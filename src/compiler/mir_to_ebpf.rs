@@ -1083,6 +1083,13 @@ impl<'a> MirToEbpfCompiler<'a> {
                     inst
                 )));
             }
+
+            MirInst::Placeholder => {
+                // Placeholder should never reach codegen - it's replaced during lowering
+                return Err(CompileError::UnsupportedInstruction(
+                    "Placeholder terminator reached codegen (block not properly terminated)".into(),
+                ));
+            }
         }
 
         Ok(())

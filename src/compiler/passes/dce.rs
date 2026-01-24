@@ -138,7 +138,8 @@ fn has_side_effects(inst: &MirInst) -> bool {
         | MirInst::Return { .. }
         | MirInst::TailCall { .. }
         | MirInst::LoopHeader { .. }
-        | MirInst::LoopBack { .. } => true,
+        | MirInst::LoopBack { .. }
+        | MirInst::Placeholder => true, // Keep placeholder so it triggers error if not replaced
     }
 }
 

@@ -286,7 +286,8 @@ impl CopyPropagation {
             | MirInst::Return { .. }
             | MirInst::TailCall { .. }
             | MirInst::LoopHeader { .. }
-            | MirInst::LoopBack { .. } => {}
+            | MirInst::LoopBack { .. }
+            | MirInst::Placeholder => {}
 
             MirInst::StringAppend { dst_len, val, .. } => {
                 if let Some(&copy_src) = copy_map.get(dst_len) {

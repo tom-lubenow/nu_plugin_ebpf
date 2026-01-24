@@ -526,6 +526,7 @@ impl<'a> SsaBuilder<'a> {
                     args: args.clone(),
                 }
             }
+            MirInst::Placeholder => MirInst::Placeholder,
         }
     }
 

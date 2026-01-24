@@ -992,7 +992,7 @@ impl<'a> IrToMirLowering<'a> {
         op: nu_protocol::ast::Operator,
         rhs: RegId,
     ) -> Result<(), CompileError> {
-        use nu_protocol::ast::{Comparison, Math, Operator};
+        use nu_protocol::ast::{Boolean, Comparison, Math, Operator};
 
         let lhs_vreg = self.get_vreg(lhs_dst);
         let rhs_vreg = self.get_vreg(rhs);
@@ -1014,6 +1014,10 @@ impl<'a> IrToMirLowering<'a> {
             Operator::Bits(nu_protocol::ast::Bits::BitXor) => BinOpKind::Xor,
             Operator::Bits(nu_protocol::ast::Bits::ShiftLeft) => BinOpKind::Shl,
             Operator::Bits(nu_protocol::ast::Bits::ShiftRight) => BinOpKind::Shr,
+            // Logical and/or - use bitwise ops since comparisons return 0 or 1
+            Operator::Boolean(Boolean::And) => BinOpKind::And,
+            Operator::Boolean(Boolean::Or) => BinOpKind::Or,
+            Operator::Boolean(Boolean::Xor) => BinOpKind::Xor,
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "Operator {:?} not supported in eBPF",
@@ -2502,7 +2506,7 @@ impl<'a> SubfunctionLowering<'a> {
             }
 
             Instruction::BinaryOp { lhs_dst, op, rhs } => {
-                use nu_protocol::ast::{Comparison, Math, Operator};
+                use nu_protocol::ast::{Boolean, Comparison, Math, Operator};
 
                 let dst_vreg = self.get_vreg(*lhs_dst);
                 let rhs_vreg = self.get_vreg(*rhs);
@@ -2524,6 +2528,10 @@ impl<'a> SubfunctionLowering<'a> {
                     Operator::Bits(nu_protocol::ast::Bits::BitXor) => BinOpKind::Xor,
                     Operator::Bits(nu_protocol::ast::Bits::ShiftLeft) => BinOpKind::Shl,
                     Operator::Bits(nu_protocol::ast::Bits::ShiftRight) => BinOpKind::Shr,
+                    // Logical and/or - use bitwise ops since comparisons return 0 or 1
+                    Operator::Boolean(Boolean::And) => BinOpKind::And,
+                    Operator::Boolean(Boolean::Or) => BinOpKind::Or,
+                    Operator::Boolean(Boolean::Xor) => BinOpKind::Xor,
                     _ => {
                         return Err(CompileError::UnsupportedInstruction(format!(
                             "Unsupported binary operator {:?} in subfunction",

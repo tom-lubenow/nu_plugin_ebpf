@@ -542,6 +542,9 @@ pub enum MirInst {
         step: i64,
         header: BlockId,
     },
+
+    /// Placeholder terminator (not a real terminator, must be replaced)
+    Placeholder,
 }
 
 impl MirInst {
@@ -651,6 +654,7 @@ impl MirInst {
             MirInst::TailCall { index, .. } => add_value(&mut uses, index),
             MirInst::LoopHeader { counter, .. } => uses.push(*counter),
             MirInst::LoopBack { counter, .. } => uses.push(*counter),
+            MirInst::Placeholder => {} // No uses
             MirInst::Phi { args, .. } => {
                 for (_, vreg) in args {
                     uses.push(*vreg);
@@ -685,7 +689,7 @@ impl BasicBlock {
         Self {
             id,
             instructions: Vec::new(),
-            terminator: MirInst::Return { val: None }, // Placeholder
+            terminator: MirInst::Placeholder, // Must be replaced with a real terminator
         }
     }
 
@@ -699,6 +703,7 @@ impl BasicBlock {
             MirInst::LoopHeader { body, exit, .. } => vec![*body, *exit],
             MirInst::LoopBack { header, .. } => vec![*header],
             MirInst::Return { .. } | MirInst::TailCall { .. } => vec![],
+            MirInst::Placeholder => vec![], // Placeholder has no successors yet
             _ => panic!("Invalid terminator: {:?}", self.terminator),
         }
     }

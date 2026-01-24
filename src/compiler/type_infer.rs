@@ -310,7 +310,8 @@ impl TypeInference {
             | MirInst::Branch { .. }
             | MirInst::Return { .. }
             | MirInst::TailCall { .. }
-            | MirInst::LoopBack { .. } => {}
+            | MirInst::LoopBack { .. }
+            | MirInst::Placeholder => {}
         }
 
         Ok(())
