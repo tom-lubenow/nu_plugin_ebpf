@@ -16,6 +16,12 @@ use thiserror::Error;
 use crate::compiler::{BpfFieldType, CompileError, EbpfProgram, EbpfProgramType, EventSchema};
 use crate::kernel_btf::{FunctionCheckResult, KernelBtf};
 
+/// Maximum entries per eBPF hash map
+const MAX_MAP_ENTRIES: usize = 10240;
+
+/// Threshold for map capacity warnings (80%)
+const MAP_CAPACITY_WARN_THRESHOLD: usize = MAX_MAP_ENTRIES * 8 / 10;
+
 /// Errors that can occur during eBPF loading
 #[derive(Debug, Error)]
 pub enum LoadError {
@@ -54,6 +60,9 @@ pub enum LoadError {
 
     #[error("Elevated privileges required")]
     NeedsSudo,
+
+    #[error("Internal error: lock poisoned")]
+    LockPoisoned,
 }
 
 /// Parsed uprobe/uretprobe target information
@@ -469,7 +478,10 @@ impl EbpfState {
         // Track pin group reference count for cleanup
         let pin_group_owned = pin_group.map(|s| s.to_string());
         if let Some(ref group) = pin_group_owned {
-            let mut refs = self.pin_group_refs.lock().unwrap();
+            let mut refs = self
+                .pin_group_refs
+                .lock()
+                .map_err(|_| LoadError::LockPoisoned)?;
             *refs.entry(group.clone()).or_insert(0) += 1;
         }
 
@@ -489,7 +501,10 @@ impl EbpfState {
             pin_group: pin_group_owned,
         };
 
-        self.probes.lock().unwrap().insert(id, active_probe);
+        self.probes
+            .lock()
+            .map_err(|_| LoadError::LockPoisoned)?
+            .insert(id, active_probe);
 
         Ok(id)
     }
@@ -499,7 +514,7 @@ impl EbpfState {
     /// Returns events emitted by the eBPF program via bpf-emit.
     /// The timeout specifies how long to wait for events.
     pub fn poll_events(&self, id: u32, _timeout: Duration) -> Result<Vec<BpfEvent>, LoadError> {
-        let mut probes = self.probes.lock().unwrap();
+        let mut probes = self.probes.lock().map_err(|_| LoadError::LockPoisoned)?;
         let probe = probes.get_mut(&id).ok_or(LoadError::ProbeNotFound(id))?;
 
         if !probe.has_ringbuf {
@@ -622,7 +637,7 @@ impl EbpfState {
         has_map: impl Fn(&ActiveProbe) -> bool,
         map_name: &str,
     ) -> Result<Vec<(i64, i64)>, LoadError> {
-        let mut probes = self.probes.lock().unwrap();
+        let mut probes = self.probes.lock().map_err(|_| LoadError::LockPoisoned)?;
         let probe = probes.get_mut(&id).ok_or(LoadError::ProbeNotFound(id))?;
 
         if !has_map(probe) {
@@ -639,6 +654,17 @@ impl EbpfState {
             for (key, value) in hash_map.iter().filter_map(|item| item.ok()) {
                 entries.push((key, value));
             }
+        }
+
+        // Warn if map is approaching capacity
+        if entries.len() > MAP_CAPACITY_WARN_THRESHOLD {
+            eprintln!(
+                "Warning: map '{}' is {}% full ({}/{} entries). New entries may be dropped.",
+                map_name,
+                entries.len() * 100 / MAX_MAP_ENTRIES,
+                entries.len(),
+                MAX_MAP_ENTRIES
+            );
         }
 
         Ok(entries)
@@ -660,7 +686,7 @@ impl EbpfState {
     /// Returns all key-value pairs from the bpf-count hash map with string keys
     /// (e.g., process names from $ctx.comm).
     pub fn get_string_counters(&self, id: u32) -> Result<Vec<StringCounterEntry>, LoadError> {
-        let mut probes = self.probes.lock().unwrap();
+        let mut probes = self.probes.lock().map_err(|_| LoadError::LockPoisoned)?;
         let probe = probes.get_mut(&id).ok_or(LoadError::ProbeNotFound(id))?;
 
         if !probe.has_string_counter_map {
@@ -684,6 +710,16 @@ impl EbpfState {
                     .to_string();
                 entries.push(StringCounterEntry { key, count });
             }
+        }
+
+        // Warn if map is approaching capacity
+        if entries.len() > MAP_CAPACITY_WARN_THRESHOLD {
+            eprintln!(
+                "Warning: map 'str_counters' is {}% full ({}/{} entries). New entries may be dropped.",
+                entries.len() * 100 / MAX_MAP_ENTRIES,
+                entries.len(),
+                MAX_MAP_ENTRIES
+            );
         }
 
         Ok(entries)
@@ -729,7 +765,7 @@ impl EbpfState {
         map_name: &str,
         has_map: impl Fn(&ActiveProbe) -> bool,
     ) -> Result<Vec<StackTrace>, LoadError> {
-        let mut probes = self.probes.lock().unwrap();
+        let mut probes = self.probes.lock().map_err(|_| LoadError::LockPoisoned)?;
         let probe = probes.get_mut(&id).ok_or(LoadError::ProbeNotFound(id))?;
 
         if !has_map(probe) {
@@ -771,11 +807,14 @@ impl EbpfState {
     /// If the probe was using a pin group and this is the last probe using it,
     /// the pinned maps will be automatically cleaned up.
     pub fn detach(&self, id: u32) -> Result<(), LoadError> {
-        let mut probes = self.probes.lock().unwrap();
+        let mut probes = self.probes.lock().map_err(|_| LoadError::LockPoisoned)?;
         if let Some(probe) = probes.remove(&id) {
             // Check if we need to clean up a pin group
             if let Some(ref group) = probe.pin_group {
-                let mut refs = self.pin_group_refs.lock().unwrap();
+                let mut refs = self
+                    .pin_group_refs
+                    .lock()
+                    .map_err(|_| LoadError::LockPoisoned)?;
                 if let Some(count) = refs.get_mut(group) {
                     *count = count.saturating_sub(1);
                     if *count == 0 {
@@ -796,16 +835,16 @@ impl EbpfState {
     }
 
     /// List all active probes
-    pub fn list(&self) -> Vec<ProbeInfo> {
-        let probes = self.probes.lock().unwrap();
-        probes
+    pub fn list(&self) -> Result<Vec<ProbeInfo>, LoadError> {
+        let probes = self.probes.lock().map_err(|_| LoadError::LockPoisoned)?;
+        Ok(probes
             .values()
             .map(|p| ProbeInfo {
                 id: p.id,
                 probe_spec: p.probe_spec.clone(),
                 uptime_secs: p.attached_at.elapsed().as_secs(),
             })
-            .collect()
+            .collect())
     }
 }
 

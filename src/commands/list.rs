@@ -57,7 +57,9 @@ fn run_list(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
     use crate::loader::get_state;
 
     let state = get_state();
-    let probes = state.list();
+    let probes = state.list().map_err(|e| {
+        LabeledError::new("Failed to list probes").with_label(e.to_string(), call.head)
+    })?;
 
     let rows: Vec<Value> = probes
         .into_iter()

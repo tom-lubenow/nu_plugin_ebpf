@@ -17,6 +17,13 @@ use super::mir::{
     VReg,
 };
 
+/// Maximum string size that eBPF can reliably handle
+/// Strings longer than this will be truncated
+pub const MAX_STRING_SIZE: usize = 128;
+
+/// Maximum entries per eBPF map before data loss may occur
+pub const MAX_MAP_ENTRIES: usize = 10240;
+
 /// Command types we recognize for eBPF
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BpfCommand {
@@ -200,8 +207,12 @@ pub struct IrToMirLowering<'a> {
     /// Generated subfunctions
     subfunctions: Vec<MirFunction>,
     /// Registry of generated subfunctions by DeclId
+    /// Reserved for future BPF-to-BPF subfunction support
+    #[allow(dead_code)]
     subfunction_registry: HashMap<DeclId, SubfunctionId>,
     /// Call count for each user function (for inline vs subfunction decision)
+    /// Reserved for future BPF-to-BPF subfunction support
+    #[allow(dead_code)]
     call_counts: HashMap<DeclId, usize>,
 }
 
@@ -812,9 +823,18 @@ impl<'a> IrToMirLowering<'a> {
             }
 
             Literal::String(data_slice) => {
-                // Allocate stack slot for string
+                // Warn if string exceeds eBPF limits
+                let string_len = data_slice.len as usize;
+                if string_len > MAX_STRING_SIZE {
+                    eprintln!(
+                        "Warning: string literal ({} bytes) exceeds eBPF limit of {} bytes and will be truncated",
+                        string_len, MAX_STRING_SIZE
+                    );
+                }
+                // Allocate stack slot for string (capped at MAX_STRING_SIZE)
+                let effective_len = string_len.min(MAX_STRING_SIZE);
                 let slot = self.func.alloc_stack_slot(
-                    data_slice.len as usize + 1, // Include null terminator
+                    effective_len + 1, // Include null terminator
                     8,
                     StackSlotKind::StringBuffer,
                 );
@@ -1555,13 +1575,24 @@ impl<'a> IrToMirLowering<'a> {
                 let ptr_vreg = self.pipeline_input.unwrap_or(dst_vreg);
 
                 // Check for --max-len argument (default 128)
-                let max_len = self
+                let requested_len = self
                     .named_args
                     .get("max-len")
                     .and_then(|(_, reg)| self.get_metadata(*reg))
                     .and_then(|m| m.literal_int)
                     .map(|v| v as usize)
-                    .unwrap_or(128);
+                    .unwrap_or(MAX_STRING_SIZE);
+
+                // Warn and cap if exceeds limit
+                let max_len = if requested_len > MAX_STRING_SIZE {
+                    eprintln!(
+                        "Warning: read-str max-len ({} bytes) exceeds eBPF limit of {} bytes, capping",
+                        requested_len, MAX_STRING_SIZE
+                    );
+                    MAX_STRING_SIZE
+                } else {
+                    requested_len
+                };
 
                 let slot = self
                     .func
@@ -1588,13 +1619,24 @@ impl<'a> IrToMirLowering<'a> {
                 let ptr_vreg = self.pipeline_input.unwrap_or(dst_vreg);
 
                 // Check for --max-len argument (default 128)
-                let max_len = self
+                let requested_len = self
                     .named_args
                     .get("max-len")
                     .and_then(|(_, reg)| self.get_metadata(*reg))
                     .and_then(|m| m.literal_int)
                     .map(|v| v as usize)
-                    .unwrap_or(128);
+                    .unwrap_or(MAX_STRING_SIZE);
+
+                // Warn and cap if exceeds limit
+                let max_len = if requested_len > MAX_STRING_SIZE {
+                    eprintln!(
+                        "Warning: read-kernel-str max-len ({} bytes) exceeds eBPF limit of {} bytes, capping",
+                        requested_len, MAX_STRING_SIZE
+                    );
+                    MAX_STRING_SIZE
+                } else {
+                    requested_len
+                };
 
                 let slot = self
                     .func
@@ -2316,206 +2358,10 @@ pub fn lower_ir_to_mir(
     Ok(lowering.finish())
 }
 
-/// Simplified lowering context for generating subfunction MIR
-/// Used when creating BPF-to-BPF subfunctions from user-defined commands
-struct SubfunctionLowering<'a> {
-    /// The MIR function being built
-    func: &'a mut MirFunction,
-    /// IR block to lower
-    ir_block: &'a IrBlock,
-    /// Parameter VarId -> VReg mappings
-    param_map: HashMap<VarId, VReg>,
-    /// Nushell RegId -> MIR VReg mappings
-    reg_map: HashMap<u32, VReg>,
-    /// Current basic block
-    current_block: BlockId,
-}
-
-impl<'a> SubfunctionLowering<'a> {
-    fn new(
-        func: &'a mut MirFunction,
-        ir_block: &'a IrBlock,
-        params: &[(Option<VarId>, VReg)],
-    ) -> Self {
-        let param_map: HashMap<VarId, VReg> = params
-            .iter()
-            .filter_map(|(var_id, vreg)| var_id.map(|v| (v, *vreg)))
-            .collect();
-
-        Self {
-            func,
-            ir_block,
-            param_map,
-            reg_map: HashMap::new(),
-            current_block: BlockId(0),
-        }
-    }
-
-    fn lower(&mut self) -> Result<(), CompileError> {
-        self.current_block = self.func.entry;
-
-        for (ir_idx, inst) in self.ir_block.instructions.iter().enumerate() {
-            self.lower_instruction(inst, ir_idx)?;
-        }
-
-        Ok(())
-    }
-
-    fn get_vreg(&mut self, reg: RegId) -> VReg {
-        let reg_id = reg.get();
-        if let Some(&vreg) = self.reg_map.get(&reg_id) {
-            vreg
-        } else {
-            let vreg = self.func.alloc_vreg();
-            self.reg_map.insert(reg_id, vreg);
-            vreg
-        }
-    }
-
-    fn emit(&mut self, inst: MirInst) {
-        self.func
-            .block_mut(self.current_block)
-            .instructions
-            .push(inst);
-    }
-
-    fn terminate(&mut self, inst: MirInst) {
-        self.func.block_mut(self.current_block).terminator = inst;
-    }
-
-    fn lower_instruction(
-        &mut self,
-        inst: &Instruction,
-        _ir_idx: usize,
-    ) -> Result<(), CompileError> {
-        match inst {
-            Instruction::LoadLiteral { dst, lit } => {
-                let dst_vreg = self.get_vreg(*dst);
-                match lit {
-                    nu_protocol::ir::Literal::Int(i) => {
-                        self.emit(MirInst::Copy {
-                            dst: dst_vreg,
-                            src: MirValue::Const(*i),
-                        });
-                    }
-                    nu_protocol::ir::Literal::Bool(b) => {
-                        self.emit(MirInst::Copy {
-                            dst: dst_vreg,
-                            src: MirValue::Const(if *b { 1 } else { 0 }),
-                        });
-                    }
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "Unsupported literal type in subfunction".into(),
-                        ));
-                    }
-                }
-            }
-
-            Instruction::LoadVariable { dst, var_id } => {
-                let dst_vreg = self.get_vreg(*dst);
-                if let Some(&param_vreg) = self.param_map.get(var_id) {
-                    self.emit(MirInst::Copy {
-                        dst: dst_vreg,
-                        src: MirValue::VReg(param_vreg),
-                    });
-                } else {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "Unknown variable {} in subfunction",
-                        var_id.get()
-                    )));
-                }
-            }
-
-            Instruction::Move { dst, src } => {
-                let dst_vreg = self.get_vreg(*dst);
-                let src_vreg = self.get_vreg(*src);
-                self.emit(MirInst::Copy {
-                    dst: dst_vreg,
-                    src: MirValue::VReg(src_vreg),
-                });
-            }
-
-            Instruction::BinaryOp { lhs_dst, op, rhs } => {
-                use nu_protocol::ast::{Boolean, Comparison, Math, Operator};
-
-                let dst_vreg = self.get_vreg(*lhs_dst);
-                let rhs_vreg = self.get_vreg(*rhs);
-
-                let mir_op = match op {
-                    Operator::Math(Math::Add) => BinOpKind::Add,
-                    Operator::Math(Math::Subtract) => BinOpKind::Sub,
-                    Operator::Math(Math::Multiply) => BinOpKind::Mul,
-                    Operator::Math(Math::Divide) => BinOpKind::Div,
-                    Operator::Math(Math::Modulo) => BinOpKind::Mod,
-                    Operator::Comparison(Comparison::Equal) => BinOpKind::Eq,
-                    Operator::Comparison(Comparison::NotEqual) => BinOpKind::Ne,
-                    Operator::Comparison(Comparison::LessThan) => BinOpKind::Lt,
-                    Operator::Comparison(Comparison::LessThanOrEqual) => BinOpKind::Le,
-                    Operator::Comparison(Comparison::GreaterThan) => BinOpKind::Gt,
-                    Operator::Comparison(Comparison::GreaterThanOrEqual) => BinOpKind::Ge,
-                    Operator::Bits(nu_protocol::ast::Bits::BitAnd) => BinOpKind::And,
-                    Operator::Bits(nu_protocol::ast::Bits::BitOr) => BinOpKind::Or,
-                    Operator::Bits(nu_protocol::ast::Bits::BitXor) => BinOpKind::Xor,
-                    Operator::Bits(nu_protocol::ast::Bits::ShiftLeft) => BinOpKind::Shl,
-                    Operator::Bits(nu_protocol::ast::Bits::ShiftRight) => BinOpKind::Shr,
-                    // Logical and/or - use bitwise ops since comparisons return 0 or 1
-                    Operator::Boolean(Boolean::And) => BinOpKind::And,
-                    Operator::Boolean(Boolean::Or) => BinOpKind::Or,
-                    Operator::Boolean(Boolean::Xor) => BinOpKind::Xor,
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(format!(
-                            "Unsupported binary operator {:?} in subfunction",
-                            op
-                        )));
-                    }
-                };
-
-                let temp = self.func.alloc_vreg();
-                self.emit(MirInst::Copy {
-                    dst: temp,
-                    src: MirValue::VReg(dst_vreg),
-                });
-                self.emit(MirInst::BinOp {
-                    dst: dst_vreg,
-                    op: mir_op,
-                    lhs: MirValue::VReg(temp),
-                    rhs: MirValue::VReg(rhs_vreg),
-                });
-            }
-
-            Instruction::Return { src } => {
-                let src_vreg = self.get_vreg(*src);
-                self.terminate(MirInst::Return {
-                    val: Some(MirValue::VReg(src_vreg)),
-                });
-            }
-
-            Instruction::ReturnEarly { src } => {
-                let src_vreg = self.get_vreg(*src);
-                self.terminate(MirInst::Return {
-                    val: Some(MirValue::VReg(src_vreg)),
-                });
-            }
-
-            // Skip instructions that don't produce code
-            Instruction::Drop { .. }
-            | Instruction::Drain { .. }
-            | Instruction::Clone { .. }
-            | Instruction::Collect { .. }
-            | Instruction::Span { .. } => {}
-
-            _ => {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "Instruction {:?} not supported in subfunctions",
-                    inst
-                )));
-            }
-        }
-
-        Ok(())
-    }
-}
+// NOTE: SubfunctionLowering has been removed as dead code.
+// It was intended for BPF-to-BPF subfunction support but was never integrated.
+// If BPF-to-BPF subfunctions are needed in the future, refer to git history
+// for the implementation (struct SubfunctionLowering with ~200 lines of code).
 
 #[cfg(test)]
 mod tests {
