@@ -3,12 +3,11 @@
 //! This module converts Nushell's internal IR representation into MIR,
 //! which is then lowered to eBPF bytecode by mir_to_ebpf.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use nu_protocol::ast::{CellPath, PathMember, Pattern, RangeInclusion};
-use nu_protocol::engine::EngineState;
-use nu_protocol::ir::{Instruction, IrBlock};
-use nu_protocol::{DeclId, RegId, Value, VarId};
+use nu_protocol::ir::{Instruction, IrBlock, Literal};
+use nu_protocol::{BlockId as NuBlockId, DeclId, RegId, Value, VarId};
 
 use super::CompileError;
 use super::elf::ProbeContext;
@@ -29,6 +28,59 @@ pub enum BpfCommand {
     Histogram,
     StartTimer,
     StopTimer,
+}
+
+/// Infer the context parameter VarId from IR instructions.
+///
+/// Closure parameters are variables that are loaded but never stored to within the closure.
+/// The first such variable (by order of first load) is the context parameter.
+pub fn infer_ctx_param(ir_block: &IrBlock) -> Option<VarId> {
+    let mut stored_vars: HashSet<VarId> = HashSet::new();
+    let mut first_loaded: Vec<VarId> = Vec::new();
+
+    // First pass: collect all stored variables
+    for instruction in &ir_block.instructions {
+        if let Instruction::StoreVariable { var_id, .. } = instruction {
+            stored_vars.insert(*var_id);
+        }
+    }
+
+    // Second pass: find loaded variables that were never stored (parameters)
+    for instruction in &ir_block.instructions {
+        if let Instruction::LoadVariable { var_id, .. } = instruction {
+            if !stored_vars.contains(var_id) && !first_loaded.contains(var_id) {
+                first_loaded.push(*var_id);
+            }
+        }
+    }
+
+    // The first parameter is the context
+    first_loaded.first().copied()
+}
+
+/// Extract all closure/block IDs referenced in an IR block.
+///
+/// This scans the IR for LoadLiteral instructions that load closures, blocks,
+/// or row conditions, and returns all the block IDs found.
+pub fn extract_closure_block_ids(ir_block: &IrBlock) -> Vec<NuBlockId> {
+    let mut block_ids = Vec::new();
+
+    for instruction in &ir_block.instructions {
+        if let Instruction::LoadLiteral { lit, .. } = instruction {
+            match lit {
+                Literal::Closure(block_id)
+                | Literal::Block(block_id)
+                | Literal::RowCondition(block_id) => {
+                    if !block_ids.contains(block_id) {
+                        block_ids.push(*block_id);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    block_ids
 }
 
 /// A field in a record being built
@@ -113,8 +165,10 @@ pub struct IrToMirLowering<'a> {
     /// Probe context for field access (reserved for future BTF/CO-RE support)
     #[allow(dead_code)]
     probe_ctx: Option<&'a ProbeContext>,
-    /// Engine state for looking up commands
-    engine_state: Option<&'a EngineState>,
+    /// Mapping from DeclId to command name (for plugin context where engine_state is unavailable)
+    decl_names: &'a HashMap<DeclId, String>,
+    /// Mapping from BlockId to IrBlock for nested closures (where, each, etc.)
+    closure_irs: &'a HashMap<nu_protocol::BlockId, IrBlock>,
     /// Captured closure values to inline
     captures: &'a [(String, i64)],
     /// Context parameter variable ID (if any)
@@ -156,7 +210,8 @@ impl<'a> IrToMirLowering<'a> {
     pub fn new(
         ir_block: &'a IrBlock,
         probe_ctx: Option<&'a ProbeContext>,
-        engine_state: Option<&'a EngineState>,
+        decl_names: &'a HashMap<DeclId, String>,
+        closure_irs: &'a HashMap<nu_protocol::BlockId, IrBlock>,
         captures: &'a [(String, i64)],
         ctx_param: Option<VarId>,
     ) -> Self {
@@ -171,7 +226,8 @@ impl<'a> IrToMirLowering<'a> {
             current_block: entry,
             ir_block: Some(ir_block),
             probe_ctx,
-            engine_state,
+            decl_names,
+            closure_irs,
             captures,
             ctx_param,
             pipeline_input: None,
@@ -431,21 +487,19 @@ impl<'a> IrToMirLowering<'a> {
             }
 
             Instruction::PushPositional { src } => {
-                // Track positional argument for user-defined functions
+                // Track positional argument for user-defined functions and built-ins
+                // like `where {closure}`, `each {closure}`, `skip N`, etc.
+                // NOTE: Do NOT set pipeline_input here - positional args are separate
+                // from pipeline input. Pipeline input comes from src_dst of Call.
                 let src_vreg = self.get_vreg(*src);
                 self.positional_args.push((src_vreg, *src));
-                // Also set pipeline_input for built-in commands (backwards compatibility)
-                self.pipeline_input = Some(src_vreg);
-                self.pipeline_input_reg = Some(*src);
             }
 
             Instruction::AppendRest { src } => {
-                // Track as positional argument
+                // Track as positional argument (rest parameter)
+                // NOTE: Do NOT set pipeline_input here either
                 let src_vreg = self.get_vreg(*src);
                 self.positional_args.push((src_vreg, *src));
-                // Also set pipeline_input for built-in commands
-                self.pipeline_input = Some(src_vreg);
-                self.pipeline_input_reg = Some(*src);
             }
 
             Instruction::PushFlag { name } => {
@@ -1368,17 +1422,11 @@ impl<'a> IrToMirLowering<'a> {
 
     /// Lower Call instruction (emit, count, etc. or user-defined functions)
     fn lower_call(&mut self, decl_id: DeclId, src_dst: RegId) -> Result<(), CompileError> {
-        // Check if this is a user-defined command that we should inline
-        if let Some(es) = self.engine_state {
-            let decl = es.get_decl(decl_id);
-            if decl.is_custom() {
-                return self.inline_user_function(decl_id, src_dst);
-            }
-        }
-
+        // Look up command name from our decl_names mapping
         let cmd_name = self
-            .engine_state
-            .map(|es| es.get_decl(decl_id).name().to_string())
+            .decl_names
+            .get(&decl_id)
+            .cloned()
             .unwrap_or_else(|| format!("decl_{}", decl_id.get()));
 
         let dst_vreg = self.get_vreg(src_dst);
@@ -1511,7 +1559,13 @@ impl<'a> IrToMirLowering<'a> {
 
                 let condition_vreg = if let Some(block_id) = closure_block_id {
                     // Inline the closure with $in bound to input_vreg
-                    self.inline_closure_with_in(block_id, input_vreg)?
+                    let closure_ir = self.closure_irs.get(&block_id).ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "Closure block {} not found (did you pass the closure IRs?)",
+                            block_id.get()
+                        ))
+                    })?;
+                    self.inline_closure_with_in(closure_ir, input_vreg)?
                 } else {
                     // No closure - use input value directly as condition
                     input_vreg
@@ -1666,7 +1720,13 @@ impl<'a> IrToMirLowering<'a> {
 
                 if let Some(block_id) = closure_block_id {
                     // Inline the closure with $in bound to input_vreg
-                    let result_vreg = self.inline_closure_with_in(block_id, input_vreg)?;
+                    let closure_ir = self.closure_irs.get(&block_id).ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "Closure block {} not found",
+                            block_id.get()
+                        ))
+                    })?;
+                    let result_vreg = self.inline_closure_with_in(closure_ir, input_vreg)?;
 
                     // Create exit block and continue block
                     let exit_block = self.func.alloc_block();
@@ -1735,6 +1795,14 @@ impl<'a> IrToMirLowering<'a> {
                     .is_some();
 
                 if let Some(block_id) = closure_block_id {
+                    // Look up the closure IR
+                    let closure_ir = self.closure_irs.get(&block_id).ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "Closure block {} not found",
+                            block_id.get()
+                        ))
+                    })?;
+
                     if is_list {
                         // List transformation: iterate and transform each element
                         let list_info = input_reg
@@ -1799,7 +1867,7 @@ impl<'a> IrToMirLowering<'a> {
                             });
 
                             // Transform element with closure
-                            let transformed = self.inline_closure_with_in(block_id, elem_vreg)?;
+                            let transformed = self.inline_closure_with_in(closure_ir, elem_vreg)?;
 
                             // Push to output list
                             self.emit(MirInst::ListPush {
@@ -1824,7 +1892,7 @@ impl<'a> IrToMirLowering<'a> {
                         meta.list_buffer = Some((out_slot, max_len));
                     } else {
                         // Single value transformation
-                        let result_vreg = self.inline_closure_with_in(block_id, input_vreg)?;
+                        let result_vreg = self.inline_closure_with_in(closure_ir, input_vreg)?;
                         self.emit(MirInst::Copy {
                             dst: dst_vreg,
                             src: MirValue::VReg(result_vreg),
@@ -2064,224 +2132,45 @@ impl<'a> IrToMirLowering<'a> {
     }
 
     /// Call a user-defined function (inline for single use, subfunction for multiple calls)
+    // NOTE: User-defined function inlining is not supported in plugin context
+    // because it requires access to EngineState to look up block definitions.
+    // If needed in the future, the plugin protocol could be extended to support
+    // fetching block IR by DeclId.
+    #[allow(dead_code)]
     fn inline_user_function(
         &mut self,
-        decl_id: DeclId,
-        src_dst: RegId,
+        _decl_id: DeclId,
+        _src_dst: RegId,
     ) -> Result<(), CompileError> {
-        // Increment call count for this function
-        let count = self.call_counts.entry(decl_id).or_insert(0);
-        *count += 1;
-        let call_count = *count;
-
-        let dst_vreg = self.get_vreg(src_dst);
-        let positional_args = std::mem::take(&mut self.positional_args);
-
-        // If this is the first call, inline it directly
-        // (We could also always generate subfunctions, but inlining single-use functions is more efficient)
-        if call_count == 1 {
-            self.inline_function_body(decl_id, dst_vreg, &positional_args)?;
-        } else {
-            // For second+ calls, use subfunction
-            let subfn_id = self.get_or_create_subfunction(decl_id)?;
-
-            // Emit CallSubfn instruction
-            let arg_vregs: Vec<VReg> = positional_args.iter().map(|(vreg, _)| *vreg).collect();
-            self.emit(MirInst::CallSubfn {
-                dst: dst_vreg,
-                subfn: subfn_id,
-                args: arg_vregs,
-            });
-        }
-
-        // Clear pipeline state
-        self.pipeline_input = None;
-        self.pipeline_input_reg = None;
-        self.positional_args.clear();
-        self.named_flags.clear();
-        self.named_args.clear();
-
-        Ok(())
+        Err(CompileError::UnsupportedInstruction(
+            "User-defined function inlining is not supported in plugin context".into(),
+        ))
     }
 
     /// Get or create a subfunction for a user-defined command
+    /// NOTE: Not supported in plugin context
+    #[allow(dead_code)]
     fn get_or_create_subfunction(
         &mut self,
-        decl_id: DeclId,
+        _decl_id: DeclId,
     ) -> Result<SubfunctionId, CompileError> {
-        // Check if we already have a subfunction for this decl
-        if let Some(&subfn_id) = self.subfunction_registry.get(&decl_id) {
-            return Ok(subfn_id);
-        }
-
-        let es = self.engine_state.ok_or_else(|| {
-            CompileError::UnsupportedInstruction("No engine state for user function lookup".into())
-        })?;
-
-        let decl = es.get_decl(decl_id);
-        let cmd_name = decl.name().to_string();
-
-        // Get the block ID for the user-defined command
-        let block_id = decl.block_id().ok_or_else(|| {
-            CompileError::UnsupportedInstruction(format!(
-                "Command '{}' has no block (not a def command)",
-                cmd_name
-            ))
-        })?;
-
-        // Get the block and its IR
-        let block = es.get_block(block_id);
-        let ir_block = block.ir_block.as_ref().ok_or_else(|| {
-            CompileError::UnsupportedInstruction(format!(
-                "Command '{}' has no IR (not compiled)",
-                cmd_name
-            ))
-        })?;
-
-        let signature = decl.signature();
-
-        // Create a new MIR function for the subfunction
-        let mut subfn = MirFunction::with_name(&cmd_name);
-        subfn.param_count =
-            signature.required_positional.len() + signature.optional_positional.len();
-
-        // Create entry block
-        let entry = subfn.alloc_block();
-        subfn.entry = entry;
-
-        // Allocate vregs for parameters (R1-R5 in BPF calling convention)
-        let mut param_vregs = Vec::new();
-        for param in &signature.required_positional {
-            let vreg = subfn.alloc_vreg();
-            param_vregs.push((param.var_id, vreg));
-        }
-        for param in &signature.optional_positional {
-            let vreg = subfn.alloc_vreg();
-            param_vregs.push((param.var_id, vreg));
-        }
-
-        // Lower the function body into the subfunction
-        // We need a separate lowering context for this
-        let mut subfn_lowering = SubfunctionLowering::new(&mut subfn, ir_block, &param_vregs);
-        subfn_lowering.lower()?;
-
-        // Add the subfunction to our list
-        let subfn_id = SubfunctionId(self.subfunctions.len() as u32);
-        self.subfunctions.push(subfn);
-        self.subfunction_registry.insert(decl_id, subfn_id);
-
-        Ok(subfn_id)
+        Err(CompileError::UnsupportedInstruction(
+            "User-defined subfunctions are not supported in plugin context".into(),
+        ))
     }
 
     /// Inline a function body directly at the call site
+    /// NOTE: Not supported in plugin context
+    #[allow(dead_code)]
     fn inline_function_body(
         &mut self,
-        decl_id: DeclId,
-        dst_vreg: VReg,
-        positional_args: &[(VReg, RegId)],
+        _decl_id: DeclId,
+        _dst_vreg: VReg,
+        _positional_args: &[(VReg, RegId)],
     ) -> Result<(), CompileError> {
-        let es = self.engine_state.ok_or_else(|| {
-            CompileError::UnsupportedInstruction("No engine state for user function lookup".into())
-        })?;
-
-        let decl = es.get_decl(decl_id);
-        let cmd_name = decl.name().to_string();
-
-        // Get the block ID for the user-defined command
-        let block_id = decl.block_id().ok_or_else(|| {
-            CompileError::UnsupportedInstruction(format!(
-                "Command '{}' has no block (not a def command)",
-                cmd_name
-            ))
-        })?;
-
-        // Get the block and its IR
-        let block = es.get_block(block_id);
-        let ir_block = block.ir_block.as_ref().ok_or_else(|| {
-            CompileError::UnsupportedInstruction(format!(
-                "Command '{}' has no IR (not compiled)",
-                cmd_name
-            ))
-        })?;
-
-        // Get the signature to map parameters to VarIds
-        let signature = decl.signature();
-
-        // Map positional arguments to their parameter VarIds
-        for (i, (arg_vreg, _arg_reg)) in positional_args.iter().enumerate() {
-            if let Some(param) = signature.required_positional.get(i) {
-                if let Some(var_id) = param.var_id {
-                    self.var_mappings.insert(var_id, *arg_vreg);
-                }
-            } else if let Some(param) = signature
-                .optional_positional
-                .get(i.saturating_sub(signature.required_positional.len()))
-            {
-                if let Some(var_id) = param.var_id {
-                    self.var_mappings.insert(var_id, *arg_vreg);
-                }
-            }
-        }
-
-        // Save current IR context
-        let saved_ir_block = self.ir_block;
-
-        // Process the function's IR instructions
-        self.ir_block = Some(ir_block);
-
-        // Track the result register - we'll capture the last expression's value
-        let mut result_vreg: Option<VReg> = None;
-
-        for (ir_idx, inst) in ir_block.instructions.iter().enumerate() {
-            // Handle Return specially - capture the return value
-            if let Instruction::Return { src } = inst {
-                let src_vreg = self.get_vreg(*src);
-                result_vreg = Some(src_vreg);
-                // Don't emit the Return instruction - we're inlining
-                continue;
-            }
-
-            // Also handle ReturnEarly the same way
-            if let Instruction::ReturnEarly { src } = inst {
-                let src_vreg = self.get_vreg(*src);
-                result_vreg = Some(src_vreg);
-                continue;
-            }
-
-            // Lower the instruction normally
-            self.lower_instruction(inst, ir_idx)?;
-        }
-
-        // Restore IR context
-        self.ir_block = saved_ir_block;
-
-        // Copy result to destination register
-        if let Some(result) = result_vreg {
-            self.emit(MirInst::Copy {
-                dst: dst_vreg,
-                src: MirValue::VReg(result),
-            });
-        } else {
-            // No explicit return, set result to 0
-            self.emit(MirInst::Copy {
-                dst: dst_vreg,
-                src: MirValue::Const(0),
-            });
-        }
-
-        // Clean up var mappings for this function's parameters
-        for param in &signature.required_positional {
-            if let Some(var_id) = param.var_id {
-                self.var_mappings.remove(&var_id);
-            }
-        }
-        for param in &signature.optional_positional {
-            if let Some(var_id) = param.var_id {
-                self.var_mappings.remove(&var_id);
-            }
-        }
-
-        Ok(())
+        Err(CompileError::UnsupportedInstruction(
+            "User-defined function inlining is not supported in plugin context".into(),
+        ))
     }
 
     /// Lower RecordInsert instruction
@@ -2332,62 +2221,40 @@ impl<'a> IrToMirLowering<'a> {
 
     /// Inline a closure with $in bound to a specific value
     /// Returns the vreg containing the closure's result
+    ///
+    /// This is used for commands like `where` and `each` that take closure arguments.
+    /// The closure's parameter is bound to the input value.
     fn inline_closure_with_in(
         &mut self,
-        block_id: nu_protocol::BlockId,
+        ir_block: &IrBlock,
         in_vreg: VReg,
     ) -> Result<VReg, CompileError> {
-        let es = self.engine_state.ok_or_else(|| {
-            CompileError::UnsupportedInstruction("No engine state for closure lookup".into())
-        })?;
-
-        // Get the block and its IR
-        let block = es.get_block(block_id);
-        let ir_block = block.ir_block.as_ref().ok_or_else(|| {
-            CompileError::UnsupportedInstruction("Closure has no IR (not compiled)".into())
-        })?;
+        // Collect all variable IDs that are loaded in this closure
+        // These could be $in, closure parameters, or captured variables
+        // Map all of them to the input value since this is a single-value transform
+        let mut loaded_var_ids: Vec<VarId> = Vec::new();
+        for inst in &ir_block.instructions {
+            if let Instruction::LoadVariable { var_id, .. } = inst {
+                if !loaded_var_ids.contains(var_id) {
+                    loaded_var_ids.push(*var_id);
+                }
+            }
+        }
 
         // Save old mappings to restore later
         use nu_protocol::IN_VARIABLE_ID;
         let old_in_mapping = self.var_mappings.get(&IN_VARIABLE_ID).copied();
 
-        // Map $in variable (ID 1) to in_vreg
+        // Map $in variable to in_vreg
         self.var_mappings.insert(IN_VARIABLE_ID, in_vreg);
 
-        // Also map any signature parameters to in_vreg
-        // RowCondition blocks may declare their own input variable
-        let mut param_var_ids: Vec<nu_protocol::VarId> = Vec::new();
-        for param in &block.signature.required_positional {
-            if let Some(var_id) = param.var_id {
+        // Map all loaded variables to in_vreg (they all represent the row/input)
+        let mut param_var_ids: Vec<VarId> = Vec::new();
+        for var_id in loaded_var_ids {
+            // Don't override existing mappings (like captures from outer scope)
+            if !self.var_mappings.contains_key(&var_id) {
                 param_var_ids.push(var_id);
                 self.var_mappings.insert(var_id, in_vreg);
-            }
-        }
-        for param in &block.signature.optional_positional {
-            if let Some(var_id) = param.var_id {
-                param_var_ids.push(var_id);
-                self.var_mappings.insert(var_id, in_vreg);
-            }
-        }
-
-        // Also map captures to in_vreg if they're the $in variable
-        // (captures may reference $in from outer scope)
-        for (var_id, _span) in &block.captures {
-            param_var_ids.push(*var_id);
-            self.var_mappings.insert(*var_id, in_vreg);
-        }
-
-        // Scan the IR block for LoadVariable instructions and map any variable
-        // that looks like it could be the row input (position 0)
-        // This handles cases where the block defines its own input variable
-        for inst in &ir_block.instructions {
-            if let Instruction::LoadVariable { var_id, .. } = inst {
-                // Map any variable we don't already have mapped
-                if !self.var_mappings.contains_key(var_id) {
-                    // Assume this is the row input variable
-                    self.var_mappings.insert(*var_id, in_vreg);
-                    param_var_ids.push(*var_id);
-                }
             }
         }
 
@@ -2395,15 +2262,13 @@ impl<'a> IrToMirLowering<'a> {
         let result_vreg = self.func.alloc_vreg();
 
         // Save current register mappings (closure has its own register space)
+        // IMPORTANT: We start with an empty reg_map so the closure allocates fresh
+        // vregs for all its internal registers. This is proper alpha-renaming -
+        // without it, the closure would overwrite in_vreg during computation.
         let old_reg_map = std::mem::take(&mut self.reg_map);
         let old_reg_metadata = std::mem::take(&mut self.reg_metadata);
 
-        // The closure expects its input in RegId(0), so pre-map that
-        // RegId(0) in the closure's IR should map to in_vreg
-        self.reg_map.insert(0, in_vreg);
-
         // Lower the closure body
-        // We need to process each instruction in the closure's IR
         for (ir_idx, inst) in ir_block.instructions.iter().enumerate() {
             // Handle Return specially to capture the result
             if let Instruction::Return { src } = inst {
@@ -2430,7 +2295,7 @@ impl<'a> IrToMirLowering<'a> {
             self.var_mappings.remove(&IN_VARIABLE_ID);
         }
 
-        // Remove signature parameter mappings
+        // Remove parameter mappings
         for var_id in param_var_ids {
             self.var_mappings.remove(&var_id);
         }
@@ -2495,14 +2360,20 @@ impl<'a> IrToMirLowering<'a> {
 /// Lower Nushell IR to MIR
 ///
 /// This is the main entry point for the IR → MIR conversion.
+///
+/// The `decl_names` parameter maps DeclId to command names for the eBPF helper
+/// commands (emit, count, histogram, etc.). In plugin context, this is built
+/// by querying the engine via `find_decl()`.
 pub fn lower_ir_to_mir(
     ir_block: &IrBlock,
     probe_ctx: Option<&ProbeContext>,
-    engine_state: Option<&EngineState>,
+    decl_names: &HashMap<DeclId, String>,
+    closure_irs: &HashMap<nu_protocol::BlockId, IrBlock>,
     captures: &[(String, i64)],
     ctx_param: Option<VarId>,
 ) -> Result<MirProgram, CompileError> {
-    let mut lowering = IrToMirLowering::new(ir_block, probe_ctx, engine_state, captures, ctx_param);
+    let mut lowering =
+        IrToMirLowering::new(ir_block, probe_ctx, decl_names, closure_irs, captures, ctx_param);
     lowering.lower_block(ir_block)?;
     Ok(lowering.finish())
 }

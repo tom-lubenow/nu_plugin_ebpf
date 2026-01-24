@@ -1,43 +1,85 @@
 //! `ebpf attach` command - attach an eBPF probe
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
 use nu_protocol::engine::Closure;
-use nu_protocol::ir::{Instruction, IrBlock};
+use nu_protocol::ir::IrBlock;
 use nu_protocol::{
-    Category, Example, LabeledError, PipelineData, Record, Signature, Span, Spanned, SyntaxShape,
-    Type, Value, VarId, record,
+    BlockId, Category, DeclId, Example, LabeledError, PipelineData, Record, Signature, Span,
+    Spanned, SyntaxShape, Type, Value, record,
 };
 
 use crate::EbpfPlugin;
 
-/// Infer the context parameter VarId from IR instructions.
-///
-/// Closure parameters are variables that are loaded but never stored to within the closure.
-/// The first such variable (by order of first load) is the context parameter.
-fn infer_ctx_param(ir_block: &IrBlock) -> Option<VarId> {
-    let mut stored_vars: HashSet<VarId> = HashSet::new();
-    let mut first_loaded: Vec<VarId> = Vec::new();
+/// Known eBPF helper commands that need to be mapped by decl_id
+const EBPF_COMMANDS: &[&str] = &[
+    "emit",
+    "filter",
+    "count",
+    "histogram",
+    "start-timer",
+    "stop-timer",
+    "read-str",
+    "read-kernel-str",
+    // Also include common nushell commands used in closures
+    "where",
+    "each",
+    "skip",
+    "first",
+    "last",
+    "get",
+    "select",
+    "reject",
+    "default",
+    "if",
+    "match",
+];
 
-    // First pass: collect all stored variables
-    for instruction in &ir_block.instructions {
-        if let Instruction::StoreVariable { var_id, .. } = instruction {
-            stored_vars.insert(*var_id);
+/// Build a mapping from DeclId to command name for known commands
+fn build_decl_names(engine: &EngineInterface) -> Result<HashMap<DeclId, String>, LabeledError> {
+    let mut decl_names = HashMap::new();
+
+    for &cmd_name in EBPF_COMMANDS {
+        if let Some(decl_id) = engine.find_decl(cmd_name).map_err(|e| {
+            LabeledError::new("Failed to look up command")
+                .with_label(format!("Could not find '{}': {}", cmd_name, e), Span::unknown())
+        })? {
+            decl_names.insert(decl_id, cmd_name.to_string());
         }
     }
 
-    // Second pass: find loaded variables that were never stored (parameters)
-    for instruction in &ir_block.instructions {
-        if let Instruction::LoadVariable { var_id, .. } = instruction {
-            if !stored_vars.contains(var_id) && !first_loaded.contains(var_id) {
-                first_loaded.push(*var_id);
-            }
+    Ok(decl_names)
+}
+
+/// Recursively fetch IR for all closures referenced in an IR block
+fn fetch_closure_irs(
+    engine: &EngineInterface,
+    ir_block: &IrBlock,
+    closure_irs: &mut HashMap<BlockId, IrBlock>,
+    span: Span,
+) -> Result<(), LabeledError> {
+    use crate::compiler::extract_closure_block_ids;
+
+    let block_ids = extract_closure_block_ids(ir_block);
+
+    for block_id in block_ids {
+        if closure_irs.contains_key(&block_id) {
+            continue; // Already fetched
         }
+
+        let nested_ir = engine.get_block_ir(block_id).map_err(|e| {
+            LabeledError::new("Failed to get IR for nested closure")
+                .with_label(format!("Block {}: {}", block_id.get(), e), span)
+        })?;
+
+        // Recursively fetch any closures referenced by this closure
+        fetch_closure_irs(engine, &nested_ir, closure_irs, span)?;
+
+        closure_irs.insert(block_id, nested_ir);
     }
 
-    // The first parameter is the context
-    first_loaded.first().copied()
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -191,8 +233,8 @@ fn run_attach(
     call: &EvaluatedCall,
 ) -> Result<PipelineData, LabeledError> {
     use crate::compiler::{
-        EbpfProgram, ProbeContext, compile_mir_to_ebpf, ir_to_mir::lower_ir_to_mir,
-        passes::optimize_with_ssa,
+        EbpfProgram, ProbeContext, compile_mir_to_ebpf, infer_ctx_param,
+        ir_to_mir::lower_ir_to_mir, passes::optimize_with_ssa,
     };
     use crate::loader::{LoadError, get_state, parse_probe_spec};
 
@@ -240,6 +282,13 @@ fn run_attach(
             .with_label(e.to_string(), closure.span)
     })?;
 
+    // Build decl_id -> command name mapping for known commands
+    let decl_names = build_decl_names(engine)?;
+
+    // Fetch IR for any nested closures (used by where, each, etc.)
+    let mut closure_irs = HashMap::new();
+    fetch_closure_irs(engine, &ir_block, &mut closure_irs, call.head)?;
+
     // Convert captures to (String, i64) pairs for integer captures
     let captures: Vec<(String, i64)> = closure
         .item
@@ -258,11 +307,12 @@ fn run_attach(
     // but never stored (i.e., a parameter rather than a local variable)
     let ctx_param = infer_ctx_param(&ir_block);
 
-    // Lower IR to MIR (without engine_state access in plugin context)
+    // Lower IR to MIR
     let mut mir_program = lower_ir_to_mir(
         &ir_block,
         Some(&probe_context),
-        None, // No engine_state access in plugin
+        &decl_names,
+        &closure_irs,
         &captures,
         ctx_param,
     )
@@ -407,11 +457,21 @@ impl Iterator for EventStreamIterator {
     type Item = Value;
 
     fn next(&mut self) -> Option<Self::Item> {
+        // Return any pending events first
         if let Some(event) = self.pending_events.pop_front() {
             return Some(event);
         }
-        self.poll_batch();
-        self.pending_events.pop_front()
+
+        // Keep polling until we get an event
+        // This is a blocking iterator - it will keep trying until events arrive
+        loop {
+            self.poll_batch();
+            if let Some(event) = self.pending_events.pop_front() {
+                return Some(event);
+            }
+            // Small sleep to avoid busy-waiting
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 }
 

@@ -33,6 +33,7 @@ pub use elf::{
     ProbeContext, SchemaField,
 };
 pub use instruction::{BpfHelper, EbpfInsn, EbpfReg};
+pub use ir_to_mir::{extract_closure_block_ids, infer_ctx_param};
 pub use mir_to_ebpf::{MirCompileResult, compile_mir_to_ebpf};
 pub use type_infer::{TypeError, TypeInference};
 
