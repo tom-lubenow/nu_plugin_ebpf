@@ -2,7 +2,6 @@
 //!
 //! These commands are used inside eBPF closures to perform actions:
 //! - emit: Send a value to userspace via ring buffer
-//! - filter: Exit early if condition is false
 //! - count: Increment a counter by key
 //! - histogram: Add value to log2 histogram
 //! - start-timer: Start latency measurement
@@ -68,56 +67,6 @@ Examples:
         // Stub for non-eBPF execution (e.g., help display)
         let value = input.into_value(call.head)?;
         Ok(PipelineData::Value(value, None))
-    }
-}
-
-#[derive(Clone)]
-pub struct Filter;
-
-impl PluginCommand for Filter {
-    type Plugin = EbpfPlugin;
-
-    fn name(&self) -> &str {
-        "filter"
-    }
-
-    fn description(&self) -> &str {
-        "Exit the eBPF program early if the input condition is false."
-    }
-
-    fn extra_description(&self) -> &str {
-        r#"Takes a boolean value from the pipeline. If false (0), the eBPF
-program exits immediately, skipping all subsequent operations.
-
-Examples:
-  {|ctx| $ctx.uid == 0 | filter | $ctx.pid | emit }     # Only root
-  {|ctx| $ctx.pid > 1000 | filter | $ctx.comm | emit }  # PIDs > 1000"#
-    }
-
-    fn signature(&self) -> Signature {
-        Signature::build("filter")
-            .input_output_types(vec![(Type::Bool, Type::Nothing)])
-            .category(Category::Experimental)
-    }
-
-    fn examples(&self) -> Vec<Example<'_>> {
-        vec![
-            Example {
-                example: "ebpf attach -s 'kprobe:do_sys_openat2' {|ctx| $ctx.uid == 0 | filter | $ctx.pid | emit }",
-                description: "Only emit events for root user",
-                result: None,
-            },
-        ]
-    }
-
-    fn run(
-        &self,
-        _plugin: &EbpfPlugin,
-        _engine: &EngineInterface,
-        call: &EvaluatedCall,
-        _input: PipelineData,
-    ) -> Result<PipelineData, LabeledError> {
-        Ok(PipelineData::Value(Value::nothing(call.head), None))
     }
 }
 

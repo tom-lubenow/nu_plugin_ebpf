@@ -29,6 +29,7 @@ mod detach;
 mod helpers;
 mod histogram;
 mod list;
+mod setup;
 mod stacks;
 mod trace;
 
@@ -58,8 +59,9 @@ pub(crate) fn validate_probe_id(id: i64, span: Span) -> Result<u32, LabeledError
 pub use attach::EbpfAttach;
 pub use counters::EbpfCounters;
 pub use detach::EbpfDetach;
-pub use helpers::{Count, Emit, Filter, Histogram, ReadKernelStr, ReadStr, StartTimer, StopTimer};
+pub use helpers::{Count, Emit, Histogram, ReadKernelStr, ReadStr, StartTimer, StopTimer};
 pub use histogram::EbpfHistogram;
 pub use list::EbpfList;
+pub use setup::EbpfSetup;
 pub use stacks::EbpfStacks;
 pub use trace::EbpfTrace;

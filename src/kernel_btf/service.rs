@@ -263,7 +263,10 @@ impl KernelBtf {
         }
 
         match self.load_function_list() {
-            FunctionListResult::PermissionDenied => FunctionCheckResult::NeedsSudo,
+            // If we can't read tracefs due to permissions, skip validation.
+            // The actual BPF loading will fail with a proper error if the function doesn't exist.
+            // This allows CAP_BPF/CAP_PERFMON to work without also needing tracefs read access.
+            FunctionListResult::PermissionDenied => FunctionCheckResult::CannotValidate,
             FunctionListResult::NotAvailable => FunctionCheckResult::CannotValidate,
             FunctionListResult::Loaded(ref funcs) if funcs.is_empty() => {
                 // Empty file - can't validate

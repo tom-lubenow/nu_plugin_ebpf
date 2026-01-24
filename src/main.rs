@@ -32,11 +32,11 @@ impl Plugin for EbpfPlugin {
             Box::new(EbpfDetach),
             Box::new(EbpfHistogram),
             Box::new(EbpfList),
+            Box::new(EbpfSetup),
             Box::new(EbpfStacks),
             Box::new(EbpfTrace),
             // Helper commands for use in eBPF closures
             Box::new(Emit),
-            Box::new(Filter),
             Box::new(Count),
             Box::new(Histogram),
             Box::new(StartTimer),
