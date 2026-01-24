@@ -1376,9 +1376,12 @@ impl<'a> IrToMirLowering<'a> {
         };
 
         // Map field name to CtxField
+        // Note: In Linux BPF, bpf_get_current_pid_tgid() returns:
+        //   - Lower 32 bits: thread ID (kernel calls this "pid")
+        //   - Upper 32 bits: thread group ID (kernel calls this "tgid", userspace calls this "PID")
         let ctx_field = match field_name.as_str() {
             "pid" => CtxField::Pid,
-            "tid" => CtxField::Tid,
+            "tid" | "tgid" => CtxField::Tid, // tgid = thread group ID (what userspace calls PID)
             "uid" => CtxField::Uid,
             "gid" => CtxField::Gid,
             "comm" => CtxField::Comm,
