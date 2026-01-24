@@ -80,10 +80,7 @@ Note: Requires debugfs mounted and appropriate permissions."#
 }
 
 #[cfg(target_os = "linux")]
-fn run_trace(
-    engine: &EngineInterface,
-    call: &EvaluatedCall,
-) -> Result<PipelineData, LabeledError> {
+fn run_trace(engine: &EngineInterface, call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
     use std::fs::File;
     use std::io::{BufRead, BufReader};
 
@@ -100,7 +97,8 @@ fn run_trace(
         } else {
             None
         };
-        let mut err = LabeledError::new("Failed to open trace_pipe").with_label(e.to_string(), span);
+        let mut err =
+            LabeledError::new("Failed to open trace_pipe").with_label(e.to_string(), span);
         if let Some(h) = help {
             err = err.with_help(h);
         }

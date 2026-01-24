@@ -1,7 +1,9 @@
 //! Display histogram values from the `histogram` command
 
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
-use nu_protocol::{Category, Example, LabeledError, PipelineData, Signature, SyntaxShape, Type, Value, record};
+use nu_protocol::{
+    Category, Example, LabeledError, PipelineData, Signature, SyntaxShape, Type, Value, record,
+};
 
 use crate::EbpfPlugin;
 

@@ -1,7 +1,9 @@
 //! Display counter values from the `count` command
 
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
-use nu_protocol::{Category, Example, LabeledError, PipelineData, Signature, SyntaxShape, Type, Value, record};
+use nu_protocol::{
+    Category, Example, LabeledError, PipelineData, Signature, SyntaxShape, Type, Value, record,
+};
 
 use crate::EbpfPlugin;
 
@@ -81,9 +83,9 @@ fn run_counters(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
     let state = get_state();
     let mut records: Vec<Value> = Vec::new();
 
-    let int_entries = state.get_counters(id).map_err(|e| {
-        LabeledError::new("Failed to get counters").with_label(e.to_string(), span)
-    })?;
+    let int_entries = state
+        .get_counters(id)
+        .map_err(|e| LabeledError::new("Failed to get counters").with_label(e.to_string(), span))?;
 
     for entry in int_entries {
         records.push(Value::record(

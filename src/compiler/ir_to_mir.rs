@@ -2352,8 +2352,14 @@ pub fn lower_ir_to_mir(
     captures: &[(String, i64)],
     ctx_param: Option<VarId>,
 ) -> Result<MirProgram, CompileError> {
-    let mut lowering =
-        IrToMirLowering::new(ir_block, probe_ctx, decl_names, closure_irs, captures, ctx_param);
+    let mut lowering = IrToMirLowering::new(
+        ir_block,
+        probe_ctx,
+        decl_names,
+        closure_irs,
+        captures,
+        ctx_param,
+    );
     lowering.lower_block(ir_block)?;
     Ok(lowering.finish())
 }

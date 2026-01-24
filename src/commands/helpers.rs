@@ -48,13 +48,11 @@ Examples:
     }
 
     fn examples(&self) -> Vec<Example<'_>> {
-        vec![
-            Example {
-                example: "ebpf attach -s 'kprobe:sys_read' {|ctx| $ctx.pid | emit }",
-                description: "Emit the PID on each sys_read call",
-                result: None,
-            },
-        ]
+        vec![Example {
+            example: "ebpf attach -s 'kprobe:sys_read' {|ctx| $ctx.pid | emit }",
+            description: "Emit the PID on each sys_read call",
+            result: None,
+        }]
     }
 
     fn run(
@@ -98,13 +96,11 @@ By default, reads from userspace memory which covers most use cases:
     }
 
     fn examples(&self) -> Vec<Example<'_>> {
-        vec![
-            Example {
-                example: "ebpf attach -s 'kprobe:do_sys_openat2' {|ctx| $ctx.arg1 | read-str }",
-                description: "Read filename from syscall argument",
-                result: None,
-            },
-        ]
+        vec![Example {
+            example: "ebpf attach -s 'kprobe:do_sys_openat2' {|ctx| $ctx.arg1 | read-str }",
+            description: "Read filename from syscall argument",
+            result: None,
+        }]
     }
 
     fn run(
@@ -114,7 +110,10 @@ By default, reads from userspace memory which covers most use cases:
         call: &EvaluatedCall,
         _input: PipelineData,
     ) -> Result<PipelineData, LabeledError> {
-        Ok(PipelineData::Value(Value::string("<string>", call.head), None))
+        Ok(PipelineData::Value(
+            Value::string("<string>", call.head),
+            None,
+        ))
     }
 }
 
@@ -159,7 +158,10 @@ data structures. For most cases, use read-str instead."#
         call: &EvaluatedCall,
         _input: PipelineData,
     ) -> Result<PipelineData, LabeledError> {
-        Ok(PipelineData::Value(Value::string("<kernel string>", call.head), None))
+        Ok(PipelineData::Value(
+            Value::string("<kernel string>", call.head),
+            None,
+        ))
     }
 }
 

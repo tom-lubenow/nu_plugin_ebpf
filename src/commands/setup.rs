@@ -1,9 +1,7 @@
 //! `ebpf setup` command - configure capabilities for non-root usage
 
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
-use nu_protocol::{
-    Category, Example, LabeledError, PipelineData, Record, Signature, Type, Value,
-};
+use nu_protocol::{Category, Example, LabeledError, PipelineData, Record, Signature, Type, Value};
 
 use crate::EbpfPlugin;
 
@@ -95,8 +93,7 @@ fn run_setup(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
 
     // Get the path to the plugin binary
     let plugin_path = std::env::current_exe().map_err(|e| {
-        LabeledError::new("Failed to determine plugin path")
-            .with_label(e.to_string(), span)
+        LabeledError::new("Failed to determine plugin path").with_label(e.to_string(), span)
     })?;
 
     let plugin_path_str = plugin_path.display().to_string();
@@ -120,7 +117,10 @@ fn run_setup(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
         rec.push("cap_bpf", Value::bool(has_bpf, span));
         rec.push("cap_perfmon", Value::bool(has_perfmon, span));
         rec.push("caps_configured", Value::bool(caps_configured, span));
-        rec.push("perf_event_paranoid", Value::int(paranoid_level as i64, span));
+        rec.push(
+            "perf_event_paranoid",
+            Value::int(paranoid_level as i64, span),
+        );
         rec.push("paranoid_ok", Value::bool(paranoid_ok, span));
         rec.push("ready", Value::bool(is_ready, span));
         if !current_caps.is_empty() {
@@ -165,22 +165,17 @@ fn run_setup(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
             issues.push("capabilities not set");
         }
         if !paranoid_ok {
-            issues.push(
-                if paranoid_level > 2 {
-                    "perf_event_paranoid too restrictive"
-                } else {
-                    "perf_event_paranoid check failed"
-                }
-            );
+            issues.push(if paranoid_level > 2 {
+                "perf_event_paranoid too restrictive"
+            } else {
+                "perf_event_paranoid check failed"
+            });
         }
 
         rec.push(
             "message",
             Value::string(
-                format!(
-                    "Run the commands above to fix: {}",
-                    issues.join(", ")
-                ),
+                format!("Run the commands above to fix: {}", issues.join(", ")),
                 span,
             ),
         );

@@ -41,8 +41,10 @@ fn build_decl_names(engine: &EngineInterface) -> Result<HashMap<DeclId, String>,
 
     for &cmd_name in EBPF_COMMANDS {
         if let Some(decl_id) = engine.find_decl(cmd_name).map_err(|e| {
-            LabeledError::new("Failed to look up command")
-                .with_label(format!("Could not find '{}': {}", cmd_name, e), Span::unknown())
+            LabeledError::new("Failed to look up command").with_label(
+                format!("Could not find '{}': {}", cmd_name, e),
+                Span::unknown(),
+            )
         })? {
             decl_names.insert(decl_id, cmd_name.to_string());
         }
@@ -318,8 +320,7 @@ fn run_attach(
 
     // Get IR block from engine via plugin protocol
     let ir_block = engine.get_block_ir(closure.item.block_id).map_err(|e| {
-        LabeledError::new("Failed to get IR for closure")
-            .with_label(e.to_string(), closure.span)
+        LabeledError::new("Failed to get IR for closure").with_label(e.to_string(), closure.span)
     })?;
 
     // Build decl_id -> command name mapping for known commands

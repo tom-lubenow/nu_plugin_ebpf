@@ -5,7 +5,7 @@
 
 #[cfg(target_os = "linux")]
 mod linux_tests {
-    use nu_plugin_ebpf::loader::{parse_probe_spec, LoadError, UprobeTarget};
+    use nu_plugin_ebpf::loader::{LoadError, UprobeTarget, parse_probe_spec};
 
     /// Test parsing valid kprobe specification
     #[test]

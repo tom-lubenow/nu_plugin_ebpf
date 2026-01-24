@@ -38,8 +38,10 @@ use nu_protocol::{LabeledError, Span};
 /// Create the "eBPF not supported" error for non-Linux platforms
 #[cfg(not(target_os = "linux"))]
 pub(crate) fn linux_only_error(span: Span) -> LabeledError {
-    LabeledError::new("eBPF is only supported on Linux")
-        .with_label("This command requires a Linux system with eBPF support", span)
+    LabeledError::new("eBPF is only supported on Linux").with_label(
+        "This command requires a Linux system with eBPF support",
+        span,
+    )
 }
 
 /// Validate and convert a probe ID from i64 to u32
