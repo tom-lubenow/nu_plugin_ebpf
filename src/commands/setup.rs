@@ -130,14 +130,115 @@ fn run_setup(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
         return Ok(PipelineData::Value(Value::record(rec, span), None));
     }
 
-    // Generate setup commands
+    let mut rec = Record::new();
+    rec.push("plugin_path", Value::string(&plugin_path_str, span));
+
+    if is_root() {
+        let mut applied = Vec::new();
+
+        if !caps_configured {
+            let output = std::process::Command::new("setcap")
+                .arg("cap_bpf,cap_perfmon+ep")
+                .arg(&plugin_path_str)
+                .output()
+                .map_err(|e| {
+                    LabeledError::new("Failed to run setcap")
+                        .with_label(e.to_string(), span)
+                        .with_help("Install setcap (libcap) or run setup on a system with it")
+                })?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                return Err(LabeledError::new("Failed to set capabilities")
+                    .with_label(stderr, span)
+                    .with_help("Ensure the filesystem supports file capabilities"));
+            }
+            applied.push(Value::string(
+                format!("setcap cap_bpf,cap_perfmon+ep {}", plugin_path_str),
+                span,
+            ));
+        }
+
+        if !paranoid_ok {
+            let output = std::process::Command::new("sysctl")
+                .arg("kernel.perf_event_paranoid=2")
+                .output();
+
+            let mut sysctl_applied = false;
+            if let Ok(out) = output {
+                if out.status.success() {
+                    sysctl_applied = true;
+                }
+            }
+
+            if !sysctl_applied {
+                std::fs::write("/proc/sys/kernel/perf_event_paranoid", "2\n").map_err(|e| {
+                    LabeledError::new("Failed to update perf_event_paranoid")
+                        .with_label(e.to_string(), span)
+                        .with_help("Run `sysctl kernel.perf_event_paranoid=2` as root")
+                })?;
+            }
+
+            applied.push(Value::string(
+                "sysctl kernel.perf_event_paranoid=2".to_string(),
+                span,
+            ));
+        }
+
+        // Re-check after applying
+        let current_caps = get_file_capabilities(&plugin_path_str);
+        let has_bpf = current_caps.contains("cap_bpf");
+        let has_perfmon = current_caps.contains("cap_perfmon");
+        let caps_configured = has_bpf && has_perfmon;
+        let paranoid_level = get_perf_event_paranoid();
+        let paranoid_ok = paranoid_level <= 2;
+        let is_ready = caps_configured && paranoid_ok;
+
+        rec.push("cap_bpf", Value::bool(has_bpf, span));
+        rec.push("cap_perfmon", Value::bool(has_perfmon, span));
+        rec.push("caps_configured", Value::bool(caps_configured, span));
+        rec.push(
+            "perf_event_paranoid",
+            Value::int(paranoid_level as i64, span),
+        );
+        rec.push("paranoid_ok", Value::bool(paranoid_ok, span));
+        rec.push("ready", Value::bool(is_ready, span));
+
+        if !current_caps.is_empty() {
+            rec.push("current_caps", Value::string(&current_caps, span));
+        }
+
+        if applied.is_empty() {
+            rec.push(
+                "message",
+                Value::string("System is configured. eBPF should work without sudo.", span),
+            );
+        } else {
+            rec.push("applied", Value::list(applied, span));
+            rec.push(
+                "message",
+                Value::string("Applied system configuration changes.", span),
+            );
+        }
+
+        if !paranoid_ok {
+            rec.push(
+                "note",
+                Value::string(
+                    "To make perf_event_paranoid persistent across reboots, add 'kernel.perf_event_paranoid=2' to /etc/sysctl.conf",
+                    span,
+                ),
+            );
+        }
+
+        return Ok(PipelineData::Value(Value::record(rec, span), None));
+    }
+
+    // Non-root: generate setup commands
     let setcap_cmd = format!(
         "sudo setcap cap_bpf,cap_perfmon+ep '{}'",
         plugin_path_str.replace('\'', "'\\''")
     );
 
-    let mut rec = Record::new();
-    rec.push("plugin_path", Value::string(&plugin_path_str, span));
     rec.push("ready", Value::bool(is_ready, span));
 
     // Build commands list
@@ -221,4 +322,9 @@ fn get_perf_event_paranoid() -> i32 {
         .ok()
         .and_then(|s| s.trim().parse().ok())
         .unwrap_or(4) // Default to restrictive if we can't read
+}
+
+#[cfg(target_os = "linux")]
+fn is_root() -> bool {
+    unsafe { libc::geteuid() == 0 }
 }

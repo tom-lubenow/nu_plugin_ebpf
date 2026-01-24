@@ -37,7 +37,7 @@ To run without root, grant BPF capabilities:
 # One-time setup (requires root)
 sudo setcap cap_bpf,cap_perfmon=ep ~/.cargo/bin/nu_plugin_ebpf
 
-# Or run the setup command
+# Or run the setup command (applies changes when run as root)
 ebpf setup
 ```
 
@@ -135,8 +135,8 @@ Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/fo
 | `histogram` | Add value to log2 histogram |
 | `start-timer` | Record start timestamp |
 | `stop-timer` | Calculate elapsed time |
-| `read-str` | Read string from user memory |
-| `read-kernel-str` | Read string from kernel memory |
+| `read-str` | Read string from user memory (`--max-len` to cap, default 128) |
+| `read-kernel-str` | Read string from kernel memory (`--max-len` to cap, default 128) |
 
 ## Discovering Tracepoints
 

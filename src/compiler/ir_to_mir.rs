@@ -21,6 +21,10 @@ use super::mir::{
 /// Strings longer than this will be truncated
 pub const MAX_STRING_SIZE: usize = 128;
 
+fn align_to_eight(len: usize) -> usize {
+    (len + 7) & !7
+}
+
 /// Maximum entries per eBPF map before data loss may occur
 pub const MAX_MAP_ENTRIES: usize = 10240;
 
@@ -825,26 +829,50 @@ impl<'a> IrToMirLowering<'a> {
             Literal::String(data_slice) => {
                 // Warn if string exceeds eBPF limits
                 let string_len = data_slice.len as usize;
-                if string_len > MAX_STRING_SIZE {
+                let max_content_len = MAX_STRING_SIZE.saturating_sub(1);
+                if string_len > max_content_len {
                     eprintln!(
                         "Warning: string literal ({} bytes) exceeds eBPF limit of {} bytes and will be truncated",
-                        string_len, MAX_STRING_SIZE
+                        string_len, max_content_len
                     );
                 }
-                // Allocate stack slot for string (capped at MAX_STRING_SIZE)
-                let effective_len = string_len.min(MAX_STRING_SIZE);
-                let slot = self.func.alloc_stack_slot(
-                    effective_len + 1, // Include null terminator
-                    8,
-                    StackSlotKind::StringBuffer,
-                );
-                // Get the string value first (before mutable borrow for metadata)
-                let string_value = self
+                let string_bytes = self
                     .get_data_slice(data_slice.start as usize, data_slice.len as usize)
-                    .and_then(|bytes| std::str::from_utf8(bytes).ok())
+                    .map(|bytes| bytes.to_vec())
+                    .unwrap_or_default();
+                let content_len = string_bytes.len().min(max_content_len);
+                let aligned_len = align_to_eight(content_len + 1).min(MAX_STRING_SIZE).max(16);
+
+                // Allocate stack slot for string buffer (aligned for emit)
+                let slot = self
+                    .func
+                    .alloc_stack_slot(aligned_len, 8, StackSlotKind::StringBuffer);
+
+                // Build literal bytes with null terminator and zero padding
+                let mut literal_bytes = vec![0u8; aligned_len];
+                literal_bytes[..content_len].copy_from_slice(&string_bytes[..content_len]);
+                // literal_bytes is zero-initialized, so null + padding are already zeroed.
+
+                // Write literal bytes into the buffer at runtime
+                let len_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::Copy {
+                    dst: len_vreg,
+                    src: MirValue::Const(0),
+                });
+                self.emit(MirInst::StringAppend {
+                    dst_buffer: slot,
+                    dst_len: len_vreg,
+                    val: MirValue::Const(0),
+                    val_type: StringAppendType::Literal {
+                        bytes: literal_bytes,
+                    },
+                });
+
+                let string_value = std::str::from_utf8(&string_bytes[..content_len])
+                    .ok()
                     .map(|s| s.to_string());
-                // TODO: Store string bytes to slot
-                // For now, just record slot ID in a vreg (placeholder)
+
+                // Record slot pointer in a vreg
                 self.emit(MirInst::Copy {
                     dst: dst_vreg,
                     src: MirValue::StackSlot(slot),
@@ -852,6 +880,10 @@ impl<'a> IrToMirLowering<'a> {
                 // Track the string slot and value
                 let meta = self.get_or_create_metadata(dst);
                 meta.string_slot = Some(slot);
+                meta.field_type = Some(MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: aligned_len,
+                });
                 // Also track the literal string value for record field names
                 if let Some(s) = string_value {
                     meta.literal_string = Some(s);
@@ -1593,15 +1625,16 @@ impl<'a> IrToMirLowering<'a> {
                 } else {
                     requested_len
                 };
+                let aligned_len = align_to_eight(max_len).min(MAX_STRING_SIZE).max(16);
 
                 let slot = self
                     .func
-                    .alloc_stack_slot(max_len, 8, StackSlotKind::StringBuffer);
+                    .alloc_stack_slot(aligned_len, 8, StackSlotKind::StringBuffer);
                 self.emit(MirInst::ReadStr {
                     dst: slot,
                     ptr: ptr_vreg,
                     user_space: true,
-                    max_len,
+                    max_len: aligned_len,
                 });
                 self.emit(MirInst::Copy {
                     dst: dst_vreg,
@@ -1611,7 +1644,7 @@ impl<'a> IrToMirLowering<'a> {
                 meta.string_slot = Some(slot);
                 meta.field_type = Some(MirType::Array {
                     elem: Box::new(MirType::U8),
-                    len: max_len,
+                    len: aligned_len,
                 });
             }
 
@@ -1637,15 +1670,16 @@ impl<'a> IrToMirLowering<'a> {
                 } else {
                     requested_len
                 };
+                let aligned_len = align_to_eight(max_len).min(MAX_STRING_SIZE).max(16);
 
                 let slot = self
                     .func
-                    .alloc_stack_slot(max_len, 8, StackSlotKind::StringBuffer);
+                    .alloc_stack_slot(aligned_len, 8, StackSlotKind::StringBuffer);
                 self.emit(MirInst::ReadStr {
                     dst: slot,
                     ptr: ptr_vreg,
                     user_space: false,
-                    max_len,
+                    max_len: aligned_len,
                 });
                 self.emit(MirInst::Copy {
                     dst: dst_vreg,
@@ -1655,7 +1689,7 @@ impl<'a> IrToMirLowering<'a> {
                 meta.string_slot = Some(slot);
                 meta.field_type = Some(MirType::Array {
                     elem: Box::new(MirType::U8),
-                    len: max_len,
+                    len: aligned_len,
                 });
             }
 

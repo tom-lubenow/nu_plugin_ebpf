@@ -587,13 +587,21 @@ impl EbpfState {
 
         let mut fields = Vec::with_capacity(schema.fields.len());
 
-        for field in &schema.fields {
+        for (idx, field) in schema.fields.iter().enumerate() {
+            let next_offset = schema
+                .fields
+                .get(idx + 1)
+                .map(|f| f.offset)
+                .unwrap_or(schema.total_size);
+            let field_size = next_offset.saturating_sub(field.offset);
             // Bounds check: ensure field.offset is within buffer
             if field.offset >= buf.len() {
                 // Field offset out of bounds, skip this field
                 continue;
             }
-            let field_buf = &buf[field.offset..];
+            let available = buf.len() - field.offset;
+            let slice_len = field_size.min(available);
+            let field_buf = &buf[field.offset..field.offset + slice_len];
             let value = match field.field_type {
                 BpfFieldType::Int => {
                     if field_buf.len() >= 8 {
@@ -614,8 +622,8 @@ impl EbpfState {
                     BpfFieldValue::String(s)
                 }
                 BpfFieldType::String => {
-                    // 128-byte string
-                    let max_len = field_buf.len().min(128);
+                    // String size is derived from schema offsets
+                    let max_len = field_buf.len();
                     let null_pos = field_buf[..max_len]
                         .iter()
                         .position(|&b| b == 0)
@@ -1070,6 +1078,51 @@ mod tests {
                 // that we don't have permission to read the function list
             }
             Err(e) => panic!("Unexpected error: {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_structured_event_string_respects_field_size() {
+        let schema = EventSchema {
+            fields: vec![
+                crate::compiler::SchemaField {
+                    name: "msg".to_string(),
+                    field_type: BpfFieldType::String,
+                    offset: 0,
+                },
+                crate::compiler::SchemaField {
+                    name: "value".to_string(),
+                    field_type: BpfFieldType::Int,
+                    offset: 24,
+                },
+            ],
+            total_size: 32,
+        };
+
+        let msg_bytes: Vec<u8> = (0..24).map(|i| b'a' + (i % 26) as u8).collect();
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&msg_bytes);
+        buf.extend_from_slice(&0x0102030405060708i64.to_le_bytes());
+
+        let data = EbpfState::deserialize_structured_event(&buf, &schema)
+            .expect("expected structured event");
+
+        match data {
+            BpfEventData::Record(fields) => {
+                let mut msg = None;
+                let mut value = None;
+                for (name, field) in fields {
+                    match (name.as_str(), field) {
+                        ("msg", BpfFieldValue::String(s)) => msg = Some(s),
+                        ("value", BpfFieldValue::Int(v)) => value = Some(v),
+                        _ => {}
+                    }
+                }
+                let expected_msg = String::from_utf8_lossy(&msg_bytes).to_string();
+                assert_eq!(msg, Some(expected_msg));
+                assert_eq!(value, Some(0x0102030405060708i64));
+            }
+            _ => panic!("expected structured record"),
         }
     }
 }

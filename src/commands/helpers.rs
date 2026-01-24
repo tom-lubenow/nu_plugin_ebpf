@@ -10,7 +10,9 @@
 //! - read-kernel-str: Read string from kernel memory pointer
 
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
-use nu_protocol::{Category, Example, LabeledError, PipelineData, Signature, Type, Value};
+use nu_protocol::{
+    Category, Example, LabeledError, PipelineData, Signature, SyntaxShape, Type, Value,
+};
 
 use crate::EbpfPlugin;
 
@@ -92,6 +94,12 @@ By default, reads from userspace memory which covers most use cases:
     fn signature(&self) -> Signature {
         Signature::build("read-str")
             .input_output_types(vec![(Type::Int, Type::String)])
+            .named(
+                "max-len",
+                SyntaxShape::Int,
+                "Maximum bytes to read (default 128, rounded up to 8 bytes, minimum 16).",
+                None,
+            )
             .category(Category::Experimental)
     }
 
@@ -140,6 +148,12 @@ data structures. For most cases, use read-str instead."#
     fn signature(&self) -> Signature {
         Signature::build("read-kernel-str")
             .input_output_types(vec![(Type::Int, Type::String)])
+            .named(
+                "max-len",
+                SyntaxShape::Int,
+                "Maximum bytes to read (default 128, rounded up to 8 bytes, minimum 16).",
+                None,
+            )
             .category(Category::Experimental)
     }
 

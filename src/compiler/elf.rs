@@ -201,7 +201,7 @@ impl BpfFieldType {
 }
 
 /// A field in a structured event schema
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchemaField {
     /// Field name
     pub name: String,
@@ -212,7 +212,7 @@ pub struct SchemaField {
 }
 
 /// Schema describing the structure of events emitted by an eBPF program
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EventSchema {
     /// Fields in the event, in order
     pub fields: Vec<SchemaField>,

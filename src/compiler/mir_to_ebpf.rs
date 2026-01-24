@@ -1524,11 +1524,20 @@ impl<'a> MirToEbpfCompiler<'a> {
             total_size += size;
         }
 
-        // Store schema
-        self.event_schema = Some(EventSchema {
+        let new_schema = EventSchema {
             fields: schema_fields,
             total_size,
-        });
+        };
+        if let Some(existing) = &self.event_schema {
+            if existing != &new_schema {
+                return Err(CompileError::UnsupportedInstruction(
+                    "emit record schema mismatch: multiple record shapes in one program".into(),
+                ));
+            }
+        } else {
+            // Store schema
+            self.event_schema = Some(new_schema);
+        }
 
         // Allocate contiguous buffer on stack
         self.check_stack_space(total_size as i16)?;
@@ -3143,6 +3152,48 @@ mod tests {
     }
 
     #[test]
+    fn test_string_literal_lowering_populates_buffer() {
+        use crate::compiler::mir::{MirInst, StringAppendType};
+        use nu_protocol::ir::DataSlice;
+
+        let mut data = Vec::new();
+        data.extend_from_slice(b"hello");
+        let ir = IrBlock {
+            instructions: vec![
+                Instruction::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: Literal::String(DataSlice { start: 0, len: 5 }),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![],
+            data: Arc::from(data),
+            ast: vec![],
+            comments: vec![],
+            register_count: 2,
+            file_count: 0,
+        };
+
+        let mir_program =
+            lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
+
+        let saw_literal_append = mir_program.main.blocks.iter().any(|block| {
+            block.instructions.iter().any(|inst| match inst {
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } => bytes.starts_with(b"hello") && bytes.len() == 16 && bytes[5] == 0,
+                _ => false,
+            })
+        });
+
+        assert!(
+            saw_literal_append,
+            "Expected string literal to populate stack buffer via StringAppend"
+        );
+    }
+
+    #[test]
     fn test_emit_event_copies_buffer() {
         use crate::compiler::mir::*;
 
@@ -3188,6 +3239,68 @@ mod tests {
         });
 
         assert!(saw_copy, "Expected buffer copy from pointer for emit");
+    }
+
+    #[test]
+    fn test_emit_record_schema_mismatch_errors() {
+        use crate::compiler::CompileError;
+        use crate::compiler::mir::*;
+
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let v0 = func.alloc_vreg();
+        let v1 = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: v0,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: v1,
+            src: MirValue::Const(2),
+        });
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::EmitRecord {
+                fields: vec![RecordFieldDef {
+                    name: "a".to_string(),
+                    value: v0,
+                    ty: MirType::I64,
+                }],
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::EmitRecord {
+                fields: vec![RecordFieldDef {
+                    name: "b".to_string(),
+                    value: v1,
+                    ty: MirType::I64,
+                }],
+            });
+
+        func.block_mut(entry).terminator = MirInst::Return {
+            val: Some(MirValue::Const(0)),
+        };
+
+        let program = MirProgram {
+            main: func,
+            subfunctions: vec![],
+        };
+
+        let result = compile_mir_to_ebpf(&program, None);
+        match result {
+            Err(CompileError::UnsupportedInstruction(msg)) => {
+                assert!(
+                    msg.contains("schema mismatch"),
+                    "Unexpected error message: {msg}"
+                );
+            }
+            Ok(_) => panic!("Expected schema mismatch error, got Ok"),
+            Err(e) => panic!("Expected schema mismatch error, got: {e:?}"),
+        }
     }
 
     #[test]
