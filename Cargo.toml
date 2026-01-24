@@ -1,0 +1,32 @@
+[package]
+name = "nu_plugin_ebpf"
+version = "0.1.0"
+authors = ["Tom Lubenow <tomlubenow@gmail.com>"]
+edition = "2024"
+description = "eBPF plugin for Nushell - compile closures to kernel tracing programs"
+repository = "https://github.com/tom-lubenow/nu_plugin_ebpf"
+license = "MIT"
+
+[dependencies]
+# Nushell plugin dependencies
+nu-plugin = "0.110"
+nu-protocol = { version = "0.110", features = ["plugin"] }
+
+# eBPF loading
+aya = { version = "0.13", default-features = false }
+
+# ELF generation
+object = { version = "0.36", default-features = false, features = ["write"] }
+
+# Error handling
+thiserror = "2.0"
+
+# Perf buffer handling
+bytes = "1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+btf = "0.5.1"
+libc = "0.2"
+
+[dev-dependencies]
+nu-plugin-test-support = "0.110"
