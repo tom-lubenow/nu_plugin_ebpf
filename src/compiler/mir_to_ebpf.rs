@@ -2256,7 +2256,7 @@ mod tests {
             Instruction::Return { src: RegId::new(0) },
         ]);
 
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
         assert!(!mir_result.bytecode.is_empty(), "Should produce bytecode");
         assert_eq!(
@@ -2286,7 +2286,7 @@ mod tests {
             Instruction::Return { src: RegId::new(0) },
         ]);
 
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
         assert!(!mir_result.bytecode.is_empty(), "Should produce bytecode");
     }
@@ -2332,7 +2332,7 @@ mod tests {
             Instruction::Return { src: RegId::new(0) },
         ]);
         // Compile and verify
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
         assert!(
             !mir_result.bytecode.is_empty(),
@@ -2570,7 +2570,7 @@ mod tests {
             Instruction::Return { src: RegId::new(0) },
         ]);
         // Compile and verify
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
         assert!(
             !mir_result.bytecode.is_empty(),
@@ -2598,7 +2598,7 @@ mod tests {
             Instruction::Return { src: RegId::new(0) },
         ]);
         // Compile and verify
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
         assert!(
             !mir_result.bytecode.is_empty(),
@@ -2626,7 +2626,7 @@ mod tests {
             Instruction::Return { src: RegId::new(0) },
         ]);
         // Compile and verify
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
         assert!(
             !mir_result.bytecode.is_empty(),
@@ -2656,7 +2656,7 @@ mod tests {
             Instruction::Return { src: RegId::new(0) },
         ]);
         // Compile and verify
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
         assert!(
             !mir_result.bytecode.is_empty(),
@@ -2686,7 +2686,7 @@ mod tests {
             Instruction::Return { src: RegId::new(0) },
         ]);
         // Compile and verify
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
         assert!(
             !mir_result.bytecode.is_empty(),
@@ -2716,7 +2716,7 @@ mod tests {
             Instruction::Return { src: RegId::new(0) },
         ]);
         // Compile and verify
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
         assert!(
             !mir_result.bytecode.is_empty(),
@@ -2746,7 +2746,7 @@ mod tests {
             Instruction::Return { src: RegId::new(0) },
         ]);
         // Compile and verify
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
         assert!(
             !mir_result.bytecode.is_empty(),
@@ -2768,7 +2768,7 @@ mod tests {
             Instruction::Return { src: RegId::new(0) },
         ]);
         // Compile and verify
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
         assert!(
             !mir_result.bytecode.is_empty(),
@@ -2798,7 +2798,7 @@ mod tests {
             Instruction::Return { src: RegId::new(0) },
         ]);
         // Compile and verify
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
         assert!(
             !mir_result.bytecode.is_empty(),
@@ -2828,7 +2828,7 @@ mod tests {
             Instruction::Return { src: RegId::new(0) },
         ]);
         // Compile and verify
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
         assert!(
             !mir_result.bytecode.is_empty(),
@@ -2858,7 +2858,7 @@ mod tests {
             Instruction::Return { src: RegId::new(0) },
         ]);
         // Compile and verify
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
         assert!(
             !mir_result.bytecode.is_empty(),
@@ -2900,7 +2900,7 @@ mod tests {
             Instruction::Return { src: RegId::new(0) },
         ]);
         // Compile and verify
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
         assert!(
             !mir_result.bytecode.is_empty(),
@@ -2938,7 +2938,7 @@ mod tests {
             Instruction::Return { src: RegId::new(1) },
         ]);
         // Compile and verify
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
         assert!(
             !mir_result.bytecode.is_empty(),
@@ -2957,7 +2957,7 @@ mod tests {
             Instruction::Return { src: RegId::new(0) },
         ]);
         // Compile and verify
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
         assert!(
             !mir_result.bytecode.is_empty(),
@@ -2976,7 +2976,7 @@ mod tests {
             Instruction::Return { src: RegId::new(0) },
         ]);
         // Compile and verify
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
         assert!(
             !mir_result.bytecode.is_empty(),
@@ -3042,7 +3042,7 @@ mod tests {
         ]);
 
         // Compile and verify should handle register pressure via linear scan
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
 
         // Should produce valid bytecode
@@ -3113,7 +3113,7 @@ mod tests {
             Instruction::Return { src: RegId::new(0) },
         ]);
 
-        let mir_program = lower_ir_to_mir(&ir, None, None, &[], None).unwrap();
+        let mir_program = lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
         let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
 
         assert!(

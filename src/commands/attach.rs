@@ -15,7 +15,6 @@ use crate::EbpfPlugin;
 /// Known eBPF helper commands that need to be mapped by decl_id
 const EBPF_COMMANDS: &[&str] = &[
     "emit",
-    "filter",
     "count",
     "histogram",
     "start-timer",
