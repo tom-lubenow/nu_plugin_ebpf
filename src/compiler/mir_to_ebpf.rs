@@ -21,19 +21,21 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::compiler::CompileError;
-use crate::compiler::cfg::{CFG, LivenessInfo};
+use crate::compiler::cfg::CFG;
 use crate::compiler::elf::{
     BpfFieldType, BpfMapDef, EbpfMap, EventSchema, MapRelocation, ProbeContext, SchemaField,
 };
 use crate::compiler::graph_coloring::{ColoringResult, GraphColoringAllocator};
 use crate::compiler::hindley_milner::HMType;
 use crate::compiler::instruction::{BpfHelper, EbpfInsn, EbpfReg, opcode};
+use crate::compiler::lir::{LirBlock, LirFunction, LirInst, LirProgram};
 use crate::compiler::mir::{
-    BasicBlock, BinOpKind, BlockId, CtxField, MirFunction, MirInst, MirProgram, MirType, MirValue,
-    RecordFieldDef, StackSlot, StackSlotId, StringAppendType, SubfunctionId, UnaryOpKind, VReg,
+    BinOpKind, BlockId, CtxField, MirProgram, MirType, MirValue, RecordFieldDef, StackSlot,
+    StackSlotId, StringAppendType, SubfunctionId, UnaryOpKind, VReg,
 };
+use crate::compiler::mir_to_lir::lower_mir_to_lir;
 use crate::compiler::passes::{ListLowering, MirPass};
-use crate::compiler::type_infer::{SubfnSchemeMap, TypeInference, infer_subfunction_schemes};
+use crate::compiler::type_infer::{TypeInference, infer_subfunction_schemes};
 use crate::compiler::vcc;
 use crate::kernel_btf::KernelBtf;
 
@@ -66,8 +68,8 @@ pub struct MirCompileResult {
 
 /// MIR to eBPF compiler
 pub struct MirToEbpfCompiler<'a> {
-    /// MIR program to compile
-    mir: &'a MirProgram,
+    /// LIR program to compile
+    lir: &'a LirProgram,
     /// Probe context for field offsets
     probe_ctx: Option<&'a ProbeContext>,
     /// eBPF instructions
@@ -108,17 +110,15 @@ pub struct MirToEbpfCompiler<'a> {
     subfn_calls: Vec<(usize, SubfunctionId)>,
     /// Subfunction start offsets (instruction index where each subfunction begins)
     subfn_offsets: HashMap<SubfunctionId, usize>,
-    /// Inferred subfunction type schemes
-    subfn_schemes: SubfnSchemeMap,
     /// Callee-saved register spill offsets for current function
     callee_saved_offsets: HashMap<EbpfReg, i16>,
 }
 
 impl<'a> MirToEbpfCompiler<'a> {
     /// Create a new compiler
-    pub fn new(mir: &'a MirProgram, probe_ctx: Option<&'a ProbeContext>) -> Self {
+    pub fn new(lir: &'a LirProgram, probe_ctx: Option<&'a ProbeContext>) -> Self {
         Self {
-            mir,
+            lir,
             probe_ctx,
             instructions: Vec::new(),
             vreg_to_phys: HashMap::new(),
@@ -149,34 +149,19 @@ impl<'a> MirToEbpfCompiler<'a> {
             ],
             subfn_calls: Vec::new(),
             subfn_offsets: HashMap::new(),
-            subfn_schemes: HashMap::new(),
             callee_saved_offsets: HashMap::new(),
         }
     }
 
     /// Compile the MIR program to eBPF
     pub fn compile(mut self) -> Result<MirCompileResult, CompileError> {
-        // Infer subfunction types (polymorphic schemes)
-        self.subfn_schemes = match infer_subfunction_schemes(
-            &self.mir.subfunctions,
-            self.probe_ctx.cloned(),
-        ) {
-            Ok(schemes) => schemes,
-            Err(errors) => {
-                if let Some(err) = errors.into_iter().next() {
-                    return Err(crate::compiler::CompileError::TypeError(err));
-                }
-                HashMap::new()
-            }
-        };
-
         // Compile the main function
         self.prepare_function_state(
-            &self.mir.main,
+            &self.lir.main,
             self.available_regs.clone(),
-            HashMap::new(),
+            self.lir.main.precolored.clone(),
         )?;
-        let main_func = self.mir.main.clone();
+        let main_func = self.lir.main.clone();
         self.compile_function(&main_func)?;
 
         // Fix up jumps in main function
@@ -251,26 +236,22 @@ impl<'a> MirToEbpfCompiler<'a> {
     /// Run graph coloring register allocation for a function
     fn allocate_registers_for_function(
         &self,
-        func: &MirFunction,
+        func: &LirFunction,
         available_regs: Vec<EbpfReg>,
         precolored: HashMap<VReg, EbpfReg>,
     ) -> ColoringResult {
-        // Build CFG and compute liveness
-        let cfg = CFG::build(func);
-        let liveness = LivenessInfo::compute(func, &cfg);
-
         // Run graph coloring allocation
         let mut allocator = GraphColoringAllocator::new(available_regs);
         if !precolored.is_empty() {
             allocator.set_precolored(precolored);
         }
-        allocator.allocate(func, &cfg, &liveness)
+        allocator.allocate(func, None)
     }
 
     /// Layout stack slots and assign offsets for a function
     fn layout_stack_for_function(
         &self,
-        func: &MirFunction,
+        func: &LirFunction,
         alloc: &ColoringResult,
     ) -> Result<(HashMap<StackSlotId, i16>, HashMap<VReg, i16>, i16), CompileError> {
         let mut slots: Vec<StackSlot> = func.stack_slots.clone();
@@ -310,7 +291,7 @@ impl<'a> MirToEbpfCompiler<'a> {
 
     fn prepare_function_state(
         &mut self,
-        func: &MirFunction,
+        func: &LirFunction,
         available_regs: Vec<EbpfReg>,
         precolored: HashMap<VReg, EbpfReg>,
     ) -> Result<ColoringResult, CompileError> {
@@ -362,7 +343,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         }
     }
 
-    fn emit_param_moves(&mut self, func: &MirFunction) -> Result<(), CompileError> {
+    fn emit_param_moves(&mut self, func: &LirFunction) -> Result<(), CompileError> {
         if func.param_count == 0 {
             return Ok(());
         }
@@ -452,48 +433,12 @@ impl<'a> MirToEbpfCompiler<'a> {
         }
     }
 
-    /// Compile a MIR function
-    fn compile_function(&mut self, func: &MirFunction) -> Result<(), CompileError> {
-        // Build CFG and compute analysis information
-        let cfg = CFG::build(func);
-
-        // Run type inference to validate types and catch errors early
-        let mut type_infer = TypeInference::new_with_env(
-            self.probe_ctx.cloned(),
-            Some(&self.subfn_schemes),
-            Some(HMType::I64),
-        );
-        let types = match type_infer.infer(func) {
-            Ok(types) => types,
-            Err(errors) => {
-                if let Some(err) = errors.into_iter().next() {
-                    return Err(crate::compiler::CompileError::TypeError(err));
-                }
-                HashMap::new()
-            }
-        };
-        if let Err(errors) = vcc::verify_mir(func, &types) {
-            let message = errors
-                .iter()
-                .map(|err| err.to_string())
-                .collect::<Vec<_>>()
-                .join("; ");
-            return Err(CompileError::VccError(message));
-        }
-
+    /// Compile a LIR function
+    fn compile_function(&mut self, func: &LirFunction) -> Result<(), CompileError> {
         // Register allocation uses Chaitin-Briggs graph coloring for optimal results.
 
-        // Use reverse post-order for block layout
-        // This ensures that:
-        // 1. Dominators appear before dominated blocks
-        // 2. Loop headers appear before loop bodies
-        // 3. Better cache locality for typical execution paths
-        let block_order: Vec<BlockId> = if cfg.rpo.is_empty() {
-            // Fallback to simple ordering if CFG is empty
-            func.blocks.iter().map(|b| b.id).collect()
-        } else {
-            cfg.rpo.clone()
-        };
+        // Use block order as listed; LIR is already low-level.
+        let block_order: Vec<BlockId> = func.blocks.iter().map(|b| b.id).collect();
 
         // Emit function prologue: save R1 (context pointer) to R9
         // R1 contains the probe context (pt_regs for kprobe, etc.)
@@ -503,10 +448,6 @@ impl<'a> MirToEbpfCompiler<'a> {
 
         // Compile each block in CFG order
         for block_id in block_order {
-            // Skip unreachable blocks
-            if !cfg.reachable_blocks().contains(&block_id) {
-                continue;
-            }
             let block = func.block(block_id).clone();
             self.compile_block(&block)?;
         }
@@ -515,7 +456,7 @@ impl<'a> MirToEbpfCompiler<'a> {
     }
 
     /// Compile a basic block
-    fn compile_block(&mut self, block: &BasicBlock) -> Result<(), CompileError> {
+    fn compile_block(&mut self, block: &LirBlock) -> Result<(), CompileError> {
         // Record block start offset
         self.block_offsets.insert(block.id, self.instructions.len());
 
@@ -530,10 +471,10 @@ impl<'a> MirToEbpfCompiler<'a> {
         Ok(())
     }
 
-    /// Compile a single MIR instruction
-    fn compile_instruction(&mut self, inst: &MirInst) -> Result<(), CompileError> {
+    /// Compile a single LIR instruction
+    fn compile_instruction(&mut self, inst: &LirInst) -> Result<(), CompileError> {
         match inst {
-            MirInst::Copy { dst, src } => {
+            LirInst::Copy { dst, src } => {
                 let dst_reg = self.alloc_dst_reg(*dst)?;
                 match src {
                     MirValue::VReg(v) => {
@@ -571,7 +512,109 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
 
-            MirInst::Load { dst, ptr, offset, ty } => {
+            LirInst::ParallelMove { moves } => {
+                #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+                enum Loc {
+                    Reg(EbpfReg),
+                    Stack(i16),
+                }
+
+                #[derive(Clone, Copy)]
+                struct Move {
+                    dst: Loc,
+                    src: Loc,
+                }
+
+                let mut pending: Vec<Move> = Vec::new();
+                let mut uses_r0 = false;
+
+                for (dst_vreg, src_vreg) in moves {
+                    let dst_loc = if let Some(&phys) = self.vreg_to_phys.get(dst_vreg) {
+                        if phys == EbpfReg::R0 {
+                            uses_r0 = true;
+                        }
+                        Loc::Reg(phys)
+                    } else if let Some(&offset) = self.vreg_spills.get(dst_vreg) {
+                        Loc::Stack(offset)
+                    } else {
+                        Loc::Reg(EbpfReg::R0)
+                    };
+
+                    let src_loc = if let Some(&phys) = self.vreg_to_phys.get(src_vreg) {
+                        if phys == EbpfReg::R0 {
+                            uses_r0 = true;
+                        }
+                        Loc::Reg(phys)
+                    } else if let Some(&offset) = self.vreg_spills.get(src_vreg) {
+                        Loc::Stack(offset)
+                    } else {
+                        Loc::Reg(EbpfReg::R0)
+                    };
+
+                    if dst_loc != src_loc {
+                        pending.push(Move {
+                            dst: dst_loc,
+                            src: src_loc,
+                        });
+                    }
+                }
+
+                if uses_r0 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "ParallelMove involving R0 is not yet supported".into(),
+                    ));
+                }
+
+                let temp = EbpfReg::R0;
+
+                while !pending.is_empty() {
+                    let dsts: HashSet<Loc> = pending.iter().map(|m| m.dst).collect();
+                    let ready_idx = pending
+                        .iter()
+                        .position(|m| !dsts.contains(&m.src));
+
+                    if let Some(idx) = ready_idx {
+                        let mv = pending.remove(idx);
+                        match (mv.dst, mv.src) {
+                            (Loc::Reg(dst), Loc::Reg(src)) => {
+                                if dst != src {
+                                    self.instructions.push(EbpfInsn::mov64_reg(dst, src));
+                                }
+                            }
+                            (Loc::Reg(dst), Loc::Stack(src_off)) => {
+                                self.instructions
+                                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R10, src_off));
+                            }
+                            (Loc::Stack(dst_off), Loc::Reg(src)) => {
+                                self.instructions
+                                    .push(EbpfInsn::stxdw(EbpfReg::R10, dst_off, src));
+                            }
+                            (Loc::Stack(dst_off), Loc::Stack(src_off)) => {
+                                self.instructions
+                                    .push(EbpfInsn::ldxdw(temp, EbpfReg::R10, src_off));
+                                self.instructions
+                                    .push(EbpfInsn::stxdw(EbpfReg::R10, dst_off, temp));
+                            }
+                        }
+                        continue;
+                    }
+
+                    // Cycle: break by saving one source to temp
+                    let src = pending[0].src;
+                    match src {
+                        Loc::Reg(r) => {
+                            self.instructions.push(EbpfInsn::mov64_reg(temp, r));
+                        }
+                        Loc::Stack(off) => {
+                            self.instructions
+                                .push(EbpfInsn::ldxdw(temp, EbpfReg::R10, off));
+                        }
+                    }
+                    pending[0].src = Loc::Reg(temp);
+                }
+            }
+
+            LirInst::Load { dst, ptr, offset, ty } => {
                 let dst_reg = self.alloc_dst_reg(*dst)?;
                 let ptr_reg = self.ensure_reg(*ptr)?;
                 let size = ty.size();
@@ -584,7 +627,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.emit_load(dst_reg, ptr_reg, offset, size)?;
             }
 
-            MirInst::Store { ptr, offset, val, ty } => {
+            LirInst::Store { ptr, offset, val, ty } => {
                 let ptr_reg = self.ensure_reg(*ptr)?;
                 let size = ty.size();
                 let offset = i16::try_from(*offset).map_err(|_| {
@@ -597,21 +640,21 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.emit_store(ptr_reg, offset, val_reg, size)?;
             }
 
-            MirInst::LoadSlot { dst, slot, offset, ty } => {
+            LirInst::LoadSlot { dst, slot, offset, ty } => {
                 let dst_reg = self.alloc_dst_reg(*dst)?;
                 let size = ty.size();
                 let offset = self.slot_offset_i16(*slot, *offset)?;
                 self.emit_load(dst_reg, EbpfReg::R10, offset, size)?;
             }
 
-            MirInst::StoreSlot { slot, offset, val, ty } => {
+            LirInst::StoreSlot { slot, offset, val, ty } => {
                 let size = ty.size();
                 let offset = self.slot_offset_i16(*slot, *offset)?;
                 let val_reg = self.value_to_reg(val)?;
                 self.emit_store(EbpfReg::R10, offset, val_reg, size)?;
             }
 
-            MirInst::BinOp { dst, op, lhs, rhs } => {
+            LirInst::BinOp { dst, op, lhs, rhs } => {
                 let dst_reg = self.alloc_dst_reg(*dst)?;
                 let lhs_vreg = match lhs {
                     MirValue::VReg(v) => Some(*v),
@@ -673,7 +716,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
 
-            MirInst::UnaryOp { dst, op, src } => {
+            LirInst::UnaryOp { dst, op, src } => {
                 let dst_reg = self.alloc_dst_reg(*dst)?;
                 match src {
                     MirValue::VReg(v) => {
@@ -709,23 +752,23 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
 
-            MirInst::LoadCtxField { dst, field, slot } => {
+            LirInst::LoadCtxField { dst, field, slot } => {
                 let dst_reg = self.alloc_dst_reg(*dst)?;
                 self.compile_load_ctx_field(dst_reg, field, *slot)?;
             }
 
-            MirInst::EmitEvent { data, size } => {
+            LirInst::EmitEvent { data, size } => {
                 self.needs_ringbuf = true;
                 let data_reg = self.ensure_reg(*data)?;
                 self.compile_emit_event(data_reg, *size)?;
             }
 
-            MirInst::EmitRecord { fields } => {
+            LirInst::EmitRecord { fields } => {
                 self.needs_ringbuf = true;
                 self.compile_emit_record(fields)?;
             }
 
-            MirInst::MapUpdate { map, key, .. } => {
+            LirInst::MapUpdate { map, key, .. } => {
                 if map.name == "counters" {
                     self.needs_counter_map = true;
                 } else if map.name == STRING_COUNTER_MAP_NAME {
@@ -735,7 +778,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.compile_map_update(&map.name, key_reg)?;
             }
 
-            MirInst::ReadStr {
+            LirInst::ReadStr {
                 dst,
                 ptr,
                 user_space,
@@ -746,13 +789,13 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.compile_read_str(offset, ptr_reg, *user_space, *max_len)?;
             }
 
-            MirInst::Jump { target } => {
+            LirInst::Jump { target } => {
                 let jump_idx = self.instructions.len();
                 self.instructions.push(EbpfInsn::jump(0)); // Placeholder
                 self.pending_jumps.push((jump_idx, *target));
             }
 
-            MirInst::Branch {
+            LirInst::Branch {
                 cond,
                 if_true,
                 if_false,
@@ -777,7 +820,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.pending_jumps.push((jmp_idx, *if_false));
             }
 
-            MirInst::Return { val } => {
+            LirInst::Return { val } => {
                 match val {
                     Some(MirValue::VReg(v)) => {
                         let src = self.ensure_reg(*v)?;
@@ -803,24 +846,24 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions.push(EbpfInsn::exit());
             }
 
-            MirInst::Histogram { value } => {
+            LirInst::Histogram { value } => {
                 self.needs_histogram_map = true;
                 let value_reg = self.ensure_reg(*value)?;
                 self.compile_histogram(value_reg)?;
             }
 
-            MirInst::StartTimer => {
+            LirInst::StartTimer => {
                 self.needs_timestamp_map = true;
                 self.compile_start_timer()?;
             }
 
-            MirInst::StopTimer { dst } => {
+            LirInst::StopTimer { dst } => {
                 self.needs_timestamp_map = true;
                 let dst_reg = self.alloc_dst_reg(*dst)?;
                 self.compile_stop_timer(dst_reg)?;
             }
 
-            MirInst::LoopHeader {
+            LirInst::LoopHeader {
                 counter,
                 limit,
                 body,
@@ -848,7 +891,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.pending_jumps.push((jmp_idx, *exit));
             }
 
-            MirInst::LoopBack {
+            LirInst::LoopBack {
                 counter,
                 step,
                 header,
@@ -866,7 +909,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.pending_jumps.push((jmp_idx, *header));
             }
 
-            MirInst::TailCall {
+            LirInst::TailCall {
                 prog_map: _,
                 index: _,
             } => {
@@ -875,66 +918,39 @@ impl<'a> MirToEbpfCompiler<'a> {
                 ));
             }
 
-            MirInst::CallSubfn { dst, subfn, args } => {
+            LirInst::CallSubfn { subfn, args, .. } => {
                 // BPF-to-BPF function call
-                // Arguments go in R1-R5
                 if args.len() > 5 {
                     return Err(CompileError::UnsupportedInstruction(
                         "BPF subfunctions support at most 5 arguments".into(),
                     ));
                 }
 
-                // Move arguments to R1-R5
-                let arg_regs = [
-                    EbpfReg::R1,
-                    EbpfReg::R2,
-                    EbpfReg::R3,
-                    EbpfReg::R4,
-                    EbpfReg::R5,
-                ];
-                let mut moves = Vec::new();
-                for (i, arg) in args.iter().enumerate() {
-                    let src = self.ensure_reg(*arg)?;
-                    let dst = arg_regs[i];
-                    if src != dst {
-                        moves.push((dst, src));
-                    }
-                }
-                self.emit_parallel_reg_moves(moves);
-
                 // Emit call instruction with placeholder offset
-                // The actual offset will be filled in during linking
                 let call_idx = self.instructions.len();
                 self.instructions.push(EbpfInsn::call_local(subfn.0 as i32));
 
                 // Track this call for relocation
                 self.subfn_calls.push((call_idx, *subfn));
-
-                // Return value is in R0, move to destination
-                let dst_reg = self.alloc_dst_reg(*dst)?;
-                if dst_reg != EbpfReg::R0 {
-                    self.instructions
-                        .push(EbpfInsn::mov64_reg(dst_reg, EbpfReg::R0));
-                }
             }
 
             // Phi nodes should be eliminated before codegen via SSA destruction
-            MirInst::Phi { .. } => {
+            LirInst::Phi { .. } => {
                 return Err(CompileError::UnsupportedInstruction(
                     "Phi nodes must be eliminated before codegen (SSA destruction)".into(),
                 ));
             }
 
-            MirInst::ListNew { .. }
-            | MirInst::ListPush { .. }
-            | MirInst::ListLen { .. }
-            | MirInst::ListGet { .. } => {
+            LirInst::ListNew { .. }
+            | LirInst::ListPush { .. }
+            | LirInst::ListLen { .. }
+            | LirInst::ListGet { .. } => {
                 return Err(CompileError::UnsupportedInstruction(
                     "List operations must be lowered before codegen".into(),
                 ));
             }
 
-            MirInst::StringAppend {
+            LirInst::StringAppend {
                 dst_buffer,
                 dst_len,
                 val,
@@ -1172,7 +1188,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
 
-            MirInst::IntToString {
+            LirInst::IntToString {
                 dst_buffer,
                 dst_len,
                 val,
@@ -1252,18 +1268,18 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
 
             // Instructions reserved for future features
-            MirInst::CallHelper { .. }
-            | MirInst::MapLookup { .. }
-            | MirInst::MapDelete { .. }
-            | MirInst::StrCmp { .. }
-            | MirInst::RecordStore { .. } => {
+            LirInst::CallHelper { .. }
+            | LirInst::MapLookup { .. }
+            | LirInst::MapDelete { .. }
+            | LirInst::StrCmp { .. }
+            | LirInst::RecordStore { .. } => {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "MIR instruction {:?} not yet implemented",
                     inst
                 )));
             }
 
-            MirInst::Placeholder => {
+            LirInst::Placeholder => {
                 // Placeholder should never reach codegen - it's replaced during lowering
                 return Err(CompileError::UnsupportedInstruction(
                     "Placeholder terminator reached codegen (block not properly terminated)".into(),
@@ -2068,7 +2084,7 @@ impl<'a> MirToEbpfCompiler<'a> {
     /// - Callee-saved: R6-R9, R10 (frame pointer)
     fn compile_subfunctions(&mut self) -> Result<(), CompileError> {
         // Clone subfunctions to avoid borrowing issues
-        let subfunctions: Vec<_> = self.mir.subfunctions.clone();
+        let subfunctions: Vec<_> = self.lir.subfunctions.clone();
 
         for (idx, subfn) in subfunctions.iter().enumerate() {
             let subfn_id = SubfunctionId(idx as u32);
@@ -2093,26 +2109,21 @@ impl<'a> MirToEbpfCompiler<'a> {
                     subfn_id, subfn.param_count
                 )));
             }
-            self.prepare_function_state(subfn, self.available_regs.clone(), HashMap::new())?;
+            self.prepare_function_state(
+                subfn,
+                self.available_regs.clone(),
+                subfn.precolored.clone(),
+            )?;
 
             // Emit callee-saved prologue for subfunction
             self.emit_callee_save_prologue()?;
             self.emit_param_moves(subfn)?;
 
-            let cfg = CFG::build(subfn);
-
             // Compile subfunction blocks
             // Note: subfunctions receive args in R1-R5 and save any used callee-saved regs.
-            let block_order: Vec<BlockId> = if cfg.rpo.is_empty() {
-                subfn.blocks.iter().map(|b| b.id).collect()
-            } else {
-                cfg.rpo.clone()
-            };
+            let block_order: Vec<BlockId> = subfn.blocks.iter().map(|b| b.id).collect();
 
             for block_id in block_order {
-                if !cfg.reachable_blocks().contains(&block_id) {
-                    continue;
-                }
                 let block = subfn.block(block_id).clone();
                 self.compile_block(&block)?;
             }
@@ -2511,8 +2522,62 @@ pub fn compile_mir_to_ebpf(
         let _ = list_lowering.run(subfn, &cfg);
     }
 
-    let compiler = MirToEbpfCompiler::new(&program, probe_ctx);
+    verify_mir_program(&program, probe_ctx)?;
+    let lir_program = lower_mir_to_lir(&program);
+
+    let compiler = MirToEbpfCompiler::new(&lir_program, probe_ctx);
     compiler.compile()
+}
+
+fn verify_mir_program(
+    program: &MirProgram,
+    probe_ctx: Option<&ProbeContext>,
+) -> Result<(), CompileError> {
+    let subfn_schemes = match infer_subfunction_schemes(
+        &program.subfunctions,
+        probe_ctx.cloned(),
+    ) {
+        Ok(schemes) => schemes,
+        Err(errors) => {
+            if let Some(err) = errors.into_iter().next() {
+                return Err(crate::compiler::CompileError::TypeError(err));
+            }
+            HashMap::new()
+        }
+    };
+
+    let mut all_funcs = Vec::with_capacity(1 + program.subfunctions.len());
+    all_funcs.push(&program.main);
+    for subfn in &program.subfunctions {
+        all_funcs.push(subfn);
+    }
+
+    for func in all_funcs {
+        let mut type_infer = TypeInference::new_with_env(
+            probe_ctx.cloned(),
+            Some(&subfn_schemes),
+            Some(HMType::I64),
+        );
+        let types = match type_infer.infer(func) {
+            Ok(types) => types,
+            Err(errors) => {
+                if let Some(err) = errors.into_iter().next() {
+                    return Err(crate::compiler::CompileError::TypeError(err));
+                }
+                HashMap::new()
+            }
+        };
+        if let Err(errors) = vcc::verify_mir(func, &types) {
+            let message = errors
+                .iter()
+                .map(|err| err.to_string())
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(CompileError::VccError(message));
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -3502,11 +3567,16 @@ mod tests {
             subfunctions: vec![],
         };
 
-        let mut compiler = MirToEbpfCompiler::new(&program, None);
+        let lir = lower_mir_to_lir(&program);
+        let mut compiler = MirToEbpfCompiler::new(&lir, None);
         compiler
-            .prepare_function_state(&program.main, compiler.available_regs.clone(), HashMap::new())
+            .prepare_function_state(
+                &lir.main,
+                compiler.available_regs.clone(),
+                lir.main.precolored.clone(),
+            )
             .unwrap();
-        compiler.compile_function(&program.main).unwrap();
+        compiler.compile_function(&lir.main).unwrap();
         compiler.fixup_jumps().unwrap();
 
         // After graph coloring, VReg(0) should be assigned a register
@@ -4120,7 +4190,8 @@ mod tests {
             subfunctions: vec![],
         };
 
-        let compiler = MirToEbpfCompiler::new(&program, None);
+        let lir = lower_mir_to_lir(&program);
+        let compiler = MirToEbpfCompiler::new(&lir, None);
         let result = compiler.compile();
 
         assert!(result.is_ok(), "StringAppend literal should compile");
@@ -4168,7 +4239,8 @@ mod tests {
             subfunctions: vec![],
         };
 
-        let compiler = MirToEbpfCompiler::new(&program, None);
+        let lir = lower_mir_to_lir(&program);
+        let compiler = MirToEbpfCompiler::new(&lir, None);
         let result = compiler.compile();
 
         assert!(result.is_ok(), "IntToString should compile");
@@ -4227,7 +4299,8 @@ mod tests {
             subfunctions: vec![],
         };
 
-        let compiler = MirToEbpfCompiler::new(&program, None);
+        let lir = lower_mir_to_lir(&program);
+        let compiler = MirToEbpfCompiler::new(&lir, None);
         let result = compiler.compile();
 
         assert!(result.is_ok(), "StringAppend slot should compile");
@@ -4282,7 +4355,8 @@ mod tests {
             subfunctions: vec![],
         };
 
-        let compiler = MirToEbpfCompiler::new(&program, None);
+        let lir = lower_mir_to_lir(&program);
+        let compiler = MirToEbpfCompiler::new(&lir, None);
         let result = compiler.compile();
 
         assert!(result.is_ok(), "StringAppend integer should compile");
@@ -4337,7 +4411,8 @@ mod tests {
             subfunctions: vec![],
         };
 
-        let compiler = MirToEbpfCompiler::new(&program, None);
+        let lir = lower_mir_to_lir(&program);
+        let compiler = MirToEbpfCompiler::new(&lir, None);
         let result = compiler.compile();
 
         assert!(result.is_ok(), "StringAppend integer zero should compile");
@@ -4421,9 +4496,14 @@ mod tests {
         };
 
         // Compile and verify
-        let mut compiler = MirToEbpfCompiler::new(&program, None);
+        let lir = lower_mir_to_lir(&program);
+        let mut compiler = MirToEbpfCompiler::new(&lir, None);
         compiler
-            .prepare_function_state(&program.main, compiler.available_regs.clone(), HashMap::new())
+            .prepare_function_state(
+                &lir.main,
+                compiler.available_regs.clone(),
+                lir.main.precolored.clone(),
+            )
             .unwrap();
 
         // Verify list_ptr (VReg 0) got a physical register
@@ -4432,7 +4512,7 @@ mod tests {
             "list_ptr vreg should be assigned a physical register"
         );
 
-        compiler.compile_function(&program.main).unwrap();
+        compiler.compile_function(&lir.main).unwrap();
         compiler.fixup_jumps().unwrap();
 
         // Verify bytecode was generated

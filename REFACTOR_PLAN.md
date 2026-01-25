@@ -61,7 +61,9 @@
       - All scratch usage must be represented as LIR temporaries so the allocator can reason about interference (this resolves
         the current "implicit clobber" bug class).
       - Implement parallel move lowering for arguments/returns in LIR so cycles are correct by construction (no ad-hoc swaps).
-      Status: ABI is encoded and clobbers are partially modeled; scratch usage is still implicit and there is no LIR.
+      Status: LIR introduced; MIR→LIR pass creates precolored ABI vregs (R0–R5) and explicit
+      CallSubfn arg shuffles; allocator now consumes LIR and enforces call/scratch clobbers from
+      LIR metadata; codegen consumes LIR and lowers ParallelMove deterministically (cycle-safe).
 
   [~] 4. Rebuild type inference as a two-layer system
       - Layer A (HM): rank-1 polymorphism with algorithm W; principal types for predictable inference and error messages.

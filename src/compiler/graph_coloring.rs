@@ -29,10 +29,306 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use super::cfg::{CFG, LivenessInfo, LoopInfo};
+use super::cfg::{CFG, LoopInfo};
 use super::instruction::EbpfReg;
-use super::mir::{MirFunction, MirInst, MirValue, StackSlot, StackSlotId, StackSlotKind, VReg};
+use super::lir::{LirBlock, LirFunction, LirInst};
+use super::mir::{
+    BasicBlock, BlockId, MirFunction, MirInst, MirValue, StackSlot, StackSlotId, StackSlotKind,
+    VReg,
+};
 use super::reg_info;
+
+pub trait RegAllocInst {
+    fn defs(&self) -> Vec<VReg>;
+    fn uses(&self) -> Vec<VReg>;
+    fn move_pairs(&self) -> Vec<(VReg, VReg)>;
+    fn call_clobbers(&self) -> &'static [EbpfReg];
+    fn scratch_clobbers(&self) -> &'static [EbpfReg];
+}
+
+pub trait RegAllocBlock {
+    type Inst: RegAllocInst;
+    fn id(&self) -> BlockId;
+    fn instructions(&self) -> &[Self::Inst];
+    fn terminator(&self) -> &Self::Inst;
+    fn successors(&self) -> Vec<BlockId>;
+}
+
+pub trait RegAllocFunction {
+    type Inst: RegAllocInst;
+    type Block: RegAllocBlock<Inst = Self::Inst>;
+    fn entry(&self) -> BlockId;
+    fn blocks(&self) -> &[Self::Block];
+    fn block(&self, id: BlockId) -> &Self::Block;
+    fn has_block(&self, id: BlockId) -> bool;
+    fn vreg_count(&self) -> u32;
+    fn param_count(&self) -> usize;
+}
+
+#[derive(Debug)]
+struct AllocCfg {
+    #[allow(dead_code)]
+    entry: BlockId,
+    predecessors: HashMap<BlockId, Vec<BlockId>>,
+    successors: HashMap<BlockId, Vec<BlockId>>,
+    rpo: Vec<BlockId>,
+    post_order: Vec<BlockId>,
+}
+
+impl AllocCfg {
+    fn build<F: RegAllocFunction>(func: &F) -> Self {
+        let mut cfg = AllocCfg {
+            entry: func.entry(),
+            predecessors: HashMap::new(),
+            successors: HashMap::new(),
+            rpo: Vec::new(),
+            post_order: Vec::new(),
+        };
+
+        for block in func.blocks() {
+            cfg.predecessors.insert(block.id(), Vec::new());
+            cfg.successors.insert(block.id(), Vec::new());
+        }
+
+        for block in func.blocks() {
+            let succs = block.successors();
+            cfg.successors.insert(block.id(), succs.clone());
+            for succ in succs {
+                cfg.predecessors.entry(succ).or_default().push(block.id());
+            }
+        }
+
+        cfg.compute_post_order(func);
+        cfg
+    }
+
+    fn compute_post_order<F: RegAllocFunction>(&mut self, func: &F) {
+        let mut visited = HashSet::new();
+        let mut post_order = Vec::new();
+
+        fn dfs<F: RegAllocFunction>(
+            block_id: BlockId,
+            func: &F,
+            cfg: &AllocCfg,
+            visited: &mut HashSet<BlockId>,
+            post_order: &mut Vec<BlockId>,
+        ) {
+            if visited.contains(&block_id) {
+                return;
+            }
+            visited.insert(block_id);
+
+            if let Some(succs) = cfg.successors.get(&block_id) {
+                for &succ in succs {
+                    if func.has_block(succ) {
+                        dfs(succ, func, cfg, visited, post_order);
+                    }
+                }
+            }
+
+            post_order.push(block_id);
+        }
+
+        dfs(func.entry(), func, self, &mut visited, &mut post_order);
+        self.post_order = post_order.clone();
+        self.rpo = post_order.into_iter().rev().collect();
+    }
+}
+
+#[derive(Debug)]
+struct AllocLiveness {
+    live_in: HashMap<BlockId, HashSet<VReg>>,
+    live_out: HashMap<BlockId, HashSet<VReg>>,
+}
+
+impl AllocLiveness {
+    fn compute<F: RegAllocFunction>(func: &F, cfg: &AllocCfg) -> Self {
+        let mut info = AllocLiveness {
+            live_in: HashMap::new(),
+            live_out: HashMap::new(),
+        };
+
+        for block in func.blocks() {
+            info.live_in.insert(block.id(), HashSet::new());
+            info.live_out.insert(block.id(), HashSet::new());
+        }
+
+        let mut changed = true;
+        while changed {
+            changed = false;
+
+            for &block_id in cfg.post_order.iter() {
+                let block = func.block(block_id);
+
+                let mut live_out = HashSet::new();
+                for succ_id in block.successors() {
+                    if let Some(succ_live_in) = info.live_in.get(&succ_id) {
+                        live_out.extend(succ_live_in);
+                    }
+                }
+
+                let mut live_in = live_out.clone();
+
+                for def in block.terminator().defs() {
+                    live_in.remove(&def);
+                }
+                for use_vreg in block.terminator().uses() {
+                    live_in.insert(use_vreg);
+                }
+
+                for inst in block.instructions().iter().rev() {
+                    for def in inst.defs() {
+                        live_in.remove(&def);
+                    }
+                    for use_vreg in inst.uses() {
+                        live_in.insert(use_vreg);
+                    }
+                }
+
+                let old_in = info.live_in.get(&block_id).cloned().unwrap_or_default();
+                let old_out = info.live_out.get(&block_id).cloned().unwrap_or_default();
+
+                if live_in != old_in || live_out != old_out {
+                    changed = true;
+                    info.live_in.insert(block_id, live_in);
+                    info.live_out.insert(block_id, live_out);
+                }
+            }
+        }
+
+        info
+    }
+}
+
+impl RegAllocInst for MirInst {
+    fn defs(&self) -> Vec<VReg> {
+        self.def().into_iter().collect()
+    }
+
+    fn uses(&self) -> Vec<VReg> {
+        self.uses()
+    }
+
+    fn move_pairs(&self) -> Vec<(VReg, VReg)> {
+        match self {
+            MirInst::Copy {
+                dst,
+                src: MirValue::VReg(src),
+            } => vec![(*dst, *src)],
+            _ => Vec::new(),
+        }
+    }
+
+    fn call_clobbers(&self) -> &'static [EbpfReg] {
+        reg_info::call_clobbers(self)
+    }
+
+    fn scratch_clobbers(&self) -> &'static [EbpfReg] {
+        reg_info::scratch_clobbers(self)
+    }
+}
+
+impl RegAllocInst for LirInst {
+    fn defs(&self) -> Vec<VReg> {
+        self.defs()
+    }
+
+    fn uses(&self) -> Vec<VReg> {
+        self.uses()
+    }
+
+    fn move_pairs(&self) -> Vec<(VReg, VReg)> {
+        self.move_pairs()
+    }
+
+    fn call_clobbers(&self) -> &'static [EbpfReg] {
+        self.call_clobbers()
+    }
+
+    fn scratch_clobbers(&self) -> &'static [EbpfReg] {
+        self.scratch_clobbers()
+    }
+}
+
+impl RegAllocBlock for BasicBlock {
+    type Inst = MirInst;
+    fn id(&self) -> BlockId {
+        self.id
+    }
+    fn instructions(&self) -> &[Self::Inst] {
+        &self.instructions
+    }
+    fn terminator(&self) -> &Self::Inst {
+        &self.terminator
+    }
+    fn successors(&self) -> Vec<BlockId> {
+        self.successors()
+    }
+}
+
+impl RegAllocFunction for MirFunction {
+    type Inst = MirInst;
+    type Block = super::mir::BasicBlock;
+
+    fn entry(&self) -> BlockId {
+        self.entry
+    }
+    fn blocks(&self) -> &[Self::Block] {
+        &self.blocks
+    }
+    fn block(&self, id: BlockId) -> &Self::Block {
+        self.block(id)
+    }
+    fn has_block(&self, id: BlockId) -> bool {
+        self.has_block(id)
+    }
+    fn vreg_count(&self) -> u32 {
+        self.vreg_count
+    }
+    fn param_count(&self) -> usize {
+        self.param_count
+    }
+}
+
+impl RegAllocBlock for LirBlock {
+    type Inst = LirInst;
+    fn id(&self) -> BlockId {
+        self.id
+    }
+    fn instructions(&self) -> &[Self::Inst] {
+        &self.instructions
+    }
+    fn terminator(&self) -> &Self::Inst {
+        &self.terminator
+    }
+    fn successors(&self) -> Vec<BlockId> {
+        self.successors()
+    }
+}
+
+impl RegAllocFunction for LirFunction {
+    type Inst = LirInst;
+    type Block = LirBlock;
+
+    fn entry(&self) -> BlockId {
+        self.entry
+    }
+    fn blocks(&self) -> &[Self::Block] {
+        &self.blocks
+    }
+    fn block(&self, id: BlockId) -> &Self::Block {
+        self.block(id)
+    }
+    fn has_block(&self, id: BlockId) -> bool {
+        self.has_block(id)
+    }
+    fn vreg_count(&self) -> u32 {
+        self.vreg_count
+    }
+    fn param_count(&self) -> usize {
+        self.param_count
+    }
+}
 
 /// Result of graph coloring register allocation
 #[derive(Debug)]
@@ -250,17 +546,19 @@ impl GraphColoringAllocator {
     }
 
     /// Run the full allocation algorithm
-    pub fn allocate(
+    pub fn allocate<F: RegAllocFunction>(
         &mut self,
-        func: &MirFunction,
-        cfg: &CFG,
-        liveness: &LivenessInfo,
+        func: &F,
+        loop_depths: Option<&HashMap<BlockId, usize>>,
     ) -> ColoringResult {
+        let cfg = AllocCfg::build(func);
+        let liveness = AllocLiveness::compute(func, &cfg);
+
         // Build interference graph
-        self.build(func, cfg, liveness);
+        self.build(func, &cfg, &liveness);
 
         // Compute spill costs
-        self.compute_spill_costs(func, cfg);
+        self.compute_spill_costs(func, &cfg, loop_depths);
 
         // Initialize worklists
         self.make_worklist();
@@ -351,9 +649,14 @@ impl GraphColoringAllocator {
     }
 
     /// Build the interference graph from liveness information
-    fn build(&mut self, func: &MirFunction, cfg: &CFG, liveness: &LivenessInfo) {
+    fn build<F: RegAllocFunction>(
+        &mut self,
+        func: &F,
+        cfg: &AllocCfg,
+        liveness: &AllocLiveness,
+    ) {
         // Add all vregs as nodes
-        let total_vregs = func.vreg_count.max(func.param_count as u32);
+        let total_vregs = func.vreg_count().max(func.param_count() as u32);
         for i in 0..total_vregs {
             let vreg = VReg(i);
             self.graph.add_node(vreg);
@@ -381,20 +684,16 @@ impl GraphColoringAllocator {
                 .unwrap_or_default();
 
             // Process terminator first (backward analysis)
-            self.process_instruction_liveness(&block.terminator, &mut live, inst_idx);
+            self.process_instruction_liveness(block.terminator(), &mut live, inst_idx);
             inst_idx += 1;
 
             // Process instructions in reverse
-            for inst in block.instructions.iter().rev() {
+            for inst in block.instructions().iter().rev() {
                 self.process_instruction_liveness(inst, &mut live, inst_idx);
 
                 // Check for move instructions that could be coalesced
-                if let MirInst::Copy {
-                    dst,
-                    src: MirValue::VReg(src),
-                } = inst
-                {
-                    self.graph.add_move(*src, *dst);
+                for (dst, src) in inst.move_pairs() {
+                    self.graph.add_move(src, dst);
                 }
 
                 inst_idx += 1;
@@ -406,11 +705,11 @@ impl GraphColoringAllocator {
     }
 
     /// Build interference edges from liveness analysis
-    fn build_interference_from_liveness(
+    fn build_interference_from_liveness<F: RegAllocFunction>(
         &mut self,
-        func: &MirFunction,
-        cfg: &CFG,
-        liveness: &LivenessInfo,
+        func: &F,
+        cfg: &AllocCfg,
+        liveness: &AllocLiveness,
     ) {
         let block_order = &cfg.rpo;
 
@@ -425,13 +724,13 @@ impl GraphColoringAllocator {
                 .unwrap_or_default();
 
             // Process terminator
-            self.apply_call_clobbers(&block.terminator, &live);
-            self.add_interference_for_inst(&block.terminator, &live);
-            self.update_live_for_inst(&block.terminator, &mut live);
-            self.apply_scratch_clobbers(&block.terminator, &live);
+            self.apply_call_clobbers(block.terminator(), &live);
+            self.add_interference_for_inst(block.terminator(), &live);
+            self.update_live_for_inst(block.terminator(), &mut live);
+            self.apply_scratch_clobbers(block.terminator(), &live);
 
             // Process instructions in reverse
-            for inst in block.instructions.iter().rev() {
+            for inst in block.instructions().iter().rev() {
                 self.apply_call_clobbers(inst, &live);
                 self.add_interference_for_inst(inst, &live);
                 self.update_live_for_inst(inst, &mut live);
@@ -441,30 +740,36 @@ impl GraphColoringAllocator {
     }
 
     /// Add interference edges for an instruction
-    fn add_interference_for_inst(&mut self, inst: &MirInst, live: &HashSet<VReg>) {
-        // Get the definition (if any)
-        if let Some(def) = self.get_def(inst) {
-            // The defined vreg interferes with all live vregs (except itself)
-            // Special case for moves: don't add interference between src and dst
-            let move_src = if let MirInst::Copy {
-                src: MirValue::VReg(src),
-                ..
-            } = inst
-            {
-                Some(*src)
-            } else {
-                None
-            };
+    fn add_interference_for_inst<I: RegAllocInst>(&mut self, inst: &I, live: &HashSet<VReg>) {
+        let defs = inst.defs();
+        let mut move_src: HashMap<VReg, VReg> = HashMap::new();
+        for (dst, src) in inst.move_pairs() {
+            move_src.insert(dst, src);
+        }
 
+        for def in &defs {
             for &live_vreg in live {
-                if live_vreg != def && Some(live_vreg) != move_src {
-                    self.graph.add_edge(def, live_vreg);
+                if live_vreg == *def {
+                    continue;
+                }
+                if move_src.get(def).copied() == Some(live_vreg) {
+                    continue;
+                }
+                self.graph.add_edge(*def, live_vreg);
+            }
+        }
+
+        // Defs in the same instruction cannot alias
+        for i in 0..defs.len() {
+            for j in (i + 1)..defs.len() {
+                if defs[i] != defs[j] {
+                    self.graph.add_edge(defs[i], defs[j]);
                 }
             }
         }
 
         // Operands used by the same instruction must not alias registers
-        let uses = self.get_uses(inst);
+        let uses = inst.uses();
         for i in 0..uses.len() {
             for j in (i + 1)..uses.len() {
                 if uses[i] != uses[j] {
@@ -474,20 +779,20 @@ impl GraphColoringAllocator {
         }
     }
 
-    fn apply_call_clobbers(&mut self, inst: &MirInst, live: &HashSet<VReg>) {
-        let regs = reg_info::call_clobbers(inst);
+    fn apply_call_clobbers<I: RegAllocInst>(&mut self, inst: &I, live: &HashSet<VReg>) {
+        let regs = inst.call_clobbers();
         if regs.is_empty() {
             return;
         }
         let mut live_across: HashSet<VReg> = live.iter().copied().collect();
-        if let Some(def) = self.get_def(inst) {
+        for def in inst.defs() {
             live_across.remove(&def);
         }
         self.forbid_regs_for_live(&live_across, regs);
     }
 
-    fn apply_scratch_clobbers(&mut self, inst: &MirInst, live: &HashSet<VReg>) {
-        let regs = reg_info::scratch_clobbers(inst);
+    fn apply_scratch_clobbers<I: RegAllocInst>(&mut self, inst: &I, live: &HashSet<VReg>) {
+        let regs = inst.scratch_clobbers();
         if regs.is_empty() {
             return;
         }
@@ -495,22 +800,20 @@ impl GraphColoringAllocator {
     }
 
     /// Update live set for an instruction (backward)
-    fn update_live_for_inst(&mut self, inst: &MirInst, live: &mut HashSet<VReg>) {
-        // Remove definition
-        if let Some(def) = self.get_def(inst) {
+    fn update_live_for_inst<I: RegAllocInst>(&mut self, inst: &I, live: &mut HashSet<VReg>) {
+        for def in inst.defs() {
             live.remove(&def);
         }
 
-        // Add uses
-        for use_vreg in self.get_uses(inst) {
+        for use_vreg in inst.uses() {
             live.insert(use_vreg);
         }
     }
 
     /// Process instruction for liveness (used during initial build)
-    fn process_instruction_liveness(
+    fn process_instruction_liveness<I: RegAllocInst>(
         &mut self,
-        inst: &MirInst,
+        inst: &I,
         live: &mut HashSet<VReg>,
         _inst_idx: usize,
     ) {
@@ -522,33 +825,22 @@ impl GraphColoringAllocator {
             }
         }
 
-        // Update liveness
-        if let Some(def) = self.get_def(inst) {
+        for def in inst.defs() {
             live.remove(&def);
         }
-        for use_vreg in self.get_uses(inst) {
+        for use_vreg in inst.uses() {
             live.insert(use_vreg);
         }
     }
 
-    /// Get the vreg defined by an instruction (if any)
-    fn get_def(&self, inst: &MirInst) -> Option<VReg> {
-        // Use the MirInst::def() method which handles all instruction types
-        inst.def()
-    }
-
-    /// Get all vregs used by an instruction
-    fn get_uses(&self, inst: &MirInst) -> Vec<VReg> {
-        // Use the MirInst::uses() method which handles all instruction types
-        inst.uses()
-    }
-
     /// Compute spill costs for each vreg
-    fn compute_spill_costs(&mut self, func: &MirFunction, cfg: &CFG) {
-        // Count uses and defs, weighted by loop depth
-        let loop_info = LoopInfo::compute(func, cfg);
-
-        let total_vregs = func.vreg_count.max(func.param_count as u32);
+    fn compute_spill_costs<F: RegAllocFunction>(
+        &mut self,
+        func: &F,
+        cfg: &AllocCfg,
+        loop_depths: Option<&HashMap<BlockId, usize>>,
+    ) {
+        let total_vregs = func.vreg_count().max(func.param_count() as u32);
         for i in 0..total_vregs {
             let vreg = VReg(i);
             self.spill_cost.insert(vreg, 0.0);
@@ -556,25 +848,24 @@ impl GraphColoringAllocator {
 
         for &block_id in cfg.rpo.iter() {
             let block = func.block(block_id);
-            let depth = loop_info.loop_depth.get(&block_id).copied().unwrap_or(0);
-            let weight = 10.0_f64.powi(depth as i32); // 10^depth
+            let depth = loop_depths
+                .and_then(|d| d.get(&block_id).copied())
+                .unwrap_or(0);
+            let weight = 10.0_f64.powi(depth as i32);
 
-            for inst in &block.instructions {
-                // Count definition
-                if let Some(def) = self.get_def(inst) {
+            for inst in block.instructions() {
+                for def in inst.defs() {
                     *self.spill_cost.entry(def).or_insert(0.0) += weight;
                 }
-                // Count uses
-                for use_vreg in self.get_uses(inst) {
+                for use_vreg in inst.uses() {
                     *self.spill_cost.entry(use_vreg).or_insert(0.0) += weight;
                 }
             }
 
-            // Terminator
-            if let Some(def) = self.get_def(&block.terminator) {
+            for def in block.terminator().defs() {
                 *self.spill_cost.entry(def).or_insert(0.0) += weight;
             }
-            for use_vreg in self.get_uses(&block.terminator) {
+            for use_vreg in block.terminator().uses() {
                 *self.spill_cost.entry(use_vreg).or_insert(0.0) += weight;
             }
         }
@@ -974,9 +1265,9 @@ impl GraphColoringAllocator {
 /// Convenience function to perform graph coloring allocation
 pub fn allocate_registers(func: &MirFunction, available_regs: Vec<EbpfReg>) -> ColoringResult {
     let cfg = CFG::build(func);
-    let liveness = LivenessInfo::compute(func, &cfg);
+    let loop_info = LoopInfo::compute(func, &cfg);
     let mut allocator = GraphColoringAllocator::new(available_regs);
-    allocator.allocate(func, &cfg, &liveness)
+    allocator.allocate(func, Some(&loop_info.loop_depth))
 }
 
 #[cfg(test)]
@@ -1173,8 +1464,8 @@ mod tests {
         // v2 = v0 + v1  <-- v0 and v1 are both live here, so they interfere
         // return v2
         let func = make_simple_function();
-        let cfg = CFG::build(&func);
-        let liveness = LivenessInfo::compute(&func, &cfg);
+        let cfg = AllocCfg::build(&func);
+        let liveness = AllocLiveness::compute(&func, &cfg);
         let mut allocator = GraphColoringAllocator::new(vec![EbpfReg::R6, EbpfReg::R7]);
         allocator.build(&func, &cfg, &liveness);
 
@@ -1316,8 +1607,8 @@ mod tests {
     #[test]
     fn test_list_interference() {
         let func = make_list_function();
-        let cfg = CFG::build(&func);
-        let liveness = LivenessInfo::compute(&func, &cfg);
+        let cfg = AllocCfg::build(&func);
+        let liveness = AllocLiveness::compute(&func, &cfg);
         let mut allocator =
             GraphColoringAllocator::new(vec![EbpfReg::R6, EbpfReg::R7, EbpfReg::R8]);
         allocator.build(&func, &cfg, &liveness);

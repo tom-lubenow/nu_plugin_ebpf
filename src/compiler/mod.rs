@@ -25,6 +25,8 @@ pub mod hir_to_mir;
 pub mod hindley_milner;
 pub mod instruction;
 pub mod ir_to_mir;
+pub mod lir;
+pub mod mir_to_lir;
 pub mod mir;
 pub mod mir_to_ebpf;
 pub mod passes;
@@ -39,6 +41,7 @@ pub use elf::{
 pub use instruction::{BpfHelper, EbpfInsn, EbpfReg};
 pub use hir::{extract_closure_block_ids, infer_ctx_param, lower_ir_to_hir, HirProgram};
 pub use hir_to_mir::lower_hir_to_mir;
+pub use mir_to_lir::lower_mir_to_lir;
 pub use mir_to_ebpf::{MirCompileResult, compile_mir_to_ebpf};
 pub use type_infer::{TypeError, TypeInference};
 
