@@ -16,6 +16,7 @@ mod branch_opt;
 mod const_fold;
 mod copy_prop;
 mod dce;
+mod list_lowering;
 mod ssa;
 mod ssa_destruct;
 mod strength;
@@ -24,6 +25,7 @@ pub use branch_opt::BranchOptimization;
 pub use const_fold::ConstantFolding;
 pub use copy_prop::CopyPropagation;
 pub use dce::DeadCodeElimination;
+pub use list_lowering::ListLowering;
 pub use ssa::SsaConstruction;
 pub use ssa_destruct::SsaDestruction;
 pub use strength::StrengthReduction;
@@ -182,6 +184,13 @@ pub fn optimize_with_ssa(func: &mut MirFunction) -> usize {
     let cfg = CFG::build(func);
     let ssa_destruct = SsaDestruction;
     if ssa_destruct.run(func, &cfg) {
+        total_changes += 1;
+    }
+
+    // Step 4: Lower list operations into explicit loads/stores with bounds checks
+    let cfg = CFG::build(func);
+    let list_lowering = ListLowering;
+    if list_lowering.run(func, &cfg) {
         total_changes += 1;
     }
 
@@ -813,6 +822,7 @@ mod tests {
             .push(MirInst::LoadCtxField {
                 dst: v_pid,
                 field: CtxField::Pid,
+                slot: None,
             });
         func.block_mut(bb0).instructions.push(MirInst::BinOp {
             dst: v_cond,

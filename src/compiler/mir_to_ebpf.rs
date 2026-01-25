@@ -18,20 +18,23 @@
 //! 6. Compile blocks in reverse post-order
 //! 7. Fix up jumps and emit bytecode
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::compiler::CompileError;
 use crate::compiler::cfg::{CFG, LivenessInfo};
 use crate::compiler::elf::{
     BpfFieldType, BpfMapDef, EbpfMap, EventSchema, MapRelocation, ProbeContext, SchemaField,
 };
-use crate::compiler::graph_coloring::GraphColoringAllocator;
+use crate::compiler::graph_coloring::{ColoringResult, GraphColoringAllocator};
+use crate::compiler::hindley_milner::HMType;
 use crate::compiler::instruction::{BpfHelper, EbpfInsn, EbpfReg, opcode};
 use crate::compiler::mir::{
     BasicBlock, BinOpKind, BlockId, CtxField, MirFunction, MirInst, MirProgram, MirType, MirValue,
-    RecordFieldDef, StackSlotId, StringAppendType, SubfunctionId, UnaryOpKind, VReg,
+    RecordFieldDef, StackSlot, StackSlotId, StringAppendType, SubfunctionId, UnaryOpKind, VReg,
 };
-use crate::compiler::type_infer::TypeInference;
+use crate::compiler::passes::{ListLowering, MirPass};
+use crate::compiler::type_infer::{SubfnSchemeMap, TypeInference, infer_subfunction_schemes};
+use crate::compiler::vcc;
 use crate::kernel_btf::KernelBtf;
 
 /// Ring buffer map name
@@ -39,7 +42,7 @@ pub const RINGBUF_MAP_NAME: &str = "events";
 /// Counter map name
 pub const COUNTER_MAP_NAME: &str = "counters";
 /// String counter map name (comm keys)
-pub const STRING_COUNTER_MAP_NAME: &str = "str_counters";
+pub const STRING_COUNTER_MAP_NAME: &str = crate::compiler::mir::STRING_COUNTER_MAP_NAME;
 /// Histogram map name
 pub const HISTOGRAM_MAP_NAME: &str = "histogram";
 /// Timestamp map name (for timing)
@@ -105,6 +108,10 @@ pub struct MirToEbpfCompiler<'a> {
     subfn_calls: Vec<(usize, SubfunctionId)>,
     /// Subfunction start offsets (instruction index where each subfunction begins)
     subfn_offsets: HashMap<SubfunctionId, usize>,
+    /// Inferred subfunction type schemes
+    subfn_schemes: SubfnSchemeMap,
+    /// Callee-saved register spill offsets for current function
+    callee_saved_offsets: HashMap<EbpfReg, i16>,
 }
 
 impl<'a> MirToEbpfCompiler<'a> {
@@ -129,23 +136,46 @@ impl<'a> MirToEbpfCompiler<'a> {
             needs_kstack_map: false,
             needs_ustack_map: false,
             event_schema: None,
-            // R6-R9 are callee-saved and available for our use
-            // R9 is reserved for context pointer, so we use R6-R8
-            available_regs: vec![EbpfReg::R6, EbpfReg::R7, EbpfReg::R8],
+            // Allow use of caller-saved regs; R9 remains reserved for the context pointer.
+            available_regs: vec![
+                EbpfReg::R1,
+                EbpfReg::R2,
+                EbpfReg::R3,
+                EbpfReg::R4,
+                EbpfReg::R5,
+                EbpfReg::R6,
+                EbpfReg::R7,
+                EbpfReg::R8,
+            ],
             subfn_calls: Vec::new(),
             subfn_offsets: HashMap::new(),
+            subfn_schemes: HashMap::new(),
+            callee_saved_offsets: HashMap::new(),
         }
     }
 
     /// Compile the MIR program to eBPF
     pub fn compile(mut self) -> Result<MirCompileResult, CompileError> {
-        // Run graph coloring register allocation for main function
-        self.run_register_allocation()?;
-
-        // Lay out stack slots (including spill slots from register allocation)
-        self.layout_stack()?;
+        // Infer subfunction types (polymorphic schemes)
+        self.subfn_schemes = match infer_subfunction_schemes(
+            &self.mir.subfunctions,
+            self.probe_ctx.cloned(),
+        ) {
+            Ok(schemes) => schemes,
+            Err(errors) => {
+                if let Some(err) = errors.into_iter().next() {
+                    return Err(crate::compiler::CompileError::TypeError(err));
+                }
+                HashMap::new()
+            }
+        };
 
         // Compile the main function
+        self.prepare_function_state(
+            &self.mir.main,
+            self.available_regs.clone(),
+            HashMap::new(),
+        )?;
         let main_func = self.mir.main.clone();
         self.compile_function(&main_func)?;
 
@@ -218,53 +248,208 @@ impl<'a> MirToEbpfCompiler<'a> {
         })
     }
 
-    /// Run graph coloring register allocation
-    fn run_register_allocation(&mut self) -> Result<(), CompileError> {
-        let func = &self.mir.main;
-
+    /// Run graph coloring register allocation for a function
+    fn allocate_registers_for_function(
+        &self,
+        func: &MirFunction,
+        available_regs: Vec<EbpfReg>,
+        precolored: HashMap<VReg, EbpfReg>,
+    ) -> ColoringResult {
         // Build CFG and compute liveness
         let cfg = CFG::build(func);
         let liveness = LivenessInfo::compute(func, &cfg);
 
         // Run graph coloring allocation
-        let mut allocator = GraphColoringAllocator::new(self.available_regs.clone());
-        let result = allocator.allocate(func, &cfg, &liveness);
+        let mut allocator = GraphColoringAllocator::new(available_regs);
+        if !precolored.is_empty() {
+            allocator.set_precolored(precolored);
+        }
+        allocator.allocate(func, &cfg, &liveness)
+    }
 
-        // Store register assignments
-        self.vreg_to_phys = result.coloring;
+    /// Layout stack slots and assign offsets for a function
+    fn layout_stack_for_function(
+        &self,
+        func: &MirFunction,
+        alloc: &ColoringResult,
+    ) -> Result<(HashMap<StackSlotId, i16>, HashMap<VReg, i16>, i16), CompileError> {
+        let mut slots: Vec<StackSlot> = func.stack_slots.clone();
+        let spill_base = slots.len() as u32;
 
-        // Allocate spill slots and store their offsets
-        for (vreg, _slot_id) in &result.spills {
+        for (idx, slot) in alloc.spill_slots.iter().enumerate() {
+            let mut slot = slot.clone();
+            slot.id = StackSlotId(spill_base + idx as u32);
+            slots.push(slot);
+        }
+
+        // Sort slots by alignment (largest first) for better packing
+        slots.sort_by(|a, b| b.align.cmp(&a.align).then(b.size.cmp(&a.size)));
+
+        let mut stack_offset: i16 = 0;
+        let mut slot_offsets: HashMap<StackSlotId, i16> = HashMap::new();
+
+        for slot in slots {
+            let aligned_size = slot.size.div_ceil(slot.align) * slot.align;
+            stack_offset -= aligned_size as i16;
+            if stack_offset < -512 {
+                return Err(CompileError::StackOverflow);
+            }
+            slot_offsets.insert(slot.id, stack_offset);
+        }
+
+        let mut vreg_spills: HashMap<VReg, i16> = HashMap::new();
+        for (vreg, slot_id) in &alloc.spills {
+            let new_slot_id = StackSlotId(spill_base + slot_id.0);
+            if let Some(&offset) = slot_offsets.get(&new_slot_id) {
+                vreg_spills.insert(*vreg, offset);
+            }
+        }
+
+        Ok((slot_offsets, vreg_spills, stack_offset))
+    }
+
+    fn prepare_function_state(
+        &mut self,
+        func: &MirFunction,
+        available_regs: Vec<EbpfReg>,
+        precolored: HashMap<VReg, EbpfReg>,
+    ) -> Result<ColoringResult, CompileError> {
+        let alloc = self.allocate_registers_for_function(func, available_regs, precolored);
+        let (slot_offsets, vreg_spills, stack_offset) = self.layout_stack_for_function(func, &alloc)?;
+
+        self.vreg_to_phys = alloc.coloring.clone();
+        self.vreg_spills = vreg_spills;
+        self.slot_offsets = slot_offsets;
+        self.stack_offset = stack_offset;
+        self.callee_saved_offsets.clear();
+
+        Ok(alloc)
+    }
+
+    fn emit_callee_save_prologue(&mut self) -> Result<(), CompileError> {
+        let mut regs: Vec<EbpfReg> = self
+            .vreg_to_phys
+            .values()
+            .copied()
+            .filter(|reg| matches!(reg, EbpfReg::R6 | EbpfReg::R7 | EbpfReg::R8 | EbpfReg::R9))
+            .collect();
+        regs.sort_by_key(|reg| reg.as_u8());
+        regs.dedup();
+
+        for reg in regs {
             self.check_stack_space(8)?;
             self.stack_offset -= 8;
-            self.vreg_spills.insert(*vreg, self.stack_offset);
+            let offset = self.stack_offset;
+            self.callee_saved_offsets.insert(reg, offset);
+            self.instructions
+                .push(EbpfInsn::stxdw(EbpfReg::R10, offset, reg));
         }
 
         Ok(())
     }
 
-    /// Layout stack slots and assign offsets
-    fn layout_stack(&mut self) -> Result<(), CompileError> {
-        let func = &self.mir.main;
-
-        // Sort slots by alignment (largest first) for better packing
-        let mut slots: Vec<_> = func.stack_slots.iter().collect();
-        slots.sort_by(|a, b| b.align.cmp(&a.align).then(b.size.cmp(&a.size)));
-
-        for slot in slots {
-            // Align the offset
-            let aligned_size = slot.size.div_ceil(slot.align) * slot.align;
-            self.stack_offset -= aligned_size as i16;
-
-            // Check for stack overflow
-            if self.stack_offset < -512 {
-                return Err(CompileError::StackOverflow);
+    fn restore_callee_saved(&mut self) {
+        if self.callee_saved_offsets.is_empty() {
+            return;
+        }
+        let mut regs: Vec<EbpfReg> = self.callee_saved_offsets.keys().copied().collect();
+        regs.sort_by_key(|reg| reg.as_u8());
+        for reg in regs {
+            if let Some(&offset) = self.callee_saved_offsets.get(&reg) {
+                self.instructions
+                    .push(EbpfInsn::ldxdw(reg, EbpfReg::R10, offset));
             }
+        }
+    }
 
-            self.slot_offsets.insert(slot.id, self.stack_offset);
+    fn emit_param_moves(&mut self, func: &MirFunction) -> Result<(), CompileError> {
+        if func.param_count == 0 {
+            return Ok(());
         }
 
+        let arg_regs = [
+            EbpfReg::R1,
+            EbpfReg::R2,
+            EbpfReg::R3,
+            EbpfReg::R4,
+            EbpfReg::R5,
+        ];
+
+        let mut reg_moves: Vec<(EbpfReg, EbpfReg)> = Vec::new();
+
+        for i in 0..func.param_count {
+            let vreg = VReg(i as u32);
+            let src = arg_regs[i];
+            if let Some(&dst) = self.vreg_to_phys.get(&vreg) {
+                if dst != src {
+                    reg_moves.push((src, dst));
+                }
+            } else if let Some(&offset) = self.vreg_spills.get(&vreg) {
+                self.instructions
+                    .push(EbpfInsn::stxdw(EbpfReg::R10, offset, src));
+            }
+        }
+
+        self.emit_parallel_reg_moves(reg_moves);
+
         Ok(())
+    }
+
+    fn emit_parallel_reg_moves(&mut self, moves: Vec<(EbpfReg, EbpfReg)>) {
+        let mut move_map: HashMap<EbpfReg, EbpfReg> = HashMap::new();
+        for (src, dst) in moves {
+            if src != dst {
+                move_map.insert(src, dst);
+            }
+        }
+
+        while !move_map.is_empty() {
+            let sources: HashSet<EbpfReg> = move_map.keys().copied().collect();
+            let mut progress = false;
+            let mut ready = Vec::new();
+
+            for (&src, &dst) in move_map.iter() {
+                if !sources.contains(&dst) {
+                    ready.push(src);
+                }
+            }
+
+            for src in ready {
+                if let Some(dst) = move_map.remove(&src) {
+                    self.instructions
+                        .push(EbpfInsn::mov64_reg(dst, src));
+                    progress = true;
+                }
+            }
+
+            if progress {
+                continue;
+            }
+
+            // Cycle: break with R0
+            let (&start_src, &start_dst) = move_map.iter().next().expect("cycle");
+            let mut cycle = vec![start_src];
+            let mut next = start_dst;
+            while next != start_src {
+                cycle.push(next);
+                next = *move_map.get(&next).expect("cycle");
+            }
+
+            self.instructions
+                .push(EbpfInsn::mov64_reg(EbpfReg::R0, start_src));
+            for i in (1..cycle.len()).rev() {
+                let src = cycle[i];
+                let dst = move_map[&src];
+                self.instructions.push(EbpfInsn::mov64_reg(dst, src));
+            }
+            let dst0 = move_map[&start_src];
+            self.instructions
+                .push(EbpfInsn::mov64_reg(dst0, EbpfReg::R0));
+
+            for src in cycle {
+                move_map.remove(&src);
+            }
+        }
     }
 
     /// Compile a MIR function
@@ -273,12 +458,27 @@ impl<'a> MirToEbpfCompiler<'a> {
         let cfg = CFG::build(func);
 
         // Run type inference to validate types and catch errors early
-        let mut type_infer = TypeInference::new(self.probe_ctx.cloned());
-        if let Err(errors) = type_infer.infer(func) {
-            // Return the first type error
-            if let Some(err) = errors.into_iter().next() {
-                return Err(crate::compiler::CompileError::TypeError(err));
+        let mut type_infer = TypeInference::new_with_env(
+            self.probe_ctx.cloned(),
+            Some(&self.subfn_schemes),
+            Some(HMType::I64),
+        );
+        let types = match type_infer.infer(func) {
+            Ok(types) => types,
+            Err(errors) => {
+                if let Some(err) = errors.into_iter().next() {
+                    return Err(crate::compiler::CompileError::TypeError(err));
+                }
+                HashMap::new()
             }
+        };
+        if let Err(errors) = vcc::verify_mir(func, &types) {
+            let message = errors
+                .iter()
+                .map(|err| err.to_string())
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(CompileError::VccError(message));
         }
 
         // Register allocation uses Chaitin-Briggs graph coloring for optimal results.
@@ -371,8 +571,71 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
 
+            MirInst::Load { dst, ptr, offset, ty } => {
+                let dst_reg = self.alloc_dst_reg(*dst)?;
+                let ptr_reg = self.ensure_reg(*ptr)?;
+                let size = ty.size();
+                let offset = i16::try_from(*offset).map_err(|_| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "load offset {} out of range",
+                        offset
+                    ))
+                })?;
+                self.emit_load(dst_reg, ptr_reg, offset, size)?;
+            }
+
+            MirInst::Store { ptr, offset, val, ty } => {
+                let ptr_reg = self.ensure_reg(*ptr)?;
+                let size = ty.size();
+                let offset = i16::try_from(*offset).map_err(|_| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "store offset {} out of range",
+                        offset
+                    ))
+                })?;
+                let val_reg = self.value_to_reg(val)?;
+                self.emit_store(ptr_reg, offset, val_reg, size)?;
+            }
+
+            MirInst::LoadSlot { dst, slot, offset, ty } => {
+                let dst_reg = self.alloc_dst_reg(*dst)?;
+                let size = ty.size();
+                let offset = self.slot_offset_i16(*slot, *offset)?;
+                self.emit_load(dst_reg, EbpfReg::R10, offset, size)?;
+            }
+
+            MirInst::StoreSlot { slot, offset, val, ty } => {
+                let size = ty.size();
+                let offset = self.slot_offset_i16(*slot, *offset)?;
+                let val_reg = self.value_to_reg(val)?;
+                self.emit_store(EbpfReg::R10, offset, val_reg, size)?;
+            }
+
             MirInst::BinOp { dst, op, lhs, rhs } => {
                 let dst_reg = self.alloc_dst_reg(*dst)?;
+                let lhs_vreg = match lhs {
+                    MirValue::VReg(v) => Some(*v),
+                    _ => None,
+                };
+                let rhs_vreg = match rhs {
+                    MirValue::VReg(v) => Some(*v),
+                    _ => None,
+                };
+                let mut rhs_reg = match rhs {
+                    MirValue::VReg(v) => Some(self.ensure_reg(*v)?),
+                    _ => None,
+                };
+
+                if let (Some(rhs_reg_value), Some(rhs_vreg)) = (rhs_reg, rhs_vreg) {
+                    if rhs_reg_value == dst_reg && lhs_vreg != Some(rhs_vreg) {
+                        // Preserve RHS before we clobber dst_reg with LHS.
+                        if dst_reg != EbpfReg::R0 {
+                            self.instructions
+                                .push(EbpfInsn::mov64_reg(EbpfReg::R0, rhs_reg_value));
+                            rhs_reg = Some(EbpfReg::R0);
+                        }
+                    }
+                }
 
                 // Load LHS into dst
                 match lhs {
@@ -396,7 +659,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 // Apply operation with RHS
                 match rhs {
                     MirValue::VReg(v) => {
-                        let rhs_reg = self.ensure_reg(*v)?;
+                        let rhs_reg = rhs_reg.unwrap_or(self.ensure_reg(*v)?);
                         self.emit_binop_reg(dst_reg, *op, rhs_reg)?;
                     }
                     MirValue::Const(c) => {
@@ -446,9 +709,9 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
 
-            MirInst::LoadCtxField { dst, field } => {
+            MirInst::LoadCtxField { dst, field, slot } => {
                 let dst_reg = self.alloc_dst_reg(*dst)?;
-                self.compile_load_ctx_field(dst_reg, field)?;
+                self.compile_load_ctx_field(dst_reg, field, *slot)?;
             }
 
             MirInst::EmitEvent { data, size } => {
@@ -536,6 +799,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                         self.instructions.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
                     }
                 }
+                self.restore_callee_saved();
                 self.instructions.push(EbpfInsn::exit());
             }
 
@@ -628,13 +892,15 @@ impl<'a> MirToEbpfCompiler<'a> {
                     EbpfReg::R4,
                     EbpfReg::R5,
                 ];
+                let mut moves = Vec::new();
                 for (i, arg) in args.iter().enumerate() {
                     let src = self.ensure_reg(*arg)?;
-                    if src != arg_regs[i] {
-                        self.instructions
-                            .push(EbpfInsn::mov64_reg(arg_regs[i], src));
+                    let dst = arg_regs[i];
+                    if src != dst {
+                        moves.push((dst, src));
                     }
                 }
+                self.emit_parallel_reg_moves(moves);
 
                 // Emit call instruction with placeholder offset
                 // The actual offset will be filled in during linking
@@ -659,103 +925,13 @@ impl<'a> MirToEbpfCompiler<'a> {
                 ));
             }
 
-            // List operations
-            // List layout on stack: [length: u64, elem0: u64, elem1: u64, ...]
-            MirInst::ListNew { dst, buffer, .. } => {
-                // Get buffer address and store in dst
-                let offset = self.slot_offsets.get(buffer).copied().unwrap_or(0);
-                let dst_reg = self.alloc_dst_reg(*dst)?;
-
-                // dst = R10 + offset (pointer to list buffer)
-                self.instructions
-                    .push(EbpfInsn::mov64_reg(dst_reg, EbpfReg::R10));
-                self.instructions
-                    .push(EbpfInsn::add64_imm(dst_reg, offset as i32));
-
-                // Initialize length to 0: *(u64*)(dst) = 0
-                // Must set R0 to 0 BEFORE storing it
-                self.instructions.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
-                self.instructions
-                    .push(EbpfInsn::stxdw(dst_reg, 0, EbpfReg::R0));
-            }
-
-            MirInst::ListPush { list, item } => {
-                // Load current length
-                let list_reg = self.ensure_reg(*list)?;
-                let item_reg = self.ensure_reg(*item)?;
-
-                // R0 = length = *(u64*)(list)
-                self.instructions
-                    .push(EbpfInsn::ldxdw(EbpfReg::R0, list_reg, 0));
-
-                // R1 = offset = length * 8 + 8
-                self.instructions
-                    .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R0));
-                self.instructions.push(EbpfInsn::mul64_imm(EbpfReg::R1, 8));
-                self.instructions.push(EbpfInsn::add64_imm(EbpfReg::R1, 8));
-
-                // R2 = list + offset (address of new element)
-                self.instructions
-                    .push(EbpfInsn::mov64_reg(EbpfReg::R2, list_reg));
-                self.instructions
-                    .push(EbpfInsn::add64_reg(EbpfReg::R2, EbpfReg::R1));
-
-                // Store item at R2
-                self.instructions
-                    .push(EbpfInsn::stxdw(EbpfReg::R2, 0, item_reg));
-
-                // Increment length
-                self.instructions.push(EbpfInsn::add64_imm(EbpfReg::R0, 1));
-                self.instructions
-                    .push(EbpfInsn::stxdw(list_reg, 0, EbpfReg::R0));
-            }
-
-            MirInst::ListLen { dst, list } => {
-                let list_reg = self.ensure_reg(*list)?;
-                let dst_reg = self.alloc_dst_reg(*dst)?;
-
-                // Load length from list buffer
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst_reg, list_reg, 0));
-            }
-
-            MirInst::ListGet { dst, list, idx } => {
-                let list_reg = self.ensure_reg(*list)?;
-                let dst_reg = self.alloc_dst_reg(*dst)?;
-
-                match idx {
-                    MirValue::Const(i) => {
-                        // Static index: load from fixed offset
-                        let offset = (*i as i16) * 8 + 8;
-                        self.instructions
-                            .push(EbpfInsn::ldxdw(dst_reg, list_reg, offset));
-                    }
-                    MirValue::VReg(idx_vreg) => {
-                        // Dynamic index: compute offset
-                        let idx_reg = self.ensure_reg(*idx_vreg)?;
-
-                        // R0 = idx * 8 + 8
-                        self.instructions
-                            .push(EbpfInsn::mov64_reg(EbpfReg::R0, idx_reg));
-                        self.instructions.push(EbpfInsn::mul64_imm(EbpfReg::R0, 8));
-                        self.instructions.push(EbpfInsn::add64_imm(EbpfReg::R0, 8));
-
-                        // R1 = list + R0
-                        self.instructions
-                            .push(EbpfInsn::mov64_reg(EbpfReg::R1, list_reg));
-                        self.instructions
-                            .push(EbpfInsn::add64_reg(EbpfReg::R1, EbpfReg::R0));
-
-                        // Load element
-                        self.instructions
-                            .push(EbpfInsn::ldxdw(dst_reg, EbpfReg::R1, 0));
-                    }
-                    MirValue::StackSlot(_) => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "Stack slot as list index not supported".into(),
-                        ));
-                    }
-                }
+            MirInst::ListNew { .. }
+            | MirInst::ListPush { .. }
+            | MirInst::ListLen { .. }
+            | MirInst::ListGet { .. } => {
+                return Err(CompileError::UnsupportedInstruction(
+                    "List operations must be lowered before codegen".into(),
+                ));
             }
 
             MirInst::StringAppend {
@@ -772,6 +948,11 @@ impl<'a> MirToEbpfCompiler<'a> {
                     StringAppendType::Literal { bytes } => {
                         // Append literal string bytes to buffer
                         // Each byte is stored at dst_buffer + dst_len + i
+                        let effective_len = bytes
+                            .iter()
+                            .rposition(|b| *b != 0)
+                            .map(|idx| idx + 1)
+                            .unwrap_or(0);
                         for (i, byte) in bytes.iter().enumerate() {
                             // R0 = dst_len + i (offset within buffer)
                             self.instructions
@@ -798,9 +979,11 @@ impl<'a> MirToEbpfCompiler<'a> {
                                 .push(EbpfInsn::stxb(EbpfReg::R1, 0, EbpfReg::R2));
                         }
 
-                        // Update length: dst_len += bytes.len()
-                        self.instructions
-                            .push(EbpfInsn::add64_imm(len_reg, bytes.len() as i32));
+                        if effective_len > 0 {
+                            // Update length: dst_len += effective_len
+                            self.instructions
+                                .push(EbpfInsn::add64_imm(len_reg, effective_len as i32));
+                        }
                     }
 
                     StringAppendType::StringSlot { slot, max_len } => {
@@ -904,7 +1087,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                         self.instructions.push(EbpfInsn::mov64_imm(EbpfReg::R4, 1));
 
                         // Extract digits for non-zero value (bounded loop for verifier)
-                        for _ in 0..20 {
+                        for i in 0..20 {
                             // Skip if R3 == 0
                             let done_offset = 8i16;
                             self.instructions
@@ -919,13 +1102,13 @@ impl<'a> MirToEbpfCompiler<'a> {
                             self.instructions
                                 .push(EbpfInsn::add64_imm(EbpfReg::R0, b'0' as i32));
 
-                            // Store digit at temp + 19 - R4
+                            // Store digit at temp + (19 - i)
                             self.instructions
                                 .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R10));
-                            self.instructions
-                                .push(EbpfInsn::add64_imm(EbpfReg::R1, (temp_offset + 19) as i32));
-                            self.instructions
-                                .push(EbpfInsn::sub64_reg(EbpfReg::R1, EbpfReg::R4));
+                            self.instructions.push(EbpfInsn::add64_imm(
+                                EbpfReg::R1,
+                                (temp_offset + 19 - i as i16) as i32,
+                            ));
                             self.instructions
                                 .push(EbpfInsn::stxb(EbpfReg::R1, 0, EbpfReg::R0));
 
@@ -949,7 +1132,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                         for i in 0..20 {
                             // Skip if we've copied all digits (i >= R4)
                             self.instructions.push(EbpfInsn::mov64_imm(EbpfReg::R0, i));
-                            let skip_copy = 7i16;
+                            let skip_copy = 10i16;
                             // Jump if R0 >= R4 (unsigned)
                             self.instructions.push(EbpfInsn::new(
                                 opcode::BPF_JMP | opcode::BPF_JGE | opcode::BPF_X,
@@ -1069,11 +1252,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
 
             // Instructions reserved for future features
-            MirInst::Load { .. }
-            | MirInst::Store { .. }
-            | MirInst::LoadSlot { .. }
-            | MirInst::StoreSlot { .. }
-            | MirInst::CallHelper { .. }
+            MirInst::CallHelper { .. }
             | MirInst::MapLookup { .. }
             | MirInst::MapDelete { .. }
             | MirInst::StrCmp { .. }
@@ -1225,11 +1404,93 @@ impl<'a> MirToEbpfCompiler<'a> {
         Ok(())
     }
 
+    fn slot_offset_i16(&self, slot: StackSlotId, offset: i32) -> Result<i16, CompileError> {
+        let base = self.slot_offsets.get(&slot).copied().unwrap_or(0) as i32;
+        let total = base + offset;
+        i16::try_from(total).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "stack slot offset {} out of range",
+                total
+            ))
+        })
+    }
+
+    fn value_to_reg(&mut self, value: &MirValue) -> Result<EbpfReg, CompileError> {
+        match value {
+            MirValue::VReg(v) => self.ensure_reg(*v),
+            MirValue::Const(c) => {
+                if *c >= i32::MIN as i64 && *c <= i32::MAX as i64 {
+                    self.instructions
+                        .push(EbpfInsn::mov64_imm(EbpfReg::R0, *c as i32));
+                } else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "constant {} too large for store",
+                        c
+                    )));
+                }
+                Ok(EbpfReg::R0)
+            }
+            MirValue::StackSlot(slot) => {
+                let offset = self.slot_offsets.get(slot).copied().unwrap_or(0);
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R0, EbpfReg::R10));
+                self.instructions
+                    .push(EbpfInsn::add64_imm(EbpfReg::R0, offset as i32));
+                Ok(EbpfReg::R0)
+            }
+        }
+    }
+
+    fn emit_load(
+        &mut self,
+        dst: EbpfReg,
+        base: EbpfReg,
+        offset: i16,
+        size: usize,
+    ) -> Result<(), CompileError> {
+        match size {
+            1 => self.instructions.push(EbpfInsn::ldxb(dst, base, offset)),
+            2 => self.instructions.push(EbpfInsn::ldxh(dst, base, offset)),
+            4 => self.instructions.push(EbpfInsn::ldxw(dst, base, offset)),
+            8 => self.instructions.push(EbpfInsn::ldxdw(dst, base, offset)),
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "load size {} not supported",
+                    size
+                )))
+            }
+        }
+        Ok(())
+    }
+
+    fn emit_store(
+        &mut self,
+        base: EbpfReg,
+        offset: i16,
+        src: EbpfReg,
+        size: usize,
+    ) -> Result<(), CompileError> {
+        match size {
+            1 => self.instructions.push(EbpfInsn::stxb(base, offset, src)),
+            2 => self.instructions.push(EbpfInsn::stxh(base, offset, src)),
+            4 => self.instructions.push(EbpfInsn::stxw(base, offset, src)),
+            8 => self.instructions.push(EbpfInsn::stxdw(base, offset, src)),
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "store size {} not supported",
+                    size
+                )))
+            }
+        }
+        Ok(())
+    }
+
     /// Compile context field load
     fn compile_load_ctx_field(
         &mut self,
         dst: EbpfReg,
         field: &CtxField,
+        slot: Option<StackSlotId>,
     ) -> Result<(), CompileError> {
         match field {
             CtxField::Pid => {
@@ -1277,11 +1538,18 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }
             CtxField::Comm => {
-                // Allocate stack space for comm (16 bytes)
-                self.check_stack_space(16)?;
-                // Stack grows downward - decrement first
-                self.stack_offset -= 16;
-                let comm_offset = self.stack_offset;
+                let comm_offset = if let Some(slot) = slot {
+                    *self.slot_offsets.get(&slot).ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "comm stack slot not found".into(),
+                        )
+                    })?
+                } else {
+                    // Fallback: allocate temporary stack space if no slot was provided.
+                    self.check_stack_space(16)?;
+                    self.stack_offset -= 16;
+                    self.stack_offset
+                };
 
                 // bpf_get_current_comm(buf, size)
                 self.instructions
@@ -1809,30 +2077,32 @@ impl<'a> MirToEbpfCompiler<'a> {
             let start_offset = self.instructions.len();
             self.subfn_offsets.insert(subfn_id, start_offset);
 
-            // Run register allocation for this subfunction
-            // We need fresh allocation state for each subfunction
-            let cfg = CFG::build(subfn);
-            let liveness = LivenessInfo::compute(subfn, &cfg);
-            let mut allocator = GraphColoringAllocator::new(self.available_regs.clone());
-            let result = allocator.allocate(subfn, &cfg, &liveness);
-
-            // Store temporary register state
+            // Store temporary register/stack state
             let saved_vreg_to_phys = std::mem::take(&mut self.vreg_to_phys);
             let saved_vreg_spills = std::mem::take(&mut self.vreg_spills);
+            let saved_slot_offsets = std::mem::take(&mut self.slot_offsets);
+            let saved_stack_offset = self.stack_offset;
             let saved_block_offsets = std::mem::take(&mut self.block_offsets);
             let saved_pending_jumps = std::mem::take(&mut self.pending_jumps);
+            let saved_callee_saved = std::mem::take(&mut self.callee_saved_offsets);
 
-            self.vreg_to_phys = result.coloring;
-
-            // Allocate spill slots for this subfunction
-            for (vreg, _slot_id) in &result.spills {
-                self.check_stack_space(8)?;
-                self.stack_offset -= 8;
-                self.vreg_spills.insert(*vreg, self.stack_offset);
+            // Prepare allocation and stack layout for this subfunction
+            if subfn.param_count > 5 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "Subfunction {:?} has {} params; BPF supports at most 5",
+                    subfn_id, subfn.param_count
+                )));
             }
+            self.prepare_function_state(subfn, self.available_regs.clone(), HashMap::new())?;
+
+            // Emit callee-saved prologue for subfunction
+            self.emit_callee_save_prologue()?;
+            self.emit_param_moves(subfn)?;
+
+            let cfg = CFG::build(subfn);
 
             // Compile subfunction blocks
-            // Note: subfunctions don't save R1 to R9 - they receive args in R1-R5
+            // Note: subfunctions receive args in R1-R5 and save any used callee-saved regs.
             let block_order: Vec<BlockId> = if cfg.rpo.is_empty() {
                 subfn.blocks.iter().map(|b| b.id).collect()
             } else {
@@ -1850,11 +2120,14 @@ impl<'a> MirToEbpfCompiler<'a> {
             // Fix up jumps within this subfunction
             self.fixup_jumps()?;
 
-            // Restore main function's register state
+            // Restore main function's register/stack state
             self.vreg_to_phys = saved_vreg_to_phys;
             self.vreg_spills = saved_vreg_spills;
+            self.slot_offsets = saved_slot_offsets;
+            self.stack_offset = saved_stack_offset;
             self.block_offsets = saved_block_offsets;
             self.pending_jumps = saved_pending_jumps;
+            self.callee_saved_offsets = saved_callee_saved;
         }
 
         Ok(())
@@ -2229,7 +2502,16 @@ pub fn compile_mir_to_ebpf(
     mir: &MirProgram,
     probe_ctx: Option<&ProbeContext>,
 ) -> Result<MirCompileResult, CompileError> {
-    let compiler = MirToEbpfCompiler::new(mir, probe_ctx);
+    let mut program = mir.clone();
+    let list_lowering = ListLowering;
+    let cfg = CFG::build(&program.main);
+    let _ = list_lowering.run(&mut program.main, &cfg);
+    for subfn in &mut program.subfunctions {
+        let cfg = CFG::build(subfn);
+        let _ = list_lowering.run(subfn, &cfg);
+    }
+
+    let compiler = MirToEbpfCompiler::new(&program, probe_ctx);
     compiler.compile()
 }
 
@@ -3015,7 +3297,7 @@ mod tests {
     /// This tests the linear scan register allocator integration
     #[test]
     fn test_register_pressure_integration() {
-        // Create code that uses more than 3 registers (we have R6, R7, R8)
+        // Create code that uses multiple registers to exercise allocation
         // v0 = 1, v1 = 2, v2 = 3, v3 = 4, v4 = 5
         // result = v0 + v1 + v2 + v3 + v4 (needs all values live)
         let ir = make_ir_block(vec![
@@ -3221,8 +3503,9 @@ mod tests {
         };
 
         let mut compiler = MirToEbpfCompiler::new(&program, None);
-        compiler.run_register_allocation().unwrap();
-        compiler.layout_stack().unwrap();
+        compiler
+            .prepare_function_state(&program.main, compiler.available_regs.clone(), HashMap::new())
+            .unwrap();
         compiler.compile_function(&program.main).unwrap();
         compiler.fixup_jumps().unwrap();
 
@@ -4067,6 +4350,8 @@ mod tests {
     #[test]
     fn test_list_literal_compilation() {
         use crate::compiler::mir::*;
+        use crate::compiler::passes::{ListLowering, MirPass};
+        use crate::compiler::cfg::CFG;
 
         let mut func = MirFunction::new();
         let entry = func.alloc_block();
@@ -4126,6 +4411,10 @@ mod tests {
             val: Some(MirValue::Const(0)),
         };
 
+        let cfg = CFG::build(&func);
+        let pass = ListLowering;
+        assert!(pass.run(&mut func, &cfg));
+
         let program = MirProgram {
             main: func,
             subfunctions: vec![],
@@ -4133,7 +4422,9 @@ mod tests {
 
         // Compile and verify
         let mut compiler = MirToEbpfCompiler::new(&program, None);
-        compiler.run_register_allocation().unwrap();
+        compiler
+            .prepare_function_state(&program.main, compiler.available_regs.clone(), HashMap::new())
+            .unwrap();
 
         // Verify list_ptr (VReg 0) got a physical register
         assert!(
@@ -4141,7 +4432,6 @@ mod tests {
             "list_ptr vreg should be assigned a physical register"
         );
 
-        compiler.layout_stack().unwrap();
         compiler.compile_function(&program.main).unwrap();
         compiler.fixup_jumps().unwrap();
 

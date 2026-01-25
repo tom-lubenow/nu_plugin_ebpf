@@ -5,7 +5,7 @@
 //! ## Compilation Pipeline
 //!
 //! ```text
-//! Nushell IR → [ir_to_mir] → MIR → [type_infer] → typed MIR
+//! Nushell IR → [hir] → HIR → [hir_to_mir] → MIR → [type_infer] → typed MIR
 //!                                       ↓
 //!                                 [cfg] → CFG analysis
 //!                                       ↓
@@ -20,20 +20,25 @@ mod btf;
 pub mod cfg;
 mod elf;
 pub mod graph_coloring;
+pub mod hir;
+pub mod hir_to_mir;
 pub mod hindley_milner;
 pub mod instruction;
 pub mod ir_to_mir;
 pub mod mir;
 pub mod mir_to_ebpf;
 pub mod passes;
+pub mod reg_info;
 pub mod type_infer;
+pub mod vcc;
 
 pub use elf::{
     BpfFieldType, BpfMapDef, EbpfMap, EbpfProgram, EbpfProgramType, EventSchema, MapRelocation,
     ProbeContext, SchemaField,
 };
 pub use instruction::{BpfHelper, EbpfInsn, EbpfReg};
-pub use ir_to_mir::{extract_closure_block_ids, infer_ctx_param};
+pub use hir::{extract_closure_block_ids, infer_ctx_param, lower_ir_to_hir, HirProgram};
+pub use hir_to_mir::lower_hir_to_mir;
 pub use mir_to_ebpf::{MirCompileResult, compile_mir_to_ebpf};
 pub use type_infer::{TypeError, TypeInference};
 
@@ -75,4 +80,7 @@ pub enum CompileError {
 
     #[error("Type error: {0}")]
     TypeError(#[from] TypeError),
+
+    #[error("VCC verification failed: {0}")]
+    VccError(String),
 }

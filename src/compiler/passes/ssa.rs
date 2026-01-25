@@ -359,9 +359,10 @@ impl<'a> SsaBuilder<'a> {
                 val: self.rename_value(val),
                 ty: ty.clone(),
             },
-            MirInst::LoadCtxField { dst, field } => MirInst::LoadCtxField {
+            MirInst::LoadCtxField { dst, field, slot } => MirInst::LoadCtxField {
                 dst: *dst,
                 field: field.clone(),
+                slot: *slot,
             },
             MirInst::Jump { target } => MirInst::Jump { target: *target },
             MirInst::Branch {
@@ -583,10 +584,14 @@ fn update_def(inst: &mut MirInst, new_dst: VReg) {
         | MirInst::LoadSlot { dst, .. }
         | MirInst::LoadCtxField { dst, .. }
         | MirInst::CallHelper { dst, .. }
+        | MirInst::CallSubfn { dst, .. }
         | MirInst::MapLookup { dst, .. }
         | MirInst::StrCmp { dst, .. }
         | MirInst::StopTimer { dst, .. }
         | MirInst::LoopHeader { counter: dst, .. }
+        | MirInst::ListNew { dst, .. }
+        | MirInst::ListLen { dst, .. }
+        | MirInst::ListGet { dst, .. }
         | MirInst::Phi { dst, .. } => {
             *dst = new_dst;
         }

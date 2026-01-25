@@ -17,22 +17,61 @@
 //! - Milner, R. (1978). A theory of type polymorphism in programming
 //! - Damas & Milner (1982). Principal type-schemes for functional programs
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::elf::{EbpfProgramType, ProbeContext};
 use super::hindley_milner::{
-    Constraint, HMType, Substitution, TypeVar, TypeVarGenerator, UnifyError, unify,
+    Constraint, HMType, Substitution, TypeScheme, TypeVar, TypeVarGenerator, UnifyError, unify,
 };
 use super::mir::{
     AddressSpace, BasicBlock, BinOpKind, CtxField, MirFunction, MirInst, MirType, MirValue,
-    UnaryOpKind, VReg,
+    StackSlotId, StackSlotKind, StringAppendType, SubfunctionId, UnaryOpKind, VReg,
+    STRING_COUNTER_MAP_NAME,
 };
+
+pub type SubfnSchemeMap = HashMap<SubfunctionId, TypeScheme>;
+
 
 /// Type inference error
 #[derive(Debug, Clone)]
 pub struct TypeError {
     pub message: String,
     pub hint: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ValueRange {
+    Unset,
+    Unknown,
+    Known { min: i64, max: i64 },
+}
+
+impl ValueRange {
+    fn known(min: i64, max: i64) -> Self {
+        ValueRange::Known { min, max }
+    }
+
+    fn merge(self, other: ValueRange) -> ValueRange {
+        match (self, other) {
+            (ValueRange::Unset, other) => other,
+            (ValueRange::Unknown, _) | (_, ValueRange::Unknown) => ValueRange::Unknown,
+            (ValueRange::Known { min, max }, ValueRange::Known { min: omin, max: omax }) => {
+                ValueRange::Known {
+                    min: min.min(omin),
+                    max: max.max(omax),
+                }
+            }
+            (known, ValueRange::Unset) => known,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StackBounds {
+    slot: StackSlotId,
+    min: i64,
+    max: i64,
+    limit: i64,
 }
 
 impl TypeError {
@@ -72,7 +111,7 @@ impl From<UnifyError> for TypeError {
 }
 
 /// Hindley-Milner type inference pass for MIR
-pub struct TypeInference {
+pub struct TypeInference<'a> {
     /// Type variable generator
     tvar_gen: TypeVarGenerator,
     /// Type variable assigned to each vreg
@@ -83,17 +122,41 @@ pub struct TypeInference {
     probe_ctx: Option<ProbeContext>,
     /// Current substitution (updated during inference)
     substitution: Substitution,
+    /// Subfunction type schemes (if any)
+    subfn_schemes: Option<&'a SubfnSchemeMap>,
+    /// Type variables for context args (kprobes can be ptr or int)
+    ctx_arg_vars: HashMap<usize, TypeVar>,
+    /// Type variables for tracepoint fields (field name -> type)
+    ctx_tp_vars: HashMap<String, TypeVar>,
+    /// Return type variable for the current function
+    return_var: Option<TypeVar>,
+    /// Expected return type (if constrained externally)
+    expected_return: Option<HMType>,
 }
 
-impl TypeInference {
+impl<'a> TypeInference<'a> {
     /// Create a new type inference pass
     pub fn new(probe_ctx: Option<ProbeContext>) -> Self {
+        Self::new_with_env(probe_ctx, None, None)
+    }
+
+    /// Create a new type inference pass with subfunction schemes and optional return type
+    pub fn new_with_env(
+        probe_ctx: Option<ProbeContext>,
+        subfn_schemes: Option<&'a SubfnSchemeMap>,
+        expected_return: Option<HMType>,
+    ) -> Self {
         Self {
             tvar_gen: TypeVarGenerator::new(),
             vreg_vars: HashMap::new(),
             constraints: Vec::new(),
             probe_ctx,
             substitution: Substitution::new(),
+            subfn_schemes,
+            ctx_arg_vars: HashMap::new(),
+            ctx_tp_vars: HashMap::new(),
+            return_var: None,
+            expected_return,
         }
     }
 
@@ -101,11 +164,19 @@ impl TypeInference {
     ///
     /// Returns the type map on success, or a list of type errors.
     pub fn infer(&mut self, func: &MirFunction) -> Result<HashMap<VReg, MirType>, Vec<TypeError>> {
+        let total_vregs = func
+            .vreg_count
+            .max(func.param_count as u32);
+
         // Phase 1: Assign fresh type variables to all vregs
-        for i in 0..func.vreg_count {
+        for i in 0..total_vregs {
             let vreg = VReg(i);
             let tvar = self.tvar_gen.fresh();
             self.vreg_vars.insert(vreg, tvar);
+        }
+        self.return_var = Some(self.tvar_gen.fresh());
+        if let (Some(ret_var), Some(expected)) = (self.return_var, self.expected_return.clone()) {
+            self.constrain(HMType::Var(ret_var), expected, "return_type");
         }
 
         // Phase 2: Generate constraints from each instruction
@@ -146,6 +217,13 @@ impl TypeInference {
             let hm_type = self.substitution.apply(&HMType::Var(*tvar));
             let mir_type = self.hm_to_mir(&hm_type);
             result.insert(*vreg, mir_type);
+        }
+
+        // Phase 5: Validate operations with resolved types
+        self.validate_types(func, &result, &mut errors);
+
+        if !errors.is_empty() {
+            return Err(errors);
         }
 
         Ok(result)
@@ -211,11 +289,41 @@ impl TypeInference {
                 self.constrain(dst_ty, HMType::I64, "helper_call");
             }
 
-            MirInst::CallSubfn { dst, .. } => {
-                // Subfunction return type - default to i64 for now
-                // TODO: infer from subfunction signature
+            MirInst::CallSubfn { dst, subfn, args } => {
                 let dst_ty = self.vreg_type(*dst);
-                self.constrain(dst_ty, HMType::I64, "subfn_call");
+                let scheme = self
+                    .subfn_schemes
+                    .and_then(|env| env.get(subfn))
+                    .ok_or_else(|| {
+                        TypeError::new(format!("Unknown subfunction ID {:?}", subfn))
+                    })?;
+                let inst = scheme.instantiate(&mut self.tvar_gen);
+                match inst {
+                    HMType::Fn {
+                        args: expected_args,
+                        ret,
+                    } => {
+                        if expected_args.len() != args.len() {
+                            return Err(TypeError::new(format!(
+                                "Subfunction {:?} expects {} args, got {}",
+                                subfn,
+                                expected_args.len(),
+                                args.len()
+                            )));
+                        }
+                        for (arg_vreg, expected) in args.iter().zip(expected_args.iter()) {
+                            let arg_ty = self.vreg_type(*arg_vreg);
+                            self.constrain(arg_ty, expected.clone(), "subfn_arg");
+                        }
+                        self.constrain(dst_ty, *ret, "subfn_ret");
+                    }
+                    _ => {
+                        return Err(TypeError::new(format!(
+                            "Subfunction scheme is not a function type: {}",
+                            inst
+                        )));
+                    }
+                }
             }
 
             MirInst::MapLookup { dst, .. } => {
@@ -228,7 +336,7 @@ impl TypeInference {
                 self.constrain(dst_ty, ptr_ty, "map_lookup");
             }
 
-            MirInst::LoadCtxField { dst, field } => {
+            MirInst::LoadCtxField { dst, field, .. } => {
                 let dst_ty = self.vreg_type(*dst);
                 let field_ty = self.ctx_field_type(field);
                 self.constrain(dst_ty, field_ty, format!("ctx.{:?}", field));
@@ -292,6 +400,55 @@ impl TypeInference {
                 }
             }
 
+            MirInst::ReadStr {
+                ptr, user_space, ..
+            } => {
+                let ptr_ty = self.vreg_type(*ptr);
+                let expected = HMType::Ptr {
+                    pointee: Box::new(HMType::U8),
+                    address_space: if *user_space {
+                        AddressSpace::User
+                    } else {
+                        AddressSpace::Kernel
+                    },
+                };
+                self.constrain(ptr_ty, expected, "read_str_ptr");
+            }
+
+            MirInst::StringAppend { dst_len, val, val_type, .. } => {
+                let len_ty = self.vreg_type(*dst_len);
+                self.constrain(len_ty, HMType::U64, "string_len");
+                if matches!(val_type, StringAppendType::Integer) {
+                    let val_ty = self.value_type(val);
+                    self.constrain(val_ty, HMType::I64, "string_append_int");
+                }
+            }
+
+            MirInst::IntToString { dst_len, val, .. } => {
+                let len_ty = self.vreg_type(*dst_len);
+                self.constrain(len_ty, HMType::U64, "int_to_string_len");
+                let val_ty = self.vreg_type(*val);
+                self.constrain(val_ty, HMType::I64, "int_to_string_val");
+            }
+
+            MirInst::ListPush { list, item } => {
+                let list_ty = self.vreg_type(*list);
+                let list_ptr_ty = HMType::Ptr {
+                    pointee: Box::new(HMType::I64),
+                    address_space: AddressSpace::Stack,
+                };
+                let item_ty = self.vreg_type(*item);
+                self.constrain(list_ty, list_ptr_ty, "list_push_list");
+                self.constrain(item_ty, HMType::I64, "list_push_item");
+            }
+
+            MirInst::Return { val } => {
+                if let (Some(ret_var), Some(value)) = (self.return_var, val.as_ref()) {
+                    let value_ty = self.value_type(value);
+                    self.constrain(HMType::Var(ret_var), value_ty, "return");
+                }
+            }
+
             // Instructions that don't define a vreg - no constraints needed
             MirInst::Store { .. }
             | MirInst::StoreSlot { .. }
@@ -301,14 +458,9 @@ impl TypeInference {
             | MirInst::StartTimer
             | MirInst::EmitEvent { .. }
             | MirInst::EmitRecord { .. }
-            | MirInst::ReadStr { .. }
             | MirInst::RecordStore { .. }
-            | MirInst::ListPush { .. }
-            | MirInst::StringAppend { .. }
-            | MirInst::IntToString { .. }
             | MirInst::Jump { .. }
             | MirInst::Branch { .. }
-            | MirInst::Return { .. }
             | MirInst::TailCall { .. }
             | MirInst::LoopBack { .. }
             | MirInst::Placeholder => {}
@@ -338,14 +490,1074 @@ impl TypeInference {
         }
     }
 
+    fn mir_type_for_vreg(&self, vreg: VReg, types: &HashMap<VReg, MirType>) -> MirType {
+        types.get(&vreg).cloned().unwrap_or(MirType::Unknown)
+    }
+
+    fn mir_type_for_value(&self, value: &MirValue, types: &HashMap<VReg, MirType>) -> MirType {
+        match value {
+            MirValue::VReg(vreg) => self.mir_type_for_vreg(*vreg, types),
+            MirValue::Const(_) => MirType::I64,
+            MirValue::StackSlot(_) => MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        }
+    }
+
+    fn mir_is_numeric(ty: &MirType) -> bool {
+        matches!(
+            ty,
+            MirType::I8
+                | MirType::I16
+                | MirType::I32
+                | MirType::I64
+                | MirType::U8
+                | MirType::U16
+                | MirType::U32
+                | MirType::U64
+                | MirType::Bool
+        )
+    }
+
+    fn mir_ptr_space(ty: &MirType) -> Option<AddressSpace> {
+        match ty {
+            MirType::Ptr { address_space, .. } => Some(*address_space),
+            _ => None,
+        }
+    }
+
+    fn is_const_zero(value: &MirValue) -> bool {
+        matches!(value, MirValue::Const(c) if *c == 0)
+    }
+
+    fn const_value(value: &MirValue) -> Option<i64> {
+        match value {
+            MirValue::Const(c) => Some(*c),
+            _ => None,
+        }
+    }
+
+    fn record_field_size(ty: &MirType) -> usize {
+        match ty {
+            MirType::Array { elem, len } if matches!(elem.as_ref(), MirType::U8) => {
+                if *len == 16 {
+                    16
+                } else {
+                    (*len + 7) & !7
+                }
+            }
+            _ => 8,
+        }
+    }
+
     /// Add a constraint
     fn constrain(&mut self, expected: HMType, actual: HMType, context: impl Into<String>) {
         self.constraints
             .push(Constraint::new(expected, actual, context));
     }
 
+    fn validate_types(
+        &self,
+        func: &MirFunction,
+        types: &HashMap<VReg, MirType>,
+        errors: &mut Vec<TypeError>,
+    ) {
+        let list_caps = self.compute_list_caps(func);
+        let value_ranges = self.compute_value_ranges(func, types, &list_caps);
+        let stack_bounds = self.compute_stack_bounds(func, types, &value_ranges);
+
+        for block in &func.blocks {
+            for inst in &block.instructions {
+                self.validate_inst(inst, types, &value_ranges, &stack_bounds, errors);
+            }
+            self.validate_inst(
+                &block.terminator,
+                types,
+                &value_ranges,
+                &stack_bounds,
+                errors,
+            );
+        }
+    }
+
+    fn validate_inst(
+        &self,
+        inst: &MirInst,
+        types: &HashMap<VReg, MirType>,
+        value_ranges: &HashMap<VReg, ValueRange>,
+        stack_bounds: &HashMap<VReg, StackBounds>,
+        errors: &mut Vec<TypeError>,
+    ) {
+        match inst {
+            MirInst::BinOp { op, lhs, rhs, .. } => {
+                let lhs_ty = self.mir_type_for_value(lhs, types);
+                let rhs_ty = self.mir_type_for_value(rhs, types);
+                let lhs_ptr = Self::mir_ptr_space(&lhs_ty);
+                let rhs_ptr = Self::mir_ptr_space(&rhs_ty);
+
+                match op {
+                    BinOpKind::Eq | BinOpKind::Ne => {
+                        if lhs_ptr.is_some() || rhs_ptr.is_some() {
+                            match (lhs_ptr, rhs_ptr) {
+                                (Some(lhs_space), Some(rhs_space)) => {
+                                    if lhs_space != rhs_space {
+                                        errors.push(TypeError::new(format!(
+                                            "pointer comparison requires same address space (lhs={:?}, rhs={:?})",
+                                            lhs_space, rhs_space
+                                        )));
+                                    }
+                                }
+                                (Some(_), None) => {
+                                    if !Self::is_const_zero(rhs) {
+                                        errors.push(TypeError::new(
+                                            "pointer comparison only supports null (0) constants"
+                                                .to_string(),
+                                        ));
+                                    }
+                                }
+                                (None, Some(_)) => {
+                                    if !Self::is_const_zero(lhs) {
+                                        errors.push(TypeError::new(
+                                            "pointer comparison only supports null (0) constants"
+                                                .to_string(),
+                                        ));
+                                    }
+                                }
+                                _ => {}
+                            }
+                        } else if !Self::mir_is_numeric(&lhs_ty)
+                            || !Self::mir_is_numeric(&rhs_ty)
+                        {
+                            errors.push(TypeError::new(format!(
+                                "comparison expects numeric types, got {:?} and {:?}",
+                                lhs_ty, rhs_ty
+                            )));
+                        }
+                    }
+                    BinOpKind::Lt
+                    | BinOpKind::Le
+                    | BinOpKind::Gt
+                    | BinOpKind::Ge => {
+                        if lhs_ptr.is_some() || rhs_ptr.is_some() {
+                            errors.push(TypeError::new(
+                                "ordering comparisons on pointers are not supported".to_string(),
+                            ));
+                        } else if !Self::mir_is_numeric(&lhs_ty)
+                            || !Self::mir_is_numeric(&rhs_ty)
+                        {
+                            errors.push(TypeError::new(format!(
+                                "comparison expects numeric types, got {:?} and {:?}",
+                                lhs_ty, rhs_ty
+                            )));
+                        }
+                    }
+                    BinOpKind::Add | BinOpKind::Sub => {
+                        let is_add = matches!(op, BinOpKind::Add);
+                        match (lhs_ptr, rhs_ptr) {
+                            (Some(_), Some(_)) => {
+                                errors.push(TypeError::new(
+                                    "pointer + pointer arithmetic is not supported".to_string(),
+                                ));
+                            }
+                            (Some(space), None) => {
+                                if !Self::mir_is_numeric(&rhs_ty) {
+                                    errors.push(TypeError::new(format!(
+                                        "pointer arithmetic expects numeric offset, got {:?}",
+                                        rhs_ty
+                                    )));
+                                } else if let Err(msg) = self.pointer_arith_check(
+                                    space,
+                                    self.stack_bounds_for_value(lhs, stack_bounds),
+                                    rhs,
+                                    is_add,
+                                    value_ranges,
+                                ) {
+                                    errors.push(TypeError::new(msg));
+                                }
+                            }
+                            (None, Some(space)) => {
+                                if !is_add {
+                                    errors.push(TypeError::new(
+                                        "numeric - pointer is not supported".to_string(),
+                                    ));
+                                } else if !Self::mir_is_numeric(&lhs_ty) {
+                                    errors.push(TypeError::new(format!(
+                                        "pointer arithmetic expects numeric offset, got {:?}",
+                                        lhs_ty
+                                    )));
+                                } else if let Err(msg) = self.pointer_arith_check(
+                                    space,
+                                    self.stack_bounds_for_value(rhs, stack_bounds),
+                                    lhs,
+                                    true,
+                                    value_ranges,
+                                ) {
+                                    errors.push(TypeError::new(msg));
+                                }
+                            }
+                            (None, None) => {
+                                if !Self::mir_is_numeric(&lhs_ty)
+                                    || !Self::mir_is_numeric(&rhs_ty)
+                                {
+                                    errors.push(TypeError::new(format!(
+                                        "arithmetic expects numeric types, got {:?} and {:?}",
+                                        lhs_ty, rhs_ty
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                    BinOpKind::Mul
+                    | BinOpKind::Div
+                    | BinOpKind::Mod
+                    | BinOpKind::And
+                    | BinOpKind::Or
+                    | BinOpKind::Xor
+                    | BinOpKind::Shl
+                    | BinOpKind::Shr => {
+                        if lhs_ptr.is_some() || rhs_ptr.is_some() {
+                            errors.push(TypeError::new(
+                                "bitwise/arithmetic ops on pointers are not supported".to_string(),
+                            ));
+                        } else if !Self::mir_is_numeric(&lhs_ty)
+                            || !Self::mir_is_numeric(&rhs_ty)
+                        {
+                            errors.push(TypeError::new(format!(
+                                "operation expects numeric types, got {:?} and {:?}",
+                                lhs_ty, rhs_ty
+                            )));
+                        }
+                    }
+                }
+            }
+
+            MirInst::UnaryOp { op, src, .. } => {
+                let src_ty = self.mir_type_for_value(src, types);
+                if Self::mir_ptr_space(&src_ty).is_some() {
+                    errors.push(TypeError::new(format!(
+                        "unary {:?} is not supported for pointers",
+                        op
+                    )));
+                } else if !Self::mir_is_numeric(&src_ty) {
+                    errors.push(TypeError::new(format!(
+                        "unary {:?} expects numeric type, got {:?}",
+                        op, src_ty
+                    )));
+                }
+            }
+
+            MirInst::ReadStr {
+                ptr, user_space, ..
+            } => {
+                let ptr_ty = self.mir_type_for_vreg(*ptr, types);
+                match ptr_ty {
+                    MirType::Ptr { address_space, .. } => {
+                        let expected = if *user_space {
+                            AddressSpace::User
+                        } else {
+                            AddressSpace::Kernel
+                        };
+                        if address_space != expected {
+                            errors.push(TypeError::new(format!(
+                                "read_str expects {:?} pointer, got {:?}",
+                                expected, address_space
+                            )));
+                        }
+                    }
+                    _ => {
+                        errors.push(TypeError::new(format!(
+                            "read_str expects pointer, got {:?}",
+                            ptr_ty
+                        )));
+                    }
+                }
+            }
+
+            MirInst::EmitEvent { data, size } => {
+                if *size > 8 {
+                    let data_ty = self.mir_type_for_vreg(*data, types);
+                    match data_ty {
+                        MirType::Ptr { address_space, .. }
+                            if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {}
+                        _ => errors.push(TypeError::new(format!(
+                            "emit event of size {} expects stack/map pointer, got {:?}",
+                            size, data_ty
+                        ))),
+                    }
+                }
+            }
+
+            MirInst::EmitRecord { fields } => {
+                for field in fields {
+                    let size = Self::record_field_size(&field.ty);
+                    let value_ty = self.mir_type_for_vreg(field.value, types);
+                    if size > 8 {
+                        match value_ty {
+                            MirType::Ptr { address_space, .. }
+                                if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {}
+                            _ => errors.push(TypeError::new(format!(
+                                "record field '{}' expects pointer value, got {:?}",
+                                field.name, value_ty
+                            ))),
+                        }
+                    } else if !Self::mir_is_numeric(&value_ty) {
+                        errors.push(TypeError::new(format!(
+                            "record field '{}' expects numeric value, got {:?}",
+                            field.name, value_ty
+                        )));
+                    }
+                }
+            }
+
+            MirInst::RecordStore { val, ty, .. } => {
+                let size = ty.size();
+                let value_ty = self.mir_type_for_value(val, types);
+                if size > 8 {
+                    match value_ty {
+                        MirType::Ptr { address_space, .. }
+                            if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {}
+                        _ => errors.push(TypeError::new(format!(
+                            "record store expects pointer for {:?}, got {:?}",
+                            ty, value_ty
+                        ))),
+                    }
+                } else if !Self::mir_is_numeric(&value_ty) {
+                    errors.push(TypeError::new(format!(
+                        "record store expects numeric value for {:?}, got {:?}",
+                        ty, value_ty
+                    )));
+                }
+            }
+
+            MirInst::MapUpdate { map, key, .. } => {
+                let key_ty = self.mir_type_for_vreg(*key, types);
+                if map.name == STRING_COUNTER_MAP_NAME {
+                    match key_ty {
+                        MirType::Ptr { address_space, .. }
+                            if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {}
+                        _ => errors.push(TypeError::new(format!(
+                            "map '{}' expects string pointer key, got {:?}",
+                            map.name, key_ty
+                        ))),
+                    }
+                } else if !Self::mir_is_numeric(&key_ty) {
+                    errors.push(TypeError::new(format!(
+                        "map '{}' expects numeric key, got {:?}",
+                        map.name, key_ty
+                    )));
+                }
+            }
+
+            MirInst::Histogram { value } => {
+                let value_ty = self.mir_type_for_vreg(*value, types);
+                if !Self::mir_is_numeric(&value_ty) {
+                    errors.push(TypeError::new(format!(
+                        "histogram expects numeric value, got {:?}",
+                        value_ty
+                    )));
+                }
+            }
+
+            MirInst::ListPush { list, item } => {
+                let list_ty = self.mir_type_for_vreg(*list, types);
+                if !matches!(
+                    list_ty,
+                    MirType::Ptr {
+                        address_space: AddressSpace::Stack,
+                        ..
+                    }
+                ) {
+                    errors.push(TypeError::new(format!(
+                        "list expects stack pointer, got {:?}",
+                        list_ty
+                    )));
+                }
+                let item_ty = self.mir_type_for_vreg(*item, types);
+                if !Self::mir_is_numeric(&item_ty) {
+                    errors.push(TypeError::new(format!(
+                        "list push expects numeric item, got {:?}",
+                        item_ty
+                    )));
+                }
+            }
+
+            MirInst::ListLen { list, .. } => {
+                let list_ty = self.mir_type_for_vreg(*list, types);
+                if !matches!(
+                    list_ty,
+                    MirType::Ptr {
+                        address_space: AddressSpace::Stack,
+                        ..
+                    }
+                ) {
+                    errors.push(TypeError::new(format!(
+                        "list expects stack pointer, got {:?}",
+                        list_ty
+                    )));
+                }
+            }
+
+            MirInst::ListGet { list, idx, .. } => {
+                let list_ty = self.mir_type_for_vreg(*list, types);
+                if !matches!(
+                    list_ty,
+                    MirType::Ptr {
+                        address_space: AddressSpace::Stack,
+                        ..
+                    }
+                ) {
+                    errors.push(TypeError::new(format!(
+                        "list expects stack pointer, got {:?}",
+                        list_ty
+                    )));
+                }
+                let idx_ty = self.mir_type_for_value(idx, types);
+                if !Self::mir_is_numeric(&idx_ty) {
+                    errors.push(TypeError::new(format!(
+                        "list index expects numeric type, got {:?}",
+                        idx_ty
+                    )));
+                }
+            }
+
+            MirInst::StringAppend { dst_len, val, val_type, .. } => {
+                let len_ty = self.mir_type_for_vreg(*dst_len, types);
+                if !Self::mir_is_numeric(&len_ty) {
+                    errors.push(TypeError::new(format!(
+                        "string append length expects numeric type, got {:?}",
+                        len_ty
+                    )));
+                }
+                if matches!(val_type, StringAppendType::Integer) {
+                    let val_ty = self.mir_type_for_value(val, types);
+                    if !Self::mir_is_numeric(&val_ty) {
+                        errors.push(TypeError::new(format!(
+                            "string append integer expects numeric type, got {:?}",
+                            val_ty
+                        )));
+                    }
+                }
+            }
+
+            MirInst::IntToString { dst_len, val, .. } => {
+                let len_ty = self.mir_type_for_vreg(*dst_len, types);
+                if !Self::mir_is_numeric(&len_ty) {
+                    errors.push(TypeError::new(format!(
+                        "int to string length expects numeric type, got {:?}",
+                        len_ty
+                    )));
+                }
+                let val_ty = self.mir_type_for_vreg(*val, types);
+                if !Self::mir_is_numeric(&val_ty) {
+                    errors.push(TypeError::new(format!(
+                        "int to string expects numeric value, got {:?}",
+                        val_ty
+                    )));
+                }
+            }
+
+            MirInst::Branch { cond, .. } => {
+                let cond_ty = self.mir_type_for_vreg(*cond, types);
+                if !Self::mir_is_numeric(&cond_ty) && Self::mir_ptr_space(&cond_ty).is_none() {
+                    errors.push(TypeError::new(format!(
+                        "branch condition expects numeric or pointer, got {:?}",
+                        cond_ty
+                    )));
+                }
+            }
+
+            MirInst::TailCall { index, .. } => {
+                let idx_ty = self.mir_type_for_value(index, types);
+                if !Self::mir_is_numeric(&idx_ty) {
+                    errors.push(TypeError::new(format!(
+                        "tail call index expects numeric type, got {:?}",
+                        idx_ty
+                    )));
+                }
+            }
+
+            MirInst::CallSubfn { args, .. } => {
+                if args.len() > 5 {
+                    errors.push(TypeError::new(
+                        "BPF subfunctions support at most 5 arguments".to_string(),
+                    ));
+                }
+            }
+
+            _ => {}
+        }
+    }
+
+    fn pointer_arith_check(
+        &self,
+        space: AddressSpace,
+        base_bounds: Option<&StackBounds>,
+        offset: &MirValue,
+        is_add: bool,
+        value_ranges: &HashMap<VReg, ValueRange>,
+    ) -> Result<(), String> {
+        match space {
+            AddressSpace::Stack => {
+                if Self::const_value(offset).is_some() {
+                    return Ok(());
+                }
+                let Some(bounds) = base_bounds else {
+                    return Err("stack pointer arithmetic requires constant offsets".to_string());
+                };
+                match self.value_range_for(offset, value_ranges) {
+                    ValueRange::Known { min, max } => {
+                        if min < 0 {
+                            return Err(
+                                "stack pointer arithmetic requires non-negative offsets"
+                                    .to_string(),
+                            );
+                        }
+                        let (new_min, new_max) = if is_add {
+                            (bounds.min + min, bounds.max + max)
+                        } else {
+                            (bounds.min - max, bounds.max - min)
+                        };
+                        if new_min < 0 || new_max > bounds.limit {
+                            return Err(format!(
+                                "stack pointer arithmetic offset range [{}..{}] exceeds bounds [0..{}]",
+                                new_min, new_max, bounds.limit
+                            ));
+                        }
+                        Ok(())
+                    }
+                    ValueRange::Unknown | ValueRange::Unset => Err(
+                        "stack pointer arithmetic requires constant or bounded offsets".to_string(),
+                    ),
+                }
+            }
+            AddressSpace::Map => Ok(()),
+            _ => Err(format!(
+                "pointer arithmetic not supported for {:?} pointers",
+                space
+            )),
+        }
+    }
+
+    fn compute_list_caps(&self, func: &MirFunction) -> HashMap<VReg, usize> {
+        let mut caps: HashMap<VReg, usize> = HashMap::new();
+        let mut slot_caps: HashMap<StackSlotId, usize> = HashMap::new();
+        for slot in &func.stack_slots {
+            if matches!(slot.kind, StackSlotKind::ListBuffer) {
+                let elems = slot.size / 8;
+                slot_caps.insert(slot.id, elems.saturating_sub(1));
+            }
+        }
+        let mut changed = true;
+        let max_iters = func.vreg_count.max(1);
+
+        for _ in 0..max_iters {
+            if !changed {
+                break;
+            }
+            changed = false;
+            for block in &func.blocks {
+                for inst in block
+                    .instructions
+                    .iter()
+                    .chain(std::iter::once(&block.terminator))
+                {
+                    match inst {
+                        MirInst::ListNew {
+                            dst,
+                            buffer,
+                            max_len,
+                        } => {
+                            let cap = slot_caps
+                                .get(buffer)
+                                .copied()
+                                .map(|slot_cap| (*max_len).min(slot_cap))
+                                .unwrap_or(*max_len);
+                            let entry = caps.entry(*dst).or_insert(cap);
+                            if *entry != cap {
+                                *entry = cap;
+                                changed = true;
+                            }
+                        }
+                        MirInst::Copy {
+                            dst,
+                            src: MirValue::StackSlot(slot),
+                        } => {
+                            if let Some(&cap) = slot_caps.get(slot) {
+                                let entry = caps.entry(*dst).or_insert(cap);
+                                if *entry != cap {
+                                    *entry = cap;
+                                    changed = true;
+                                }
+                            }
+                        }
+                        MirInst::Copy {
+                            dst,
+                            src: MirValue::VReg(src),
+                        } => {
+                            if let Some(&cap) = caps.get(src) {
+                                let entry = caps.entry(*dst).or_insert(cap);
+                                if *entry != cap {
+                                    *entry = cap;
+                                    changed = true;
+                                }
+                            }
+                        }
+                        MirInst::Phi { dst, args } => {
+                            let mut cap = None;
+                            let mut consistent = true;
+                            for (_, vreg) in args {
+                                match (cap, caps.get(vreg)) {
+                                    (None, Some(&c)) => cap = Some(c),
+                                    (Some(c), Some(&c2)) if c == c2 => {}
+                                    _ => {
+                                        consistent = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if consistent {
+                                if let Some(c) = cap {
+                                    let entry = caps.entry(*dst).or_insert(c);
+                                    if *entry != c {
+                                        *entry = c;
+                                        changed = true;
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        caps
+    }
+
+    fn list_len_range(cap: usize) -> ValueRange {
+        // We intentionally cap at max_len-1 to keep list element addressing bounded.
+        let max = cap.saturating_sub(1) as i64;
+        ValueRange::known(0, max)
+    }
+
+    fn compute_value_ranges(
+        &self,
+        func: &MirFunction,
+        types: &HashMap<VReg, MirType>,
+        list_caps: &HashMap<VReg, usize>,
+    ) -> HashMap<VReg, ValueRange> {
+        let mut slot_caps: HashMap<StackSlotId, usize> = HashMap::new();
+        for slot in &func.stack_slots {
+            if matches!(slot.kind, StackSlotKind::ListBuffer) {
+                let elems = slot.size / 8;
+                slot_caps.insert(slot.id, elems.saturating_sub(1));
+            }
+        }
+        let total_vregs = func.vreg_count.max(func.param_count as u32);
+        let mut ranges: HashMap<VReg, ValueRange> = HashMap::new();
+        for i in 0..total_vregs {
+            ranges.insert(VReg(i), ValueRange::Unset);
+        }
+
+        let mut changed = true;
+        let max_iters = func.vreg_count.max(1);
+        for _ in 0..max_iters {
+            if !changed {
+                break;
+            }
+            changed = false;
+            for block in &func.blocks {
+                for inst in block
+                    .instructions
+                    .iter()
+                    .chain(std::iter::once(&block.terminator))
+                {
+                    let Some(dst) = inst.def() else {
+                        continue;
+                    };
+                    let dst_ty = types.get(&dst).cloned().unwrap_or(MirType::Unknown);
+                    if !Self::mir_is_numeric(&dst_ty) {
+                        continue;
+                    }
+
+                    let new_range = match inst {
+                        MirInst::Copy { src, .. } => self.value_range_for(src, &ranges),
+                        MirInst::BinOp { op, lhs, rhs, .. } => {
+                            let lhs_range = self.value_range_for(lhs, &ranges);
+                            let rhs_range = self.value_range_for(rhs, &ranges);
+                            self.range_for_binop(*op, lhs_range, rhs_range)
+                        }
+                        MirInst::UnaryOp { op, src, .. } => {
+                            let src_range = self.value_range_for(src, &ranges);
+                            self.range_for_unary(*op, src_range)
+                        }
+                        MirInst::ListLen { list, .. } => list_caps
+                            .get(list)
+                            .map(|cap| Self::list_len_range(*cap))
+                            .unwrap_or(ValueRange::Unknown),
+                        MirInst::Load { ptr, offset, .. } => {
+                            if *offset == 0 {
+                                list_caps
+                                    .get(ptr)
+                                    .map(|cap| Self::list_len_range(*cap))
+                                    .unwrap_or(ValueRange::Unknown)
+                            } else {
+                                ValueRange::Unknown
+                            }
+                        }
+                        MirInst::LoadSlot { slot, offset, .. } => {
+                            if *offset == 0 {
+                                slot_caps
+                                    .get(slot)
+                                    .map(|cap| Self::list_len_range(*cap))
+                                    .unwrap_or(ValueRange::Unknown)
+                            } else {
+                                ValueRange::Unknown
+                            }
+                        }
+                        MirInst::Phi { args, .. } => {
+                            let mut merged: Option<ValueRange> = None;
+                            for (_, vreg) in args {
+                                let range = ranges.get(vreg).copied().unwrap_or(ValueRange::Unknown);
+                                merged = Some(match merged {
+                                    None => range,
+                                    Some(existing) => existing.merge(range),
+                                });
+                            }
+                            merged.unwrap_or(ValueRange::Unknown)
+                        }
+                        _ => ValueRange::Unknown,
+                    };
+
+                    let entry = ranges.entry(dst).or_insert(ValueRange::Unknown);
+                    let merged = entry.merge(new_range);
+                    if *entry != merged {
+                        *entry = merged;
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        ranges
+    }
+
+    fn compute_stack_bounds(
+        &self,
+        func: &MirFunction,
+        types: &HashMap<VReg, MirType>,
+        value_ranges: &HashMap<VReg, ValueRange>,
+    ) -> HashMap<VReg, StackBounds> {
+        let mut slot_limits: HashMap<StackSlotId, i64> = HashMap::new();
+        for slot in &func.stack_slots {
+            let limit = slot.size.saturating_sub(1) as i64;
+            slot_limits.insert(slot.id, limit);
+        }
+
+        let mut bounds: HashMap<VReg, StackBounds> = HashMap::new();
+        let mut changed = true;
+        let max_iters = func.vreg_count.max(1);
+
+        for _ in 0..max_iters {
+            if !changed {
+                break;
+            }
+            changed = false;
+            for block in &func.blocks {
+                for inst in block
+                    .instructions
+                    .iter()
+                    .chain(std::iter::once(&block.terminator))
+                {
+                    let update = match inst {
+                        MirInst::ListNew {
+                            dst,
+                            buffer,
+                            max_len,
+                        } => {
+                            let list_limit = (*max_len as i64) * 8;
+                            let limit = slot_limits
+                                .get(buffer)
+                                .map(|slot_limit| list_limit.min(*slot_limit))
+                                .unwrap_or(list_limit);
+                            Some((
+                                *dst,
+                                StackBounds {
+                                    slot: *buffer,
+                                    min: 0,
+                                    max: 0,
+                                    limit,
+                                },
+                            ))
+                        }
+                        MirInst::Copy {
+                            dst,
+                            src: MirValue::StackSlot(slot),
+                        } => {
+                            let limit = slot_limits.get(slot).copied().unwrap_or(0);
+                            Some((
+                                *dst,
+                                StackBounds {
+                                    slot: *slot,
+                                    min: 0,
+                                    max: 0,
+                                    limit,
+                                },
+                            ))
+                        }
+                        MirInst::Copy {
+                            dst,
+                            src: MirValue::VReg(src),
+                        } => bounds.get(src).copied().map(|b| (*dst, b)),
+                        MirInst::Phi { dst, args } => {
+                            let mut merged: Option<StackBounds> = None;
+                            let mut consistent = true;
+                            for (_, vreg) in args {
+                                let Some(b) = bounds.get(vreg).copied() else {
+                                    consistent = false;
+                                    break;
+                                };
+                                merged = Some(match merged {
+                                    None => b,
+                                    Some(existing) => {
+                                        if existing.slot != b.slot || existing.limit != b.limit {
+                                            consistent = false;
+                                            break;
+                                        }
+                                        StackBounds {
+                                            slot: existing.slot,
+                                            min: existing.min.min(b.min),
+                                            max: existing.max.max(b.max),
+                                            limit: existing.limit,
+                                        }
+                                    }
+                                });
+                                if !consistent {
+                                    break;
+                                }
+                            }
+                            if consistent {
+                                merged.map(|b| (*dst, b))
+                            } else {
+                                None
+                            }
+                        }
+                        MirInst::BinOp { dst, op, lhs, rhs } => {
+                            if !matches!(op, BinOpKind::Add | BinOpKind::Sub) {
+                                None
+                            } else {
+                                let dst_ty =
+                                    types.get(dst).cloned().unwrap_or(MirType::Unknown);
+                                if !matches!(
+                                    dst_ty,
+                                    MirType::Ptr {
+                                        address_space: AddressSpace::Stack,
+                                        ..
+                                    }
+                                ) {
+                                    None
+                                } else {
+                                    let base_info = if matches!(op, BinOpKind::Add) {
+                                        let lhs_bounds = match lhs {
+                                            MirValue::VReg(v) => bounds.get(v).copied(),
+                                            _ => None,
+                                        };
+                                        let rhs_bounds = match rhs {
+                                            MirValue::VReg(v) => bounds.get(v).copied(),
+                                            _ => None,
+                                        };
+                                        if lhs_bounds.is_some() {
+                                            Some((lhs, rhs, true))
+                                        } else if rhs_bounds.is_some() {
+                                            Some((rhs, lhs, true))
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        let lhs_bounds = match lhs {
+                                            MirValue::VReg(v) => bounds.get(v).copied(),
+                                            _ => None,
+                                        };
+                                        if lhs_bounds.is_some() {
+                                            Some((lhs, rhs, false))
+                                        } else {
+                                            None
+                                        }
+                                    };
+
+                                    if let Some((base, offset, is_add)) = base_info {
+                                        let base_bounds = match base {
+                                            MirValue::VReg(v) => bounds.get(v).copied(),
+                                            _ => None,
+                                        };
+                                        if let Some(base_bounds) = base_bounds {
+                                            let offset_range =
+                                                self.value_range_for(offset, value_ranges);
+                                            if let ValueRange::Known { min, max } = offset_range {
+                                                if min < 0 {
+                                                    None
+                                                } else {
+                                                    let (new_min, new_max) = if is_add {
+                                                        (base_bounds.min + min, base_bounds.max + max)
+                                                    } else {
+                                                        (base_bounds.min - max, base_bounds.max - min)
+                                                    };
+                                                    if new_min < 0 || new_max > base_bounds.limit {
+                                                        None
+                                                    } else {
+                                                        Some((
+                                                            *dst,
+                                                            StackBounds {
+                                                                slot: base_bounds.slot,
+                                                                min: new_min,
+                                                                max: new_max,
+                                                                limit: base_bounds.limit,
+                                                            },
+                                                        ))
+                                                    }
+                                                }
+                                            } else {
+                                                None
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                }
+                            }
+                        }
+                        _ => None,
+                    };
+
+                    if let Some((dst, new_bounds)) = update {
+                        match bounds.get(&dst).copied() {
+                            None => {
+                                bounds.insert(dst, new_bounds);
+                                changed = true;
+                            }
+                            Some(existing) => {
+                                if existing.slot != new_bounds.slot
+                                    || existing.limit != new_bounds.limit
+                                {
+                                    bounds.remove(&dst);
+                                    changed = true;
+                                } else {
+                                    let merged = StackBounds {
+                                        slot: existing.slot,
+                                        min: existing.min.min(new_bounds.min),
+                                        max: existing.max.max(new_bounds.max),
+                                        limit: existing.limit,
+                                    };
+                                    if merged != existing {
+                                        bounds.insert(dst, merged);
+                                        changed = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        bounds
+    }
+
+    fn value_range_for(
+        &self,
+        value: &MirValue,
+        ranges: &HashMap<VReg, ValueRange>,
+    ) -> ValueRange {
+        match value {
+            MirValue::Const(c) => ValueRange::known(*c, *c),
+            MirValue::VReg(v) => ranges.get(v).copied().unwrap_or(ValueRange::Unknown),
+            MirValue::StackSlot(_) => ValueRange::Unknown,
+        }
+    }
+
+    fn stack_bounds_for_value<'b>(
+        &self,
+        value: &MirValue,
+        stack_bounds: &'b HashMap<VReg, StackBounds>,
+    ) -> Option<&'b StackBounds> {
+        match value {
+            MirValue::VReg(v) => stack_bounds.get(v),
+            _ => None,
+        }
+    }
+
+    fn range_for_binop(
+        &self,
+        op: BinOpKind,
+        lhs: ValueRange,
+        rhs: ValueRange,
+    ) -> ValueRange {
+        match op {
+            BinOpKind::Add => self.range_add(lhs, rhs),
+            BinOpKind::Sub => self.range_sub(lhs, rhs),
+            BinOpKind::Mul => self.range_mul(lhs, rhs),
+            BinOpKind::Shl | BinOpKind::Shr => self.range_shift(lhs, rhs),
+            _ => ValueRange::Unknown,
+        }
+    }
+
+    fn range_for_unary(&self, op: UnaryOpKind, src: ValueRange) -> ValueRange {
+        match op {
+            UnaryOpKind::Neg => match src {
+                ValueRange::Known { min, max } => ValueRange::known(-max, -min),
+                ValueRange::Unknown | ValueRange::Unset => ValueRange::Unknown,
+            },
+            UnaryOpKind::Not => ValueRange::known(0, 1),
+            _ => ValueRange::Unknown,
+        }
+    }
+
+    fn range_add(&self, lhs: ValueRange, rhs: ValueRange) -> ValueRange {
+        match (lhs, rhs) {
+            (ValueRange::Known { min: lmin, max: lmax }, ValueRange::Known { min: rmin, max: rmax }) => {
+                ValueRange::known(lmin + rmin, lmax + rmax)
+            }
+            _ => ValueRange::Unknown,
+        }
+    }
+
+    fn range_sub(&self, lhs: ValueRange, rhs: ValueRange) -> ValueRange {
+        match (lhs, rhs) {
+            (ValueRange::Known { min: lmin, max: lmax }, ValueRange::Known { min: rmin, max: rmax }) => {
+                ValueRange::known(lmin - rmax, lmax - rmin)
+            }
+            _ => ValueRange::Unknown,
+        }
+    }
+
+    fn range_mul(&self, lhs: ValueRange, rhs: ValueRange) -> ValueRange {
+        let (lmin, lmax, rmin, rmax) = match (lhs, rhs) {
+            (ValueRange::Known { min: lmin, max: lmax }, ValueRange::Known { min: rmin, max: rmax }) => {
+                (lmin, lmax, rmin, rmax)
+            }
+            _ => return ValueRange::Unknown,
+        };
+        let candidates = [
+            lmin.saturating_mul(rmin),
+            lmin.saturating_mul(rmax),
+            lmax.saturating_mul(rmin),
+            lmax.saturating_mul(rmax),
+        ];
+        let min = *candidates.iter().min().unwrap_or(&0);
+        let max = *candidates.iter().max().unwrap_or(&0);
+        ValueRange::known(min, max)
+    }
+
+    fn range_shift(&self, lhs: ValueRange, rhs: ValueRange) -> ValueRange {
+        let _ = (lhs, rhs);
+        ValueRange::Unknown
+    }
+
     /// Get the type of a context field based on probe type
-    fn ctx_field_type(&self, field: &CtxField) -> HMType {
+    fn ctx_field_type(&mut self, field: &CtxField) -> HMType {
         match field {
             CtxField::Pid | CtxField::Tid | CtxField::Uid | CtxField::Gid | CtxField::Cpu => {
                 HMType::U32
@@ -353,26 +1565,39 @@ impl TypeInference {
 
             CtxField::Timestamp => HMType::U64,
 
-            CtxField::Arg(_) => {
+            CtxField::Arg(idx) => {
                 if self.is_userspace_probe() {
                     HMType::Ptr {
                         pointee: Box::new(HMType::U8),
                         address_space: AddressSpace::User,
                     }
                 } else {
-                    HMType::I64
+                    let tvar = *self
+                        .ctx_arg_vars
+                        .entry(*idx as usize)
+                        .or_insert_with(|| self.tvar_gen.fresh());
+                    HMType::Var(tvar)
                 }
             }
 
             CtxField::RetVal => HMType::I64,
             CtxField::KStack | CtxField::UStack => HMType::I64,
 
-            CtxField::Comm => HMType::Array {
-                elem: Box::new(HMType::U8),
-                len: 16,
+            CtxField::Comm => HMType::Ptr {
+                pointee: Box::new(HMType::Array {
+                    elem: Box::new(HMType::U8),
+                    len: 16,
+                }),
+                address_space: AddressSpace::Stack,
             },
 
-            CtxField::TracepointField(_) => HMType::I64,
+            CtxField::TracepointField(name) => {
+                let tvar = *self
+                    .ctx_tp_vars
+                    .entry(name.clone())
+                    .or_insert_with(|| self.tvar_gen.fresh());
+                HMType::Var(tvar)
+            }
         }
     }
 
@@ -494,6 +1719,36 @@ impl TypeInference {
         matches!(ty, HMType::I8 | HMType::I16 | HMType::I32 | HMType::I64)
     }
 
+    fn hm_type_for_vreg(&self, vreg: VReg) -> HMType {
+        self.substitution.apply(&self.vreg_type(vreg))
+    }
+
+    fn hm_return_type(&self) -> HMType {
+        match self.return_var {
+            Some(var) => self.substitution.apply(&HMType::Var(var)),
+            None => HMType::Unknown,
+        }
+    }
+
+    fn scheme_for_function(
+        &self,
+        func: &MirFunction,
+        env: Option<&SubfnSchemeMap>,
+    ) -> TypeScheme {
+        let args: Vec<HMType> = (0..func.param_count)
+            .map(|i| self.hm_type_for_vreg(VReg(i as u32)))
+            .collect();
+        let ret = self.hm_return_type();
+        let ty = HMType::Fn {
+            args,
+            ret: Box::new(ret),
+        };
+        let env_vars = env.map(env_free_vars).unwrap_or_default();
+        let ty_vars = ty.free_vars();
+        let quantified = ty_vars.difference(&env_vars).copied().collect();
+        TypeScheme { quantified, ty }
+    }
+
     /// Convert HMType to MirType
     fn hm_to_mir(&self, ty: &HMType) -> MirType {
         // Apply current substitution first
@@ -566,10 +1821,133 @@ impl TypeInference {
     }
 }
 
+fn env_free_vars(env: &SubfnSchemeMap) -> HashSet<TypeVar> {
+    let mut vars = HashSet::new();
+    for scheme in env.values() {
+        vars.extend(scheme.free_vars());
+    }
+    vars
+}
+
+fn collect_subfn_calls(func: &MirFunction) -> Vec<SubfunctionId> {
+    let mut calls = Vec::new();
+    for block in &func.blocks {
+        for inst in &block.instructions {
+            if let MirInst::CallSubfn { subfn, .. } = inst {
+                calls.push(*subfn);
+            }
+        }
+        if let MirInst::CallSubfn { subfn, .. } = &block.terminator {
+            calls.push(*subfn);
+        }
+    }
+    calls
+}
+
+fn topo_sort_subfunctions(
+    graph: &[Vec<usize>],
+) -> Result<Vec<usize>, TypeError> {
+    fn dfs(
+        node: usize,
+        graph: &[Vec<usize>],
+        state: &mut [u8],
+        stack: &mut Vec<usize>,
+        order: &mut Vec<usize>,
+    ) -> Result<(), TypeError> {
+        match state[node] {
+            1 => {
+                let mut cycle = stack.clone();
+                cycle.push(node);
+                let cycle_ids: Vec<String> = cycle
+                    .into_iter()
+                    .map(|idx| format!("subfn{}", idx))
+                    .collect();
+                return Err(TypeError::new(format!(
+                    "recursive subfunction call detected: {}",
+                    cycle_ids.join(" -> ")
+                )));
+            }
+            2 => return Ok(()),
+            _ => {}
+        }
+
+        state[node] = 1;
+        stack.push(node);
+        for &next in &graph[node] {
+            dfs(next, graph, state, stack, order)?;
+        }
+        stack.pop();
+        state[node] = 2;
+        order.push(node);
+        Ok(())
+    }
+
+    let mut state = vec![0u8; graph.len()];
+    let mut order = Vec::new();
+    let mut stack = Vec::new();
+
+    for node in 0..graph.len() {
+        if state[node] == 0 {
+            dfs(node, graph, &mut state, &mut stack, &mut order)?;
+        }
+    }
+
+    order.reverse();
+    Ok(order)
+}
+
+pub fn infer_subfunction_schemes(
+    subfunctions: &[MirFunction],
+    probe_ctx: Option<ProbeContext>,
+) -> Result<SubfnSchemeMap, Vec<TypeError>> {
+    let mut errors = Vec::new();
+    let mut graph = vec![Vec::new(); subfunctions.len()];
+
+    for (idx, func) in subfunctions.iter().enumerate() {
+        for subfn in collect_subfn_calls(func) {
+            let target = subfn.0 as usize;
+            if target >= subfunctions.len() {
+                errors.push(TypeError::new(format!(
+                    "Unknown subfunction ID {:?}",
+                    subfn
+                )));
+            } else {
+                graph[idx].push(target);
+            }
+        }
+    }
+
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+
+    let order = match topo_sort_subfunctions(&graph) {
+        Ok(order) => order,
+        Err(err) => return Err(vec![err]),
+    };
+
+    let mut schemes: SubfnSchemeMap = HashMap::new();
+
+    for idx in order {
+        let subfn_id = SubfunctionId(idx as u32);
+        let func = &subfunctions[idx];
+        let mut ti = TypeInference::new_with_env(probe_ctx.clone(), Some(&schemes), None);
+        match ti.infer(func) {
+            Ok(_) => {
+                let scheme = ti.scheme_for_function(func, Some(&schemes));
+                schemes.insert(subfn_id, scheme);
+            }
+            Err(errs) => return Err(errs),
+        }
+    }
+
+    Ok(schemes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::mir::{BlockId, MirFunction};
+    use crate::compiler::mir::{BlockId, MirFunction, RecordFieldDef, StackSlotKind};
 
     fn make_test_function() -> MirFunction {
         let mut func = MirFunction::new();
@@ -605,6 +1983,7 @@ mod tests {
             .push(MirInst::LoadCtxField {
                 dst: v0,
                 field: CtxField::Pid,
+                slot: None,
             });
         func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
 
@@ -624,6 +2003,7 @@ mod tests {
             .push(MirInst::LoadCtxField {
                 dst: v0,
                 field: CtxField::Comm,
+                slot: None,
             });
         func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
 
@@ -632,9 +2012,12 @@ mod tests {
 
         assert_eq!(
             types.get(&v0),
-            Some(&MirType::Array {
-                elem: Box::new(MirType::U8),
-                len: 16
+            Some(&MirType::Ptr {
+                pointee: Box::new(MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: 16
+                }),
+                address_space: AddressSpace::Stack,
             })
         );
     }
@@ -679,6 +2062,7 @@ mod tests {
         block.instructions.push(MirInst::LoadCtxField {
             dst: v0,
             field: CtxField::Pid,
+            slot: None,
         });
         block.instructions.push(MirInst::BinOp {
             dst: v1,
@@ -704,6 +2088,7 @@ mod tests {
             .push(MirInst::LoadCtxField {
                 dst: v0,
                 field: CtxField::Arg(0),
+                slot: None,
             });
         func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
 
@@ -729,6 +2114,7 @@ mod tests {
             .push(MirInst::LoadCtxField {
                 dst: v0,
                 field: CtxField::Arg(0),
+                slot: None,
             });
         func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
 
@@ -783,6 +2169,7 @@ mod tests {
         block.instructions.push(MirInst::LoadCtxField {
             dst: v0,
             field: CtxField::Timestamp,
+            slot: None,
         });
         block.instructions.push(MirInst::Copy {
             dst: v1,
@@ -810,6 +2197,7 @@ mod tests {
         block.instructions.push(MirInst::LoadCtxField {
             dst: v0,
             field: CtxField::Pid, // U32
+            slot: None,
         });
         block.instructions.push(MirInst::Copy {
             dst: v1,
@@ -842,6 +2230,7 @@ mod tests {
         block.instructions.push(MirInst::LoadCtxField {
             dst: v0,
             field: CtxField::Uid, // U32
+            slot: None,
         });
         block.instructions.push(MirInst::Copy {
             dst: v1,
@@ -862,5 +2251,212 @@ mod tests {
         assert_eq!(types.get(&v0), Some(&MirType::U32));
         assert_eq!(types.get(&v1), Some(&MirType::U32));
         assert_eq!(types.get(&v2), Some(&MirType::Bool));
+    }
+
+    #[test]
+    fn test_subfn_polymorphic_id() {
+        let mut subfn = MirFunction::with_name("id");
+        subfn.param_count = 1;
+        let entry = subfn.alloc_block();
+        subfn.entry = entry;
+        let arg = VReg(0);
+        subfn.block_mut(entry).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(arg)),
+        };
+
+        let mut main_func = MirFunction::new();
+        let main_entry = main_func.alloc_block();
+        main_func.entry = main_entry;
+
+        let int_arg = main_func.alloc_vreg();
+        let comm_arg = main_func.alloc_vreg();
+        let out_int = main_func.alloc_vreg();
+        let out_comm = main_func.alloc_vreg();
+
+        let block = main_func.block_mut(main_entry);
+        block.instructions.push(MirInst::Copy {
+            dst: int_arg,
+            src: MirValue::Const(42),
+        });
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: comm_arg,
+            field: CtxField::Comm,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallSubfn {
+            dst: out_int,
+            subfn: SubfunctionId(0),
+            args: vec![int_arg],
+        });
+        block.instructions.push(MirInst::CallSubfn {
+            dst: out_comm,
+            subfn: SubfunctionId(0),
+            args: vec![comm_arg],
+        });
+        block.terminator = MirInst::Return {
+            val: Some(MirValue::Const(0)),
+        };
+
+        let subfn_schemes = infer_subfunction_schemes(&[subfn], None).unwrap();
+        let mut ti = TypeInference::new_with_env(None, Some(&subfn_schemes), Some(HMType::I64));
+        let types = ti.infer(&main_func).unwrap();
+
+        assert_eq!(types.get(&out_int), Some(&MirType::I64));
+        match types.get(&out_comm) {
+            Some(MirType::Ptr { address_space, .. }) => {
+                assert_eq!(*address_space, AddressSpace::Stack);
+            }
+            other => panic!("Expected stack pointer type, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_type_error_pointer_add() {
+        let mut func = make_test_function();
+        let v0 = func.alloc_vreg();
+        let v1 = func.alloc_vreg();
+        let v2 = func.alloc_vreg();
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::Comm,
+            slot: None,
+        });
+        block.instructions.push(MirInst::Copy {
+            dst: v1,
+            src: MirValue::VReg(v0),
+        });
+        block.instructions.push(MirInst::BinOp {
+            dst: v2,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(v0),
+            rhs: MirValue::VReg(v1),
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        assert!(ti.infer(&func).is_err());
+    }
+
+    #[test]
+    fn test_stack_pointer_add_bounded_offset() {
+        let mut func = make_test_function();
+        let list = func.alloc_vreg();
+        let len = func.alloc_vreg();
+        let scaled = func.alloc_vreg();
+        let ptr = func.alloc_vreg();
+
+        let slot = func.alloc_stack_slot(40, 8, StackSlotKind::ListBuffer);
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::ListNew {
+            dst: list,
+            buffer: slot,
+            max_len: 4,
+        });
+        block.instructions.push(MirInst::ListLen { dst: len, list });
+        block.instructions.push(MirInst::BinOp {
+            dst: scaled,
+            op: BinOpKind::Mul,
+            lhs: MirValue::VReg(len),
+            rhs: MirValue::Const(8),
+        });
+        block.instructions.push(MirInst::BinOp {
+            dst: ptr,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(list),
+            rhs: MirValue::VReg(scaled),
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        assert!(
+            ti.infer(&func).is_ok(),
+            "bounded stack pointer arithmetic should type-check"
+        );
+    }
+
+    #[test]
+    fn test_stack_pointer_add_unbounded_offset_errors() {
+        let mut func = make_test_function();
+        let ptr = func.alloc_vreg();
+        let idx = func.alloc_vreg();
+        let out = func.alloc_vreg();
+
+        let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: idx,
+            field: CtxField::Pid,
+            slot: None,
+        });
+        block.instructions.push(MirInst::BinOp {
+            dst: out,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::VReg(idx),
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        assert!(
+            ti.infer(&func).is_err(),
+            "unbounded stack pointer arithmetic should be rejected"
+        );
+    }
+
+    #[test]
+    fn test_type_error_read_str_non_ptr() {
+        use crate::compiler::mir::StackSlotKind;
+
+        let mut func = make_test_function();
+        let v0 = func.alloc_vreg();
+        let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: v0,
+            src: MirValue::Const(123),
+        });
+        block.instructions.push(MirInst::ReadStr {
+            dst: slot,
+            ptr: v0,
+            user_space: false,
+            max_len: 16,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        assert!(ti.infer(&func).is_err());
+    }
+
+    #[test]
+    fn test_type_error_emit_record_string_scalar() {
+        let mut func = make_test_function();
+        let v0 = func.alloc_vreg();
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: v0,
+            src: MirValue::Const(7),
+        });
+        block.instructions.push(MirInst::EmitRecord {
+            fields: vec![RecordFieldDef {
+                name: "comm".to_string(),
+                value: v0,
+                ty: MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: 16,
+                },
+            }],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        assert!(ti.infer(&func).is_err());
     }
 }

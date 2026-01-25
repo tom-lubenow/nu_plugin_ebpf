@@ -1,0 +1,2152 @@
+//! Verifier-Compatible Core (VCC) IR
+//!
+//! VCC is a minimal, typed core language that makes pointer-sensitive
+//! operations explicit. Its invariants are designed to mirror the eBPF
+//! verifier so that violations are caught before codegen.
+//!
+//! Core invariants (initial draft):
+//! - Pointer arithmetic is explicit (`PtrAdd`) and never encoded as `BinOp`.
+//! - `BinOp` operates on scalars only (no pointer + pointer).
+//! - Stack pointer arithmetic requires bounded scalar offsets.
+//! - Loads/stores require pointer operands and must respect stack bounds.
+
+use std::collections::HashMap;
+
+use crate::compiler::cfg::CFG;
+use crate::compiler::mir::{
+    AddressSpace, BinOpKind, MirFunction, MirInst, MirType, MirValue, StackSlotId, StackSlotKind,
+    StringAppendType, UnaryOpKind, VReg, STRING_COUNTER_MAP_NAME,
+};
+use crate::compiler::passes::{ListLowering, MirPass};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct VccReg(pub u32);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct VccBlockId(pub u32);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VccBinOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    And,
+    Or,
+    Xor,
+    Shl,
+    Shr,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VccAddrSpace {
+    Stack(StackSlotId),
+    MapValue,
+    Context,
+    RingBuf,
+    Kernel,
+    User,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VccBounds {
+    pub min: i64,
+    pub max: i64,
+    pub limit: i64,
+}
+
+impl VccBounds {
+    fn shifted(self, offset: VccRange) -> Option<VccBounds> {
+        let new_min = self.min.saturating_add(offset.min);
+        let new_max = self.max.saturating_add(offset.max);
+        if new_min < 0 || new_max > self.limit {
+            return None;
+        }
+        Some(VccBounds {
+            min: new_min,
+            max: new_max,
+            limit: self.limit,
+        })
+    }
+
+    fn shifted_with_size(self, offset: i64, size: i64) -> Option<VccBounds> {
+        if size <= 0 {
+            return None;
+        }
+        let new_min = self.min.saturating_add(offset);
+        let new_max = self
+            .max
+            .saturating_add(offset)
+            .saturating_add(size.saturating_sub(1));
+        if new_min < 0 || new_max > self.limit {
+            return None;
+        }
+        Some(VccBounds {
+            min: new_min,
+            max: new_max,
+            limit: self.limit,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VccValue {
+    Reg(VccReg),
+    Imm(i64),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VccTypeClass {
+    Scalar,
+    Bool,
+    Ptr,
+    Unknown,
+    Uninit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VccPointerInfo {
+    pub space: VccAddrSpace,
+    pub bounds: Option<VccBounds>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VccRange {
+    pub min: i64,
+    pub max: i64,
+}
+
+impl VccRange {
+    fn add(self, other: VccRange) -> VccRange {
+        VccRange {
+            min: self.min.saturating_add(other.min),
+            max: self.max.saturating_add(other.max),
+        }
+    }
+
+    fn sub(self, other: VccRange) -> VccRange {
+        VccRange {
+            min: self.min.saturating_sub(other.max),
+            max: self.max.saturating_sub(other.min),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VccValueType {
+    Uninit,
+    Unknown,
+    Bool,
+    Scalar { range: Option<VccRange> },
+    Ptr(VccPointerInfo),
+}
+
+impl VccValueType {
+    fn class(&self) -> VccTypeClass {
+        match self {
+            VccValueType::Uninit => VccTypeClass::Uninit,
+            VccValueType::Unknown => VccTypeClass::Unknown,
+            VccValueType::Bool => VccTypeClass::Bool,
+            VccValueType::Scalar { .. } => VccTypeClass::Scalar,
+            VccValueType::Ptr(_) => VccTypeClass::Ptr,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VccInst {
+    Const { dst: VccReg, value: i64 },
+    Copy { dst: VccReg, src: VccValue },
+    Assume { dst: VccReg, ty: VccValueType },
+    AssertScalar { value: VccValue },
+    StackAddr {
+        dst: VccReg,
+        slot: StackSlotId,
+        size: i64,
+    },
+    BinOp {
+        dst: VccReg,
+        op: VccBinOp,
+        lhs: VccValue,
+        rhs: VccValue,
+    },
+    PtrAdd {
+        dst: VccReg,
+        base: VccReg,
+        offset: VccValue,
+    },
+    Load {
+        dst: VccReg,
+        ptr: VccReg,
+        offset: i64,
+        size: u8,
+    },
+    Store {
+        ptr: VccReg,
+        offset: i64,
+        src: VccValue,
+        size: u8,
+    },
+    Phi {
+        dst: VccReg,
+        args: Vec<(VccBlockId, VccReg)>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VccTerminator {
+    Jump { target: VccBlockId },
+    Branch {
+        cond: VccValue,
+        if_true: VccBlockId,
+        if_false: VccBlockId,
+    },
+    Return { value: Option<VccValue> },
+}
+
+#[derive(Debug, Clone)]
+pub struct VccBlock {
+    pub id: VccBlockId,
+    pub instructions: Vec<VccInst>,
+    pub terminator: VccTerminator,
+}
+
+#[derive(Debug, Clone)]
+pub struct VccFunction {
+    pub entry: VccBlockId,
+    pub blocks: Vec<VccBlock>,
+    reg_count: u32,
+}
+
+impl VccFunction {
+    pub fn new() -> Self {
+        let entry = VccBlockId(0);
+        Self {
+            entry,
+            blocks: vec![VccBlock {
+                id: entry,
+                instructions: Vec::new(),
+                terminator: VccTerminator::Return { value: None },
+            }],
+            reg_count: 0,
+        }
+    }
+
+    pub fn alloc_reg(&mut self) -> VccReg {
+        let reg = VccReg(self.reg_count);
+        self.reg_count += 1;
+        reg
+    }
+
+    pub fn alloc_block(&mut self) -> VccBlockId {
+        let id = VccBlockId(self.blocks.len() as u32);
+        self.blocks.push(VccBlock {
+            id,
+            instructions: Vec::new(),
+            terminator: VccTerminator::Return { value: None },
+        });
+        id
+    }
+
+    pub fn block_mut(&mut self, id: VccBlockId) -> &mut VccBlock {
+        let idx = id.0 as usize;
+        &mut self.blocks[idx]
+    }
+
+    pub fn block(&self, id: VccBlockId) -> &VccBlock {
+        let idx = id.0 as usize;
+        &self.blocks[idx]
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VccErrorKind {
+    UseOfUninitializedReg(VccReg),
+    TypeMismatch {
+        expected: VccTypeClass,
+        actual: VccTypeClass,
+    },
+    PointerArithmetic,
+    PointerBounds,
+    UnknownOffset,
+    InvalidLoadStore,
+    UnsupportedInstruction,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VccError {
+    pub kind: VccErrorKind,
+    pub message: String,
+}
+
+impl VccError {
+    fn new(kind: VccErrorKind, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for VccError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct VccVerifier {
+    errors: Vec<VccError>,
+}
+
+impl VccVerifier {
+    pub fn verify_function(self, func: &VccFunction) -> Result<(), Vec<VccError>> {
+        self.verify_function_with_seed(func, HashMap::new())
+    }
+
+    pub fn verify_function_with_seed(
+        mut self,
+        func: &VccFunction,
+        seed: HashMap<VccReg, VccValueType>,
+    ) -> Result<(), Vec<VccError>> {
+        let mut state = VccState::with_seed(seed);
+        for block in &func.blocks {
+            for inst in &block.instructions {
+                self.verify_inst(inst, &mut state);
+            }
+            self.verify_terminator(&block.terminator, &mut state);
+        }
+
+        if self.errors.is_empty() {
+            Ok(())
+        } else {
+            Err(self.errors)
+        }
+    }
+
+    fn verify_inst(&mut self, inst: &VccInst, state: &mut VccState) {
+        match inst {
+            VccInst::Const { dst, value } => {
+                state.set_reg(
+                    *dst,
+                    VccValueType::Scalar {
+                        range: Some(VccRange {
+                            min: *value,
+                            max: *value,
+                        }),
+                    },
+                );
+            }
+            VccInst::Copy { dst, src } => match state.value_type(*src) {
+                Ok(ty) => state.set_reg(*dst, ty),
+                Err(err) => self.errors.push(err),
+            },
+            VccInst::Assume { dst, ty } => {
+                state.set_reg(*dst, *ty);
+            }
+            VccInst::AssertScalar { value } => match state.value_type(*value) {
+                Ok(ty) => {
+                    if ty.class() != VccTypeClass::Scalar && ty.class() != VccTypeClass::Bool {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::TypeMismatch {
+                                expected: VccTypeClass::Scalar,
+                                actual: ty.class(),
+                            },
+                            "expected scalar value",
+                        ));
+                    }
+                }
+                Err(err) => self.errors.push(err),
+            },
+            VccInst::StackAddr { dst, slot, size } => {
+                let bounds = if *size > 0 {
+                    Some(VccBounds {
+                        min: 0,
+                        max: 0,
+                        limit: size.saturating_sub(1),
+                    })
+                } else {
+                    None
+                };
+                state.set_reg(
+                    *dst,
+                    VccValueType::Ptr(VccPointerInfo {
+                        space: VccAddrSpace::Stack(*slot),
+                        bounds,
+                    }),
+                );
+            }
+            VccInst::BinOp { dst, op, lhs, rhs } => {
+                let lhs_ty = match state.value_type(*lhs) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                let rhs_ty = match state.value_type(*rhs) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+
+                match op {
+                    VccBinOp::Eq | VccBinOp::Ne => {
+                        let lhs_is_ptr = matches!(lhs_ty, VccValueType::Ptr(_));
+                        let rhs_is_ptr = matches!(rhs_ty, VccValueType::Ptr(_));
+                        if lhs_is_ptr || rhs_is_ptr {
+                            match (lhs_ty, rhs_ty) {
+                                (VccValueType::Ptr(lp), VccValueType::Ptr(rp)) => {
+                                    if lp.space != rp.space
+                                        && lp.space != VccAddrSpace::Unknown
+                                        && rp.space != VccAddrSpace::Unknown
+                                    {
+                                        self.errors.push(VccError::new(
+                                            VccErrorKind::TypeMismatch {
+                                                expected: VccTypeClass::Ptr,
+                                                actual: VccTypeClass::Ptr,
+                                            },
+                                            "pointer comparison requires matching address space",
+                                        ));
+                                        return;
+                                    }
+                                }
+                                (VccValueType::Ptr(_), other)
+                                | (other, VccValueType::Ptr(_)) => {
+                                    if !self.is_null_scalar(*lhs, lhs_ty)
+                                        && !self.is_null_scalar(*rhs, rhs_ty)
+                                        && other.class() != VccTypeClass::Ptr
+                                    {
+                                        self.errors.push(VccError::new(
+                                            VccErrorKind::TypeMismatch {
+                                                expected: VccTypeClass::Scalar,
+                                                actual: other.class(),
+                                            },
+                                            "pointer comparison only supports null scalar",
+                                        ));
+                                        return;
+                                    }
+                                }
+                                _ => {}
+                            }
+                        } else if lhs_ty.class() != VccTypeClass::Scalar
+                            && lhs_ty.class() != VccTypeClass::Bool
+                        {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::TypeMismatch {
+                                    expected: VccTypeClass::Scalar,
+                                    actual: lhs_ty.class(),
+                                },
+                                "comparison expects scalar operands",
+                            ));
+                            return;
+                        } else if rhs_ty.class() != VccTypeClass::Scalar
+                            && rhs_ty.class() != VccTypeClass::Bool
+                        {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::TypeMismatch {
+                                    expected: VccTypeClass::Scalar,
+                                    actual: rhs_ty.class(),
+                                },
+                                "comparison expects scalar operands",
+                            ));
+                            return;
+                        }
+                        state.set_reg(*dst, VccValueType::Bool);
+                    }
+                    VccBinOp::Lt
+                    | VccBinOp::Le
+                    | VccBinOp::Gt
+                    | VccBinOp::Ge => {
+                        if lhs_ty.class() != VccTypeClass::Scalar
+                            && lhs_ty.class() != VccTypeClass::Bool
+                        {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::TypeMismatch {
+                                    expected: VccTypeClass::Scalar,
+                                    actual: lhs_ty.class(),
+                                },
+                                "comparison expects scalar operands",
+                            ));
+                            return;
+                        }
+                        if rhs_ty.class() != VccTypeClass::Scalar
+                            && rhs_ty.class() != VccTypeClass::Bool
+                        {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::TypeMismatch {
+                                    expected: VccTypeClass::Scalar,
+                                    actual: rhs_ty.class(),
+                                },
+                                "comparison expects scalar operands",
+                            ));
+                            return;
+                        }
+                        state.set_reg(*dst, VccValueType::Bool);
+                    }
+                    _ => {
+                        if lhs_ty.class() != VccTypeClass::Scalar
+                            && lhs_ty.class() != VccTypeClass::Bool
+                        {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::PointerArithmetic,
+                                "binop requires scalar operands (pointer used)",
+                            ));
+                            return;
+                        }
+                        if rhs_ty.class() != VccTypeClass::Scalar
+                            && rhs_ty.class() != VccTypeClass::Bool
+                        {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::PointerArithmetic,
+                                "binop requires scalar operands (pointer used)",
+                            ));
+                            return;
+                        }
+                        let range = state.binop_range(*op, lhs_ty, rhs_ty);
+                        state.set_reg(*dst, VccValueType::Scalar { range });
+                    }
+                }
+            }
+            VccInst::PtrAdd { dst, base, offset } => {
+                let base_ty = state.reg_type(*base);
+                let base_ptr = match base_ty {
+                    Ok(VccValueType::Ptr(ptr)) => ptr,
+                    Ok(other) => {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::TypeMismatch {
+                                expected: VccTypeClass::Ptr,
+                                actual: other.class(),
+                            },
+                            "ptr_add base must be a pointer",
+                        ));
+                        return;
+                    }
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+
+                let offset_ty = match state.value_type(*offset) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                if offset_ty.class() != VccTypeClass::Scalar
+                    && offset_ty.class() != VccTypeClass::Bool
+                {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerArithmetic,
+                        "ptr_add offset must be scalar",
+                    ));
+                    return;
+                }
+
+                let offset_range = state.value_range(*offset, offset_ty);
+                let bounds = match (base_ptr.space, base_ptr.bounds, offset_range) {
+                    (VccAddrSpace::Stack(_), Some(bounds), Some(range)) => bounds
+                        .shifted(range)
+                        .map(Some)
+                        .unwrap_or_else(|| {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::PointerBounds,
+                                "stack pointer arithmetic out of bounds",
+                            ));
+                            None
+                        }),
+                    (VccAddrSpace::Stack(_), Some(_), None) => {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::UnknownOffset,
+                            "stack pointer arithmetic requires bounded scalar offset",
+                        ));
+                        None
+                    }
+                    _ => base_ptr.bounds,
+                };
+
+                state.set_reg(
+                    *dst,
+                    VccValueType::Ptr(VccPointerInfo {
+                        space: base_ptr.space,
+                        bounds,
+                    }),
+                );
+            }
+            VccInst::Load {
+                dst,
+                ptr,
+                offset,
+                size,
+            } => {
+                let ptr_ty = match state.reg_type(*ptr) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                match ptr_ty {
+                    VccValueType::Ptr(ptr_info) => {
+                        if let (VccAddrSpace::Stack(_), Some(bounds)) =
+                            (ptr_info.space, ptr_info.bounds)
+                        {
+                            let size = *size as i64;
+                            if size <= 0 {
+                                self.errors.push(VccError::new(
+                                    VccErrorKind::InvalidLoadStore,
+                                    "load size must be positive",
+                                ));
+                                return;
+                            }
+                            if bounds
+                                .shifted_with_size(*offset, size)
+                                .is_none()
+                            {
+                                self.errors.push(VccError::new(
+                                    VccErrorKind::PointerBounds,
+                                    "stack load offset out of bounds",
+                                ));
+                            }
+                        }
+                    }
+                    other => {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::InvalidLoadStore,
+                            format!(
+                                "load requires pointer operand (got {:?})",
+                                other.class()
+                            ),
+                        ));
+                        return;
+                    }
+                }
+                state.set_reg(
+                    *dst,
+                    VccValueType::Scalar { range: None },
+                );
+            }
+            VccInst::Store {
+                ptr,
+                offset,
+                src,
+                size,
+            } => {
+                let ptr_ty = match state.reg_type(*ptr) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                match ptr_ty {
+                    VccValueType::Ptr(ptr_info) => {
+                        if let (VccAddrSpace::Stack(_), Some(bounds)) =
+                            (ptr_info.space, ptr_info.bounds)
+                        {
+                            let size = *size as i64;
+                            if size <= 0 {
+                                self.errors.push(VccError::new(
+                                    VccErrorKind::InvalidLoadStore,
+                                    "store size must be positive",
+                                ));
+                                return;
+                            }
+                            if bounds
+                                .shifted_with_size(*offset, size)
+                                .is_none()
+                            {
+                                self.errors.push(VccError::new(
+                                    VccErrorKind::PointerBounds,
+                                    "stack store offset out of bounds",
+                                ));
+                            }
+                        }
+                    }
+                    other => {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::InvalidLoadStore,
+                            format!(
+                                "store requires pointer operand (got {:?})",
+                                other.class()
+                            ),
+                        ));
+                        return;
+                    }
+                }
+
+                if let Err(err) = state.value_type(*src) {
+                    self.errors.push(err);
+                }
+            }
+            VccInst::Phi { dst, args } => {
+                let mut merged: Option<VccValueType> = None;
+                for (_, reg) in args {
+                    match state.reg_type(*reg) {
+                        Ok(ty) => {
+                            merged = Some(match merged {
+                                None => ty,
+                                Some(existing) => state.merge_types(existing, ty),
+                            });
+                        }
+                        Err(err) => self.errors.push(err),
+                    }
+                }
+                let ty = merged.unwrap_or(VccValueType::Unknown);
+                state.set_reg(*dst, ty);
+            }
+        }
+    }
+
+    fn verify_terminator(&mut self, term: &VccTerminator, state: &mut VccState) {
+        match term {
+            VccTerminator::Jump { .. } => {}
+            VccTerminator::Branch { cond, .. } => match state.value_type(*cond) {
+                Ok(ty) => {
+                    if ty.class() != VccTypeClass::Scalar && ty.class() != VccTypeClass::Bool {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::TypeMismatch {
+                                expected: VccTypeClass::Bool,
+                                actual: ty.class(),
+                            },
+                            "branch condition must be scalar/bool",
+                        ));
+                    }
+                }
+                Err(err) => self.errors.push(err),
+            },
+            VccTerminator::Return { value } => {
+                if let Some(value) = value {
+                    if let Err(err) = state.value_type(*value) {
+                        self.errors.push(err);
+                    }
+                }
+            }
+        }
+    }
+
+    fn is_null_scalar(&self, value: VccValue, ty: VccValueType) -> bool {
+        (match ty {
+            VccValueType::Scalar { range } => matches!(range, Some(VccRange { min: 0, max: 0 })),
+            VccValueType::Bool => false,
+            VccValueType::Ptr(_) | VccValueType::Unknown | VccValueType::Uninit => false,
+        }) || matches!(value, VccValue::Imm(0))
+    }
+}
+
+#[derive(Debug, Default)]
+struct VccState {
+    reg_types: HashMap<VccReg, VccValueType>,
+}
+
+impl VccState {
+    fn with_seed(seed: HashMap<VccReg, VccValueType>) -> Self {
+        Self { reg_types: seed }
+    }
+
+    fn set_reg(&mut self, reg: VccReg, ty: VccValueType) {
+        self.reg_types.insert(reg, ty);
+    }
+
+    fn reg_type(&self, reg: VccReg) -> Result<VccValueType, VccError> {
+        match self.reg_types.get(&reg).copied() {
+            Some(VccValueType::Uninit) | None => Err(VccError::new(
+                VccErrorKind::UseOfUninitializedReg(reg),
+                format!("use of uninitialized reg {:?}", reg),
+            )),
+            Some(ty) => Ok(ty),
+        }
+    }
+
+    fn value_type(&self, value: VccValue) -> Result<VccValueType, VccError> {
+        match value {
+            VccValue::Imm(v) => Ok(VccValueType::Scalar {
+                range: Some(VccRange { min: v, max: v }),
+            }),
+            VccValue::Reg(reg) => self.reg_type(reg),
+        }
+    }
+
+    fn value_range(&self, value: VccValue, ty: VccValueType) -> Option<VccRange> {
+        match value {
+            VccValue::Imm(v) => Some(VccRange { min: v, max: v }),
+            VccValue::Reg(_) => match ty {
+                VccValueType::Scalar { range } => range,
+                VccValueType::Bool => Some(VccRange { min: 0, max: 1 }),
+                _ => None,
+            },
+        }
+    }
+
+    fn binop_range(
+        &self,
+        op: VccBinOp,
+        lhs: VccValueType,
+        rhs: VccValueType,
+    ) -> Option<VccRange> {
+        let lhs_range = match lhs {
+            VccValueType::Scalar { range } => range,
+            VccValueType::Bool => Some(VccRange { min: 0, max: 1 }),
+            _ => None,
+        }?;
+        let rhs_range = match rhs {
+            VccValueType::Scalar { range } => range,
+            VccValueType::Bool => Some(VccRange { min: 0, max: 1 }),
+            _ => None,
+        }?;
+
+        match op {
+            VccBinOp::Add => Some(lhs_range.add(rhs_range)),
+            VccBinOp::Sub => Some(lhs_range.sub(rhs_range)),
+            VccBinOp::Mul => Some(self.mul_range(lhs_range, rhs_range)),
+            _ => None,
+        }
+    }
+
+    fn mul_range(&self, lhs: VccRange, rhs: VccRange) -> VccRange {
+        let candidates = [
+            lhs.min.saturating_mul(rhs.min),
+            lhs.min.saturating_mul(rhs.max),
+            lhs.max.saturating_mul(rhs.min),
+            lhs.max.saturating_mul(rhs.max),
+        ];
+        let mut min = candidates[0];
+        let mut max = candidates[0];
+        for value in candidates.iter().copied() {
+            min = min.min(value);
+            max = max.max(value);
+        }
+        VccRange { min, max }
+    }
+
+    fn merge_types(&self, lhs: VccValueType, rhs: VccValueType) -> VccValueType {
+        match (lhs, rhs) {
+            (VccValueType::Scalar { range: l }, VccValueType::Scalar { range: r }) => {
+                VccValueType::Scalar {
+                    range: match (l, r) {
+                        (Some(lr), Some(rr)) => Some(VccRange {
+                            min: lr.min.min(rr.min),
+                            max: lr.max.max(rr.max),
+                        }),
+                        _ => None,
+                    },
+                }
+            }
+            (VccValueType::Ptr(lp), VccValueType::Ptr(rp)) if lp.space == rp.space => {
+                let bounds = match (lp.bounds, rp.bounds) {
+                    (Some(l), Some(r)) if l.limit == r.limit => Some(VccBounds {
+                        min: l.min.min(r.min),
+                        max: l.max.max(r.max),
+                        limit: l.limit,
+                    }),
+                    _ => None,
+                };
+                VccValueType::Ptr(VccPointerInfo {
+                    space: lp.space,
+                    bounds,
+                })
+            }
+            (left, right) if left == right => left,
+            _ => VccValueType::Unknown,
+        }
+    }
+}
+
+pub fn verify_mir(
+    func: &MirFunction,
+    types: &HashMap<VReg, MirType>,
+) -> Result<(), Vec<VccError>> {
+    let list_max = collect_list_max(func);
+    let mut verify_func = func.clone();
+    let cfg = CFG::build(&verify_func);
+    let list_lowering = ListLowering;
+    let _ = list_lowering.run(&mut verify_func, &cfg);
+
+    let mut lowerer = VccLowerer::new(&verify_func, types, list_max);
+    let vcc_func = match lowerer.lower() {
+        Ok(vcc) => vcc,
+        Err(err) => return Err(vec![err]),
+    };
+    let seed = lowerer.seed_types();
+    VccVerifier::default().verify_function_with_seed(&vcc_func, seed)
+}
+
+struct VccLowerer<'a> {
+    func: &'a MirFunction,
+    types: &'a HashMap<VReg, MirType>,
+    slot_sizes: HashMap<StackSlotId, usize>,
+    slot_kinds: HashMap<StackSlotId, StackSlotKind>,
+    list_max: HashMap<StackSlotId, usize>,
+    ptr_regs: HashMap<VccReg, VccPointerInfo>,
+    next_temp: u32,
+}
+
+const STRING_APPEND_COPY_CAP: usize = 64;
+const MAX_INT_STRING_LEN: usize = 20;
+
+impl<'a> VccLowerer<'a> {
+    fn new(
+        func: &'a MirFunction,
+        types: &'a HashMap<VReg, MirType>,
+        list_max: HashMap<StackSlotId, usize>,
+    ) -> Self {
+        let mut slot_sizes = HashMap::new();
+        let mut slot_kinds = HashMap::new();
+        for slot in &func.stack_slots {
+            slot_sizes.insert(slot.id, slot.size);
+            slot_kinds.insert(slot.id, slot.kind);
+        }
+        let mut ptr_regs = HashMap::new();
+        for (vreg, ty) in types {
+            if let VccValueType::Ptr(info) = vcc_type_from_mir(ty) {
+                ptr_regs.insert(VccReg(vreg.0), info);
+            }
+        }
+        Self {
+            func,
+            types,
+            slot_sizes,
+            slot_kinds,
+            list_max,
+            ptr_regs,
+            next_temp: func.vreg_count.max(func.param_count as u32),
+        }
+    }
+
+    fn seed_types(&self) -> HashMap<VccReg, VccValueType> {
+        let mut seed = HashMap::new();
+        for (vreg, ty) in self.types {
+            seed.insert(VccReg(vreg.0), vcc_type_from_mir(ty));
+        }
+        seed
+    }
+
+    fn lower(&mut self) -> Result<VccFunction, VccError> {
+        let max_block = self
+            .func
+            .blocks
+            .iter()
+            .map(|b| b.id.0)
+            .max()
+            .unwrap_or(0) as usize;
+        let mut blocks = Vec::with_capacity(max_block + 1);
+        for i in 0..=max_block {
+            blocks.push(VccBlock {
+                id: VccBlockId(i as u32),
+                instructions: Vec::new(),
+                terminator: VccTerminator::Return { value: None },
+            });
+        }
+
+        for block in &self.func.blocks {
+            let mut insts = Vec::new();
+            for inst in &block.instructions {
+                self.lower_inst(inst, &mut insts)?;
+            }
+            let term = self.lower_terminator(&block.terminator, &mut insts)?;
+            let idx = block.id.0 as usize;
+            blocks[idx] = VccBlock {
+                id: VccBlockId(block.id.0),
+                instructions: insts,
+                terminator: term,
+            };
+        }
+
+        Ok(VccFunction {
+            entry: VccBlockId(self.func.entry.0),
+            blocks,
+            reg_count: self.next_temp,
+        })
+    }
+
+    fn lower_inst(&mut self, inst: &MirInst, out: &mut Vec<VccInst>) -> Result<(), VccError> {
+        match inst {
+            MirInst::Copy { dst, src } => {
+                let dst_reg = VccReg(dst.0);
+                match src {
+                    MirValue::StackSlot(slot) => {
+                        let size = self.slot_sizes.get(slot).copied().unwrap_or(0) as i64;
+                        out.push(VccInst::StackAddr {
+                            dst: dst_reg,
+                            slot: *slot,
+                            size,
+                        });
+                        self.ptr_regs.insert(
+                            dst_reg,
+                            VccPointerInfo {
+                                space: VccAddrSpace::Stack(*slot),
+                                bounds: stack_bounds(size),
+                            },
+                        );
+                    }
+                    _ => {
+                        let vcc_src = self.lower_value(src, out);
+                        out.push(VccInst::Copy {
+                            dst: dst_reg,
+                            src: vcc_src,
+                        });
+                        if let Some(ptr) = self.value_ptr_info(src) {
+                            self.ptr_regs.insert(dst_reg, ptr);
+                        }
+                    }
+                }
+            }
+            MirInst::Load { dst, ptr, offset, ty } => {
+                out.push(VccInst::Load {
+                    dst: VccReg(dst.0),
+                    ptr: VccReg(ptr.0),
+                    offset: *offset as i64,
+                    size: ty.size() as u8,
+                });
+                self.maybe_assume_list_len(*dst, *ptr, *offset, out);
+                self.maybe_assume_type(*dst, ty, out);
+            }
+            MirInst::Store { ptr, offset, val, ty } => {
+                let vcc_val = self.lower_value(val, out);
+                out.push(VccInst::Store {
+                    ptr: VccReg(ptr.0),
+                    offset: *offset as i64,
+                    src: vcc_val,
+                    size: ty.size() as u8,
+                });
+            }
+            MirInst::LoadSlot { dst, slot, offset, ty } => {
+                let base = self.stack_addr_temp(*slot, out);
+                out.push(VccInst::Load {
+                    dst: VccReg(dst.0),
+                    ptr: base,
+                    offset: *offset as i64,
+                    size: ty.size() as u8,
+                });
+                self.maybe_assume_list_len_slot(*dst, *slot, *offset, out);
+                self.maybe_assume_type(*dst, ty, out);
+            }
+            MirInst::StoreSlot { slot, offset, val, ty } => {
+                let base = self.stack_addr_temp(*slot, out);
+                let vcc_val = self.lower_value(val, out);
+                out.push(VccInst::Store {
+                    ptr: base,
+                    offset: *offset as i64,
+                    src: vcc_val,
+                    size: ty.size() as u8,
+                });
+            }
+            MirInst::BinOp { dst, op, lhs, rhs } => {
+                let lhs_ptr = self.value_ptr_info(lhs);
+                let rhs_ptr = self.value_ptr_info(rhs);
+
+                let vcc_op = to_vcc_binop(*op);
+                let dst_reg = VccReg(dst.0);
+
+                match op {
+                    BinOpKind::Add | BinOpKind::Sub if lhs_ptr.is_some() ^ rhs_ptr.is_some() => {
+                        let (base, offset_val, base_ptr) = if lhs_ptr.is_some() {
+                            (lhs, rhs, lhs_ptr.unwrap())
+                        } else {
+                            (rhs, lhs, rhs_ptr.unwrap())
+                        };
+
+                        if matches!(op, BinOpKind::Sub) && lhs_ptr.is_none() {
+                            return Err(VccError::new(
+                                VccErrorKind::PointerArithmetic,
+                                "numeric - pointer is not supported",
+                            ));
+                        }
+
+                        let base_reg = self.base_ptr_reg(base, out);
+                        let mut offset = self.lower_value(offset_val, out);
+                        if matches!(op, BinOpKind::Sub) {
+                            match offset {
+                                VccValue::Imm(value) => {
+                                    offset = VccValue::Imm(-value);
+                                }
+                                VccValue::Reg(reg) => {
+                                    let tmp = self.temp_reg();
+                                    out.push(VccInst::BinOp {
+                                        dst: tmp,
+                                        op: VccBinOp::Sub,
+                                        lhs: VccValue::Imm(0),
+                                        rhs: VccValue::Reg(reg),
+                                    });
+                                    offset = VccValue::Reg(tmp);
+                                }
+                            }
+                        }
+                        out.push(VccInst::PtrAdd {
+                            dst: dst_reg,
+                            base: base_reg,
+                            offset,
+                        });
+                        self.ptr_regs.insert(dst_reg, base_ptr);
+                    }
+                    _ => {
+                        let vcc_lhs = self.lower_value(lhs, out);
+                        let vcc_rhs = self.lower_value(rhs, out);
+                        out.push(VccInst::BinOp {
+                            dst: dst_reg,
+                            op: vcc_op,
+                            lhs: vcc_lhs,
+                            rhs: vcc_rhs,
+                        });
+                    }
+                }
+            }
+            MirInst::UnaryOp { dst, op, src } => {
+                let vcc_src = self.lower_value(src, out);
+                out.push(VccInst::AssertScalar { value: vcc_src });
+                let dst_ty = self
+                    .types
+                    .get(dst)
+                    .map(vcc_type_from_mir)
+                    .unwrap_or(VccValueType::Unknown);
+                match op {
+                    UnaryOpKind::Not => {
+                        out.push(VccInst::Assume {
+                            dst: VccReg(dst.0),
+                            ty: VccValueType::Bool,
+                        });
+                    }
+                    _ => {
+                        out.push(VccInst::Assume {
+                            dst: VccReg(dst.0),
+                            ty: dst_ty,
+                        });
+                    }
+                }
+            }
+            MirInst::Phi { dst, args } => {
+                let vcc_args = args
+                    .iter()
+                    .map(|(block, vreg)| (VccBlockId(block.0), VccReg(vreg.0)))
+                    .collect();
+                out.push(VccInst::Phi {
+                    dst: VccReg(dst.0),
+                    args: vcc_args,
+                });
+            }
+            MirInst::LoadCtxField { dst, slot, .. } => {
+                if let Some(slot) = slot {
+                    let size = self.slot_sizes.get(slot).copied().unwrap_or(0) as i64;
+                    out.push(VccInst::StackAddr {
+                        dst: VccReg(dst.0),
+                        slot: *slot,
+                        size,
+                    });
+                    if size > 0 {
+                        out.push(VccInst::Store {
+                            ptr: VccReg(dst.0),
+                            offset: size.saturating_sub(1),
+                            src: VccValue::Imm(0),
+                            size: 1,
+                        });
+                    }
+                    self.ptr_regs.insert(
+                        VccReg(dst.0),
+                        VccPointerInfo {
+                            space: VccAddrSpace::Stack(*slot),
+                            bounds: stack_bounds(size),
+                        },
+                    );
+                } else {
+                    let ty = self
+                        .types
+                        .get(dst)
+                        .map(vcc_type_from_mir)
+                        .unwrap_or(VccValueType::Unknown);
+                    out.push(VccInst::Assume {
+                        dst: VccReg(dst.0),
+                        ty,
+                    });
+                    if let VccValueType::Ptr(info) = ty {
+                        self.ptr_regs.insert(VccReg(dst.0), info);
+                    }
+                }
+            }
+            MirInst::StrCmp { dst, lhs, rhs, len } => {
+                if *len > 0 {
+                    let lhs_base = self.stack_addr_temp(*lhs, out);
+                    let rhs_base = self.stack_addr_temp(*rhs, out);
+                    let last = (*len as i64).saturating_sub(1);
+                    let lhs_tmp = self.temp_reg();
+                    let rhs_tmp = self.temp_reg();
+                    out.push(VccInst::Load {
+                        dst: lhs_tmp,
+                        ptr: lhs_base,
+                        offset: last,
+                        size: 1,
+                    });
+                    out.push(VccInst::Load {
+                        dst: rhs_tmp,
+                        ptr: rhs_base,
+                        offset: last,
+                        size: 1,
+                    });
+                }
+                out.push(VccInst::Assume {
+                    dst: VccReg(dst.0),
+                    ty: VccValueType::Bool,
+                });
+            }
+            MirInst::MapLookup { dst, map, key } => {
+                self.verify_map_key(&map.name, *key, out)?;
+                let ty = self
+                    .types
+                    .get(dst)
+                    .map(vcc_type_from_mir)
+                    .unwrap_or(VccValueType::Unknown);
+                out.push(VccInst::Assume {
+                    dst: VccReg(dst.0),
+                    ty,
+                });
+                if let VccValueType::Ptr(info) = ty {
+                    self.ptr_regs.insert(VccReg(dst.0), info);
+                }
+            }
+            MirInst::MapUpdate { map, key, .. } => {
+                self.verify_map_key(&map.name, *key, out)?;
+            }
+            MirInst::MapDelete { map, key } => {
+                self.verify_map_key(&map.name, *key, out)?;
+            }
+            MirInst::EmitEvent { data, size } => {
+                if *size <= 8 {
+                    self.assert_scalar_reg(*data, out);
+                } else {
+                    self.check_ptr_range(*data, *size, out)?;
+                }
+            }
+            MirInst::EmitRecord { fields } => {
+                for field in fields {
+                    let size = record_field_size(&field.ty);
+                    if size <= 8 {
+                        self.assert_scalar_reg(field.value, out);
+                    } else {
+                        self.check_ptr_range(field.value, size, out)?;
+                    }
+                }
+            }
+            MirInst::Histogram { value } => {
+                self.assert_scalar_reg(*value, out);
+            }
+            MirInst::StartTimer => {}
+            MirInst::StopTimer { dst } => {
+                let ty = self
+                    .types
+                    .get(dst)
+                    .map(vcc_type_from_mir)
+                    .unwrap_or(VccValueType::Unknown);
+                out.push(VccInst::Assume {
+                    dst: VccReg(dst.0),
+                    ty,
+                });
+            }
+            MirInst::CallHelper { dst, .. } | MirInst::CallSubfn { dst, .. } => {
+                let ty = self
+                    .types
+                    .get(dst)
+                    .map(vcc_type_from_mir)
+                    .unwrap_or(VccValueType::Unknown);
+                out.push(VccInst::Assume {
+                    dst: VccReg(dst.0),
+                    ty,
+                });
+            }
+            MirInst::ReadStr {
+                dst,
+                ptr,
+                max_len,
+                ..
+            } => {
+                if *max_len == 0 {
+                    return Err(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "read_str max_len must be positive",
+                    ));
+                }
+                let ptr_reg = VccReg(ptr.0);
+                let tmp = self.temp_reg();
+                out.push(VccInst::PtrAdd {
+                    dst: tmp,
+                    base: ptr_reg,
+                    offset: VccValue::Imm(0),
+                });
+
+                let base = self.stack_addr_temp(*dst, out);
+                out.push(VccInst::Store {
+                    ptr: base,
+                    offset: (*max_len as i64).saturating_sub(1),
+                    src: VccValue::Imm(0),
+                    size: 1,
+                });
+            }
+            MirInst::StringAppend {
+                dst_buffer,
+                dst_len,
+                val,
+                val_type,
+            } => {
+                let len_reg = VccReg(dst_len.0);
+                out.push(VccInst::AssertScalar {
+                    value: VccValue::Reg(len_reg),
+                });
+
+                let dst_base = self.stack_addr_temp(*dst_buffer, out);
+                let dst_ptr = self.temp_reg();
+                out.push(VccInst::PtrAdd {
+                    dst: dst_ptr,
+                    base: dst_base,
+                    offset: VccValue::Reg(len_reg),
+                });
+
+                match val_type {
+                    StringAppendType::Literal { bytes } => {
+                        let effective_len = bytes
+                            .iter()
+                            .rposition(|b| *b != 0)
+                            .map(|idx| idx + 1)
+                            .unwrap_or(0);
+                        if !bytes.is_empty() {
+                            let last = (bytes.len() as i64).saturating_sub(1);
+                            out.push(VccInst::Store {
+                                ptr: dst_ptr,
+                                offset: last,
+                                src: VccValue::Imm(0),
+                                size: 1,
+                            });
+                        }
+                        if effective_len > 0 {
+                            out.push(VccInst::BinOp {
+                                dst: len_reg,
+                                op: VccBinOp::Add,
+                                lhs: VccValue::Reg(len_reg),
+                                rhs: VccValue::Imm(effective_len as i64),
+                            });
+                        }
+                    }
+                    StringAppendType::StringSlot { slot, max_len } => {
+                        let copy_len = (*max_len).min(STRING_APPEND_COPY_CAP);
+                        if copy_len > 0 {
+                            let last = (copy_len as i64).saturating_sub(1);
+                            let src_base = self.stack_addr_temp(*slot, out);
+                            let tmp = self.temp_reg();
+                            out.push(VccInst::Load {
+                                dst: tmp,
+                                ptr: src_base,
+                                offset: last,
+                                size: 1,
+                            });
+                            out.push(VccInst::Store {
+                                ptr: dst_ptr,
+                                offset: last,
+                                src: VccValue::Imm(0),
+                                size: 1,
+                            });
+                        }
+
+                        let delta = self.temp_reg();
+                        out.push(VccInst::Assume {
+                            dst: delta,
+                            ty: VccValueType::Scalar {
+                                range: Some(VccRange {
+                                    min: 0,
+                                    max: copy_len as i64,
+                                }),
+                            },
+                        });
+                        out.push(VccInst::BinOp {
+                            dst: len_reg,
+                            op: VccBinOp::Add,
+                            lhs: VccValue::Reg(len_reg),
+                            rhs: VccValue::Reg(delta),
+                        });
+                    }
+                    StringAppendType::Integer => {
+                        let vcc_val = self.lower_value(val, out);
+                        out.push(VccInst::AssertScalar { value: vcc_val });
+
+                        let max_digits = MAX_INT_STRING_LEN;
+                        if max_digits > 0 {
+                            out.push(VccInst::Store {
+                                ptr: dst_ptr,
+                                offset: (max_digits as i64).saturating_sub(1),
+                                src: VccValue::Imm(0),
+                                size: 1,
+                            });
+                        }
+
+                        let delta = self.temp_reg();
+                        out.push(VccInst::Assume {
+                            dst: delta,
+                            ty: VccValueType::Scalar {
+                                range: Some(VccRange {
+                                    min: 1,
+                                    max: max_digits as i64,
+                                }),
+                            },
+                        });
+                        out.push(VccInst::BinOp {
+                            dst: len_reg,
+                            op: VccBinOp::Add,
+                            lhs: VccValue::Reg(len_reg),
+                            rhs: VccValue::Reg(delta),
+                        });
+                    }
+                }
+            }
+            MirInst::IntToString {
+                dst_buffer,
+                dst_len,
+                val,
+            } => {
+                out.push(VccInst::AssertScalar {
+                    value: VccValue::Reg(VccReg(val.0)),
+                });
+
+                let base = self.stack_addr_temp(*dst_buffer, out);
+                let max_digits = MAX_INT_STRING_LEN;
+                if max_digits > 0 {
+                    out.push(VccInst::Store {
+                        ptr: base,
+                        offset: (max_digits as i64).saturating_sub(1),
+                        src: VccValue::Imm(0),
+                        size: 1,
+                    });
+                }
+
+                out.push(VccInst::Assume {
+                    dst: VccReg(dst_len.0),
+                    ty: VccValueType::Scalar {
+                        range: Some(VccRange {
+                            min: 1,
+                            max: max_digits as i64,
+                        }),
+                    },
+                });
+            }
+            MirInst::RecordStore {
+                buffer,
+                field_offset,
+                val,
+                ty,
+            } => {
+                let size = ty.size();
+                if size == 0 || size > u8::MAX as usize {
+                    return Err(VccError::new(
+                        VccErrorKind::InvalidLoadStore,
+                        "record store size out of range",
+                    ));
+                }
+                let base = self.stack_addr_temp(*buffer, out);
+                let vcc_val = self.lower_value(val, out);
+                out.push(VccInst::Store {
+                    ptr: base,
+                    offset: *field_offset as i64,
+                    src: vcc_val,
+                    size: size as u8,
+                });
+            }
+            MirInst::ListNew { .. }
+            | MirInst::ListPush { .. }
+            | MirInst::ListLen { .. }
+            | MirInst::ListGet { .. } => {
+                return Err(VccError::new(
+                    VccErrorKind::UnsupportedInstruction,
+                    "list operations must be lowered before VCC verification",
+                ));
+            }
+            MirInst::Jump { .. }
+            | MirInst::Branch { .. }
+            | MirInst::Return { .. }
+            | MirInst::TailCall { .. }
+            | MirInst::LoopHeader { .. }
+            | MirInst::LoopBack { .. }
+            | MirInst::Placeholder => {}
+        }
+
+        Ok(())
+    }
+
+    fn lower_terminator(
+        &mut self,
+        term: &MirInst,
+        out: &mut Vec<VccInst>,
+    ) -> Result<VccTerminator, VccError> {
+        match term {
+            MirInst::Jump { target } => Ok(VccTerminator::Jump {
+                target: VccBlockId(target.0),
+            }),
+            MirInst::Branch {
+                cond,
+                if_true,
+                if_false,
+            } => Ok(VccTerminator::Branch {
+                cond: VccValue::Reg(VccReg(cond.0)),
+                if_true: VccBlockId(if_true.0),
+                if_false: VccBlockId(if_false.0),
+            }),
+            MirInst::Return { val } => {
+                let vcc_val = val.as_ref().map(|v| self.lower_value(v, out));
+                Ok(VccTerminator::Return { value: vcc_val })
+            }
+            MirInst::TailCall { index, .. } => {
+                let vcc_val = self.lower_value(index, out);
+                out.push(VccInst::AssertScalar { value: vcc_val });
+                Ok(VccTerminator::Return { value: None })
+            }
+            MirInst::LoopHeader {
+                counter,
+                limit,
+                body,
+                exit,
+            } => {
+                let tmp = self.temp_reg();
+                out.push(VccInst::BinOp {
+                    dst: tmp,
+                    op: VccBinOp::Lt,
+                    lhs: VccValue::Reg(VccReg(counter.0)),
+                    rhs: VccValue::Imm(*limit),
+                });
+                Ok(VccTerminator::Branch {
+                    cond: VccValue::Reg(tmp),
+                    if_true: VccBlockId(body.0),
+                    if_false: VccBlockId(exit.0),
+                })
+            }
+            MirInst::LoopBack {
+                counter,
+                step,
+                header,
+            } => {
+                out.push(VccInst::BinOp {
+                    dst: VccReg(counter.0),
+                    op: VccBinOp::Add,
+                    lhs: VccValue::Reg(VccReg(counter.0)),
+                    rhs: VccValue::Imm(*step),
+                });
+                Ok(VccTerminator::Jump {
+                    target: VccBlockId(header.0),
+                })
+            }
+            MirInst::Placeholder => Err(VccError::new(
+                VccErrorKind::UnsupportedInstruction,
+                "placeholder terminator in VCC lowering",
+            )),
+            _ => Err(VccError::new(
+                VccErrorKind::UnsupportedInstruction,
+                "non-terminator in terminator position",
+            )),
+        }
+    }
+
+    fn lower_value(&mut self, value: &MirValue, out: &mut Vec<VccInst>) -> VccValue {
+        match value {
+            MirValue::Const(v) => VccValue::Imm(*v),
+            MirValue::VReg(v) => VccValue::Reg(VccReg(v.0)),
+            MirValue::StackSlot(slot) => VccValue::Reg(self.stack_addr_temp(*slot, out)),
+        }
+    }
+
+    fn base_ptr_reg(&mut self, value: &MirValue, out: &mut Vec<VccInst>) -> VccReg {
+        match value {
+            MirValue::VReg(v) => VccReg(v.0),
+            MirValue::StackSlot(slot) => self.stack_addr_temp(*slot, out),
+            MirValue::Const(_) => self.temp_reg(),
+        }
+    }
+
+    fn stack_addr_temp(&mut self, slot: StackSlotId, out: &mut Vec<VccInst>) -> VccReg {
+        let reg = self.temp_reg();
+        let size = self.slot_sizes.get(&slot).copied().unwrap_or(0) as i64;
+        out.push(VccInst::StackAddr {
+            dst: reg,
+            slot,
+            size,
+        });
+        self.ptr_regs.insert(
+            reg,
+            VccPointerInfo {
+                space: VccAddrSpace::Stack(slot),
+                bounds: stack_bounds(size),
+            },
+        );
+        reg
+    }
+
+    fn temp_reg(&mut self) -> VccReg {
+        let reg = VccReg(self.next_temp);
+        self.next_temp += 1;
+        reg
+    }
+
+    fn value_ptr_info(&self, value: &MirValue) -> Option<VccPointerInfo> {
+        match value {
+            MirValue::StackSlot(slot) => {
+                let size = self.slot_sizes.get(slot).copied().unwrap_or(0) as i64;
+                Some(VccPointerInfo {
+                    space: VccAddrSpace::Stack(*slot),
+                    bounds: stack_bounds(size),
+                })
+            }
+            MirValue::VReg(v) => self
+                .ptr_regs
+                .get(&VccReg(v.0))
+                .copied()
+                .or_else(|| self.types.get(v).and_then(ptr_info_from_mir)),
+            MirValue::Const(_) => None,
+        }
+    }
+
+    fn maybe_assume_type(&mut self, dst: VReg, ty: &MirType, out: &mut Vec<VccInst>) {
+        let vcc_ty = vcc_type_from_mir(ty);
+        if matches!(vcc_ty, VccValueType::Ptr(_) | VccValueType::Bool) {
+            out.push(VccInst::Assume {
+                dst: VccReg(dst.0),
+                ty: vcc_ty,
+            });
+            if let VccValueType::Ptr(info) = vcc_ty {
+                self.ptr_regs.insert(VccReg(dst.0), info);
+            }
+        }
+    }
+
+    fn maybe_assume_list_len(
+        &mut self,
+        dst: VReg,
+        ptr: VReg,
+        offset: i32,
+        out: &mut Vec<VccInst>,
+    ) {
+        if offset != 0 {
+            return;
+        }
+        let slot = match self.ptr_regs.get(&VccReg(ptr.0)) {
+            Some(info) => match info.space {
+                VccAddrSpace::Stack(slot) => Some(slot),
+                _ => None,
+            },
+            None => None,
+        };
+        if let Some(slot) = slot {
+            self.maybe_assume_list_len_slot(dst, slot, offset, out);
+        }
+    }
+
+    fn maybe_assume_list_len_slot(
+        &self,
+        dst: VReg,
+        slot: StackSlotId,
+        offset: i32,
+        out: &mut Vec<VccInst>,
+    ) {
+        if offset != 0 {
+            return;
+        }
+        let kind = self.slot_kinds.get(&slot).copied();
+        if kind != Some(StackSlotKind::ListBuffer) {
+            return;
+        }
+        let size = self.slot_sizes.get(&slot).copied().unwrap_or(0);
+        let slot_cap = size / 8;
+        if slot_cap == 0 {
+            return;
+        }
+        let max_len = self
+            .list_max
+            .get(&slot)
+            .copied()
+            .unwrap_or(slot_cap.saturating_sub(1));
+        let max_len = max_len.min(slot_cap.saturating_sub(1));
+        let max = max_len.saturating_sub(1);
+        out.push(VccInst::Assume {
+            dst: VccReg(dst.0),
+            ty: VccValueType::Scalar {
+                range: Some(VccRange {
+                    min: 0,
+                    max: max as i64,
+                }),
+            },
+        });
+    }
+
+    fn assert_scalar_reg(&self, reg: VReg, out: &mut Vec<VccInst>) {
+        out.push(VccInst::AssertScalar {
+            value: VccValue::Reg(VccReg(reg.0)),
+        });
+    }
+
+    fn check_ptr_range(
+        &mut self,
+        reg: VReg,
+        size: usize,
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        if size == 0 {
+            return Ok(());
+        }
+        let ty = self
+            .types
+            .get(&reg)
+            .map(vcc_type_from_mir)
+            .unwrap_or(VccValueType::Unknown);
+        if ty.class() != VccTypeClass::Ptr && !self.ptr_regs.contains_key(&VccReg(reg.0)) {
+            return Err(VccError::new(
+                VccErrorKind::TypeMismatch {
+                    expected: VccTypeClass::Ptr,
+                    actual: ty.class(),
+                },
+                "expected pointer value",
+            ));
+        }
+
+        let check_size = if size >= 8 { 8 } else { 1 };
+        let offset = if size >= 8 {
+            (size - 8) as i64
+        } else {
+            (size - 1) as i64
+        };
+        let tmp = self.temp_reg();
+        out.push(VccInst::Load {
+            dst: tmp,
+            ptr: VccReg(reg.0),
+            offset,
+            size: check_size as u8,
+        });
+        Ok(())
+    }
+
+    fn verify_map_key(
+        &mut self,
+        map_name: &str,
+        key: VReg,
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        if map_name == STRING_COUNTER_MAP_NAME {
+            self.check_ptr_range(key, 16, out)
+        } else {
+            self.assert_scalar_reg(key, out);
+            Ok(())
+        }
+    }
+}
+
+fn record_field_size(ty: &MirType) -> usize {
+    match ty {
+        MirType::I64 | MirType::U64 => 8,
+        MirType::I32 | MirType::U32 => 8,
+        MirType::I16 | MirType::U16 => 8,
+        MirType::I8 | MirType::U8 | MirType::Bool => 8,
+        MirType::Array { elem, len } if matches!(elem.as_ref(), MirType::U8) && *len == 16 => 16,
+        MirType::Array { elem, len } if matches!(elem.as_ref(), MirType::U8) => {
+            (len + 7) & !7
+        }
+        _ => 8,
+    }
+}
+
+fn vcc_type_from_mir(ty: &MirType) -> VccValueType {
+    match ty {
+        MirType::Bool => VccValueType::Bool,
+        MirType::Ptr { address_space, .. } => VccValueType::Ptr(VccPointerInfo {
+            space: match address_space {
+                AddressSpace::Stack => VccAddrSpace::Unknown,
+                AddressSpace::Kernel => VccAddrSpace::Kernel,
+                AddressSpace::User => VccAddrSpace::User,
+                AddressSpace::Map => VccAddrSpace::MapValue,
+            },
+            bounds: None,
+        }),
+        MirType::Unknown => VccValueType::Unknown,
+        _ => VccValueType::Scalar { range: None },
+    }
+}
+
+fn ptr_info_from_mir(ty: &MirType) -> Option<VccPointerInfo> {
+    match vcc_type_from_mir(ty) {
+        VccValueType::Ptr(info) => Some(info),
+        _ => None,
+    }
+}
+
+fn to_vcc_binop(op: BinOpKind) -> VccBinOp {
+    match op {
+        BinOpKind::Add => VccBinOp::Add,
+        BinOpKind::Sub => VccBinOp::Sub,
+        BinOpKind::Mul => VccBinOp::Mul,
+        BinOpKind::Div => VccBinOp::Div,
+        BinOpKind::Mod => VccBinOp::Mod,
+        BinOpKind::And => VccBinOp::And,
+        BinOpKind::Or => VccBinOp::Or,
+        BinOpKind::Xor => VccBinOp::Xor,
+        BinOpKind::Shl => VccBinOp::Shl,
+        BinOpKind::Shr => VccBinOp::Shr,
+        BinOpKind::Eq => VccBinOp::Eq,
+        BinOpKind::Ne => VccBinOp::Ne,
+        BinOpKind::Lt => VccBinOp::Lt,
+        BinOpKind::Le => VccBinOp::Le,
+        BinOpKind::Gt => VccBinOp::Gt,
+        BinOpKind::Ge => VccBinOp::Ge,
+    }
+}
+
+fn stack_bounds(size: i64) -> Option<VccBounds> {
+    if size <= 0 {
+        return None;
+    }
+    Some(VccBounds {
+        min: 0,
+        max: 0,
+        limit: size.saturating_sub(1),
+    })
+}
+
+fn collect_list_max(func: &MirFunction) -> HashMap<StackSlotId, usize> {
+    let mut maxes = HashMap::new();
+    for block in &func.blocks {
+        for inst in block
+            .instructions
+            .iter()
+            .chain(std::iter::once(&block.terminator))
+        {
+            if let MirInst::ListNew { buffer, max_len, .. } = inst {
+                maxes
+                    .entry(*buffer)
+                    .and_modify(|existing: &mut usize| {
+                        *existing = (*existing).min(*max_len);
+                    })
+                    .or_insert(*max_len);
+            }
+        }
+    }
+    maxes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compiler::mir::{
+        BlockId, MirFunction, MirInst, MirValue, StackSlotKind, StringAppendType,
+    };
+    use std::collections::HashMap;
+
+    fn verify_ok(func: &VccFunction) {
+        VccVerifier::default()
+            .verify_function(func)
+            .expect("expected verifier success");
+    }
+
+    fn verify_err(func: &VccFunction, kind: VccErrorKind) {
+        let err = VccVerifier::default()
+            .verify_function(func)
+            .expect_err("expected verifier error");
+        assert!(
+            err.iter().any(|e| e.kind == kind),
+            "expected error {:?}, got {:?}",
+            kind,
+            err
+        );
+    }
+
+    #[test]
+    fn test_reject_pointer_binop() {
+        let mut func = VccFunction::new();
+        let entry = func.entry;
+        let p0 = func.alloc_reg();
+        let p1 = func.alloc_reg();
+        let out = func.alloc_reg();
+
+        func.block_mut(entry).instructions.push(VccInst::StackAddr {
+            dst: p0,
+            slot: StackSlotId(0),
+            size: 16,
+        });
+        func.block_mut(entry).instructions.push(VccInst::StackAddr {
+            dst: p1,
+            slot: StackSlotId(1),
+            size: 16,
+        });
+        func.block_mut(entry).instructions.push(VccInst::BinOp {
+            dst: out,
+            op: VccBinOp::Add,
+            lhs: VccValue::Reg(p0),
+            rhs: VccValue::Reg(p1),
+        });
+
+        verify_err(&func, VccErrorKind::PointerArithmetic);
+    }
+
+    #[test]
+    fn test_ptr_add_in_bounds() {
+        let mut func = VccFunction::new();
+        let entry = func.entry;
+        let base = func.alloc_reg();
+        let out = func.alloc_reg();
+
+        func.block_mut(entry).instructions.push(VccInst::StackAddr {
+            dst: base,
+            slot: StackSlotId(0),
+            size: 16,
+        });
+        func.block_mut(entry).instructions.push(VccInst::PtrAdd {
+            dst: out,
+            base,
+            offset: VccValue::Imm(8),
+        });
+
+        verify_ok(&func);
+    }
+
+    #[test]
+    fn test_ptr_add_out_of_bounds() {
+        let mut func = VccFunction::new();
+        let entry = func.entry;
+        let base = func.alloc_reg();
+        let out = func.alloc_reg();
+
+        func.block_mut(entry).instructions.push(VccInst::StackAddr {
+            dst: base,
+            slot: StackSlotId(0),
+            size: 8,
+        });
+        func.block_mut(entry).instructions.push(VccInst::PtrAdd {
+            dst: out,
+            base,
+            offset: VccValue::Imm(16),
+        });
+
+        verify_err(&func, VccErrorKind::PointerBounds);
+    }
+
+    #[test]
+    fn test_ptr_add_unknown_offset_on_stack() {
+        let mut func = VccFunction::new();
+        let entry = func.entry;
+        let base = func.alloc_reg();
+        let tmp = func.alloc_reg();
+        let out = func.alloc_reg();
+
+        func.block_mut(entry).instructions.push(VccInst::StackAddr {
+            dst: base,
+            slot: StackSlotId(0),
+            size: 16,
+        });
+        func.block_mut(entry).instructions.push(VccInst::Assume {
+            dst: tmp,
+            ty: VccValueType::Scalar { range: None },
+        });
+        func.block_mut(entry).instructions.push(VccInst::PtrAdd {
+            dst: out,
+            base,
+            offset: VccValue::Reg(tmp),
+        });
+
+        verify_err(&func, VccErrorKind::UnknownOffset);
+    }
+
+    fn new_mir_function() -> (MirFunction, BlockId) {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+        (func, entry)
+    }
+
+    #[test]
+    fn test_verify_mir_string_append_literal_bounds() {
+        let (mut func, entry) = new_mir_function();
+        let buffer = func.alloc_stack_slot(8, 1, StackSlotKind::StringBuffer);
+        let len = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::Copy {
+                dst: len,
+                src: MirValue::Const(0),
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::StringAppend {
+                dst_buffer: buffer,
+                dst_len: len,
+                val: MirValue::Const(0),
+                val_type: StringAppendType::Literal {
+                    bytes: vec![b'a', b'b', b'c'],
+                },
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        assert!(verify_mir(&func, &HashMap::new()).is_ok());
+    }
+
+    #[test]
+    fn test_verify_mir_string_append_literal_oob() {
+        let (mut func, entry) = new_mir_function();
+        let buffer = func.alloc_stack_slot(8, 1, StackSlotKind::StringBuffer);
+        let len = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::Copy {
+                dst: len,
+                src: MirValue::Const(0),
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::StringAppend {
+                dst_buffer: buffer,
+                dst_len: len,
+                val: MirValue::Const(0),
+                val_type: StringAppendType::Literal {
+                    bytes: vec![0u8; 9],
+                },
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let err = verify_mir(&func, &HashMap::new()).expect_err("expected bounds error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_string_append_slot_oob() {
+        let (mut func, entry) = new_mir_function();
+        let dst_buffer = func.alloc_stack_slot(16, 1, StackSlotKind::StringBuffer);
+        let src_buffer = func.alloc_stack_slot(4, 1, StackSlotKind::StringBuffer);
+        let len = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::Copy {
+                dst: len,
+                src: MirValue::Const(0),
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::StringAppend {
+                dst_buffer,
+                dst_len: len,
+                val: MirValue::Const(0),
+                val_type: StringAppendType::StringSlot {
+                    slot: src_buffer,
+                    max_len: 8,
+                },
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let err = verify_mir(&func, &HashMap::new()).expect_err("expected bounds error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_int_to_string_buffer_oob() {
+        let (mut func, entry) = new_mir_function();
+        let buffer = func.alloc_stack_slot(8, 1, StackSlotKind::StringBuffer);
+        let len = func.alloc_vreg();
+        let val = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::Copy {
+                dst: val,
+                src: MirValue::Const(42),
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::IntToString {
+                dst_buffer: buffer,
+                dst_len: len,
+                val,
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let err = verify_mir(&func, &HashMap::new()).expect_err("expected bounds error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_emit_event_requires_ptr() {
+        let (mut func, entry) = new_mir_function();
+        let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let data = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::Copy {
+                dst: data,
+                src: MirValue::StackSlot(slot),
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::EmitEvent { data, size: 16 });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        assert!(verify_mir(&func, &HashMap::new()).is_ok());
+
+        let (mut func, entry) = new_mir_function();
+        let data = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::Copy {
+                dst: data,
+                src: MirValue::Const(0),
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::EmitEvent { data, size: 16 });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let err = verify_mir(&func, &HashMap::new()).expect_err("expected pointer error");
+        assert!(
+            err.iter()
+                .any(|e| matches!(e.kind, VccErrorKind::TypeMismatch { .. })),
+            "expected type mismatch error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_strcmp_bounds() {
+        let (mut func, entry) = new_mir_function();
+        let lhs = func.alloc_stack_slot(4, 1, StackSlotKind::StringBuffer);
+        let rhs = func.alloc_stack_slot(4, 1, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::StrCmp {
+                dst,
+                lhs,
+                rhs,
+                len: 8,
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let err = verify_mir(&func, &HashMap::new()).expect_err("expected bounds error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+    }
+}

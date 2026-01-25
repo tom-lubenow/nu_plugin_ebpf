@@ -61,6 +61,8 @@ pub enum MapKind {
     ProgArray,
 }
 
+pub const STRING_COUNTER_MAP_NAME: &str = "str_counters";
+
 /// Type of value being appended in StringAppend
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StringAppendType {
@@ -421,7 +423,12 @@ pub enum MirInst {
 
     // Context access
     /// Load context field
-    LoadCtxField { dst: VReg, field: CtxField },
+    LoadCtxField {
+        dst: VReg,
+        field: CtxField,
+        /// Optional stack slot backing the field (for stack-based ctx data like comm)
+        slot: Option<StackSlotId>,
+    },
 
     // String operations
     /// Read string from user/kernel memory

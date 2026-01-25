@@ -32,6 +32,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use super::cfg::{CFG, LivenessInfo, LoopInfo};
 use super::instruction::EbpfReg;
 use super::mir::{MirFunction, MirInst, MirValue, StackSlot, StackSlotId, StackSlotKind, VReg};
+use super::reg_info;
 
 /// Result of graph coloring register allocation
 #[derive(Debug)]
@@ -52,6 +53,7 @@ struct Move {
     src: VReg,
     dst: VReg,
 }
+
 
 /// Interference graph for register allocation
 struct InterferenceGraph {
@@ -148,6 +150,8 @@ impl InterferenceGraph {
 enum NodeState {
     /// Not yet categorized
     Initial,
+    /// Precolored (fixed physical register)
+    Precolored,
     /// Low-degree, non-move-related
     Simplify,
     /// Low-degree, move-related
@@ -209,8 +213,10 @@ pub struct GraphColoringAllocator {
     spilled_nodes: HashSet<VReg>,
     /// Spill cost for each node (uses / degree, adjusted for loops)
     spill_cost: HashMap<VReg, f64>,
-    /// Next spill slot ID
-    next_spill_slot: u32,
+    /// Precolored vregs (fixed register assignments)
+    precolored: HashMap<VReg, EbpfReg>,
+    /// Per-vreg register exclusions derived from clobbers
+    forbidden_regs: HashMap<VReg, HashSet<EbpfReg>>,
 }
 
 impl GraphColoringAllocator {
@@ -233,8 +239,14 @@ impl GraphColoringAllocator {
             color: HashMap::new(),
             spilled_nodes: HashSet::new(),
             spill_cost: HashMap::new(),
-            next_spill_slot: 0,
+            precolored: HashMap::new(),
+            forbidden_regs: HashMap::new(),
         }
+    }
+
+    /// Set precolored vregs (fixed register assignments)
+    pub fn set_precolored(&mut self, precolored: HashMap<VReg, EbpfReg>) {
+        self.precolored = precolored;
     }
 
     /// Run the full allocation algorithm
@@ -278,21 +290,8 @@ impl GraphColoringAllocator {
             .filter(|&&s| s == MoveState::Coalesced)
             .count();
 
-        // Build spill slots
-        let mut spill_slots = Vec::new();
-        let mut spill_map = HashMap::new();
-        for &vreg in &self.spilled_nodes {
-            let slot_id = StackSlotId(self.next_spill_slot);
-            self.next_spill_slot += 1;
-            spill_slots.push(StackSlot {
-                id: slot_id,
-                size: 8,
-                align: 8,
-                kind: StackSlotKind::Spill,
-                offset: None, // Will be assigned during stack layout
-            });
-            spill_map.insert(vreg, slot_id);
-        }
+        // Build spill slots (reuse slots for non-interfering vregs)
+        let (spill_map, spill_slots) = self.build_spill_slots();
 
         ColoringResult {
             coloring: self.color.clone(),
@@ -302,12 +301,68 @@ impl GraphColoringAllocator {
         }
     }
 
+    fn build_spill_slots(&self) -> (HashMap<VReg, StackSlotId>, Vec<StackSlot>) {
+        if self.spilled_nodes.is_empty() {
+            return (HashMap::new(), Vec::new());
+        }
+
+        let mut spilled: Vec<VReg> = self.spilled_nodes.iter().copied().collect();
+        spilled.sort_by(|a, b| self.graph.degree(*b).cmp(&self.graph.degree(*a)));
+
+        let mut slot_for: HashMap<VReg, u32> = HashMap::new();
+        let mut max_slot: u32 = 0;
+
+        for vreg in spilled {
+            let mut used: HashSet<u32> = HashSet::new();
+            for neighbor in self.graph.adjacent(vreg) {
+                if self.spilled_nodes.contains(&neighbor) {
+                    if let Some(&slot) = slot_for.get(&neighbor) {
+                        used.insert(slot);
+                    }
+                }
+            }
+            let mut slot = 0u32;
+            while used.contains(&slot) {
+                slot += 1;
+            }
+            slot_for.insert(vreg, slot);
+            if slot > max_slot {
+                max_slot = slot;
+            }
+        }
+
+        let mut spill_slots = Vec::new();
+        for slot_idx in 0..=max_slot {
+            spill_slots.push(StackSlot {
+                id: StackSlotId(slot_idx),
+                size: 8,
+                align: 8,
+                kind: StackSlotKind::Spill,
+                offset: None,
+            });
+        }
+
+        let spill_map = slot_for
+            .into_iter()
+            .map(|(vreg, slot)| (vreg, StackSlotId(slot)))
+            .collect();
+
+        (spill_map, spill_slots)
+    }
+
     /// Build the interference graph from liveness information
     fn build(&mut self, func: &MirFunction, cfg: &CFG, liveness: &LivenessInfo) {
         // Add all vregs as nodes
-        for i in 0..func.vreg_count {
-            self.graph.add_node(VReg(i));
-            self.node_state.insert(VReg(i), NodeState::Initial);
+        let total_vregs = func.vreg_count.max(func.param_count as u32);
+        for i in 0..total_vregs {
+            let vreg = VReg(i);
+            self.graph.add_node(vreg);
+            if let Some(&reg) = self.precolored.get(&vreg) {
+                self.node_state.insert(vreg, NodeState::Precolored);
+                self.color.insert(vreg, reg);
+            } else {
+                self.node_state.insert(vreg, NodeState::Initial);
+            }
         }
 
         // Build interference edges: two vregs interfere if they're both live at the same point
@@ -370,13 +425,17 @@ impl GraphColoringAllocator {
                 .unwrap_or_default();
 
             // Process terminator
+            self.apply_call_clobbers(&block.terminator, &live);
             self.add_interference_for_inst(&block.terminator, &live);
             self.update_live_for_inst(&block.terminator, &mut live);
+            self.apply_scratch_clobbers(&block.terminator, &live);
 
             // Process instructions in reverse
             for inst in block.instructions.iter().rev() {
+                self.apply_call_clobbers(inst, &live);
                 self.add_interference_for_inst(inst, &live);
                 self.update_live_for_inst(inst, &mut live);
+                self.apply_scratch_clobbers(inst, &live);
             }
         }
     }
@@ -403,6 +462,36 @@ impl GraphColoringAllocator {
                 }
             }
         }
+
+        // Operands used by the same instruction must not alias registers
+        let uses = self.get_uses(inst);
+        for i in 0..uses.len() {
+            for j in (i + 1)..uses.len() {
+                if uses[i] != uses[j] {
+                    self.graph.add_edge(uses[i], uses[j]);
+                }
+            }
+        }
+    }
+
+    fn apply_call_clobbers(&mut self, inst: &MirInst, live: &HashSet<VReg>) {
+        let regs = reg_info::call_clobbers(inst);
+        if regs.is_empty() {
+            return;
+        }
+        let mut live_across: HashSet<VReg> = live.iter().copied().collect();
+        if let Some(def) = self.get_def(inst) {
+            live_across.remove(&def);
+        }
+        self.forbid_regs_for_live(&live_across, regs);
+    }
+
+    fn apply_scratch_clobbers(&mut self, inst: &MirInst, live: &HashSet<VReg>) {
+        let regs = reg_info::scratch_clobbers(inst);
+        if regs.is_empty() {
+            return;
+        }
+        self.forbid_regs_for_live(live, regs);
     }
 
     /// Update live set for an instruction (backward)
@@ -459,7 +548,8 @@ impl GraphColoringAllocator {
         // Count uses and defs, weighted by loop depth
         let loop_info = LoopInfo::compute(func, cfg);
 
-        for i in 0..func.vreg_count {
+        let total_vregs = func.vreg_count.max(func.param_count as u32);
+        for i in 0..total_vregs {
             let vreg = VReg(i);
             self.spill_cost.insert(vreg, 0.0);
         }
@@ -501,8 +591,9 @@ impl GraphColoringAllocator {
 
             let degree = self.graph.degree(vreg);
             let move_related = self.is_move_related(vreg);
+            let k = self.effective_k(vreg);
 
-            if degree >= self.k {
+            if k == 0 || degree >= k {
                 self.spill_worklist.insert(vreg);
                 self.node_state.insert(vreg, NodeState::Spill);
             } else if move_related {
@@ -518,6 +609,37 @@ impl GraphColoringAllocator {
         for mv in self.graph.all_moves.iter().copied() {
             self.move_worklist.push_back(mv);
             self.move_state.insert(mv, MoveState::Worklist);
+        }
+    }
+
+    fn is_precolored(&self, vreg: VReg) -> bool {
+        matches!(self.node_state.get(&vreg), Some(NodeState::Precolored))
+    }
+
+    fn is_forbidden(&self, vreg: VReg, reg: EbpfReg) -> bool {
+        self.forbidden_regs
+            .get(&vreg)
+            .map(|set| set.contains(&reg))
+            .unwrap_or(false)
+    }
+
+    fn effective_k(&self, vreg: VReg) -> usize {
+        if self.is_precolored(vreg) {
+            return 1;
+        }
+        self.available_regs
+            .iter()
+            .filter(|reg| !self.is_forbidden(vreg, **reg))
+            .count()
+    }
+
+    fn forbid_regs_for_live(&mut self, live: &HashSet<VReg>, regs: &[EbpfReg]) {
+        if regs.is_empty() {
+            return;
+        }
+        for vreg in live {
+            let entry = self.forbidden_regs.entry(*vreg).or_default();
+            entry.extend(regs.iter().copied());
         }
     }
 
@@ -561,6 +683,9 @@ impl GraphColoringAllocator {
 
     /// Decrement degree when a neighbor is removed
     fn decrement_degree(&mut self, vreg: VReg) {
+        if self.is_precolored(vreg) {
+            return;
+        }
         let old_degree = self.graph.degree.get(&vreg).copied().unwrap_or(0);
         if old_degree == 0 {
             return;
@@ -570,7 +695,7 @@ impl GraphColoringAllocator {
         self.graph.degree.insert(vreg, new_degree);
 
         // If degree dropped below K, move from spill to freeze/simplify
-        if old_degree == self.k {
+        if old_degree == self.effective_k(vreg) {
             // Enable moves for this node and its neighbors
             let neighbors: Vec<VReg> = self.graph.adjacent(vreg).collect();
             self.enable_moves(vreg);
@@ -610,8 +735,14 @@ impl GraphColoringAllocator {
         let x = self.get_alias(mv.dst);
         let y = self.get_alias(mv.src);
 
-        // Order so that if one is precolored, it's u
-        let (u, v) = (x, y); // We don't have precolored nodes in our current setup
+        // Order so that if one is precolored, it's u (George criterion)
+        let (u, v) = if self.is_precolored(x) {
+            (x, y)
+        } else if self.is_precolored(y) {
+            (y, x)
+        } else {
+            (x, y)
+        };
 
         if u == v {
             // Already coalesced
@@ -622,6 +753,15 @@ impl GraphColoringAllocator {
             self.move_state.insert(mv, MoveState::Constrained);
             self.add_worklist(u);
             self.add_worklist(v);
+        } else if self.is_precolored(u) {
+            if self.george(u, v) {
+                self.move_state.insert(mv, MoveState::Coalesced);
+                self.combine(u, v);
+                self.add_worklist(u);
+            } else {
+                self.active_moves.insert(mv);
+                self.move_state.insert(mv, MoveState::Active);
+            }
         } else if self.can_coalesce(u, v) {
             // Safe to coalesce using Briggs or George criterion
             self.move_state.insert(mv, MoveState::Coalesced);
@@ -637,24 +777,41 @@ impl GraphColoringAllocator {
     /// Check if coalescing u and v is safe (Briggs criterion)
     fn can_coalesce(&self, u: VReg, v: VReg) -> bool {
         // Briggs: coalesce if resulting node has fewer than K high-degree neighbors
+        let k = self.effective_k(u).min(self.effective_k(v));
+        if k == 0 {
+            return false;
+        }
         let mut high_degree_neighbors = HashSet::new();
 
         for neighbor in self.graph.adjacent(u) {
-            if self.graph.degree(neighbor) >= self.k {
+            if self.graph.degree(neighbor) >= k {
                 high_degree_neighbors.insert(neighbor);
             }
         }
         for neighbor in self.graph.adjacent(v) {
-            if self.graph.degree(neighbor) >= self.k {
+            if self.graph.degree(neighbor) >= k {
                 high_degree_neighbors.insert(neighbor);
             }
         }
 
-        high_degree_neighbors.len() < self.k
+        high_degree_neighbors.len() < k
+    }
+
+    /// George criterion for coalescing with a precolored node
+    fn george(&self, u: VReg, v: VReg) -> bool {
+        for t in self.graph.adjacent(v) {
+            if self.graph.degree(t) >= self.k && !self.graph.interferes(t, u) {
+                return false;
+            }
+        }
+        true
     }
 
     /// Add node to simplify worklist if appropriate
     fn add_worklist(&mut self, vreg: VReg) {
+        if self.is_precolored(vreg) {
+            return;
+        }
         if self.node_state.get(&vreg) == Some(&NodeState::Freeze)
             && !self.is_move_related(vreg)
             && self.graph.degree(vreg) < self.k
@@ -773,6 +930,9 @@ impl GraphColoringAllocator {
     /// Assign colors (registers) to nodes
     fn assign_colors(&mut self) {
         while let Some(vreg) = self.select_stack.pop() {
+            if self.is_precolored(vreg) {
+                continue;
+            }
             // Find colors used by neighbors
             let mut used_colors: HashSet<EbpfReg> = HashSet::new();
 
@@ -787,7 +947,7 @@ impl GraphColoringAllocator {
             let available = self
                 .available_regs
                 .iter()
-                .find(|r| !used_colors.contains(r));
+                .find(|r| !used_colors.contains(r) && !self.is_forbidden(vreg, **r));
 
             if let Some(&reg) = available {
                 self.color.insert(vreg, reg);
@@ -822,7 +982,7 @@ pub fn allocate_registers(func: &MirFunction, available_regs: Vec<EbpfReg>) -> C
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::mir::{BinOpKind, MirInst, MirValue};
+    use crate::compiler::mir::{BinOpKind, MirInst, MirValue, StackSlotKind, StringAppendType};
 
     fn make_simple_function() -> MirFunction {
         // v0 = 1
@@ -1072,6 +1232,36 @@ mod tests {
         func
     }
 
+    fn make_string_append_int_function() -> MirFunction {
+        let mut func = MirFunction::new();
+        let bb0 = func.alloc_block();
+        func.entry = bb0;
+
+        let slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+        let len = func.alloc_vreg();
+        let val = func.alloc_vreg();
+
+        func.block_mut(bb0).instructions.push(MirInst::Copy {
+            dst: len,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(bb0).instructions.push(MirInst::Copy {
+            dst: val,
+            src: MirValue::Const(42),
+        });
+        func.block_mut(bb0).instructions.push(MirInst::StringAppend {
+            dst_buffer: slot,
+            dst_len: len,
+            val: MirValue::VReg(val),
+            val_type: StringAppendType::Integer,
+        });
+        func.block_mut(bb0).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(val)),
+        };
+
+        func
+    }
+
     #[test]
     fn test_list_register_allocation() {
         let func = make_list_function();
@@ -1097,6 +1287,33 @@ mod tests {
     }
 
     #[test]
+    fn test_list_push_clobber_constraints() {
+        let func = make_list_function();
+        let available = vec![
+            EbpfReg::R1,
+            EbpfReg::R2,
+            EbpfReg::R3,
+            EbpfReg::R4,
+            EbpfReg::R5,
+            EbpfReg::R6,
+        ];
+
+        let result = allocate_registers(&func, available);
+
+        let v0_reg = result
+            .coloring
+            .get(&VReg(0))
+            .copied()
+            .expect("v0 should be colored");
+
+        assert!(
+            v0_reg != EbpfReg::R1 && v0_reg != EbpfReg::R2,
+            "List pointer should avoid R1/R2 due to ListPush scratch usage, got {:?}",
+            v0_reg
+        );
+    }
+
+    #[test]
     fn test_list_interference() {
         let func = make_list_function();
         let cfg = CFG::build(&func);
@@ -1115,6 +1332,41 @@ mod tests {
         assert!(
             allocator.graph.interferes(VReg(0), VReg(1)),
             "v0 (list) and v1 (item) should interfere"
+        );
+    }
+
+    #[test]
+    fn test_string_append_int_clobber_constraints() {
+        let func = make_string_append_int_function();
+        let available = vec![
+            EbpfReg::R1,
+            EbpfReg::R2,
+            EbpfReg::R3,
+            EbpfReg::R4,
+            EbpfReg::R5,
+            EbpfReg::R6,
+            EbpfReg::R7,
+            EbpfReg::R8,
+        ];
+
+        let result = allocate_registers(&func, available);
+        let val_reg = result
+            .coloring
+            .get(&VReg(1))
+            .copied()
+            .expect("val vreg should be colored");
+
+        assert!(
+            !matches!(
+                val_reg,
+                EbpfReg::R1
+                    | EbpfReg::R2
+                    | EbpfReg::R3
+                    | EbpfReg::R4
+                    | EbpfReg::R5
+            ),
+            "StringAppend integer source should avoid R1-R5 scratch regs, got {:?}",
+            val_reg
         );
     }
 }
