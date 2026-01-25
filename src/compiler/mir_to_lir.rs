@@ -75,10 +75,10 @@ fn lower_function(mir: &MirFunction) -> LirFunction {
     for block in &mir.blocks {
         let mut out = Vec::new();
         for inst in &block.instructions {
-            lower_inst(inst, &phys, &mut out);
+            lower_inst(inst, &phys, &mut out, &mut func);
         }
         let mut term_out = Vec::new();
-        lower_inst(&block.terminator, &phys, &mut term_out);
+        lower_inst(&block.terminator, &phys, &mut term_out, &mut func);
         let terminator = if term_out.len() == 1 {
             term_out.remove(0)
         } else {
@@ -94,7 +94,7 @@ fn lower_function(mir: &MirFunction) -> LirFunction {
     func
 }
 
-fn lower_inst(inst: &MirInst, phys: &PhysRegs, out: &mut Vec<LirInst>) {
+fn lower_inst(inst: &MirInst, phys: &PhysRegs, out: &mut Vec<LirInst>, func: &mut LirFunction) {
     match inst {
         MirInst::Copy { dst, src } => out.push(LirInst::Copy { dst: *dst, src: src.clone() }),
         MirInst::Load { dst, ptr, offset, ty } => {
@@ -145,10 +145,44 @@ fn lower_inst(inst: &MirInst, phys: &PhysRegs, out: &mut Vec<LirInst>) {
             });
         }
         MirInst::CallHelper { dst, helper, args } => {
+            let mut moves = Vec::new();
+            let mut arg_regs = Vec::new();
+            for (idx, arg) in args.iter().enumerate() {
+                let reg = match idx {
+                    0 => EbpfReg::R1,
+                    1 => EbpfReg::R2,
+                    2 => EbpfReg::R3,
+                    3 => EbpfReg::R4,
+                    4 => EbpfReg::R5,
+                    _ => EbpfReg::R5,
+                };
+                let dst_reg = phys.get(reg);
+                let src_vreg = match arg {
+                    MirValue::VReg(vreg) => *vreg,
+                    _ => {
+                        let tmp = func.alloc_vreg();
+                        out.push(LirInst::Copy {
+                            dst: tmp,
+                            src: arg.clone(),
+                        });
+                        tmp
+                    }
+                };
+                moves.push((dst_reg, src_vreg));
+                arg_regs.push(dst_reg);
+            }
+            if !moves.is_empty() {
+                out.push(LirInst::ParallelMove { moves });
+            }
+            let ret_reg = phys.get(EbpfReg::R0);
             out.push(LirInst::CallHelper {
-                dst: *dst,
                 helper: *helper,
-                args: args.clone(),
+                args: arg_regs,
+                ret: ret_reg,
+            });
+            out.push(LirInst::Copy {
+                dst: *dst,
+                src: MirValue::VReg(ret_reg),
             });
         }
         MirInst::CallSubfn { dst, subfn, args } => {

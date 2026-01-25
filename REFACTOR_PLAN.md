@@ -53,7 +53,8 @@
       - LIR: low-level, explicit temporaries, explicit call/return, explicit loads/stores. No hidden scratch registers.
       Status: HIR now normalizes literals and instruction string fields (removes DataSlice
       coupling) and preserves IR metadata; MIR lowering consumes HIR directly (IR → HIR → MIR
-      wrapper retained for compatibility). LIR not yet introduced.
+      wrapper retained for compatibility). LIR introduced with a MIR→LIR pass and the pipeline
+      now compiles LIR directly.
 
   [~] 3. Make the register file a first-class object
       - Encode the eBPF ABI in the compiler: R0 return, R1-R5 args (caller-saved), R6-R9 callee-saved, R10 frame pointer.
@@ -61,9 +62,11 @@
       - All scratch usage must be represented as LIR temporaries so the allocator can reason about interference (this resolves
         the current "implicit clobber" bug class).
       - Implement parallel move lowering for arguments/returns in LIR so cycles are correct by construction (no ad-hoc swaps).
+      - Ensure parallel-move lowering handles cases where R0 is part of the move set (avoid reliance on R0 as the temp).
       Status: LIR introduced; MIR→LIR pass creates precolored ABI vregs (R0–R5) and explicit
-      CallSubfn arg shuffles; allocator now consumes LIR and enforces call/scratch clobbers from
-      LIR metadata; codegen consumes LIR and lowers ParallelMove deterministically (cycle-safe).
+      CallSubfn/CallHelper arg shuffles; allocator now consumes LIR and enforces call/scratch
+      clobbers from LIR metadata; codegen consumes LIR and lowers ParallelMove deterministically
+      (cycle-safe).
 
   [~] 4. Rebuild type inference as a two-layer system
       - Layer A (HM): rank-1 polymorphism with algorithm W; principal types for predictable inference and error messages.
@@ -100,7 +103,9 @@
         clobbers. (research.ibm.com (https://research.ibm.com/publications/register-allocation-andamp-spilling-via-graph-
         coloring--1?utm_source=openai))
       - Ensure every helper call (and subprogram call) has explicit clobber constraints; no "secret" register usage.
-      Status: graph coloring allocator exists with spill costs; partial clobber modeling added; LIR not implemented.
+      - Plumb loop depth into LIR spill-cost heuristics (carry LoopInfo through LIR or recompute on LIR CFG).
+      Status: graph coloring allocator exists with spill costs; allocator now consumes LIR and
+      uses LIR clobbers; loop-depth heuristics still come from MIR only.
 
   [~] 8. Testing strategy aligned with the design
       - Unit tests for HM inference and principal type schemes.

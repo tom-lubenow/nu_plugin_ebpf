@@ -934,6 +934,16 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.subfn_calls.push((call_idx, *subfn));
             }
 
+            LirInst::CallHelper { helper, args, .. } => {
+                if args.len() > 5 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "BPF helpers support at most 5 arguments".into(),
+                    ));
+                }
+                self.instructions
+                    .push(EbpfInsn::new(opcode::CALL, 0, 0, 0, *helper as i32));
+            }
+
             // Phi nodes should be eliminated before codegen via SSA destruction
             LirInst::Phi { .. } => {
                 return Err(CompileError::UnsupportedInstruction(
@@ -1268,8 +1278,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
 
             // Instructions reserved for future features
-            LirInst::CallHelper { .. }
-            | LirInst::MapLookup { .. }
+            LirInst::MapLookup { .. }
             | LirInst::MapDelete { .. }
             | LirInst::StrCmp { .. }
             | LirInst::RecordStore { .. } => {

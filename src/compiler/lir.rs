@@ -194,9 +194,9 @@ pub enum LirInst {
 
     // BPF helpers / calls
     CallHelper {
-        dst: VReg,
         helper: u32,
-        args: Vec<MirValue>,
+        args: Vec<VReg>, // precolored R1-R5 vregs
+        ret: VReg,       // precolored R0 vreg
     },
     CallSubfn {
         subfn: SubfunctionId,
@@ -310,7 +310,7 @@ impl LirInst {
             | LirInst::LoadSlot { dst, .. }
             | LirInst::BinOp { dst, .. }
             | LirInst::UnaryOp { dst, .. }
-            | LirInst::CallHelper { dst, .. }
+            | LirInst::CallHelper { ret: dst, .. }
             | LirInst::CallSubfn { ret: dst, .. }
             | LirInst::MapLookup { dst, .. }
             | LirInst::LoadCtxField { dst, .. }
@@ -354,9 +354,7 @@ impl LirInst {
                 }
             }
             LirInst::CallHelper { args, .. } => {
-                for arg in args {
-                    add_value(&mut uses, arg);
-                }
+                uses.extend(args.iter().copied());
             }
             LirInst::CallSubfn { args, .. } => {
                 uses.extend(args.iter().copied());
