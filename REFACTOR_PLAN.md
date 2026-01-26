@@ -103,8 +103,9 @@
       Status: verifier-type pass now enforces pointer space/nullability for loads/stores, read-str helpers,
       list ops, and record/emit string pointers, plus stack-slot and map-value bounds on load/store and
       stack/map pointers. Scalar range tracking now propagates through consts, add/sub/mul/div/mod/shift,
-      non-zero guards, bitwise ops (bounded non-negative), and phi joins, preserving bounds across non-constant
-      offsets and pointer phis. Bounded stack range analysis exists in MIR type inference; VCC verifier is now
+      non-zero guards, bitwise ops (bounded non-negative, mask-derived; exact for constants), and phi joins,
+      preserving bounds across non-constant offsets and pointer phis. Bounded stack range analysis exists in
+      MIR type inference; VCC verifier is now
       integrated as a compile-time gate; full model not implemented.
 
   [~] 7. Register allocation & codegen modernization

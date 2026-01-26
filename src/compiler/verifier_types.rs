@@ -1153,10 +1153,15 @@ fn range_and(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
         ) => (lhs_min, lhs_max, rhs_min, rhs_max),
         _ => return ValueRange::Unknown,
     };
+    if lhs_min == lhs_max && rhs_min == rhs_max {
+        let val = lhs_min & rhs_min;
+        return ValueRange::Known { min: val, max: val };
+    }
     if lhs_min < 0 || rhs_min < 0 {
         return ValueRange::Unknown;
     }
-    let max = lhs_max.min(rhs_max);
+    let mask = mask_for_max(lhs_max) & mask_for_max(rhs_max);
+    let max = lhs_max.min(rhs_max).min(mask as i64);
     ValueRange::Known { min: 0, max }
 }
 
@@ -1168,10 +1173,15 @@ fn range_or(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
         ) => (lhs_min, lhs_max, rhs_min, rhs_max),
         _ => return ValueRange::Unknown,
     };
+    if lhs_min == lhs_max && rhs_min == rhs_max {
+        let val = lhs_min | rhs_min;
+        return ValueRange::Known { min: val, max: val };
+    }
     if lhs_min < 0 || rhs_min < 0 {
         return ValueRange::Unknown;
     }
-    let max = lhs_max.saturating_add(rhs_max);
+    let mask = mask_for_max(lhs_max) | mask_for_max(rhs_max);
+    let max = (mask as i64).min(lhs_max.saturating_add(rhs_max));
     ValueRange::Known { min: 0, max }
 }
 
@@ -1183,11 +1193,32 @@ fn range_xor(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
         ) => (lhs_min, lhs_max, rhs_min, rhs_max),
         _ => return ValueRange::Unknown,
     };
+    if lhs_min == lhs_max && rhs_min == rhs_max {
+        let val = lhs_min ^ rhs_min;
+        return ValueRange::Known { min: val, max: val };
+    }
     if lhs_min < 0 || rhs_min < 0 {
         return ValueRange::Unknown;
     }
-    let max = lhs_max.saturating_add(rhs_max);
+    let mask = mask_for_max(lhs_max) | mask_for_max(rhs_max);
+    let max = (mask as i64).min(lhs_max.saturating_add(rhs_max));
     ValueRange::Known { min: 0, max }
+}
+
+fn mask_for_max(max: i64) -> u64 {
+    if max <= 0 {
+        return 0;
+    }
+    let max = max as u64;
+    if max == u64::MAX {
+        return u64::MAX;
+    }
+    let bit = 64 - max.leading_zeros();
+    if bit >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << bit) - 1
+    }
 }
 
 fn ptr_type_for_phi(args: &[(BlockId, VReg)], state: &VerifierState) -> Option<VerifierType> {
@@ -2000,11 +2031,11 @@ mod tests {
         });
         func.block_mut(entry).instructions.push(MirInst::Copy {
             dst: left,
-            src: MirValue::Const(7),
+            src: MirValue::Const(15),
         });
         func.block_mut(entry).instructions.push(MirInst::Copy {
             dst: right,
-            src: MirValue::Const(3),
+            src: MirValue::Const(1),
         });
         func.block_mut(entry).instructions.push(MirInst::BinOp {
             dst: tmp_and,
