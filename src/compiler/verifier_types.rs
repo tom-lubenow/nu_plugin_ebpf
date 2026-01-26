@@ -67,6 +67,11 @@ enum Guard {
         op: BinOpKind,
         value: i64,
     },
+    RangeCmp {
+        lhs: VReg,
+        rhs: VReg,
+        op: BinOpKind,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -350,6 +355,27 @@ fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool
                     matches!(new_range, ValueRange::Known { min, max } if min > 0 || max < 0);
                 if let Some(slot) = next.non_zero.get_mut(reg.0 as usize) {
                     *slot = *slot || range_excludes_zero;
+                }
+            }
+            Guard::RangeCmp { lhs, rhs, op } => {
+                let lhs_range = next.get_range(lhs);
+                let rhs_range = next.get_range(rhs);
+                let (new_lhs, new_rhs) = refine_compare_ranges(lhs_range, rhs_range, op, take_true);
+                if let Some(slot) = next.ranges.get_mut(lhs.0 as usize) {
+                    *slot = new_lhs;
+                }
+                if let Some(slot) = next.ranges.get_mut(rhs.0 as usize) {
+                    *slot = new_rhs;
+                }
+                let lhs_excludes_zero =
+                    matches!(new_lhs, ValueRange::Known { min, max } if min > 0 || max < 0);
+                if let Some(slot) = next.non_zero.get_mut(lhs.0 as usize) {
+                    *slot = *slot || lhs_excludes_zero;
+                }
+                let rhs_excludes_zero =
+                    matches!(new_rhs, ValueRange::Known { min, max } if min > 0 || max < 0);
+                if let Some(slot) = next.non_zero.get_mut(rhs.0 as usize) {
+                    *slot = *slot || rhs_excludes_zero;
                 }
             }
         }
@@ -704,12 +730,44 @@ fn guard_from_compare(
     rhs: &MirValue,
     state: &VerifierState,
 ) -> Option<Guard> {
-    let (reg, value, op) = match (lhs, rhs) {
-        (MirValue::VReg(v), MirValue::Const(c)) => (*v, *c, op),
-        (MirValue::Const(c), MirValue::VReg(v)) => (*v, *c, swap_compare(op)?),
-        _ => return None,
-    };
+    match (lhs, rhs) {
+        (MirValue::VReg(v), MirValue::Const(c)) => {
+            guard_from_compare_reg_const(op, *v, *c, state)
+        }
+        (MirValue::Const(c), MirValue::VReg(v)) => {
+            guard_from_compare_reg_const(swap_compare(op)?, *v, *c, state)
+        }
+        (MirValue::VReg(lhs), MirValue::VReg(rhs)) => {
+            let op = match op {
+                BinOpKind::Eq
+                | BinOpKind::Ne
+                | BinOpKind::Lt
+                | BinOpKind::Le
+                | BinOpKind::Gt
+                | BinOpKind::Ge => op,
+                _ => return None,
+            };
+            let lhs_ty = state.get(*lhs);
+            let rhs_ty = state.get(*rhs);
+            if matches!(lhs_ty, VerifierType::Ptr { .. }) || matches!(rhs_ty, VerifierType::Ptr { .. }) {
+                return None;
+            }
+            Some(Guard::RangeCmp {
+                lhs: *lhs,
+                rhs: *rhs,
+                op,
+            })
+        }
+        _ => None,
+    }
+}
 
+fn guard_from_compare_reg_const(
+    op: BinOpKind,
+    reg: VReg,
+    value: i64,
+    state: &VerifierState,
+) -> Option<Guard> {
     let op = match op {
         BinOpKind::Eq
         | BinOpKind::Ne
@@ -800,35 +858,165 @@ fn refine_range(current: ValueRange, op: BinOpKind, value: i64, take_true: bool)
         };
     }
 
-    let candidate = match op {
-        BinOpKind::Eq => ValueRange::Known { min: value, max: value },
-        BinOpKind::Lt => ValueRange::Known {
-            min: i64::MIN,
-            max: value.saturating_sub(1),
-        },
-        BinOpKind::Le => ValueRange::Known { min: i64::MIN, max: value },
-        BinOpKind::Gt => ValueRange::Known {
-            min: value.saturating_add(1),
-            max: i64::MAX,
-        },
-        BinOpKind::Ge => ValueRange::Known { min: value, max: i64::MAX },
+    let (min, max) = match op {
+        BinOpKind::Eq => (Some(value), Some(value)),
+        BinOpKind::Lt => (None, Some(value.saturating_sub(1))),
+        BinOpKind::Le => (None, Some(value)),
+        BinOpKind::Gt => (Some(value.saturating_add(1)), None),
+        BinOpKind::Ge => (Some(value), None),
         _ => return current,
     };
 
-    match (current, candidate) {
-        (
-            ValueRange::Known { min: cur_min, max: cur_max },
-            ValueRange::Known { min: cand_min, max: cand_max },
-        ) => {
-            let min = cur_min.max(cand_min);
-            let max = cur_max.min(cand_max);
+    intersect_range(current, min, max)
+}
+
+fn refine_compare_ranges(
+    lhs: ValueRange,
+    rhs: ValueRange,
+    op: BinOpKind,
+    take_true: bool,
+) -> (ValueRange, ValueRange) {
+    let op = if take_true {
+        op
+    } else {
+        let Some(negated) = negate_compare(op) else {
+            return (lhs, rhs);
+        };
+        negated
+    };
+
+    let lhs_bounds = range_bounds(lhs);
+    let rhs_bounds = range_bounds(rhs);
+
+    match op {
+        BinOpKind::Eq => {
+            let lhs = match rhs_bounds {
+                Some((min, max)) => intersect_range(lhs, Some(min), Some(max)),
+                None => lhs,
+            };
+            let rhs = match lhs_bounds {
+                Some((min, max)) => intersect_range(rhs, Some(min), Some(max)),
+                None => rhs,
+            };
+            (lhs, rhs)
+        }
+        BinOpKind::Ne => {
+            let lhs = if let Some((min, max)) = rhs_bounds {
+                if min == max {
+                    refine_range(lhs, BinOpKind::Ne, min, true)
+                } else {
+                    lhs
+                }
+            } else {
+                lhs
+            };
+            let rhs = if let Some((min, max)) = lhs_bounds {
+                if min == max {
+                    refine_range(rhs, BinOpKind::Ne, min, true)
+                } else {
+                    rhs
+                }
+            } else {
+                rhs
+            };
+            (lhs, rhs)
+        }
+        BinOpKind::Lt => {
+            let lhs = match rhs_bounds {
+                Some((_, rhs_max)) => {
+                    let max = rhs_max.saturating_sub(1);
+                    intersect_range(lhs, None, Some(max))
+                }
+                None => lhs,
+            };
+            let rhs = match lhs_bounds {
+                Some((lhs_min, _)) => {
+                    let min = lhs_min.saturating_add(1);
+                    intersect_range(rhs, Some(min), None)
+                }
+                None => rhs,
+            };
+            (lhs, rhs)
+        }
+        BinOpKind::Le => {
+            let lhs = match rhs_bounds {
+                Some((_, rhs_max)) => intersect_range(lhs, None, Some(rhs_max)),
+                None => lhs,
+            };
+            let rhs = match lhs_bounds {
+                Some((lhs_min, _)) => intersect_range(rhs, Some(lhs_min), None),
+                None => rhs,
+            };
+            (lhs, rhs)
+        }
+        BinOpKind::Gt => {
+            let lhs = match rhs_bounds {
+                Some((rhs_min, _)) => {
+                    let min = rhs_min.saturating_add(1);
+                    intersect_range(lhs, Some(min), None)
+                }
+                None => lhs,
+            };
+            let rhs = match lhs_bounds {
+                Some((_, lhs_max)) => {
+                    let max = lhs_max.saturating_sub(1);
+                    intersect_range(rhs, None, Some(max))
+                }
+                None => rhs,
+            };
+            (lhs, rhs)
+        }
+        BinOpKind::Ge => {
+            let lhs = match rhs_bounds {
+                Some((rhs_min, _)) => intersect_range(lhs, Some(rhs_min), None),
+                None => lhs,
+            };
+            let rhs = match lhs_bounds {
+                Some((_, lhs_max)) => intersect_range(rhs, None, Some(lhs_max)),
+                None => rhs,
+            };
+            (lhs, rhs)
+        }
+        _ => (lhs, rhs),
+    }
+}
+
+fn range_bounds(range: ValueRange) -> Option<(i64, i64)> {
+    match range {
+        ValueRange::Known { min, max } => Some((min, max)),
+        ValueRange::Unknown => None,
+    }
+}
+
+fn intersect_range(current: ValueRange, min: Option<i64>, max: Option<i64>) -> ValueRange {
+    if min.is_none() && max.is_none() {
+        return current;
+    }
+    match current {
+        ValueRange::Known {
+            min: cur_min,
+            max: cur_max,
+        } => {
+            let min = min.map(|v| cur_min.max(v)).unwrap_or(cur_min);
+            let max = max.map(|v| cur_max.min(v)).unwrap_or(cur_max);
             if min <= max {
                 ValueRange::Known { min, max }
             } else {
-                ValueRange::Known { min: cand_min, max: cand_max }
+                ValueRange::Known {
+                    min: cur_min,
+                    max: cur_max,
+                }
             }
         }
-        (_, candidate) => candidate,
+        ValueRange::Unknown => {
+            let min = min.unwrap_or(i64::MIN);
+            let max = max.unwrap_or(i64::MAX);
+            if min <= max {
+                ValueRange::Known { min, max }
+            } else {
+                ValueRange::Unknown
+            }
+        }
     }
 }
 
@@ -2444,5 +2632,103 @@ mod tests {
         types.insert(dst, MirType::I8);
 
         verify_mir(&func, &types).expect("expected compare to refine range");
+    }
+
+    #[test]
+    fn test_compare_refines_vreg_bound() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let left = func.alloc_block();
+        let right = func.alloc_block();
+        let join = func.alloc_block();
+        let ok = func.alloc_block();
+        let bad = func.alloc_block();
+        func.entry = entry;
+
+        let slot = func.alloc_stack_slot(4, 1, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let idx = func.alloc_vreg();
+        let bound = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let cmp = func.alloc_vreg();
+        let tmp_ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: bound,
+            src: MirValue::Const(4),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: cond,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: left,
+            if_false: right,
+        };
+
+        func.block_mut(left).instructions.push(MirInst::Copy {
+            dst: idx,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(left).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(right).instructions.push(MirInst::Copy {
+            dst: idx,
+            src: MirValue::Const(7),
+        });
+        func.block_mut(right).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(join).instructions.push(MirInst::BinOp {
+            dst: cmp,
+            op: BinOpKind::Lt,
+            lhs: MirValue::VReg(idx),
+            rhs: MirValue::VReg(bound),
+        });
+        func.block_mut(join).terminator = MirInst::Branch {
+            cond: cmp,
+            if_true: ok,
+            if_false: bad,
+        };
+
+        func.block_mut(ok).instructions.push(MirInst::BinOp {
+            dst: tmp_ptr,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::VReg(idx),
+        });
+        func.block_mut(ok).instructions.push(MirInst::Load {
+            dst,
+            ptr: tmp_ptr,
+            offset: 0,
+            ty: MirType::I8,
+        });
+        func.block_mut(ok).terminator = MirInst::Return { val: None };
+
+        func.block_mut(bad).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            tmp_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I8);
+
+        verify_mir(&func, &types).expect("expected vreg compare to refine range");
     }
 }
