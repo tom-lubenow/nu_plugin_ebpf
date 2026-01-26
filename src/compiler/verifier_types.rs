@@ -53,15 +53,22 @@ enum VerifierType {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Guard {
-    ptr: VReg,
-    true_is_non_null: bool,
+enum Guard {
+    Ptr {
+        ptr: VReg,
+        true_is_non_null: bool,
+    },
+    NonZero {
+        reg: VReg,
+        true_is_non_zero: bool,
+    },
 }
 
 #[derive(Debug, Clone)]
 struct VerifierState {
     regs: Vec<VerifierType>,
     ranges: Vec<ValueRange>,
+    non_zero: Vec<bool>,
     guards: HashMap<VReg, Guard>,
 }
 
@@ -70,6 +77,7 @@ impl VerifierState {
         Self {
             regs: vec![VerifierType::Uninit; total_vregs],
             ranges: vec![ValueRange::Unknown; total_vregs],
+            non_zero: vec![false; total_vregs],
             guards: HashMap::new(),
         }
     }
@@ -78,6 +86,7 @@ impl VerifierState {
         Self {
             regs: self.regs.clone(),
             ranges: self.ranges.clone(),
+            non_zero: self.non_zero.clone(),
             guards: HashMap::new(),
         }
     }
@@ -96,6 +105,13 @@ impl VerifierState {
             .unwrap_or(ValueRange::Unknown)
     }
 
+    fn is_non_zero(&self, vreg: VReg) -> bool {
+        self.non_zero
+            .get(vreg.0 as usize)
+            .copied()
+            .unwrap_or(false)
+    }
+
     fn set(&mut self, vreg: VReg, ty: VerifierType) {
         self.set_with_range(vreg, ty, ValueRange::Unknown);
     }
@@ -106,6 +122,9 @@ impl VerifierState {
         }
         if let Some(slot) = self.ranges.get_mut(vreg.0 as usize) {
             *slot = range;
+        }
+        if let Some(slot) = self.non_zero.get_mut(vreg.0 as usize) {
+            *slot = false;
         }
         self.guards.remove(&vreg);
     }
@@ -123,9 +142,14 @@ impl VerifierState {
             let b = other.ranges[i];
             ranges.push(join_range(a, b));
         }
+        let mut non_zero = Vec::with_capacity(self.non_zero.len());
+        for i in 0..self.non_zero.len() {
+            non_zero.push(self.non_zero[i] && other.non_zero[i]);
+        }
         VerifierState {
             regs,
             ranges,
+            non_zero,
             guards: HashMap::new(),
         }
     }
@@ -250,26 +274,55 @@ fn propagate_state(
 fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool) -> VerifierState {
     let mut next = state.with_cleared_guards();
     if let Some(guard) = guard {
-        let wants_non_null = if take_true {
-            guard.true_is_non_null
-        } else {
-            !guard.true_is_non_null
-        };
-        let current = next.get(guard.ptr);
-        if let VerifierType::Ptr { space, bounds, .. } = current {
-            let nullability = if wants_non_null {
-                Nullability::NonNull
-            } else {
-                Nullability::Null
-            };
-            next.set(
-                guard.ptr,
-                VerifierType::Ptr {
-                    space,
-                    nullability,
-                    bounds,
-                },
-            );
+        match guard {
+            Guard::Ptr {
+                ptr,
+                true_is_non_null,
+            } => {
+                let wants_non_null = if take_true {
+                    true_is_non_null
+                } else {
+                    !true_is_non_null
+                };
+                let current = next.get(ptr);
+                if let VerifierType::Ptr { space, bounds, .. } = current {
+                    let nullability = if wants_non_null {
+                        Nullability::NonNull
+                    } else {
+                        Nullability::Null
+                    };
+                    next.set(
+                        ptr,
+                        VerifierType::Ptr {
+                            space,
+                            nullability,
+                            bounds,
+                        },
+                    );
+                }
+            }
+            Guard::NonZero {
+                reg,
+                true_is_non_zero,
+            } => {
+                let wants_non_zero = if take_true {
+                    true_is_non_zero
+                } else {
+                    !true_is_non_zero
+                };
+                if wants_non_zero {
+                    if let Some(slot) = next.non_zero.get_mut(reg.0 as usize) {
+                        *slot = true;
+                    }
+                } else {
+                    if let Some(slot) = next.ranges.get_mut(reg.0 as usize) {
+                        *slot = ValueRange::Known { min: 0, max: 0 };
+                    }
+                    if let Some(slot) = next.non_zero.get_mut(reg.0 as usize) {
+                        *slot = false;
+                    }
+                }
+            }
         }
     }
     next
@@ -622,19 +675,22 @@ fn guard_from_compare(
         _ => (None, rhs),
     };
 
-    let ptr = ptr?;
-    let ptr_ty = state.get(ptr);
-    if !matches!(ptr_ty, VerifierType::Ptr { .. }) {
-        return None;
-    }
-
+    let reg = ptr?;
     match other {
         MirValue::Const(c) if *c == 0 => {
-            let true_is_non_null = matches!(op, BinOpKind::Ne);
-            Some(Guard {
-                ptr,
-                true_is_non_null,
-            })
+            let true_is_non_zero = matches!(op, BinOpKind::Ne);
+            let ty = state.get(reg);
+            if matches!(ty, VerifierType::Ptr { .. }) {
+                Some(Guard::Ptr {
+                    ptr: reg,
+                    true_is_non_null: true_is_non_zero,
+                })
+            } else {
+                Some(Guard::NonZero {
+                    reg,
+                    true_is_non_zero,
+                })
+            }
         }
         _ => None,
     }
@@ -797,7 +853,28 @@ fn value_type(
 fn value_range(value: &MirValue, state: &VerifierState) -> ValueRange {
     match value {
         MirValue::Const(c) => ValueRange::Known { min: *c, max: *c },
-        MirValue::VReg(v) => state.get_range(*v),
+        MirValue::VReg(v) => {
+            let mut range = state.get_range(*v);
+            if state.is_non_zero(*v) {
+                range = match range {
+                    ValueRange::Known { min, max } => {
+                        if min < 0 && max > 0 {
+                            ValueRange::Unknown
+                        } else if min == 0 && max > 0 {
+                            ValueRange::Known { min: 1, max }
+                        } else if max == 0 && min < 0 {
+                            ValueRange::Known { min, max: -1 }
+                        } else if min == 0 && max == 0 {
+                            ValueRange::Unknown
+                        } else {
+                            ValueRange::Known { min, max }
+                        }
+                    }
+                    ValueRange::Unknown => ValueRange::Unknown,
+                };
+            }
+            range
+        }
         MirValue::StackSlot(_) => ValueRange::Unknown,
     }
 }
@@ -933,6 +1010,8 @@ fn range_for_binop(op: BinOpKind, lhs: &MirValue, rhs: &MirValue, state: &Verifi
         BinOpKind::Add => range_add(lhs_range, rhs_range),
         BinOpKind::Sub => range_sub(lhs_range, rhs_range),
         BinOpKind::Mul => range_mul(lhs_range, rhs_range),
+        BinOpKind::Div => range_div(lhs_range, rhs_range),
+        BinOpKind::Mod => range_mod(lhs_range, rhs_range),
         BinOpKind::Shl => range_shift(lhs_range, rhs_range, true),
         BinOpKind::Shr => range_shift(lhs_range, rhs_range, false),
         _ => ValueRange::Unknown,
@@ -1017,6 +1096,49 @@ fn range_shift(lhs: ValueRange, rhs: ValueRange, is_left: bool) -> ValueRange {
     ValueRange::Known {
         min: clamp_i128_to_i64(min),
         max: clamp_i128_to_i64(max),
+    }
+}
+
+fn range_div(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
+    match (lhs, rhs) {
+        (ValueRange::Known { min: lhs_min, max: lhs_max }, ValueRange::Known { min: rhs_min, max: rhs_max }) => {
+            if rhs_min <= 0 && rhs_max >= 0 {
+                return ValueRange::Unknown;
+            }
+            let candidates = [
+                (lhs_min as i128) / (rhs_min as i128),
+                (lhs_min as i128) / (rhs_max as i128),
+                (lhs_max as i128) / (rhs_min as i128),
+                (lhs_max as i128) / (rhs_max as i128),
+            ];
+            let mut min = i128::MAX;
+            let mut max = i128::MIN;
+            for val in candidates {
+                min = min.min(val);
+                max = max.max(val);
+            }
+            ValueRange::Known {
+                min: clamp_i128_to_i64(min),
+                max: clamp_i128_to_i64(max),
+            }
+        }
+        _ => ValueRange::Unknown,
+    }
+}
+
+fn range_mod(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
+    match (lhs, rhs) {
+        (ValueRange::Known { min: lhs_min, max: _lhs_max }, ValueRange::Known { min: rhs_min, max: rhs_max }) => {
+            if rhs_min <= 0 || rhs_max <= 0 {
+                return ValueRange::Unknown;
+            }
+            if lhs_min < 0 {
+                return ValueRange::Unknown;
+            }
+            let max_mod = rhs_max.saturating_sub(1);
+            ValueRange::Known { min: 0, max: max_mod }
+        }
+        _ => ValueRange::Unknown,
     }
 }
 
@@ -1632,5 +1754,177 @@ mod tests {
         types.insert(dst, MirType::I64);
 
         verify_mir(&func, &types).expect("expected bounds to propagate through phi");
+    }
+
+    #[test]
+    fn test_div_range_with_non_zero_guard() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let left = func.alloc_block();
+        let right = func.alloc_block();
+        let join = func.alloc_block();
+        let ok = func.alloc_block();
+        let bad = func.alloc_block();
+        func.entry = entry;
+
+        let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let idx = func.alloc_vreg();
+        let div = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let offset = func.alloc_vreg();
+        let tmp_ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: ptr,
+            if_true: left,
+            if_false: right,
+        };
+
+        func.block_mut(left).instructions.push(MirInst::Copy {
+            dst: idx,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(left).instructions.push(MirInst::Copy {
+            dst: div,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(left).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(right).instructions.push(MirInst::Copy {
+            dst: idx,
+            src: MirValue::Const(31),
+        });
+        func.block_mut(right).instructions.push(MirInst::Copy {
+            dst: div,
+            src: MirValue::Const(4),
+        });
+        func.block_mut(right).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(join).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(div),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(join).terminator = MirInst::Branch {
+            cond,
+            if_true: ok,
+            if_false: bad,
+        };
+
+        func.block_mut(ok).instructions.push(MirInst::BinOp {
+            dst: offset,
+            op: BinOpKind::Div,
+            lhs: MirValue::VReg(idx),
+            rhs: MirValue::VReg(div),
+        });
+        func.block_mut(ok).instructions.push(MirInst::BinOp {
+            dst: tmp_ptr,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::VReg(offset),
+        });
+        func.block_mut(ok).instructions.push(MirInst::Load {
+            dst,
+            ptr: tmp_ptr,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(ok).terminator = MirInst::Return { val: None };
+
+        func.block_mut(bad).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            tmp_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected bounds error");
+        assert!(err.iter().any(|e| e.message.contains("out of bounds")));
+    }
+
+    #[test]
+    fn test_mod_range_bounds() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let slot = func.alloc_stack_slot(2, 1, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let idx = func.alloc_vreg();
+        let div = func.alloc_vreg();
+        let offset = func.alloc_vreg();
+        let tmp_ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: idx,
+            src: MirValue::Const(31),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: div,
+            src: MirValue::Const(4),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: offset,
+            op: BinOpKind::Mod,
+            lhs: MirValue::VReg(idx),
+            rhs: MirValue::VReg(div),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: tmp_ptr,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::VReg(offset),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Load {
+            dst,
+            ptr: tmp_ptr,
+            offset: 0,
+            ty: MirType::I8,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            tmp_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I8);
+
+        let err = verify_mir(&func, &types).expect_err("expected bounds error");
+        assert!(err.iter().any(|e| e.message.contains("out of bounds")));
     }
 }
