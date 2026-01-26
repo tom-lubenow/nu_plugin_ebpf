@@ -229,7 +229,7 @@ fn apply_inst(
             state.set(*dst, ty);
         }
         MirInst::Load { dst, ptr, .. } => {
-            require_non_null_ptr(*ptr, "load", state, errors);
+            require_ptr_with_space(*ptr, "load", &[AddressSpace::Stack, AddressSpace::Map], state, errors);
             let ty = types
                 .get(dst)
                 .map(verifier_type_from_mir)
@@ -237,7 +237,7 @@ fn apply_inst(
             state.set(*dst, ty);
         }
         MirInst::Store { ptr, .. } => {
-            require_non_null_ptr(*ptr, "store", state, errors);
+            require_ptr_with_space(*ptr, "store", &[AddressSpace::Stack, AddressSpace::Map], state, errors);
         }
         MirInst::LoadSlot { dst, .. } => {
             let ty = types
@@ -275,8 +275,6 @@ fn apply_inst(
         | MirInst::StrCmp { dst, .. }
         | MirInst::StopTimer { dst, .. }
         | MirInst::LoopHeader { counter: dst, .. }
-        | MirInst::ListLen { dst, .. }
-        | MirInst::ListGet { dst, .. }
         | MirInst::Phi { dst, .. } => {
             let ty = types
                 .get(dst)
@@ -302,6 +300,22 @@ fn apply_inst(
                 },
             );
         }
+        MirInst::ListLen { dst, list } => {
+            require_ptr_with_space(*list, "list", &[AddressSpace::Stack], state, errors);
+            let ty = types
+                .get(dst)
+                .map(verifier_type_from_mir)
+                .unwrap_or(VerifierType::Scalar);
+            state.set(*dst, ty);
+        }
+        MirInst::ListGet { dst, list, .. } => {
+            require_ptr_with_space(*list, "list", &[AddressSpace::Stack], state, errors);
+            let ty = types
+                .get(dst)
+                .map(verifier_type_from_mir)
+                .unwrap_or(VerifierType::Scalar);
+            state.set(*dst, ty);
+        }
         MirInst::LoadCtxField { dst, .. } => {
             let ty = types
                 .get(dst)
@@ -309,22 +323,54 @@ fn apply_inst(
                 .unwrap_or(VerifierType::Scalar);
             state.set(*dst, ty);
         }
+        MirInst::ReadStr {
+            ptr, user_space, ..
+        } => {
+            let allowed = if *user_space {
+                &[AddressSpace::User][..]
+            } else {
+                &[AddressSpace::Kernel, AddressSpace::Map, AddressSpace::Stack][..]
+            };
+            require_ptr_with_space(*ptr, "read_str", allowed, state, errors);
+        }
         MirInst::EmitEvent { data, size } => {
             if *size > 8 {
-                require_non_null_ptr(*data, "emit", state, errors);
+                require_ptr_with_space(
+                    *data,
+                    "emit",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    state,
+                    errors,
+                );
             }
         }
         MirInst::EmitRecord { fields } => {
             for field in fields {
-                if let Some(MirType::Array { .. }) = types.get(&field.value) {
-                    require_non_null_ptr(field.value, "emit record", state, errors);
+                if let Some(MirType::Array { .. }) | Some(MirType::Ptr { .. }) =
+                    types.get(&field.value)
+                {
+                    require_ptr_with_space(
+                        field.value,
+                        "emit record",
+                        &[AddressSpace::Stack, AddressSpace::Map],
+                        state,
+                        errors,
+                    );
                 }
             }
         }
-        MirInst::MapUpdate { .. }
-        | MirInst::MapDelete { .. }
-        | MirInst::ReadStr { .. }
-        | MirInst::Histogram { .. }
+        MirInst::MapUpdate { key, .. } | MirInst::MapDelete { key, .. } => {
+            if let VerifierType::Ptr { .. } = state.get(*key) {
+                require_ptr_with_space(
+                    *key,
+                    "map key",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    state,
+                    errors,
+                );
+            }
+        }
+        MirInst::Histogram { .. }
         | MirInst::StartTimer
         | MirInst::TailCall { .. }
         | MirInst::Jump { .. }
@@ -332,8 +378,37 @@ fn apply_inst(
         | MirInst::Return { .. }
         | MirInst::LoopBack { .. }
         | MirInst::Placeholder => {}
-        MirInst::ListPush { .. } => {}
-        MirInst::StringAppend { .. } | MirInst::IntToString { .. } | MirInst::RecordStore { .. } => {}
+        MirInst::ListPush { list, .. } => {
+            require_ptr_with_space(
+                *list,
+                "list",
+                &[AddressSpace::Stack],
+                state,
+                errors,
+            );
+        }
+        MirInst::StringAppend { dst_len, .. } | MirInst::IntToString { dst_len, .. } => {
+            let ty = state.get(*dst_len);
+            if matches!(ty, VerifierType::Uninit) {
+                errors.push(VerifierTypeError::new(format!(
+                    "string length uses uninitialized v{}",
+                    dst_len.0
+                )));
+            }
+        }
+        MirInst::RecordStore { val, ty, .. } => {
+            if matches!(ty, MirType::Array { .. } | MirType::Ptr { .. }) {
+                if let MirValue::VReg(vreg) = val {
+                    require_ptr_with_space(
+                        *vreg,
+                        "record store",
+                        &[AddressSpace::Stack, AddressSpace::Map],
+                        state,
+                        errors,
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -393,17 +468,26 @@ fn guard_from_compare(
     }
 }
 
-fn require_non_null_ptr(
+fn require_ptr_with_space(
     ptr: VReg,
     op: &str,
+    allowed: &[AddressSpace],
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
     match state.get(ptr) {
         VerifierType::Ptr {
             nullability: Nullability::NonNull,
+            space,
             ..
-        } => {}
+        } => {
+            if !allowed.contains(&space) {
+                errors.push(VerifierTypeError::new(format!(
+                    "{op} expects pointer in {:?}, got {:?}",
+                    allowed, space
+                )));
+            }
+        }
         VerifierType::Ptr {
             nullability: Nullability::Null,
             ..
@@ -443,6 +527,10 @@ fn value_type(value: &MirValue, state: &VerifierState) -> VerifierType {
 fn verifier_type_from_mir(ty: &MirType) -> VerifierType {
     match ty {
         MirType::Bool => VerifierType::Bool,
+        MirType::Array { .. } => VerifierType::Ptr {
+            space: AddressSpace::Stack,
+            nullability: Nullability::NonNull,
+        },
         MirType::Ptr { address_space, .. } => VerifierType::Ptr {
             space: *address_space,
             nullability: match address_space {
@@ -626,5 +714,68 @@ mod tests {
         );
         types.insert(dst, MirType::I64);
         verify_mir(&func, &types).expect("stack pointer should be non-null");
+    }
+
+    #[test]
+    fn test_read_str_rejects_non_user_ptr_for_user_space() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let ptr = func.alloc_vreg();
+        func.param_count = 1;
+
+        let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        func.block_mut(entry).instructions.push(MirInst::ReadStr {
+            dst: slot,
+            ptr,
+            user_space: true,
+            max_len: 16,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected user ptr error");
+        assert!(err.iter().any(|e| e.message.contains("read_str")));
+    }
+
+    #[test]
+    fn test_load_rejects_user_ptr() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let ptr = func.alloc_vreg();
+        func.param_count = 1;
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Load {
+            dst,
+            ptr,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::User,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected user ptr load error");
+        assert!(err.iter().any(|e| e.message.contains("load")));
     }
 }

@@ -100,7 +100,9 @@
         utm_source=openai))
       - This becomes a compile-time "pre-verifier": it should reject anything the kernel verifier would reject, and ideally
         catch more with better error messages.
-      Status: bounded stack range analysis exists in MIR type inference; VCC verifier is now integrated as a compile-time gate; full model not implemented.
+      Status: verifier-type pass now enforces pointer space/nullability for loads/stores, read-str helpers,
+      list ops, and record/emit string pointers. Bounded stack range analysis exists in MIR type inference;
+      VCC verifier is now integrated as a compile-time gate; full model not implemented.
 
   [~] 7. Register allocation & codegen modernization
       - Use graph coloring with spill cost heuristics on LIR (post-SSA destruction), with explicit precolored regs and
