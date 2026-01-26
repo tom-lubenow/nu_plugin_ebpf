@@ -92,6 +92,7 @@
         utm_source=openai))
       Status: HIR let-generalization now implemented for Store/LoadVariable using HM-style schemes, and
       HIR inference runs after IR→HIR lowering (before HIR→MIR) to support rank-1 polymorphism.
+      HIR inference now constrains list/record/string ops and range literals to reduce Unknown propagation.
 
   [~] 6. Verifier-aligned abstract interpretation pass
       - Implement a small interpreter that tracks register types, stack slots, and ranges, following the kernel's model

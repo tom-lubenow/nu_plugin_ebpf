@@ -196,6 +196,28 @@ impl<'a> HirTypeInference<'a> {
             HirStmt::DropVariable { var_id } => {
                 self.env.remove(*var_id);
             }
+            HirStmt::StringAppend { src_dst, .. } => {
+                let dst_ty = self.reg_type(*src_dst);
+                self.constrain(dst_ty, stack_string_ptr_type(), "string_append")?;
+            }
+            HirStmt::ListPush { src_dst, item } => {
+                let list_ty = self.reg_type(*src_dst);
+                let item_ty = self.reg_type(*item);
+                self.constrain(list_ty, stack_list_ptr_type(), "list_push_list")?;
+                self.constrain(item_ty, HMType::I64, "list_push_item")?;
+            }
+            HirStmt::ListSpread { src_dst, items } => {
+                let list_ty = self.reg_type(*src_dst);
+                let items_ty = self.reg_type(*items);
+                self.constrain(list_ty, stack_list_ptr_type(), "list_spread_dst")?;
+                self.constrain(items_ty, stack_list_ptr_type(), "list_spread_src")?;
+            }
+            HirStmt::RecordInsert { src_dst, key, .. } => {
+                let record_ty = self.reg_type(*src_dst);
+                let key_ty = self.reg_type(*key);
+                self.constrain(record_ty, stack_record_ptr_type(), "record_insert_dst")?;
+                self.constrain(key_ty, stack_string_ptr_type(), "record_insert_key")?;
+            }
             HirStmt::BinaryOp { lhs_dst, op, rhs } => {
                 let lhs_ty = self.reg_type(*lhs_dst);
                 let rhs_ty = self.reg_type(*rhs);
@@ -293,23 +315,15 @@ fn hm_type_for_literal(lit: &HirLiteral) -> HMType {
         | HirLiteral::Filesize(_)
         | HirLiteral::Duration(_)
         | HirLiteral::Date(_) => HMType::I64,
+        HirLiteral::Range { .. } => HMType::I64,
         HirLiteral::Binary(_)
         | HirLiteral::String(_)
         | HirLiteral::RawString(_)
         | HirLiteral::Filepath { .. }
         | HirLiteral::Directory { .. }
-        | HirLiteral::GlobPattern { .. } => HMType::Ptr {
-            pointee: Box::new(HMType::U8),
-            address_space: AddressSpace::Stack,
-        },
-        HirLiteral::List { .. } => HMType::Ptr {
-            pointee: Box::new(HMType::I64),
-            address_space: AddressSpace::Stack,
-        },
-        HirLiteral::Record { .. } => HMType::Ptr {
-            pointee: Box::new(HMType::I64),
-            address_space: AddressSpace::Stack,
-        },
+        | HirLiteral::GlobPattern { .. } => stack_string_ptr_type(),
+        HirLiteral::List { .. } => stack_list_ptr_type(),
+        HirLiteral::Record { .. } => stack_record_ptr_type(),
         _ => HMType::Unknown,
     }
 }
@@ -323,6 +337,27 @@ fn hm_type_for_value(val: &Value) -> HMType {
         | Value::Duration { .. }
         | Value::Date { .. } => HMType::I64,
         _ => HMType::Unknown,
+    }
+}
+
+fn stack_string_ptr_type() -> HMType {
+    HMType::Ptr {
+        pointee: Box::new(HMType::U8),
+        address_space: AddressSpace::Stack,
+    }
+}
+
+fn stack_list_ptr_type() -> HMType {
+    HMType::Ptr {
+        pointee: Box::new(HMType::I64),
+        address_space: AddressSpace::Stack,
+    }
+}
+
+fn stack_record_ptr_type() -> HMType {
+    HMType::Ptr {
+        pointee: Box::new(HMType::I64),
+        address_space: AddressSpace::Stack,
     }
 }
 
@@ -408,6 +443,125 @@ mod tests {
             lit: HirLiteral::String("oops".into()),
         });
         block.stmts.push(HirStmt::Not { src_dst: RegId::new(0) });
+
+        func.blocks.push(block);
+
+        let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+        let decl_names = HashMap::new();
+        assert!(infer_hir(&program, &decl_names).is_err());
+    }
+
+    #[test]
+    fn test_list_push_requires_list_ptr() {
+        let mut func = HirFunction {
+            blocks: Vec::new(),
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 2,
+            file_count: 0,
+        };
+
+        let mut block = HirBlock {
+            id: HirBlockId(0),
+            stmts: Vec::new(),
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        };
+
+        block.stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Int(0),
+        });
+        block.stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Int(1),
+        });
+        block.stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: RegId::new(1),
+        });
+
+        func.blocks.push(block);
+
+        let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+        let decl_names = HashMap::new();
+        assert!(infer_hir(&program, &decl_names).is_err());
+    }
+
+    #[test]
+    fn test_record_insert_requires_string_key() {
+        let mut func = HirFunction {
+            blocks: Vec::new(),
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 3,
+            file_count: 0,
+        };
+
+        let mut block = HirBlock {
+            id: HirBlockId(0),
+            stmts: Vec::new(),
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        };
+
+        block.stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Record { capacity: 0 },
+        });
+        block.stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Int(0),
+        });
+        block.stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(1),
+        });
+        block.stmts.push(HirStmt::RecordInsert {
+            src_dst: RegId::new(0),
+            key: RegId::new(1),
+            val: RegId::new(2),
+        });
+
+        func.blocks.push(block);
+
+        let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+        let decl_names = HashMap::new();
+        assert!(infer_hir(&program, &decl_names).is_err());
+    }
+
+    #[test]
+    fn test_string_append_requires_string_dst() {
+        let mut func = HirFunction {
+            blocks: Vec::new(),
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 2,
+            file_count: 0,
+        };
+
+        let mut block = HirBlock {
+            id: HirBlockId(0),
+            stmts: Vec::new(),
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        };
+
+        block.stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Int(0),
+        });
+        block.stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::String("hi".into()),
+        });
+        block.stmts.push(HirStmt::StringAppend {
+            src_dst: RegId::new(0),
+            val: RegId::new(1),
+        });
 
         func.blocks.push(block);
 
