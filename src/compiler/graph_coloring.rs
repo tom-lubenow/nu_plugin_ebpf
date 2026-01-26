@@ -135,6 +135,176 @@ impl AllocCfg {
     }
 }
 
+pub(crate) fn compute_loop_depths<F: RegAllocFunction>(
+    func: &F,
+) -> HashMap<BlockId, usize> {
+    let cfg = AllocCfg::build(func);
+    compute_loop_depths_with_cfg(func, &cfg)
+}
+
+fn compute_loop_depths_with_cfg<F: RegAllocFunction>(
+    func: &F,
+    cfg: &AllocCfg,
+) -> HashMap<BlockId, usize> {
+    let mut loop_depth: HashMap<BlockId, usize> = HashMap::new();
+    for block in func.blocks() {
+        loop_depth.insert(block.id(), 0);
+    }
+
+    if cfg.rpo.is_empty() {
+        return loop_depth;
+    }
+
+    let idom = compute_idom(func, cfg);
+
+    let dominates = |a: BlockId, b: BlockId| -> bool {
+        if a == b {
+            return true;
+        }
+        let mut current = b;
+        while let Some(&dom) = idom.get(&current) {
+            if dom == a {
+                return true;
+            }
+            if dom == current {
+                break;
+            }
+            current = dom;
+        }
+        false
+    };
+
+    let mut loops: HashMap<BlockId, HashSet<BlockId>> = HashMap::new();
+
+    for &block_id in &cfg.rpo {
+        let succs = cfg.successors.get(&block_id).cloned().unwrap_or_default();
+        for succ in succs {
+            if dominates(succ, block_id) {
+                let mut loop_blocks = HashSet::new();
+                loop_blocks.insert(succ);
+
+                let mut worklist = VecDeque::new();
+                if block_id != succ {
+                    loop_blocks.insert(block_id);
+                    worklist.push_back(block_id);
+                }
+
+                while let Some(node) = worklist.pop_front() {
+                    for &pred in cfg.predecessors.get(&node).unwrap_or(&Vec::new()) {
+                        if !loop_blocks.contains(&pred) {
+                            loop_blocks.insert(pred);
+                            worklist.push_back(pred);
+                        }
+                    }
+                }
+
+                loops.entry(succ).or_default().extend(loop_blocks);
+            }
+        }
+    }
+
+    for blocks in loops.values() {
+        for &block in blocks {
+            *loop_depth.entry(block).or_insert(0) += 1;
+        }
+    }
+
+    loop_depth
+}
+
+fn compute_idom<F: RegAllocFunction>(
+    func: &F,
+    cfg: &AllocCfg,
+) -> HashMap<BlockId, BlockId> {
+    let entry = func.entry();
+    let rpo_index: HashMap<BlockId, usize> =
+        cfg.rpo.iter().enumerate().map(|(i, &b)| (b, i)).collect();
+
+    let mut doms: HashMap<BlockId, Option<BlockId>> = HashMap::new();
+    for block in func.blocks() {
+        doms.insert(block.id(), None);
+    }
+    doms.insert(entry, Some(entry));
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for &block_id in &cfg.rpo {
+            if block_id == entry {
+                continue;
+            }
+
+            let preds = cfg
+                .predecessors
+                .get(&block_id)
+                .cloned()
+                .unwrap_or_default();
+            let mut new_idom = None;
+            for &pred in &preds {
+                if doms.get(&pred).and_then(|d| *d).is_some() {
+                    new_idom = Some(pred);
+                    break;
+                }
+            }
+
+            if let Some(mut idom) = new_idom {
+                for &pred in &preds {
+                    if pred == idom {
+                        continue;
+                    }
+                    if doms.get(&pred).and_then(|d| *d).is_some() {
+                        idom = intersect(pred, idom, &doms, &rpo_index);
+                    }
+                }
+
+                if doms.get(&block_id).and_then(|d| *d) != Some(idom) {
+                    doms.insert(block_id, Some(idom));
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    let mut idom = HashMap::new();
+    for (block_id, dom) in doms {
+        if let Some(parent) = dom
+            && block_id != parent
+        {
+            idom.insert(block_id, parent);
+        }
+    }
+
+    idom
+}
+
+fn intersect(
+    b1: BlockId,
+    b2: BlockId,
+    doms: &HashMap<BlockId, Option<BlockId>>,
+    rpo_index: &HashMap<BlockId, usize>,
+) -> BlockId {
+    let get_idx = |b: BlockId| rpo_index.get(&b).copied().unwrap_or(usize::MAX);
+
+    let mut finger1 = b1;
+    let mut finger2 = b2;
+
+    while finger1 != finger2 {
+        while get_idx(finger1) > get_idx(finger2) {
+            match doms.get(&finger1).and_then(|d| *d) {
+                Some(dom) if dom != finger1 => finger1 = dom,
+                _ => return finger2,
+            }
+        }
+        while get_idx(finger2) > get_idx(finger1) {
+            match doms.get(&finger2).and_then(|d| *d) {
+                Some(dom) if dom != finger2 => finger2 = dom,
+                _ => return finger1,
+            }
+        }
+    }
+    finger1
+}
+
 #[derive(Debug)]
 struct AllocLiveness {
     live_in: HashMap<BlockId, HashSet<VReg>>,
@@ -1659,5 +1829,39 @@ mod tests {
             "StringAppend integer source should avoid R1-R5 scratch regs, got {:?}",
             val_reg
         );
+    }
+
+    #[test]
+    fn test_lir_loop_depths() {
+        use crate::compiler::lir::{LirFunction, LirInst};
+
+        let mut func = LirFunction::new();
+        let entry = func.alloc_block();
+        let header = func.alloc_block();
+        let body = func.alloc_block();
+        let exit = func.alloc_block();
+        func.entry = entry;
+
+        let counter = func.alloc_vreg();
+
+        func.block_mut(entry).terminator = LirInst::Jump { target: header };
+        func.block_mut(header).terminator = LirInst::LoopHeader {
+            counter,
+            limit: 10,
+            body,
+            exit,
+        };
+        func.block_mut(body).terminator = LirInst::LoopBack {
+            counter,
+            step: 1,
+            header,
+        };
+        func.block_mut(exit).terminator = LirInst::Return { val: None };
+
+        let depths = compute_loop_depths(&func);
+        assert_eq!(depths.get(&entry).copied().unwrap_or(0), 0);
+        assert_eq!(depths.get(&header).copied().unwrap_or(0), 1);
+        assert_eq!(depths.get(&body).copied().unwrap_or(0), 1);
+        assert_eq!(depths.get(&exit).copied().unwrap_or(0), 0);
     }
 }

@@ -25,7 +25,9 @@ use crate::compiler::cfg::CFG;
 use crate::compiler::elf::{
     BpfFieldType, BpfMapDef, EbpfMap, EventSchema, MapRelocation, ProbeContext, SchemaField,
 };
-use crate::compiler::graph_coloring::{ColoringResult, GraphColoringAllocator};
+use crate::compiler::graph_coloring::{
+    compute_loop_depths, ColoringResult, GraphColoringAllocator,
+};
 use crate::compiler::hindley_milner::HMType;
 use crate::compiler::instruction::{BpfHelper, EbpfInsn, EbpfReg, opcode};
 use crate::compiler::lir::{LirBlock, LirFunction, LirInst, LirProgram};
@@ -245,7 +247,8 @@ impl<'a> MirToEbpfCompiler<'a> {
         if !precolored.is_empty() {
             allocator.set_precolored(precolored);
         }
-        allocator.allocate(func, None)
+        let loop_depths = compute_loop_depths(func);
+        allocator.allocate(func, Some(&loop_depths))
     }
 
     /// Layout stack slots and assign offsets for a function
