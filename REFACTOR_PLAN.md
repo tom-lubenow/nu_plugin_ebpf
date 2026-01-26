@@ -145,3 +145,7 @@
   - HIR instruction coverage expanded (Raw removed) and MIR lowering now consumes HIR directly.
   - HIR→MIR no longer pre-allocates a placeholder entry block (fixes VCC placeholder terminator failures).
   - Count map lowering updated to MapRef/MapKind; LoadCtxField now threads optional comm stack slot.
+
+  Verifier notes (2026-01-26)
+  - Known limitations: branch feasibility is not pruned when a guard contradicts a known range; `!=` lacks disjoint
+    range modeling (may keep a superset), which can yield false positives in bounds checks. Consider revisiting later.
