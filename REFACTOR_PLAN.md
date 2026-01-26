@@ -66,7 +66,7 @@
       Status: LIR introduced; MIR→LIR pass creates precolored ABI vregs (R0–R5) and explicit
       CallSubfn/CallHelper arg shuffles; allocator now consumes LIR and enforces call/scratch
       clobbers from LIR metadata; codegen consumes LIR and lowers ParallelMove deterministically
-      (cycle-safe).
+      (cycle-safe) with a temp stack slot, including R0-involved cycles.
 
   [~] 4. Rebuild type inference as a two-layer system
       - Layer A (HM): rank-1 polymorphism with algorithm W; principal types for predictable inference and error messages.
