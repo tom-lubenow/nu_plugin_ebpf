@@ -82,8 +82,10 @@ pub struct MirToEbpfCompiler<'a> {
     vreg_spills: HashMap<VReg, i16>,
     /// Stack slot offsets
     slot_offsets: HashMap<StackSlotId, i16>,
-    /// Temporary stack slots for parallel move handling (cycle, scratch-save)
-    parallel_move_temp_offsets: Option<(i16, i16)>,
+    /// Temporary stack slot for parallel move cycle breaking
+    parallel_move_cycle_offset: Option<i16>,
+    /// Temporary stack slot for saving a scratch register during parallel moves
+    parallel_move_scratch_offset: Option<i16>,
     /// Current stack offset (grows downward from R10)
     stack_offset: i16,
     /// Block start offsets (instruction index)
@@ -128,7 +130,8 @@ impl<'a> MirToEbpfCompiler<'a> {
             vreg_to_phys: HashMap::new(),
             vreg_spills: HashMap::new(),
             slot_offsets: HashMap::new(),
-            parallel_move_temp_offsets: None,
+            parallel_move_cycle_offset: None,
+            parallel_move_scratch_offset: None,
             stack_offset: 0,
             block_offsets: HashMap::new(),
             pending_jumps: Vec::new(),
@@ -264,7 +267,8 @@ impl<'a> MirToEbpfCompiler<'a> {
             HashMap<StackSlotId, i16>,
             HashMap<VReg, i16>,
             i16,
-            Option<(i16, i16)>,
+            Option<i16>,
+            Option<i16>,
         ),
         CompileError,
     > {
@@ -277,10 +281,11 @@ impl<'a> MirToEbpfCompiler<'a> {
             slots.push(slot);
         }
 
-        let temp_slot_ids = if Self::function_has_parallel_moves(func) {
+        let needs_parallel_moves = Self::function_has_parallel_moves(func);
+        let needs_scratch = needs_parallel_moves && Self::parallel_move_needs_scratch(func, alloc);
+        let temp_slot_ids = if needs_parallel_moves {
             let base = spill_base + alloc.spill_slots.len() as u32;
             let cycle_id = StackSlotId(base);
-            let scratch_id = StackSlotId(base + 1);
             slots.push(StackSlot {
                 id: cycle_id,
                 size: 8,
@@ -288,13 +293,19 @@ impl<'a> MirToEbpfCompiler<'a> {
                 kind: StackSlotKind::Spill,
                 offset: None,
             });
-            slots.push(StackSlot {
-                id: scratch_id,
-                size: 8,
-                align: 8,
-                kind: StackSlotKind::Spill,
-                offset: None,
-            });
+            let scratch_id = if needs_scratch {
+                let scratch_id = StackSlotId(base + 1);
+                slots.push(StackSlot {
+                    id: scratch_id,
+                    size: 8,
+                    align: 8,
+                    kind: StackSlotKind::Spill,
+                    offset: None,
+                });
+                Some(scratch_id)
+            } else {
+                None
+            };
             Some((cycle_id, scratch_id))
         } else {
             None
@@ -323,18 +334,21 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
         }
 
-        let parallel_move_temp_offsets = temp_slot_ids.and_then(|(cycle_id, scratch_id)| {
-            Some((
-                slot_offsets.get(&cycle_id).copied()?,
-                slot_offsets.get(&scratch_id).copied()?,
-            ))
-        });
+        let (parallel_move_cycle_offset, parallel_move_scratch_offset) =
+            if let Some((cycle_id, scratch_id)) = temp_slot_ids {
+                let cycle = slot_offsets.get(&cycle_id).copied();
+                let scratch = scratch_id.and_then(|id| slot_offsets.get(&id).copied());
+                (cycle, scratch)
+            } else {
+                (None, None)
+            };
 
         Ok((
             slot_offsets,
             vreg_spills,
             stack_offset,
-            parallel_move_temp_offsets,
+            parallel_move_cycle_offset,
+            parallel_move_scratch_offset,
         ))
     }
 
@@ -354,6 +368,61 @@ impl<'a> MirToEbpfCompiler<'a> {
         false
     }
 
+    fn parallel_move_needs_scratch(func: &LirFunction, alloc: &ColoringResult) -> bool {
+        #[derive(Clone, Copy)]
+        enum Loc {
+            Reg(EbpfReg),
+            Stack,
+        }
+
+        let vreg_loc = |vreg: VReg| -> Loc {
+            if alloc.spills.contains_key(&vreg) {
+                return Loc::Stack;
+            }
+            if let Some(&reg) = alloc.coloring.get(&vreg) {
+                return Loc::Reg(reg);
+            }
+            Loc::Reg(EbpfReg::R0)
+        };
+
+        for block in &func.blocks {
+            let insts = block
+                .instructions
+                .iter()
+                .chain(std::iter::once(&block.terminator));
+            for inst in insts {
+                if let LirInst::ParallelMove { moves } = inst {
+                    let mut reg_sources = HashSet::new();
+                    let mut reg_dests = Vec::new();
+                    let mut has_stack = false;
+
+                    for (dst, src) in moves {
+                        let dst_loc = vreg_loc(*dst);
+                        let src_loc = vreg_loc(*src);
+                        if matches!(dst_loc, Loc::Stack) || matches!(src_loc, Loc::Stack) {
+                            has_stack = true;
+                        }
+                        if let Loc::Reg(reg) = src_loc {
+                            reg_sources.insert(reg);
+                        }
+                        if let Loc::Reg(reg) = dst_loc {
+                            reg_dests.push(reg);
+                        }
+                    }
+
+                    if has_stack {
+                        let safe = reg_dests.iter().any(|r| !reg_sources.contains(r));
+                        if !safe {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
     fn prepare_function_state(
         &mut self,
         func: &LirFunction,
@@ -361,14 +430,21 @@ impl<'a> MirToEbpfCompiler<'a> {
         precolored: HashMap<VReg, EbpfReg>,
     ) -> Result<ColoringResult, CompileError> {
         let alloc = self.allocate_registers_for_function(func, available_regs, precolored);
-        let (slot_offsets, vreg_spills, stack_offset, parallel_move_temp_offsets) =
+        let (
+            slot_offsets,
+            vreg_spills,
+            stack_offset,
+            parallel_move_cycle_offset,
+            parallel_move_scratch_offset,
+        ) =
             self.layout_stack_for_function(func, &alloc)?;
 
         self.vreg_to_phys = alloc.coloring.clone();
         self.vreg_spills = vreg_spills;
         self.slot_offsets = slot_offsets;
         self.stack_offset = stack_offset;
-        self.parallel_move_temp_offsets = parallel_move_temp_offsets;
+        self.parallel_move_cycle_offset = parallel_move_cycle_offset;
+        self.parallel_move_scratch_offset = parallel_move_scratch_offset;
         self.callee_saved_offsets.clear();
 
         Ok(alloc)
@@ -632,11 +708,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                     return Ok(());
                 }
 
-                let (cycle_temp, scratch_temp) = self.parallel_move_temp_offsets.ok_or_else(|| {
+                let cycle_temp = self.parallel_move_cycle_offset.ok_or_else(|| {
                     CompileError::UnsupportedInstruction(
                         "ParallelMove requires a temp stack slot".into(),
                     )
                 })?;
+                let scratch_temp = self.parallel_move_scratch_offset;
 
                 let mut scratch_reg = None;
                 if has_stack {
@@ -664,6 +741,11 @@ impl<'a> MirToEbpfCompiler<'a> {
 
                         if let Some(reg) = scratch_reg {
                             if reg_sources.contains(&reg) {
+                                let scratch_temp = scratch_temp.ok_or_else(|| {
+                                    CompileError::UnsupportedInstruction(
+                                        "ParallelMove requires a scratch temp slot".into(),
+                                    )
+                                })?;
                                 self.instructions
                                     .push(EbpfInsn::stxdw(EbpfReg::R10, scratch_temp, reg));
                                 for mv in &mut pending {
@@ -2821,6 +2903,30 @@ mod tests {
         let program = LirProgram::new(func);
         let result = MirToEbpfCompiler::new(&program, None).compile();
         assert!(result.is_ok(), "ParallelMove with R0 should compile");
+    }
+
+    #[test]
+    fn test_parallel_move_stack_to_stack() {
+        let program = LirProgram::new(LirFunction::new());
+        let mut compiler = MirToEbpfCompiler::new(&program, None);
+
+        compiler.parallel_move_cycle_offset = Some(-8);
+        compiler.parallel_move_scratch_offset = Some(-16);
+        compiler.vreg_spills.insert(VReg(0), -24);
+        compiler.vreg_spills.insert(VReg(1), -32);
+        compiler.vreg_to_phys.insert(VReg(2), EbpfReg::R1);
+
+        let inst = LirInst::ParallelMove {
+            moves: vec![(VReg(0), VReg(1)), (VReg(0), VReg(2))],
+        };
+
+        compiler
+            .compile_instruction(&inst)
+            .expect("ParallelMove stack-to-stack should compile");
+        assert!(
+            !compiler.instructions.is_empty(),
+            "ParallelMove should emit instructions"
+        );
     }
 
     /// Test that old compiler handles branching (MIR branch test is separate)
