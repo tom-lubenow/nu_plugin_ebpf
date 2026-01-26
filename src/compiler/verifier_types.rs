@@ -6,7 +6,9 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use super::mir::{AddressSpace, BinOpKind, BlockId, MirFunction, MirInst, MirType, MirValue, VReg};
+use super::mir::{
+    AddressSpace, BinOpKind, BlockId, MirFunction, MirInst, MirType, MirValue, StackSlotId, VReg,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Nullability {
@@ -16,12 +18,24 @@ enum Nullability {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PtrBounds {
+    slot: StackSlotId,
+    min: i64,
+    max: i64,
+    limit: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum VerifierType {
     Uninit,
     Unknown,
     Scalar,
     Bool,
-    Ptr { space: AddressSpace, nullability: Nullability },
+    Ptr {
+        space: AddressSpace,
+        nullability: Nullability,
+        bounds: Option<PtrBounds>,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -107,6 +121,11 @@ pub fn verify_mir(
     let total_vregs = func
         .vreg_count
         .max(func.param_count as u32) as usize;
+    let mut slot_sizes: HashMap<StackSlotId, i64> = HashMap::new();
+    for slot in &func.stack_slots {
+        let limit = slot.size.saturating_sub(1) as i64;
+        slot_sizes.insert(slot.id, limit);
+    }
     let mut in_states: HashMap<BlockId, VerifierState> = HashMap::new();
     let mut worklist: VecDeque<BlockId> = VecDeque::new();
     let mut errors = Vec::new();
@@ -133,7 +152,7 @@ pub fn verify_mir(
         let block = func.block(block_id);
 
         for inst in &block.instructions {
-            apply_inst(inst, types, &mut state, &mut errors);
+            apply_inst(inst, types, &slot_sizes, &mut state, &mut errors);
         }
 
         match &block.terminator {
@@ -199,7 +218,7 @@ fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool
             !guard.true_is_non_null
         };
         let current = next.get(guard.ptr);
-        if let VerifierType::Ptr { space, .. } = current {
+        if let VerifierType::Ptr { space, bounds, .. } = current {
             let nullability = if wants_non_null {
                 Nullability::NonNull
             } else {
@@ -210,6 +229,7 @@ fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool
                 VerifierType::Ptr {
                     space,
                     nullability,
+                    bounds,
                 },
             );
         }
@@ -220,33 +240,62 @@ fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool
 fn apply_inst(
     inst: &MirInst,
     types: &HashMap<VReg, MirType>,
+    slot_sizes: &HashMap<StackSlotId, i64>,
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
     match inst {
         MirInst::Copy { dst, src } => {
-            let ty = value_type(src, state);
+            let ty = value_type(src, state, slot_sizes);
             state.set(*dst, ty);
         }
-        MirInst::Load { dst, ptr, .. } => {
-            require_ptr_with_space(*ptr, "load", &[AddressSpace::Stack, AddressSpace::Map], state, errors);
+        MirInst::Load { dst, ptr, offset, .. } => {
+            let access_size = types
+                .get(dst)
+                .map(|ty| ty.size())
+                .unwrap_or(8);
+            check_ptr_access(
+                *ptr,
+                "load",
+                &[AddressSpace::Stack, AddressSpace::Map],
+                *offset,
+                access_size,
+                state,
+                errors,
+            );
             let ty = types
                 .get(dst)
                 .map(verifier_type_from_mir)
                 .unwrap_or(VerifierType::Scalar);
             state.set(*dst, ty);
         }
-        MirInst::Store { ptr, .. } => {
-            require_ptr_with_space(*ptr, "store", &[AddressSpace::Stack, AddressSpace::Map], state, errors);
+        MirInst::Store { ptr, offset, ty, .. } => {
+            let access_size = ty.size();
+            check_ptr_access(
+                *ptr,
+                "store",
+                &[AddressSpace::Stack, AddressSpace::Map],
+                *offset,
+                access_size,
+                state,
+                errors,
+            );
         }
         MirInst::LoadSlot { dst, .. } => {
+            if let MirInst::LoadSlot { slot, offset, ty, .. } = inst {
+                check_slot_access(*slot, *offset, ty.size(), slot_sizes, "load slot", errors);
+            }
             let ty = types
                 .get(dst)
                 .map(verifier_type_from_mir)
                 .unwrap_or(VerifierType::Scalar);
             state.set(*dst, ty);
         }
-        MirInst::StoreSlot { .. } => {}
+        MirInst::StoreSlot { .. } => {
+            if let MirInst::StoreSlot { slot, offset, ty, .. } = inst {
+                check_slot_access(*slot, *offset, ty.size(), slot_sizes, "store slot", errors);
+            }
+        }
         MirInst::BinOp { dst, op, lhs, rhs } => {
             if matches!(op, BinOpKind::Eq | BinOpKind::Ne) {
                 state.set(*dst, VerifierType::Bool);
@@ -256,7 +305,7 @@ fn apply_inst(
             } else if matches!(op, BinOpKind::Lt | BinOpKind::Le | BinOpKind::Gt | BinOpKind::Ge) {
                 state.set(*dst, VerifierType::Bool);
             } else {
-                let ty = pointer_arith_result(lhs, rhs, state)
+                let ty = pointer_arith_result(*op, lhs, rhs, state, slot_sizes)
                     .unwrap_or(VerifierType::Scalar);
                 state.set(*dst, ty);
             }
@@ -288,15 +337,23 @@ fn apply_inst(
                 VerifierType::Ptr {
                     space: AddressSpace::Map,
                     nullability: Nullability::MaybeNull,
+                    bounds: None,
                 },
             );
         }
-        MirInst::ListNew { dst, .. } => {
+        MirInst::ListNew { dst, buffer, .. } => {
+            let bounds = slot_sizes.get(buffer).copied().map(|limit| PtrBounds {
+                slot: *buffer,
+                min: 0,
+                max: 0,
+                limit,
+            });
             state.set(
                 *dst,
                 VerifierType::Ptr {
                     space: AddressSpace::Stack,
                     nullability: Nullability::NonNull,
+                    bounds,
                 },
             );
         }
@@ -316,11 +373,26 @@ fn apply_inst(
                 .unwrap_or(VerifierType::Scalar);
             state.set(*dst, ty);
         }
-        MirInst::LoadCtxField { dst, .. } => {
-            let ty = types
+        MirInst::LoadCtxField { dst, slot, .. } => {
+            let mut ty = types
                 .get(dst)
                 .map(verifier_type_from_mir)
                 .unwrap_or(VerifierType::Scalar);
+            if let (VerifierType::Ptr { space: AddressSpace::Stack, nullability, .. }, Some(slot)) =
+                (ty, slot)
+            {
+                let bounds = slot_sizes.get(slot).copied().map(|limit| PtrBounds {
+                    slot: *slot,
+                    min: 0,
+                    max: 0,
+                    limit,
+                });
+                ty = VerifierType::Ptr {
+                    space: AddressSpace::Stack,
+                    nullability,
+                    bounds,
+                };
+            }
             state.set(*dst, ty);
         }
         MirInst::ReadStr {
@@ -413,29 +485,69 @@ fn apply_inst(
 }
 
 fn pointer_arith_result(
+    op: BinOpKind,
     lhs: &MirValue,
     rhs: &MirValue,
     state: &VerifierState,
+    slot_sizes: &HashMap<StackSlotId, i64>,
 ) -> Option<VerifierType> {
-    let lhs_ty = value_type(lhs, state);
-    let rhs_ty = value_type(rhs, state);
-    match (lhs_ty, rhs_ty) {
-        (VerifierType::Ptr { space, nullability }, VerifierType::Scalar)
-        | (VerifierType::Ptr { space, nullability }, VerifierType::Bool) => Some(
-            VerifierType::Ptr {
-                space,
-                nullability,
-            },
-        ),
-        (VerifierType::Scalar, VerifierType::Ptr { space, nullability })
-        | (VerifierType::Bool, VerifierType::Ptr { space, nullability }) => Some(
-            VerifierType::Ptr {
-                space,
-                nullability,
-            },
-        ),
-        _ => None,
+    if !matches!(op, BinOpKind::Add | BinOpKind::Sub) {
+        return None;
     }
+
+    let lhs_ty = value_type(lhs, state, slot_sizes);
+    let rhs_ty = value_type(rhs, state, slot_sizes);
+
+    let (ptr_ty, offset, is_add) = match op {
+        BinOpKind::Add => match (&lhs_ty, &rhs_ty) {
+            (VerifierType::Ptr { .. }, VerifierType::Scalar | VerifierType::Bool) => {
+                (lhs_ty, rhs, true)
+            }
+            (VerifierType::Scalar | VerifierType::Bool, VerifierType::Ptr { .. }) => {
+                (rhs_ty, lhs, true)
+            }
+            _ => return None,
+        },
+        BinOpKind::Sub => match (&lhs_ty, &rhs_ty) {
+            (VerifierType::Ptr { .. }, VerifierType::Scalar | VerifierType::Bool) => {
+                (lhs_ty, rhs, false)
+            }
+            _ => return None,
+        },
+        _ => return None,
+    };
+
+    let offset_const = match offset {
+        MirValue::Const(c) => Some(*c),
+        _ => None,
+    };
+
+    if let VerifierType::Ptr {
+        space,
+        nullability,
+        bounds,
+    } = ptr_ty
+    {
+        let bounds = match (bounds, offset_const) {
+            (Some(bounds), Some(delta)) => {
+                let delta = if is_add { delta } else { -delta };
+                Some(PtrBounds {
+                    slot: bounds.slot,
+                    min: bounds.min.saturating_add(delta),
+                    max: bounds.max.saturating_add(delta),
+                    limit: bounds.limit,
+                })
+            }
+            _ => None,
+        };
+        return Some(VerifierType::Ptr {
+            space,
+            nullability,
+            bounds,
+        });
+    }
+
+    None
 }
 
 fn guard_from_compare(
@@ -474,11 +586,12 @@ fn require_ptr_with_space(
     allowed: &[AddressSpace],
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
-) {
+) -> Option<VerifierType> {
     match state.get(ptr) {
         VerifierType::Ptr {
             nullability: Nullability::NonNull,
             space,
+            bounds,
             ..
         } => {
             if !allowed.contains(&space) {
@@ -487,40 +600,132 @@ fn require_ptr_with_space(
                     allowed, space
                 )));
             }
+            Some(VerifierType::Ptr {
+                space,
+                nullability: Nullability::NonNull,
+                bounds,
+            })
         }
         VerifierType::Ptr {
             nullability: Nullability::Null,
             ..
-        } => errors.push(VerifierTypeError::new(format!(
+        } => {
+            errors.push(VerifierTypeError::new(format!(
             "{op} uses null pointer v{}",
             ptr.0
-        ))),
+            )));
+            None
+        }
         VerifierType::Ptr {
             nullability: Nullability::MaybeNull,
             ..
-        } => errors.push(VerifierTypeError::new(format!(
+        } => {
+            errors.push(VerifierTypeError::new(format!(
             "{op} may dereference null pointer v{} (add a null check)",
             ptr.0
-        ))),
-        VerifierType::Uninit => errors.push(VerifierTypeError::new(format!(
+            )));
+            None
+        }
+        VerifierType::Uninit => {
+            errors.push(VerifierTypeError::new(format!(
             "{op} uses uninitialized pointer v{}",
             ptr.0
-        ))),
-        other => errors.push(VerifierTypeError::new(format!(
+            )));
+            None
+        }
+        other => {
+            errors.push(VerifierTypeError::new(format!(
             "{op} requires pointer type, got {:?}",
             other
-        ))),
+            )));
+            None
+        }
     }
 }
 
-fn value_type(value: &MirValue, state: &VerifierState) -> VerifierType {
+fn check_ptr_access(
+    ptr: VReg,
+    op: &str,
+    allowed: &[AddressSpace],
+    offset: i32,
+    size: usize,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some(VerifierType::Ptr { space, bounds, .. }) =
+        require_ptr_with_space(ptr, op, allowed, state, errors)
+    else {
+        return;
+    };
+
+    if space != AddressSpace::Stack {
+        return;
+    }
+
+    let Some(bounds) = bounds else {
+        return;
+    };
+
+    let size = size as i64;
+    let offset = offset as i64;
+    let start = bounds.min.saturating_add(offset);
+    let end = bounds
+        .max
+        .saturating_add(offset)
+        .saturating_add(size.saturating_sub(1));
+
+    if start < 0 || end > bounds.limit {
+        errors.push(VerifierTypeError::new(format!(
+            "{op} out of bounds for stack slot {}: access [{start}..{end}] exceeds 0..{}",
+            bounds.slot.0, bounds.limit
+        )));
+    }
+}
+
+fn check_slot_access(
+    slot: StackSlotId,
+    offset: i32,
+    size: usize,
+    slot_sizes: &HashMap<StackSlotId, i64>,
+    op: &str,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some(limit) = slot_sizes.get(&slot).copied() else {
+        return;
+    };
+    let size = size as i64;
+    let offset = offset as i64;
+    let start = offset;
+    let end = offset.saturating_add(size.saturating_sub(1));
+    if start < 0 || end > limit {
+        errors.push(VerifierTypeError::new(format!(
+            "{op} out of bounds for stack slot {}: access [{start}..{end}] exceeds 0..{}",
+            slot.0, limit
+        )));
+    }
+}
+
+fn value_type(
+    value: &MirValue,
+    state: &VerifierState,
+    slot_sizes: &HashMap<StackSlotId, i64>,
+) -> VerifierType {
     match value {
         MirValue::Const(_) => VerifierType::Scalar,
         MirValue::VReg(v) => state.get(*v),
-        MirValue::StackSlot(_) => VerifierType::Ptr {
-            space: AddressSpace::Stack,
-            nullability: Nullability::NonNull,
-        },
+        MirValue::StackSlot(slot) => {
+            let bounds = slot_sizes.get(slot).copied().map(|limit| PtrBounds {
+                slot: *slot,
+                min: 0,
+                max: 0,
+                limit,
+            });
+            VerifierType::Ptr {
+                space: AddressSpace::Stack,
+                nullability: Nullability::NonNull,
+                bounds,
+            }
+        }
     }
 }
 
@@ -530,6 +735,7 @@ fn verifier_type_from_mir(ty: &MirType) -> VerifierType {
         MirType::Array { .. } => VerifierType::Ptr {
             space: AddressSpace::Stack,
             nullability: Nullability::NonNull,
+            bounds: None,
         },
         MirType::Ptr { address_space, .. } => VerifierType::Ptr {
             space: *address_space,
@@ -538,6 +744,7 @@ fn verifier_type_from_mir(ty: &MirType) -> VerifierType {
                 AddressSpace::Map => Nullability::MaybeNull,
                 AddressSpace::Kernel | AddressSpace::User => Nullability::MaybeNull,
             },
+            bounds: None,
         },
         MirType::Unknown => VerifierType::Unknown,
         _ => VerifierType::Scalar,
@@ -551,14 +758,27 @@ fn join_type(a: VerifierType, b: VerifierType) -> VerifierType {
         (Unknown, _) | (_, Unknown) => Unknown,
         (Scalar, Scalar) => Scalar,
         (Bool, Bool) => Bool,
-        (Ptr { space: sa, nullability: na }, Ptr { space: sb, nullability: nb }) => {
+        (
+            Ptr {
+                space: sa,
+                nullability: na,
+                bounds: ba,
+            },
+            Ptr {
+                space: sb,
+                nullability: nb,
+                bounds: bb,
+            },
+        ) => {
             if sa != sb {
                 return Unknown;
             }
             let nullability = join_nullability(na, nb);
+            let bounds = join_bounds(ba, bb);
             Ptr {
                 space: sa,
                 nullability,
+                bounds,
             }
         }
         (Scalar, Bool) | (Bool, Scalar) => Scalar,
@@ -571,6 +791,18 @@ fn join_nullability(a: Nullability, b: Nullability) -> Nullability {
         (Nullability::Null, Nullability::Null) => Nullability::Null,
         (Nullability::NonNull, Nullability::NonNull) => Nullability::NonNull,
         _ => Nullability::MaybeNull,
+    }
+}
+
+fn join_bounds(a: Option<PtrBounds>, b: Option<PtrBounds>) -> Option<PtrBounds> {
+    match (a, b) {
+        (Some(a), Some(b)) if a.slot == b.slot && a.limit == b.limit => Some(PtrBounds {
+            slot: a.slot,
+            min: a.min.min(b.min),
+            max: a.max.max(b.max),
+            limit: a.limit,
+        }),
+        _ => None,
     }
 }
 
@@ -714,6 +946,91 @@ mod tests {
         );
         types.insert(dst, MirType::I64);
         verify_mir(&func, &types).expect("stack pointer should be non-null");
+    }
+
+    #[test]
+    fn test_stack_load_out_of_bounds() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Load {
+            dst,
+            ptr,
+            offset: 8,
+            ty: MirType::I64,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected bounds error");
+        assert!(err.iter().any(|e| e.message.contains("out of bounds")));
+    }
+
+    #[test]
+    fn test_stack_pointer_offset_in_bounds() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let tmp = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: tmp,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(8),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Load {
+            dst,
+            ptr: tmp,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            tmp,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        verify_mir(&func, &types).expect("expected in-bounds access");
     }
 
     #[test]
