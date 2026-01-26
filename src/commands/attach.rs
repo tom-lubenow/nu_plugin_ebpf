@@ -274,10 +274,10 @@ fn run_attach(
     engine: &EngineInterface,
     call: &EvaluatedCall,
 ) -> Result<PipelineData, LabeledError> {
-    use crate::compiler::{
-        EbpfProgram, ProbeContext, compile_mir_to_ebpf, infer_ctx_param, lower_hir_to_mir,
-        lower_ir_to_hir, passes::optimize_with_ssa,
-    };
+use crate::compiler::{
+    EbpfProgram, ProbeContext, compile_mir_to_ebpf, hir_type_infer, infer_ctx_param,
+    lower_hir_to_mir, lower_ir_to_hir, passes::optimize_with_ssa,
+};
     use crate::loader::{LoadError, get_state, parse_probe_spec};
 
     let probe_spec: String = call.req(0)?;
@@ -353,6 +353,14 @@ fn run_attach(
             .with_label(e.to_string(), call.head)
             .with_help("The closure may use unsupported operations")
     })?;
+
+    if let Err(errors) = hir_type_infer::infer_hir(&hir_program, &decl_names) {
+        if let Some(err) = errors.into_iter().next() {
+            return Err(LabeledError::new("eBPF compilation failed")
+                .with_label(err.to_string(), call.head)
+                .with_help("The closure may use unsupported operations"));
+        }
+    }
 
     // Lower HIR to MIR
     let mut mir_program = lower_hir_to_mir(&hir_program, Some(&probe_context), &decl_names)

@@ -90,7 +90,8 @@
       - Impredicative or partial polymorphic inference: require explicit type applications/annotations; full inference is
         undecidable. (research.google (https://research.google/pubs/partial-polymorphic-type-inference-is-undecidable/?
         utm_source=openai))
-      Status: rank-1 polymorphism is inferred for subfunctions only; no HIR-level let-generalization yet.
+      Status: HIR let-generalization now implemented for Store/LoadVariable using HM-style schemes, and
+      HIR inference runs after IR→HIR lowering (before HIR→MIR) to support rank-1 polymorphism.
 
   [~] 6. Verifier-aligned abstract interpretation pass
       - Implement a small interpreter that tracks register types, stack slots, and ranges, following the kernel's model

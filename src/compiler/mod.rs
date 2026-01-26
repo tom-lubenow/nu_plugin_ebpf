@@ -22,6 +22,7 @@ mod elf;
 pub mod graph_coloring;
 pub mod hir;
 pub mod hir_to_mir;
+pub mod hir_type_infer;
 pub mod hindley_milner;
 pub mod instruction;
 pub mod ir_to_mir;
