@@ -32,6 +32,7 @@ pub mod mir_to_ebpf;
 pub mod passes;
 pub mod reg_info;
 pub mod type_infer;
+pub mod verifier_types;
 pub mod vcc;
 
 pub use elf::{
@@ -44,6 +45,7 @@ pub use hir_to_mir::lower_hir_to_mir;
 pub use mir_to_lir::lower_mir_to_lir;
 pub use mir_to_ebpf::{MirCompileResult, compile_mir_to_ebpf};
 pub use type_infer::{TypeError, TypeInference};
+pub use verifier_types::VerifierTypeError;
 
 use thiserror::Error;
 
@@ -86,4 +88,7 @@ pub enum CompileError {
 
     #[error("VCC verification failed: {0}")]
     VccError(String),
+
+    #[error("Verifier type check failed: {0}")]
+    VerifierTypeError(#[from] VerifierTypeError),
 }

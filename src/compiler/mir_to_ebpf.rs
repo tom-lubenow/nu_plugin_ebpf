@@ -38,6 +38,7 @@ use crate::compiler::mir::{
 use crate::compiler::mir_to_lir::lower_mir_to_lir;
 use crate::compiler::passes::{ListLowering, MirPass};
 use crate::compiler::type_infer::{TypeInference, infer_subfunction_schemes};
+use crate::compiler::verifier_types;
 use crate::compiler::vcc;
 use crate::kernel_btf::KernelBtf;
 
@@ -2797,6 +2798,11 @@ fn verify_mir_program(
                 HashMap::new()
             }
         };
+        if let Err(errors) = verifier_types::verify_mir(func, &types) {
+            if let Some(err) = errors.into_iter().next() {
+                return Err(CompileError::VerifierTypeError(err));
+            }
+        }
         if let Err(errors) = vcc::verify_mir(func, &types) {
             let message = errors
                 .iter()
