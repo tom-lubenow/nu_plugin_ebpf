@@ -6,6 +6,7 @@
 //! - Type information for verification
 //! - A target for optimization passes
 
+use std::collections::HashMap;
 use std::fmt;
 
 /// Virtual register ID - unlimited, will be allocated to physical registers later
@@ -830,6 +831,13 @@ pub struct MirProgram {
     pub main: MirFunction,
     /// Subfunctions (for BPF-to-BPF calls)
     pub subfunctions: Vec<MirFunction>,
+}
+
+/// Optional type hints for MIR registers, usually derived from HIR inference.
+#[derive(Debug, Clone, Default)]
+pub struct MirTypeHints {
+    pub main: HashMap<VReg, MirType>,
+    pub subfunctions: Vec<HashMap<VReg, MirType>>,
 }
 
 impl MirProgram {

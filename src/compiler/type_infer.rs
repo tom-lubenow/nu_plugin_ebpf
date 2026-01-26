@@ -132,12 +132,14 @@ pub struct TypeInference<'a> {
     return_var: Option<TypeVar>,
     /// Expected return type (if constrained externally)
     expected_return: Option<HMType>,
+    /// Optional type hints for MIR registers
+    type_hints: Option<&'a HashMap<VReg, MirType>>,
 }
 
 impl<'a> TypeInference<'a> {
     /// Create a new type inference pass
     pub fn new(probe_ctx: Option<ProbeContext>) -> Self {
-        Self::new_with_env(probe_ctx, None, None)
+        Self::new_with_env(probe_ctx, None, None, None)
     }
 
     /// Create a new type inference pass with subfunction schemes and optional return type
@@ -145,6 +147,7 @@ impl<'a> TypeInference<'a> {
         probe_ctx: Option<ProbeContext>,
         subfn_schemes: Option<&'a SubfnSchemeMap>,
         expected_return: Option<HMType>,
+        type_hints: Option<&'a HashMap<VReg, MirType>>,
     ) -> Self {
         Self {
             tvar_gen: TypeVarGenerator::new(),
@@ -157,6 +160,7 @@ impl<'a> TypeInference<'a> {
             ctx_tp_vars: HashMap::new(),
             return_var: None,
             expected_return,
+            type_hints,
         }
     }
 
@@ -181,6 +185,19 @@ impl<'a> TypeInference<'a> {
 
         // Phase 2: Generate constraints from each instruction
         let mut errors = Vec::new();
+
+        if let Some(hints) = self.type_hints {
+            for (vreg, mir_ty) in hints {
+                if matches!(mir_ty, MirType::Unknown) {
+                    continue;
+                }
+                if let Some(tvar) = self.vreg_vars.get(vreg) {
+                    let expected = HMType::Var(*tvar);
+                    let actual = HMType::from_mir_type(mir_ty);
+                    self.constrain(expected, actual, "type_hint");
+                }
+            }
+        }
         for block in &func.blocks {
             self.generate_block_constraints(block, &mut errors);
         }
@@ -1931,7 +1948,7 @@ pub fn infer_subfunction_schemes(
     for idx in order {
         let subfn_id = SubfunctionId(idx as u32);
         let func = &subfunctions[idx];
-        let mut ti = TypeInference::new_with_env(probe_ctx.clone(), Some(&schemes), None);
+        let mut ti = TypeInference::new_with_env(probe_ctx.clone(), Some(&schemes), None, None);
         match ti.infer(func) {
             Ok(_) => {
                 let scheme = ti.scheme_for_function(func, Some(&schemes));
@@ -1947,7 +1964,8 @@ pub fn infer_subfunction_schemes(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::mir::{BlockId, MirFunction, RecordFieldDef, StackSlotKind};
+    use crate::compiler::mir::{AddressSpace, BlockId, MirFunction, RecordFieldDef, StackSlotKind};
+    use std::collections::HashMap;
 
     fn make_test_function() -> MirFunction {
         let mut func = MirFunction::new();
@@ -2076,6 +2094,30 @@ mod tests {
         let types = ti.infer(&func).unwrap();
 
         assert_eq!(types.get(&v1), Some(&MirType::Bool));
+    }
+
+    #[test]
+    fn test_type_hint_mismatch_errors() {
+        let mut func = make_test_function();
+        let v0 = func.alloc_vreg();
+
+        func.block_mut(BlockId(0)).instructions.push(MirInst::Copy {
+            dst: v0,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+        let mut hints = HashMap::new();
+        hints.insert(
+            v0,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints));
+        assert!(ti.infer(&func).is_err());
     }
 
     #[test]
@@ -2298,7 +2340,8 @@ mod tests {
         };
 
         let subfn_schemes = infer_subfunction_schemes(&[subfn], None).unwrap();
-        let mut ti = TypeInference::new_with_env(None, Some(&subfn_schemes), Some(HMType::I64));
+        let mut ti =
+            TypeInference::new_with_env(None, Some(&subfn_schemes), Some(HMType::I64), None);
         let types = ti.infer(&main_func).unwrap();
 
         assert_eq!(types.get(&out_int), Some(&MirType::I64));

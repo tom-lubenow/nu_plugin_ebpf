@@ -275,8 +275,8 @@ fn run_attach(
     call: &EvaluatedCall,
 ) -> Result<PipelineData, LabeledError> {
 use crate::compiler::{
-    EbpfProgram, ProbeContext, compile_mir_to_ebpf, hir_type_infer, infer_ctx_param,
-    lower_hir_to_mir, lower_ir_to_hir, passes::optimize_with_ssa,
+    EbpfProgram, ProbeContext, compile_mir_to_ebpf_with_hints, hir_type_infer, infer_ctx_param,
+    lower_hir_to_mir_with_hints, lower_ir_to_hir, passes::optimize_with_ssa,
 };
     use crate::loader::{LoadError, get_state, parse_probe_spec};
 
@@ -354,21 +354,28 @@ use crate::compiler::{
             .with_help("The closure may use unsupported operations")
     })?;
 
-    if let Err(errors) = hir_type_infer::infer_hir(&hir_program, &decl_names) {
-        if let Some(err) = errors.into_iter().next() {
-            return Err(LabeledError::new("eBPF compilation failed")
-                .with_label(err.to_string(), call.head)
-                .with_help("The closure may use unsupported operations"));
+    let hir_types = match hir_type_infer::infer_hir_types(&hir_program, &decl_names) {
+        Ok(types) => types,
+        Err(errors) => {
+            if let Some(err) = errors.into_iter().next() {
+                return Err(LabeledError::new("eBPF compilation failed")
+                    .with_label(err.to_string(), call.head)
+                    .with_help("The closure may use unsupported operations"));
+            }
+            unreachable!("infer_hir_types returned empty error list");
         }
-    }
+    };
 
     // Lower HIR to MIR
-    let mut mir_program = lower_hir_to_mir(&hir_program, Some(&probe_context), &decl_names)
+    let lower_result =
+        lower_hir_to_mir_with_hints(&hir_program, Some(&probe_context), &decl_names, Some(&hir_types))
     .map_err(|e| {
         LabeledError::new("eBPF compilation failed")
             .with_label(e.to_string(), call.head)
             .with_help("The closure may use unsupported operations")
     })?;
+    let mut mir_program = lower_result.program;
+    let type_hints = lower_result.type_hints;
 
     // Run SSA-based optimizations
     optimize_with_ssa(&mut mir_program.main);
@@ -377,7 +384,12 @@ use crate::compiler::{
     }
 
     // Compile MIR to eBPF
-    let compile_result = compile_mir_to_ebpf(&mir_program, Some(&probe_context)).map_err(|e| {
+    let compile_result = compile_mir_to_ebpf_with_hints(
+        &mir_program,
+        Some(&probe_context),
+        Some(&type_hints),
+    )
+    .map_err(|e| {
         LabeledError::new("eBPF compilation failed")
             .with_label(e.to_string(), call.head)
             .with_help("Check that the closure uses supported BPF operations")

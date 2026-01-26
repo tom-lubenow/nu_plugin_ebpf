@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use nu_protocol::ast::{Boolean, Operator};
-use nu_protocol::{DeclId, RegId, Value, VarId};
+use nu_protocol::{BlockId as NuBlockId, DeclId, RegId, Value, VarId};
 
 use super::hindley_milner::{
     HMType, Substitution, TypeScheme, TypeVar, TypeVarGenerator, UnifyError, unify,
@@ -76,15 +76,38 @@ pub fn infer_hir(
     program: &HirProgram,
     decl_names: &HashMap<DeclId, String>,
 ) -> Result<(), Vec<TypeError>> {
-    let mut errors = Vec::new();
+    infer_hir_types(program, decl_names).map(|_| ())
+}
 
-    infer_function(&program.main, decl_names, &mut errors);
-    for func in program.closures.values() {
-        infer_function(func, decl_names, &mut errors);
+#[derive(Debug, Clone, Default)]
+pub struct HirTypeInfo {
+    pub main: HashMap<RegId, HMType>,
+    pub closures: HashMap<NuBlockId, HashMap<RegId, HMType>>,
+}
+
+pub fn infer_hir_types(
+    program: &HirProgram,
+    decl_names: &HashMap<DeclId, String>,
+) -> Result<HirTypeInfo, Vec<TypeError>> {
+    let mut errors = Vec::new();
+    let mut type_info = HirTypeInfo::default();
+
+    match infer_function(&program.main, decl_names) {
+        Ok(types) => type_info.main = types,
+        Err(mut errs) => errors.append(&mut errs),
+    }
+
+    for (block_id, func) in &program.closures {
+        match infer_function(func, decl_names) {
+            Ok(types) => {
+                type_info.closures.insert(*block_id, types);
+            }
+            Err(mut errs) => errors.append(&mut errs),
+        }
     }
 
     if errors.is_empty() {
-        Ok(())
+        Ok(type_info)
     } else {
         Err(errors)
     }
@@ -294,17 +317,25 @@ impl<'a> HirTypeInference<'a> {
             })),
         }
     }
+
+    fn type_map(&self) -> HashMap<RegId, HMType> {
+        self.reg_vars
+            .iter()
+            .map(|(reg, tvar)| {
+                let ty = self.substitution.apply(&HMType::Var(*tvar));
+                (RegId::new(*reg), ty)
+            })
+            .collect()
+    }
 }
 
 fn infer_function(
     func: &HirFunction,
     decl_names: &HashMap<DeclId, String>,
-    errors: &mut Vec<TypeError>,
-) {
+) -> Result<HashMap<RegId, HMType>, Vec<TypeError>> {
     let mut infer = HirTypeInference::new(decl_names);
-    if let Err(mut errs) = infer.infer_function(func) {
-        errors.append(&mut errs);
-    }
+    infer.infer_function(func)?;
+    Ok(infer.type_map())
 }
 
 fn hm_type_for_literal(lit: &HirLiteral) -> HMType {

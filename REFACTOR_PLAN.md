@@ -77,9 +77,10 @@
         verifier.html?utm_source=openai))
       - Integration rule: HIR types must lower into MIR with verifier-type obligations, then the abstract interpreter
         discharges them (or produces an error).
-      Status: HM-style constraint inference exists at MIR; verifier-type layer now implemented for MIR
-      with flow-sensitive pointer/nullability tracking (map lookup requires null check) and integrated
-      into the compile pipeline before VCC.
+      Status: HM-style constraint inference exists at MIR; HIR inference now emits type hints that
+      lower into MIR and constrain MIR inference for verifier/VCC; verifier-type layer now implemented
+      for MIR with flow-sensitive pointer/nullability tracking (map lookup requires null check) and
+      integrated into the compile pipeline before VCC.
 
   [~] 5. Polymorphism strategy (powerful but principled)
       - Rank-1 parametric polymorphism: fully inferred (HM). (research.ed.ac.uk (https://www.research.ed.ac.uk/en/

@@ -32,8 +32,8 @@ use crate::compiler::hindley_milner::HMType;
 use crate::compiler::instruction::{BpfHelper, EbpfInsn, EbpfReg, opcode};
 use crate::compiler::lir::{LirBlock, LirFunction, LirInst, LirProgram};
 use crate::compiler::mir::{
-    BinOpKind, BlockId, CtxField, MirProgram, MirType, MirValue, RecordFieldDef, StackSlot,
-    StackSlotId, StackSlotKind, StringAppendType, SubfunctionId, UnaryOpKind, VReg,
+    BinOpKind, BlockId, CtxField, MirProgram, MirType, MirTypeHints, MirValue, RecordFieldDef,
+    StackSlot, StackSlotId, StackSlotKind, StringAppendType, SubfunctionId, UnaryOpKind, VReg,
     COUNTER_MAP_NAME, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME,
     TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
 };
@@ -2731,6 +2731,14 @@ pub fn compile_mir_to_ebpf(
     mir: &MirProgram,
     probe_ctx: Option<&ProbeContext>,
 ) -> Result<MirCompileResult, CompileError> {
+    compile_mir_to_ebpf_with_hints(mir, probe_ctx, None)
+}
+
+pub fn compile_mir_to_ebpf_with_hints(
+    mir: &MirProgram,
+    probe_ctx: Option<&ProbeContext>,
+    type_hints: Option<&MirTypeHints>,
+) -> Result<MirCompileResult, CompileError> {
     let mut program = mir.clone();
     let list_lowering = ListLowering;
     let cfg = CFG::build(&program.main);
@@ -2740,7 +2748,7 @@ pub fn compile_mir_to_ebpf(
         let _ = list_lowering.run(subfn, &cfg);
     }
 
-    verify_mir_program(&program, probe_ctx)?;
+    verify_mir_program(&program, probe_ctx, type_hints)?;
     let lir_program = lower_mir_to_lir(&program);
 
     let compiler = MirToEbpfCompiler::new(&lir_program, probe_ctx);
@@ -2750,6 +2758,7 @@ pub fn compile_mir_to_ebpf(
 fn verify_mir_program(
     program: &MirProgram,
     probe_ctx: Option<&ProbeContext>,
+    type_hints: Option<&MirTypeHints>,
 ) -> Result<(), CompileError> {
     let subfn_schemes = match infer_subfunction_schemes(
         &program.subfunctions,
@@ -2765,16 +2774,18 @@ fn verify_mir_program(
     };
 
     let mut all_funcs = Vec::with_capacity(1 + program.subfunctions.len());
-    all_funcs.push(&program.main);
-    for subfn in &program.subfunctions {
-        all_funcs.push(subfn);
+    all_funcs.push((&program.main, type_hints.map(|h| &h.main)));
+    for (idx, subfn) in program.subfunctions.iter().enumerate() {
+        let hints = type_hints.and_then(|h| h.subfunctions.get(idx));
+        all_funcs.push((subfn, hints));
     }
 
-    for func in all_funcs {
+    for (func, hints) in all_funcs {
         let mut type_infer = TypeInference::new_with_env(
             probe_ctx.cloned(),
             Some(&subfn_schemes),
             Some(HMType::I64),
+            hints,
         );
         let types = match type_infer.infer(func) {
             Ok(types) => types,

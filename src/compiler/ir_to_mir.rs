@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use nu_protocol::ast::{CellPath, PathMember, Pattern, RangeInclusion};
 use nu_protocol::ir::IrBlock;
-use nu_protocol::{DeclId, RegId, Value, VarId};
+use nu_protocol::{BlockId as NuBlockId, DeclId, RegId, Value, VarId};
 
 use super::CompileError;
 use super::elf::ProbeContext;
@@ -15,10 +15,12 @@ use super::hir::{
     HirBlockId, HirCallArgs, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
     lower_ir_to_hir,
 };
+use super::hindley_milner::HMType;
+use super::hir_type_infer::HirTypeInfo;
 use super::mir::{
     BasicBlock, BinOpKind, BlockId, CtxField, MapKind, MapRef, MirFunction, MirInst, MirProgram,
-    MirType, MirValue, RecordFieldDef, StackSlotId, StackSlotKind, StringAppendType, SubfunctionId,
-    VReg,
+    MirType, MirTypeHints, MirValue, RecordFieldDef, StackSlotId, StackSlotKind, StringAppendType,
+    SubfunctionId, VReg,
 };
 
 /// Maximum string size that eBPF can reliably handle
@@ -26,6 +28,37 @@ use super::mir::{
 pub const MAX_STRING_SIZE: usize = 128;
 const STRING_APPEND_COPY_CAP: usize = 64;
 const MAX_INT_STRING_LEN: usize = 20;
+
+#[derive(Debug, Clone, Default)]
+struct HirMirTypeHints {
+    main: HashMap<u32, MirType>,
+    closures: HashMap<NuBlockId, HashMap<u32, MirType>>,
+}
+
+fn mir_hints_from_hir(type_info: &HirTypeInfo) -> HirMirTypeHints {
+    fn convert(map: &HashMap<RegId, HMType>) -> HashMap<u32, MirType> {
+        map.iter()
+            .filter_map(|(reg, ty)| {
+                let mir_ty = ty.to_mir_type()?;
+                if matches!(mir_ty, MirType::Unknown) {
+                    None
+                } else {
+                    Some((reg.get(), mir_ty))
+                }
+            })
+            .collect()
+    }
+
+    let mut closures = HashMap::new();
+    for (block_id, types) in &type_info.closures {
+        closures.insert(*block_id, convert(types));
+    }
+
+    HirMirTypeHints {
+        main: convert(&type_info.main),
+        closures,
+    }
+}
 
 fn align_to_eight(len: usize) -> usize {
     (len + 7) & !7
@@ -161,6 +194,12 @@ pub struct HirToMirLowering<'a> {
     hir_block_map: HashMap<HirBlockId, BlockId>,
     /// Loop body initializations (copy counter into dst)
     loop_body_inits: HashMap<BlockId, Vec<(VReg, VReg)>>,
+    /// Type hints for the current HIR function (RegId -> MirType)
+    current_type_hints: HashMap<u32, MirType>,
+    /// Type hints for closure HIR functions (BlockId -> RegId -> MirType)
+    closure_type_hints: HashMap<NuBlockId, HashMap<u32, MirType>>,
+    /// Collected MIR type hints (VReg -> MirType)
+    vreg_type_hints: HashMap<VReg, MirType>,
     /// Generated subfunctions
     subfunctions: Vec<MirFunction>,
     /// Registry of generated subfunctions by DeclId
@@ -175,13 +214,18 @@ pub struct HirToMirLowering<'a> {
 
 impl<'a> HirToMirLowering<'a> {
     /// Create a new lowering context
-    pub fn new(
+    fn new(
         probe_ctx: Option<&'a ProbeContext>,
         decl_names: &'a HashMap<DeclId, String>,
         closure_irs: &'a HashMap<nu_protocol::BlockId, HirFunction>,
         captures: &'a [(String, i64)],
         ctx_param: Option<VarId>,
+        type_hints: Option<&'a HirMirTypeHints>,
     ) -> Self {
+        let (current_type_hints, closure_type_hints) = match type_hints {
+            Some(hints) => (hints.main.clone(), hints.closures.clone()),
+            None => (HashMap::new(), HashMap::new()),
+        };
         Self {
             func: MirFunction::new(),
             reg_map: HashMap::new(),
@@ -205,6 +249,9 @@ impl<'a> HirToMirLowering<'a> {
             loop_contexts: Vec::new(),
             hir_block_map: HashMap::new(),
             loop_body_inits: HashMap::new(),
+            current_type_hints,
+            closure_type_hints,
+            vreg_type_hints: HashMap::new(),
             subfunctions: Vec::new(),
             subfunction_registry: HashMap::new(),
             call_counts: HashMap::new(),
@@ -243,6 +290,9 @@ impl<'a> HirToMirLowering<'a> {
         } else {
             let vreg = self.func.alloc_vreg();
             self.reg_map.insert(reg_id, vreg);
+            if let Some(hint) = self.current_type_hints.get(&reg_id) {
+                self.vreg_type_hints.entry(vreg).or_insert_with(|| hint.clone());
+            }
             vreg
         }
     }
@@ -1577,7 +1627,8 @@ impl<'a> HirToMirLowering<'a> {
                             block_id.get()
                         ))
                     })?;
-                    let result_vreg = self.inline_closure_with_in(closure_ir, input_vreg)?;
+                    let result_vreg =
+                        self.inline_closure_with_in(block_id, closure_ir, input_vreg)?;
 
                     // Create exit block and continue block
                     let exit_block = self.func.alloc_block();
@@ -1669,7 +1720,8 @@ impl<'a> HirToMirLowering<'a> {
                                 });
 
                                 // Transform element with closure
-                                let transformed = self.inline_closure_with_in(closure_ir, elem_vreg)?;
+                                let transformed =
+                                    self.inline_closure_with_in(block_id, closure_ir, elem_vreg)?;
                                 self.emit(MirInst::ListPush {
                                     list: dst_vreg,
                                     item: transformed,
@@ -1685,7 +1737,8 @@ impl<'a> HirToMirLowering<'a> {
                     }
 
                     // Default: apply closure and return transformed value
-                    let result_vreg = self.inline_closure_with_in(closure_ir, input_vreg)?;
+                    let result_vreg =
+                        self.inline_closure_with_in(block_id, closure_ir, input_vreg)?;
                     self.emit(MirInst::Copy {
                         dst: dst_vreg,
                         src: MirValue::VReg(result_vreg),
@@ -1906,6 +1959,7 @@ impl<'a> HirToMirLowering<'a> {
     /// The closure's parameter is bound to the input value.
     fn inline_closure_with_in(
         &mut self,
+        block_id: NuBlockId,
         hir: &HirFunction,
         in_vreg: VReg,
     ) -> Result<VReg, CompileError> {
@@ -1953,7 +2007,14 @@ impl<'a> HirToMirLowering<'a> {
         let old_hir_block_map = std::mem::take(&mut self.hir_block_map);
         let old_loop_contexts = std::mem::take(&mut self.loop_contexts);
         let old_loop_body_inits = std::mem::take(&mut self.loop_body_inits);
+        let old_type_hints = std::mem::take(&mut self.current_type_hints);
         let entry_block = self.current_block;
+
+        self.current_type_hints = self
+            .closure_type_hints
+            .get(&block_id)
+            .cloned()
+            .unwrap_or_default();
 
         self.hir_block_map = HashMap::new();
         self.loop_contexts = Vec::new();
@@ -2022,6 +2083,7 @@ impl<'a> HirToMirLowering<'a> {
         self.hir_block_map = old_hir_block_map;
         self.loop_contexts = old_loop_contexts;
         self.loop_body_inits = old_loop_body_inits;
+        self.current_type_hints = old_type_hints;
 
         // Restore old $in mapping (if any)
         if let Some(old) = old_in_mapping {
@@ -2087,9 +2149,21 @@ impl<'a> HirToMirLowering<'a> {
 
     /// Finish lowering and return the MIR program
     pub fn finish(self) -> MirProgram {
+        let (program, _) = self.finish_with_hints();
+        program
+    }
+
+    pub fn finish_with_hints(self) -> (MirProgram, MirTypeHints) {
         let mut program = MirProgram::new(self.func);
         program.subfunctions = self.subfunctions;
-        program
+        let mut hints = MirTypeHints {
+            main: self.vreg_type_hints,
+            subfunctions: Vec::new(),
+        };
+        if !program.subfunctions.is_empty() {
+            hints.subfunctions = vec![HashMap::new(); program.subfunctions.len()];
+        }
+        (program, hints)
     }
 }
 
@@ -2100,20 +2174,38 @@ impl<'a> HirToMirLowering<'a> {
 /// The `decl_names` parameter maps DeclId to command names for the eBPF helper
 /// commands (emit, count, histogram, etc.). In plugin context, this is built
 /// by querying the engine via `find_decl()`.
-pub fn lower_hir_to_mir(
+pub struct MirLoweringResult {
+    pub program: MirProgram,
+    pub type_hints: MirTypeHints,
+}
+
+pub fn lower_hir_to_mir_with_hints(
     hir: &HirProgram,
     probe_ctx: Option<&ProbeContext>,
     decl_names: &HashMap<DeclId, String>,
-) -> Result<MirProgram, CompileError> {
+    type_info: Option<&HirTypeInfo>,
+) -> Result<MirLoweringResult, CompileError> {
+    let hir_type_hints = type_info.map(mir_hints_from_hir);
     let mut lowering = HirToMirLowering::new(
         probe_ctx,
         decl_names,
         &hir.closures,
         &hir.captures,
         hir.ctx_param,
+        hir_type_hints.as_ref(),
     );
     lowering.lower_block(&hir.main)?;
-    Ok(lowering.finish())
+    let (program, type_hints) = lowering.finish_with_hints();
+    Ok(MirLoweringResult { program, type_hints })
+}
+
+pub fn lower_hir_to_mir(
+    hir: &HirProgram,
+    probe_ctx: Option<&ProbeContext>,
+    decl_names: &HashMap<DeclId, String>,
+) -> Result<MirProgram, CompileError> {
+    let result = lower_hir_to_mir_with_hints(hir, probe_ctx, decl_names, None)?;
+    Ok(result.program)
 }
 
 /// Lower Nushell IR to MIR
