@@ -61,7 +61,13 @@ pub enum MapKind {
     ProgArray,
 }
 
+pub const RINGBUF_MAP_NAME: &str = "events";
+pub const COUNTER_MAP_NAME: &str = "counters";
 pub const STRING_COUNTER_MAP_NAME: &str = "str_counters";
+pub const HISTOGRAM_MAP_NAME: &str = "histogram";
+pub const TIMESTAMP_MAP_NAME: &str = "timestamps";
+pub const KSTACK_MAP_NAME: &str = "kstacks";
+pub const USTACK_MAP_NAME: &str = "ustacks";
 
 /// Type of value being appended in StringAppend
 #[derive(Debug, Clone, PartialEq, Eq)]

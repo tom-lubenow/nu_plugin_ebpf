@@ -34,6 +34,8 @@ use crate::compiler::lir::{LirBlock, LirFunction, LirInst, LirProgram};
 use crate::compiler::mir::{
     BinOpKind, BlockId, CtxField, MirProgram, MirType, MirValue, RecordFieldDef, StackSlot,
     StackSlotId, StackSlotKind, StringAppendType, SubfunctionId, UnaryOpKind, VReg,
+    COUNTER_MAP_NAME, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME,
+    TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
 };
 use crate::compiler::mir_to_lir::lower_mir_to_lir;
 use crate::compiler::passes::{ListLowering, MirPass};
@@ -41,21 +43,6 @@ use crate::compiler::type_infer::{TypeInference, infer_subfunction_schemes};
 use crate::compiler::verifier_types;
 use crate::compiler::vcc;
 use crate::kernel_btf::KernelBtf;
-
-/// Ring buffer map name
-pub const RINGBUF_MAP_NAME: &str = "events";
-/// Counter map name
-pub const COUNTER_MAP_NAME: &str = "counters";
-/// String counter map name (comm keys)
-pub const STRING_COUNTER_MAP_NAME: &str = crate::compiler::mir::STRING_COUNTER_MAP_NAME;
-/// Histogram map name
-pub const HISTOGRAM_MAP_NAME: &str = "histogram";
-/// Timestamp map name (for timing)
-pub const TIMESTAMP_MAP_NAME: &str = "timestamps";
-/// Kernel stack trace map name
-pub const KSTACK_MAP_NAME: &str = "kstacks";
-/// User stack trace map name
-pub const USTACK_MAP_NAME: &str = "ustacks";
 
 /// Result of MIR to eBPF compilation
 pub struct MirCompileResult {

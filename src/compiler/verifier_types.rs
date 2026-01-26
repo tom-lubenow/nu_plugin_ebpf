@@ -7,7 +7,9 @@
 use std::collections::{HashMap, VecDeque};
 
 use super::mir::{
-    AddressSpace, BinOpKind, BlockId, MirFunction, MirInst, MirType, MirValue, StackSlotId, VReg,
+    AddressSpace, BinOpKind, BlockId, MapRef, MirFunction, MirInst, MirType, MirValue, StackSlotId,
+    VReg, COUNTER_MAP_NAME, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, STRING_COUNTER_MAP_NAME,
+    TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,8 +20,14 @@ enum Nullability {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PtrOrigin {
+    Stack(StackSlotId),
+    Map,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PtrBounds {
-    slot: StackSlotId,
+    origin: PtrOrigin,
     min: i64,
     max: i64,
     limit: i64,
@@ -331,19 +339,25 @@ fn apply_inst(
                 .unwrap_or(VerifierType::Scalar);
             state.set(*dst, ty);
         }
-        MirInst::MapLookup { dst, .. } => {
+        MirInst::MapLookup { dst, map, .. } => {
+            let bounds = map_value_limit(map).map(|limit| PtrBounds {
+                origin: PtrOrigin::Map,
+                min: 0,
+                max: 0,
+                limit,
+            });
             state.set(
                 *dst,
                 VerifierType::Ptr {
                     space: AddressSpace::Map,
                     nullability: Nullability::MaybeNull,
-                    bounds: None,
+                    bounds,
                 },
             );
         }
         MirInst::ListNew { dst, buffer, .. } => {
             let bounds = slot_sizes.get(buffer).copied().map(|limit| PtrBounds {
-                slot: *buffer,
+                origin: PtrOrigin::Stack(*buffer),
                 min: 0,
                 max: 0,
                 limit,
@@ -382,7 +396,7 @@ fn apply_inst(
                 (ty, slot)
             {
                 let bounds = slot_sizes.get(slot).copied().map(|limit| PtrBounds {
-                    slot: *slot,
+                    origin: PtrOrigin::Stack(*slot),
                     min: 0,
                     max: 0,
                     limit,
@@ -532,7 +546,7 @@ fn pointer_arith_result(
             (Some(bounds), Some(delta)) => {
                 let delta = if is_add { delta } else { -delta };
                 Some(PtrBounds {
-                    slot: bounds.slot,
+                    origin: bounds.origin,
                     min: bounds.min.saturating_add(delta),
                     max: bounds.max.saturating_add(delta),
                     limit: bounds.limit,
@@ -658,13 +672,14 @@ fn check_ptr_access(
         return;
     };
 
-    if space != AddressSpace::Stack {
-        return;
-    }
-
     let Some(bounds) = bounds else {
         return;
     };
+
+    match (space, bounds.origin) {
+        (AddressSpace::Stack, PtrOrigin::Stack(_)) | (AddressSpace::Map, PtrOrigin::Map) => {}
+        _ => return,
+    }
 
     let size = size as i64;
     let offset = offset as i64;
@@ -675,9 +690,13 @@ fn check_ptr_access(
         .saturating_add(size.saturating_sub(1));
 
     if start < 0 || end > bounds.limit {
+        let origin = match bounds.origin {
+            PtrOrigin::Stack(slot) => format!("stack slot {}", slot.0),
+            PtrOrigin::Map => "map value".to_string(),
+        };
         errors.push(VerifierTypeError::new(format!(
-            "{op} out of bounds for stack slot {}: access [{start}..{end}] exceeds 0..{}",
-            bounds.slot.0, bounds.limit
+            "{op} out of bounds for {origin}: access [{start}..{end}] exceeds 0..{}",
+            bounds.limit
         )));
     }
 }
@@ -715,7 +734,7 @@ fn value_type(
         MirValue::VReg(v) => state.get(*v),
         MirValue::StackSlot(slot) => {
             let bounds = slot_sizes.get(slot).copied().map(|limit| PtrBounds {
-                slot: *slot,
+                origin: PtrOrigin::Stack(*slot),
                 min: 0,
                 max: 0,
                 limit,
@@ -796,8 +815,8 @@ fn join_nullability(a: Nullability, b: Nullability) -> Nullability {
 
 fn join_bounds(a: Option<PtrBounds>, b: Option<PtrBounds>) -> Option<PtrBounds> {
     match (a, b) {
-        (Some(a), Some(b)) if a.slot == b.slot && a.limit == b.limit => Some(PtrBounds {
-            slot: a.slot,
+        (Some(a), Some(b)) if a.origin == b.origin && a.limit == b.limit => Some(PtrBounds {
+            origin: a.origin,
             min: a.min.min(b.min),
             max: a.max.max(b.max),
             limit: a.limit,
@@ -806,10 +825,23 @@ fn join_bounds(a: Option<PtrBounds>, b: Option<PtrBounds>) -> Option<PtrBounds> 
     }
 }
 
+fn map_value_limit(map: &MapRef) -> Option<i64> {
+    match map.name.as_str() {
+        COUNTER_MAP_NAME
+        | STRING_COUNTER_MAP_NAME
+        | HISTOGRAM_MAP_NAME
+        | TIMESTAMP_MAP_NAME => Some(8 - 1),
+        KSTACK_MAP_NAME | USTACK_MAP_NAME => Some((127 * 8) - 1),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::mir::{MapKind, MapRef, MirType, StackSlotKind};
+    use crate::compiler::mir::{
+        MapKind, MapRef, MirType, StackSlotKind, COUNTER_MAP_NAME,
+    };
 
     fn map_lookup_types(func: &MirFunction, vreg: VReg) -> HashMap<VReg, MirType> {
         let mut types = HashMap::new();
@@ -1094,5 +1126,66 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected user ptr load error");
         assert!(err.iter().any(|e| e.message.contains("load")));
+    }
+
+    #[test]
+    fn test_map_value_bounds() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let ok = func.alloc_block();
+        let bad = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+        let ptr = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapLookup {
+            dst: ptr,
+            map: MapRef {
+                name: COUNTER_MAP_NAME.to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: ok,
+            if_false: bad,
+        };
+
+        func.block_mut(ok).instructions.push(MirInst::Load {
+            dst,
+            ptr,
+            offset: 8,
+            ty: MirType::I64,
+        });
+        func.block_mut(ok).terminator = MirInst::Return { val: None };
+
+        func.block_mut(bad).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Map,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected map bounds error");
+        assert!(err.iter().any(|e| e.message.contains("out of bounds")));
     }
 }
