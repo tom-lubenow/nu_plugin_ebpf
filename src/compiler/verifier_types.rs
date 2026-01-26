@@ -381,6 +381,11 @@ fn apply_inst(
             } else {
                 ValueRange::Unknown
             };
+            let ty = if let MirInst::Phi { args, .. } = inst {
+                ptr_type_for_phi(args, state).unwrap_or(ty)
+            } else {
+                ty
+            };
             state.set_with_range(*dst, ty, range);
         }
         MirInst::MapLookup { dst, map, .. } => {
@@ -927,6 +932,9 @@ fn range_for_binop(op: BinOpKind, lhs: &MirValue, rhs: &MirValue, state: &Verifi
     match op {
         BinOpKind::Add => range_add(lhs_range, rhs_range),
         BinOpKind::Sub => range_sub(lhs_range, rhs_range),
+        BinOpKind::Mul => range_mul(lhs_range, rhs_range),
+        BinOpKind::Shl => range_shift(lhs_range, rhs_range, true),
+        BinOpKind::Shr => range_shift(lhs_range, rhs_range, false),
         _ => ValueRange::Unknown,
     }
 }
@@ -941,6 +949,90 @@ fn range_for_phi(args: &[(BlockId, VReg)], state: &VerifierState) -> ValueRange 
         });
     }
     merged.unwrap_or(ValueRange::Unknown)
+}
+
+fn clamp_i128_to_i64(value: i128) -> i64 {
+    if value > i64::MAX as i128 {
+        i64::MAX
+    } else if value < i64::MIN as i128 {
+        i64::MIN
+    } else {
+        value as i64
+    }
+}
+
+fn range_mul(a: ValueRange, b: ValueRange) -> ValueRange {
+    match (a, b) {
+        (ValueRange::Known { min: a_min, max: a_max }, ValueRange::Known { min: b_min, max: b_max }) => {
+            let candidates = [
+                (a_min as i128) * (b_min as i128),
+                (a_min as i128) * (b_max as i128),
+                (a_max as i128) * (b_min as i128),
+                (a_max as i128) * (b_max as i128),
+            ];
+            let mut min = i128::MAX;
+            let mut max = i128::MIN;
+            for val in candidates {
+                min = min.min(val);
+                max = max.max(val);
+            }
+            ValueRange::Known {
+                min: clamp_i128_to_i64(min),
+                max: clamp_i128_to_i64(max),
+            }
+        }
+        _ => ValueRange::Unknown,
+    }
+}
+
+fn range_shift(lhs: ValueRange, rhs: ValueRange, is_left: bool) -> ValueRange {
+    let (lhs_min, lhs_max, rhs_min, rhs_max) = match (lhs, rhs) {
+        (
+            ValueRange::Known { min: lhs_min, max: lhs_max },
+            ValueRange::Known { min: rhs_min, max: rhs_max },
+        ) => (lhs_min, lhs_max, rhs_min, rhs_max),
+        _ => return ValueRange::Unknown,
+    };
+
+    if rhs_min < 0 || rhs_max > 63 {
+        return ValueRange::Unknown;
+    }
+
+    let mut min = i128::MAX;
+    let mut max = i128::MIN;
+    let lhs_vals = [lhs_min, lhs_max];
+    let rhs_vals = [rhs_min, rhs_max];
+    for lhs_val in lhs_vals {
+        for rhs_val in rhs_vals {
+            let shifted = if is_left {
+                (lhs_val as i128) << rhs_val
+            } else {
+                (lhs_val as i128) >> rhs_val
+            };
+            min = min.min(shifted);
+            max = max.max(shifted);
+        }
+    }
+
+    ValueRange::Known {
+        min: clamp_i128_to_i64(min),
+        max: clamp_i128_to_i64(max),
+    }
+}
+
+fn ptr_type_for_phi(args: &[(BlockId, VReg)], state: &VerifierState) -> Option<VerifierType> {
+    let mut merged: Option<VerifierType> = None;
+    for (_, vreg) in args {
+        let ty = state.get(*vreg);
+        if !matches!(ty, VerifierType::Ptr { .. }) {
+            return None;
+        }
+        merged = Some(match merged {
+            None => ty,
+            Some(existing) => join_type(existing, ty),
+        });
+    }
+    merged
 }
 
 #[cfg(test)]
@@ -1330,5 +1422,215 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected map bounds error");
         assert!(err.iter().any(|e| e.message.contains("out of bounds")));
+    }
+
+    #[test]
+    fn test_stack_pointer_offset_via_shift_out_of_bounds() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let base = func.alloc_vreg();
+        let offset = func.alloc_vreg();
+        let tmp = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: base,
+            src: MirValue::Const(3),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: offset,
+            op: BinOpKind::Shl,
+            lhs: MirValue::VReg(base),
+            rhs: MirValue::Const(2),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: tmp,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::VReg(offset),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Load {
+            dst,
+            ptr: tmp,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            tmp,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected bounds error");
+        assert!(err.iter().any(|e| e.message.contains("out of bounds")));
+    }
+
+    #[test]
+    fn test_stack_pointer_offset_via_mul_out_of_bounds() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let base = func.alloc_vreg();
+        let scale = func.alloc_vreg();
+        let offset = func.alloc_vreg();
+        let tmp = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: base,
+            src: MirValue::Const(3),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: scale,
+            src: MirValue::Const(4),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: offset,
+            op: BinOpKind::Mul,
+            lhs: MirValue::VReg(base),
+            rhs: MirValue::VReg(scale),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: tmp,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::VReg(offset),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Load {
+            dst,
+            ptr: tmp,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            tmp,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected bounds error");
+        assert!(err.iter().any(|e| e.message.contains("out of bounds")));
+    }
+
+    #[test]
+    fn test_pointer_phi_preserves_bounds() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let left = func.alloc_block();
+        let right = func.alloc_block();
+        let join = func.alloc_block();
+        func.entry = entry;
+
+        let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let tmp = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let phi_ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: cond,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: left,
+            if_false: right,
+        };
+
+        func.block_mut(left).instructions.push(MirInst::Copy {
+            dst: tmp,
+            src: MirValue::VReg(ptr),
+        });
+        func.block_mut(left).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(right).instructions.push(MirInst::Copy {
+            dst: tmp,
+            src: MirValue::VReg(ptr),
+        });
+        func.block_mut(right).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(join).instructions.push(MirInst::Phi {
+            dst: phi_ptr,
+            args: vec![(left, tmp), (right, tmp)],
+        });
+        func.block_mut(join).instructions.push(MirInst::Load {
+            dst,
+            ptr: phi_ptr,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(join).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            tmp,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            phi_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        verify_mir(&func, &types).expect("expected bounds to propagate through phi");
     }
 }
