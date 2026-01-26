@@ -105,7 +105,7 @@
       - Ensure every helper call (and subprogram call) has explicit clobber constraints; no "secret" register usage.
       - Plumb loop depth into LIR spill-cost heuristics (carry LoopInfo through LIR or recompute on LIR CFG).
       Status: graph coloring allocator exists with spill costs; allocator now consumes LIR and
-      uses LIR clobbers; loop-depth heuristics still come from MIR only.
+      uses LIR clobbers; loop-depth heuristics now computed for LIR via alloc CFG.
 
   [~] 8. Testing strategy aligned with the design
       - Unit tests for HM inference and principal type schemes.
