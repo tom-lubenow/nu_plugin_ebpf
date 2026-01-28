@@ -150,3 +150,10 @@
   Verifier notes (2026-01-26)
   - Known limitations: branch feasibility is not pruned when a guard contradicts a known range; `!=` lacks disjoint
     range modeling (may keep a superset), which can yield false positives in bounds checks. Consider revisiting later.
+
+  Notes (2026-01-28)
+  - User-defined function calls now lower to BPF subfunctions via `view ir --json --decl-id`,
+    with HIR type hints threaded into subfunction MIR and per-subfunction hints returned to the verifier.
+  - Attach now scans main/closure IR for DeclIds, fetches nested user IR + closure IR, and wires HIR→MIR with decls.
+  - ELF generation now emits subfunction symbols and main-function size for aya relocation; StoreVariable/DropVariable
+    now track local bindings to support $in pipelines in user-defined functions.

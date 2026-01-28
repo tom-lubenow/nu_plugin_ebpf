@@ -24,6 +24,7 @@ use crate::compiler::CompileError;
 use crate::compiler::cfg::CFG;
 use crate::compiler::elf::{
     BpfFieldType, BpfMapDef, EbpfMap, EventSchema, MapRelocation, ProbeContext, SchemaField,
+    SubfunctionSymbol,
 };
 use crate::compiler::graph_coloring::{
     compute_loop_depths, ColoringResult, GraphColoringAllocator,
@@ -48,10 +49,14 @@ use crate::kernel_btf::KernelBtf;
 pub struct MirCompileResult {
     /// The compiled bytecode
     pub bytecode: Vec<u8>,
+    /// Size of the main function in bytes
+    pub main_size: usize,
     /// Maps needed by the program
     pub maps: Vec<EbpfMap>,
     /// Relocations for map references
     pub relocations: Vec<MapRelocation>,
+    /// Subfunction symbols for BPF-to-BPF relocation
+    pub subfunction_symbols: Vec<SubfunctionSymbol>,
     /// Optional schema for structured events
     pub event_schema: Option<EventSchema>,
 }
@@ -162,6 +167,7 @@ impl<'a> MirToEbpfCompiler<'a> {
 
         // Fix up jumps in main function
         self.fixup_jumps()?;
+        let main_insns = self.instructions.len();
 
         // Compile all subfunctions (BPF-to-BPF calls)
         // Each subfunction is appended after the main function
@@ -170,11 +176,45 @@ impl<'a> MirToEbpfCompiler<'a> {
         // Fix up subfunction call offsets
         self.fixup_subfn_calls()?;
 
+        let subfunction_symbols = if self.subfn_offsets.is_empty() {
+            Vec::new()
+        } else {
+            let mut offsets: Vec<(SubfunctionId, usize)> = self
+                .subfn_offsets
+                .iter()
+                .map(|(id, &offset)| (*id, offset))
+                .collect();
+            offsets.sort_by_key(|(_, offset)| *offset);
+
+            let total = self.instructions.len();
+            let mut symbols = Vec::new();
+            for (idx, (subfn_id, offset)) in offsets.iter().enumerate() {
+                let end = offsets
+                    .get(idx + 1)
+                    .map(|(_, next_offset)| *next_offset)
+                    .unwrap_or(total);
+                let size = end.saturating_sub(*offset);
+                let name = self
+                    .lir
+                    .subfunctions
+                    .get(subfn_id.0 as usize)
+                    .and_then(|func| func.name.clone())
+                    .unwrap_or_else(|| format!("subfn_{}", subfn_id.0));
+                symbols.push(SubfunctionSymbol {
+                    name,
+                    offset: offset * 8,
+                    size: size * 8,
+                });
+            }
+            symbols
+        };
+
         // Build bytecode from instructions
         let mut bytecode = Vec::with_capacity(self.instructions.len() * 8);
         for insn in &self.instructions {
             bytecode.extend_from_slice(&insn.encode());
         }
+        let main_size = main_insns * 8;
 
         // Build maps
         let mut maps = Vec::new();
@@ -223,8 +263,10 @@ impl<'a> MirToEbpfCompiler<'a> {
 
         Ok(MirCompileResult {
             bytecode,
+            main_size,
             maps,
             relocations: self.relocations,
+            subfunction_symbols,
             event_schema: self.event_schema,
         })
     }

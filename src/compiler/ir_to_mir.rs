@@ -3,11 +3,11 @@
 //! This module converts the compiler's HIR representation into MIR,
 //! which is then lowered to eBPF bytecode by mir_to_ebpf.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use nu_protocol::ast::{CellPath, PathMember, Pattern, RangeInclusion};
 use nu_protocol::ir::IrBlock;
-use nu_protocol::{BlockId as NuBlockId, DeclId, RegId, Value, VarId};
+use nu_protocol::{BlockId as NuBlockId, DeclId, RegId, Value, VarId, IN_VARIABLE_ID};
 
 use super::CompileError;
 use super::elf::ProbeContext;
@@ -33,6 +33,7 @@ const MAX_INT_STRING_LEN: usize = 20;
 struct HirMirTypeHints {
     main: HashMap<u32, MirType>,
     closures: HashMap<NuBlockId, HashMap<u32, MirType>>,
+    decls: HashMap<DeclId, HashMap<u32, MirType>>,
 }
 
 fn mir_hints_from_hir(type_info: &HirTypeInfo) -> HirMirTypeHints {
@@ -53,10 +54,15 @@ fn mir_hints_from_hir(type_info: &HirTypeInfo) -> HirMirTypeHints {
     for (block_id, types) in &type_info.closures {
         closures.insert(*block_id, convert(types));
     }
+    let mut decls = HashMap::new();
+    for (decl_id, types) in &type_info.decls {
+        decls.insert(*decl_id, convert(types));
+    }
 
     HirMirTypeHints {
         main: convert(&type_info.main),
         closures,
+        decls,
     }
 }
 
@@ -198,8 +204,18 @@ pub struct HirToMirLowering<'a> {
     current_type_hints: HashMap<u32, MirType>,
     /// Type hints for closure HIR functions (BlockId -> RegId -> MirType)
     closure_type_hints: HashMap<NuBlockId, HashMap<u32, MirType>>,
+    /// Type hints for user-defined functions (DeclId -> RegId -> MirType)
+    decl_type_hints: HashMap<DeclId, HashMap<u32, MirType>>,
     /// Collected MIR type hints (VReg -> MirType)
     vreg_type_hints: HashMap<VReg, MirType>,
+    /// User-defined functions by DeclId
+    user_functions: &'a HashMap<DeclId, HirFunction>,
+    /// Cached parameter VarIds for user-defined functions
+    subfunction_params: HashMap<DeclId, Vec<VarId>>,
+    /// Subfunction vreg type hints (aligned with subfunctions vec)
+    subfunction_hints: Vec<HashMap<VReg, MirType>>,
+    /// Subfunctions currently being lowered (recursion guard)
+    subfunction_in_progress: HashSet<DeclId>,
     /// Generated subfunctions
     subfunctions: Vec<MirFunction>,
     /// Registry of generated subfunctions by DeclId
@@ -221,10 +237,15 @@ impl<'a> HirToMirLowering<'a> {
         captures: &'a [(String, i64)],
         ctx_param: Option<VarId>,
         type_hints: Option<&'a HirMirTypeHints>,
+        user_functions: &'a HashMap<DeclId, HirFunction>,
     ) -> Self {
-        let (current_type_hints, closure_type_hints) = match type_hints {
-            Some(hints) => (hints.main.clone(), hints.closures.clone()),
-            None => (HashMap::new(), HashMap::new()),
+        let (current_type_hints, closure_type_hints, decl_type_hints) = match type_hints {
+            Some(hints) => (
+                hints.main.clone(),
+                hints.closures.clone(),
+                hints.decls.clone(),
+            ),
+            None => (HashMap::new(), HashMap::new(), HashMap::new()),
         };
         Self {
             func: MirFunction::new(),
@@ -251,7 +272,12 @@ impl<'a> HirToMirLowering<'a> {
             loop_body_inits: HashMap::new(),
             current_type_hints,
             closure_type_hints,
+            decl_type_hints,
             vreg_type_hints: HashMap::new(),
+            user_functions,
+            subfunction_params: HashMap::new(),
+            subfunction_hints: Vec::new(),
+            subfunction_in_progress: HashSet::new(),
             subfunctions: Vec::new(),
             subfunction_registry: HashMap::new(),
             call_counts: HashMap::new(),
@@ -692,13 +718,17 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             HirStmt::StoreVariable { var_id, src } => {
-                // Store variable - for now just track the vreg
-                let _src_vreg = self.get_vreg(*src);
-                let _ = var_id; // Would need a var_map to track this
+                let src_vreg = self.get_vreg(*src);
+                let preserved = self.func.alloc_vreg();
+                self.emit(MirInst::Copy {
+                    dst: preserved,
+                    src: MirValue::VReg(src_vreg),
+                });
+                self.var_mappings.insert(*var_id, preserved);
             }
 
-            HirStmt::DropVariable { .. } => {
-                // No-op in eBPF
+            HirStmt::DropVariable { var_id } => {
+                self.var_mappings.remove(var_id);
             }
 
             // === Environment Variables (not supported in eBPF) ===
@@ -909,6 +939,142 @@ impl<'a> HirToMirLowering<'a> {
             self.named_flags.push(flag);
         }
 
+        Ok(())
+    }
+
+    fn clear_call_state(&mut self) {
+        self.pipeline_input = None;
+        self.pipeline_input_reg = None;
+        self.positional_args.clear();
+        self.named_flags.clear();
+        self.named_args.clear();
+    }
+
+    fn infer_param_vars(hir: &HirFunction) -> Vec<VarId> {
+        let mut stored = HashSet::new();
+        let mut params = HashSet::new();
+
+        for block in &hir.blocks {
+            for stmt in &block.stmts {
+                if let HirStmt::StoreVariable { var_id, .. } = stmt {
+                    stored.insert(*var_id);
+                }
+            }
+        }
+
+        for block in &hir.blocks {
+            for stmt in &block.stmts {
+                if let HirStmt::LoadVariable { var_id, .. } = stmt {
+                    if *var_id != IN_VARIABLE_ID && !stored.contains(var_id) {
+                        params.insert(*var_id);
+                    }
+                }
+            }
+        }
+
+        let mut vars: Vec<VarId> = params.into_iter().collect();
+        vars.sort_by_key(|var_id| var_id.get());
+        vars
+    }
+
+    fn uses_in_variable(hir: &HirFunction) -> bool {
+        for block in &hir.blocks {
+            for stmt in &block.stmts {
+                if let HirStmt::LoadVariable { var_id, .. } = stmt {
+                    if *var_id == IN_VARIABLE_ID {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    fn infer_pipeline_input_reg(hir: &HirFunction) -> Option<RegId> {
+        for block in &hir.blocks {
+            for stmt in &block.stmts {
+                match stmt {
+                    HirStmt::Collect { src_dst }
+                    | HirStmt::Drain { src: src_dst }
+                    | HirStmt::DrainIfEnd { src: src_dst } => {
+                        return Some(*src_dst);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        None
+    }
+
+    fn subfunction_params(&mut self, decl_id: DeclId, func: &HirFunction) -> Vec<VarId> {
+        if let Some(params) = self.subfunction_params.get(&decl_id) {
+            return params.clone();
+        }
+        let params = Self::infer_param_vars(func);
+        self.subfunction_params.insert(decl_id, params.clone());
+        params
+    }
+
+    fn lower_user_function_call(
+        &mut self,
+        decl_id: DeclId,
+        src_dst: RegId,
+        dst_vreg: VReg,
+    ) -> Result<(), CompileError> {
+        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "User-defined functions do not support named arguments or flags yet".into(),
+            ));
+        }
+
+        let hir = self.user_functions.get(&decl_id).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "User-defined function {} not found",
+                decl_id.get()
+            ))
+        })?;
+        let param_vars = self.subfunction_params(decl_id, hir);
+        let input_reg = Self::infer_pipeline_input_reg(hir);
+        let needs_input = input_reg.is_some() || Self::uses_in_variable(hir);
+
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        let mut args = Vec::new();
+        if needs_input {
+            args.push(input_vreg);
+        }
+
+        let mut positional_idx = 0usize;
+        for _ in &param_vars {
+            let (arg_vreg, _) = self.positional_args.get(positional_idx).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "User-defined function missing positional arguments".into(),
+                )
+            })?;
+            args.push(*arg_vreg);
+            positional_idx += 1;
+        }
+
+        if positional_idx != self.positional_args.len() {
+            return Err(CompileError::UnsupportedInstruction(
+                "User-defined function argument count mismatch (unused params not supported yet)"
+                    .into(),
+            ));
+        }
+
+        if args.len() > 5 {
+            return Err(CompileError::UnsupportedInstruction(
+                "BPF subfunctions support at most 5 arguments".into(),
+            ));
+        }
+
+        let subfn = self.get_or_create_subfunction(decl_id)?;
+        self.emit(MirInst::CallSubfn {
+            dst: dst_vreg,
+            subfn,
+            args,
+        });
+
+        self.reg_metadata.remove(&src_dst.get());
         Ok(())
     }
 
@@ -1356,14 +1522,20 @@ impl<'a> HirToMirLowering<'a> {
 
     /// Lower Call instruction (emit, count, etc. or user-defined functions)
     fn lower_call(&mut self, decl_id: DeclId, src_dst: RegId) -> Result<(), CompileError> {
+        let dst_vreg = self.get_vreg(src_dst);
+
+        if self.user_functions.contains_key(&decl_id) {
+            self.lower_user_function_call(decl_id, src_dst, dst_vreg)?;
+            self.clear_call_state();
+            return Ok(());
+        }
+
         // Look up command name from our decl_names mapping
         let cmd_name = self
             .decl_names
             .get(&decl_id)
             .cloned()
             .unwrap_or_else(|| format!("decl_{}", decl_id.get()));
-
-        let dst_vreg = self.get_vreg(src_dst);
 
         match cmd_name.as_str() {
             "emit" => {
@@ -1881,12 +2053,113 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
-        self.pipeline_input = None;
-        self.pipeline_input_reg = None;
-        self.positional_args.clear();
-        self.named_flags.clear();
-        self.named_args.clear();
+        self.clear_call_state();
         Ok(())
+    }
+
+    fn get_or_create_subfunction(&mut self, decl_id: DeclId) -> Result<SubfunctionId, CompileError> {
+        if let Some(&subfn_id) = self.subfunction_registry.get(&decl_id) {
+            return Ok(subfn_id);
+        }
+
+        let hir = self.user_functions.get(&decl_id).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "User-defined function {} not found",
+                decl_id.get()
+            ))
+        })?;
+
+        if !self.subfunction_in_progress.insert(decl_id) {
+            return Err(CompileError::UnsupportedInstruction(
+                "Recursive user-defined functions are not supported in eBPF".into(),
+            ));
+        }
+
+        let param_vars = self.subfunction_params(decl_id, hir);
+        let input_reg = Self::infer_pipeline_input_reg(hir);
+        let uses_in = Self::uses_in_variable(hir);
+        let needs_input = input_reg.is_some() || uses_in;
+        let name = self
+            .decl_names
+            .get(&decl_id)
+            .cloned()
+            .unwrap_or_else(|| format!("decl_{}", decl_id.get()));
+
+        let mut subfn = MirFunction::with_name(name);
+        subfn.param_count = param_vars.len() + usize::from(needs_input);
+
+        let old_func = std::mem::replace(&mut self.func, subfn);
+        let old_reg_map = std::mem::take(&mut self.reg_map);
+        let old_reg_metadata = std::mem::take(&mut self.reg_metadata);
+        let old_current_block = self.current_block;
+        let old_pipeline_input = self.pipeline_input.take();
+        let old_pipeline_input_reg = self.pipeline_input_reg.take();
+        let old_positional_args = std::mem::take(&mut self.positional_args);
+        let old_named_flags = std::mem::take(&mut self.named_flags);
+        let old_named_args = std::mem::take(&mut self.named_args);
+        let old_var_mappings = std::mem::take(&mut self.var_mappings);
+        let old_loop_contexts = std::mem::take(&mut self.loop_contexts);
+        let old_hir_block_map = std::mem::take(&mut self.hir_block_map);
+        let old_loop_body_inits = std::mem::take(&mut self.loop_body_inits);
+        let old_type_hints = std::mem::replace(
+            &mut self.current_type_hints,
+            self.decl_type_hints
+                .get(&decl_id)
+                .cloned()
+                .unwrap_or_default(),
+        );
+        let old_vreg_hints = std::mem::take(&mut self.vreg_type_hints);
+        let old_ctx_param = self.ctx_param;
+
+        self.ctx_param = None;
+
+        if needs_input {
+            let vreg = self.func.alloc_vreg();
+            if let Some(reg) = input_reg {
+                self.reg_map.insert(reg.get(), vreg);
+            }
+            if uses_in {
+                self.var_mappings.insert(IN_VARIABLE_ID, vreg);
+            }
+        }
+
+        for var_id in &param_vars {
+            let vreg = self.func.alloc_vreg();
+            self.var_mappings.insert(*var_id, vreg);
+        }
+
+        let result = self.lower_block(hir);
+
+        let subfn = std::mem::replace(&mut self.func, old_func);
+        let subfn_hints = std::mem::replace(&mut self.vreg_type_hints, old_vreg_hints);
+
+        self.reg_map = old_reg_map;
+        self.reg_metadata = old_reg_metadata;
+        self.current_block = old_current_block;
+        self.pipeline_input = old_pipeline_input;
+        self.pipeline_input_reg = old_pipeline_input_reg;
+        self.positional_args = old_positional_args;
+        self.named_flags = old_named_flags;
+        self.named_args = old_named_args;
+        self.var_mappings = old_var_mappings;
+        self.loop_contexts = old_loop_contexts;
+        self.hir_block_map = old_hir_block_map;
+        self.loop_body_inits = old_loop_body_inits;
+        self.current_type_hints = old_type_hints;
+        self.ctx_param = old_ctx_param;
+
+        self.subfunction_in_progress.remove(&decl_id);
+
+        if let Err(err) = result {
+            return Err(err);
+        }
+
+        let subfn_id = SubfunctionId(self.subfunctions.len() as u32);
+        self.subfunctions.push(subfn);
+        self.subfunction_hints.push(subfn_hints);
+        self.subfunction_registry.insert(decl_id, subfn_id);
+
+        Ok(subfn_id)
     }
 
     /// Call a user-defined function (inline for single use, subfunction for multiple calls)
@@ -2158,10 +2431,11 @@ impl<'a> HirToMirLowering<'a> {
         program.subfunctions = self.subfunctions;
         let mut hints = MirTypeHints {
             main: self.vreg_type_hints,
-            subfunctions: Vec::new(),
+            subfunctions: self.subfunction_hints,
         };
-        if !program.subfunctions.is_empty() {
-            hints.subfunctions = vec![HashMap::new(); program.subfunctions.len()];
+        if hints.subfunctions.len() < program.subfunctions.len() {
+            hints.subfunctions
+                .resize_with(program.subfunctions.len(), HashMap::new);
         }
         (program, hints)
     }
@@ -2184,6 +2458,7 @@ pub fn lower_hir_to_mir_with_hints(
     probe_ctx: Option<&ProbeContext>,
     decl_names: &HashMap<DeclId, String>,
     type_info: Option<&HirTypeInfo>,
+    user_functions: &HashMap<DeclId, HirFunction>,
 ) -> Result<MirLoweringResult, CompileError> {
     let hir_type_hints = type_info.map(mir_hints_from_hir);
     let mut lowering = HirToMirLowering::new(
@@ -2193,6 +2468,7 @@ pub fn lower_hir_to_mir_with_hints(
         &hir.captures,
         hir.ctx_param,
         hir_type_hints.as_ref(),
+        user_functions,
     );
     lowering.lower_block(&hir.main)?;
     let (program, type_hints) = lowering.finish_with_hints();
@@ -2204,7 +2480,9 @@ pub fn lower_hir_to_mir(
     probe_ctx: Option<&ProbeContext>,
     decl_names: &HashMap<DeclId, String>,
 ) -> Result<MirProgram, CompileError> {
-    let result = lower_hir_to_mir_with_hints(hir, probe_ctx, decl_names, None)?;
+    let empty_user_functions = HashMap::new();
+    let result =
+        lower_hir_to_mir_with_hints(hir, probe_ctx, decl_names, None, &empty_user_functions)?;
     Ok(result.program)
 }
 
@@ -2426,5 +2704,83 @@ mod tests {
         assert_eq!(uses.len(), 2);
         assert!(uses.contains(&list_ptr));
         assert!(uses.contains(&idx_vreg));
+    }
+
+    #[test]
+    fn test_user_function_call_lowers_to_subfn() {
+        use nu_protocol::ir::{Instruction, IrBlock, Literal};
+        use nu_protocol::{DeclId, RegId, VarId};
+        use std::sync::Arc;
+
+        let user_ir = IrBlock {
+            instructions: vec![
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(10),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![],
+            data: Arc::from([]),
+            ast: vec![],
+            comments: vec![],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let main_ir = IrBlock {
+            instructions: vec![
+                Instruction::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: Literal::Int(7),
+                },
+                Instruction::PushPositional { src: RegId::new(0) },
+                Instruction::Call {
+                    decl_id: DeclId::new(1),
+                    src_dst: RegId::new(1),
+                },
+                Instruction::Return { src: RegId::new(1) },
+            ],
+            spans: vec![],
+            data: Arc::from([]),
+            ast: vec![],
+            comments: vec![],
+            register_count: 2,
+            file_count: 0,
+        };
+
+        let user_func = HirFunction::from_ir_block(user_ir).unwrap();
+        let hir_program = HirProgram::new(
+            HirFunction::from_ir_block(main_ir).unwrap(),
+            HashMap::new(),
+            vec![],
+            None,
+        );
+
+        let mut user_functions = HashMap::new();
+        user_functions.insert(DeclId::new(1), user_func);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir_program,
+            None,
+            &HashMap::new(),
+            None,
+            &user_functions,
+        )
+        .unwrap();
+
+        assert_eq!(result.program.subfunctions.len(), 1);
+        assert_eq!(result.program.subfunctions[0].param_count, 1);
+
+        let mut saw_call = false;
+        for block in &result.program.main.blocks {
+            for inst in &block.instructions {
+                if let MirInst::CallSubfn { args, .. } = inst {
+                    saw_call = true;
+                    assert_eq!(args.len(), 1);
+                }
+            }
+        }
+        assert!(saw_call, "Expected CallSubfn in main function");
     }
 }

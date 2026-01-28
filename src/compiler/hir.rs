@@ -746,6 +746,21 @@ pub fn extract_closure_block_ids(ir_block: &IrBlock) -> Vec<NuBlockId> {
     block_ids
 }
 
+/// Extract all DeclIds referenced by Call instructions in an IR block.
+pub fn extract_call_decl_ids(ir_block: &IrBlock) -> Vec<DeclId> {
+    let mut decl_ids = Vec::new();
+
+    for instruction in &ir_block.instructions {
+        if let Instruction::Call { decl_id, .. } = instruction {
+            if !decl_ids.contains(decl_id) {
+                decl_ids.push(*decl_id);
+            }
+        }
+    }
+
+    decl_ids
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

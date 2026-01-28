@@ -83,11 +83,20 @@ pub fn infer_hir(
 pub struct HirTypeInfo {
     pub main: HashMap<RegId, HMType>,
     pub closures: HashMap<NuBlockId, HashMap<RegId, HMType>>,
+    pub decls: HashMap<DeclId, HashMap<RegId, HMType>>,
 }
 
 pub fn infer_hir_types(
     program: &HirProgram,
     decl_names: &HashMap<DeclId, String>,
+) -> Result<HirTypeInfo, Vec<TypeError>> {
+    infer_hir_types_with_decls(program, decl_names, &HashMap::new())
+}
+
+pub fn infer_hir_types_with_decls(
+    program: &HirProgram,
+    decl_names: &HashMap<DeclId, String>,
+    decls: &HashMap<DeclId, HirFunction>,
 ) -> Result<HirTypeInfo, Vec<TypeError>> {
     let mut errors = Vec::new();
     let mut type_info = HirTypeInfo::default();
@@ -101,6 +110,15 @@ pub fn infer_hir_types(
         match infer_function(func, decl_names) {
             Ok(types) => {
                 type_info.closures.insert(*block_id, types);
+            }
+            Err(mut errs) => errors.append(&mut errs),
+        }
+    }
+
+    for (decl_id, func) in decls {
+        match infer_function(func, decl_names) {
+            Ok(types) => {
+                type_info.decls.insert(*decl_id, types);
             }
             Err(mut errs) => errors.append(&mut errs),
         }

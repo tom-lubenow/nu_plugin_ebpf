@@ -41,7 +41,9 @@ pub use elf::{
     ProbeContext, SchemaField,
 };
 pub use instruction::{BpfHelper, EbpfInsn, EbpfReg};
-pub use hir::{extract_closure_block_ids, infer_ctx_param, lower_ir_to_hir, HirProgram};
+pub use hir::{
+    extract_call_decl_ids, extract_closure_block_ids, infer_ctx_param, lower_ir_to_hir, HirProgram,
+};
 pub use hir_to_mir::{lower_hir_to_mir, lower_hir_to_mir_with_hints, MirLoweringResult};
 pub use mir_to_lir::lower_mir_to_lir;
 pub use mir_to_ebpf::{MirCompileResult, compile_mir_to_ebpf, compile_mir_to_ebpf_with_hints};

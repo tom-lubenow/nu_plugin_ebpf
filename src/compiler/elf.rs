@@ -178,6 +178,16 @@ pub struct MapRelocation {
     pub map_name: String,
 }
 
+/// Function symbol metadata for BPF-to-BPF subfunctions.
+#[derive(Debug, Clone)]
+pub struct SubfunctionSymbol {
+    pub name: String,
+    /// Offset in bytecode (in bytes) where the subfunction starts
+    pub offset: usize,
+    /// Size in bytes of the subfunction
+    pub size: usize,
+}
+
 /// Field type for structured events
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BpfFieldType {
@@ -357,12 +367,16 @@ pub struct EbpfProgram {
     pub name: String,
     /// The raw bytecode
     pub bytecode: Vec<u8>,
+    /// Size of the main function in bytes
+    pub main_size: usize,
     /// License string (must be GPL-compatible for most helpers)
     pub license: String,
     /// Maps used by this program
     pub maps: Vec<EbpfMap>,
     /// Relocations for map references
     pub relocations: Vec<MapRelocation>,
+    /// Subfunction symbols for BPF-to-BPF calls
+    pub subfunctions: Vec<SubfunctionSymbol>,
     /// Optional schema for structured events
     pub event_schema: Option<EventSchema>,
 }
@@ -375,14 +389,17 @@ impl EbpfProgram {
         name: impl Into<String>,
         builder: EbpfBuilder,
     ) -> Self {
+        let bytecode = builder.build();
         Self {
             prog_type,
             target: target.into(),
             name: name.into(),
-            bytecode: builder.build(),
+            main_size: bytecode.len(),
+            bytecode,
             license: "GPL".to_string(),
             maps: Vec::new(),
             relocations: Vec::new(),
+            subfunctions: Vec::new(),
             event_schema: None,
         }
     }
@@ -394,14 +411,17 @@ impl EbpfProgram {
         name: impl Into<String>,
         bytecode: Vec<u8>,
     ) -> Self {
+        let main_size = bytecode.len();
         Self {
             prog_type,
             target: target.into(),
             name: name.into(),
             bytecode,
+            main_size,
             license: "GPL".to_string(),
             maps: Vec::new(),
             relocations: Vec::new(),
+            subfunctions: Vec::new(),
             event_schema: None,
         }
     }
@@ -412,8 +432,10 @@ impl EbpfProgram {
         target: impl Into<String>,
         name: impl Into<String>,
         bytecode: Vec<u8>,
+        main_size: usize,
         maps: Vec<EbpfMap>,
         relocations: Vec<MapRelocation>,
+        subfunctions: Vec<SubfunctionSymbol>,
         event_schema: Option<EventSchema>,
     ) -> Self {
         Self {
@@ -421,9 +443,11 @@ impl EbpfProgram {
             target: target.into(),
             name: name.into(),
             bytecode,
+            main_size,
             license: "GPL".to_string(),
             maps,
             relocations,
+            subfunctions,
             event_schema,
         }
     }
@@ -534,7 +558,7 @@ impl EbpfProgram {
         obj.add_symbol(Symbol {
             name: self.name.as_bytes().to_vec(),
             value: offset,
-            size: self.bytecode.len() as u64,
+            size: self.main_size as u64,
             kind: SymbolKind::Text,
             scope: SymbolScope::Linkage, // GLOBAL binding
             weak: false,
@@ -544,6 +568,23 @@ impl EbpfProgram {
                 st_other: object::elf::STV_DEFAULT,
             },
         });
+
+        // Add symbols for subfunctions to support BPF-to-BPF call relocation
+        for subfn in &self.subfunctions {
+            obj.add_symbol(Symbol {
+                name: subfn.name.as_bytes().to_vec(),
+                value: offset + subfn.offset as u64,
+                size: subfn.size as u64,
+                kind: SymbolKind::Text,
+                scope: SymbolScope::Compilation,
+                weak: false,
+                section: SymbolSection::Section(section_id),
+                flags: SymbolFlags::Elf {
+                    st_info: (object::elf::STB_LOCAL << 4) | object::elf::STT_FUNC,
+                    st_other: object::elf::STV_DEFAULT,
+                },
+            });
+        }
 
         // Add relocations for map references
         for reloc in &self.relocations {

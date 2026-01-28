@@ -1,13 +1,13 @@
 //! `ebpf attach` command - attach an eBPF probe
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
 use nu_protocol::engine::Closure;
 use nu_protocol::ir::IrBlock;
 use nu_protocol::{
-    BlockId, Category, DeclId, Example, LabeledError, PipelineData, Record, Signature, Span,
-    Spanned, SyntaxShape, Type, Value, record,
+    BlockId, Category, DeclId, Example, IntoSpanned, LabeledError, PipelineData, Record,
+    Signature, Span, Spanned, SyntaxShape, Type, Value, record,
 };
 
 use crate::EbpfPlugin;
@@ -81,6 +81,116 @@ fn fetch_closure_irs(
     }
 
     Ok(())
+}
+
+fn parse_view_ir_json(json: &str, span: Span) -> Result<IrBlock, LabeledError> {
+    let value: serde_json::Value = serde_json::from_str(json).map_err(|e| {
+        LabeledError::new("Failed to parse 'view ir --json' output")
+            .with_label(e.to_string(), span)
+    })?;
+    let ir_value = value.get("ir_block").ok_or_else(|| {
+        LabeledError::new("Missing ir_block in 'view ir --json' output")
+            .with_label("Expected ir_block field", span)
+    })?;
+    let ir_block: IrBlock = serde_json::from_value(ir_value.clone()).map_err(|e| {
+        LabeledError::new("Failed to decode 'view ir --json' block")
+            .with_label(e.to_string(), span)
+    })?;
+    Ok(ir_block)
+}
+
+fn fetch_decl_ir(
+    engine: &EngineInterface,
+    decl_id: DeclId,
+    span: Span,
+) -> Result<IrBlock, LabeledError> {
+    let view_ir_decl = engine
+        .find_decl("view ir")
+        .map_err(|e| {
+            LabeledError::new("Failed to look up 'view ir'")
+                .with_label(e.to_string(), span)
+        })?
+        .ok_or_else(|| {
+            LabeledError::new("Required command 'view ir' not found")
+                .with_label("User-defined functions require view ir", span)
+        })?;
+
+    let mut eval = EvaluatedCall::new(span);
+    eval.add_flag("json".into_spanned(span));
+    eval.add_flag("decl-id".into_spanned(span));
+    eval.add_positional(Value::int(decl_id.get() as i64, span));
+
+    let data = engine
+        .call_decl(view_ir_decl, eval, PipelineData::empty(), true, false)
+        .map_err(|e| {
+            LabeledError::new("Failed to run 'view ir'")
+                .with_label(e.to_string(), span)
+        })?;
+    let value = data.into_value(span).map_err(|e| {
+        LabeledError::new("Failed to decode 'view ir' output")
+            .with_label(e.to_string(), span)
+    })?;
+    let json = match value {
+        Value::String { val, .. } => val,
+        _ => {
+            return Err(LabeledError::new("Unexpected 'view ir' output type").with_label(
+                "Expected string output from view ir --json",
+                span,
+            ));
+        }
+    };
+
+    parse_view_ir_json(&json, span)
+}
+
+fn collect_user_function_irs(
+    engine: &EngineInterface,
+    ir_block: &IrBlock,
+    closure_irs: &mut HashMap<BlockId, IrBlock>,
+    decl_names: &HashMap<DeclId, String>,
+    span: Span,
+) -> Result<HashMap<DeclId, IrBlock>, LabeledError> {
+    use crate::compiler::extract_call_decl_ids;
+
+    let mut pending = Vec::new();
+    let mut seen = HashSet::new();
+
+    let scan_block = |block: &IrBlock,
+                      seen: &mut HashSet<DeclId>,
+                      pending: &mut Vec<DeclId>| {
+        for decl_id in extract_call_decl_ids(block) {
+            if decl_names.contains_key(&decl_id) {
+                continue;
+            }
+            if seen.insert(decl_id) {
+                pending.push(decl_id);
+            }
+        }
+    };
+
+    scan_block(ir_block, &mut seen, &mut pending);
+    for ir in closure_irs.values() {
+        scan_block(ir, &mut seen, &mut pending);
+    }
+
+    let mut user_irs = HashMap::new();
+    let mut scanned_closures: HashSet<BlockId> = closure_irs.keys().copied().collect();
+
+    while let Some(decl_id) = pending.pop() {
+        let ir = fetch_decl_ir(engine, decl_id, span)?;
+        scan_block(&ir, &mut seen, &mut pending);
+
+        fetch_closure_irs(engine, &ir, closure_irs, span)?;
+        for (block_id, closure_ir) in closure_irs.iter() {
+            if scanned_closures.insert(*block_id) {
+                scan_block(closure_ir, &mut seen, &mut pending);
+            }
+        }
+
+        user_irs.insert(decl_id, ir);
+    }
+
+    Ok(user_irs)
 }
 
 #[derive(Clone)]
@@ -275,8 +385,8 @@ fn run_attach(
     call: &EvaluatedCall,
 ) -> Result<PipelineData, LabeledError> {
 use crate::compiler::{
-    EbpfProgram, ProbeContext, compile_mir_to_ebpf_with_hints, hir_type_infer, infer_ctx_param,
-    lower_hir_to_mir_with_hints, lower_ir_to_hir, passes::optimize_with_ssa,
+    EbpfProgram, ProbeContext, compile_mir_to_ebpf_with_hints, hir::HirFunction, hir_type_infer,
+    infer_ctx_param, lower_hir_to_mir_with_hints, lower_ir_to_hir, passes::optimize_with_ssa,
 };
     use crate::loader::{LoadError, get_state, parse_probe_spec};
 
@@ -330,6 +440,10 @@ use crate::compiler::{
     let mut closure_irs = HashMap::new();
     fetch_closure_irs(engine, &ir_block, &mut closure_irs, call.head)?;
 
+    // Fetch IR for any user-defined functions referenced by the closure or nested closures.
+    let user_ir_blocks =
+        collect_user_function_irs(engine, &ir_block, &mut closure_irs, &decl_names, call.head)?;
+
     // Convert captures to (String, i64) pairs for integer captures
     let captures: Vec<(String, i64)> = closure
         .item
@@ -354,7 +468,21 @@ use crate::compiler::{
             .with_help("The closure may use unsupported operations")
     })?;
 
-    let hir_types = match hir_type_infer::infer_hir_types(&hir_program, &decl_names) {
+    let mut user_functions = HashMap::new();
+    for (decl_id, ir) in user_ir_blocks {
+        let func = HirFunction::from_ir_block(ir).map_err(|e| {
+            LabeledError::new("eBPF compilation failed")
+                .with_label(e.to_string(), call.head)
+                .with_help("User-defined function uses unsupported operations")
+        })?;
+        user_functions.insert(decl_id, func);
+    }
+
+    let hir_types = match hir_type_infer::infer_hir_types_with_decls(
+        &hir_program,
+        &decl_names,
+        &user_functions,
+    ) {
         Ok(types) => types,
         Err(errors) => {
             if let Some(err) = errors.into_iter().next() {
@@ -367,8 +495,13 @@ use crate::compiler::{
     };
 
     // Lower HIR to MIR
-    let lower_result =
-        lower_hir_to_mir_with_hints(&hir_program, Some(&probe_context), &decl_names, Some(&hir_types))
+    let lower_result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_context),
+        &decl_names,
+        Some(&hir_types),
+        &user_functions,
+    )
     .map_err(|e| {
         LabeledError::new("eBPF compilation failed")
             .with_label(e.to_string(), call.head)
@@ -400,8 +533,10 @@ use crate::compiler::{
         &target,
         "nushell_ebpf",
         compile_result.bytecode,
+        compile_result.main_size,
         compile_result.maps,
         compile_result.relocations,
+        compile_result.subfunction_symbols,
         compile_result.event_schema,
     );
 

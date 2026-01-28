@@ -1139,6 +1139,7 @@ dependencies = [
  "nu-plugin-test-support",
  "nu-protocol",
  "object",
+ "serde_json",
  "thiserror 2.0.18",
 ]
 
