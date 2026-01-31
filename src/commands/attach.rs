@@ -9,8 +9,14 @@ use nu_protocol::{
     BlockId, Category, DeclId, Example, IntoSpanned, LabeledError, PipelineData, Record,
     Signature, Span, Spanned, SyntaxShape, Type, Value, record,
 };
+use nu_protocol::casing::Casing;
 
 use crate::EbpfPlugin;
+use crate::compiler::{
+    EbpfProgram, ProbeContext, UserFunctionSig, UserParam, UserParamKind,
+    compile_mir_to_ebpf_with_hints, hir::HirFunction, hir_type_infer, infer_ctx_param,
+    lower_hir_to_mir_with_hints, lower_ir_to_hir, passes::optimize_with_ssa,
+};
 
 /// Known eBPF helper commands that need to be mapped by decl_id
 const EBPF_COMMANDS: &[&str] = &[
@@ -191,6 +197,134 @@ fn collect_user_function_irs(
     }
 
     Ok(user_irs)
+}
+
+fn signature_from_record(record: &Record) -> Option<UserFunctionSig> {
+    let sig_val = record.cased(Casing::Sensitive).get("signatures")?;
+    let sig_record = match sig_val {
+        Value::Record { val, .. } => val,
+        _ => return None,
+    };
+    let any_val = sig_record.cased(Casing::Sensitive).get("any")?;
+    let params = match any_val {
+        Value::List { vals, .. } => vals,
+        _ => return None,
+    };
+    let mut out = Vec::new();
+    for param in params {
+        let record = match param {
+            Value::Record { val, .. } => val,
+            _ => continue,
+        };
+        let param_type = record
+            .cased(Casing::Sensitive)
+            .get("parameter_type")
+            .and_then(|v| match v {
+                Value::String { val, .. } => Some(val.as_str()),
+                _ => None,
+            })?;
+        let name = record
+            .cased(Casing::Sensitive)
+            .get("parameter_name")
+            .and_then(|v| match v {
+                Value::String { val, .. } => Some(val.clone()),
+                Value::Nothing { .. } => None,
+                _ => None,
+            });
+        let optional = record
+            .cased(Casing::Sensitive)
+            .get("is_optional")
+            .and_then(|v| match v {
+                Value::Bool { val, .. } => Some(*val),
+                _ => None,
+            })
+            .unwrap_or(false);
+        let kind = match param_type {
+            "input" => UserParamKind::Input,
+            "positional" => UserParamKind::Positional,
+            "named" => UserParamKind::Named,
+            "switch" => UserParamKind::Switch,
+            "rest" => UserParamKind::Rest,
+            "output" => continue,
+            _ => continue,
+        };
+        out.push(UserParam {
+            name,
+            kind,
+            optional,
+        });
+    }
+    Some(UserFunctionSig { params: out })
+}
+
+fn fetch_user_function_signatures(
+    engine: &EngineInterface,
+    decl_ids: &HashSet<DeclId>,
+    span: Span,
+) -> Result<HashMap<DeclId, UserFunctionSig>, LabeledError> {
+    if decl_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let scope_decl = engine
+        .find_decl("scope commands")
+        .map_err(|e| {
+            LabeledError::new("Failed to look up 'scope commands'")
+                .with_label(e.to_string(), span)
+        })?
+        .ok_or_else(|| {
+            LabeledError::new("Required command 'scope commands' not found")
+                .with_label("User-defined functions require scope commands", span)
+        })?;
+
+    let call = EvaluatedCall::new(span);
+    let data = engine
+        .call_decl(scope_decl, call, PipelineData::empty(), true, false)
+        .map_err(|e| {
+            LabeledError::new("Failed to run 'scope commands'")
+                .with_label(e.to_string(), span)
+        })?;
+    let value = data.into_value(span).map_err(|e| {
+        LabeledError::new("Failed to decode 'scope commands' output")
+            .with_label(e.to_string(), span)
+    })?;
+
+    let list = match value {
+        Value::List { vals, .. } => vals,
+        _ => {
+            return Err(LabeledError::new("Unexpected 'scope commands' output type").with_label(
+                "Expected list output from scope commands",
+                span,
+            ));
+        }
+    };
+
+    let mut sigs = HashMap::new();
+    for item in list {
+        let record = match item {
+            Value::Record { val, .. } => val,
+            _ => continue,
+        };
+        let decl_id = record
+            .cased(Casing::Sensitive)
+            .get("decl_id")
+            .and_then(|v| match v {
+                Value::Int { val, .. } => Some(DeclId::new(*val as usize)),
+                _ => None,
+            });
+        let decl_id = match decl_id {
+            Some(id) => id,
+            None => continue,
+        };
+        if !decl_ids.contains(&decl_id) {
+            continue;
+        }
+        if let Some(sig) = signature_from_record(&record) {
+            sigs.insert(decl_id, sig);
+        }
+    }
+
+    Ok(sigs)
 }
 
 #[derive(Clone)]
@@ -384,10 +518,6 @@ fn run_attach(
     engine: &EngineInterface,
     call: &EvaluatedCall,
 ) -> Result<PipelineData, LabeledError> {
-use crate::compiler::{
-    EbpfProgram, ProbeContext, compile_mir_to_ebpf_with_hints, hir::HirFunction, hir_type_infer,
-    infer_ctx_param, lower_hir_to_mir_with_hints, lower_ir_to_hir, passes::optimize_with_ssa,
-};
     use crate::loader::{LoadError, get_state, parse_probe_spec};
 
     let probe_spec: String = call.req(0)?;
@@ -469,14 +599,17 @@ use crate::compiler::{
     })?;
 
     let mut user_functions = HashMap::new();
-    for (decl_id, ir) in user_ir_blocks {
-        let func = HirFunction::from_ir_block(ir).map_err(|e| {
+    for (decl_id, ir) in user_ir_blocks.iter() {
+        let func = HirFunction::from_ir_block(ir.clone()).map_err(|e| {
             LabeledError::new("eBPF compilation failed")
                 .with_label(e.to_string(), call.head)
                 .with_help("User-defined function uses unsupported operations")
         })?;
-        user_functions.insert(decl_id, func);
+        user_functions.insert(*decl_id, func);
     }
+
+    let user_decl_ids: HashSet<DeclId> = user_functions.keys().copied().collect();
+    let user_signatures = fetch_user_function_signatures(engine, &user_decl_ids, call.head)?;
 
     let hir_types = match hir_type_infer::infer_hir_types_with_decls(
         &hir_program,
@@ -501,6 +634,7 @@ use crate::compiler::{
         &decl_names,
         Some(&hir_types),
         &user_functions,
+        &user_signatures,
     )
     .map_err(|e| {
         LabeledError::new("eBPF compilation failed")

@@ -157,3 +157,4 @@
   - Attach now scans main/closure IR for DeclIds, fetches nested user IR + closure IR, and wires HIR→MIR with decls.
   - ELF generation now emits subfunction symbols and main-function size for aya relocation; StoreVariable/DropVariable
     now track local bindings to support $in pipelines in user-defined functions.
+  - User function signatures are pulled from `scope commands` to allow unused params and named args/flags.
