@@ -1403,7 +1403,7 @@ fn check_helper_arg(
     }
 }
 
-fn helper_const_positive_size(
+fn helper_positive_size_upper_bound(
     helper_id: u32,
     arg_idx: usize,
     value: &MirValue,
@@ -1411,14 +1411,16 @@ fn helper_const_positive_size(
     errors: &mut Vec<VerifierTypeError>,
 ) -> Option<usize> {
     match value_range(value, state) {
-        ValueRange::Known { max, .. } if max <= 0 => {
-            errors.push(VerifierTypeError::new(format!(
-                "helper {} arg{} must be > 0",
-                helper_id, arg_idx
-            )));
-            None
+        ValueRange::Known { min, max } => {
+            if max <= 0 || min <= 0 {
+                errors.push(VerifierTypeError::new(format!(
+                    "helper {} arg{} must be > 0",
+                    helper_id, arg_idx
+                )));
+                return None;
+            }
+            usize::try_from(max).ok()
         }
-        ValueRange::Known { min, max } if min == max && min > 0 => usize::try_from(min).ok(),
         _ => None,
     }
 }
@@ -1539,7 +1541,7 @@ fn apply_helper_semantics(
         BpfHelper::GetCurrentComm => {
             let size = args
                 .get(1)
-                .and_then(|value| helper_const_positive_size(helper_id, 1, value, state, errors));
+                .and_then(|value| helper_positive_size_upper_bound(helper_id, 1, value, state, errors));
             if let Some(dst) = args.first() {
                 check_helper_ptr_arg_value(
                     helper_id,
@@ -1557,7 +1559,7 @@ fn apply_helper_semantics(
         BpfHelper::ProbeRead | BpfHelper::ProbeReadKernelStr | BpfHelper::ProbeReadUserStr => {
             let size = args
                 .get(1)
-                .and_then(|value| helper_const_positive_size(helper_id, 1, value, state, errors));
+                .and_then(|value| helper_positive_size_upper_bound(helper_id, 1, value, state, errors));
             if let Some(dst) = args.first() {
                 check_helper_ptr_arg_value(
                     helper_id,
@@ -1593,7 +1595,7 @@ fn apply_helper_semantics(
         BpfHelper::RingbufOutput => {
             let size = args
                 .get(2)
-                .and_then(|value| helper_const_positive_size(helper_id, 2, value, state, errors));
+                .and_then(|value| helper_positive_size_upper_bound(helper_id, 2, value, state, errors));
             if let Some(data) = args.get(1) {
                 check_helper_ptr_arg_value(
                     helper_id,
@@ -1611,7 +1613,7 @@ fn apply_helper_semantics(
         BpfHelper::PerfEventOutput => {
             let size = args
                 .get(4)
-                .and_then(|value| helper_const_positive_size(helper_id, 4, value, state, errors));
+                .and_then(|value| helper_positive_size_upper_bound(helper_id, 4, value, state, errors));
             if let Some(data) = args.get(3) {
                 check_helper_ptr_arg_value(
                     helper_id,
@@ -2455,6 +2457,124 @@ mod tests {
             "unexpected errors: {:?}",
             err
         );
+    }
+
+    #[test]
+    fn test_helper_get_current_comm_variable_size_range_checks_bounds() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let check_upper = func.alloc_block();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let size = func.alloc_vreg();
+        func.param_count = 1;
+        let ge_one = func.alloc_vreg();
+        let le_sixteen = func.alloc_vreg();
+        let buf = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: ge_one,
+            op: BinOpKind::Ge,
+            lhs: MirValue::VReg(size),
+            rhs: MirValue::Const(1),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: ge_one,
+            if_true: check_upper,
+            if_false: done,
+        };
+
+        func.block_mut(check_upper).instructions.push(MirInst::BinOp {
+            dst: le_sixteen,
+            op: BinOpKind::Le,
+            lhs: MirValue::VReg(size),
+            rhs: MirValue::Const(16),
+        });
+        func.block_mut(check_upper).terminator = MirInst::Branch {
+            cond: le_sixteen,
+            if_true: call,
+            if_false: done,
+        };
+
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 16, // bpf_get_current_comm(buf, size)
+            args: vec![MirValue::StackSlot(buf), MirValue::VReg(size)],
+        });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(size, MirType::I64);
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper dst bounds error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("helper get_current_comm dst out of bounds")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_helper_get_current_comm_variable_size_range_within_bounds() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let check_upper = func.alloc_block();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let size = func.alloc_vreg();
+        func.param_count = 1;
+        let ge_one = func.alloc_vreg();
+        let le_eight = func.alloc_vreg();
+        let buf = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: ge_one,
+            op: BinOpKind::Ge,
+            lhs: MirValue::VReg(size),
+            rhs: MirValue::Const(1),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: ge_one,
+            if_true: check_upper,
+            if_false: done,
+        };
+
+        func.block_mut(check_upper).instructions.push(MirInst::BinOp {
+            dst: le_eight,
+            op: BinOpKind::Le,
+            lhs: MirValue::VReg(size),
+            rhs: MirValue::Const(8),
+        });
+        func.block_mut(check_upper).terminator = MirInst::Branch {
+            cond: le_eight,
+            if_true: call,
+            if_false: done,
+        };
+
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 16, // bpf_get_current_comm(buf, size)
+            args: vec![MirValue::StackSlot(buf), MirValue::VReg(size)],
+        });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(size, MirType::I64);
+        types.insert(dst, MirType::I64);
+
+        verify_mir(&func, &types).expect("expected bounded helper size range to pass");
     }
 
     #[test]
