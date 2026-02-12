@@ -1488,7 +1488,7 @@ fn apply_helper_semantics(
                     key,
                     "helper map_lookup key",
                     &[AddressSpace::Stack, AddressSpace::Map],
-                    None,
+                    Some(1),
                     state,
                     slot_sizes,
                     errors,
@@ -1503,7 +1503,7 @@ fn apply_helper_semantics(
                     key,
                     "helper map_update key",
                     &[AddressSpace::Stack, AddressSpace::Map],
-                    None,
+                    Some(1),
                     state,
                     slot_sizes,
                     errors,
@@ -1516,7 +1516,7 @@ fn apply_helper_semantics(
                     val,
                     "helper map_update value",
                     &[AddressSpace::Stack, AddressSpace::Map],
-                    None,
+                    Some(1),
                     state,
                     slot_sizes,
                     errors,
@@ -1531,7 +1531,7 @@ fn apply_helper_semantics(
                     key,
                     "helper map_delete key",
                     &[AddressSpace::Stack, AddressSpace::Map],
-                    None,
+                    Some(1),
                     state,
                     slot_sizes,
                     errors,
@@ -2399,6 +2399,54 @@ mod tests {
         assert!(
             err.iter()
                 .any(|e| e.message.contains("may dereference null"))
+        );
+    }
+
+    #[test]
+    fn test_helper_map_lookup_rejects_out_of_bounds_key_pointer() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let map = func.alloc_vreg();
+        let key_base = func.alloc_vreg();
+        let key = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: map,
+            src: MirValue::StackSlot(map_slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key_base,
+            src: MirValue::StackSlot(key_slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: key,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(key_base),
+            rhs: MirValue::Const(8),
+        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 1, // bpf_map_lookup_elem(map, key)
+                args: vec![MirValue::VReg(map), MirValue::VReg(key)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper key bounds error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("helper map_lookup key out of bounds")),
+            "unexpected errors: {:?}",
+            err
         );
     }
 

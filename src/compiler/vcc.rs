@@ -2018,7 +2018,7 @@ impl<'a> VccLowerer<'a> {
                         true,
                         false,
                         false,
-                        None,
+                        Some(1),
                         out,
                     )?;
                 }
@@ -2034,7 +2034,7 @@ impl<'a> VccLowerer<'a> {
                         true,
                         false,
                         false,
-                        None,
+                        Some(1),
                         out,
                     )?;
                 }
@@ -2048,7 +2048,7 @@ impl<'a> VccLowerer<'a> {
                         true,
                         false,
                         false,
-                        None,
+                        Some(1),
                         out,
                     )?;
                 }
@@ -2064,7 +2064,7 @@ impl<'a> VccLowerer<'a> {
                         true,
                         false,
                         false,
-                        None,
+                        Some(1),
                         out,
                     )?;
                 }
