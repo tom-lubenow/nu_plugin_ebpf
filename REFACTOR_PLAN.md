@@ -107,8 +107,8 @@
       non-zero guards, compare guards (eq/ne/lt/le/gt/ge vs constants and vregs), bitwise ops (bounded non-negative,
       mask-derived; exact for constants), and phi joins, preserving bounds across non-constant offsets and
       pointer phis. Comparison-based range refinement now narrows branch ranges and preserves non-zero info.
-      Branch feasibility pruning now drops contradictory compare branches, and `!= const` facts are tracked
-      to reject impossible follow-up `== const` branches.
+      Branch feasibility pruning now drops contradictory compare branches, and bounded `!= const`
+      fact sets are tracked per vreg to reject impossible follow-up `== const` branches.
       Bounded stack range analysis exists in MIR type inference; VCC verifier is now
       integrated as a compile-time gate; full model not implemented.
 
@@ -154,8 +154,7 @@
   Verifier notes (2026-02-12)
   - Branch feasibility pruning for contradictory compare guards is now implemented.
   - `!= const` facts are now tracked across branches and used to prune contradictory `== const` follow-up guards.
-  - Remaining limitation: only one excluded constant is tracked per vreg, so multiple independent `!= const`
-    facts are merged conservatively.
+  - Multiple excluded constants are preserved per vreg (bounded fact set) so chained `!=` guards retain precision.
 
   Notes (2026-01-28)
   - User-defined function calls now lower to BPF subfunctions via `view ir --json --decl-id`,
