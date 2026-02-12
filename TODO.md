@@ -8,7 +8,7 @@ Last updated: 2026-02-12.
 - [~] Complete the VCC verifier model.
   - VCC is a mandatory gate, but the model is still incomplete versus kernel verifier behavior for broader program classes.
   - Expand tracked state beyond current pointer/stack/map/range model and tighten parity tests against real verifier outcomes.
-  - Recent progress: verifier/VCC now apply typed helper argument and return checks for known helper IDs.
+  - Recent progress: verifier/VCC now apply typed helper argument and return checks for known helper IDs, plus helper-specific pointer-space and size/bounds checks for core helpers.
 
 - [x] Implement tail calls end-to-end.
   - Implemented bytecode lowering to `bpf_tail_call` and failure fallback termination.
@@ -27,7 +27,7 @@ Last updated: 2026-02-12.
 - [~] Replace opaque helper handling with typed helper semantics.
   - Added shared helper signatures for known helper IDs and wired signature-aware arg-count/type checks through type inference, VCC, and codegen.
   - Added typed helper return modeling (e.g., pointer return for `bpf_map_lookup_elem` helper calls).
-  - Added helper-side pointer-space and range-aware size/bounds checks in the verifier for map ops, probe-read variants, ringbuf output, perf-event output, and `get_current_comm`.
+  - Added helper-side pointer-space and range-aware size/bounds checks in the verifier, with matching VCC checks for map ops, probe-read variants, ringbuf output, perf-event output, and `get_current_comm`.
   - Remaining: model deeper helper pointer-state transitions (provenance/nullability/mutability/ref-lifetime semantics) with kernel-verifier-level fidelity.
 
 ## Roadmap to a general-purpose eBPF language

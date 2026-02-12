@@ -13,7 +13,7 @@
 use std::collections::HashMap;
 
 use crate::compiler::cfg::CFG;
-use crate::compiler::instruction::{HelperArgKind, HelperSignature};
+use crate::compiler::instruction::{BpfHelper, HelperArgKind, HelperSignature};
 use crate::compiler::mir::{
     AddressSpace, BinOpKind, MirFunction, MirInst, MirType, MirValue, STRING_COUNTER_MAP_NAME,
     StackSlotId, StackSlotKind, StringAppendType, UnaryOpKind, VReg,
@@ -1755,6 +1755,7 @@ impl<'a> VccLowerer<'a> {
             for (idx, arg) in args.iter().enumerate() {
                 self.verify_helper_arg_value(helper_id, idx, arg, sig.arg_kind(idx), out)?;
             }
+            self.verify_helper_semantics(helper_id, args, out)?;
         } else if args.len() > 5 {
             return Err(VccError::new(
                 VccErrorKind::UnsupportedInstruction,
@@ -1800,6 +1801,365 @@ impl<'a> VccLowerer<'a> {
                 MirValue::StackSlot(_) => Ok(()),
             },
         }
+    }
+
+    fn helper_space_allowed(
+        &self,
+        space: VccAddrSpace,
+        allow_stack: bool,
+        allow_map: bool,
+        allow_kernel: bool,
+        allow_user: bool,
+    ) -> bool {
+        match space {
+            VccAddrSpace::Stack(_) => allow_stack,
+            VccAddrSpace::MapValue | VccAddrSpace::RingBuf => allow_map,
+            VccAddrSpace::Context | VccAddrSpace::Kernel => allow_kernel,
+            VccAddrSpace::User => allow_user,
+            VccAddrSpace::Unknown => true,
+        }
+    }
+
+    fn helper_space_name(&self, space: VccAddrSpace) -> &'static str {
+        match space {
+            VccAddrSpace::Stack(_) => "Stack",
+            VccAddrSpace::MapValue | VccAddrSpace::RingBuf => "Map",
+            VccAddrSpace::Context => "Context",
+            VccAddrSpace::Kernel => "Kernel",
+            VccAddrSpace::User => "User",
+            VccAddrSpace::Unknown => "Unknown",
+        }
+    }
+
+    fn helper_allowed_spaces_label(
+        &self,
+        allow_stack: bool,
+        allow_map: bool,
+        allow_kernel: bool,
+        allow_user: bool,
+    ) -> String {
+        let mut labels = Vec::new();
+        if allow_stack {
+            labels.push("Stack");
+        }
+        if allow_map {
+            labels.push("Map");
+        }
+        if allow_kernel {
+            labels.push("Kernel");
+        }
+        if allow_user {
+            labels.push("User");
+        }
+        format!("[{}]", labels.join(", "))
+    }
+
+    fn check_ptr_range_reg(
+        &mut self,
+        ptr: VccReg,
+        size: usize,
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        if size == 0 {
+            return Ok(());
+        }
+        if !self.ptr_regs.contains_key(&ptr) {
+            return Err(VccError::new(
+                VccErrorKind::TypeMismatch {
+                    expected: VccTypeClass::Ptr,
+                    actual: VccTypeClass::Unknown,
+                },
+                "expected pointer value",
+            ));
+        }
+
+        let check_size = if size >= 8 { 8 } else { 1 };
+        let offset = if size >= 8 {
+            (size - 8) as i64
+        } else {
+            (size - 1) as i64
+        };
+        let tmp = self.temp_reg();
+        out.push(VccInst::Load {
+            dst: tmp,
+            ptr,
+            offset,
+            size: check_size as u8,
+        });
+        Ok(())
+    }
+
+    fn check_helper_ptr_arg_value(
+        &mut self,
+        helper_id: u32,
+        arg_idx: usize,
+        arg: &MirValue,
+        op: &str,
+        allow_stack: bool,
+        allow_map: bool,
+        allow_kernel: bool,
+        allow_user: bool,
+        access_size: Option<usize>,
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        let ptr = self.value_ptr_info(arg).ok_or_else(|| {
+            VccError::new(
+                VccErrorKind::TypeMismatch {
+                    expected: VccTypeClass::Ptr,
+                    actual: VccTypeClass::Scalar,
+                },
+                format!("helper {} arg{} expects pointer value", helper_id, arg_idx),
+            )
+        })?;
+
+        if !self.helper_space_allowed(ptr.space, allow_stack, allow_map, allow_kernel, allow_user) {
+            let allowed =
+                self.helper_allowed_spaces_label(allow_stack, allow_map, allow_kernel, allow_user);
+            return Err(VccError::new(
+                VccErrorKind::PointerBounds,
+                format!(
+                    "{op} expects pointer in {allowed}, got {}",
+                    self.helper_space_name(ptr.space)
+                ),
+            ));
+        }
+
+        if let Some(size) = access_size {
+            match arg {
+                MirValue::VReg(vreg) => self.check_ptr_range(*vreg, size, out)?,
+                MirValue::StackSlot(slot) => {
+                    let ptr = self.stack_addr_temp(*slot, out);
+                    self.check_ptr_range_reg(ptr, size, out)?;
+                }
+                MirValue::Const(_) => {
+                    return Err(VccError::new(
+                        VccErrorKind::TypeMismatch {
+                            expected: VccTypeClass::Ptr,
+                            actual: VccTypeClass::Scalar,
+                        },
+                        format!("helper {} arg{} expects pointer value", helper_id, arg_idx),
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn helper_positive_size_upper_bound(
+        &self,
+        helper_id: u32,
+        arg_idx: usize,
+        value: &MirValue,
+    ) -> Result<Option<usize>, VccError> {
+        match value {
+            MirValue::Const(v) => {
+                if *v <= 0 {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!("helper {} arg{} must be > 0", helper_id, arg_idx),
+                    ));
+                }
+                let size = usize::try_from(*v).map_err(|_| {
+                    VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!("helper {} arg{} is out of range", helper_id, arg_idx),
+                    )
+                })?;
+                Ok(Some(size))
+            }
+            MirValue::VReg(_) => Ok(None),
+            MirValue::StackSlot(_) => Err(VccError::new(
+                VccErrorKind::TypeMismatch {
+                    expected: VccTypeClass::Scalar,
+                    actual: VccTypeClass::Ptr,
+                },
+                format!("helper {} arg{} expects scalar value", helper_id, arg_idx),
+            )),
+        }
+    }
+
+    fn verify_helper_semantics(
+        &mut self,
+        helper_id: u32,
+        args: &[MirValue],
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        let Some(helper) = BpfHelper::from_u32(helper_id) else {
+            return Ok(());
+        };
+
+        match helper {
+            BpfHelper::MapLookupElem => {
+                if let Some(key) = args.get(1) {
+                    self.check_helper_ptr_arg_value(
+                        helper_id,
+                        1,
+                        key,
+                        "helper map_lookup key",
+                        true,
+                        true,
+                        false,
+                        false,
+                        None,
+                        out,
+                    )?;
+                }
+            }
+            BpfHelper::MapUpdateElem => {
+                if let Some(key) = args.get(1) {
+                    self.check_helper_ptr_arg_value(
+                        helper_id,
+                        1,
+                        key,
+                        "helper map_update key",
+                        true,
+                        true,
+                        false,
+                        false,
+                        None,
+                        out,
+                    )?;
+                }
+                if let Some(value) = args.get(2) {
+                    self.check_helper_ptr_arg_value(
+                        helper_id,
+                        2,
+                        value,
+                        "helper map_update value",
+                        true,
+                        true,
+                        false,
+                        false,
+                        None,
+                        out,
+                    )?;
+                }
+            }
+            BpfHelper::MapDeleteElem => {
+                if let Some(key) = args.get(1) {
+                    self.check_helper_ptr_arg_value(
+                        helper_id,
+                        1,
+                        key,
+                        "helper map_delete key",
+                        true,
+                        true,
+                        false,
+                        false,
+                        None,
+                        out,
+                    )?;
+                }
+            }
+            BpfHelper::GetCurrentComm => {
+                let size = args
+                    .get(1)
+                    .map(|arg| self.helper_positive_size_upper_bound(helper_id, 1, arg))
+                    .transpose()?
+                    .flatten();
+                if let Some(dst) = args.first() {
+                    self.check_helper_ptr_arg_value(
+                        helper_id,
+                        0,
+                        dst,
+                        "helper get_current_comm dst",
+                        true,
+                        true,
+                        false,
+                        false,
+                        size,
+                        out,
+                    )?;
+                }
+            }
+            BpfHelper::ProbeRead | BpfHelper::ProbeReadKernelStr | BpfHelper::ProbeReadUserStr => {
+                let size = args
+                    .get(1)
+                    .map(|arg| self.helper_positive_size_upper_bound(helper_id, 1, arg))
+                    .transpose()?
+                    .flatten();
+                if let Some(dst) = args.first() {
+                    self.check_helper_ptr_arg_value(
+                        helper_id,
+                        0,
+                        dst,
+                        "helper probe_read dst",
+                        true,
+                        true,
+                        false,
+                        false,
+                        size,
+                        out,
+                    )?;
+                }
+                if let Some(src) = args.get(2) {
+                    let (allow_stack, allow_map, allow_kernel, allow_user) =
+                        if matches!(helper, BpfHelper::ProbeReadUserStr) {
+                            (false, false, false, true)
+                        } else {
+                            (true, true, true, false)
+                        };
+                    self.check_helper_ptr_arg_value(
+                        helper_id,
+                        2,
+                        src,
+                        "helper probe_read src",
+                        allow_stack,
+                        allow_map,
+                        allow_kernel,
+                        allow_user,
+                        size,
+                        out,
+                    )?;
+                }
+            }
+            BpfHelper::RingbufOutput => {
+                let size = args
+                    .get(2)
+                    .map(|arg| self.helper_positive_size_upper_bound(helper_id, 2, arg))
+                    .transpose()?
+                    .flatten();
+                if let Some(data) = args.get(1) {
+                    self.check_helper_ptr_arg_value(
+                        helper_id,
+                        1,
+                        data,
+                        "helper ringbuf_output data",
+                        true,
+                        true,
+                        false,
+                        false,
+                        size,
+                        out,
+                    )?;
+                }
+            }
+            BpfHelper::PerfEventOutput => {
+                let size = args
+                    .get(4)
+                    .map(|arg| self.helper_positive_size_upper_bound(helper_id, 4, arg))
+                    .transpose()?
+                    .flatten();
+                if let Some(data) = args.get(3) {
+                    self.check_helper_ptr_arg_value(
+                        helper_id,
+                        3,
+                        data,
+                        "helper perf_event_output data",
+                        true,
+                        true,
+                        false,
+                        false,
+                        size,
+                        out,
+                    )?;
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
     }
 
     fn verify_map_key(
@@ -1937,7 +2297,8 @@ fn collect_list_max(func: &MirFunction) -> HashMap<StackSlotId, usize> {
 mod tests {
     use super::*;
     use crate::compiler::mir::{
-        BlockId, MirFunction, MirInst, MirValue, StackSlotKind, StringAppendType,
+        AddressSpace, BlockId, MirFunction, MirInst, MirType, MirValue, StackSlotKind,
+        StringAppendType,
     };
     use std::collections::HashMap;
 
@@ -2233,6 +2594,143 @@ mod tests {
         assert!(
             err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
             "expected pointer bounds error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_helper_get_current_comm_positive_size_required() {
+        let (mut func, entry) = new_mir_function();
+        let dst = func.alloc_vreg();
+        let buf = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 16, // bpf_get_current_comm(buf, size)
+            args: vec![MirValue::StackSlot(buf), MirValue::Const(0)],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper size error");
+        assert!(
+            err.iter()
+                .any(|e| e.kind == VccErrorKind::UnsupportedInstruction),
+            "expected helper size error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("helper 16 arg1 must be > 0")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_helper_get_current_comm_bounds() {
+        let (mut func, entry) = new_mir_function();
+        let dst = func.alloc_vreg();
+        let buf = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 16, // bpf_get_current_comm(buf, size)
+            args: vec![MirValue::StackSlot(buf), MirValue::Const(16)],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper bounds error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_helper_probe_read_user_str_rejects_stack_src() {
+        let (mut func, entry) = new_mir_function();
+        let dst = func.alloc_vreg();
+        let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 114, // bpf_probe_read_user_str(dst, size, unsafe_ptr)
+            args: vec![
+                MirValue::StackSlot(dst_slot),
+                MirValue::Const(8),
+                MirValue::StackSlot(src_slot),
+            ],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper source space error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("helper probe_read src expects pointer in [User]")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_helper_map_update_rejects_user_key() {
+        let (mut func, entry) = new_mir_function();
+        let key = func.alloc_vreg();
+        func.param_count = 1;
+        let dst = func.alloc_vreg();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let val_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 2, // bpf_map_update_elem(map, key, value, flags)
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::VReg(key),
+                MirValue::StackSlot(val_slot),
+                MirValue::Const(0),
+            ],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            key,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::User,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper key space error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter().any(
+                |e| e.message
+                    .contains("helper map_update key expects pointer in [Stack, Map]")
+            ),
+            "unexpected error messages: {:?}",
             err
         );
     }
