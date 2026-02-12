@@ -13,7 +13,7 @@
 use std::collections::HashMap;
 
 use crate::compiler::cfg::CFG;
-use crate::compiler::instruction::{BpfHelper, HelperArgKind, HelperSignature};
+use crate::compiler::instruction::{BpfHelper, HelperArgKind, HelperRetKind, HelperSignature};
 use crate::compiler::mir::{
     AddressSpace, BinOpKind, MirFunction, MirInst, MirType, MirValue, STRING_COUNTER_MAP_NAME,
     StackSlotId, StackSlotKind, StringAppendType, UnaryOpKind, VReg,
@@ -1257,15 +1257,14 @@ impl<'a> VccLowerer<'a> {
             }
             MirInst::CallHelper { dst, helper, args } => {
                 self.verify_helper_call(*helper, args, out)?;
-                let ty = self
-                    .types
-                    .get(dst)
-                    .map(vcc_type_from_mir)
-                    .unwrap_or(VccValueType::Unknown);
+                let ty = self.helper_return_type(*helper, *dst);
                 out.push(VccInst::Assume {
                     dst: VccReg(dst.0),
                     ty,
                 });
+                if let VccValueType::Ptr(info) = ty {
+                    self.ptr_regs.insert(VccReg(dst.0), info);
+                }
             }
             MirInst::CallSubfn { dst, .. } => {
                 let ty = self
@@ -1630,6 +1629,24 @@ impl<'a> VccLowerer<'a> {
             if let VccValueType::Ptr(info) = vcc_ty {
                 self.ptr_regs.insert(VccReg(dst.0), info);
             }
+        }
+    }
+
+    fn helper_return_type(&self, helper_id: u32, dst: VReg) -> VccValueType {
+        let inferred = self.types.get(&dst).map(vcc_type_from_mir);
+        let Some(sig) = HelperSignature::for_id(helper_id) else {
+            return inferred.unwrap_or(VccValueType::Unknown);
+        };
+
+        match sig.ret_kind {
+            HelperRetKind::Scalar => inferred.unwrap_or(VccValueType::Scalar { range: None }),
+            HelperRetKind::PointerMaybeNull => match inferred {
+                Some(VccValueType::Ptr(info)) => VccValueType::Ptr(info),
+                _ => VccValueType::Ptr(VccPointerInfo {
+                    space: VccAddrSpace::MapValue,
+                    bounds: None,
+                }),
+            },
         }
     }
 
@@ -2596,6 +2613,33 @@ mod tests {
             "expected pointer bounds error, got {:?}",
             err
         );
+    }
+
+    #[test]
+    fn test_verify_mir_helper_map_lookup_return_typed_without_dst_annotation() {
+        let (mut func, entry) = new_mir_function();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst: ptr,
+            helper: 1, // bpf_map_lookup_elem(map, key)
+            args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
+        });
+        func.block_mut(entry).instructions.push(MirInst::Load {
+            dst,
+            ptr,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        verify_mir(&func, &types).expect("expected helper return pointer modeling to pass");
     }
 
     #[test]
