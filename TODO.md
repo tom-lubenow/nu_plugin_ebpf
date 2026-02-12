@@ -8,6 +8,7 @@ Last updated: 2026-02-12.
 - [~] Complete the VCC verifier model.
   - VCC is a mandatory gate, but the model is still incomplete versus kernel verifier behavior for broader program classes.
   - Expand tracked state beyond current pointer/stack/map/range model and tighten parity tests against real verifier outcomes.
+  - Recent progress: verifier/VCC now apply typed helper argument and return checks for known helper IDs.
 
 - [x] Implement tail calls end-to-end.
   - Implemented bytecode lowering to `bpf_tail_call` and failure fallback termination.

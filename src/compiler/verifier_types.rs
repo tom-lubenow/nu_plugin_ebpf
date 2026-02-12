@@ -6,6 +6,7 @@
 
 use std::collections::{HashMap, VecDeque};
 
+use super::instruction::{HelperArgKind, HelperRetKind, HelperSignature};
 use super::mir::{
     AddressSpace, BinOpKind, BlockId, MapRef, MirFunction, MirInst, MirType, MirValue, StackSlotId,
     VReg, COUNTER_MAP_NAME, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, STRING_COUNTER_MAP_NAME,
@@ -623,8 +624,58 @@ fn apply_inst(
                 state.set_with_range(dst, ty, range);
             }
         }
-        MirInst::CallHelper { dst, .. }
-        | MirInst::CallSubfn { dst, .. }
+        MirInst::CallHelper { dst, helper, args } => {
+            if let Some(sig) = HelperSignature::for_id(*helper) {
+                if args.len() < sig.min_args || args.len() > sig.max_args {
+                    errors.push(VerifierTypeError::new(format!(
+                        "helper {} expects {}..={} args, got {}",
+                        helper,
+                        sig.min_args,
+                        sig.max_args,
+                        args.len()
+                    )));
+                }
+                for (idx, arg) in args.iter().take(sig.max_args.min(5)).enumerate() {
+                    check_helper_arg(
+                        *helper,
+                        idx,
+                        arg,
+                        sig.arg_kind(idx),
+                        state,
+                        slot_sizes,
+                        errors,
+                    );
+                }
+
+                let ty = match sig.ret_kind {
+                    HelperRetKind::Scalar => types
+                        .get(dst)
+                        .map(verifier_type_from_mir)
+                        .unwrap_or(VerifierType::Scalar),
+                    HelperRetKind::PointerMaybeNull => {
+                        let bounds = map_value_limit_from_dst_type(types.get(dst)).map(|limit| PtrBounds {
+                            origin: PtrOrigin::Map,
+                            min: 0,
+                            max: 0,
+                            limit,
+                        });
+                        VerifierType::Ptr {
+                            space: AddressSpace::Map,
+                            nullability: Nullability::MaybeNull,
+                            bounds,
+                        }
+                    }
+                };
+                state.set_with_range(*dst, ty, ValueRange::Unknown);
+            } else {
+                let ty = types
+                    .get(dst)
+                    .map(verifier_type_from_mir)
+                    .unwrap_or(VerifierType::Scalar);
+                state.set_with_range(*dst, ty, ValueRange::Unknown);
+            }
+        }
+        MirInst::CallSubfn { dst, .. }
         | MirInst::StrCmp { dst, .. }
         | MirInst::StopTimer { dst, .. }
         | MirInst::LoopHeader { counter: dst, .. }
@@ -1314,6 +1365,36 @@ fn require_ptr_with_space(
     }
 }
 
+fn check_helper_arg(
+    helper_id: u32,
+    arg_idx: usize,
+    arg: &MirValue,
+    expected: HelperArgKind,
+    state: &VerifierState,
+    slot_sizes: &HashMap<StackSlotId, i64>,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let ty = value_type(arg, state, slot_sizes);
+    match expected {
+        HelperArgKind::Scalar => {
+            if !matches!(ty, VerifierType::Scalar | VerifierType::Bool) {
+                errors.push(VerifierTypeError::new(format!(
+                    "helper {} arg{} expects scalar, got {:?}",
+                    helper_id, arg_idx, ty
+                )));
+            }
+        }
+        HelperArgKind::Pointer => {
+            if !matches!(ty, VerifierType::Ptr { .. }) {
+                errors.push(VerifierTypeError::new(format!(
+                    "helper {} arg{} expects pointer, got {:?}",
+                    helper_id, arg_idx, ty
+                )));
+            }
+        }
+    }
+}
+
 fn check_ptr_access(
     ptr: VReg,
     op: &str,
@@ -1914,6 +1995,81 @@ mod tests {
 
         let types = map_lookup_types(&func, dst);
         verify_mir(&func, &types).expect("expected verifier pass");
+    }
+
+    #[test]
+    fn test_helper_pointer_arg_required() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let dst = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 16, // bpf_get_current_comm(buf, size)
+            args: vec![MirValue::Const(0), MirValue::Const(16)],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+        let err = verify_mir(&func, &types).expect_err("expected helper pointer-arg error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("arg0 expects pointer")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_helper_map_lookup_requires_null_check() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let map = func.alloc_vreg();
+        let key = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let load_dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: map,
+            src: MirValue::StackSlot(map_slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::StackSlot(key_slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 1, // bpf_map_lookup_elem(map, key)
+            args: vec![MirValue::VReg(map), MirValue::VReg(key)],
+        });
+        func.block_mut(entry).instructions.push(MirInst::Load {
+            dst: load_dst,
+            ptr: dst,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            dst,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Map,
+            },
+        );
+        types.insert(load_dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper null-check error");
+        assert!(err
+            .iter()
+            .any(|e| e.message.contains("may dereference null")));
     }
 
     #[test]
