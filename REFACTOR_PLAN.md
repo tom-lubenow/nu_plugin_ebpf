@@ -122,7 +122,7 @@
       uses LIR clobbers; loop-depth heuristics now computed for LIR via alloc CFG. Worklist/adjacency
       processing is deterministic with stable tie-breaking for freeze/spill selection.
 
-  [~] 8. Testing strategy aligned with the design
+  [x] 8. Testing strategy aligned with the design
       - Unit tests for HM inference and principal type schemes.
       - "Verifier-style" tests: run the abstract interpreter against negative examples (pointer + pointer, illegal stack
         access, etc.). (docs.kernel.org (https://docs.kernel.org/bpf/verifier.html?utm_source=openai))
