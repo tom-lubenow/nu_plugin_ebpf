@@ -3619,6 +3619,40 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_mir_helper_ringbuf_submit_requires_null_check() {
+        let (mut func, entry) = new_mir_function();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let record = func.alloc_vreg();
+        let submit_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst: record,
+            helper: 131, // bpf_ringbuf_reserve(map, size, flags)
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(8),
+                MirValue::Const(0),
+            ],
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst: submit_ret,
+            helper: 132, // bpf_ringbuf_submit(data, flags)
+            args: vec![MirValue::VReg(record), MirValue::Const(0)],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(submit_ret, MirType::I64);
+        let err = verify_mir(&func, &types).expect_err("expected missing null-check error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("may dereference null pointer")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
     fn test_verify_mir_helper_ringbuf_submit_rejects_double_release() {
         let (mut func, entry) = new_mir_function();
         let submit = func.alloc_block();
