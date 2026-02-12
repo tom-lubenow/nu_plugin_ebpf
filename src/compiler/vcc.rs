@@ -117,6 +117,7 @@ pub enum VccTypeClass {
 pub struct VccPointerInfo {
     pub space: VccAddrSpace,
     pub bounds: Option<VccBounds>,
+    pub ringbuf_ref: Option<VccReg>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -210,6 +211,12 @@ pub enum VccInst {
     Phi {
         dst: VccReg,
         args: Vec<(VccBlockId, VccReg)>,
+    },
+    RingbufAcquire {
+        id: VccReg,
+    },
+    RingbufRelease {
+        ptr: VccValue,
     },
 }
 
@@ -363,18 +370,21 @@ impl VccVerifier {
                     );
                 }
                 VccTerminator::Branch {
-                    if_true, if_false, ..
+                    cond,
+                    if_true,
+                    if_false,
                 } => {
+                    let (true_state, false_state) = self.refine_branch_states(*cond, &state);
                     self.propagate_state(
                         *if_true,
-                        &state,
+                        &true_state,
                         &mut in_states,
                         &mut worklist,
                         &mut update_counts,
                     );
                     self.propagate_state(
                         *if_false,
-                        &state,
+                        &false_state,
                         &mut in_states,
                         &mut worklist,
                         &mut update_counts,
@@ -389,6 +399,23 @@ impl VccVerifier {
         } else {
             Err(self.errors)
         }
+    }
+
+    fn refine_branch_states(&self, cond: VccValue, state: &VccState) -> (VccState, VccState) {
+        let mut true_state = state.clone();
+        let mut false_state = state.clone();
+        if let VccValue::Reg(cond_reg) = cond {
+            if let Some(refinement) = state.cond_refinement(cond_reg) {
+                if refinement.true_means_non_null {
+                    true_state.set_live_ringbuf_ref(refinement.ringbuf_ref, true);
+                    false_state.set_live_ringbuf_ref(refinement.ringbuf_ref, false);
+                } else {
+                    true_state.set_live_ringbuf_ref(refinement.ringbuf_ref, false);
+                    false_state.set_live_ringbuf_ref(refinement.ringbuf_ref, true);
+                }
+            }
+        }
+        (true_state, false_state)
     }
 
     fn propagate_state(
@@ -471,6 +498,7 @@ impl VccVerifier {
                     VccValueType::Ptr(VccPointerInfo {
                         space: VccAddrSpace::Stack(*slot),
                         bounds,
+                        ringbuf_ref: None,
                     }),
                 );
             }
@@ -492,6 +520,8 @@ impl VccVerifier {
 
                 match op {
                     VccBinOp::Eq | VccBinOp::Ne => {
+                        let ringbuf_ref_cmp =
+                            self.ringbuf_null_comparison(*lhs, lhs_ty, *rhs, rhs_ty);
                         let lhs_is_ptr = matches!(lhs_ty, VccValueType::Ptr(_));
                         let rhs_is_ptr = matches!(rhs_ty, VccValueType::Ptr(_));
                         if lhs_is_ptr || rhs_is_ptr {
@@ -552,6 +582,15 @@ impl VccVerifier {
                             return;
                         }
                         state.set_reg(*dst, VccValueType::Bool);
+                        if let Some(ref_id) = ringbuf_ref_cmp {
+                            state.set_cond_refinement(
+                                *dst,
+                                VccCondRefinement {
+                                    ringbuf_ref: ref_id,
+                                    true_means_non_null: matches!(op, VccBinOp::Ne),
+                                },
+                            );
+                        }
                     }
                     VccBinOp::Lt | VccBinOp::Le | VccBinOp::Gt | VccBinOp::Ge => {
                         if lhs_ty.class() != VccTypeClass::Scalar
@@ -667,6 +706,7 @@ impl VccVerifier {
                     VccValueType::Ptr(VccPointerInfo {
                         space: base_ptr.space,
                         bounds,
+                        ringbuf_ref: base_ptr.ringbuf_ref,
                     }),
                 );
             }
@@ -777,6 +817,52 @@ impl VccVerifier {
                 let ty = merged.unwrap_or(VccValueType::Unknown);
                 state.set_reg(*dst, ty);
             }
+            VccInst::RingbufAcquire { id } => {
+                state.set_live_ringbuf_ref(*id, true);
+            }
+            VccInst::RingbufRelease { ptr } => {
+                let ty = match state.value_type(*ptr) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                match ty {
+                    VccValueType::Ptr(info) if info.space == VccAddrSpace::RingBuf => {
+                        if let Some(ref_id) = info.ringbuf_ref {
+                            if state.is_live_ringbuf_ref(ref_id) {
+                                state.invalidate_ringbuf_ref(ref_id);
+                            } else {
+                                self.errors.push(VccError::new(
+                                    VccErrorKind::PointerBounds,
+                                    "ringbuf record already released",
+                                ));
+                            }
+                        } else {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::PointerBounds,
+                                "ringbuf record pointer is not tracked",
+                            ));
+                        }
+                    }
+                    VccValueType::Ptr(_) => {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::PointerBounds,
+                            "ringbuf release requires ringbuf record pointer",
+                        ));
+                    }
+                    other => {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::TypeMismatch {
+                                expected: VccTypeClass::Ptr,
+                                actual: other.class(),
+                            },
+                            "ringbuf release requires pointer operand",
+                        ));
+                    }
+                }
+            }
         }
     }
 
@@ -803,7 +889,27 @@ impl VccVerifier {
                         self.errors.push(err);
                     }
                 }
+                if state.has_live_ringbuf_refs() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "unreleased ringbuf record reference at function exit",
+                    ));
+                }
             }
+        }
+    }
+
+    fn ringbuf_null_comparison(
+        &self,
+        lhs: VccValue,
+        lhs_ty: VccValueType,
+        rhs: VccValue,
+        rhs_ty: VccValueType,
+    ) -> Option<VccReg> {
+        match (lhs_ty, rhs_ty) {
+            (VccValueType::Ptr(ptr), other) if self.is_null_scalar(rhs, other) => ptr.ringbuf_ref,
+            (other, VccValueType::Ptr(ptr)) if self.is_null_scalar(lhs, other) => ptr.ringbuf_ref,
+            _ => None,
         }
     }
 
@@ -819,15 +925,65 @@ impl VccVerifier {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct VccState {
     reg_types: HashMap<VccReg, VccValueType>,
+    live_ringbuf_refs: HashMap<VccReg, bool>,
+    cond_refinements: HashMap<VccReg, VccCondRefinement>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct VccCondRefinement {
+    ringbuf_ref: VccReg,
+    true_means_non_null: bool,
 }
 
 impl VccState {
     fn with_seed(seed: HashMap<VccReg, VccValueType>) -> Self {
-        Self { reg_types: seed }
+        Self {
+            reg_types: seed,
+            live_ringbuf_refs: HashMap::new(),
+            cond_refinements: HashMap::new(),
+        }
     }
 
     fn set_reg(&mut self, reg: VccReg, ty: VccValueType) {
         self.reg_types.insert(reg, ty);
+        self.cond_refinements.remove(&reg);
+    }
+
+    fn set_live_ringbuf_ref(&mut self, id: VccReg, live: bool) {
+        self.live_ringbuf_refs.insert(id, live);
+    }
+
+    fn set_cond_refinement(&mut self, reg: VccReg, refinement: VccCondRefinement) {
+        self.cond_refinements.insert(reg, refinement);
+    }
+
+    fn cond_refinement(&self, reg: VccReg) -> Option<VccCondRefinement> {
+        self.cond_refinements.get(&reg).copied()
+    }
+
+    fn is_live_ringbuf_ref(&self, id: VccReg) -> bool {
+        self.live_ringbuf_refs.get(&id).copied().unwrap_or(false)
+    }
+
+    fn has_live_ringbuf_refs(&self) -> bool {
+        self.live_ringbuf_refs.values().copied().any(std::convert::identity)
+    }
+
+    fn invalidate_ringbuf_ref(&mut self, id: VccReg) {
+        self.set_live_ringbuf_ref(id, false);
+        for ty in self.reg_types.values_mut() {
+            let matches_ref = matches!(
+                ty,
+                VccValueType::Ptr(VccPointerInfo {
+                    ringbuf_ref: Some(ref_id),
+                    ..
+                }) if *ref_id == id
+            );
+            if matches_ref {
+                *ty = VccValueType::Unknown;
+            }
+        }
+        self.cond_refinements.retain(|_, info| info.ringbuf_ref != id);
     }
 
     fn merge_with(&self, other: &VccState) -> VccState {
@@ -842,7 +998,24 @@ impl VccState {
                 }
             }
         }
-        VccState { reg_types: merged }
+        let mut live_ringbuf_refs = self.live_ringbuf_refs.clone();
+        for (id, live) in &other.live_ringbuf_refs {
+            let current = live_ringbuf_refs.get(id).copied().unwrap_or(false);
+            live_ringbuf_refs.insert(*id, current || *live);
+        }
+        let mut cond_refinements = HashMap::new();
+        for (reg, left) in &self.cond_refinements {
+            if let Some(right) = other.cond_refinements.get(reg) {
+                if left == right {
+                    cond_refinements.insert(*reg, *left);
+                }
+            }
+        }
+        VccState {
+            reg_types: merged,
+            live_ringbuf_refs,
+            cond_refinements,
+        }
     }
 
     fn widened(&self) -> VccState {
@@ -853,6 +1026,7 @@ impl VccState {
                 VccValueType::Ptr(ptr) => VccValueType::Ptr(VccPointerInfo {
                     space: ptr.space,
                     bounds: None,
+                    ringbuf_ref: None,
                 }),
                 VccValueType::Bool => VccValueType::Bool,
                 VccValueType::Unknown => VccValueType::Unknown,
@@ -860,7 +1034,11 @@ impl VccState {
             };
             widened.insert(*reg, widened_ty);
         }
-        VccState { reg_types: widened }
+        VccState {
+            reg_types: widened,
+            live_ringbuf_refs: self.live_ringbuf_refs.clone(),
+            cond_refinements: HashMap::new(),
+        }
     }
 
     fn reg_type(&self, reg: VccReg) -> Result<VccValueType, VccError> {
@@ -951,9 +1129,14 @@ impl VccState {
                     }),
                     _ => None,
                 };
+                let ringbuf_ref = match (lp.ringbuf_ref, rp.ringbuf_ref) {
+                    (Some(a), Some(b)) if a == b => Some(a),
+                    _ => None,
+                };
                 VccValueType::Ptr(VccPointerInfo {
                     space: lp.space,
                     bounds,
+                    ringbuf_ref,
                 })
             }
             (left, right) if left == right => left,
@@ -1077,6 +1260,7 @@ impl<'a> VccLowerer<'a> {
                             VccPointerInfo {
                                 space: VccAddrSpace::Stack(*slot),
                                 bounds: stack_bounds(size),
+                                ringbuf_ref: None,
                             },
                         );
                     }
@@ -1266,6 +1450,7 @@ impl<'a> VccLowerer<'a> {
                         VccPointerInfo {
                             space: VccAddrSpace::Stack(*slot),
                             bounds: stack_bounds(size),
+                            ringbuf_ref: None,
                         },
                     );
                 } else {
@@ -1371,6 +1556,20 @@ impl<'a> VccLowerer<'a> {
                 });
                 if let VccValueType::Ptr(info) = ty {
                     self.ptr_regs.insert(VccReg(dst.0), info);
+                }
+                if matches!(BpfHelper::from_u32(*helper), Some(BpfHelper::RingbufReserve)) {
+                    out.push(VccInst::RingbufAcquire { id: VccReg(dst.0) });
+                }
+                if matches!(
+                    BpfHelper::from_u32(*helper),
+                    Some(BpfHelper::RingbufSubmit | BpfHelper::RingbufDiscard)
+                ) {
+                    if let Some(arg0) = args.first() {
+                        let release_ptr = self.lower_value(arg0, out);
+                        out.push(VccInst::RingbufRelease {
+                            ptr: release_ptr,
+                        });
+                    }
                 }
             }
             MirInst::CallSubfn { dst, .. } => {
@@ -1697,6 +1896,7 @@ impl<'a> VccLowerer<'a> {
             VccPointerInfo {
                 space: VccAddrSpace::Stack(slot),
                 bounds: stack_bounds(size),
+                ringbuf_ref: None,
             },
         );
         reg
@@ -1715,6 +1915,7 @@ impl<'a> VccLowerer<'a> {
                 Some(VccPointerInfo {
                     space: VccAddrSpace::Stack(*slot),
                     bounds: stack_bounds(size),
+                    ringbuf_ref: None,
                 })
             }
             MirValue::VReg(v) => self
@@ -1753,6 +1954,7 @@ impl<'a> VccLowerer<'a> {
                     return VccValueType::Ptr(VccPointerInfo {
                         space: VccAddrSpace::RingBuf,
                         bounds: None,
+                        ringbuf_ref: Some(VccReg(dst.0)),
                     });
                 }
                 match inferred {
@@ -1760,6 +1962,7 @@ impl<'a> VccLowerer<'a> {
                     _ => VccValueType::Ptr(VccPointerInfo {
                         space: VccAddrSpace::MapValue,
                         bounds: None,
+                        ringbuf_ref: None,
                     }),
                 }
             }
@@ -2576,6 +2779,7 @@ fn vcc_type_from_mir(ty: &MirType) -> VccValueType {
                 AddressSpace::Map => VccAddrSpace::MapValue,
             },
             bounds: None,
+            ringbuf_ref: None,
         }),
         MirType::Unknown => VccValueType::Unknown,
         _ => VccValueType::Scalar { range: None },
@@ -3094,6 +3298,82 @@ mod tests {
         let mut types = HashMap::new();
         types.insert(submit_ret, MirType::I64);
         verify_mir(&func, &types).expect("expected ringbuf submit flow to pass");
+    }
+
+    #[test]
+    fn test_verify_mir_helper_ringbuf_reserve_submit_ok_with_eq_null_branch() {
+        let (mut func, entry) = new_mir_function();
+        let submit = func.alloc_block();
+        let done = func.alloc_block();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let record = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let submit_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst: record,
+            helper: 131, // bpf_ringbuf_reserve(map, size, flags)
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(8),
+                MirValue::Const(0),
+            ],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(record),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: done,
+            if_false: submit,
+        };
+
+        func.block_mut(submit).instructions.push(MirInst::CallHelper {
+            dst: submit_ret,
+            helper: 132, // bpf_ringbuf_submit(data, flags)
+            args: vec![MirValue::VReg(record), MirValue::Const(0)],
+        });
+        func.block_mut(submit).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(submit_ret, MirType::I64);
+        verify_mir(&func, &types).expect("expected ringbuf submit flow to pass");
+    }
+
+    #[test]
+    fn test_verify_mir_helper_ringbuf_reserve_without_release_rejected() {
+        let (mut func, entry) = new_mir_function();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let record = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst: record,
+            helper: 131, // bpf_ringbuf_reserve(map, size, flags)
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(8),
+                MirValue::Const(0),
+            ],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let err = verify_mir(&func, &HashMap::new())
+            .expect_err("expected leak error for unreleased ringbuf record");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("unreleased ringbuf record reference")),
+            "unexpected error messages: {:?}",
+            err
+        );
     }
 
     #[test]
