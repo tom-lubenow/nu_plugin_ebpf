@@ -1481,6 +1481,19 @@ fn apply_helper_semantics(
 
     match helper {
         BpfHelper::MapLookupElem => {
+            if let Some(map) = args.first() {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    0,
+                    map,
+                    "helper map_lookup map",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    None,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
             if let Some(key) = args.get(1) {
                 check_helper_ptr_arg_value(
                     helper_id,
@@ -1496,6 +1509,19 @@ fn apply_helper_semantics(
             }
         }
         BpfHelper::MapUpdateElem => {
+            if let Some(map) = args.first() {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    0,
+                    map,
+                    "helper map_update map",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    None,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
             if let Some(key) = args.get(1) {
                 check_helper_ptr_arg_value(
                     helper_id,
@@ -1524,6 +1550,19 @@ fn apply_helper_semantics(
             }
         }
         BpfHelper::MapDeleteElem => {
+            if let Some(map) = args.first() {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    0,
+                    map,
+                    "helper map_delete map",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    None,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
             if let Some(key) = args.get(1) {
                 check_helper_ptr_arg_value(
                     helper_id,
@@ -2445,6 +2484,61 @@ mod tests {
         assert!(
             err.iter()
                 .any(|e| e.message.contains("helper map_lookup key out of bounds")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_helper_map_lookup_rejects_user_map_pointer() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let map = func.alloc_vreg();
+        func.param_count = 1;
+        let cond = func.alloc_vreg();
+        let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(map),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: call,
+            if_false: done,
+        };
+
+        func.block_mut(call)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 1, // bpf_map_lookup_elem(map, key)
+                args: vec![MirValue::VReg(map), MirValue::StackSlot(key_slot)],
+            });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            map,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::User,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper map pointer-space error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("helper map_lookup map expects pointer in [Stack, Map]")),
             "unexpected errors: {:?}",
             err
         );

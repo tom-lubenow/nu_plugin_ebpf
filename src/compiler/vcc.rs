@@ -2008,6 +2008,20 @@ impl<'a> VccLowerer<'a> {
 
         match helper {
             BpfHelper::MapLookupElem => {
+                if let Some(map) = args.first() {
+                    self.check_helper_ptr_arg_value(
+                        helper_id,
+                        0,
+                        map,
+                        "helper map_lookup map",
+                        true,
+                        true,
+                        false,
+                        false,
+                        None,
+                        out,
+                    )?;
+                }
                 if let Some(key) = args.get(1) {
                     self.check_helper_ptr_arg_value(
                         helper_id,
@@ -2024,6 +2038,20 @@ impl<'a> VccLowerer<'a> {
                 }
             }
             BpfHelper::MapUpdateElem => {
+                if let Some(map) = args.first() {
+                    self.check_helper_ptr_arg_value(
+                        helper_id,
+                        0,
+                        map,
+                        "helper map_update map",
+                        true,
+                        true,
+                        false,
+                        false,
+                        None,
+                        out,
+                    )?;
+                }
                 if let Some(key) = args.get(1) {
                     self.check_helper_ptr_arg_value(
                         helper_id,
@@ -2054,6 +2082,20 @@ impl<'a> VccLowerer<'a> {
                 }
             }
             BpfHelper::MapDeleteElem => {
+                if let Some(map) = args.first() {
+                    self.check_helper_ptr_arg_value(
+                        helper_id,
+                        0,
+                        map,
+                        "helper map_delete map",
+                        true,
+                        true,
+                        false,
+                        false,
+                        None,
+                        out,
+                    )?;
+                }
                 if let Some(key) = args.get(1) {
                     self.check_helper_ptr_arg_value(
                         helper_id,
@@ -2640,6 +2682,47 @@ mod tests {
         types.insert(dst, MirType::I64);
 
         verify_mir(&func, &types).expect("expected helper return pointer modeling to pass");
+    }
+
+    #[test]
+    fn test_verify_mir_helper_map_lookup_rejects_user_map_pointer() {
+        let (mut func, entry) = new_mir_function();
+        let map = func.alloc_vreg();
+        func.param_count = 1;
+        let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 1, // bpf_map_lookup_elem(map, key)
+            args: vec![MirValue::VReg(map), MirValue::StackSlot(key_slot)],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            map,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::User,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper map pointer-space error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter().any(
+                |e| e.message
+                    .contains("helper map_lookup map expects pointer in [Stack, Map]")
+            ),
+            "unexpected error messages: {:?}",
+            err
+        );
     }
 
     #[test]
