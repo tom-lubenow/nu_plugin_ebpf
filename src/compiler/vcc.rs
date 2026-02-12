@@ -4533,6 +4533,153 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_mir_helper_perf_event_output_variable_size_range_checks_bounds() {
+        let (mut func, entry) = new_mir_function();
+        let check_upper = func.alloc_block();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+
+        let ctx = func.alloc_vreg();
+        let size = func.alloc_vreg();
+        func.param_count = 2;
+        let ge_one = func.alloc_vreg();
+        let le_sixteen = func.alloc_vreg();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let data_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: ge_one,
+            op: BinOpKind::Ge,
+            lhs: MirValue::VReg(size),
+            rhs: MirValue::Const(1),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: ge_one,
+            if_true: check_upper,
+            if_false: done,
+        };
+
+        func.block_mut(check_upper).instructions.push(MirInst::BinOp {
+            dst: le_sixteen,
+            op: BinOpKind::Le,
+            lhs: MirValue::VReg(size),
+            rhs: MirValue::Const(16),
+        });
+        func.block_mut(check_upper).terminator = MirInst::Branch {
+            cond: le_sixteen,
+            if_true: call,
+            if_false: done,
+        };
+
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 25, // bpf_perf_event_output(ctx, map, flags, data, size)
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(0),
+                MirValue::StackSlot(data_slot),
+                MirValue::VReg(size),
+            ],
+        });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(size, MirType::I64);
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper bounds error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("helper perf_event_output data out of bounds")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_helper_perf_event_output_variable_size_range_within_bounds() {
+        let (mut func, entry) = new_mir_function();
+        let check_upper = func.alloc_block();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+
+        let ctx = func.alloc_vreg();
+        let size = func.alloc_vreg();
+        func.param_count = 2;
+        let ge_one = func.alloc_vreg();
+        let le_eight = func.alloc_vreg();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let data_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: ge_one,
+            op: BinOpKind::Ge,
+            lhs: MirValue::VReg(size),
+            rhs: MirValue::Const(1),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: ge_one,
+            if_true: check_upper,
+            if_false: done,
+        };
+
+        func.block_mut(check_upper).instructions.push(MirInst::BinOp {
+            dst: le_eight,
+            op: BinOpKind::Le,
+            lhs: MirValue::VReg(size),
+            rhs: MirValue::Const(8),
+        });
+        func.block_mut(check_upper).terminator = MirInst::Branch {
+            cond: le_eight,
+            if_true: call,
+            if_false: done,
+        };
+
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 25, // bpf_perf_event_output(ctx, map, flags, data, size)
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(0),
+                MirValue::StackSlot(data_slot),
+                MirValue::VReg(size),
+            ],
+        });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(size, MirType::I64);
+        types.insert(dst, MirType::I64);
+
+        verify_mir(&func, &types).expect("expected bounded helper size range to pass");
+    }
+
+    #[test]
     fn test_verify_mir_helper_get_stackid_rejects_user_ctx_pointer() {
         let (mut func, entry) = new_mir_function();
         let ctx = func.alloc_vreg();
