@@ -1507,12 +1507,16 @@ fn check_helper_ptr_arg_value(
     arg_idx: usize,
     arg: &MirValue,
     op: &str,
-    allowed: &[AddressSpace],
+    allow_stack: bool,
+    allow_map: bool,
+    allow_kernel: bool,
+    allow_user: bool,
     access_size: Option<usize>,
     state: &VerifierState,
     slot_sizes: &HashMap<StackSlotId, i64>,
     errors: &mut Vec<VerifierTypeError>,
 ) {
+    let allowed = helper_allowed_spaces(allow_stack, allow_map, allow_kernel, allow_user);
     match arg {
         MirValue::VReg(vreg) => {
             let Some(VerifierType::Ptr { space, bounds, .. }) =
@@ -1545,6 +1549,24 @@ fn check_helper_ptr_arg_value(
     }
 }
 
+fn helper_allowed_spaces(
+    allow_stack: bool,
+    allow_map: bool,
+    allow_kernel: bool,
+    allow_user: bool,
+) -> &'static [AddressSpace] {
+    match (allow_stack, allow_map, allow_kernel, allow_user) {
+        (true, true, false, false) => &[AddressSpace::Stack, AddressSpace::Map],
+        (true, true, true, false) => &[AddressSpace::Stack, AddressSpace::Map, AddressSpace::Kernel],
+        (false, false, true, false) => &[AddressSpace::Kernel],
+        (false, false, false, true) => &[AddressSpace::User],
+        (true, false, false, false) => &[AddressSpace::Stack],
+        (false, true, false, false) => &[AddressSpace::Map],
+        (false, false, false, false) => &[],
+        _ => &[AddressSpace::Stack, AddressSpace::Map, AddressSpace::Kernel, AddressSpace::User],
+    }
+}
+
 fn apply_helper_semantics(
     helper_id: u32,
     args: &[MirValue],
@@ -1556,351 +1578,82 @@ fn apply_helper_semantics(
         return;
     };
 
-    match helper {
-        BpfHelper::MapLookupElem => {
-            if let Some(map) = args.first() {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    0,
-                    map,
-                    "helper map_lookup map",
-                    &[AddressSpace::Stack, AddressSpace::Map],
-                    None,
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-            if let Some(key) = args.get(1) {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    1,
-                    key,
-                    "helper map_lookup key",
-                    &[AddressSpace::Stack, AddressSpace::Map],
-                    Some(1),
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
+    let semantics = helper.semantics();
+    let mut positive_size_bounds: [Option<usize>; 5] = [None; 5];
+    for size_arg in semantics.positive_size_args {
+        if let Some(value) = args.get(*size_arg) {
+            positive_size_bounds[*size_arg] =
+                helper_positive_size_upper_bound(helper_id, *size_arg, value, state, errors);
         }
-        BpfHelper::MapUpdateElem => {
-            if let Some(map) = args.first() {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    0,
-                    map,
-                    "helper map_update map",
-                    &[AddressSpace::Stack, AddressSpace::Map],
-                    None,
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-            if let Some(key) = args.get(1) {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    1,
-                    key,
-                    "helper map_update key",
-                    &[AddressSpace::Stack, AddressSpace::Map],
-                    Some(1),
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-            if let Some(val) = args.get(2) {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    2,
-                    val,
-                    "helper map_update value",
-                    &[AddressSpace::Stack, AddressSpace::Map],
-                    Some(1),
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-        }
-        BpfHelper::MapDeleteElem => {
-            if let Some(map) = args.first() {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    0,
-                    map,
-                    "helper map_delete map",
-                    &[AddressSpace::Stack, AddressSpace::Map],
-                    None,
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-            if let Some(key) = args.get(1) {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    1,
-                    key,
-                    "helper map_delete key",
-                    &[AddressSpace::Stack, AddressSpace::Map],
-                    Some(1),
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-        }
-        BpfHelper::GetCurrentComm => {
-            let size = args.get(1).and_then(|value| {
-                helper_positive_size_upper_bound(helper_id, 1, value, state, errors)
-            });
-            if let Some(dst) = args.first() {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    0,
-                    dst,
-                    "helper get_current_comm dst",
-                    &[AddressSpace::Stack, AddressSpace::Map],
-                    size,
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-        }
-        BpfHelper::ProbeRead | BpfHelper::ProbeReadKernelStr | BpfHelper::ProbeReadUserStr => {
-            let size = args.get(1).and_then(|value| {
-                helper_positive_size_upper_bound(helper_id, 1, value, state, errors)
-            });
-            if let Some(dst) = args.first() {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    0,
-                    dst,
-                    "helper probe_read dst",
-                    &[AddressSpace::Stack, AddressSpace::Map],
-                    size,
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-            if let Some(src) = args.get(2) {
-                let allowed = if matches!(helper, BpfHelper::ProbeReadUserStr) {
-                    &[AddressSpace::User][..]
-                } else {
-                    &[AddressSpace::Kernel, AddressSpace::Stack, AddressSpace::Map][..]
-                };
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    2,
-                    src,
-                    "helper probe_read src",
-                    allowed,
-                    size,
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-        }
-        BpfHelper::RingbufReserve => {
-            if let Some(map) = args.first() {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    0,
-                    map,
-                    "helper ringbuf_reserve map",
-                    &[AddressSpace::Stack, AddressSpace::Map],
-                    None,
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-            if let Some(size_arg) = args.get(1) {
-                let _ = helper_positive_size_upper_bound(helper_id, 1, size_arg, state, errors);
-            }
-        }
-        BpfHelper::RingbufOutput => {
-            if let Some(map) = args.first() {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    0,
-                    map,
-                    "helper ringbuf_output map",
-                    &[AddressSpace::Stack, AddressSpace::Map],
-                    None,
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-            let size = args.get(2).and_then(|value| {
-                helper_positive_size_upper_bound(helper_id, 2, value, state, errors)
-            });
-            if let Some(data) = args.get(1) {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    1,
-                    data,
-                    "helper ringbuf_output data",
-                    &[AddressSpace::Stack, AddressSpace::Map],
-                    size,
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-        }
-        BpfHelper::TailCall => {
-            if let Some(ctx) = args.first() {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    0,
-                    ctx,
-                    "helper tail_call ctx",
-                    &[AddressSpace::Kernel],
-                    None,
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-            if let Some(map) = args.get(1) {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    1,
-                    map,
-                    "helper tail_call map",
-                    &[AddressSpace::Stack, AddressSpace::Map],
-                    None,
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-        }
-        BpfHelper::RingbufSubmit | BpfHelper::RingbufDiscard => {
-            if let Some(record) = args.first() {
-                match record {
-                    MirValue::VReg(vreg) => match state.get(*vreg) {
-                        VerifierType::Ptr {
-                            space: AddressSpace::Map,
-                            nullability: Nullability::NonNull,
-                            ringbuf_ref: Some(ref_id),
-                            ..
-                        } => {
-                            state.invalidate_ringbuf_ref(ref_id);
-                        }
-                        VerifierType::Ptr {
-                            nullability: Nullability::MaybeNull,
-                            ..
-                        } => {
-                            errors.push(VerifierTypeError::new(format!(
-                                "helper {} arg0 may dereference null pointer v{} (add a null check)",
-                                helper_id, vreg.0
-                            )));
-                        }
-                        VerifierType::Ptr { .. } => {
-                            errors.push(VerifierTypeError::new(format!(
-                                "helper {} arg0 expects ringbuf record pointer",
-                                helper_id
-                            )));
-                        }
-                        _ => {
-                            errors.push(VerifierTypeError::new(format!(
-                                "helper {} arg0 expects ringbuf record pointer",
-                                helper_id
-                            )));
-                        }
-                    },
+    }
+
+    for rule in semantics.ptr_arg_rules {
+        let Some(arg) = args.get(rule.arg_idx) else {
+            continue;
+        };
+        let access_size = match (rule.fixed_size, rule.size_from_arg) {
+            (Some(size), _) => Some(size),
+            (None, Some(size_arg)) => positive_size_bounds[size_arg],
+            (None, None) => None,
+        };
+        check_helper_ptr_arg_value(
+            helper_id,
+            rule.arg_idx,
+            arg,
+            rule.op,
+            rule.allowed.allow_stack,
+            rule.allowed.allow_map,
+            rule.allowed.allow_kernel,
+            rule.allowed.allow_user,
+            access_size,
+            state,
+            slot_sizes,
+            errors,
+        );
+    }
+
+    if semantics.ringbuf_record_arg0 {
+        if let Some(record) = args.first() {
+            match record {
+                MirValue::VReg(vreg) => match state.get(*vreg) {
+                    VerifierType::Ptr {
+                        space: AddressSpace::Map,
+                        nullability: Nullability::NonNull,
+                        ringbuf_ref: Some(ref_id),
+                        ..
+                    } => {
+                        state.invalidate_ringbuf_ref(ref_id);
+                    }
+                    VerifierType::Ptr {
+                        nullability: Nullability::MaybeNull,
+                        ..
+                    } => {
+                        errors.push(VerifierTypeError::new(format!(
+                            "helper {} arg0 may dereference null pointer v{} (add a null check)",
+                            helper_id, vreg.0
+                        )));
+                    }
+                    VerifierType::Ptr { .. } => {
+                        errors.push(VerifierTypeError::new(format!(
+                            "helper {} arg0 expects ringbuf record pointer",
+                            helper_id
+                        )));
+                    }
                     _ => {
                         errors.push(VerifierTypeError::new(format!(
                             "helper {} arg0 expects ringbuf record pointer",
                             helper_id
                         )));
                     }
+                },
+                _ => {
+                    errors.push(VerifierTypeError::new(format!(
+                        "helper {} arg0 expects ringbuf record pointer",
+                        helper_id
+                    )));
                 }
             }
         }
-        BpfHelper::PerfEventOutput => {
-            if let Some(ctx) = args.first() {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    0,
-                    ctx,
-                    "helper perf_event_output ctx",
-                    &[AddressSpace::Kernel],
-                    None,
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-            if let Some(map) = args.get(1) {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    1,
-                    map,
-                    "helper perf_event_output map",
-                    &[AddressSpace::Stack, AddressSpace::Map],
-                    None,
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-            let size = args.get(4).and_then(|value| {
-                helper_positive_size_upper_bound(helper_id, 4, value, state, errors)
-            });
-            if let Some(data) = args.get(3) {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    3,
-                    data,
-                    "helper perf_event_output data",
-                    &[AddressSpace::Stack, AddressSpace::Map],
-                    size,
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-        }
-        BpfHelper::GetStackId => {
-            if let Some(ctx) = args.first() {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    0,
-                    ctx,
-                    "helper get_stackid ctx",
-                    &[AddressSpace::Kernel],
-                    None,
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-            if let Some(map) = args.get(1) {
-                check_helper_ptr_arg_value(
-                    helper_id,
-                    1,
-                    map,
-                    "helper get_stackid map",
-                    &[AddressSpace::Stack, AddressSpace::Map],
-                    None,
-                    state,
-                    slot_sizes,
-                    errors,
-                );
-            }
-        }
-        _ => {}
     }
 }
 

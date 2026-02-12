@@ -100,6 +100,54 @@ pub enum HelperRetKind {
     PointerMaybeNull,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HelperAllowedPtrSpaces {
+    pub allow_stack: bool,
+    pub allow_map: bool,
+    pub allow_kernel: bool,
+    pub allow_user: bool,
+}
+
+impl HelperAllowedPtrSpaces {
+    pub const fn new(
+        allow_stack: bool,
+        allow_map: bool,
+        allow_kernel: bool,
+        allow_user: bool,
+    ) -> Self {
+        Self {
+            allow_stack,
+            allow_map,
+            allow_kernel,
+            allow_user,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HelperPtrArgRule {
+    pub arg_idx: usize,
+    pub op: &'static str,
+    pub allowed: HelperAllowedPtrSpaces,
+    pub fixed_size: Option<usize>,
+    pub size_from_arg: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct HelperSemantics {
+    pub ptr_arg_rules: &'static [HelperPtrArgRule],
+    pub positive_size_args: &'static [usize],
+    pub ringbuf_record_arg0: bool,
+}
+
+impl HelperSemantics {
+    pub const EMPTY: Self = Self {
+        ptr_arg_rules: &[],
+        positive_size_args: &[],
+        ringbuf_record_arg0: false,
+    };
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct HelperSignature {
     pub min_args: usize,
@@ -238,6 +286,261 @@ impl BpfHelper {
                 arg_kinds: [P, S, P, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
+        }
+    }
+
+    pub const fn semantics(self) -> HelperSemantics {
+        const STACK_MAP: HelperAllowedPtrSpaces = HelperAllowedPtrSpaces::new(true, true, false, false);
+        const STACK_MAP_KERNEL: HelperAllowedPtrSpaces =
+            HelperAllowedPtrSpaces::new(true, true, true, false);
+        const KERNEL: HelperAllowedPtrSpaces = HelperAllowedPtrSpaces::new(false, false, true, false);
+        const USER: HelperAllowedPtrSpaces = HelperAllowedPtrSpaces::new(false, false, false, true);
+
+        const MAP_LOOKUP_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper map_lookup map",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper map_lookup key",
+                allowed: STACK_MAP,
+                fixed_size: Some(1),
+                size_from_arg: None,
+            },
+        ];
+
+        const MAP_UPDATE_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper map_update map",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper map_update key",
+                allowed: STACK_MAP,
+                fixed_size: Some(1),
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper map_update value",
+                allowed: STACK_MAP,
+                fixed_size: Some(1),
+                size_from_arg: None,
+            },
+        ];
+
+        const MAP_DELETE_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper map_delete map",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper map_delete key",
+                allowed: STACK_MAP,
+                fixed_size: Some(1),
+                size_from_arg: None,
+            },
+        ];
+
+        const GET_CURRENT_COMM_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper get_current_comm dst",
+            allowed: STACK_MAP,
+            fixed_size: None,
+            size_from_arg: Some(1),
+        }];
+
+        const PROBE_READ_KERNEL_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper probe_read dst",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(1),
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper probe_read src",
+                allowed: STACK_MAP_KERNEL,
+                fixed_size: None,
+                size_from_arg: Some(1),
+            },
+        ];
+
+        const PROBE_READ_USER_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper probe_read dst",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(1),
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper probe_read src",
+                allowed: USER,
+                fixed_size: None,
+                size_from_arg: Some(1),
+            },
+        ];
+
+        const RINGBUF_RESERVE_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper ringbuf_reserve map",
+            allowed: STACK_MAP,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
+        const RINGBUF_OUTPUT_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper ringbuf_output map",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper ringbuf_output data",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
+
+        const TAIL_CALL_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper tail_call ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper tail_call map",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+        ];
+
+        const PERF_EVENT_OUTPUT_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper perf_event_output ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper perf_event_output map",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 3,
+                op: "helper perf_event_output data",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(4),
+            },
+        ];
+
+        const GET_STACKID_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper get_stackid ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper get_stackid map",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+        ];
+
+        match self {
+            BpfHelper::MapLookupElem => HelperSemantics {
+                ptr_arg_rules: MAP_LOOKUP_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::MapUpdateElem => HelperSemantics {
+                ptr_arg_rules: MAP_UPDATE_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::MapDeleteElem => HelperSemantics {
+                ptr_arg_rules: MAP_DELETE_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::GetCurrentComm => HelperSemantics {
+                ptr_arg_rules: GET_CURRENT_COMM_RULES,
+                positive_size_args: &[1],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::ProbeRead | BpfHelper::ProbeReadKernelStr => HelperSemantics {
+                ptr_arg_rules: PROBE_READ_KERNEL_RULES,
+                positive_size_args: &[1],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::ProbeReadUserStr => HelperSemantics {
+                ptr_arg_rules: PROBE_READ_USER_RULES,
+                positive_size_args: &[1],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::RingbufReserve => HelperSemantics {
+                ptr_arg_rules: RINGBUF_RESERVE_RULES,
+                positive_size_args: &[1],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::RingbufOutput => HelperSemantics {
+                ptr_arg_rules: RINGBUF_OUTPUT_RULES,
+                positive_size_args: &[2],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::TailCall => HelperSemantics {
+                ptr_arg_rules: TAIL_CALL_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::RingbufSubmit | BpfHelper::RingbufDiscard => HelperSemantics {
+                ptr_arg_rules: &[],
+                positive_size_args: &[],
+                ringbuf_record_arg0: true,
+            },
+            BpfHelper::PerfEventOutput => HelperSemantics {
+                ptr_arg_rules: PERF_EVENT_OUTPUT_RULES,
+                positive_size_args: &[4],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::GetStackId => HelperSemantics {
+                ptr_arg_rules: GET_STACKID_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            _ => HelperSemantics::EMPTY,
         }
     }
 }

@@ -3344,368 +3344,50 @@ impl<'a> VccLowerer<'a> {
             return Ok(());
         };
 
-        match helper {
-            BpfHelper::MapLookupElem => {
-                if let Some(map) = args.first() {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        0,
-                        map,
-                        "helper map_lookup map",
-                        true,
-                        true,
-                        false,
-                        false,
-                        None,
-                        None,
-                        out,
-                    )?;
-                }
-                if let Some(key) = args.get(1) {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        1,
-                        key,
-                        "helper map_lookup key",
-                        true,
-                        true,
-                        false,
-                        false,
-                        Some(1),
-                        None,
-                        out,
-                    )?;
-                }
+        let semantics = helper.semantics();
+        let mut positive_size_bounds: [Option<usize>; 5] = [None; 5];
+        for size_arg in semantics.positive_size_args {
+            if let Some(arg) = args.get(*size_arg) {
+                positive_size_bounds[*size_arg] =
+                    self.helper_positive_size_upper_bound(helper_id, *size_arg, arg)?;
             }
-            BpfHelper::MapUpdateElem => {
-                if let Some(map) = args.first() {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        0,
-                        map,
-                        "helper map_update map",
-                        true,
-                        true,
-                        false,
-                        false,
-                        None,
-                        None,
-                        out,
-                    )?;
-                }
-                if let Some(key) = args.get(1) {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        1,
-                        key,
-                        "helper map_update key",
-                        true,
-                        true,
-                        false,
-                        false,
-                        Some(1),
-                        None,
-                        out,
-                    )?;
-                }
-                if let Some(value) = args.get(2) {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        2,
-                        value,
-                        "helper map_update value",
-                        true,
-                        true,
-                        false,
-                        false,
-                        Some(1),
-                        None,
-                        out,
-                    )?;
-                }
+        }
+
+        for rule in semantics.ptr_arg_rules {
+            let Some(arg) = args.get(rule.arg_idx) else {
+                continue;
+            };
+            let access_size = match (rule.fixed_size, rule.size_from_arg) {
+                (Some(size), _) => Some(size),
+                (None, Some(size_arg)) => positive_size_bounds[size_arg],
+                (None, None) => None,
+            };
+            let dynamic_size = rule.size_from_arg.and_then(|size_arg| args.get(size_arg));
+            self.check_helper_ptr_arg_value(
+                helper_id,
+                rule.arg_idx,
+                arg,
+                rule.op,
+                rule.allowed.allow_stack,
+                rule.allowed.allow_map,
+                rule.allowed.allow_kernel,
+                rule.allowed.allow_user,
+                access_size,
+                dynamic_size,
+                out,
+            )?;
+        }
+
+        if semantics.ringbuf_record_arg0 {
+            if let Some(record) = args.first() {
+                self.check_helper_ringbuf_record_arg(
+                    helper_id,
+                    0,
+                    record,
+                    "helper ringbuf submit/discard record",
+                    out,
+                )?;
             }
-            BpfHelper::MapDeleteElem => {
-                if let Some(map) = args.first() {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        0,
-                        map,
-                        "helper map_delete map",
-                        true,
-                        true,
-                        false,
-                        false,
-                        None,
-                        None,
-                        out,
-                    )?;
-                }
-                if let Some(key) = args.get(1) {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        1,
-                        key,
-                        "helper map_delete key",
-                        true,
-                        true,
-                        false,
-                        false,
-                        Some(1),
-                        None,
-                        out,
-                    )?;
-                }
-            }
-            BpfHelper::GetCurrentComm => {
-                let size = args
-                    .get(1)
-                    .map(|arg| self.helper_positive_size_upper_bound(helper_id, 1, arg))
-                    .transpose()?
-                    .flatten();
-                if let Some(dst) = args.first() {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        0,
-                        dst,
-                        "helper get_current_comm dst",
-                        true,
-                        true,
-                        false,
-                        false,
-                        size,
-                        args.get(1),
-                        out,
-                    )?;
-                }
-            }
-            BpfHelper::ProbeRead | BpfHelper::ProbeReadKernelStr | BpfHelper::ProbeReadUserStr => {
-                let size = args
-                    .get(1)
-                    .map(|arg| self.helper_positive_size_upper_bound(helper_id, 1, arg))
-                    .transpose()?
-                    .flatten();
-                if let Some(dst) = args.first() {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        0,
-                        dst,
-                        "helper probe_read dst",
-                        true,
-                        true,
-                        false,
-                        false,
-                        size,
-                        args.get(1),
-                        out,
-                    )?;
-                }
-                if let Some(src) = args.get(2) {
-                    let (allow_stack, allow_map, allow_kernel, allow_user) =
-                        if matches!(helper, BpfHelper::ProbeReadUserStr) {
-                            (false, false, false, true)
-                        } else {
-                            (true, true, true, false)
-                        };
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        2,
-                        src,
-                        "helper probe_read src",
-                        allow_stack,
-                        allow_map,
-                        allow_kernel,
-                        allow_user,
-                        size,
-                        args.get(1),
-                        out,
-                    )?;
-                }
-            }
-            BpfHelper::RingbufReserve => {
-                if let Some(map) = args.first() {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        0,
-                        map,
-                        "helper ringbuf_reserve map",
-                        true,
-                        true,
-                        false,
-                        false,
-                        None,
-                        None,
-                        out,
-                    )?;
-                }
-                if let Some(size_arg) = args.get(1) {
-                    let _ = self.helper_positive_size_upper_bound(helper_id, 1, size_arg)?;
-                }
-            }
-            BpfHelper::RingbufOutput => {
-                if let Some(map) = args.first() {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        0,
-                        map,
-                        "helper ringbuf_output map",
-                        true,
-                        true,
-                        false,
-                        false,
-                        None,
-                        None,
-                        out,
-                    )?;
-                }
-                let size = args
-                    .get(2)
-                    .map(|arg| self.helper_positive_size_upper_bound(helper_id, 2, arg))
-                    .transpose()?
-                    .flatten();
-                if let Some(data) = args.get(1) {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        1,
-                        data,
-                        "helper ringbuf_output data",
-                        true,
-                        true,
-                        false,
-                        false,
-                        size,
-                        args.get(2),
-                        out,
-                    )?;
-                }
-            }
-            BpfHelper::TailCall => {
-                if let Some(ctx) = args.first() {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        0,
-                        ctx,
-                        "helper tail_call ctx",
-                        false,
-                        false,
-                        true,
-                        false,
-                        None,
-                        None,
-                        out,
-                    )?;
-                }
-                if let Some(map) = args.get(1) {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        1,
-                        map,
-                        "helper tail_call map",
-                        true,
-                        true,
-                        false,
-                        false,
-                        None,
-                        None,
-                        out,
-                    )?;
-                }
-            }
-            BpfHelper::RingbufSubmit | BpfHelper::RingbufDiscard => {
-                if let Some(record) = args.first() {
-                    self.check_helper_ringbuf_record_arg(
-                        helper_id,
-                        0,
-                        record,
-                        "helper ringbuf submit/discard record",
-                        out,
-                    )?;
-                }
-            }
-            BpfHelper::PerfEventOutput => {
-                if let Some(ctx) = args.first() {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        0,
-                        ctx,
-                        "helper perf_event_output ctx",
-                        false,
-                        false,
-                        true,
-                        false,
-                        None,
-                        None,
-                        out,
-                    )?;
-                }
-                if let Some(map) = args.get(1) {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        1,
-                        map,
-                        "helper perf_event_output map",
-                        true,
-                        true,
-                        false,
-                        false,
-                        None,
-                        None,
-                        out,
-                    )?;
-                }
-                let size = args
-                    .get(4)
-                    .map(|arg| self.helper_positive_size_upper_bound(helper_id, 4, arg))
-                    .transpose()?
-                    .flatten();
-                if let Some(data) = args.get(3) {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        3,
-                        data,
-                        "helper perf_event_output data",
-                        true,
-                        true,
-                        false,
-                        false,
-                        size,
-                        args.get(4),
-                        out,
-                    )?;
-                }
-            }
-            BpfHelper::GetStackId => {
-                if let Some(ctx) = args.first() {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        0,
-                        ctx,
-                        "helper get_stackid ctx",
-                        false,
-                        false,
-                        true,
-                        false,
-                        None,
-                        None,
-                        out,
-                    )?;
-                }
-                if let Some(map) = args.get(1) {
-                    self.check_helper_ptr_arg_value(
-                        helper_id,
-                        1,
-                        map,
-                        "helper get_stackid map",
-                        true,
-                        true,
-                        false,
-                        false,
-                        None,
-                        None,
-                        out,
-                    )?;
-                }
-            }
-            _ => {}
         }
 
         Ok(())
