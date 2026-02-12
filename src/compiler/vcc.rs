@@ -14,8 +14,8 @@ use std::collections::HashMap;
 
 use crate::compiler::cfg::CFG;
 use crate::compiler::mir::{
-    AddressSpace, BinOpKind, MirFunction, MirInst, MirType, MirValue, StackSlotId, StackSlotKind,
-    StringAppendType, UnaryOpKind, VReg, STRING_COUNTER_MAP_NAME,
+    AddressSpace, BinOpKind, MirFunction, MirInst, MirType, MirValue, STRING_COUNTER_MAP_NAME,
+    StackSlotId, StackSlotKind, StringAppendType, UnaryOpKind, VReg,
 };
 use crate::compiler::passes::{ListLowering, MirPass};
 
@@ -163,10 +163,21 @@ impl VccValueType {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VccInst {
-    Const { dst: VccReg, value: i64 },
-    Copy { dst: VccReg, src: VccValue },
-    Assume { dst: VccReg, ty: VccValueType },
-    AssertScalar { value: VccValue },
+    Const {
+        dst: VccReg,
+        value: i64,
+    },
+    Copy {
+        dst: VccReg,
+        src: VccValue,
+    },
+    Assume {
+        dst: VccReg,
+        ty: VccValueType,
+    },
+    AssertScalar {
+        value: VccValue,
+    },
     StackAddr {
         dst: VccReg,
         slot: StackSlotId,
@@ -203,13 +214,17 @@ pub enum VccInst {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VccTerminator {
-    Jump { target: VccBlockId },
+    Jump {
+        target: VccBlockId,
+    },
     Branch {
         cond: VccValue,
         if_true: VccBlockId,
         if_false: VccBlockId,
     },
-    Return { value: Option<VccValue> },
+    Return {
+        value: Option<VccValue>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -421,8 +436,7 @@ impl VccVerifier {
                                         return;
                                     }
                                 }
-                                (VccValueType::Ptr(_), other)
-                                | (other, VccValueType::Ptr(_)) => {
+                                (VccValueType::Ptr(_), other) | (other, VccValueType::Ptr(_)) => {
                                     if !self.is_null_scalar(*lhs, lhs_ty)
                                         && !self.is_null_scalar(*rhs, rhs_ty)
                                         && other.class() != VccTypeClass::Ptr
@@ -464,10 +478,7 @@ impl VccVerifier {
                         }
                         state.set_reg(*dst, VccValueType::Bool);
                     }
-                    VccBinOp::Lt
-                    | VccBinOp::Le
-                    | VccBinOp::Gt
-                    | VccBinOp::Ge => {
+                    VccBinOp::Lt | VccBinOp::Le | VccBinOp::Gt | VccBinOp::Ge => {
                         if lhs_ty.class() != VccTypeClass::Scalar
                             && lhs_ty.class() != VccTypeClass::Bool
                         {
@@ -557,16 +568,15 @@ impl VccVerifier {
 
                 let offset_range = state.value_range(*offset, offset_ty);
                 let bounds = match (base_ptr.space, base_ptr.bounds, offset_range) {
-                    (VccAddrSpace::Stack(_), Some(bounds), Some(range)) => bounds
-                        .shifted(range)
-                        .map(Some)
-                        .unwrap_or_else(|| {
+                    (VccAddrSpace::Stack(_), Some(bounds), Some(range)) => {
+                        bounds.shifted(range).map(Some).unwrap_or_else(|| {
                             self.errors.push(VccError::new(
                                 VccErrorKind::PointerBounds,
                                 "stack pointer arithmetic out of bounds",
                             ));
                             None
-                        }),
+                        })
+                    }
                     (VccAddrSpace::Stack(_), Some(_), None) => {
                         self.errors.push(VccError::new(
                             VccErrorKind::UnknownOffset,
@@ -611,10 +621,7 @@ impl VccVerifier {
                                 ));
                                 return;
                             }
-                            if bounds
-                                .shifted_with_size(*offset, size)
-                                .is_none()
-                            {
+                            if bounds.shifted_with_size(*offset, size).is_none() {
                                 self.errors.push(VccError::new(
                                     VccErrorKind::PointerBounds,
                                     "stack load offset out of bounds",
@@ -625,18 +632,12 @@ impl VccVerifier {
                     other => {
                         self.errors.push(VccError::new(
                             VccErrorKind::InvalidLoadStore,
-                            format!(
-                                "load requires pointer operand (got {:?})",
-                                other.class()
-                            ),
+                            format!("load requires pointer operand (got {:?})", other.class()),
                         ));
                         return;
                     }
                 }
-                state.set_reg(
-                    *dst,
-                    VccValueType::Scalar { range: None },
-                );
+                state.set_reg(*dst, VccValueType::Scalar { range: None });
             }
             VccInst::Store {
                 ptr,
@@ -664,10 +665,7 @@ impl VccVerifier {
                                 ));
                                 return;
                             }
-                            if bounds
-                                .shifted_with_size(*offset, size)
-                                .is_none()
-                            {
+                            if bounds.shifted_with_size(*offset, size).is_none() {
                                 self.errors.push(VccError::new(
                                     VccErrorKind::PointerBounds,
                                     "stack store offset out of bounds",
@@ -678,10 +676,7 @@ impl VccVerifier {
                     other => {
                         self.errors.push(VccError::new(
                             VccErrorKind::InvalidLoadStore,
-                            format!(
-                                "store requires pointer operand (got {:?})",
-                                other.class()
-                            ),
+                            format!("store requires pointer operand (got {:?})", other.class()),
                         ));
                         return;
                     }
@@ -790,12 +785,7 @@ impl VccState {
         }
     }
 
-    fn binop_range(
-        &self,
-        op: VccBinOp,
-        lhs: VccValueType,
-        rhs: VccValueType,
-    ) -> Option<VccRange> {
+    fn binop_range(&self, op: VccBinOp, lhs: VccValueType, rhs: VccValueType) -> Option<VccRange> {
         let lhs_range = match lhs {
             VccValueType::Scalar { range } => range,
             VccValueType::Bool => Some(VccRange { min: 0, max: 1 }),
@@ -864,10 +854,7 @@ impl VccState {
     }
 }
 
-pub fn verify_mir(
-    func: &MirFunction,
-    types: &HashMap<VReg, MirType>,
-) -> Result<(), Vec<VccError>> {
+pub fn verify_mir(func: &MirFunction, types: &HashMap<VReg, MirType>) -> Result<(), Vec<VccError>> {
     let list_max = collect_list_max(func);
     let mut verify_func = func.clone();
     let cfg = CFG::build(&verify_func);
@@ -934,13 +921,7 @@ impl<'a> VccLowerer<'a> {
     }
 
     fn lower(&mut self) -> Result<VccFunction, VccError> {
-        let max_block = self
-            .func
-            .blocks
-            .iter()
-            .map(|b| b.id.0)
-            .max()
-            .unwrap_or(0) as usize;
+        let max_block = self.func.blocks.iter().map(|b| b.id.0).max().unwrap_or(0) as usize;
         let mut blocks = Vec::with_capacity(max_block + 1);
         for i in 0..=max_block {
             blocks.push(VccBlock {
@@ -1003,7 +984,12 @@ impl<'a> VccLowerer<'a> {
                     }
                 }
             }
-            MirInst::Load { dst, ptr, offset, ty } => {
+            MirInst::Load {
+                dst,
+                ptr,
+                offset,
+                ty,
+            } => {
                 out.push(VccInst::Load {
                     dst: VccReg(dst.0),
                     ptr: VccReg(ptr.0),
@@ -1013,7 +999,12 @@ impl<'a> VccLowerer<'a> {
                 self.maybe_assume_list_len(*dst, *ptr, *offset, out);
                 self.maybe_assume_type(*dst, ty, out);
             }
-            MirInst::Store { ptr, offset, val, ty } => {
+            MirInst::Store {
+                ptr,
+                offset,
+                val,
+                ty,
+            } => {
                 let vcc_val = self.lower_value(val, out);
                 out.push(VccInst::Store {
                     ptr: VccReg(ptr.0),
@@ -1022,7 +1013,12 @@ impl<'a> VccLowerer<'a> {
                     size: ty.size() as u8,
                 });
             }
-            MirInst::LoadSlot { dst, slot, offset, ty } => {
+            MirInst::LoadSlot {
+                dst,
+                slot,
+                offset,
+                ty,
+            } => {
                 let base = self.stack_addr_temp(*slot, out);
                 out.push(VccInst::Load {
                     dst: VccReg(dst.0),
@@ -1033,7 +1029,12 @@ impl<'a> VccLowerer<'a> {
                 self.maybe_assume_list_len_slot(*dst, *slot, *offset, out);
                 self.maybe_assume_type(*dst, ty, out);
             }
-            MirInst::StoreSlot { slot, offset, val, ty } => {
+            MirInst::StoreSlot {
+                slot,
+                offset,
+                val,
+                ty,
+            } => {
                 let base = self.stack_addr_temp(*slot, out);
                 let vcc_val = self.lower_value(val, out);
                 out.push(VccInst::Store {
@@ -1214,8 +1215,9 @@ impl<'a> VccLowerer<'a> {
                     self.ptr_regs.insert(VccReg(dst.0), info);
                 }
             }
-            MirInst::MapUpdate { map, key, .. } => {
+            MirInst::MapUpdate { map, key, val, .. } => {
                 self.verify_map_key(&map.name, *key, out)?;
+                self.verify_map_value(*val, out)?;
             }
             MirInst::MapDelete { map, key } => {
                 self.verify_map_key(&map.name, *key, out)?;
@@ -1264,10 +1266,7 @@ impl<'a> VccLowerer<'a> {
                 });
             }
             MirInst::ReadStr {
-                dst,
-                ptr,
-                max_len,
-                ..
+                dst, ptr, max_len, ..
             } => {
                 if *max_len == 0 {
                     return Err(VccError::new(
@@ -1621,13 +1620,7 @@ impl<'a> VccLowerer<'a> {
         }
     }
 
-    fn maybe_assume_list_len(
-        &mut self,
-        dst: VReg,
-        ptr: VReg,
-        offset: i32,
-        out: &mut Vec<VccInst>,
-    ) {
+    fn maybe_assume_list_len(&mut self, dst: VReg, ptr: VReg, offset: i32, out: &mut Vec<VccInst>) {
         if offset != 0 {
             return;
         }
@@ -1735,7 +1728,31 @@ impl<'a> VccLowerer<'a> {
         if map_name == STRING_COUNTER_MAP_NAME {
             self.check_ptr_range(key, 16, out)
         } else {
-            self.assert_scalar_reg(key, out);
+            self.verify_map_operand(key, out)
+        }
+    }
+
+    fn verify_map_value(&mut self, value: VReg, out: &mut Vec<VccInst>) -> Result<(), VccError> {
+        self.verify_map_operand(value, out)
+    }
+
+    fn verify_map_operand(&mut self, reg: VReg, out: &mut Vec<VccInst>) -> Result<(), VccError> {
+        let is_ptr = self
+            .types
+            .get(&reg)
+            .map(vcc_type_from_mir)
+            .map(|ty| ty.class() == VccTypeClass::Ptr)
+            .unwrap_or(false)
+            || self.ptr_regs.contains_key(&VccReg(reg.0));
+
+        if is_ptr {
+            let size = match self.types.get(&reg) {
+                Some(MirType::Ptr { pointee, .. }) => pointee.size().max(1),
+                _ => 1,
+            };
+            self.check_ptr_range(reg, size, out)
+        } else {
+            self.assert_scalar_reg(reg, out);
             Ok(())
         }
     }
@@ -1748,9 +1765,7 @@ fn record_field_size(ty: &MirType) -> usize {
         MirType::I16 | MirType::U16 => 8,
         MirType::I8 | MirType::U8 | MirType::Bool => 8,
         MirType::Array { elem, len } if matches!(elem.as_ref(), MirType::U8) && *len == 16 => 16,
-        MirType::Array { elem, len } if matches!(elem.as_ref(), MirType::U8) => {
-            (len + 7) & !7
-        }
+        MirType::Array { elem, len } if matches!(elem.as_ref(), MirType::U8) => (len + 7) & !7,
         _ => 8,
     }
 }
@@ -1819,7 +1834,10 @@ fn collect_list_max(func: &MirFunction) -> HashMap<StackSlotId, usize> {
             .iter()
             .chain(std::iter::once(&block.terminator))
         {
-            if let MirInst::ListNew { buffer, max_len, .. } = inst {
+            if let MirInst::ListNew {
+                buffer, max_len, ..
+            } = inst
+            {
                 maxes
                     .entry(*buffer)
                     .and_modify(|existing: &mut usize| {
@@ -1967,12 +1985,10 @@ mod tests {
         let buffer = func.alloc_stack_slot(8, 1, StackSlotKind::StringBuffer);
         let len = func.alloc_vreg();
 
-        func.block_mut(entry)
-            .instructions
-            .push(MirInst::Copy {
-                dst: len,
-                src: MirValue::Const(0),
-            });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: len,
+            src: MirValue::Const(0),
+        });
         func.block_mut(entry)
             .instructions
             .push(MirInst::StringAppend {
@@ -1994,12 +2010,10 @@ mod tests {
         let buffer = func.alloc_stack_slot(8, 1, StackSlotKind::StringBuffer);
         let len = func.alloc_vreg();
 
-        func.block_mut(entry)
-            .instructions
-            .push(MirInst::Copy {
-                dst: len,
-                src: MirValue::Const(0),
-            });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: len,
+            src: MirValue::Const(0),
+        });
         func.block_mut(entry)
             .instructions
             .push(MirInst::StringAppend {
@@ -2027,12 +2041,10 @@ mod tests {
         let src_buffer = func.alloc_stack_slot(4, 1, StackSlotKind::StringBuffer);
         let len = func.alloc_vreg();
 
-        func.block_mut(entry)
-            .instructions
-            .push(MirInst::Copy {
-                dst: len,
-                src: MirValue::Const(0),
-            });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: len,
+            src: MirValue::Const(0),
+        });
         func.block_mut(entry)
             .instructions
             .push(MirInst::StringAppend {
@@ -2061,12 +2073,10 @@ mod tests {
         let len = func.alloc_vreg();
         let val = func.alloc_vreg();
 
-        func.block_mut(entry)
-            .instructions
-            .push(MirInst::Copy {
-                dst: val,
-                src: MirValue::Const(42),
-            });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: val,
+            src: MirValue::Const(42),
+        });
         func.block_mut(entry)
             .instructions
             .push(MirInst::IntToString {
@@ -2090,12 +2100,10 @@ mod tests {
         let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
         let data = func.alloc_vreg();
 
-        func.block_mut(entry)
-            .instructions
-            .push(MirInst::Copy {
-                dst: data,
-                src: MirValue::StackSlot(slot),
-            });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: data,
+            src: MirValue::StackSlot(slot),
+        });
         func.block_mut(entry)
             .instructions
             .push(MirInst::EmitEvent { data, size: 16 });
@@ -2105,12 +2113,10 @@ mod tests {
 
         let (mut func, entry) = new_mir_function();
         let data = func.alloc_vreg();
-        func.block_mut(entry)
-            .instructions
-            .push(MirInst::Copy {
-                dst: data,
-                src: MirValue::Const(0),
-            });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: data,
+            src: MirValue::Const(0),
+        });
         func.block_mut(entry)
             .instructions
             .push(MirInst::EmitEvent { data, size: 16 });
@@ -2132,14 +2138,12 @@ mod tests {
         let rhs = func.alloc_stack_slot(4, 1, StackSlotKind::StringBuffer);
         let dst = func.alloc_vreg();
 
-        func.block_mut(entry)
-            .instructions
-            .push(MirInst::StrCmp {
-                dst,
-                lhs,
-                rhs,
-                len: 8,
-            });
+        func.block_mut(entry).instructions.push(MirInst::StrCmp {
+            dst,
+            lhs,
+            rhs,
+            len: 8,
+        });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let err = verify_mir(&func, &HashMap::new()).expect_err("expected bounds error");

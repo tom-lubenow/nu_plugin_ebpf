@@ -18,7 +18,7 @@
 //! 6. Compile blocks in reverse post-order
 //! 7. Fix up jumps and emit bytecode
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::compiler::CompileError;
 use crate::compiler::cfg::CFG;
@@ -27,23 +27,22 @@ use crate::compiler::elf::{
     SubfunctionSymbol,
 };
 use crate::compiler::graph_coloring::{
-    compute_loop_depths, ColoringResult, GraphColoringAllocator,
+    ColoringResult, GraphColoringAllocator, compute_loop_depths,
 };
 use crate::compiler::hindley_milner::HMType;
 use crate::compiler::instruction::{BpfHelper, EbpfInsn, EbpfReg, opcode};
 use crate::compiler::lir::{LirBlock, LirFunction, LirInst, LirProgram};
 use crate::compiler::mir::{
-    BinOpKind, BlockId, CtxField, MapKind, MirProgram, MirType, MirTypeHints, MirValue,
-    RecordFieldDef, StackSlot, StackSlotId, StackSlotKind, StringAppendType, SubfunctionId,
-    UnaryOpKind, VReg,
-    COUNTER_MAP_NAME, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME,
-    TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
+    BinOpKind, BlockId, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, MapKind,
+    MirProgram, MirType, MirTypeHints, MirValue, RINGBUF_MAP_NAME, RecordFieldDef,
+    STRING_COUNTER_MAP_NAME, StackSlot, StackSlotId, StackSlotKind, StringAppendType,
+    SubfunctionId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, UnaryOpKind, VReg,
 };
 use crate::compiler::mir_to_lir::lower_mir_to_lir_checked;
 use crate::compiler::passes::{ListLowering, MirPass, SsaDestruction};
 use crate::compiler::type_infer::{TypeInference, infer_subfunction_schemes};
-use crate::compiler::verifier_types;
 use crate::compiler::vcc;
+use crate::compiler::verifier_types;
 use crate::kernel_btf::KernelBtf;
 
 /// Result of MIR to eBPF compilation
@@ -60,6 +59,26 @@ pub struct MirCompileResult {
     pub subfunction_symbols: Vec<SubfunctionSymbol>,
     /// Optional schema for structured events
     pub event_schema: Option<EventSchema>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ProgramVregTypes {
+    main: HashMap<VReg, MirType>,
+    subfunctions: Vec<HashMap<VReg, MirType>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MapLayoutSpec {
+    kind: MapKind,
+    key_size: u32,
+    value_size: u32,
+    value_size_defaulted: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum MapOperandLayout {
+    Scalar { size: usize },
+    Pointer { size: usize },
 }
 
 /// MIR to eBPF compiler
@@ -104,6 +123,12 @@ pub struct MirToEbpfCompiler<'a> {
     needs_ustack_map: bool,
     /// Names of program array maps used for tail calls
     tail_call_maps: BTreeSet<String>,
+    /// Generic maps inferred from map operations
+    generic_map_specs: BTreeMap<String, MapLayoutSpec>,
+    /// MIR vreg types for the current function being compiled
+    current_types: HashMap<VReg, MirType>,
+    /// MIR vreg types for all functions in this program
+    program_types: ProgramVregTypes,
     /// Event schema for structured output
     event_schema: Option<EventSchema>,
     /// Available physical registers for allocation
@@ -119,6 +144,14 @@ pub struct MirToEbpfCompiler<'a> {
 impl<'a> MirToEbpfCompiler<'a> {
     /// Create a new compiler
     pub fn new(lir: &'a LirProgram, probe_ctx: Option<&'a ProbeContext>) -> Self {
+        Self::new_with_types(lir, probe_ctx, ProgramVregTypes::default())
+    }
+
+    fn new_with_types(
+        lir: &'a LirProgram,
+        probe_ctx: Option<&'a ProbeContext>,
+        program_types: ProgramVregTypes,
+    ) -> Self {
         Self {
             lir,
             probe_ctx,
@@ -140,6 +173,9 @@ impl<'a> MirToEbpfCompiler<'a> {
             needs_kstack_map: false,
             needs_ustack_map: false,
             tail_call_maps: BTreeSet::new(),
+            generic_map_specs: BTreeMap::new(),
+            current_types: HashMap::new(),
+            program_types,
             event_schema: None,
             // Allow use of caller-saved regs; R9 remains reserved for the context pointer.
             available_regs: vec![
@@ -161,6 +197,7 @@ impl<'a> MirToEbpfCompiler<'a> {
     /// Compile the MIR program to eBPF
     pub fn compile(mut self) -> Result<MirCompileResult, CompileError> {
         // Compile the main function
+        self.current_types = self.program_types.main.clone();
         self.prepare_function_state(
             &self.lir.main,
             self.available_regs.clone(),
@@ -274,6 +311,18 @@ impl<'a> MirToEbpfCompiler<'a> {
             maps.push(EbpfMap {
                 name: map_name.clone(),
                 def: BpfMapDef::prog_array(1024),
+            });
+        }
+        for (map_name, spec) in &self.generic_map_specs {
+            if maps.iter().any(|m| m.name == *map_name) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "map '{}' conflicts with an existing map name",
+                    map_name
+                )));
+            }
+            maps.push(EbpfMap {
+                name: map_name.clone(),
+                def: self.build_generic_map_def(*spec)?,
             });
         }
 
@@ -484,8 +533,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             stack_offset,
             parallel_move_cycle_offset,
             parallel_move_scratch_offset,
-        ) =
-            self.layout_stack_for_function(func, &alloc)?;
+        ) = self.layout_stack_for_function(func, &alloc)?;
 
         self.vreg_to_phys = alloc.coloring.clone();
         self.vreg_spills = vreg_spills;
@@ -789,8 +837,11 @@ impl<'a> MirToEbpfCompiler<'a> {
                                         "ParallelMove requires a scratch temp slot".into(),
                                     )
                                 })?;
-                                self.instructions
-                                    .push(EbpfInsn::stxdw(EbpfReg::R10, scratch_temp, reg));
+                                self.instructions.push(EbpfInsn::stxdw(
+                                    EbpfReg::R10,
+                                    scratch_temp,
+                                    reg,
+                                ));
                                 for mv in &mut pending {
                                     if mv.src == Loc::Reg(reg) {
                                         mv.src = Loc::Stack(scratch_temp);
@@ -811,9 +862,7 @@ impl<'a> MirToEbpfCompiler<'a> {
 
                 while !pending.is_empty() {
                     let dsts: HashSet<Loc> = pending.iter().map(|m| m.dst).collect();
-                    let ready_idx = pending
-                        .iter()
-                        .position(|m| !dsts.contains(&m.src));
+                    let ready_idx = pending.iter().position(|m| !dsts.contains(&m.src));
 
                     if let Some(idx) = ready_idx {
                         let mv = pending.remove(idx);
@@ -838,10 +887,16 @@ impl<'a> MirToEbpfCompiler<'a> {
                                             .into(),
                                     )
                                 })?;
-                                self.instructions
-                                    .push(EbpfInsn::ldxdw(temp_reg, EbpfReg::R10, src_off));
-                                self.instructions
-                                    .push(EbpfInsn::stxdw(EbpfReg::R10, dst_off, temp_reg));
+                                self.instructions.push(EbpfInsn::ldxdw(
+                                    temp_reg,
+                                    EbpfReg::R10,
+                                    src_off,
+                                ));
+                                self.instructions.push(EbpfInsn::stxdw(
+                                    EbpfReg::R10,
+                                    dst_off,
+                                    temp_reg,
+                                ));
                             }
                         }
                         continue;
@@ -851,16 +906,18 @@ impl<'a> MirToEbpfCompiler<'a> {
                     let src = pending[0].src;
                     match (temp_loc, src) {
                         (Loc::Reg(temp), Loc::Reg(src_reg)) => {
-                            self.instructions
-                                .push(EbpfInsn::mov64_reg(temp, src_reg));
+                            self.instructions.push(EbpfInsn::mov64_reg(temp, src_reg));
                         }
                         (Loc::Reg(temp), Loc::Stack(off)) => {
                             self.instructions
                                 .push(EbpfInsn::ldxdw(temp, EbpfReg::R10, off));
                         }
                         (Loc::Stack(temp_off), Loc::Reg(src_reg)) => {
-                            self.instructions
-                                .push(EbpfInsn::stxdw(EbpfReg::R10, temp_off, src_reg));
+                            self.instructions.push(EbpfInsn::stxdw(
+                                EbpfReg::R10,
+                                temp_off,
+                                src_reg,
+                            ));
                         }
                         (Loc::Stack(temp_off), Loc::Stack(src_off)) => {
                             let temp_reg = scratch_reg.ok_or_else(|| {
@@ -868,17 +925,28 @@ impl<'a> MirToEbpfCompiler<'a> {
                                     "ParallelMove stack source requires a scratch register".into(),
                                 )
                             })?;
-                            self.instructions
-                                .push(EbpfInsn::ldxdw(temp_reg, EbpfReg::R10, src_off));
-                            self.instructions
-                                .push(EbpfInsn::stxdw(EbpfReg::R10, temp_off, temp_reg));
+                            self.instructions.push(EbpfInsn::ldxdw(
+                                temp_reg,
+                                EbpfReg::R10,
+                                src_off,
+                            ));
+                            self.instructions.push(EbpfInsn::stxdw(
+                                EbpfReg::R10,
+                                temp_off,
+                                temp_reg,
+                            ));
                         }
                     }
                     pending[0].src = temp_loc;
                 }
             }
 
-            LirInst::Load { dst, ptr, offset, ty } => {
+            LirInst::Load {
+                dst,
+                ptr,
+                offset,
+                ty,
+            } => {
                 let dst_reg = self.alloc_dst_reg(*dst)?;
                 let ptr_reg = self.ensure_reg(*ptr)?;
                 let size = ty.size();
@@ -891,7 +959,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.emit_load(dst_reg, ptr_reg, offset, size)?;
             }
 
-            LirInst::Store { ptr, offset, val, ty } => {
+            LirInst::Store {
+                ptr,
+                offset,
+                val,
+                ty,
+            } => {
                 let ptr_reg = self.ensure_reg(*ptr)?;
                 let size = ty.size();
                 let offset = i16::try_from(*offset).map_err(|_| {
@@ -904,14 +977,24 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.emit_store(ptr_reg, offset, val_reg, size)?;
             }
 
-            LirInst::LoadSlot { dst, slot, offset, ty } => {
+            LirInst::LoadSlot {
+                dst,
+                slot,
+                offset,
+                ty,
+            } => {
                 let dst_reg = self.alloc_dst_reg(*dst)?;
                 let size = ty.size();
                 let offset = self.slot_offset_i16(*slot, *offset)?;
                 self.emit_load(dst_reg, EbpfReg::R10, offset, size)?;
             }
 
-            LirInst::StoreSlot { slot, offset, val, ty } => {
+            LirInst::StoreSlot {
+                slot,
+                offset,
+                val,
+                ty,
+            } => {
                 let size = ty.size();
                 let offset = self.slot_offset_i16(*slot, *offset)?;
                 let val_reg = self.value_to_reg(val)?;
@@ -1032,14 +1115,36 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.compile_emit_record(fields)?;
             }
 
-            LirInst::MapUpdate { map, key, .. } => {
-                if map.name == "counters" {
+            LirInst::MapLookup { dst, map, key } => {
+                let dst_reg = self.alloc_dst_reg(*dst)?;
+                let key_reg = self.ensure_reg(*key)?;
+                self.compile_generic_map_lookup(*dst, dst_reg, map, *key, key_reg)?;
+            }
+
+            LirInst::MapUpdate {
+                map,
+                key,
+                val,
+                flags,
+            } => {
+                if map.name == COUNTER_MAP_NAME {
                     self.needs_counter_map = true;
+                    let key_reg = self.ensure_reg(*key)?;
+                    self.compile_counter_map_update(&map.name, key_reg)?;
                 } else if map.name == STRING_COUNTER_MAP_NAME {
                     self.needs_string_counter_map = true;
+                    let key_reg = self.ensure_reg(*key)?;
+                    self.compile_counter_map_update(&map.name, key_reg)?;
+                } else {
+                    let key_reg = self.ensure_reg(*key)?;
+                    let val_reg = self.ensure_reg(*val)?;
+                    self.compile_generic_map_update(map, *key, key_reg, *val, val_reg, *flags)?;
                 }
+            }
+
+            LirInst::MapDelete { map, key } => {
                 let key_reg = self.ensure_reg(*key)?;
-                self.compile_map_update(&map.name, key_reg)?;
+                self.compile_generic_map_delete(map, *key, key_reg)?;
             }
 
             LirInst::ReadStr {
@@ -1549,10 +1654,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
 
             // Instructions reserved for future features
-            LirInst::MapLookup { .. }
-            | LirInst::MapDelete { .. }
-            | LirInst::StrCmp { .. }
-            | LirInst::RecordStore { .. } => {
+            LirInst::StrCmp { .. } | LirInst::RecordStore { .. } => {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "MIR instruction {:?} not yet implemented",
                     inst
@@ -1753,7 +1855,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "load size {} not supported",
                     size
-                )))
+                )));
             }
         }
         Ok(())
@@ -1775,7 +1877,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "store size {} not supported",
                     size
-                )))
+                )));
             }
         }
         Ok(())
@@ -1836,9 +1938,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             CtxField::Comm => {
                 let comm_offset = if let Some(slot) = slot {
                     *self.slot_offsets.get(&slot).ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "comm stack slot not found".into(),
-                        )
+                        CompileError::UnsupportedInstruction("comm stack slot not found".into())
                     })?
                 } else {
                     // Fallback: allocate temporary stack space if no slot was provided.
@@ -2223,8 +2323,12 @@ impl<'a> MirToEbpfCompiler<'a> {
         }
     }
 
-    /// Compile map update (for count operation)
-    fn compile_map_update(&mut self, map_name: &str, key_reg: EbpfReg) -> Result<(), CompileError> {
+    /// Compile map update (specialized for `count` command semantics).
+    fn compile_counter_map_update(
+        &mut self,
+        map_name: &str,
+        key_reg: EbpfReg,
+    ) -> Result<(), CompileError> {
         // For count: lookup key, increment, update
         let key_size = if map_name == STRING_COUNTER_MAP_NAME {
             16
@@ -2323,6 +2427,332 @@ impl<'a> MirToEbpfCompiler<'a> {
         Ok(())
     }
 
+    fn is_builtin_map_name(name: &str) -> bool {
+        matches!(
+            name,
+            RINGBUF_MAP_NAME
+                | COUNTER_MAP_NAME
+                | STRING_COUNTER_MAP_NAME
+                | HISTOGRAM_MAP_NAME
+                | TIMESTAMP_MAP_NAME
+                | KSTACK_MAP_NAME
+                | USTACK_MAP_NAME
+        )
+    }
+
+    fn supported_generic_map_kind(kind: MapKind) -> bool {
+        matches!(
+            kind,
+            MapKind::Hash | MapKind::Array | MapKind::PerCpuHash | MapKind::PerCpuArray
+        )
+    }
+
+    fn map_operand_layout(
+        &self,
+        vreg: VReg,
+        what: &str,
+        default_size: usize,
+    ) -> Result<MapOperandLayout, CompileError> {
+        let ty = self.current_types.get(&vreg);
+        match ty {
+            Some(MirType::Ptr { pointee, .. }) => {
+                let size = match pointee.size() {
+                    0 => default_size,
+                    n => n,
+                };
+                Ok(MapOperandLayout::Pointer { size })
+            }
+            Some(ty) => {
+                let size = match ty.size() {
+                    0 => default_size,
+                    n => n,
+                };
+                if size > 8 {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{} v{} has size {} bytes and must be passed as a pointer",
+                        what, vreg.0, size
+                    )));
+                }
+                Ok(MapOperandLayout::Scalar { size })
+            }
+            None => Ok(MapOperandLayout::Scalar { size: default_size }),
+        }
+    }
+
+    fn value_ptr_size_from_lookup_dst(&self, dst: VReg) -> usize {
+        match self.current_types.get(&dst) {
+            Some(MirType::Ptr { pointee, .. }) => pointee.size().max(1),
+            _ => 8,
+        }
+    }
+
+    fn allocate_stack_temp(&mut self, size: usize) -> Result<i16, CompileError> {
+        let aligned = size.div_ceil(8) * 8;
+        self.check_stack_space(aligned as i16)?;
+        self.stack_offset -= aligned as i16;
+        Ok(self.stack_offset)
+    }
+
+    fn emit_store_scalar_to_stack(
+        &mut self,
+        src: EbpfReg,
+        offset: i16,
+        size: usize,
+    ) -> Result<(), CompileError> {
+        match size {
+            1 => self
+                .instructions
+                .push(EbpfInsn::stxb(EbpfReg::R10, offset, src)),
+            2 => self
+                .instructions
+                .push(EbpfInsn::stxh(EbpfReg::R10, offset, src)),
+            4 => self
+                .instructions
+                .push(EbpfInsn::stxw(EbpfReg::R10, offset, src)),
+            8 => self
+                .instructions
+                .push(EbpfInsn::stxdw(EbpfReg::R10, offset, src)),
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "unsupported scalar map operand size {} bytes",
+                    size
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn emit_map_fd_load(&mut self, map_name: &str) {
+        let reloc_offset = self.instructions.len() * 8;
+        let [insn1, insn2] = EbpfInsn::ld_map_fd(EbpfReg::R1);
+        self.instructions.push(insn1);
+        self.instructions.push(insn2);
+        self.relocations.push(MapRelocation {
+            insn_offset: reloc_offset,
+            map_name: map_name.to_string(),
+        });
+    }
+
+    fn setup_map_key_arg(
+        &mut self,
+        key_reg: EbpfReg,
+        layout: MapOperandLayout,
+    ) -> Result<(), CompileError> {
+        match layout {
+            MapOperandLayout::Pointer { .. } => {
+                if key_reg != EbpfReg::R2 {
+                    self.instructions
+                        .push(EbpfInsn::mov64_reg(EbpfReg::R2, key_reg));
+                }
+            }
+            MapOperandLayout::Scalar { size } => {
+                let key_offset = self.allocate_stack_temp(size)?;
+                self.emit_store_scalar_to_stack(key_reg, key_offset, size)?;
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R2, EbpfReg::R10));
+                self.instructions
+                    .push(EbpfInsn::add64_imm(EbpfReg::R2, key_offset as i32));
+            }
+        }
+        Ok(())
+    }
+
+    fn setup_map_value_arg(
+        &mut self,
+        value_reg: EbpfReg,
+        layout: MapOperandLayout,
+    ) -> Result<(), CompileError> {
+        match layout {
+            MapOperandLayout::Pointer { .. } => {
+                if value_reg != EbpfReg::R3 {
+                    self.instructions
+                        .push(EbpfInsn::mov64_reg(EbpfReg::R3, value_reg));
+                }
+            }
+            MapOperandLayout::Scalar { size } => {
+                let value_offset = self.allocate_stack_temp(size)?;
+                self.emit_store_scalar_to_stack(value_reg, value_offset, size)?;
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R3, EbpfReg::R10));
+                self.instructions
+                    .push(EbpfInsn::add64_imm(EbpfReg::R3, value_offset as i32));
+            }
+        }
+        Ok(())
+    }
+
+    fn register_generic_map_spec(
+        &mut self,
+        map: &crate::compiler::mir::MapRef,
+        key_size: usize,
+        value_size: Option<usize>,
+    ) -> Result<(), CompileError> {
+        if Self::is_builtin_map_name(&map.name) {
+            return Ok(());
+        }
+        if !Self::supported_generic_map_kind(map.kind) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map operations do not support map kind {:?} for '{}'",
+                map.kind, map.name
+            )));
+        }
+
+        let mut inferred_key_size = key_size.max(1) as u32;
+        if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
+            inferred_key_size = 4;
+        }
+        let (inferred_value_size, defaulted) = match value_size {
+            Some(size) => (size.max(1) as u32, false),
+            None => (8, true),
+        };
+
+        match self.generic_map_specs.get_mut(&map.name) {
+            Some(spec) => {
+                if spec.kind != map.kind {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "map '{}' used with conflicting kinds: {:?} vs {:?}",
+                        map.name, spec.kind, map.kind
+                    )));
+                }
+                if spec.key_size != inferred_key_size {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "map '{}' used with conflicting key sizes: {} vs {}",
+                        map.name, spec.key_size, inferred_key_size
+                    )));
+                }
+                if spec.value_size != inferred_value_size {
+                    if spec.value_size_defaulted && !defaulted {
+                        spec.value_size = inferred_value_size;
+                        spec.value_size_defaulted = false;
+                    } else if !(defaulted && !spec.value_size_defaulted) {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "map '{}' used with conflicting value sizes: {} vs {}",
+                            map.name, spec.value_size, inferred_value_size
+                        )));
+                    }
+                }
+            }
+            None => {
+                self.generic_map_specs.insert(
+                    map.name.clone(),
+                    MapLayoutSpec {
+                        kind: map.kind,
+                        key_size: inferred_key_size,
+                        value_size: inferred_value_size,
+                        value_size_defaulted: defaulted,
+                    },
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    fn build_generic_map_def(&self, spec: MapLayoutSpec) -> Result<BpfMapDef, CompileError> {
+        let max_entries = 10240;
+        let map_def = match spec.kind {
+            MapKind::Hash => BpfMapDef::hash(spec.key_size, spec.value_size, max_entries),
+            MapKind::Array => BpfMapDef::array(spec.value_size, max_entries),
+            MapKind::PerCpuHash => {
+                BpfMapDef::per_cpu_hash(spec.key_size, spec.value_size, max_entries)
+            }
+            MapKind::PerCpuArray => BpfMapDef::per_cpu_array(spec.value_size, max_entries),
+            other => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "map kind {:?} is not supported for generic map operations",
+                    other
+                )));
+            }
+        };
+        Ok(map_def)
+    }
+
+    fn compile_generic_map_lookup(
+        &mut self,
+        dst: VReg,
+        dst_reg: EbpfReg,
+        map: &crate::compiler::mir::MapRef,
+        key: VReg,
+        key_reg: EbpfReg,
+    ) -> Result<(), CompileError> {
+        let key_layout = self.map_operand_layout(key, "map key", 8)?;
+        let key_size = match key_layout {
+            MapOperandLayout::Pointer { size } | MapOperandLayout::Scalar { size } => size,
+        };
+        let value_size = self.value_ptr_size_from_lookup_dst(dst);
+        self.register_generic_map_spec(map, key_size, Some(value_size))?;
+
+        self.setup_map_key_arg(key_reg, key_layout)?;
+        self.emit_map_fd_load(&map.name);
+        self.instructions
+            .push(EbpfInsn::call(BpfHelper::MapLookupElem));
+        if dst_reg != EbpfReg::R0 {
+            self.instructions
+                .push(EbpfInsn::mov64_reg(dst_reg, EbpfReg::R0));
+        }
+        Ok(())
+    }
+
+    fn compile_generic_map_update(
+        &mut self,
+        map: &crate::compiler::mir::MapRef,
+        key: VReg,
+        key_reg: EbpfReg,
+        val: VReg,
+        val_reg: EbpfReg,
+        flags: u64,
+    ) -> Result<(), CompileError> {
+        let key_layout = self.map_operand_layout(key, "map key", 8)?;
+        let val_layout = self.map_operand_layout(val, "map value", 8)?;
+        let key_size = match key_layout {
+            MapOperandLayout::Pointer { size } | MapOperandLayout::Scalar { size } => size,
+        };
+        let value_size = match val_layout {
+            MapOperandLayout::Pointer { size } | MapOperandLayout::Scalar { size } => size,
+        };
+        self.register_generic_map_spec(map, key_size, Some(value_size))?;
+        if flags > i32::MAX as u64 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map update flags {} exceed supported 32-bit immediate range",
+                flags
+            )));
+        }
+
+        self.setup_map_key_arg(key_reg, key_layout)?;
+        self.setup_map_value_arg(val_reg, val_layout)?;
+        self.instructions
+            .push(EbpfInsn::mov64_imm(EbpfReg::R4, flags as i32));
+        self.emit_map_fd_load(&map.name);
+        self.instructions
+            .push(EbpfInsn::call(BpfHelper::MapUpdateElem));
+        Ok(())
+    }
+
+    fn compile_generic_map_delete(
+        &mut self,
+        map: &crate::compiler::mir::MapRef,
+        key: VReg,
+        key_reg: EbpfReg,
+    ) -> Result<(), CompileError> {
+        if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map delete is not supported for array map kind {:?} ('{}')",
+                map.kind, map.name
+            )));
+        }
+        let key_layout = self.map_operand_layout(key, "map key", 8)?;
+        let key_size = match key_layout {
+            MapOperandLayout::Pointer { size } | MapOperandLayout::Scalar { size } => size,
+        };
+        self.register_generic_map_spec(map, key_size, None)?;
+
+        self.setup_map_key_arg(key_reg, key_layout)?;
+        self.emit_map_fd_load(&map.name);
+        self.instructions
+            .push(EbpfInsn::call(BpfHelper::MapDeleteElem));
+        Ok(())
+    }
+
     /// Compile read string from user/kernel memory
     fn compile_read_str(
         &mut self,
@@ -2396,6 +2826,12 @@ impl<'a> MirToEbpfCompiler<'a> {
 
         for (idx, subfn) in subfunctions.iter().enumerate() {
             let subfn_id = SubfunctionId(idx as u32);
+            self.current_types = self
+                .program_types
+                .subfunctions
+                .get(idx)
+                .cloned()
+                .unwrap_or_default();
 
             // Record the start offset of this subfunction
             let start_offset = self.instructions.len();
@@ -2843,10 +3279,10 @@ pub fn compile_mir_to_ebpf_with_hints(
         let _ = ssa_destruct.run(subfn, &cfg);
     }
 
-    verify_mir_program(&program, probe_ctx, type_hints)?;
+    let program_types = verify_mir_program(&program, probe_ctx, type_hints)?;
     let lir_program = lower_mir_to_lir_checked(&program)?;
 
-    let compiler = MirToEbpfCompiler::new(&lir_program, probe_ctx);
+    let compiler = MirToEbpfCompiler::new_with_types(&lir_program, probe_ctx, program_types);
     compiler.compile()
 }
 
@@ -2854,11 +3290,8 @@ fn verify_mir_program(
     program: &MirProgram,
     probe_ctx: Option<&ProbeContext>,
     type_hints: Option<&MirTypeHints>,
-) -> Result<(), CompileError> {
-    let subfn_schemes = match infer_subfunction_schemes(
-        &program.subfunctions,
-        probe_ctx.cloned(),
-    ) {
+) -> Result<ProgramVregTypes, CompileError> {
+    let subfn_schemes = match infer_subfunction_schemes(&program.subfunctions, probe_ctx.cloned()) {
         Ok(schemes) => schemes,
         Err(errors) => {
             if let Some(err) = errors.into_iter().next() {
@@ -2875,7 +3308,9 @@ fn verify_mir_program(
         all_funcs.push((subfn, hints));
     }
 
-    for (func, hints) in all_funcs {
+    let mut program_types = ProgramVregTypes::default();
+
+    for (idx, (func, hints)) in all_funcs.into_iter().enumerate() {
         let mut type_infer = TypeInference::new_with_env(
             probe_ctx.cloned(),
             Some(&subfn_schemes),
@@ -2904,16 +3339,21 @@ fn verify_mir_program(
                 .join("; ");
             return Err(CompileError::VccError(message));
         }
+        if idx == 0 {
+            program_types.main = types;
+        } else {
+            program_types.subfunctions.push(types);
+        }
     }
 
-    Ok(())
+    Ok(program_types)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::mir_to_lir::lower_mir_to_lir;
     use crate::compiler::ir_to_mir::lower_ir_to_mir;
+    use crate::compiler::mir_to_lir::lower_mir_to_lir;
     use nu_protocol::RegId;
     use nu_protocol::ast::{Math, Operator};
     use nu_protocol::ir::{Instruction, IrBlock, Literal};
@@ -2993,9 +3433,11 @@ mod tests {
         func.precolored.insert(v1, EbpfReg::R1);
         func.precolored.insert(v2, EbpfReg::R2);
 
-        func.block_mut(entry).instructions.push(LirInst::ParallelMove {
-            moves: vec![(v0, v1), (v1, v2), (v2, v0)],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(LirInst::ParallelMove {
+                moves: vec![(v0, v1), (v1, v2), (v2, v0)],
+            });
         func.block_mut(entry).terminator = LirInst::Return {
             val: Some(MirValue::VReg(v0)),
         };
@@ -4201,6 +4643,224 @@ mod tests {
     }
 
     #[test]
+    fn test_map_lookup_compiles_and_emits_generic_map() {
+        use crate::compiler::mir::*;
+
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(7),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapLookup {
+            dst,
+            map: MapRef {
+                name: "custom_lookup".to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+        });
+        func.block_mut(entry).terminator = MirInst::Return {
+            val: Some(MirValue::Const(0)),
+        };
+
+        let program = MirProgram {
+            main: func,
+            subfunctions: vec![],
+        };
+
+        let result = compile_mir_to_ebpf(&program, None).expect("map lookup should compile");
+        let map = result
+            .maps
+            .iter()
+            .find(|m| m.name == "custom_lookup")
+            .expect("expected generic map definition");
+        assert_eq!(map.def.key_size, 8);
+        assert_eq!(map.def.value_size, 8);
+        assert!(
+            result
+                .relocations
+                .iter()
+                .any(|r| r.map_name == "custom_lookup")
+        );
+
+        let has_lookup_helper = result.bytecode.chunks(8).any(|chunk| {
+            chunk[0] == opcode::CALL
+                && i32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]])
+                    == BpfHelper::MapLookupElem as i32
+        });
+        assert!(
+            has_lookup_helper,
+            "expected bpf_map_lookup_elem helper call"
+        );
+    }
+
+    #[test]
+    fn test_map_update_compiles_and_emits_generic_map() {
+        use crate::compiler::mir::*;
+
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+        let val = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(42),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: val,
+            src: MirValue::Const(99),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+            map: MapRef {
+                name: "custom_update".to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+            val,
+            flags: 1,
+        });
+        func.block_mut(entry).terminator = MirInst::Return {
+            val: Some(MirValue::Const(0)),
+        };
+
+        let program = MirProgram {
+            main: func,
+            subfunctions: vec![],
+        };
+
+        let result = compile_mir_to_ebpf(&program, None).expect("map update should compile");
+        let map = result
+            .maps
+            .iter()
+            .find(|m| m.name == "custom_update")
+            .expect("expected generic map definition");
+        assert_eq!(map.def.key_size, 8);
+        assert_eq!(map.def.value_size, 8);
+        assert!(
+            result
+                .relocations
+                .iter()
+                .any(|r| r.map_name == "custom_update")
+        );
+
+        let has_update_helper = result.bytecode.chunks(8).any(|chunk| {
+            chunk[0] == opcode::CALL
+                && i32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]])
+                    == BpfHelper::MapUpdateElem as i32
+        });
+        assert!(
+            has_update_helper,
+            "expected bpf_map_update_elem helper call"
+        );
+    }
+
+    #[test]
+    fn test_map_delete_compiles_and_emits_generic_map() {
+        use crate::compiler::mir::*;
+
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(11),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapDelete {
+            map: MapRef {
+                name: "custom_delete".to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+        });
+        func.block_mut(entry).terminator = MirInst::Return {
+            val: Some(MirValue::Const(0)),
+        };
+
+        let program = MirProgram {
+            main: func,
+            subfunctions: vec![],
+        };
+
+        let result = compile_mir_to_ebpf(&program, None).expect("map delete should compile");
+        let map = result
+            .maps
+            .iter()
+            .find(|m| m.name == "custom_delete")
+            .expect("expected generic map definition");
+        assert_eq!(map.def.key_size, 8);
+        assert_eq!(map.def.value_size, 8);
+        assert!(
+            result
+                .relocations
+                .iter()
+                .any(|r| r.map_name == "custom_delete")
+        );
+
+        let has_delete_helper = result.bytecode.chunks(8).any(|chunk| {
+            chunk[0] == opcode::CALL
+                && i32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]])
+                    == BpfHelper::MapDeleteElem as i32
+        });
+        assert!(
+            has_delete_helper,
+            "expected bpf_map_delete_elem helper call"
+        );
+    }
+
+    #[test]
+    fn test_map_delete_rejects_array_maps() {
+        use crate::compiler::mir::*;
+
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapDelete {
+            map: MapRef {
+                name: "array_delete".to_string(),
+                kind: MapKind::Array,
+            },
+            key,
+        });
+        func.block_mut(entry).terminator = MirInst::Return {
+            val: Some(MirValue::Const(0)),
+        };
+
+        let program = MirProgram {
+            main: func,
+            subfunctions: vec![],
+        };
+
+        match compile_mir_to_ebpf(&program, None) {
+            Ok(_) => panic!("expected array map delete rejection, got Ok"),
+            Err(err) => {
+                let msg = err.to_string();
+                assert!(
+                    msg.contains("array map kind") || msg.contains("Array"),
+                    "unexpected error: {msg}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn test_tail_call_compiles_and_emits_prog_array_map() {
         use crate::compiler::mir::*;
 
@@ -4232,11 +4892,16 @@ mod tests {
             .iter()
             .find(|m| m.name == "tail_targets")
             .expect("expected prog array map");
-        assert_eq!(map.def.map_type, crate::compiler::elf::BpfMapType::ProgArray as u32);
-        assert!(result
-            .relocations
-            .iter()
-            .any(|r| r.map_name == "tail_targets"));
+        assert_eq!(
+            map.def.map_type,
+            crate::compiler::elf::BpfMapType::ProgArray as u32
+        );
+        assert!(
+            result
+                .relocations
+                .iter()
+                .any(|r| r.map_name == "tail_targets")
+        );
 
         let has_tail_call_helper = result.bytecode.chunks(8).any(|chunk| {
             chunk[0] == opcode::CALL
@@ -4296,11 +4961,13 @@ mod tests {
             args.push(MirValue::VReg(v));
         }
         let dst = func.alloc_vreg();
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 14, // bpf_get_current_pid_tgid
-            args,
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 14, // bpf_get_current_pid_tgid
+                args,
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let program = MirProgram {
@@ -5098,9 +5765,9 @@ mod tests {
     /// This tests the fix for the R0 initialization bug and proper register allocation
     #[test]
     fn test_list_literal_compilation() {
+        use crate::compiler::cfg::CFG;
         use crate::compiler::mir::*;
         use crate::compiler::passes::{ListLowering, MirPass};
-        use crate::compiler::cfg::CFG;
 
         let mut func = MirFunction::new();
         let entry = func.alloc_block();

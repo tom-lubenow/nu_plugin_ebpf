@@ -25,12 +25,11 @@ use super::hindley_milner::{
 };
 use super::mir::{
     AddressSpace, BasicBlock, BinOpKind, CtxField, MapKind, MirFunction, MirInst, MirType,
-    MirValue, StackSlotId, StackSlotKind, StringAppendType, SubfunctionId, UnaryOpKind, VReg,
-    STRING_COUNTER_MAP_NAME,
+    MirValue, STRING_COUNTER_MAP_NAME, StackSlotId, StackSlotKind, StringAppendType, SubfunctionId,
+    UnaryOpKind, VReg,
 };
 
 pub type SubfnSchemeMap = HashMap<SubfunctionId, TypeScheme>;
-
 
 /// Type inference error
 #[derive(Debug, Clone)]
@@ -55,12 +54,16 @@ impl ValueRange {
         match (self, other) {
             (ValueRange::Unset, other) => other,
             (ValueRange::Unknown, _) | (_, ValueRange::Unknown) => ValueRange::Unknown,
-            (ValueRange::Known { min, max }, ValueRange::Known { min: omin, max: omax }) => {
+            (
+                ValueRange::Known { min, max },
                 ValueRange::Known {
-                    min: min.min(omin),
-                    max: max.max(omax),
-                }
-            }
+                    min: omin,
+                    max: omax,
+                },
+            ) => ValueRange::Known {
+                min: min.min(omin),
+                max: max.max(omax),
+            },
             (known, ValueRange::Unset) => known,
         }
     }
@@ -168,9 +171,7 @@ impl<'a> TypeInference<'a> {
     ///
     /// Returns the type map on success, or a list of type errors.
     pub fn infer(&mut self, func: &MirFunction) -> Result<HashMap<VReg, MirType>, Vec<TypeError>> {
-        let total_vregs = func
-            .vreg_count
-            .max(func.param_count as u32);
+        let total_vregs = func.vreg_count.max(func.param_count as u32);
 
         // Phase 1: Assign fresh type variables to all vregs
         for i in 0..total_vregs {
@@ -311,9 +312,7 @@ impl<'a> TypeInference<'a> {
                 let scheme = self
                     .subfn_schemes
                     .and_then(|env| env.get(subfn))
-                    .ok_or_else(|| {
-                        TypeError::new(format!("Unknown subfunction ID {:?}", subfn))
-                    })?;
+                    .ok_or_else(|| TypeError::new(format!("Unknown subfunction ID {:?}", subfn)))?;
                 let inst = scheme.instantiate(&mut self.tvar_gen);
                 match inst {
                     HMType::Fn {
@@ -346,8 +345,9 @@ impl<'a> TypeInference<'a> {
             MirInst::MapLookup { dst, .. } => {
                 // Map lookup returns pointer to value
                 let dst_ty = self.vreg_type(*dst);
+                let pointee = HMType::Var(self.tvar_gen.fresh());
                 let ptr_ty = HMType::Ptr {
-                    pointee: Box::new(HMType::I64),
+                    pointee: Box::new(pointee),
                     address_space: AddressSpace::Map,
                 };
                 self.constrain(dst_ty, ptr_ty, "map_lookup");
@@ -432,7 +432,12 @@ impl<'a> TypeInference<'a> {
                 self.constrain(ptr_ty, expected, "read_str_ptr");
             }
 
-            MirInst::StringAppend { dst_len, val, val_type, .. } => {
+            MirInst::StringAppend {
+                dst_len,
+                val,
+                val_type,
+                ..
+            } => {
                 let len_ty = self.vreg_type(*dst_len);
                 self.constrain(len_ty, HMType::U64, "string_len");
                 if matches!(val_type, StringAppendType::Integer) {
@@ -643,26 +648,19 @@ impl<'a> TypeInference<'a> {
                                 }
                                 _ => {}
                             }
-                        } else if !Self::mir_is_numeric(&lhs_ty)
-                            || !Self::mir_is_numeric(&rhs_ty)
-                        {
+                        } else if !Self::mir_is_numeric(&lhs_ty) || !Self::mir_is_numeric(&rhs_ty) {
                             errors.push(TypeError::new(format!(
                                 "comparison expects numeric types, got {:?} and {:?}",
                                 lhs_ty, rhs_ty
                             )));
                         }
                     }
-                    BinOpKind::Lt
-                    | BinOpKind::Le
-                    | BinOpKind::Gt
-                    | BinOpKind::Ge => {
+                    BinOpKind::Lt | BinOpKind::Le | BinOpKind::Gt | BinOpKind::Ge => {
                         if lhs_ptr.is_some() || rhs_ptr.is_some() {
                             errors.push(TypeError::new(
                                 "ordering comparisons on pointers are not supported".to_string(),
                             ));
-                        } else if !Self::mir_is_numeric(&lhs_ty)
-                            || !Self::mir_is_numeric(&rhs_ty)
-                        {
+                        } else if !Self::mir_is_numeric(&lhs_ty) || !Self::mir_is_numeric(&rhs_ty) {
                             errors.push(TypeError::new(format!(
                                 "comparison expects numeric types, got {:?} and {:?}",
                                 lhs_ty, rhs_ty
@@ -714,8 +712,7 @@ impl<'a> TypeInference<'a> {
                                 }
                             }
                             (None, None) => {
-                                if !Self::mir_is_numeric(&lhs_ty)
-                                    || !Self::mir_is_numeric(&rhs_ty)
+                                if !Self::mir_is_numeric(&lhs_ty) || !Self::mir_is_numeric(&rhs_ty)
                                 {
                                     errors.push(TypeError::new(format!(
                                         "arithmetic expects numeric types, got {:?} and {:?}",
@@ -737,9 +734,7 @@ impl<'a> TypeInference<'a> {
                             errors.push(TypeError::new(
                                 "bitwise/arithmetic ops on pointers are not supported".to_string(),
                             ));
-                        } else if !Self::mir_is_numeric(&lhs_ty)
-                            || !Self::mir_is_numeric(&rhs_ty)
-                        {
+                        } else if !Self::mir_is_numeric(&lhs_ty) || !Self::mir_is_numeric(&rhs_ty) {
                             errors.push(TypeError::new(format!(
                                 "operation expects numeric types, got {:?} and {:?}",
                                 lhs_ty, rhs_ty
@@ -796,7 +791,8 @@ impl<'a> TypeInference<'a> {
                     let data_ty = self.mir_type_for_vreg(*data, types);
                     match data_ty {
                         MirType::Ptr { address_space, .. }
-                            if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {}
+                            if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {
+                        }
                         _ => errors.push(TypeError::new(format!(
                             "emit event of size {} expects stack/map pointer, got {:?}",
                             size, data_ty
@@ -812,7 +808,10 @@ impl<'a> TypeInference<'a> {
                     if size > 8 {
                         match value_ty {
                             MirType::Ptr { address_space, .. }
-                                if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {}
+                                if matches!(
+                                    address_space,
+                                    AddressSpace::Stack | AddressSpace::Map
+                                ) => {}
                             _ => errors.push(TypeError::new(format!(
                                 "record field '{}' expects pointer value, got {:?}",
                                 field.name, value_ty
@@ -833,7 +832,8 @@ impl<'a> TypeInference<'a> {
                 if size > 8 {
                     match value_ty {
                         MirType::Ptr { address_space, .. }
-                            if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {}
+                            if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {
+                        }
                         _ => errors.push(TypeError::new(format!(
                             "record store expects pointer for {:?}, got {:?}",
                             ty, value_ty
@@ -847,22 +847,66 @@ impl<'a> TypeInference<'a> {
                 }
             }
 
-            MirInst::MapUpdate { map, key, .. } => {
+            MirInst::MapUpdate { map, key, val, .. } => {
                 let key_ty = self.mir_type_for_vreg(*key, types);
                 if map.name == STRING_COUNTER_MAP_NAME {
                     match key_ty {
                         MirType::Ptr { address_space, .. }
-                            if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {}
+                            if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {
+                        }
                         _ => errors.push(TypeError::new(format!(
                             "map '{}' expects string pointer key, got {:?}",
                             map.name, key_ty
                         ))),
                     }
-                } else if !Self::mir_is_numeric(&key_ty) {
-                    errors.push(TypeError::new(format!(
-                        "map '{}' expects numeric key, got {:?}",
-                        map.name, key_ty
-                    )));
+                } else {
+                    match key_ty {
+                        MirType::Ptr { address_space, .. }
+                            if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {
+                        }
+                        _ if Self::mir_is_numeric(&key_ty) => {}
+                        _ => errors.push(TypeError::new(format!(
+                            "map '{}' key expects numeric or stack/map pointer, got {:?}",
+                            map.name, key_ty
+                        ))),
+                    }
+                }
+
+                let val_ty = self.mir_type_for_vreg(*val, types);
+                match val_ty {
+                    MirType::Ptr { address_space, .. }
+                        if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {}
+                    _ if Self::mir_is_numeric(&val_ty) => {}
+                    _ => errors.push(TypeError::new(format!(
+                        "map '{}' value expects numeric or stack/map pointer, got {:?}",
+                        map.name, val_ty
+                    ))),
+                }
+            }
+
+            MirInst::MapDelete { map, key } => {
+                let key_ty = self.mir_type_for_vreg(*key, types);
+                if map.name == STRING_COUNTER_MAP_NAME {
+                    match key_ty {
+                        MirType::Ptr { address_space, .. }
+                            if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {
+                        }
+                        _ => errors.push(TypeError::new(format!(
+                            "map '{}' expects string pointer key, got {:?}",
+                            map.name, key_ty
+                        ))),
+                    }
+                } else {
+                    match key_ty {
+                        MirType::Ptr { address_space, .. }
+                            if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {
+                        }
+                        _ if Self::mir_is_numeric(&key_ty) => {}
+                        _ => errors.push(TypeError::new(format!(
+                            "map '{}' key expects numeric or stack/map pointer, got {:?}",
+                            map.name, key_ty
+                        ))),
+                    }
                 }
             }
 
@@ -938,7 +982,12 @@ impl<'a> TypeInference<'a> {
                 }
             }
 
-            MirInst::StringAppend { dst_len, val, val_type, .. } => {
+            MirInst::StringAppend {
+                dst_len,
+                val,
+                val_type,
+                ..
+            } => {
                 let len_ty = self.mir_type_for_vreg(*dst_len, types);
                 if !Self::mir_is_numeric(&len_ty) {
                     errors.push(TypeError::new(format!(
@@ -1039,10 +1088,8 @@ impl<'a> TypeInference<'a> {
                 match self.value_range_for(offset, value_ranges) {
                     ValueRange::Known { min, max } => {
                         if min < 0 {
-                            return Err(
-                                "stack pointer arithmetic requires non-negative offsets"
-                                    .to_string(),
-                            );
+                            return Err("stack pointer arithmetic requires non-negative offsets"
+                                .to_string());
                         }
                         let (new_min, new_max) = if is_add {
                             (bounds.min + min, bounds.max + max)
@@ -1250,7 +1297,8 @@ impl<'a> TypeInference<'a> {
                         MirInst::Phi { args, .. } => {
                             let mut merged: Option<ValueRange> = None;
                             for (_, vreg) in args {
-                                let range = ranges.get(vreg).copied().unwrap_or(ValueRange::Unknown);
+                                let range =
+                                    ranges.get(vreg).copied().unwrap_or(ValueRange::Unknown);
                                 merged = Some(match merged {
                                     None => range,
                                     Some(existing) => existing.merge(range),
@@ -1378,8 +1426,7 @@ impl<'a> TypeInference<'a> {
                             if !matches!(op, BinOpKind::Add | BinOpKind::Sub) {
                                 None
                             } else {
-                                let dst_ty =
-                                    types.get(dst).cloned().unwrap_or(MirType::Unknown);
+                                let dst_ty = types.get(dst).cloned().unwrap_or(MirType::Unknown);
                                 if !matches!(
                                     dst_ty,
                                     MirType::Ptr {
@@ -1430,9 +1477,15 @@ impl<'a> TypeInference<'a> {
                                                     None
                                                 } else {
                                                     let (new_min, new_max) = if is_add {
-                                                        (base_bounds.min + min, base_bounds.max + max)
+                                                        (
+                                                            base_bounds.min + min,
+                                                            base_bounds.max + max,
+                                                        )
                                                     } else {
-                                                        (base_bounds.min - max, base_bounds.max - min)
+                                                        (
+                                                            base_bounds.min - max,
+                                                            base_bounds.max - min,
+                                                        )
                                                     };
                                                     if new_min < 0 || new_max > base_bounds.limit {
                                                         None
@@ -1497,11 +1550,7 @@ impl<'a> TypeInference<'a> {
         bounds
     }
 
-    fn value_range_for(
-        &self,
-        value: &MirValue,
-        ranges: &HashMap<VReg, ValueRange>,
-    ) -> ValueRange {
+    fn value_range_for(&self, value: &MirValue, ranges: &HashMap<VReg, ValueRange>) -> ValueRange {
         match value {
             MirValue::Const(c) => ValueRange::known(*c, *c),
             MirValue::VReg(v) => ranges.get(v).copied().unwrap_or(ValueRange::Unknown),
@@ -1520,12 +1569,7 @@ impl<'a> TypeInference<'a> {
         }
     }
 
-    fn range_for_binop(
-        &self,
-        op: BinOpKind,
-        lhs: ValueRange,
-        rhs: ValueRange,
-    ) -> ValueRange {
+    fn range_for_binop(&self, op: BinOpKind, lhs: ValueRange, rhs: ValueRange) -> ValueRange {
         match op {
             BinOpKind::Add => self.range_add(lhs, rhs),
             BinOpKind::Sub => self.range_sub(lhs, rhs),
@@ -1548,27 +1592,48 @@ impl<'a> TypeInference<'a> {
 
     fn range_add(&self, lhs: ValueRange, rhs: ValueRange) -> ValueRange {
         match (lhs, rhs) {
-            (ValueRange::Known { min: lmin, max: lmax }, ValueRange::Known { min: rmin, max: rmax }) => {
-                ValueRange::known(lmin + rmin, lmax + rmax)
-            }
+            (
+                ValueRange::Known {
+                    min: lmin,
+                    max: lmax,
+                },
+                ValueRange::Known {
+                    min: rmin,
+                    max: rmax,
+                },
+            ) => ValueRange::known(lmin + rmin, lmax + rmax),
             _ => ValueRange::Unknown,
         }
     }
 
     fn range_sub(&self, lhs: ValueRange, rhs: ValueRange) -> ValueRange {
         match (lhs, rhs) {
-            (ValueRange::Known { min: lmin, max: lmax }, ValueRange::Known { min: rmin, max: rmax }) => {
-                ValueRange::known(lmin - rmax, lmax - rmin)
-            }
+            (
+                ValueRange::Known {
+                    min: lmin,
+                    max: lmax,
+                },
+                ValueRange::Known {
+                    min: rmin,
+                    max: rmax,
+                },
+            ) => ValueRange::known(lmin - rmax, lmax - rmin),
             _ => ValueRange::Unknown,
         }
     }
 
     fn range_mul(&self, lhs: ValueRange, rhs: ValueRange) -> ValueRange {
         let (lmin, lmax, rmin, rmax) = match (lhs, rhs) {
-            (ValueRange::Known { min: lmin, max: lmax }, ValueRange::Known { min: rmin, max: rmax }) => {
-                (lmin, lmax, rmin, rmax)
-            }
+            (
+                ValueRange::Known {
+                    min: lmin,
+                    max: lmax,
+                },
+                ValueRange::Known {
+                    min: rmin,
+                    max: rmax,
+                },
+            ) => (lmin, lmax, rmin, rmax),
             _ => return ValueRange::Unknown,
         };
         let candidates = [
@@ -1761,11 +1826,7 @@ impl<'a> TypeInference<'a> {
         }
     }
 
-    fn scheme_for_function(
-        &self,
-        func: &MirFunction,
-        env: Option<&SubfnSchemeMap>,
-    ) -> TypeScheme {
+    fn scheme_for_function(&self, func: &MirFunction, env: Option<&SubfnSchemeMap>) -> TypeScheme {
         let args: Vec<HMType> = (0..func.param_count)
             .map(|i| self.hm_type_for_vreg(VReg(i as u32)))
             .collect();
@@ -1875,9 +1936,7 @@ fn collect_subfn_calls(func: &MirFunction) -> Vec<SubfunctionId> {
     calls
 }
 
-fn topo_sort_subfunctions(
-    graph: &[Vec<usize>],
-) -> Result<Vec<usize>, TypeError> {
+fn topo_sort_subfunctions(graph: &[Vec<usize>]) -> Result<Vec<usize>, TypeError> {
     fn dfs(
         node: usize,
         graph: &[Vec<usize>],
@@ -2396,10 +2455,13 @@ mod tests {
         block.terminator = MirInst::Return { val: None };
 
         let mut ti = TypeInference::new(None);
-        let errs = ti.infer(&func).expect_err("expected helper arg-limit type error");
-        assert!(errs
-            .iter()
-            .any(|e| e.message.contains("at most 5 arguments")));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected helper arg-limit type error");
+        assert!(
+            errs.iter()
+                .any(|e| e.message.contains("at most 5 arguments"))
+        );
     }
 
     #[test]
@@ -2409,11 +2471,14 @@ mod tests {
         let entry = subfn.alloc_block();
         subfn.entry = entry;
         let arg = VReg(0);
-        subfn.block_mut(entry).instructions.push(MirInst::CallSubfn {
-            dst: arg,
-            subfn: SubfunctionId(0),
-            args: vec![arg],
-        });
+        subfn
+            .block_mut(entry)
+            .instructions
+            .push(MirInst::CallSubfn {
+                dst: arg,
+                subfn: SubfunctionId(0),
+                args: vec![arg],
+            });
         subfn.block_mut(entry).terminator = MirInst::Return {
             val: Some(MirValue::VReg(arg)),
         };
@@ -2438,9 +2503,10 @@ mod tests {
 
         let errs = infer_subfunction_schemes(&[subfn], None)
             .expect_err("expected subfunction param-limit error");
-        assert!(errs
-            .iter()
-            .any(|e| e.message.contains("at most 5 arguments")));
+        assert!(
+            errs.iter()
+                .any(|e| e.message.contains("at most 5 arguments"))
+        );
     }
 
     #[test]

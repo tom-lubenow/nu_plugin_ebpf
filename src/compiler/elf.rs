@@ -25,6 +25,8 @@ pub enum BpfMapType {
     Array = 2,
     ProgArray = 3,
     PerfEventArray = 4,
+    PerCpuHash = 5,
+    PerCpuArray = 6,
     StackTrace = 7,
     RingBuf = 27,
 }
@@ -53,6 +55,54 @@ pub struct BpfMapDef {
 }
 
 impl BpfMapDef {
+    /// Create a generic hash map definition.
+    pub fn hash(key_size: u32, value_size: u32, max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::Hash as u32,
+            key_size,
+            value_size,
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a generic array map definition.
+    pub fn array(value_size: u32, max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::Array as u32,
+            key_size: 4, // u32 index
+            value_size,
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a generic per-CPU hash map definition.
+    pub fn per_cpu_hash(key_size: u32, value_size: u32, max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::PerCpuHash as u32,
+            key_size,
+            value_size,
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a generic per-CPU array map definition.
+    pub fn per_cpu_array(value_size: u32, max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::PerCpuArray as u32,
+            key_size: 4, // u32 index
+            value_size,
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
     /// Create a perf event array map (for outputting events to userspace)
     pub fn perf_event_array() -> Self {
         Self {
@@ -67,52 +117,24 @@ impl BpfMapDef {
 
     /// Create a hash map for counting (key: i64, value: i64)
     pub fn counter_hash() -> Self {
-        Self {
-            map_type: BpfMapType::Hash as u32,
-            key_size: 8,        // sizeof(i64) - the key to count
-            value_size: 8,      // sizeof(i64) - the count
-            max_entries: 10240, // Maximum number of unique keys
-            map_flags: 0,
-            pinning: BpfPinningType::None,
-        }
+        Self::hash(8, 8, 10240)
     }
 
     /// Create a hash map for counting with string keys (key: 16 bytes comm, value: i64)
     ///
     /// Used when counting by process name ($ctx.comm) instead of numeric keys.
     pub fn string_counter_hash() -> Self {
-        Self {
-            map_type: BpfMapType::Hash as u32,
-            key_size: 16,       // sizeof(comm) - 16-byte process name
-            value_size: 8,      // sizeof(i64) - the count
-            max_entries: 10240, // Maximum number of unique keys
-            map_flags: 0,
-            pinning: BpfPinningType::None,
-        }
+        Self::hash(16, 8, 10240)
     }
 
     /// Create a hash map for storing timestamps (key: i64 TID, value: i64 timestamp)
     pub fn timestamp_hash() -> Self {
-        Self {
-            map_type: BpfMapType::Hash as u32,
-            key_size: 8,        // sizeof(i64) - thread ID
-            value_size: 8,      // sizeof(i64) - timestamp in nanoseconds
-            max_entries: 10240, // Maximum concurrent traced threads
-            map_flags: 0,
-            pinning: BpfPinningType::None,
-        }
+        Self::hash(8, 8, 10240)
     }
 
     /// Create a hash map for histogram buckets (key: i64 bucket, value: i64 count)
     pub fn histogram_hash() -> Self {
-        Self {
-            map_type: BpfMapType::Hash as u32,
-            key_size: 8,     // sizeof(i64) - bucket index (log2 of value)
-            value_size: 8,   // sizeof(i64) - count
-            max_entries: 64, // 64 buckets covers 0 to 2^63
-            map_flags: 0,
-            pinning: BpfPinningType::None,
-        }
+        Self::hash(8, 8, 64)
     }
 
     /// Create a stack trace map for storing stack traces
@@ -148,8 +170,8 @@ impl BpfMapDef {
     pub fn prog_array(max_entries: u32) -> Self {
         Self {
             map_type: BpfMapType::ProgArray as u32,
-            key_size: 4,      // u32 index
-            value_size: 4,    // u32 program FD
+            key_size: 4,   // u32 index
+            value_size: 4, // u32 program FD
             max_entries,
             map_flags: 0,
             pinning: BpfPinningType::None,

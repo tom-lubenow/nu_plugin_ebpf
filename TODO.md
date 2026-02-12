@@ -13,9 +13,10 @@ Last updated: 2026-02-12.
   - Implemented bytecode lowering to `bpf_tail_call` and failure fallback termination.
   - Added `ProgArray` map emission and relocation plumbing, with positive/negative compiler tests.
 
-- [ ] Implement generic map operations end-to-end.
-  - `MapLookup` / `MapDelete` are still rejected in codegen.
-  - Ensure lookup/update/delete work for all supported key/value type layouts with precise nullability and bounds checks.
+- [x] Implement generic map operations end-to-end.
+  - Added `MapLookup` / `MapUpdate` / `MapDelete` codegen for generic map ops, while preserving the specialized `count` lowering path.
+  - Added generic map ELF emission + relocations from map-op usage (including key/value size inference and map-kind-aware defs for hash/array/per-cpu maps).
+  - Expanded type/VCC checks to allow scalar or stack/map-pointer operands for generic map keys/values, with backend guards for unsupported map-kind helper usage.
 
 - [ ] Make map kind a first-class backend concern.
   - Lowering carries `MapKind`, but map emission/codegen paths are still biased toward tracing maps.
