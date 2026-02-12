@@ -361,6 +361,9 @@ impl VccVerifier {
             let Some(mut state) = in_states.get(&block_id).cloned() else {
                 continue;
             };
+            if !state.is_reachable() {
+                continue;
+            }
             let block = func.block(block_id);
             for inst in &block.instructions {
                 self.verify_inst(inst, &mut state);
@@ -428,9 +431,18 @@ impl VccVerifier {
         refinement: VccCondRefinement,
         non_null: bool,
     ) {
+        if !state.is_reachable() {
+            return;
+        }
         let Ok(VccValueType::Ptr(mut ptr)) = state.reg_type(refinement.ptr_reg) else {
             return;
         };
+        if (non_null && ptr.nullability == VccNullability::Null)
+            || (!non_null && ptr.nullability == VccNullability::NonNull)
+        {
+            state.mark_unreachable();
+            return;
+        }
         ptr.nullability = if non_null {
             VccNullability::NonNull
         } else {
@@ -452,6 +464,9 @@ impl VccVerifier {
         worklist: &mut VecDeque<VccBlockId>,
         update_counts: &mut HashMap<VccBlockId, usize>,
     ) {
+        if !state.is_reachable() {
+            return;
+        }
         let existing = in_states.get(&block).cloned();
         let mut next_state = match existing.as_ref() {
             None => state.clone(),
@@ -476,6 +491,9 @@ impl VccVerifier {
     }
 
     fn verify_inst(&mut self, inst: &VccInst, state: &mut VccState) {
+        if !state.is_reachable() {
+            return;
+        }
         match inst {
             VccInst::Const { dst, value } => {
                 state.set_reg(
@@ -907,6 +925,9 @@ impl VccVerifier {
     }
 
     fn verify_terminator(&mut self, term: &VccTerminator, state: &mut VccState) {
+        if !state.is_reachable() {
+            return;
+        }
         match term {
             VccTerminator::Jump { .. } => {}
             VccTerminator::Branch { cond, .. } => match state.value_type(*cond) {
@@ -989,6 +1010,7 @@ struct VccState {
     reg_types: HashMap<VccReg, VccValueType>,
     live_ringbuf_refs: HashMap<VccReg, bool>,
     cond_refinements: HashMap<VccReg, VccCondRefinement>,
+    reachable: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1004,7 +1026,16 @@ impl VccState {
             reg_types: seed,
             live_ringbuf_refs: HashMap::new(),
             cond_refinements: HashMap::new(),
+            reachable: true,
         }
+    }
+
+    fn is_reachable(&self) -> bool {
+        self.reachable
+    }
+
+    fn mark_unreachable(&mut self) {
+        self.reachable = false;
     }
 
     fn set_reg(&mut self, reg: VccReg, ty: VccValueType) {
@@ -1051,6 +1082,12 @@ impl VccState {
     }
 
     fn merge_with(&self, other: &VccState) -> VccState {
+        if !self.reachable {
+            return other.clone();
+        }
+        if !other.reachable {
+            return self.clone();
+        }
         let mut merged = self.reg_types.clone();
         for (reg, rhs) in &other.reg_types {
             match merged.get(reg).copied() {
@@ -1079,6 +1116,7 @@ impl VccState {
             reg_types: merged,
             live_ringbuf_refs,
             cond_refinements,
+            reachable: true,
         }
     }
 
@@ -1103,6 +1141,7 @@ impl VccState {
             reg_types: widened,
             live_ringbuf_refs: self.live_ringbuf_refs.clone(),
             cond_refinements: HashMap::new(),
+            reachable: self.reachable,
         }
     }
 
@@ -3380,6 +3419,50 @@ mod tests {
 
         let types = map_lookup_types(&func, dst);
         verify_mir(&func, &types).expect("expected null-checked map lookup load to pass");
+    }
+
+    #[test]
+    fn test_verify_mir_prunes_impossible_null_branch_for_non_null_pointer() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let bad = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let load_dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: bad,
+            if_false: done,
+        };
+
+        // This path is unreachable: stack pointers are non-null.
+        func.block_mut(bad).instructions.push(MirInst::Load {
+            dst: load_dst,
+            ptr,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(bad).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(load_dst, MirType::I64);
+        verify_mir(&func, &types).expect("expected impossible null branch to be pruned");
     }
 
     #[test]
