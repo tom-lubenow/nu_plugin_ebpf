@@ -56,7 +56,7 @@
       wrapper retained for compatibility). LIR introduced with a MIR→LIR pass and the pipeline
       now compiles LIR directly.
 
-  [~] 3. Make the register file a first-class object
+  [x] 3. Make the register file a first-class object
       - Encode the eBPF ABI in the compiler: R0 return, R1-R5 args (caller-saved), R6-R9 callee-saved, R10 frame pointer.
         (kernel.org (https://www.kernel.org/doc/html/v5.19/bpf/instruction-set.html?utm_source=openai))
       - All scratch usage must be represented as LIR temporaries so the allocator can reason about interference (this resolves
@@ -66,7 +66,8 @@
       Status: LIR introduced; MIR→LIR pass creates precolored ABI vregs (R0–R5) and explicit
       CallSubfn/CallHelper arg shuffles; allocator now consumes LIR and enforces call/scratch
       clobbers from LIR metadata; codegen consumes LIR and lowers ParallelMove deterministically
-      (cycle-safe) with a temp stack slot, including R0-involved cycles.
+      (cycle-safe) with a temp stack slot, including R0-involved cycles. MIR→LIR now rejects
+      helper/subfunction calls beyond the ABI limit (5 args) and subfunctions beyond 5 params.
 
   [~] 4. Rebuild type inference as a two-layer system
       - Layer A (HM): rank-1 polymorphism with algorithm W; principal types for predictable inference and error messages.
@@ -112,7 +113,7 @@
       Bounded stack range analysis exists in MIR type inference; VCC verifier is now
       integrated as a compile-time gate; full model not implemented.
 
-  [~] 7. Register allocation & codegen modernization
+  [x] 7. Register allocation & codegen modernization
       - Use graph coloring with spill cost heuristics on LIR (post-SSA destruction), with explicit precolored regs and
         clobbers. (research.ibm.com (https://research.ibm.com/publications/register-allocation-andamp-spilling-via-graph-
         coloring--1?utm_source=openai))
@@ -120,7 +121,8 @@
       - Plumb loop depth into LIR spill-cost heuristics (carry LoopInfo through LIR or recompute on LIR CFG).
       Status: graph coloring allocator exists with spill costs; allocator now consumes LIR and
       uses LIR clobbers; loop-depth heuristics now computed for LIR via alloc CFG. Worklist/adjacency
-      processing is deterministic with stable tie-breaking for freeze/spill selection.
+      processing is deterministic with stable tie-breaking for freeze/spill selection. Call-clobber
+      constraints are covered with helper/subfunction live-across-call allocator tests.
 
   [x] 8. Testing strategy aligned with the design
       - Unit tests for HM inference and principal type schemes.
