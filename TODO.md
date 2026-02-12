@@ -31,6 +31,7 @@ Last updated: 2026-02-12.
   - Added initial helper ref-lifetime/provenance tracking in both verifier and VCC for ringbuf reserve/submit/discard (including branch-aware null-check refinement, leak detection at function exit, and pointer invalidation after release).
   - VCC now tracks nullable pointer returns for map/ringbuf helper results and rejects dereference paths that skip a null check.
   - VCC now refines scalar compare guards across branches and applies range-aware dynamic helper size checks (e.g. variable-size `get_current_comm` bounds validation).
+  - VCC now retains scalar `!= const` facts across guarded branches, pruning impossible follow-up `== const` paths.
   - VCC now propagates map-value bounds from built-in map semantics and pointee types, including pointer-arithmetic/load/store bounds checks for map-value pointers.
   - VCC now aligns direct memory access rules with verifier expectations by rejecting raw `load`/`store` on non stack/map pointer spaces.
   - Remaining: extend pointer-state transitions to broader helper/kfunc families (provenance/nullability/mutability/ref-lifetime) with kernel-verifier-level fidelity.

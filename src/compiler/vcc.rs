@@ -516,11 +516,27 @@ impl VccVerifier {
         let VccValueType::Scalar { range } = ty else {
             return;
         };
+        let prior_excluded = state.not_equal_consts(reg).to_vec();
+        if !Self::range_can_satisfy_const_compare(range, &prior_excluded, effective_op, value) {
+            state.mark_unreachable();
+            return;
+        }
         let Some(refined) = Self::refine_scalar_range(range, effective_op, value) else {
             state.mark_unreachable();
             return;
         };
         state.set_reg(reg, VccValueType::Scalar { range: refined });
+        for excluded in prior_excluded {
+            state.set_not_equal_const(reg, excluded);
+        }
+        match effective_op {
+            VccBinOp::Eq => state.clear_not_equal_consts(reg),
+            VccBinOp::Ne => {
+                state.set_not_equal_const(reg, value);
+                state.retain_not_equal_in_range(reg, refined);
+            }
+            _ => state.retain_not_equal_in_range(reg, refined),
+        }
     }
 
     fn invert_compare(op: VccBinOp) -> Option<VccBinOp> {
@@ -627,6 +643,46 @@ impl VccVerifier {
         }
     }
 
+    fn range_can_satisfy_const_compare(
+        range: Option<VccRange>,
+        excluded: &[i64],
+        op: VccBinOp,
+        value: i64,
+    ) -> bool {
+        match op {
+            VccBinOp::Eq => {
+                if excluded.contains(&value) {
+                    return false;
+                }
+                match range {
+                    Some(range) => value >= range.min && value <= range.max,
+                    None => true,
+                }
+            }
+            VccBinOp::Ne => match range {
+                Some(VccRange { min, max }) => !(min == max && min == value),
+                None => true,
+            },
+            VccBinOp::Lt => match range {
+                Some(VccRange { min, .. }) => min < value,
+                None => true,
+            },
+            VccBinOp::Le => match range {
+                Some(VccRange { min, .. }) => min <= value,
+                None => true,
+            },
+            VccBinOp::Gt => match range {
+                Some(VccRange { max, .. }) => max > value,
+                None => true,
+            },
+            VccBinOp::Ge => match range {
+                Some(VccRange { max, .. }) => max >= value,
+                None => true,
+            },
+            _ => true,
+        }
+    }
+
     fn propagate_state(
         &mut self,
         block: VccBlockId,
@@ -676,14 +732,26 @@ impl VccVerifier {
                         }),
                     },
                 );
+                if *value != 0 {
+                    state.set_not_equal_const(*dst, 0);
+                }
             }
             VccInst::Copy { dst, src } => match state.value_type(*src) {
                 Ok(ty) => {
+                    let (copied_refinement, src_not_equal) = match src {
+                        VccValue::Reg(src_reg) => (
+                            state.cond_refinement(*src_reg),
+                            state.not_equal_consts(*src_reg).to_vec(),
+                        ),
+                        VccValue::Imm(v) if *v != 0 => (None, vec![0]),
+                        _ => (None, Vec::new()),
+                    };
                     state.set_reg(*dst, ty);
-                    if let VccValue::Reg(src_reg) = src {
-                        if let Some(refinement) = state.cond_refinement(*src_reg) {
-                            state.set_cond_refinement(*dst, refinement);
-                        }
+                    if let Some(refinement) = copied_refinement {
+                        state.set_cond_refinement(*dst, refinement);
+                    }
+                    for value in src_not_equal {
+                        state.set_not_equal_const(*dst, value);
                     }
                 }
                 Err(err) => self.errors.push(err),
@@ -1372,6 +1440,7 @@ impl VccVerifier {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct VccState {
     reg_types: HashMap<VccReg, VccValueType>,
+    not_equal_consts: HashMap<VccReg, Vec<i64>>,
     live_ringbuf_refs: HashMap<VccReg, bool>,
     cond_refinements: HashMap<VccReg, VccCondRefinement>,
     reachable: bool,
@@ -1392,9 +1461,12 @@ enum VccCondRefinement {
 }
 
 impl VccState {
+    const MAX_NOT_EQUAL_FACTS: usize = 8;
+
     fn with_seed(seed: HashMap<VccReg, VccValueType>) -> Self {
         Self {
             reg_types: seed,
+            not_equal_consts: HashMap::new(),
             live_ringbuf_refs: HashMap::new(),
             cond_refinements: HashMap::new(),
             reachable: true,
@@ -1411,7 +1483,43 @@ impl VccState {
 
     fn set_reg(&mut self, reg: VccReg, ty: VccValueType) {
         self.reg_types.insert(reg, ty);
+        self.not_equal_consts.remove(&reg);
         self.cond_refinements.remove(&reg);
+    }
+
+    fn set_not_equal_const(&mut self, reg: VccReg, value: i64) {
+        let slot = self.not_equal_consts.entry(reg).or_default();
+        if slot.contains(&value) {
+            return;
+        }
+        slot.push(value);
+        slot.sort_unstable();
+        if slot.len() > Self::MAX_NOT_EQUAL_FACTS {
+            slot.remove(0);
+        }
+    }
+
+    fn clear_not_equal_consts(&mut self, reg: VccReg) {
+        self.not_equal_consts.remove(&reg);
+    }
+
+    fn not_equal_consts(&self, reg: VccReg) -> &[i64] {
+        self.not_equal_consts
+            .get(&reg)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    fn retain_not_equal_in_range(&mut self, reg: VccReg, range: Option<VccRange>) {
+        let Some(slot) = self.not_equal_consts.get_mut(&reg) else {
+            return;
+        };
+        if let Some(range) = range {
+            slot.retain(|value| *value >= range.min && *value <= range.max);
+            if slot.is_empty() {
+                self.not_equal_consts.remove(&reg);
+            }
+        }
     }
 
     fn set_live_ringbuf_ref(&mut self, id: VccReg, live: bool) {
@@ -1436,7 +1544,7 @@ impl VccState {
 
     fn invalidate_ringbuf_ref(&mut self, id: VccReg) {
         self.set_live_ringbuf_ref(id, false);
-        for ty in self.reg_types.values_mut() {
+        for (reg, ty) in self.reg_types.iter_mut() {
             let matches_ref = matches!(
                 ty,
                 VccValueType::Ptr(VccPointerInfo {
@@ -1446,6 +1554,7 @@ impl VccState {
             );
             if matches_ref {
                 *ty = VccValueType::Unknown;
+                self.not_equal_consts.remove(reg);
             }
         }
         self.cond_refinements.retain(|_, info| match info {
@@ -1485,8 +1594,27 @@ impl VccState {
                 }
             }
         }
+        let mut not_equal_consts = HashMap::new();
+        for (reg, left) in &self.not_equal_consts {
+            let Some(right) = other.not_equal_consts.get(reg) else {
+                continue;
+            };
+            if left.is_empty() || right.is_empty() {
+                continue;
+            }
+            let mut shared = Vec::new();
+            for value in left {
+                if right.contains(value) {
+                    shared.push(*value);
+                }
+            }
+            if !shared.is_empty() {
+                not_equal_consts.insert(*reg, shared);
+            }
+        }
         VccState {
             reg_types: merged,
+            not_equal_consts,
             live_ringbuf_refs,
             cond_refinements,
             reachable: true,
@@ -1512,6 +1640,7 @@ impl VccState {
         }
         VccState {
             reg_types: widened,
+            not_equal_consts: HashMap::new(),
             live_ringbuf_refs: self.live_ringbuf_refs.clone(),
             cond_refinements: HashMap::new(),
             reachable: self.reachable,
@@ -4384,6 +4513,252 @@ mod tests {
         types.insert(dst, MirType::I64);
 
         verify_mir(&func, &types).expect("expected bounds to propagate through phi");
+    }
+
+    #[test]
+    fn test_verify_mir_not_equal_fact_prunes_followup_eq_branch() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let left = func.alloc_block();
+        let right = func.alloc_block();
+        let join = func.alloc_block();
+        let guarded = func.alloc_block();
+        let skip = func.alloc_block();
+        let bad = func.alloc_block();
+        let ok = func.alloc_block();
+        func.entry = entry;
+
+        let cond = func.alloc_vreg();
+        func.param_count = 1;
+
+        let slot = func.alloc_stack_slot(4, 1, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let left_idx = func.alloc_vreg();
+        let right_idx = func.alloc_vreg();
+        let idx = func.alloc_vreg();
+        let neq = func.alloc_vreg();
+        let eq = func.alloc_vreg();
+        let tmp_ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: left,
+            if_false: right,
+        };
+
+        func.block_mut(left).instructions.push(MirInst::Copy {
+            dst: left_idx,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(left).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(right).instructions.push(MirInst::Copy {
+            dst: right_idx,
+            src: MirValue::Const(2),
+        });
+        func.block_mut(right).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(join).instructions.push(MirInst::Phi {
+            dst: idx,
+            args: vec![(left, left_idx), (right, right_idx)],
+        });
+        func.block_mut(join).instructions.push(MirInst::BinOp {
+            dst: neq,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(idx),
+            rhs: MirValue::Const(1),
+        });
+        func.block_mut(join).terminator = MirInst::Branch {
+            cond: neq,
+            if_true: guarded,
+            if_false: skip,
+        };
+
+        func.block_mut(guarded).instructions.push(MirInst::BinOp {
+            dst: eq,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(idx),
+            rhs: MirValue::Const(1),
+        });
+        func.block_mut(guarded).terminator = MirInst::Branch {
+            cond: eq,
+            if_true: bad,
+            if_false: ok,
+        };
+
+        func.block_mut(skip).terminator = MirInst::Return { val: None };
+
+        func.block_mut(bad).instructions.push(MirInst::BinOp {
+            dst: tmp_ptr,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(9),
+        });
+        func.block_mut(bad).instructions.push(MirInst::Load {
+            dst,
+            ptr: tmp_ptr,
+            offset: 0,
+            ty: MirType::I8,
+        });
+        func.block_mut(bad).terminator = MirInst::Return { val: None };
+
+        func.block_mut(ok).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(cond, MirType::Bool);
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            tmp_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I8);
+
+        verify_mir(&func, &types).expect("expected impossible == branch to be pruned");
+    }
+
+    #[test]
+    fn test_verify_mir_multiple_not_equal_facts_prune_followup_eq() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let left = func.alloc_block();
+        let right = func.alloc_block();
+        let join = func.alloc_block();
+        let after_first = func.alloc_block();
+        let after_second = func.alloc_block();
+        let skip_first = func.alloc_block();
+        let skip_second = func.alloc_block();
+        let bad = func.alloc_block();
+        let ok = func.alloc_block();
+        func.entry = entry;
+
+        let cond = func.alloc_vreg();
+        func.param_count = 1;
+
+        let slot = func.alloc_stack_slot(4, 1, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let left_idx = func.alloc_vreg();
+        let right_idx = func.alloc_vreg();
+        let idx = func.alloc_vreg();
+        let neq1 = func.alloc_vreg();
+        let neq3 = func.alloc_vreg();
+        let eq1 = func.alloc_vreg();
+        let tmp_ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: left,
+            if_false: right,
+        };
+
+        func.block_mut(left).instructions.push(MirInst::Copy {
+            dst: left_idx,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(left).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(right).instructions.push(MirInst::Copy {
+            dst: right_idx,
+            src: MirValue::Const(4),
+        });
+        func.block_mut(right).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(join).instructions.push(MirInst::Phi {
+            dst: idx,
+            args: vec![(left, left_idx), (right, right_idx)],
+        });
+        func.block_mut(join).instructions.push(MirInst::BinOp {
+            dst: neq1,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(idx),
+            rhs: MirValue::Const(1),
+        });
+        func.block_mut(join).terminator = MirInst::Branch {
+            cond: neq1,
+            if_true: after_first,
+            if_false: skip_first,
+        };
+
+        func.block_mut(after_first).instructions.push(MirInst::BinOp {
+            dst: neq3,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(idx),
+            rhs: MirValue::Const(3),
+        });
+        func.block_mut(after_first).terminator = MirInst::Branch {
+            cond: neq3,
+            if_true: after_second,
+            if_false: skip_second,
+        };
+
+        func.block_mut(after_second).instructions.push(MirInst::BinOp {
+            dst: eq1,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(idx),
+            rhs: MirValue::Const(1),
+        });
+        func.block_mut(after_second).terminator = MirInst::Branch {
+            cond: eq1,
+            if_true: bad,
+            if_false: ok,
+        };
+
+        func.block_mut(skip_first).terminator = MirInst::Return { val: None };
+        func.block_mut(skip_second).terminator = MirInst::Return { val: None };
+
+        func.block_mut(bad).instructions.push(MirInst::BinOp {
+            dst: tmp_ptr,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(9),
+        });
+        func.block_mut(bad).instructions.push(MirInst::Load {
+            dst,
+            ptr: tmp_ptr,
+            offset: 0,
+            ty: MirType::I8,
+        });
+        func.block_mut(bad).terminator = MirInst::Return { val: None };
+
+        func.block_mut(ok).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(cond, MirType::Bool);
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            tmp_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I8);
+
+        verify_mir(&func, &types).expect("expected impossible == branch to be pruned");
     }
 
     #[test]
