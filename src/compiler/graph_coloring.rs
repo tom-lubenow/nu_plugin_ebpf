@@ -1043,7 +1043,8 @@ impl GraphColoringAllocator {
 
     /// Initialize worklists based on node degree and move-relatedness
     fn make_worklist(&mut self) {
-        let nodes: Vec<VReg> = self.graph.nodes.iter().copied().collect();
+        let mut nodes: Vec<VReg> = self.graph.nodes.iter().copied().collect();
+        nodes.sort_by_key(|v| v.0);
 
         for vreg in nodes {
             if self.node_state.get(&vreg) != Some(&NodeState::Initial) {
@@ -1067,7 +1068,9 @@ impl GraphColoringAllocator {
         }
 
         // Initialize move worklist with all moves
-        for mv in self.graph.all_moves.iter().copied() {
+        let mut all_moves: Vec<Move> = self.graph.all_moves.iter().copied().collect();
+        all_moves.sort_by_key(|mv| (mv.src.0, mv.dst.0));
+        for mv in all_moves {
             self.move_worklist.push_back(mv);
             self.move_state.insert(mv, MoveState::Worklist);
         }
@@ -1117,7 +1120,8 @@ impl GraphColoringAllocator {
 
     /// Get active moves for a node
     fn node_moves(&self, vreg: VReg) -> Vec<Move> {
-        self.graph
+        let mut moves: Vec<Move> = self
+            .graph
             .moves_for(vreg)
             .filter(|mv| {
                 matches!(
@@ -1125,7 +1129,9 @@ impl GraphColoringAllocator {
                     Some(MoveState::Worklist) | Some(MoveState::Active) | None
                 )
             })
-            .collect()
+            .collect();
+        moves.sort_by_key(|mv| (mv.src.0, mv.dst.0));
+        moves
     }
 
     /// Simplify: remove a low-degree non-move-related node
@@ -1135,7 +1141,8 @@ impl GraphColoringAllocator {
             self.node_state.insert(vreg, NodeState::OnStack);
 
             // Decrement degree of neighbors
-            let neighbors: Vec<VReg> = self.graph.adjacent(vreg).collect();
+            let mut neighbors: Vec<VReg> = self.graph.adjacent(vreg).collect();
+            neighbors.sort_by_key(|n| n.0);
             for neighbor in neighbors {
                 self.decrement_degree(neighbor);
             }
@@ -1158,7 +1165,8 @@ impl GraphColoringAllocator {
         // If degree dropped below K, move from spill to freeze/simplify
         if old_degree == self.effective_k(vreg) {
             // Enable moves for this node and its neighbors
-            let neighbors: Vec<VReg> = self.graph.adjacent(vreg).collect();
+            let mut neighbors: Vec<VReg> = self.graph.adjacent(vreg).collect();
+            neighbors.sort_by_key(|n| n.0);
             self.enable_moves(vreg);
             for neighbor in neighbors {
                 self.enable_moves(neighbor);
@@ -1302,7 +1310,8 @@ impl GraphColoringAllocator {
         }
 
         // Add edges from u to v's neighbors
-        let v_neighbors: Vec<VReg> = self.graph.adjacent(v).collect();
+        let mut v_neighbors: Vec<VReg> = self.graph.adjacent(v).collect();
+        v_neighbors.sort_by_key(|n| n.0);
         for neighbor in v_neighbors {
             self.graph.add_edge(u, neighbor);
             self.decrement_degree(neighbor);
@@ -1327,8 +1336,8 @@ impl GraphColoringAllocator {
 
     /// Freeze: give up coalescing on a move-related node
     fn freeze(&mut self) {
-        // Pick any node from freeze worklist
-        let vreg = match self.freeze_worklist.iter().next().copied() {
+        // Pick lowest-numbered node for deterministic behavior.
+        let vreg = match self.freeze_worklist.iter().copied().min_by_key(|v| v.0) {
             Some(v) => v,
             None => return,
         };
@@ -1374,6 +1383,11 @@ impl GraphColoringAllocator {
             match best {
                 None => best = Some((vreg, priority)),
                 Some((_, best_priority)) if priority < best_priority => {
+                    best = Some((vreg, priority));
+                }
+                Some((best_vreg, best_priority))
+                    if (priority - best_priority).abs() < f64::EPSILON && vreg.0 < best_vreg.0 =>
+                {
                     best = Some((vreg, priority));
                 }
                 _ => {}
@@ -1612,6 +1626,37 @@ mod tests {
 
         // Verify no two simultaneously live vregs share the same register
         // (This would require checking against live intervals)
+    }
+
+    #[test]
+    fn test_register_pressure_allocation_stable() {
+        let func = make_pressure_function();
+        let available = vec![EbpfReg::R6, EbpfReg::R7, EbpfReg::R8];
+
+        let mut baseline: Option<(Vec<(u32, EbpfReg)>, Vec<u32>, usize)> = None;
+
+        for _ in 0..8 {
+            let result = allocate_registers(&func, available.clone());
+            let mut coloring: Vec<(u32, EbpfReg)> = result
+                .coloring
+                .iter()
+                .map(|(vreg, reg)| (vreg.0, *reg))
+                .collect();
+            coloring.sort_by_key(|(vreg, _)| *vreg);
+
+            let mut spills: Vec<u32> = result.spills.keys().map(|vreg| vreg.0).collect();
+            spills.sort_unstable();
+
+            let signature = (coloring, spills, result.coalesced_moves);
+            if let Some(expected) = &baseline {
+                assert_eq!(
+                    &signature, expected,
+                    "register allocation result should be stable across runs"
+                );
+            } else {
+                baseline = Some(signature);
+            }
+        }
     }
 
     #[test]
