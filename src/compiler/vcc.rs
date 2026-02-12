@@ -4061,6 +4061,77 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_mir_helper_map_lookup_rejects_out_of_bounds_key_pointer() {
+        let (mut func, entry) = new_mir_function();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let map = func.alloc_vreg();
+        let key_base = func.alloc_vreg();
+        let key = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: map,
+            src: MirValue::StackSlot(map_slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key_base,
+            src: MirValue::StackSlot(key_slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: key,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(key_base),
+            rhs: MirValue::Const(8),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 1, // bpf_map_lookup_elem(map, key)
+            args: vec![MirValue::VReg(map), MirValue::VReg(key)],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper key bounds error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_helper_ringbuf_output_checks_data_bounds() {
+        let (mut func, entry) = new_mir_function();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let data_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 130, // bpf_ringbuf_output(map, data, size, flags)
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+            ],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+        let err = verify_mir(&func, &types).expect_err("expected helper data bounds error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
     fn test_verify_mir_helper_ringbuf_reserve_submit_ok() {
         let (mut func, entry) = new_mir_function();
         let submit = func.alloc_block();
