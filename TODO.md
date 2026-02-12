@@ -39,6 +39,7 @@ Last updated: 2026-02-12.
   - VCC now models scalar `div`/`mod` ranges (including branch-derived `!= 0` divisor facts), reducing false `UnknownOffset` failures in guarded pointer arithmetic.
   - VCC now models non-negative scalar `and`/`or`/`xor`/`shl`/`shr` ranges, improving bounds precision for computed pointer offsets.
   - Added MIR-level parity tests for stack pointer non-null assumptions and stack load/offset bounds (direct add, mul, shift, and bitwise-derived offsets).
+  - VCC now enforces helper `size > 0` constraints for scalar vreg size args (not just literal immediates), matching verifier-side range behavior.
   - VCC now propagates map-value bounds from built-in map semantics and pointee types, including pointer-arithmetic/load/store bounds checks for map-value pointers.
   - VCC now aligns direct memory access rules with verifier expectations by rejecting raw `load`/`store` on non stack/map pointer spaces.
   - Remaining: extend pointer-state transitions to broader helper/kfunc families (provenance/nullability/mutability/ref-lifetime) with kernel-verifier-level fidelity.

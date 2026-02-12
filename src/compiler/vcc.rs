@@ -189,6 +189,10 @@ pub enum VccInst {
     AssertScalar {
         value: VccValue,
     },
+    AssertPositive {
+        value: VccValue,
+        message: String,
+    },
     AssertPtrAccess {
         ptr: VccReg,
         size: VccValue,
@@ -979,6 +983,33 @@ impl VccVerifier {
                 }
                 Err(err) => self.errors.push(err),
             },
+            VccInst::AssertPositive { value, message } => {
+                let ty = match state.value_type(*value) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                if ty.class() != VccTypeClass::Scalar && ty.class() != VccTypeClass::Bool {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::TypeMismatch {
+                            expected: VccTypeClass::Scalar,
+                            actual: ty.class(),
+                        },
+                        "expected scalar value",
+                    ));
+                    return;
+                }
+                if let Some(range) = state.value_range(*value, ty) {
+                    if range.max <= 0 || range.min <= 0 {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::UnsupportedInstruction,
+                            message.clone(),
+                        ));
+                    }
+                }
+            }
             VccInst::AssertPtrAccess { ptr, size, op } => {
                 let ptr_ty = match state.reg_type(*ptr) {
                     Ok(ty) => ty,
@@ -3405,6 +3436,7 @@ impl<'a> VccLowerer<'a> {
         helper_id: u32,
         arg_idx: usize,
         value: &MirValue,
+        out: &mut Vec<VccInst>,
     ) -> Result<Option<usize>, VccError> {
         match value {
             MirValue::Const(v) => {
@@ -3422,7 +3454,13 @@ impl<'a> VccLowerer<'a> {
                 })?;
                 Ok(Some(size))
             }
-            MirValue::VReg(_) => Ok(None),
+            MirValue::VReg(vreg) => {
+                out.push(VccInst::AssertPositive {
+                    value: VccValue::Reg(VccReg(vreg.0)),
+                    message: format!("helper {} arg{} must be > 0", helper_id, arg_idx),
+                });
+                Ok(None)
+            }
             MirValue::StackSlot(_) => Err(VccError::new(
                 VccErrorKind::TypeMismatch {
                     expected: VccTypeClass::Scalar,
@@ -3448,7 +3486,7 @@ impl<'a> VccLowerer<'a> {
         for size_arg in semantics.positive_size_args {
             if let Some(arg) = args.get(*size_arg) {
                 positive_size_bounds[*size_arg] =
-                    self.helper_positive_size_upper_bound(helper_id, *size_arg, arg)?;
+                    self.helper_positive_size_upper_bound(helper_id, *size_arg, arg, out)?;
             }
         }
 
@@ -6310,6 +6348,47 @@ mod tests {
         assert!(
             err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
             "expected pointer bounds error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_helper_ringbuf_reserve_vreg_size_positive_required() {
+        let (mut func, entry) = new_mir_function();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let size = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: size,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 131, // bpf_ringbuf_reserve(map, size, flags)
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::VReg(size),
+                MirValue::Const(0),
+            ],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(size, MirType::I64);
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper size error");
+        assert!(
+            err.iter()
+                .any(|e| e.kind == VccErrorKind::UnsupportedInstruction),
+            "expected helper size error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("helper 131 arg1 must be > 0")),
+            "unexpected error messages: {:?}",
             err
         );
     }
