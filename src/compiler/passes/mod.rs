@@ -783,10 +783,7 @@ mod tests {
         };
 
         // Run SSA optimization (includes constant folding)
-        let changes = optimize_with_ssa(&mut func);
-
-        // Should have made some changes (constant folding)
-        assert!(changes >= 0); // May or may not fold depending on implementation
+        let _changes = optimize_with_ssa(&mut func);
 
         // Compile to eBPF
         let program = MirProgram {

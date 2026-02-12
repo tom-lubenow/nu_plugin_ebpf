@@ -2978,7 +2978,7 @@ mod tests {
     /// Test that old compiler handles branching (MIR branch test is separate)
     #[test]
     fn test_branch() {
-        let ir = make_ir_block(vec![
+        let _ir = make_ir_block(vec![
             Instruction::LoadLiteral {
                 dst: RegId::new(0),
                 lit: Literal::Bool(true),
