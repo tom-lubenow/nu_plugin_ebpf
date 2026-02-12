@@ -994,6 +994,14 @@ impl<'a> TypeInference<'a> {
                 }
             }
 
+            MirInst::CallHelper { args, .. } => {
+                if args.len() > 5 {
+                    errors.push(TypeError::new(
+                        "BPF helpers support at most 5 arguments".to_string(),
+                    ));
+                }
+            }
+
             MirInst::CallSubfn { args, .. } => {
                 if args.len() > 5 {
                     errors.push(TypeError::new(
@@ -1880,7 +1888,7 @@ fn topo_sort_subfunctions(
                     .map(|idx| format!("subfn{}", idx))
                     .collect();
                 return Err(TypeError::new(format!(
-                    "recursive subfunction call detected: {}",
+                    "recursive subfunction call detected: {} (polymorphic recursion requires explicit type annotations and is not currently supported)",
                     cycle_ids.join(" -> ")
                 )));
             }
@@ -1921,6 +1929,12 @@ pub fn infer_subfunction_schemes(
     let mut graph = vec![Vec::new(); subfunctions.len()];
 
     for (idx, func) in subfunctions.iter().enumerate() {
+        if func.param_count > 5 {
+            errors.push(TypeError::new(format!(
+                "BPF subfunctions support at most 5 arguments, got {} for subfn{}",
+                func.param_count, idx
+            )));
+        }
         for subfn in collect_subfn_calls(func) {
             let target = subfn.0 as usize;
             if target >= subfunctions.len() {
@@ -2351,6 +2365,76 @@ mod tests {
             }
             other => panic!("Expected stack pointer type, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_type_error_helper_arg_limit() {
+        let mut func = make_test_function();
+        let mut args = Vec::new();
+        for n in 0..6 {
+            let v = func.alloc_vreg();
+            let block = func.block_mut(BlockId(0));
+            block.instructions.push(MirInst::Copy {
+                dst: v,
+                src: MirValue::Const(n),
+            });
+            args.push(MirValue::VReg(v));
+        }
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 14,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti.infer(&func).expect_err("expected helper arg-limit type error");
+        assert!(errs
+            .iter()
+            .any(|e| e.message.contains("at most 5 arguments")));
+    }
+
+    #[test]
+    fn test_infer_subfunction_schemes_rejects_recursive_calls_with_guidance() {
+        let mut subfn = MirFunction::with_name("rec");
+        subfn.param_count = 1;
+        let entry = subfn.alloc_block();
+        subfn.entry = entry;
+        let arg = VReg(0);
+        subfn.block_mut(entry).instructions.push(MirInst::CallSubfn {
+            dst: arg,
+            subfn: SubfunctionId(0),
+            args: vec![arg],
+        });
+        subfn.block_mut(entry).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(arg)),
+        };
+
+        let errs = infer_subfunction_schemes(&[subfn], None)
+            .expect_err("expected recursive subfunction scheme inference to fail");
+        assert!(errs.iter().any(|e| {
+            e.message
+                .contains("polymorphic recursion requires explicit type annotations")
+        }));
+    }
+
+    #[test]
+    fn test_infer_subfunction_schemes_rejects_param_limit() {
+        let mut subfn = MirFunction::with_name("too_many_params");
+        subfn.param_count = 6;
+        let entry = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.block_mut(entry).terminator = MirInst::Return {
+            val: Some(MirValue::Const(0)),
+        };
+
+        let errs = infer_subfunction_schemes(&[subfn], None)
+            .expect_err("expected subfunction param-limit error");
+        assert!(errs
+            .iter()
+            .any(|e| e.message.contains("at most 5 arguments")));
     }
 
     #[test]
