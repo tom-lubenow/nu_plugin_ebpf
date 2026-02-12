@@ -1727,6 +1727,19 @@ fn apply_helper_semantics(
             }
         }
         BpfHelper::RingbufOutput => {
+            if let Some(map) = args.first() {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    0,
+                    map,
+                    "helper ringbuf_output map",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    None,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
             let size = args.get(2).and_then(|value| {
                 helper_positive_size_upper_bound(helper_id, 2, value, state, errors)
             });
@@ -1738,6 +1751,34 @@ fn apply_helper_semantics(
                     "helper ringbuf_output data",
                     &[AddressSpace::Stack, AddressSpace::Map],
                     size,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
+        }
+        BpfHelper::TailCall => {
+            if let Some(ctx) = args.first() {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    0,
+                    ctx,
+                    "helper tail_call ctx",
+                    &[AddressSpace::Kernel],
+                    None,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
+            if let Some(map) = args.get(1) {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    1,
+                    map,
+                    "helper tail_call map",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    None,
                     state,
                     slot_sizes,
                     errors,
@@ -1788,6 +1829,32 @@ fn apply_helper_semantics(
             }
         }
         BpfHelper::PerfEventOutput => {
+            if let Some(ctx) = args.first() {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    0,
+                    ctx,
+                    "helper perf_event_output ctx",
+                    &[AddressSpace::Kernel],
+                    None,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
+            if let Some(map) = args.get(1) {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    1,
+                    map,
+                    "helper perf_event_output map",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    None,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
             let size = args.get(4).and_then(|value| {
                 helper_positive_size_upper_bound(helper_id, 4, value, state, errors)
             });
@@ -1799,6 +1866,34 @@ fn apply_helper_semantics(
                     "helper perf_event_output data",
                     &[AddressSpace::Stack, AddressSpace::Map],
                     size,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
+        }
+        BpfHelper::GetStackId => {
+            if let Some(ctx) = args.first() {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    0,
+                    ctx,
+                    "helper get_stackid ctx",
+                    &[AddressSpace::Kernel],
+                    None,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
+            if let Some(map) = args.get(1) {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    1,
+                    map,
+                    "helper get_stackid map",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    None,
                     state,
                     slot_sizes,
                     errors,
@@ -2950,6 +3045,180 @@ mod tests {
         assert!(
             err.iter()
                 .any(|e| e.message.contains("load requires pointer type")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_helper_perf_event_output_rejects_user_ctx_pointer() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let ctx = func.alloc_vreg();
+        func.param_count = 1;
+        let cond = func.alloc_vreg();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let data_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(ctx),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: call,
+            if_false: done,
+        };
+
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 25, // bpf_perf_event_output(ctx, map, flags, data, size)
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(0),
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(8),
+            ],
+        });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::User,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper ctx pointer-space error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("helper perf_event_output ctx expects pointer in [Kernel]")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_helper_get_stackid_rejects_user_ctx_pointer() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let ctx = func.alloc_vreg();
+        func.param_count = 1;
+        let cond = func.alloc_vreg();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(ctx),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: call,
+            if_false: done,
+        };
+
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 27, // bpf_get_stackid(ctx, map, flags)
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(0),
+            ],
+        });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::User,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper ctx pointer-space error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("helper get_stackid ctx expects pointer in [Kernel]")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_helper_tail_call_rejects_user_ctx_pointer() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let ctx = func.alloc_vreg();
+        func.param_count = 1;
+        let cond = func.alloc_vreg();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(ctx),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: call,
+            if_false: done,
+        };
+
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 12, // bpf_tail_call(ctx, prog_array_map, index)
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(0),
+            ],
+        });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::User,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper ctx pointer-space error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("helper tail_call ctx expects pointer in [Kernel]")),
             "unexpected errors: {:?}",
             err
         );
