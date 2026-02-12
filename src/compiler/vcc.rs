@@ -4249,6 +4249,144 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_mir_uninitialized_scalar_use_rejected() {
+        let (mut func, entry) = new_mir_function();
+        let lhs = func.alloc_vreg();
+        let rhs = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: rhs,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(lhs),
+            rhs: MirValue::VReg(rhs),
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected uninitialized-use error");
+        assert!(
+            err.iter()
+                .any(|e| matches!(e.kind, VccErrorKind::UseOfUninitializedReg(_))),
+            "expected uninitialized-register error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_uninitialized_branch_cond_rejected() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let left = func.alloc_block();
+        let right = func.alloc_block();
+        func.entry = entry;
+
+        let cond = func.alloc_vreg();
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: left,
+            if_false: right,
+        };
+        func.block_mut(left).terminator = MirInst::Return { val: None };
+        func.block_mut(right).terminator = MirInst::Return { val: None };
+
+        let err = verify_mir(&func, &HashMap::new()).expect_err("expected uninitialized branch cond");
+        assert!(
+            err.iter()
+                .any(|e| matches!(e.kind, VccErrorKind::UseOfUninitializedReg(_))),
+            "expected uninitialized-register error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_pointer_phi_preserves_bounds() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let left = func.alloc_block();
+        let right = func.alloc_block();
+        let join = func.alloc_block();
+        func.entry = entry;
+
+        let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let tmp = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let phi_ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: cond,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: left,
+            if_false: right,
+        };
+
+        func.block_mut(left).instructions.push(MirInst::Copy {
+            dst: tmp,
+            src: MirValue::VReg(ptr),
+        });
+        func.block_mut(left).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(right).instructions.push(MirInst::Copy {
+            dst: tmp,
+            src: MirValue::VReg(ptr),
+        });
+        func.block_mut(right).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(join).instructions.push(MirInst::Phi {
+            dst: phi_ptr,
+            args: vec![(left, tmp), (right, tmp)],
+        });
+        func.block_mut(join).instructions.push(MirInst::Load {
+            dst,
+            ptr: phi_ptr,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(join).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            tmp,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            phi_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        verify_mir(&func, &types).expect("expected bounds to propagate through phi");
+    }
+
+    #[test]
     fn test_verify_mir_helper_map_lookup_requires_null_check_before_load() {
         let (mut func, entry) = new_mir_function();
         let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
