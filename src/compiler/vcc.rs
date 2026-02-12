@@ -446,6 +446,10 @@ impl VccVerifier {
                         self.refine_scalar_compare_const(&mut true_state, reg, op, value, true);
                         self.refine_scalar_compare_const(&mut false_state, reg, op, value, false);
                     }
+                    VccCondRefinement::ScalarCmpRegs { lhs, rhs, op } => {
+                        self.refine_scalar_compare_regs(&mut true_state, lhs, rhs, op, true);
+                        self.refine_scalar_compare_regs(&mut false_state, lhs, rhs, op, false);
+                    }
                 }
             }
         }
@@ -683,6 +687,208 @@ impl VccVerifier {
         }
     }
 
+    fn refine_scalar_compare_regs(
+        &self,
+        state: &mut VccState,
+        lhs: VccReg,
+        rhs: VccReg,
+        op: VccBinOp,
+        take_true: bool,
+    ) {
+        if !state.is_reachable() {
+            return;
+        }
+        let effective_op = if take_true {
+            Some(op)
+        } else {
+            Self::invert_compare(op)
+        };
+        let Some(effective_op) = effective_op else {
+            return;
+        };
+        let Ok(lhs_ty) = state.reg_type(lhs) else {
+            return;
+        };
+        let Ok(rhs_ty) = state.reg_type(rhs) else {
+            return;
+        };
+        let VccValueType::Scalar { range: lhs_range } = lhs_ty else {
+            return;
+        };
+        let VccValueType::Scalar { range: rhs_range } = rhs_ty else {
+            return;
+        };
+        if !Self::ranges_can_satisfy_compare(lhs_range, rhs_range, effective_op) {
+            state.mark_unreachable();
+            return;
+        }
+        let (new_lhs, new_rhs) = Self::refine_compare_ranges(lhs_range, rhs_range, effective_op);
+
+        let lhs_excluded = state.not_equal_consts(lhs).to_vec();
+        let rhs_excluded = state.not_equal_consts(rhs).to_vec();
+        state.set_reg(lhs, VccValueType::Scalar { range: new_lhs });
+        for value in lhs_excluded {
+            state.set_not_equal_const(lhs, value);
+        }
+        state.retain_not_equal_in_range(lhs, new_lhs);
+
+        if rhs != lhs {
+            state.set_reg(rhs, VccValueType::Scalar { range: new_rhs });
+            for value in rhs_excluded {
+                state.set_not_equal_const(rhs, value);
+            }
+            state.retain_not_equal_in_range(rhs, new_rhs);
+        }
+    }
+
+    fn ranges_can_satisfy_compare(lhs: Option<VccRange>, rhs: Option<VccRange>, op: VccBinOp) -> bool {
+        let Some((lhs_min, lhs_max)) = Self::range_bounds(lhs) else {
+            return true;
+        };
+        let Some((rhs_min, rhs_max)) = Self::range_bounds(rhs) else {
+            return true;
+        };
+        match op {
+            VccBinOp::Eq => lhs_min <= rhs_max && rhs_min <= lhs_max,
+            VccBinOp::Ne => !(lhs_min == lhs_max && rhs_min == rhs_max && lhs_min == rhs_min),
+            VccBinOp::Lt => lhs_min < rhs_max,
+            VccBinOp::Le => lhs_min <= rhs_max,
+            VccBinOp::Gt => lhs_max > rhs_min,
+            VccBinOp::Ge => lhs_max >= rhs_min,
+            _ => true,
+        }
+    }
+
+    fn refine_compare_ranges(
+        lhs: Option<VccRange>,
+        rhs: Option<VccRange>,
+        op: VccBinOp,
+    ) -> (Option<VccRange>, Option<VccRange>) {
+        let lhs_bounds = Self::range_bounds(lhs);
+        let rhs_bounds = Self::range_bounds(rhs);
+        match op {
+            VccBinOp::Eq => {
+                let lhs = match rhs_bounds {
+                    Some((min, max)) => Self::intersect_range(lhs, Some(min), Some(max)),
+                    None => lhs,
+                };
+                let rhs = match lhs_bounds {
+                    Some((min, max)) => Self::intersect_range(rhs, Some(min), Some(max)),
+                    None => rhs,
+                };
+                (lhs, rhs)
+            }
+            VccBinOp::Ne => {
+                let lhs = if let Some((min, max)) = rhs_bounds {
+                    if min == max {
+                        Self::refine_scalar_range(lhs, VccBinOp::Ne, min).unwrap_or(lhs)
+                    } else {
+                        lhs
+                    }
+                } else {
+                    lhs
+                };
+                let rhs = if let Some((min, max)) = lhs_bounds {
+                    if min == max {
+                        Self::refine_scalar_range(rhs, VccBinOp::Ne, min).unwrap_or(rhs)
+                    } else {
+                        rhs
+                    }
+                } else {
+                    rhs
+                };
+                (lhs, rhs)
+            }
+            VccBinOp::Lt => {
+                let lhs = match rhs_bounds {
+                    Some((_, rhs_max)) => {
+                        Self::intersect_range(lhs, None, Some(rhs_max.saturating_sub(1)))
+                    }
+                    None => lhs,
+                };
+                let rhs = match lhs_bounds {
+                    Some((lhs_min, _)) => {
+                        Self::intersect_range(rhs, Some(lhs_min.saturating_add(1)), None)
+                    }
+                    None => rhs,
+                };
+                (lhs, rhs)
+            }
+            VccBinOp::Le => {
+                let lhs = match rhs_bounds {
+                    Some((_, rhs_max)) => Self::intersect_range(lhs, None, Some(rhs_max)),
+                    None => lhs,
+                };
+                let rhs = match lhs_bounds {
+                    Some((lhs_min, _)) => Self::intersect_range(rhs, Some(lhs_min), None),
+                    None => rhs,
+                };
+                (lhs, rhs)
+            }
+            VccBinOp::Gt => {
+                let lhs = match rhs_bounds {
+                    Some((rhs_min, _)) => {
+                        Self::intersect_range(lhs, Some(rhs_min.saturating_add(1)), None)
+                    }
+                    None => lhs,
+                };
+                let rhs = match lhs_bounds {
+                    Some((_, lhs_max)) => {
+                        Self::intersect_range(rhs, None, Some(lhs_max.saturating_sub(1)))
+                    }
+                    None => rhs,
+                };
+                (lhs, rhs)
+            }
+            VccBinOp::Ge => {
+                let lhs = match rhs_bounds {
+                    Some((rhs_min, _)) => Self::intersect_range(lhs, Some(rhs_min), None),
+                    None => lhs,
+                };
+                let rhs = match lhs_bounds {
+                    Some((_, lhs_max)) => Self::intersect_range(rhs, None, Some(lhs_max)),
+                    None => rhs,
+                };
+                (lhs, rhs)
+            }
+            _ => (lhs, rhs),
+        }
+    }
+
+    fn range_bounds(range: Option<VccRange>) -> Option<(i64, i64)> {
+        range.map(|range| (range.min, range.max))
+    }
+
+    fn intersect_range(
+        current: Option<VccRange>,
+        min: Option<i64>,
+        max: Option<i64>,
+    ) -> Option<VccRange> {
+        if min.is_none() && max.is_none() {
+            return current;
+        }
+        match current {
+            Some(current) => {
+                let min = min.map(|value| current.min.max(value)).unwrap_or(current.min);
+                let max = max.map(|value| current.max.min(value)).unwrap_or(current.max);
+                if min <= max {
+                    Some(VccRange { min, max })
+                } else {
+                    Some(current)
+                }
+            }
+            None => {
+                let min = min.unwrap_or(i64::MIN);
+                let max = max.unwrap_or(i64::MAX);
+                if min <= max {
+                    Some(VccRange { min, max })
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
     fn propagate_state(
         &mut self,
         block: VccBlockId,
@@ -872,6 +1078,8 @@ impl VccVerifier {
                     VccBinOp::Eq | VccBinOp::Ne => {
                         let ptr_cmp = self.ptr_null_comparison(*lhs, lhs_ty, *rhs, rhs_ty);
                         let scalar_cmp = self.scalar_const_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
+                        let scalar_reg_cmp =
+                            self.scalar_reg_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         let lhs_is_ptr = matches!(lhs_ty, VccValueType::Ptr(_));
                         let rhs_is_ptr = matches!(rhs_ty, VccValueType::Ptr(_));
                         if lhs_is_ptr || rhs_is_ptr {
@@ -950,10 +1158,21 @@ impl VccVerifier {
                                     value,
                                 },
                             );
+                        } else if let Some((lhs, rhs, cmp_op)) = scalar_reg_cmp {
+                            state.set_cond_refinement(
+                                *dst,
+                                VccCondRefinement::ScalarCmpRegs {
+                                    lhs,
+                                    rhs,
+                                    op: cmp_op,
+                                },
+                            );
                         }
                     }
                     VccBinOp::Lt | VccBinOp::Le | VccBinOp::Gt | VccBinOp::Ge => {
                         let scalar_cmp = self.scalar_const_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
+                        let scalar_reg_cmp =
+                            self.scalar_reg_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         if lhs_ty.class() != VccTypeClass::Scalar
                             && lhs_ty.class() != VccTypeClass::Bool
                         {
@@ -986,6 +1205,15 @@ impl VccVerifier {
                                     reg,
                                     op: cmp_op,
                                     value,
+                                },
+                            );
+                        } else if let Some((lhs, rhs, cmp_op)) = scalar_reg_cmp {
+                            state.set_cond_refinement(
+                                *dst,
+                                VccCondRefinement::ScalarCmpRegs {
+                                    lhs,
+                                    rhs,
+                                    op: cmp_op,
                                 },
                             );
                         }
@@ -1370,6 +1598,30 @@ impl VccVerifier {
         }
     }
 
+    fn scalar_reg_comparison(
+        &self,
+        lhs: VccValue,
+        lhs_ty: VccValueType,
+        rhs: VccValue,
+        rhs_ty: VccValueType,
+        op: VccBinOp,
+    ) -> Option<(VccReg, VccReg, VccBinOp)> {
+        if !matches!(
+            op,
+            VccBinOp::Eq | VccBinOp::Ne | VccBinOp::Lt | VccBinOp::Le | VccBinOp::Gt | VccBinOp::Ge
+        ) {
+            return None;
+        }
+        match (lhs, lhs_ty, rhs, rhs_ty) {
+            (VccValue::Reg(lhs), left_ty, VccValue::Reg(rhs), right_ty)
+                if Self::is_scalar_like(left_ty) && Self::is_scalar_like(right_ty) =>
+            {
+                Some((lhs, rhs, op))
+            }
+            _ => None,
+        }
+    }
+
     fn is_scalar_like(ty: VccValueType) -> bool {
         matches!(ty.class(), VccTypeClass::Scalar | VccTypeClass::Bool)
     }
@@ -1457,6 +1709,11 @@ enum VccCondRefinement {
         reg: VccReg,
         op: VccBinOp,
         value: i64,
+    },
+    ScalarCmpRegs {
+        lhs: VccReg,
+        rhs: VccReg,
+        op: VccBinOp,
     },
 }
 
@@ -1560,6 +1817,7 @@ impl VccState {
         self.cond_refinements.retain(|_, info| match info {
             VccCondRefinement::PtrNull { ringbuf_ref, .. } => *ringbuf_ref != Some(id),
             VccCondRefinement::ScalarCmpConst { .. } => true,
+            VccCondRefinement::ScalarCmpRegs { .. } => true,
         });
     }
 
@@ -4759,6 +5017,291 @@ mod tests {
         types.insert(dst, MirType::I8);
 
         verify_mir(&func, &types).expect("expected impossible == branch to be pruned");
+    }
+
+    #[test]
+    fn test_verify_mir_compare_refines_true_branch_lt() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let left = func.alloc_block();
+        let right = func.alloc_block();
+        let join = func.alloc_block();
+        let ok = func.alloc_block();
+        let bad = func.alloc_block();
+        func.entry = entry;
+
+        let cond = func.alloc_vreg();
+        func.param_count = 1;
+
+        let slot = func.alloc_stack_slot(4, 1, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let idx = func.alloc_vreg();
+        let cmp = func.alloc_vreg();
+        let tmp_ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: left,
+            if_false: right,
+        };
+
+        func.block_mut(left).instructions.push(MirInst::Copy {
+            dst: idx,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(left).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(right).instructions.push(MirInst::Copy {
+            dst: idx,
+            src: MirValue::Const(7),
+        });
+        func.block_mut(right).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(join).instructions.push(MirInst::BinOp {
+            dst: cmp,
+            op: BinOpKind::Lt,
+            lhs: MirValue::VReg(idx),
+            rhs: MirValue::Const(4),
+        });
+        func.block_mut(join).terminator = MirInst::Branch {
+            cond: cmp,
+            if_true: ok,
+            if_false: bad,
+        };
+
+        func.block_mut(ok).instructions.push(MirInst::BinOp {
+            dst: tmp_ptr,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::VReg(idx),
+        });
+        func.block_mut(ok).instructions.push(MirInst::Load {
+            dst,
+            ptr: tmp_ptr,
+            offset: 0,
+            ty: MirType::I8,
+        });
+        func.block_mut(ok).terminator = MirInst::Return { val: None };
+        func.block_mut(bad).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(cond, MirType::Bool);
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            tmp_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I8);
+
+        verify_mir(&func, &types).expect("expected compare to refine range");
+    }
+
+    #[test]
+    fn test_verify_mir_compare_refines_true_branch_ge() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let left = func.alloc_block();
+        let right = func.alloc_block();
+        let join = func.alloc_block();
+        let ok = func.alloc_block();
+        let bad = func.alloc_block();
+        func.entry = entry;
+
+        let cond = func.alloc_vreg();
+        func.param_count = 1;
+
+        let slot = func.alloc_stack_slot(4, 1, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let idx = func.alloc_vreg();
+        let cmp = func.alloc_vreg();
+        let offset = func.alloc_vreg();
+        let tmp_ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: left,
+            if_false: right,
+        };
+
+        func.block_mut(left).instructions.push(MirInst::Copy {
+            dst: idx,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(left).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(right).instructions.push(MirInst::Copy {
+            dst: idx,
+            src: MirValue::Const(7),
+        });
+        func.block_mut(right).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(join).instructions.push(MirInst::BinOp {
+            dst: cmp,
+            op: BinOpKind::Ge,
+            lhs: MirValue::VReg(idx),
+            rhs: MirValue::Const(4),
+        });
+        func.block_mut(join).terminator = MirInst::Branch {
+            cond: cmp,
+            if_true: ok,
+            if_false: bad,
+        };
+
+        func.block_mut(ok).instructions.push(MirInst::BinOp {
+            dst: offset,
+            op: BinOpKind::Sub,
+            lhs: MirValue::VReg(idx),
+            rhs: MirValue::Const(4),
+        });
+        func.block_mut(ok).instructions.push(MirInst::BinOp {
+            dst: tmp_ptr,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::VReg(offset),
+        });
+        func.block_mut(ok).instructions.push(MirInst::Load {
+            dst,
+            ptr: tmp_ptr,
+            offset: 0,
+            ty: MirType::I8,
+        });
+        func.block_mut(ok).terminator = MirInst::Return { val: None };
+        func.block_mut(bad).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(cond, MirType::Bool);
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            tmp_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I8);
+
+        verify_mir(&func, &types).expect("expected compare to refine range");
+    }
+
+    #[test]
+    fn test_verify_mir_compare_refines_vreg_bound() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let left = func.alloc_block();
+        let right = func.alloc_block();
+        let join = func.alloc_block();
+        let ok = func.alloc_block();
+        let bad = func.alloc_block();
+        func.entry = entry;
+
+        let cond = func.alloc_vreg();
+        func.param_count = 1;
+
+        let slot = func.alloc_stack_slot(4, 1, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let idx = func.alloc_vreg();
+        let bound = func.alloc_vreg();
+        let cmp = func.alloc_vreg();
+        let tmp_ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: bound,
+            src: MirValue::Const(4),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: left,
+            if_false: right,
+        };
+
+        func.block_mut(left).instructions.push(MirInst::Copy {
+            dst: idx,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(left).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(right).instructions.push(MirInst::Copy {
+            dst: idx,
+            src: MirValue::Const(7),
+        });
+        func.block_mut(right).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(join).instructions.push(MirInst::BinOp {
+            dst: cmp,
+            op: BinOpKind::Lt,
+            lhs: MirValue::VReg(idx),
+            rhs: MirValue::VReg(bound),
+        });
+        func.block_mut(join).terminator = MirInst::Branch {
+            cond: cmp,
+            if_true: ok,
+            if_false: bad,
+        };
+
+        func.block_mut(ok).instructions.push(MirInst::BinOp {
+            dst: tmp_ptr,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::VReg(idx),
+        });
+        func.block_mut(ok).instructions.push(MirInst::Load {
+            dst,
+            ptr: tmp_ptr,
+            offset: 0,
+            ty: MirType::I8,
+        });
+        func.block_mut(ok).terminator = MirInst::Return { val: None };
+        func.block_mut(bad).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(cond, MirType::Bool);
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            tmp_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I8);
+
+        verify_mir(&func, &types).expect("expected vreg compare to refine range");
     }
 
     #[test]
