@@ -7005,6 +7005,101 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_mir_helper_trace_printk_positive_size_required() {
+        let (mut func, entry) = new_mir_function();
+        let dst = func.alloc_vreg();
+        let fmt = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 6, // bpf_trace_printk(fmt, fmt_size, ...)
+            args: vec![MirValue::StackSlot(fmt), MirValue::Const(0)],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper size error");
+        assert!(
+            err.iter()
+                .any(|e| e.kind == VccErrorKind::UnsupportedInstruction),
+            "expected helper size error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter().any(|e| e.message.contains("helper 6 arg1 must be > 0")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_helper_trace_printk_bounds() {
+        let (mut func, entry) = new_mir_function();
+        let dst = func.alloc_vreg();
+        let fmt = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 6, // bpf_trace_printk(fmt, fmt_size, ...)
+            args: vec![MirValue::StackSlot(fmt), MirValue::Const(16)],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper bounds error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_helper_trace_printk_rejects_user_fmt_pointer() {
+        let (mut func, entry) = new_mir_function();
+        let fmt = func.alloc_vreg();
+        func.param_count = 1;
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 6, // bpf_trace_printk(fmt, fmt_size, ...)
+            args: vec![MirValue::VReg(fmt), MirValue::Const(8)],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            fmt,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::User,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper fmt pointer-space error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter().any(
+                |e| e
+                    .message
+                    .contains("helper trace_printk fmt expects pointer in [Stack, Map]")
+            ),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
     fn test_verify_mir_helper_get_current_comm_variable_size_range_checks_bounds() {
         let (mut func, entry) = new_mir_function();
         let check_upper = func.alloc_block();

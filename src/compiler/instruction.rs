@@ -362,6 +362,14 @@ impl BpfHelper {
             size_from_arg: Some(1),
         }];
 
+        const TRACE_PRINTK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper trace_printk fmt",
+            allowed: STACK_MAP,
+            fixed_size: None,
+            size_from_arg: Some(1),
+        }];
+
         const PROBE_READ_KERNEL_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -497,6 +505,11 @@ impl BpfHelper {
             },
             BpfHelper::GetCurrentComm => HelperSemantics {
                 ptr_arg_rules: GET_CURRENT_COMM_RULES,
+                positive_size_args: &[1],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::TracePrintk => HelperSemantics {
+                ptr_arg_rules: TRACE_PRINTK_RULES,
                 positive_size_args: &[1],
                 ringbuf_record_arg0: false,
             },
