@@ -311,7 +311,9 @@ impl<'a> MirToEbpfCompiler<'a> {
             slots.push(slot);
         }
 
-        let needs_parallel_moves = Self::function_has_parallel_moves(func);
+        // Subfunction entry parameter shuffles are also parallel moves and may
+        // contain cycles (e.g. R1 <-> R2), so they need the same temp slot.
+        let needs_parallel_moves = Self::function_has_parallel_moves(func) || func.param_count > 0;
         let needs_scratch = needs_parallel_moves && Self::parallel_move_needs_scratch(func, alloc);
         let temp_slot_ids = if needs_parallel_moves {
             let base = spill_base + alloc.spill_slots.len() as u32;
@@ -529,14 +531,28 @@ impl<'a> MirToEbpfCompiler<'a> {
             EbpfReg::R5,
         ];
 
-        let mut reg_moves: Vec<(EbpfReg, EbpfReg)> = Vec::new();
+        if func.param_count > arg_regs.len() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "Function has {} params; BPF supports at most {}",
+                func.param_count,
+                arg_regs.len()
+            )));
+        }
+
+        let cycle_temp = self.parallel_move_cycle_offset.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "Parameter move lowering requires a temp stack slot".into(),
+            )
+        })?;
+
+        let mut reg_moves: HashMap<EbpfReg, EbpfReg> = HashMap::new();
 
         for i in 0..func.param_count {
             let vreg = VReg(i as u32);
             let src = arg_regs[i];
             if let Some(&dst) = self.vreg_to_phys.get(&vreg) {
                 if dst != src {
-                    reg_moves.push((src, dst));
+                    reg_moves.insert(src, dst);
                 }
             } else if let Some(&offset) = self.vreg_spills.get(&vreg) {
                 self.instructions
@@ -544,66 +560,47 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
         }
 
-        self.emit_parallel_reg_moves(reg_moves);
-
-        Ok(())
-    }
-
-    fn emit_parallel_reg_moves(&mut self, moves: Vec<(EbpfReg, EbpfReg)>) {
-        let mut move_map: HashMap<EbpfReg, EbpfReg> = HashMap::new();
-        for (src, dst) in moves {
-            if src != dst {
-                move_map.insert(src, dst);
-            }
-        }
-
-        while !move_map.is_empty() {
-            let sources: HashSet<EbpfReg> = move_map.keys().copied().collect();
-            let mut progress = false;
+        while !reg_moves.is_empty() {
+            let sources: HashSet<EbpfReg> = reg_moves.keys().copied().collect();
             let mut ready = Vec::new();
 
-            for (&src, &dst) in move_map.iter() {
+            for (&src, &dst) in &reg_moves {
                 if !sources.contains(&dst) {
                     ready.push(src);
                 }
             }
 
-            for src in ready {
-                if let Some(dst) = move_map.remove(&src) {
-                    self.instructions
-                        .push(EbpfInsn::mov64_reg(dst, src));
-                    progress = true;
+            if !ready.is_empty() {
+                for src in ready {
+                    if let Some(dst) = reg_moves.remove(&src) {
+                        self.instructions.push(EbpfInsn::mov64_reg(dst, src));
+                    }
                 }
-            }
-
-            if progress {
                 continue;
             }
 
-            // Cycle: break with R0
-            let (&start_src, &start_dst) = move_map.iter().next().expect("cycle");
-            let mut cycle = vec![start_src];
-            let mut next = start_dst;
-            while next != start_src {
-                cycle.push(next);
-                next = *move_map.get(&next).expect("cycle");
-            }
-
+            // Cycle: spill one source to stack, rotate the cycle, then reload.
+            let (&start_src, &start_dst) = reg_moves.iter().next().expect("cycle");
             self.instructions
-                .push(EbpfInsn::mov64_reg(EbpfReg::R0, start_src));
-            for i in (1..cycle.len()).rev() {
-                let src = cycle[i];
-                let dst = move_map[&src];
+                .push(EbpfInsn::stxdw(EbpfReg::R10, cycle_temp, start_src));
+            reg_moves.remove(&start_src);
+
+            let mut src = start_dst;
+            while src != start_src {
+                let dst = reg_moves.remove(&src).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "Failed to lower cyclic parameter moves".into(),
+                    )
+                })?;
                 self.instructions.push(EbpfInsn::mov64_reg(dst, src));
+                src = dst;
             }
-            let dst0 = move_map[&start_src];
-            self.instructions
-                .push(EbpfInsn::mov64_reg(dst0, EbpfReg::R0));
 
-            for src in cycle {
-                move_map.remove(&src);
-            }
+            self.instructions
+                .push(EbpfInsn::ldxdw(start_dst, EbpfReg::R10, cycle_temp));
         }
+
+        Ok(())
     }
 
     /// Compile a LIR function
