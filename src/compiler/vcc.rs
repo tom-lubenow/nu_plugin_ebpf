@@ -15,8 +15,9 @@ use std::collections::{HashMap, VecDeque};
 use crate::compiler::cfg::CFG;
 use crate::compiler::instruction::{BpfHelper, HelperArgKind, HelperRetKind, HelperSignature};
 use crate::compiler::mir::{
-    AddressSpace, BinOpKind, MirFunction, MirInst, MirType, MirValue, STRING_COUNTER_MAP_NAME,
-    StackSlotId, StackSlotKind, StringAppendType, UnaryOpKind, VReg,
+    AddressSpace, BinOpKind, MirFunction, MirInst, MirType, MirValue, COUNTER_MAP_NAME,
+    HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, STRING_COUNTER_MAP_NAME, TIMESTAMP_MAP_NAME,
+    USTACK_MAP_NAME, StackSlotId, StackSlotKind, StringAppendType, UnaryOpKind, VReg,
 };
 use crate::compiler::passes::{ListLowering, MirPass};
 
@@ -983,20 +984,18 @@ impl VccVerifier {
                 }
 
                 let offset_range = state.value_range(*offset, offset_ty);
-                let bounds = match (base_ptr.space, base_ptr.bounds, offset_range) {
-                    (VccAddrSpace::Stack(_), Some(bounds), Some(range)) => {
-                        bounds.shifted(range).map(Some).unwrap_or_else(|| {
-                            self.errors.push(VccError::new(
-                                VccErrorKind::PointerBounds,
-                                "stack pointer arithmetic out of bounds",
-                            ));
-                            None
-                        })
-                    }
-                    (VccAddrSpace::Stack(_), Some(_), None) => {
+                let bounds = match (base_ptr.bounds, offset_range) {
+                    (Some(bounds), Some(range)) => bounds.shifted(range).map(Some).unwrap_or_else(|| {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::PointerBounds,
+                            "pointer arithmetic out of bounds",
+                        ));
+                        None
+                    }),
+                    (Some(_), None) => {
                         self.errors.push(VccError::new(
                             VccErrorKind::UnknownOffset,
-                            "stack pointer arithmetic requires bounded scalar offset",
+                            "pointer arithmetic requires bounded scalar offset",
                         ));
                         None
                     }
@@ -1032,9 +1031,7 @@ impl VccVerifier {
                             self.errors.push(err);
                             return;
                         }
-                        if let (VccAddrSpace::Stack(_), Some(bounds)) =
-                            (ptr_info.space, ptr_info.bounds)
-                        {
+                        if let Some(bounds) = ptr_info.bounds {
                             let size = *size as i64;
                             if size <= 0 {
                                 self.errors.push(VccError::new(
@@ -1046,7 +1043,7 @@ impl VccVerifier {
                             if bounds.shifted_with_size(*offset, size).is_none() {
                                 self.errors.push(VccError::new(
                                     VccErrorKind::PointerBounds,
-                                    "stack load offset out of bounds",
+                                    "load offset out of bounds",
                                 ));
                             }
                         }
@@ -1080,9 +1077,7 @@ impl VccVerifier {
                             self.errors.push(err);
                             return;
                         }
-                        if let (VccAddrSpace::Stack(_), Some(bounds)) =
-                            (ptr_info.space, ptr_info.bounds)
-                        {
+                        if let Some(bounds) = ptr_info.bounds {
                             let size = *size as i64;
                             if size <= 0 {
                                 self.errors.push(VccError::new(
@@ -1094,7 +1089,7 @@ impl VccVerifier {
                             if bounds.shifted_with_size(*offset, size).is_none() {
                                 self.errors.push(VccError::new(
                                     VccErrorKind::PointerBounds,
-                                    "stack store offset out of bounds",
+                                    "store offset out of bounds",
                                 ));
                             }
                         }
@@ -1953,15 +1948,33 @@ impl<'a> VccLowerer<'a> {
             }
             MirInst::MapLookup { dst, map, key } => {
                 self.verify_map_key(&map.name, *key, out)?;
-                let mut ty = self
+                let inferred = self
                     .types
                     .get(dst)
                     .map(vcc_type_from_mir)
                     .unwrap_or(VccValueType::Unknown);
-                if let VccValueType::Ptr(mut info) = ty {
-                    info.nullability = VccNullability::MaybeNull;
-                    ty = VccValueType::Ptr(info);
+                let bounds = map_value_limit(map.name.as_str())
+                    .or_else(|| map_value_limit_from_dst_type(self.types.get(dst)))
+                    .map(|limit| VccBounds {
+                        min: 0,
+                        max: 0,
+                        limit,
+                    });
+                let mut info = match inferred {
+                    VccValueType::Ptr(info) => info,
+                    _ => VccPointerInfo {
+                        space: VccAddrSpace::MapValue,
+                        nullability: VccNullability::MaybeNull,
+                        bounds: None,
+                        ringbuf_ref: None,
+                    },
+                };
+                info.space = VccAddrSpace::MapValue;
+                info.nullability = VccNullability::MaybeNull;
+                if info.bounds.is_none() {
+                    info.bounds = bounds;
                 }
+                let ty = VccValueType::Ptr(info);
                 out.push(VccInst::Assume {
                     dst: VccReg(dst.0),
                     ty,
@@ -3286,20 +3299,69 @@ fn record_field_size(ty: &MirType) -> usize {
     }
 }
 
+fn map_value_limit(map_name: &str) -> Option<i64> {
+    match map_name {
+        COUNTER_MAP_NAME | STRING_COUNTER_MAP_NAME | HISTOGRAM_MAP_NAME | TIMESTAMP_MAP_NAME => {
+            Some(8 - 1)
+        }
+        KSTACK_MAP_NAME | USTACK_MAP_NAME => Some((127 * 8) - 1),
+        _ => None,
+    }
+}
+
+fn map_value_limit_from_dst_type(dst_ty: Option<&MirType>) -> Option<i64> {
+    let pointee = match dst_ty {
+        Some(MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Map,
+        }) => pointee.as_ref(),
+        _ => return None,
+    };
+    if matches!(pointee, MirType::Unknown) {
+        return None;
+    }
+    let size = pointee.size();
+    if size == 0 {
+        return None;
+    }
+    Some(size.saturating_sub(1) as i64)
+}
+
 fn vcc_type_from_mir(ty: &MirType) -> VccValueType {
     match ty {
         MirType::Bool => VccValueType::Bool,
-        MirType::Ptr { address_space, .. } => VccValueType::Ptr(VccPointerInfo {
-            space: match address_space {
-                AddressSpace::Stack => VccAddrSpace::Unknown,
-                AddressSpace::Kernel => VccAddrSpace::Kernel,
-                AddressSpace::User => VccAddrSpace::User,
-                AddressSpace::Map => VccAddrSpace::MapValue,
-            },
-            nullability: VccNullability::NonNull,
-            bounds: None,
-            ringbuf_ref: None,
-        }),
+        MirType::Ptr {
+            address_space,
+            pointee,
+        } => {
+            let bounds = if matches!(address_space, AddressSpace::Map)
+                && !matches!(pointee.as_ref(), MirType::Unknown)
+            {
+                let size = pointee.size();
+                if size > 0 {
+                    Some(VccBounds {
+                        min: 0,
+                        max: 0,
+                        limit: size.saturating_sub(1) as i64,
+                    })
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            VccValueType::Ptr(VccPointerInfo {
+                space: match address_space {
+                    AddressSpace::Stack => VccAddrSpace::Unknown,
+                    AddressSpace::Kernel => VccAddrSpace::Kernel,
+                    AddressSpace::User => VccAddrSpace::User,
+                    AddressSpace::Map => VccAddrSpace::MapValue,
+                },
+                nullability: VccNullability::NonNull,
+                bounds,
+                ringbuf_ref: None,
+            })
+        }
         MirType::Unknown => VccValueType::Unknown,
         _ => VccValueType::Scalar { range: None },
     }
@@ -3851,6 +3913,238 @@ mod tests {
 
         let types = map_lookup_types(&func, dst);
         verify_mir(&func, &types).expect("expected null-checked map lookup load to pass");
+    }
+
+    #[test]
+    fn test_verify_mir_map_value_bounds() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let ok = func.alloc_block();
+        let bad = func.alloc_block();
+        let left = func.alloc_block();
+        let right = func.alloc_block();
+        let join = func.alloc_block();
+        func.entry = entry;
+
+        let split = func.alloc_vreg();
+        func.param_count = 1;
+        let key = func.alloc_vreg();
+        let ptr = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let off = func.alloc_vreg();
+        let tmp_ptr = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapLookup {
+            dst: ptr,
+            map: MapRef {
+                name: COUNTER_MAP_NAME.to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: ok,
+            if_false: bad,
+        };
+
+        func.block_mut(ok).terminator = MirInst::Branch {
+            cond: split,
+            if_true: left,
+            if_false: right,
+        };
+
+        func.block_mut(left).instructions.push(MirInst::Copy {
+            dst: off,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(left).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(right).instructions.push(MirInst::Copy {
+            dst: off,
+            src: MirValue::Const(4),
+        });
+        func.block_mut(right).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(join).instructions.push(MirInst::BinOp {
+            dst: tmp_ptr,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::VReg(off),
+        });
+        func.block_mut(join).instructions.push(MirInst::Load {
+            dst,
+            ptr: tmp_ptr,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(join).terminator = MirInst::Return { val: None };
+        func.block_mut(bad).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Map,
+            },
+        );
+        types.insert(
+            tmp_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Map,
+            },
+        );
+        types.insert(split, MirType::I64);
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected map bounds error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_unknown_map_uses_pointee_bounds_for_lookup_result() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let ok = func.alloc_block();
+        let bad = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+        let ptr = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapLookup {
+            dst: ptr,
+            map: MapRef {
+                name: "custom_map".to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: ok,
+            if_false: bad,
+        };
+
+        func.block_mut(ok).instructions.push(MirInst::Load {
+            dst,
+            ptr,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(ok).terminator = MirInst::Return { val: None };
+        func.block_mut(bad).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: 4,
+                }),
+                address_space: AddressSpace::Map,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected map bounds error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_unknown_map_pointee_bounds_allow_in_bounds_access() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let ok = func.alloc_block();
+        let bad = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+        let ptr = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapLookup {
+            dst: ptr,
+            map: MapRef {
+                name: "custom_map".to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: ok,
+            if_false: bad,
+        };
+
+        func.block_mut(ok).instructions.push(MirInst::Load {
+            dst,
+            ptr,
+            offset: 0,
+            ty: MirType::I32,
+        });
+        func.block_mut(ok).terminator = MirInst::Return { val: None };
+        func.block_mut(bad).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: 8,
+                }),
+                address_space: AddressSpace::Map,
+            },
+        );
+        types.insert(dst, MirType::I32);
+
+        verify_mir(&func, &types).expect("expected in-bounds access");
     }
 
     #[test]
