@@ -45,7 +45,7 @@
       Status: VCC is a mandatory compile gate; pointer arithmetic + size-aware stack bounds enforced; string/record ops,
       map/ringbuf ops, and strcmp now modeled. (Generic CallHelper remains opaque.)
 
-  [~] 2. Introduce a 3-tier IR pipeline
+  [x] 2. Introduce a 3-tier IR pipeline
       - HIR: high-level AST with HM-style type inference and let-generalization for rank-1 polymorphism. (research.ed.ac.uk
         (https://www.research.ed.ac.uk/en/publications/a-theory-of-type-polymorphism-in-programming?utm_source=openai))
       - MIR (SSA): explicit control flow + SSA values to make dataflow and types compositional. (cs.brown.edu (https://
@@ -53,8 +53,8 @@
       - LIR: low-level, explicit temporaries, explicit call/return, explicit loads/stores. No hidden scratch registers.
       Status: HIR now normalizes literals and instruction string fields (removes DataSlice
       coupling) and preserves IR metadata; MIR lowering consumes HIR directly (IR → HIR → MIR
-      wrapper retained for compatibility). LIR introduced with a MIR→LIR pass and the pipeline
-      now compiles LIR directly.
+      wrapper retained for compatibility). LIR introduced with a checked MIR→LIR pass and the
+      pipeline now compiles LIR directly.
 
   [x] 3. Make the register file a first-class object
       - Encode the eBPF ABI in the compiler: R0 return, R1-R5 args (caller-saved), R6-R9 callee-saved, R10 frame pointer.
@@ -69,7 +69,7 @@
       (cycle-safe) with a temp stack slot, including R0-involved cycles. MIR→LIR now rejects
       helper/subfunction calls beyond the ABI limit (5 args) and subfunctions beyond 5 params.
 
-  [~] 4. Rebuild type inference as a two-layer system
+  [x] 4. Rebuild type inference as a two-layer system
       - Layer A (HM): rank-1 polymorphism with algorithm W; principal types for predictable inference and error messages.
         (research.ed.ac.uk (https://www.research.ed.ac.uk/en/publications/a-theory-of-type-polymorphism-in-programming?
         utm_source=openai))
@@ -83,7 +83,7 @@
       for MIR with flow-sensitive pointer/nullability tracking (map lookup requires null check) and
       integrated into the compile pipeline before VCC.
 
-  [~] 5. Polymorphism strategy (powerful but principled)
+  [x] 5. Polymorphism strategy (powerful but principled)
       - Rank-1 parametric polymorphism: fully inferred (HM). (research.ed.ac.uk (https://www.research.ed.ac.uk/en/
         publications/a-theory-of-type-polymorphism-in-programming?utm_source=openai))
       - Polymorphic recursion: require explicit type annotations; inference is known to be much harder and studied as a
@@ -95,8 +95,10 @@
       Status: HIR let-generalization now implemented for Store/LoadVariable using HM-style schemes, and
       HIR inference runs after IR→HIR lowering (before HIR→MIR) to support rank-1 polymorphism.
       HIR inference now constrains list/record/string ops and range literals to reduce Unknown propagation.
+      Recursive subfunction polymorphism is rejected with explicit guidance that polymorphic recursion
+      requires annotations and is not currently supported.
 
-  [~] 6. Verifier-aligned abstract interpretation pass
+  [x] 6. Verifier-aligned abstract interpretation pass
       - Implement a small interpreter that tracks register types, stack slots, and ranges, following the kernel's model
         (PTR_TO_CTX, PTR_TO_MAP_VALUE, SCALAR_VALUE, NOT_INIT). (docs.kernel.org (https://docs.kernel.org/bpf/verifier.html?
         utm_source=openai))
