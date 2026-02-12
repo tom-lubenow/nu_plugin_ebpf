@@ -79,18 +79,20 @@ struct VerifierState {
     regs: Vec<VerifierType>,
     ranges: Vec<ValueRange>,
     non_zero: Vec<bool>,
-    not_equal: Vec<Option<i64>>,
+    not_equal: Vec<Vec<i64>>,
     reachable: bool,
     guards: HashMap<VReg, Guard>,
 }
 
 impl VerifierState {
+    const MAX_NOT_EQUAL_FACTS: usize = 8;
+
     fn new(total_vregs: usize) -> Self {
         Self {
             regs: vec![VerifierType::Uninit; total_vregs],
             ranges: vec![ValueRange::Unknown; total_vregs],
             non_zero: vec![false; total_vregs],
-            not_equal: vec![None; total_vregs],
+            not_equal: vec![Vec::new(); total_vregs],
             reachable: true,
             guards: HashMap::new(),
         }
@@ -128,8 +130,11 @@ impl VerifierState {
             .unwrap_or(false)
     }
 
-    fn not_equal_const(&self, vreg: VReg) -> Option<i64> {
-        self.not_equal.get(vreg.0 as usize).copied().flatten()
+    fn not_equal_consts(&self, vreg: VReg) -> &[i64] {
+        self.not_equal
+            .get(vreg.0 as usize)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     fn set(&mut self, vreg: VReg, ty: VerifierType) {
@@ -147,20 +152,32 @@ impl VerifierState {
             *slot = false;
         }
         if let Some(slot) = self.not_equal.get_mut(vreg.0 as usize) {
-            *slot = None;
+            slot.clear();
         }
         self.guards.remove(&vreg);
     }
 
     fn set_not_equal_const(&mut self, vreg: VReg, value: i64) {
         if let Some(slot) = self.not_equal.get_mut(vreg.0 as usize) {
-            *slot = Some(value);
+            if !slot.contains(&value) {
+                slot.push(value);
+                slot.sort_unstable();
+                if slot.len() > Self::MAX_NOT_EQUAL_FACTS {
+                    slot.remove(0);
+                }
+            }
         }
     }
 
     fn clear_not_equal_const(&mut self, vreg: VReg) {
         if let Some(slot) = self.not_equal.get_mut(vreg.0 as usize) {
-            *slot = None;
+            slot.clear();
+        }
+    }
+
+    fn retain_not_equal_in_range(&mut self, vreg: VReg, range: ValueRange) {
+        if let Some(slot) = self.not_equal.get_mut(vreg.0 as usize) {
+            slot.retain(|value| range_may_equal(range, *value));
         }
     }
 
@@ -198,11 +215,19 @@ impl VerifierState {
         }
         let mut not_equal = Vec::with_capacity(self.not_equal.len());
         for i in 0..self.not_equal.len() {
-            let excluded = match (self.not_equal[i], other.not_equal[i]) {
-                (Some(a), Some(b)) if a == b => Some(a),
-                _ => None,
-            };
-            not_equal.push(excluded);
+            let left = &self.not_equal[i];
+            let right = &other.not_equal[i];
+            if left.is_empty() || right.is_empty() {
+                not_equal.push(Vec::new());
+                continue;
+            }
+            let mut shared = Vec::new();
+            for value in left {
+                if right.contains(value) {
+                    shared.push(*value);
+                }
+            }
+            not_equal.push(shared);
         }
         VerifierState {
             regs,
@@ -425,8 +450,8 @@ fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool
                     return next;
                 };
                 let current = next.get_range(reg);
-                let excluded = next.not_equal_const(reg);
-                if !range_can_satisfy_const_compare(current, excluded, effective_op, value) {
+                let excluded = next.not_equal_consts(reg).to_vec();
+                if !range_can_satisfy_const_compare(current, &excluded, effective_op, value) {
                     next.mark_unreachable();
                     return next;
                 }
@@ -437,13 +462,7 @@ fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool
                 match effective_op {
                     BinOpKind::Eq => next.clear_not_equal_const(reg),
                     BinOpKind::Ne => next.set_not_equal_const(reg, value),
-                    _ => {
-                        if let Some(excluded) = next.not_equal_const(reg) {
-                            if !range_may_equal(new_range, excluded) {
-                                next.clear_not_equal_const(reg);
-                            }
-                        }
-                    }
+                    _ => next.retain_not_equal_in_range(reg, new_range),
                 }
                 let range_excludes_zero =
                     matches!(new_range, ValueRange::Known { min, max } if min > 0 || max < 0);
@@ -468,16 +487,8 @@ fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool
                 if let Some(slot) = next.ranges.get_mut(rhs.0 as usize) {
                     *slot = new_rhs;
                 }
-                if let Some(excluded) = next.not_equal_const(lhs) {
-                    if !range_may_equal(new_lhs, excluded) {
-                        next.clear_not_equal_const(lhs);
-                    }
-                }
-                if let Some(excluded) = next.not_equal_const(rhs) {
-                    if !range_may_equal(new_rhs, excluded) {
-                        next.clear_not_equal_const(rhs);
-                    }
-                }
+                next.retain_not_equal_in_range(lhs, new_lhs);
+                next.retain_not_equal_in_range(rhs, new_rhs);
                 let lhs_excludes_zero =
                     matches!(new_lhs, ValueRange::Known { min, max } if min > 0 || max < 0);
                 if let Some(slot) = next.non_zero.get_mut(lhs.0 as usize) {
@@ -511,9 +522,9 @@ fn apply_inst(
                 _ => false,
             };
             let src_not_equal = match src {
-                MirValue::VReg(vreg) => state.not_equal_const(*vreg),
-                MirValue::Const(value) if *value != 0 => Some(0),
-                _ => None,
+                MirValue::VReg(vreg) => state.not_equal_consts(*vreg).to_vec(),
+                MirValue::Const(value) if *value != 0 => vec![0],
+                _ => Vec::new(),
             };
             state.set_with_range(*dst, ty, range);
             if src_non_zero {
@@ -521,7 +532,7 @@ fn apply_inst(
                     *slot = true;
                 }
             }
-            if let Some(excluded) = src_not_equal {
+            for excluded in src_not_equal {
                 state.set_not_equal_const(*dst, excluded);
             }
         }
@@ -969,13 +980,13 @@ fn range_may_equal(range: ValueRange, value: i64) -> bool {
 
 fn range_can_satisfy_const_compare(
     range: ValueRange,
-    excluded: Option<i64>,
+    excluded: &[i64],
     op: BinOpKind,
     value: i64,
 ) -> bool {
     match op {
         BinOpKind::Eq => {
-            if excluded == Some(value) {
+            if excluded.contains(&value) {
                 return false;
             }
             range_may_equal(range, value)
@@ -2789,6 +2800,137 @@ mod tests {
         };
 
         func.block_mut(skip).terminator = MirInst::Return { val: None };
+
+        func.block_mut(bad).instructions.push(MirInst::BinOp {
+            dst: tmp_ptr,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(9),
+        });
+        func.block_mut(bad).instructions.push(MirInst::Load {
+            dst,
+            ptr: tmp_ptr,
+            offset: 0,
+            ty: MirType::I8,
+        });
+        func.block_mut(bad).terminator = MirInst::Return { val: None };
+
+        func.block_mut(ok).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(cond, MirType::Bool);
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            tmp_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I8);
+
+        verify_mir(&func, &types).expect("expected impossible == branch to be pruned");
+    }
+
+    #[test]
+    fn test_multiple_not_equal_facts_prune_followup_eq() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let left = func.alloc_block();
+        let right = func.alloc_block();
+        let join = func.alloc_block();
+        let after_first = func.alloc_block();
+        let after_second = func.alloc_block();
+        let skip_first = func.alloc_block();
+        let skip_second = func.alloc_block();
+        let bad = func.alloc_block();
+        let ok = func.alloc_block();
+        func.entry = entry;
+
+        let cond = func.alloc_vreg();
+        func.param_count = 1;
+
+        let slot = func.alloc_stack_slot(4, 1, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let left_idx = func.alloc_vreg();
+        let right_idx = func.alloc_vreg();
+        let idx = func.alloc_vreg();
+        let neq1 = func.alloc_vreg();
+        let neq3 = func.alloc_vreg();
+        let eq1 = func.alloc_vreg();
+        let tmp_ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: left,
+            if_false: right,
+        };
+
+        func.block_mut(left).instructions.push(MirInst::Copy {
+            dst: left_idx,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(left).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(right).instructions.push(MirInst::Copy {
+            dst: right_idx,
+            src: MirValue::Const(4),
+        });
+        func.block_mut(right).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(join).instructions.push(MirInst::Phi {
+            dst: idx,
+            args: vec![(left, left_idx), (right, right_idx)],
+        });
+        func.block_mut(join).instructions.push(MirInst::BinOp {
+            dst: neq1,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(idx),
+            rhs: MirValue::Const(1),
+        });
+        func.block_mut(join).terminator = MirInst::Branch {
+            cond: neq1,
+            if_true: after_first,
+            if_false: skip_first,
+        };
+
+        func.block_mut(after_first).instructions.push(MirInst::BinOp {
+            dst: neq3,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(idx),
+            rhs: MirValue::Const(3),
+        });
+        func.block_mut(after_first).terminator = MirInst::Branch {
+            cond: neq3,
+            if_true: after_second,
+            if_false: skip_second,
+        };
+
+        func.block_mut(after_second).instructions.push(MirInst::BinOp {
+            dst: eq1,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(idx),
+            rhs: MirValue::Const(1),
+        });
+        func.block_mut(after_second).terminator = MirInst::Branch {
+            cond: eq1,
+            if_true: bad,
+            if_false: ok,
+        };
+
+        func.block_mut(skip_first).terminator = MirInst::Return { val: None };
+        func.block_mut(skip_second).terminator = MirInst::Return { val: None };
 
         func.block_mut(bad).instructions.push(MirInst::BinOp {
             dst: tmp_ptr,
