@@ -23,6 +23,7 @@ use super::elf::{EbpfProgramType, ProbeContext};
 use super::hindley_milner::{
     Constraint, HMType, Substitution, TypeScheme, TypeVar, TypeVarGenerator, UnifyError, unify,
 };
+use super::instruction::{HelperArgKind, HelperRetKind, HelperSignature};
 use super::mir::{
     AddressSpace, BasicBlock, BinOpKind, CtxField, MapKind, MirFunction, MirInst, MirType,
     MirValue, STRING_COUNTER_MAP_NAME, StackSlotId, StackSlotKind, StringAppendType, SubfunctionId,
@@ -301,10 +302,26 @@ impl<'a> TypeInference<'a> {
                 self.constrain(dst_ty, result_ty, format!("unaryop {:?}", op));
             }
 
-            MirInst::CallHelper { dst, .. } => {
-                // Most BPF helpers return i64
+            MirInst::CallHelper { dst, helper, .. } => {
                 let dst_ty = self.vreg_type(*dst);
-                self.constrain(dst_ty, HMType::I64, "helper_call");
+                if let Some(sig) = HelperSignature::for_id(*helper) {
+                    match sig.ret_kind {
+                        HelperRetKind::Scalar => {
+                            self.constrain(dst_ty, HMType::I64, "helper_call");
+                        }
+                        HelperRetKind::PointerMaybeNull => {
+                            let pointee = HMType::Var(self.tvar_gen.fresh());
+                            let ptr_ty = HMType::Ptr {
+                                pointee: Box::new(pointee),
+                                address_space: AddressSpace::Map,
+                            };
+                            self.constrain(dst_ty, ptr_ty, "helper_call_ptr_ret");
+                        }
+                    }
+                } else {
+                    // Unknown helpers default to scalar return.
+                    self.constrain(dst_ty, HMType::I64, "helper_call");
+                }
             }
 
             MirInst::CallSubfn { dst, subfn, args } => {
@@ -1049,8 +1066,39 @@ impl<'a> TypeInference<'a> {
                 }
             }
 
-            MirInst::CallHelper { args, .. } => {
-                if args.len() > 5 {
+            MirInst::CallHelper { helper, args, .. } => {
+                if let Some(sig) = HelperSignature::for_id(*helper) {
+                    if args.len() < sig.min_args || args.len() > sig.max_args {
+                        errors.push(TypeError::new(format!(
+                            "helper {} expects {}..={} arguments, got {}",
+                            helper,
+                            sig.min_args,
+                            sig.max_args,
+                            args.len()
+                        )));
+                    }
+                    for (idx, arg) in args.iter().take(sig.max_args.min(5)).enumerate() {
+                        let arg_ty = self.mir_type_for_value(arg, types);
+                        match sig.arg_kind(idx) {
+                            HelperArgKind::Scalar => {
+                                if !Self::mir_is_numeric(&arg_ty) {
+                                    errors.push(TypeError::new(format!(
+                                        "helper {} arg{} expects scalar, got {:?}",
+                                        helper, idx, arg_ty
+                                    )));
+                                }
+                            }
+                            HelperArgKind::Pointer => {
+                                if !matches!(arg_ty, MirType::Ptr { .. }) {
+                                    errors.push(TypeError::new(format!(
+                                        "helper {} arg{} expects pointer, got {:?}",
+                                        helper, idx, arg_ty
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                } else if args.len() > 5 {
                     errors.push(TypeError::new(
                         "BPF helpers support at most 5 arguments".to_string(),
                     ));
@@ -2460,8 +2508,62 @@ mod tests {
             .expect_err("expected helper arg-limit type error");
         assert!(
             errs.iter()
-                .any(|e| e.message.contains("at most 5 arguments"))
+                .any(|e| e.message.contains("expects 0..=0 arguments"))
         );
+    }
+
+    #[test]
+    fn test_type_error_helper_pointer_argument_required() {
+        let mut func = make_test_function();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 16, // bpf_get_current_comm(buf, size)
+            args: vec![MirValue::Const(0), MirValue::Const(16)],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected pointer-argument helper type error");
+        assert!(errs.iter().any(|e| e.message.contains("expects pointer")));
+    }
+
+    #[test]
+    fn test_infer_helper_map_lookup_returns_pointer() {
+        let mut func = make_test_function();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let map = func.alloc_vreg();
+        let key = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: map,
+            src: MirValue::StackSlot(map_slot),
+        });
+        block.instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::StackSlot(key_slot),
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 1, // bpf_map_lookup_elem
+            args: vec![MirValue::VReg(map), MirValue::VReg(key)],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let types = ti.infer(&func).unwrap();
+        match types.get(&dst) {
+            Some(MirType::Ptr { address_space, .. }) => {
+                assert_eq!(*address_space, AddressSpace::Map);
+            }
+            other => panic!("Expected helper map lookup pointer return, got {:?}", other),
+        }
     }
 
     #[test]

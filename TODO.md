@@ -23,9 +23,10 @@ Last updated: 2026-02-12.
   - Backend map defs are kind-aware for built-in and generic map paths, instead of only name-driven defaults.
   - Loader counter readers now support both hash and per-cpu hash map types, aggregating per-cpu values consistently.
 
-- [ ] Replace opaque helper handling with typed helper semantics.
-  - `CallHelper` remains too generic for robust verifier modeling and diagnostics.
-  - Introduce typed helper signatures (arg constraints, return types, pointer provenance, mutability effects).
+- [~] Replace opaque helper handling with typed helper semantics.
+  - Added shared helper signatures for known helper IDs and wired signature-aware arg-count/type checks through type inference, VCC, and codegen.
+  - Added typed helper return modeling (e.g., pointer return for `bpf_map_lookup_elem` helper calls).
+  - Remaining: model helper side effects and pointer-state transitions (nullability/provenance/mutability) with kernel-verifier-level fidelity.
 
 ## Roadmap to a general-purpose eBPF language
 

@@ -30,7 +30,7 @@ use crate::compiler::graph_coloring::{
     ColoringResult, GraphColoringAllocator, compute_loop_depths,
 };
 use crate::compiler::hindley_milner::HMType;
-use crate::compiler::instruction::{BpfHelper, EbpfInsn, EbpfReg, opcode};
+use crate::compiler::instruction::{BpfHelper, EbpfInsn, EbpfReg, HelperSignature, opcode};
 use crate::compiler::lir::{LirBlock, LirFunction, LirInst, LirProgram};
 use crate::compiler::mir::{
     BinOpKind, BlockId, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, MapKind,
@@ -1311,7 +1311,17 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
 
             LirInst::CallHelper { helper, args, .. } => {
-                if args.len() > 5 {
+                if let Some(sig) = HelperSignature::for_id(*helper) {
+                    if args.len() < sig.min_args || args.len() > sig.max_args {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "helper {} expects {}..={} arguments, got {}",
+                            helper,
+                            sig.min_args,
+                            sig.max_args,
+                            args.len()
+                        )));
+                    }
+                } else if args.len() > 5 {
                     return Err(CompileError::UnsupportedInstruction(
                         "BPF helpers support at most 5 arguments".into(),
                     ));
@@ -5161,7 +5171,7 @@ mod tests {
             .instructions
             .push(MirInst::CallHelper {
                 dst,
-                helper: 14, // bpf_get_current_pid_tgid
+                helper: 9999, // Unknown helper still follows generic 5-arg limit
                 args,
             });
         func.block_mut(entry).terminator = MirInst::Return { val: None };

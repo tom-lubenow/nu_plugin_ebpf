@@ -82,6 +82,145 @@ pub enum BpfHelper {
     ProbeReadKernelStr = 115,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HelperArgKind {
+    Scalar,
+    Pointer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HelperRetKind {
+    Scalar,
+    PointerMaybeNull,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct HelperSignature {
+    pub min_args: usize,
+    pub max_args: usize,
+    pub arg_kinds: [HelperArgKind; 5],
+    pub ret_kind: HelperRetKind,
+}
+
+impl HelperSignature {
+    pub const fn for_id(helper_id: u32) -> Option<Self> {
+        match BpfHelper::from_u32(helper_id) {
+            Some(helper) => Some(helper.signature()),
+            None => None,
+        }
+    }
+
+    pub const fn arg_kind(&self, idx: usize) -> HelperArgKind {
+        self.arg_kinds[idx]
+    }
+}
+
+impl BpfHelper {
+    pub const fn from_u32(helper_id: u32) -> Option<Self> {
+        match helper_id {
+            1 => Some(Self::MapLookupElem),
+            2 => Some(Self::MapUpdateElem),
+            3 => Some(Self::MapDeleteElem),
+            4 => Some(Self::ProbeRead),
+            5 => Some(Self::KtimeGetNs),
+            6 => Some(Self::TracePrintk),
+            8 => Some(Self::GetSmpProcessorId),
+            12 => Some(Self::TailCall),
+            14 => Some(Self::GetCurrentPidTgid),
+            15 => Some(Self::GetCurrentUidGid),
+            16 => Some(Self::GetCurrentComm),
+            25 => Some(Self::PerfEventOutput),
+            27 => Some(Self::GetStackId),
+            114 => Some(Self::ProbeReadUserStr),
+            115 => Some(Self::ProbeReadKernelStr),
+            130 => Some(Self::RingbufOutput),
+            _ => None,
+        }
+    }
+
+    pub const fn signature(self) -> HelperSignature {
+        const S: HelperArgKind = HelperArgKind::Scalar;
+        const P: HelperArgKind = HelperArgKind::Pointer;
+        match self {
+            BpfHelper::MapLookupElem => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::PointerMaybeNull,
+            },
+            BpfHelper::MapUpdateElem => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, P, P, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::MapDeleteElem => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::ProbeRead => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, S, P, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::KtimeGetNs
+            | BpfHelper::GetSmpProcessorId
+            | BpfHelper::GetCurrentPidTgid
+            | BpfHelper::GetCurrentUidGid => HelperSignature {
+                min_args: 0,
+                max_args: 0,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::TracePrintk => HelperSignature {
+                min_args: 2,
+                max_args: 5,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::TailCall => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::GetCurrentComm => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::PerfEventOutput => HelperSignature {
+                min_args: 5,
+                max_args: 5,
+                arg_kinds: [P, P, S, P, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::GetStackId => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::RingbufOutput => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::ProbeReadUserStr | BpfHelper::ProbeReadKernelStr => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, S, P, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+        }
+    }
+}
+
 /// eBPF instruction opcodes
 pub mod opcode {
     // Instruction classes (3 bits)

@@ -13,6 +13,7 @@
 use std::collections::HashMap;
 
 use crate::compiler::cfg::CFG;
+use crate::compiler::instruction::{HelperArgKind, HelperSignature};
 use crate::compiler::mir::{
     AddressSpace, BinOpKind, MirFunction, MirInst, MirType, MirValue, STRING_COUNTER_MAP_NAME,
     StackSlotId, StackSlotKind, StringAppendType, UnaryOpKind, VReg,
@@ -1254,7 +1255,19 @@ impl<'a> VccLowerer<'a> {
                     ty,
                 });
             }
-            MirInst::CallHelper { dst, .. } | MirInst::CallSubfn { dst, .. } => {
+            MirInst::CallHelper { dst, helper, args } => {
+                self.verify_helper_call(*helper, args, out)?;
+                let ty = self
+                    .types
+                    .get(dst)
+                    .map(vcc_type_from_mir)
+                    .unwrap_or(VccValueType::Unknown);
+                out.push(VccInst::Assume {
+                    dst: VccReg(dst.0),
+                    ty,
+                });
+            }
+            MirInst::CallSubfn { dst, .. } => {
                 let ty = self
                     .types
                     .get(dst)
@@ -1717,6 +1730,76 @@ impl<'a> VccLowerer<'a> {
             size: check_size as u8,
         });
         Ok(())
+    }
+
+    fn verify_helper_call(
+        &mut self,
+        helper_id: u32,
+        args: &[MirValue],
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        if let Some(sig) = HelperSignature::for_id(helper_id) {
+            if args.len() < sig.min_args || args.len() > sig.max_args {
+                return Err(VccError::new(
+                    VccErrorKind::UnsupportedInstruction,
+                    format!(
+                        "helper {} expects {}..={} args, got {}",
+                        helper_id,
+                        sig.min_args,
+                        sig.max_args,
+                        args.len()
+                    ),
+                ));
+            }
+
+            for (idx, arg) in args.iter().enumerate() {
+                self.verify_helper_arg_value(helper_id, idx, arg, sig.arg_kind(idx), out)?;
+            }
+        } else if args.len() > 5 {
+            return Err(VccError::new(
+                VccErrorKind::UnsupportedInstruction,
+                "BPF helpers support at most 5 arguments",
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn verify_helper_arg_value(
+        &mut self,
+        helper_id: u32,
+        arg_idx: usize,
+        arg: &MirValue,
+        expected: HelperArgKind,
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        match expected {
+            HelperArgKind::Scalar => match arg {
+                MirValue::Const(_) => Ok(()),
+                MirValue::VReg(vreg) => {
+                    self.assert_scalar_reg(*vreg, out);
+                    Ok(())
+                }
+                MirValue::StackSlot(_) => Err(VccError::new(
+                    VccErrorKind::TypeMismatch {
+                        expected: VccTypeClass::Scalar,
+                        actual: VccTypeClass::Ptr,
+                    },
+                    format!("helper {} arg{} expects scalar value", helper_id, arg_idx),
+                )),
+            },
+            HelperArgKind::Pointer => match arg {
+                MirValue::Const(_) => Err(VccError::new(
+                    VccErrorKind::TypeMismatch {
+                        expected: VccTypeClass::Ptr,
+                        actual: VccTypeClass::Scalar,
+                    },
+                    format!("helper {} arg{} expects pointer value", helper_id, arg_idx),
+                )),
+                MirValue::VReg(vreg) => self.check_ptr_range(*vreg, 1, out),
+                MirValue::StackSlot(_) => Ok(()),
+            },
+        }
     }
 
     fn verify_map_key(
