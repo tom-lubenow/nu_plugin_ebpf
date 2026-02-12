@@ -1741,19 +1741,28 @@ impl<'a> VccLowerer<'a> {
 
     fn helper_return_type(&self, helper_id: u32, dst: VReg) -> VccValueType {
         let inferred = self.types.get(&dst).map(vcc_type_from_mir);
+        let helper = BpfHelper::from_u32(helper_id);
         let Some(sig) = HelperSignature::for_id(helper_id) else {
             return inferred.unwrap_or(VccValueType::Unknown);
         };
 
         match sig.ret_kind {
             HelperRetKind::Scalar => inferred.unwrap_or(VccValueType::Scalar { range: None }),
-            HelperRetKind::PointerMaybeNull => match inferred {
-                Some(VccValueType::Ptr(info)) => VccValueType::Ptr(info),
-                _ => VccValueType::Ptr(VccPointerInfo {
-                    space: VccAddrSpace::MapValue,
-                    bounds: None,
-                }),
-            },
+            HelperRetKind::PointerMaybeNull => {
+                if matches!(helper, Some(BpfHelper::RingbufReserve)) {
+                    return VccValueType::Ptr(VccPointerInfo {
+                        space: VccAddrSpace::RingBuf,
+                        bounds: None,
+                    });
+                }
+                match inferred {
+                    Some(VccValueType::Ptr(info)) => VccValueType::Ptr(info),
+                    _ => VccValueType::Ptr(VccPointerInfo {
+                        space: VccAddrSpace::MapValue,
+                        bounds: None,
+                    }),
+                }
+            }
         }
     }
 
@@ -1947,7 +1956,8 @@ impl<'a> VccLowerer<'a> {
     fn helper_space_name(&self, space: VccAddrSpace) -> &'static str {
         match space {
             VccAddrSpace::Stack(_) => "Stack",
-            VccAddrSpace::MapValue | VccAddrSpace::RingBuf => "Map",
+            VccAddrSpace::MapValue => "Map",
+            VccAddrSpace::RingBuf => "RingBuf",
             VccAddrSpace::Context => "Context",
             VccAddrSpace::Kernel => "Kernel",
             VccAddrSpace::User => "User",
@@ -2068,6 +2078,50 @@ impl<'a> VccLowerer<'a> {
         }
 
         Ok(())
+    }
+
+    fn check_helper_ringbuf_record_arg(
+        &mut self,
+        helper_id: u32,
+        arg_idx: usize,
+        arg: &MirValue,
+        op: &str,
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        let ptr = self.value_ptr_info(arg).ok_or_else(|| {
+            VccError::new(
+                VccErrorKind::TypeMismatch {
+                    expected: VccTypeClass::Ptr,
+                    actual: VccTypeClass::Scalar,
+                },
+                format!("helper {} arg{} expects ringbuf record pointer", helper_id, arg_idx),
+            )
+        })?;
+
+        if ptr.space != VccAddrSpace::RingBuf {
+            return Err(VccError::new(
+                VccErrorKind::PointerBounds,
+                format!(
+                    "{op} expects ringbuf record pointer, got {}",
+                    self.helper_space_name(ptr.space)
+                ),
+            ));
+        }
+
+        match arg {
+            MirValue::VReg(vreg) => self.check_ptr_range(*vreg, 1, out),
+            MirValue::StackSlot(slot) => {
+                let ptr = self.stack_addr_temp(*slot, out);
+                self.check_ptr_range_reg(ptr, 1, out)
+            }
+            MirValue::Const(_) => Err(VccError::new(
+                VccErrorKind::TypeMismatch {
+                    expected: VccTypeClass::Ptr,
+                    actual: VccTypeClass::Scalar,
+                },
+                format!("helper {} arg{} expects ringbuf record pointer", helper_id, arg_idx),
+            )),
+        }
     }
 
     fn helper_positive_size_upper_bound(
@@ -2280,6 +2334,25 @@ impl<'a> VccLowerer<'a> {
                     )?;
                 }
             }
+            BpfHelper::RingbufReserve => {
+                if let Some(map) = args.first() {
+                    self.check_helper_ptr_arg_value(
+                        helper_id,
+                        0,
+                        map,
+                        "helper ringbuf_reserve map",
+                        true,
+                        true,
+                        false,
+                        false,
+                        None,
+                        out,
+                    )?;
+                }
+                if let Some(size_arg) = args.get(1) {
+                    let _ = self.helper_positive_size_upper_bound(helper_id, 1, size_arg)?;
+                }
+            }
             BpfHelper::RingbufOutput => {
                 let size = args
                     .get(2)
@@ -2297,6 +2370,17 @@ impl<'a> VccLowerer<'a> {
                         false,
                         false,
                         size,
+                        out,
+                    )?;
+                }
+            }
+            BpfHelper::RingbufSubmit | BpfHelper::RingbufDiscard => {
+                if let Some(record) = args.first() {
+                    self.check_helper_ringbuf_record_arg(
+                        helper_id,
+                        0,
+                        record,
+                        "helper ringbuf submit/discard record",
                         out,
                     )?;
                 }
@@ -2861,6 +2945,133 @@ mod tests {
                 |e| e.message
                     .contains("helper map_lookup map expects pointer in [Stack, Map]")
             ),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_helper_ringbuf_reserve_submit_ok() {
+        let (mut func, entry) = new_mir_function();
+        let submit = func.alloc_block();
+        let done = func.alloc_block();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let record = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let submit_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst: record,
+            helper: 131, // bpf_ringbuf_reserve(map, size, flags)
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(8),
+                MirValue::Const(0),
+            ],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(record),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: submit,
+            if_false: done,
+        };
+
+        func.block_mut(submit).instructions.push(MirInst::CallHelper {
+            dst: submit_ret,
+            helper: 132, // bpf_ringbuf_submit(data, flags)
+            args: vec![MirValue::VReg(record), MirValue::Const(0)],
+        });
+        func.block_mut(submit).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(submit_ret, MirType::I64);
+        verify_mir(&func, &types).expect("expected ringbuf submit flow to pass");
+    }
+
+    #[test]
+    fn test_verify_mir_helper_ringbuf_submit_rejects_map_lookup_pointer() {
+        let (mut func, entry) = new_mir_function();
+        let submit = func.alloc_block();
+        let done = func.alloc_block();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let submit_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst: ptr,
+            helper: 1, // bpf_map_lookup_elem(map, key)
+            args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: submit,
+            if_false: done,
+        };
+
+        func.block_mut(submit).instructions.push(MirInst::CallHelper {
+            dst: submit_ret,
+            helper: 132, // bpf_ringbuf_submit(data, flags)
+            args: vec![MirValue::VReg(ptr), MirValue::Const(0)],
+        });
+        func.block_mut(submit).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(submit_ret, MirType::I64);
+        let err = verify_mir(&func, &types).expect_err("expected ringbuf pointer provenance error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("expects ringbuf record pointer, got Map")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_helper_ringbuf_submit_rejects_stack_pointer() {
+        let (mut func, entry) = new_mir_function();
+        let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 132, // bpf_ringbuf_submit(data, flags)
+            args: vec![MirValue::StackSlot(slot), MirValue::Const(0)],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+        let err = verify_mir(&func, &types).expect_err("expected ringbuf pointer provenance error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("expects ringbuf record pointer, got Stack")),
             "unexpected error messages: {:?}",
             err
         );
