@@ -1,5 +1,5 @@
   Status legend: [x] done  [~] partial  [ ] todo
-  Status checked against current code on 2026-01-26.
+  Status checked against current code on 2026-02-12.
 
   Phase 1: Critical Fixes [x]
 
@@ -107,6 +107,8 @@
       non-zero guards, compare guards (eq/ne/lt/le/gt/ge vs constants and vregs), bitwise ops (bounded non-negative,
       mask-derived; exact for constants), and phi joins, preserving bounds across non-constant offsets and
       pointer phis. Comparison-based range refinement now narrows branch ranges and preserves non-zero info.
+      Branch feasibility pruning now drops contradictory compare branches, and `!= const` facts are tracked
+      to reject impossible follow-up `== const` branches.
       Bounded stack range analysis exists in MIR type inference; VCC verifier is now
       integrated as a compile-time gate; full model not implemented.
 
@@ -117,14 +119,16 @@
       - Ensure every helper call (and subprogram call) has explicit clobber constraints; no "secret" register usage.
       - Plumb loop depth into LIR spill-cost heuristics (carry LoopInfo through LIR or recompute on LIR CFG).
       Status: graph coloring allocator exists with spill costs; allocator now consumes LIR and
-      uses LIR clobbers; loop-depth heuristics now computed for LIR via alloc CFG.
+      uses LIR clobbers; loop-depth heuristics now computed for LIR via alloc CFG. Worklist/adjacency
+      processing is deterministic with stable tie-breaking for freeze/spill selection.
 
   [~] 8. Testing strategy aligned with the design
       - Unit tests for HM inference and principal type schemes.
       - "Verifier-style" tests: run the abstract interpreter against negative examples (pointer + pointer, illegal stack
         access, etc.). (docs.kernel.org (https://docs.kernel.org/bpf/verifier.html?utm_source=openai))
       - Golden tests for register allocation stability (no unintended clobbers, correct spills).
-      Status: HM + regalloc tests exist; initial verifier-style tests added in VCC module.
+      Status: HM + regalloc tests exist; initial verifier-style tests added in VCC module; regalloc now has
+      repeated-allocation stability tests and MIR→eBPF has repeated-compilation bytecode stability coverage.
 
   What this buys us
 
@@ -147,9 +151,11 @@
   - HIR→MIR no longer pre-allocates a placeholder entry block (fixes VCC placeholder terminator failures).
   - Count map lowering updated to MapRef/MapKind; LoadCtxField now threads optional comm stack slot.
 
-  Verifier notes (2026-01-26)
-  - Known limitations: branch feasibility is not pruned when a guard contradicts a known range; `!=` lacks disjoint
-    range modeling (may keep a superset), which can yield false positives in bounds checks. Consider revisiting later.
+  Verifier notes (2026-02-12)
+  - Branch feasibility pruning for contradictory compare guards is now implemented.
+  - `!= const` facts are now tracked across branches and used to prune contradictory `== const` follow-up guards.
+  - Remaining limitation: only one excluded constant is tracked per vreg, so multiple independent `!= const`
+    facts are merged conservatively.
 
   Notes (2026-01-28)
   - User-defined function calls now lower to BPF subfunctions via `view ir --json --decl-id`,
