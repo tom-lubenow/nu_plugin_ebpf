@@ -1031,6 +1031,16 @@ impl VccVerifier {
                             self.errors.push(err);
                             return;
                         }
+                        if !Self::is_mem_space_allowed(ptr_info.space) {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::PointerBounds,
+                                format!(
+                                    "load requires pointer in [Stack, Map], got {}",
+                                    Self::space_name(ptr_info.space)
+                                ),
+                            ));
+                            return;
+                        }
                         if let Some(bounds) = ptr_info.bounds {
                             let size = *size as i64;
                             if size <= 0 {
@@ -1075,6 +1085,16 @@ impl VccVerifier {
                     VccValueType::Ptr(ptr_info) => {
                         if let Err(err) = self.require_non_null_ptr(ptr_info, "store") {
                             self.errors.push(err);
+                            return;
+                        }
+                        if !Self::is_mem_space_allowed(ptr_info.space) {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::PointerBounds,
+                                format!(
+                                    "store requires pointer in [Stack, Map], got {}",
+                                    Self::space_name(ptr_info.space)
+                                ),
+                            ));
                             return;
                         }
                         if let Some(bounds) = ptr_info.bounds {
@@ -1321,6 +1341,22 @@ impl VccVerifier {
                 VccErrorKind::PointerBounds,
                 format!("{op} may dereference null pointer (add a null check)"),
             )),
+        }
+    }
+
+    fn is_mem_space_allowed(space: VccAddrSpace) -> bool {
+        matches!(space, VccAddrSpace::Stack(_) | VccAddrSpace::MapValue)
+    }
+
+    fn space_name(space: VccAddrSpace) -> &'static str {
+        match space {
+            VccAddrSpace::Stack(_) => "Stack",
+            VccAddrSpace::MapValue => "Map",
+            VccAddrSpace::RingBuf => "RingBuf",
+            VccAddrSpace::Context => "Context",
+            VccAddrSpace::Kernel => "Kernel",
+            VccAddrSpace::User => "User",
+            VccAddrSpace::Unknown => "Unknown",
         }
     }
 
@@ -2533,19 +2569,10 @@ impl<'a> VccLowerer<'a> {
                 "expected pointer value",
             ));
         }
-
-        let check_size = if size >= 8 { 8 } else { 1 };
-        let offset = if size >= 8 {
-            (size - 8) as i64
-        } else {
-            (size - 1) as i64
-        };
-        let tmp = self.temp_reg();
-        out.push(VccInst::Load {
-            dst: tmp,
+        out.push(VccInst::AssertPtrAccess {
             ptr: VccReg(reg.0),
-            offset,
-            size: check_size as u8,
+            size: VccValue::Imm(size as i64),
+            op: "pointer access",
         });
         Ok(())
     }
@@ -2691,19 +2718,10 @@ impl<'a> VccLowerer<'a> {
                 "expected pointer value",
             ));
         }
-
-        let check_size = if size >= 8 { 8 } else { 1 };
-        let offset = if size >= 8 {
-            (size - 8) as i64
-        } else {
-            (size - 1) as i64
-        };
-        let tmp = self.temp_reg();
-        out.push(VccInst::Load {
-            dst: tmp,
+        out.push(VccInst::AssertPtrAccess {
             ptr,
-            offset,
-            size: check_size as u8,
+            size: VccValue::Imm(size as i64),
+            op: "pointer access",
         });
         Ok(())
     }
@@ -4189,6 +4207,45 @@ mod tests {
         let mut types = HashMap::new();
         types.insert(load_dst, MirType::I64);
         verify_mir(&func, &types).expect("expected impossible null branch to be pruned");
+    }
+
+    #[test]
+    fn test_verify_mir_load_rejects_user_ptr() {
+        let (mut func, entry) = new_mir_function();
+        let ptr = func.alloc_vreg();
+        func.param_count = 1;
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Load {
+            dst,
+            ptr,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::User,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected user ptr load error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("load requires pointer in [Stack, Map]")),
+            "unexpected error messages: {:?}",
+            err
+        );
     }
 
     #[test]
