@@ -4493,6 +4493,189 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_mir_stack_pointer_non_null() {
+        let (mut func, entry) = new_mir_function();
+        let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Load {
+            dst,
+            ptr,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        verify_mir(&func, &types).expect("stack pointer should be non-null");
+    }
+
+    #[test]
+    fn test_verify_mir_stack_load_out_of_bounds() {
+        let (mut func, entry) = new_mir_function();
+        let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Load {
+            dst,
+            ptr,
+            offset: 8,
+            ty: MirType::I64,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected bounds error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_stack_pointer_offset_in_bounds() {
+        let (mut func, entry) = new_mir_function();
+        let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let tmp = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: tmp,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(8),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Load {
+            dst,
+            ptr: tmp,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            tmp,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        verify_mir(&func, &types).expect("expected in-bounds access");
+    }
+
+    #[test]
+    fn test_verify_mir_stack_pointer_offset_via_mul_out_of_bounds() {
+        let (mut func, entry) = new_mir_function();
+        let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let base = func.alloc_vreg();
+        let scale = func.alloc_vreg();
+        let offset = func.alloc_vreg();
+        let tmp = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: base,
+            src: MirValue::Const(3),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: scale,
+            src: MirValue::Const(4),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: offset,
+            op: BinOpKind::Mul,
+            lhs: MirValue::VReg(base),
+            rhs: MirValue::VReg(scale),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: tmp,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::VReg(offset),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Load {
+            dst,
+            ptr: tmp,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            tmp,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected bounds error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
     fn test_verify_mir_read_str_rejects_non_user_ptr_for_user_space() {
         let (mut func, entry) = new_mir_function();
         let ptr = func.alloc_vreg();
