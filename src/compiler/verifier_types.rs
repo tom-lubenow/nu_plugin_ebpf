@@ -193,6 +193,27 @@ impl VerifierState {
         }
     }
 
+    fn invalidate_ringbuf_ref(&mut self, id: VReg) {
+        self.set_live_ringbuf_ref(id, false);
+        for idx in 0..self.regs.len() {
+            let reg = VReg(idx as u32);
+            let is_ref = matches!(
+                self.regs[idx],
+                VerifierType::Ptr {
+                    ringbuf_ref: Some(ref_id),
+                    ..
+                } if ref_id == id
+            );
+            if is_ref {
+                self.regs[idx] = VerifierType::Unknown;
+                self.ranges[idx] = ValueRange::Unknown;
+                self.non_zero[idx] = false;
+                self.not_equal[idx].clear();
+                self.guards.remove(&reg);
+            }
+        }
+    }
+
     fn has_live_ringbuf_refs(&self) -> bool {
         self.live_ringbuf_refs
             .iter()
@@ -1733,7 +1754,7 @@ fn apply_helper_semantics(
                             ringbuf_ref: Some(ref_id),
                             ..
                         } => {
-                            state.set_live_ringbuf_ref(ref_id, false);
+                            state.invalidate_ringbuf_ref(ref_id);
                         }
                         VerifierType::Ptr {
                             nullability: Nullability::MaybeNull,
@@ -2798,6 +2819,137 @@ mod tests {
             err.iter().any(|e| e
                 .message
                 .contains("helper 132 arg0 expects ringbuf record pointer")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_helper_ringbuf_submit_rejects_double_release() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let submit = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let record = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let submit_ret0 = func.alloc_vreg();
+        let submit_ret1 = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: record,
+                helper: 131, // bpf_ringbuf_reserve(map, size, flags)
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                ],
+            });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(record),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: submit,
+            if_false: done,
+        };
+
+        func.block_mut(submit)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: submit_ret0,
+                helper: 132, // bpf_ringbuf_submit(data, flags)
+                args: vec![MirValue::VReg(record), MirValue::Const(0)],
+            });
+        func.block_mut(submit)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: submit_ret1,
+                helper: 132, // bpf_ringbuf_submit(data, flags)
+                args: vec![MirValue::VReg(record), MirValue::Const(0)],
+            });
+        func.block_mut(submit).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(submit_ret0, MirType::I64);
+        types.insert(submit_ret1, MirType::I64);
+        let err = verify_mir(&func, &types).expect_err("expected double-release error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("helper 132 arg0 expects pointer")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_helper_ringbuf_submit_invalidates_record_pointer() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let submit = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let record = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let submit_ret = func.alloc_vreg();
+        let load_dst = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: record,
+                helper: 131, // bpf_ringbuf_reserve(map, size, flags)
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                ],
+            });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(record),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: submit,
+            if_false: done,
+        };
+
+        func.block_mut(submit)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: submit_ret,
+                helper: 132, // bpf_ringbuf_submit(data, flags)
+                args: vec![MirValue::VReg(record), MirValue::Const(0)],
+            });
+        func.block_mut(submit).instructions.push(MirInst::Load {
+            dst: load_dst,
+            ptr: record,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(submit).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(submit_ret, MirType::I64);
+        types.insert(load_dst, MirType::I64);
+        let err = verify_mir(&func, &types).expect_err("expected use-after-release error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("load requires pointer type")),
             "unexpected errors: {:?}",
             err
         );
