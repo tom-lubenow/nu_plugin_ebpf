@@ -1953,6 +1953,11 @@ impl VccState {
             VccBinOp::Mul => Some(self.mul_range(lhs_range, rhs_range)),
             VccBinOp::Div => self.div_range(lhs_range, rhs_range),
             VccBinOp::Mod => self.mod_range(lhs_range, rhs_range),
+            VccBinOp::And => self.and_range(lhs_range, rhs_range),
+            VccBinOp::Or => self.or_range(lhs_range, rhs_range),
+            VccBinOp::Xor => self.xor_range(lhs_range, rhs_range),
+            VccBinOp::Shl => self.shl_range(lhs_range, rhs_range),
+            VccBinOp::Shr => self.shr_range(lhs_range, rhs_range),
             _ => None,
         }
     }
@@ -2023,6 +2028,63 @@ impl VccState {
                 max: bound,
             })
         }
+    }
+
+    fn and_range(&self, lhs: VccRange, rhs: VccRange) -> Option<VccRange> {
+        if lhs.min < 0 || rhs.min < 0 {
+            return None;
+        }
+        Some(VccRange {
+            min: 0,
+            max: lhs.max.min(rhs.max),
+        })
+    }
+
+    fn or_range(&self, lhs: VccRange, rhs: VccRange) -> Option<VccRange> {
+        if lhs.min < 0 || rhs.min < 0 {
+            return None;
+        }
+        Some(VccRange {
+            min: 0,
+            max: lhs.max | rhs.max,
+        })
+    }
+
+    fn xor_range(&self, lhs: VccRange, rhs: VccRange) -> Option<VccRange> {
+        if lhs.min < 0 || rhs.min < 0 {
+            return None;
+        }
+        Some(VccRange {
+            min: 0,
+            max: lhs.max | rhs.max,
+        })
+    }
+
+    fn shl_range(&self, lhs: VccRange, rhs: VccRange) -> Option<VccRange> {
+        if lhs.min < 0 || rhs.min < 0 || rhs.min != rhs.max {
+            return None;
+        }
+        let shift = u32::try_from(rhs.min).ok()?;
+        if shift >= i64::BITS {
+            return None;
+        }
+        let min = lhs.min.checked_shl(shift)?;
+        let max = lhs.max.checked_shl(shift)?;
+        Some(VccRange { min, max })
+    }
+
+    fn shr_range(&self, lhs: VccRange, rhs: VccRange) -> Option<VccRange> {
+        if lhs.min < 0 || rhs.min < 0 || rhs.min != rhs.max {
+            return None;
+        }
+        let shift = u32::try_from(rhs.min).ok()?;
+        if shift >= i64::BITS {
+            return None;
+        }
+        Some(VccRange {
+            min: lhs.min >> shift,
+            max: lhs.max >> shift,
+        })
     }
 
     fn merge_types(&self, lhs: VccValueType, rhs: VccValueType) -> VccValueType {
@@ -5429,6 +5491,191 @@ mod tests {
         types.insert(dst, MirType::I8);
 
         verify_mir(&func, &types).expect("expected bounded modulo offset to pass");
+    }
+
+    #[test]
+    fn test_verify_mir_stack_pointer_offset_via_shift_out_of_bounds() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let base = func.alloc_vreg();
+        let shift = func.alloc_vreg();
+        let offset = func.alloc_vreg();
+        let tmp = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: base,
+            src: MirValue::Const(3),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: shift,
+            src: MirValue::Const(2),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: offset,
+            op: BinOpKind::Shl,
+            lhs: MirValue::VReg(base),
+            rhs: MirValue::VReg(shift),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: tmp,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::VReg(offset),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Load {
+            dst,
+            ptr: tmp,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            tmp,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected bounds error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_and_or_xor_range_bounds() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let slot = func.alloc_stack_slot(8, 1, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let left = func.alloc_vreg();
+        let right = func.alloc_vreg();
+        let tmp_and = func.alloc_vreg();
+        let tmp_or = func.alloc_vreg();
+        let tmp_xor = func.alloc_vreg();
+        let ptr_and = func.alloc_vreg();
+        let ptr_or = func.alloc_vreg();
+        let ptr_xor = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: left,
+            src: MirValue::Const(15),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: right,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: tmp_and,
+            op: BinOpKind::And,
+            lhs: MirValue::VReg(left),
+            rhs: MirValue::VReg(right),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: tmp_or,
+            op: BinOpKind::Or,
+            lhs: MirValue::VReg(left),
+            rhs: MirValue::VReg(right),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: tmp_xor,
+            op: BinOpKind::Xor,
+            lhs: MirValue::VReg(left),
+            rhs: MirValue::VReg(right),
+        });
+
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: ptr_and,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::VReg(tmp_and),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: ptr_or,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::VReg(tmp_or),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: ptr_xor,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::VReg(tmp_xor),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Load {
+            dst,
+            ptr: ptr_xor,
+            offset: 0,
+            ty: MirType::I8,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            ptr_and,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            ptr_or,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            ptr_xor,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I8);
+
+        let err = verify_mir(&func, &types).expect_err("expected bounds error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
     }
 
     #[test]
