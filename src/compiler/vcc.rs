@@ -2942,8 +2942,8 @@ fn collect_list_max(func: &MirFunction) -> HashMap<StackSlotId, usize> {
 mod tests {
     use super::*;
     use crate::compiler::mir::{
-        AddressSpace, BlockId, MirFunction, MirInst, MirType, MirValue, StackSlotKind,
-        StringAppendType,
+        AddressSpace, BlockId, MapKind, MapRef, MirFunction, MirInst, MirType, MirValue,
+        StackSlotKind, StringAppendType,
     };
     use std::collections::HashMap;
 
@@ -2963,6 +2963,21 @@ mod tests {
             kind,
             err
         );
+    }
+
+    fn map_lookup_types(func: &MirFunction, vreg: VReg) -> HashMap<VReg, MirType> {
+        let mut types = HashMap::new();
+        for i in 0..func.vreg_count {
+            types.insert(VReg(i), MirType::I64);
+        }
+        types.insert(
+            vreg,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Map,
+            },
+        );
+        types
     }
 
     #[test]
@@ -3275,6 +3290,96 @@ mod tests {
             "expected pointer bounds error, got {:?}",
             err
         );
+    }
+
+    #[test]
+    fn test_verify_mir_map_lookup_requires_null_check_before_load() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let load_dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapLookup {
+            dst,
+            map: MapRef {
+                name: "test".to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+        });
+        func.block_mut(entry).instructions.push(MirInst::Load {
+            dst: load_dst,
+            ptr: dst,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let types = map_lookup_types(&func, dst);
+        let err = verify_mir(&func, &types).expect_err("expected null-check error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("may dereference null pointer")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_map_lookup_null_check_then_load_ok() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let load_block = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let load_dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapLookup {
+            dst,
+            map: MapRef {
+                name: "test".to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(dst),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: load_block,
+            if_false: done,
+        };
+
+        func.block_mut(load_block).instructions.push(MirInst::Load {
+            dst: load_dst,
+            ptr: dst,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(load_block).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let types = map_lookup_types(&func, dst);
+        verify_mir(&func, &types).expect("expected null-checked map lookup load to pass");
     }
 
     #[test]
