@@ -507,7 +507,14 @@ impl VccVerifier {
                 );
             }
             VccInst::Copy { dst, src } => match state.value_type(*src) {
-                Ok(ty) => state.set_reg(*dst, ty),
+                Ok(ty) => {
+                    state.set_reg(*dst, ty);
+                    if let VccValue::Reg(src_reg) = src {
+                        if let Some(refinement) = state.cond_refinement(*src_reg) {
+                            state.set_cond_refinement(*dst, refinement);
+                        }
+                    }
+                }
                 Err(err) => self.errors.push(err),
             },
             VccInst::Assume { dst, ty } => {
@@ -870,6 +877,21 @@ impl VccVerifier {
                 }
                 let ty = merged.unwrap_or(VccValueType::Unknown);
                 state.set_reg(*dst, ty);
+                let mut merged_refinement: Option<Option<VccCondRefinement>> = None;
+                for (_, reg) in args {
+                    let next = state.cond_refinement(*reg);
+                    merged_refinement = Some(match merged_refinement {
+                        None => next,
+                        Some(existing) if existing == next => existing,
+                        _ => None,
+                    });
+                    if matches!(merged_refinement, Some(None)) {
+                        break;
+                    }
+                }
+                if let Some(Some(refinement)) = merged_refinement {
+                    state.set_cond_refinement(*dst, refinement);
+                }
             }
             VccInst::RingbufAcquire { id } => {
                 state.set_live_ringbuf_ref(*id, true);
@@ -3538,6 +3560,53 @@ mod tests {
         let mut types = HashMap::new();
         types.insert(dst, MirType::I64);
         verify_mir(&func, &types).expect("expected helper null-checked load to pass");
+    }
+
+    #[test]
+    fn test_verify_mir_helper_map_lookup_null_check_via_copied_cond_ok() {
+        let (mut func, entry) = new_mir_function();
+        let load_block = func.alloc_block();
+        let done = func.alloc_block();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let cond0 = func.alloc_vreg();
+        let cond1 = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst: ptr,
+            helper: 1, // bpf_map_lookup_elem(map, key)
+            args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond0,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: cond1,
+            src: MirValue::VReg(cond0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: cond1,
+            if_true: load_block,
+            if_false: done,
+        };
+
+        func.block_mut(load_block).instructions.push(MirInst::Load {
+            dst,
+            ptr,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(load_block).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+        verify_mir(&func, &types).expect("expected copied null-check guard to pass");
     }
 
     #[test]
