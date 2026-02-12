@@ -415,6 +415,13 @@ impl VccVerifier {
     fn refine_branch_states(&self, cond: VccValue, state: &VccState) -> (VccState, VccState) {
         let mut true_state = state.clone();
         let mut false_state = state.clone();
+        if let Some(truthy) = self.known_truthy(cond, state) {
+            if truthy {
+                false_state.mark_unreachable();
+            } else {
+                true_state.mark_unreachable();
+            }
+        }
         if let VccValue::Reg(cond_reg) = cond {
             if let Some(refinement) = state.cond_refinement(cond_reg) {
                 let true_non_null = refinement.true_means_non_null;
@@ -454,6 +461,18 @@ impl VccVerifier {
             }
         }
         state.set_reg(refinement.ptr_reg, VccValueType::Ptr(ptr));
+    }
+
+    fn known_truthy(&self, cond: VccValue, state: &VccState) -> Option<bool> {
+        let ty = state.value_type(cond).ok()?;
+        let range = state.value_range(cond, ty)?;
+        if range.min == 0 && range.max == 0 {
+            Some(false)
+        } else if range.min > 0 || range.max < 0 {
+            Some(true)
+        } else {
+            None
+        }
     }
 
     fn propagate_state(
@@ -3162,6 +3181,47 @@ mod tests {
                 size: 16,
             });
         func.block_mut(unreachable).instructions.push(VccInst::BinOp {
+            dst: out,
+            op: VccBinOp::Add,
+            lhs: VccValue::Reg(p0),
+            rhs: VccValue::Reg(p1),
+        });
+
+        verify_ok(&func);
+    }
+
+    #[test]
+    fn test_constant_false_branch_prunes_true_path() {
+        let mut func = VccFunction::new();
+        let entry = func.entry;
+        let bad = func.alloc_block();
+        let done = func.alloc_block();
+        let cond = func.alloc_reg();
+        let p0 = func.alloc_reg();
+        let p1 = func.alloc_reg();
+        let out = func.alloc_reg();
+
+        func.block_mut(entry).instructions.push(VccInst::Const {
+            dst: cond,
+            value: 0,
+        });
+        func.block_mut(entry).terminator = VccTerminator::Branch {
+            cond: VccValue::Reg(cond),
+            if_true: bad,
+            if_false: done,
+        };
+        func.block_mut(bad).instructions.push(VccInst::StackAddr {
+            dst: p0,
+            slot: StackSlotId(0),
+            size: 16,
+        });
+        func.block_mut(bad).instructions.push(VccInst::StackAddr {
+            dst: p1,
+            slot: StackSlotId(1),
+            size: 16,
+        });
+        // This pointer binop would be rejected if the branch were reachable.
+        func.block_mut(bad).instructions.push(VccInst::BinOp {
             dst: out,
             op: VccBinOp::Add,
             lhs: VccValue::Reg(p0),
