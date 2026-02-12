@@ -50,6 +50,7 @@ enum VerifierType {
         space: AddressSpace,
         nullability: Nullability,
         bounds: Option<PtrBounds>,
+        ringbuf_ref: Option<VReg>,
     },
 }
 
@@ -81,6 +82,7 @@ struct VerifierState {
     ranges: Vec<ValueRange>,
     non_zero: Vec<bool>,
     not_equal: Vec<Vec<i64>>,
+    live_ringbuf_refs: Vec<bool>,
     reachable: bool,
     guards: HashMap<VReg, Guard>,
 }
@@ -94,6 +96,7 @@ impl VerifierState {
             ranges: vec![ValueRange::Unknown; total_vregs],
             non_zero: vec![false; total_vregs],
             not_equal: vec![Vec::new(); total_vregs],
+            live_ringbuf_refs: vec![false; total_vregs],
             reachable: true,
             guards: HashMap::new(),
         }
@@ -105,6 +108,7 @@ impl VerifierState {
             ranges: self.ranges.clone(),
             non_zero: self.non_zero.clone(),
             not_equal: self.not_equal.clone(),
+            live_ringbuf_refs: self.live_ringbuf_refs.clone(),
             reachable: self.reachable,
             guards: HashMap::new(),
         }
@@ -183,6 +187,19 @@ impl VerifierState {
         self.reachable = false;
     }
 
+    fn set_live_ringbuf_ref(&mut self, id: VReg, live: bool) {
+        if let Some(slot) = self.live_ringbuf_refs.get_mut(id.0 as usize) {
+            *slot = live;
+        }
+    }
+
+    fn has_live_ringbuf_refs(&self) -> bool {
+        self.live_ringbuf_refs
+            .iter()
+            .copied()
+            .any(std::convert::identity)
+    }
+
     fn is_reachable(&self) -> bool {
         self.reachable
     }
@@ -227,11 +244,16 @@ impl VerifierState {
             }
             not_equal.push(shared);
         }
+        let mut live_ringbuf_refs = Vec::with_capacity(self.live_ringbuf_refs.len());
+        for i in 0..self.live_ringbuf_refs.len() {
+            live_ringbuf_refs.push(self.live_ringbuf_refs[i] || other.live_ringbuf_refs[i]);
+        }
         VerifierState {
             regs,
             ranges,
             non_zero,
             not_equal,
+            live_ringbuf_refs,
             reachable: true,
             guards: HashMap::new(),
         }
@@ -319,7 +341,13 @@ pub fn verify_mir(
                 propagate_state(*if_true, &true_state, &mut in_states, &mut worklist);
                 propagate_state(*if_false, &false_state, &mut in_states, &mut worklist);
             }
-            MirInst::Return { .. } | MirInst::TailCall { .. } => {}
+            MirInst::Return { .. } | MirInst::TailCall { .. } => {
+                if state.has_live_ringbuf_refs() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased ringbuf record reference at function exit",
+                    ));
+                }
+            }
             _ => {}
         }
     }
@@ -352,6 +380,7 @@ fn propagate_state(
                 || merged.ranges != existing.ranges
                 || merged.non_zero != existing.non_zero
                 || merged.not_equal != existing.not_equal
+                || merged.live_ringbuf_refs != existing.live_ringbuf_refs
                 || merged.reachable != existing.reachable
             {
                 in_states.insert(block, merged);
@@ -385,6 +414,7 @@ fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool
                     space,
                     nullability,
                     bounds,
+                    ringbuf_ref,
                 } = current
                 {
                     if (wants_non_null && nullability == Nullability::Null)
@@ -398,12 +428,18 @@ fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool
                     } else {
                         Nullability::Null
                     };
+                    if !wants_non_null {
+                        if let Some(ref_id) = ringbuf_ref {
+                            next.set_live_ringbuf_ref(ref_id, false);
+                        }
+                    }
                     next.set(
                         ptr,
                         VerifierType::Ptr {
                             space,
                             nullability,
                             bounds,
+                            ringbuf_ref,
                         },
                     );
                 }
@@ -659,20 +695,34 @@ fn apply_inst(
                         .get(dst)
                         .map(verifier_type_from_mir)
                         .unwrap_or(VerifierType::Scalar),
-                    HelperRetKind::PointerMaybeNull => {
-                        let bounds =
-                            map_value_limit_from_dst_type(types.get(dst)).map(|limit| PtrBounds {
-                                origin: PtrOrigin::Map,
-                                min: 0,
-                                max: 0,
-                                limit,
-                            });
-                        VerifierType::Ptr {
-                            space: AddressSpace::Map,
-                            nullability: Nullability::MaybeNull,
-                            bounds,
+                    HelperRetKind::PointerMaybeNull => match BpfHelper::from_u32(*helper) {
+                        Some(BpfHelper::RingbufReserve) => {
+                            state.set_live_ringbuf_ref(*dst, true);
+                            VerifierType::Ptr {
+                                space: AddressSpace::Map,
+                                nullability: Nullability::MaybeNull,
+                                bounds: None,
+                                ringbuf_ref: Some(*dst),
+                            }
                         }
-                    }
+                        _ => {
+                            let bounds =
+                                map_value_limit_from_dst_type(types.get(dst)).map(|limit| {
+                                    PtrBounds {
+                                        origin: PtrOrigin::Map,
+                                        min: 0,
+                                        max: 0,
+                                        limit,
+                                    }
+                                });
+                            VerifierType::Ptr {
+                                space: AddressSpace::Map,
+                                nullability: Nullability::MaybeNull,
+                                bounds,
+                                ringbuf_ref: None,
+                            }
+                        }
+                    },
                 };
                 state.set_with_range(*dst, ty, ValueRange::Unknown);
             } else {
@@ -719,6 +769,7 @@ fn apply_inst(
                     space: AddressSpace::Map,
                     nullability: Nullability::MaybeNull,
                     bounds,
+                    ringbuf_ref: None,
                 },
             );
         }
@@ -735,6 +786,7 @@ fn apply_inst(
                     space: AddressSpace::Stack,
                     nullability: Nullability::NonNull,
                     bounds,
+                    ringbuf_ref: None,
                 },
             );
         }
@@ -778,6 +830,7 @@ fn apply_inst(
                     space: AddressSpace::Stack,
                     nullability,
                     bounds,
+                    ringbuf_ref: None,
                 };
             }
             state.set(*dst, ty);
@@ -919,6 +972,7 @@ fn pointer_arith_result(
         space,
         nullability,
         bounds,
+        ringbuf_ref,
     } = ptr_ty
     {
         let bounds = match (bounds, offset_range) {
@@ -937,6 +991,7 @@ fn pointer_arith_result(
             space,
             nullability,
             bounds,
+            ringbuf_ref,
         });
     }
 
@@ -1322,7 +1377,7 @@ fn require_ptr_with_space(
             nullability: Nullability::NonNull,
             space,
             bounds,
-            ..
+            ringbuf_ref,
         } => {
             if !allowed.contains(&space) {
                 errors.push(VerifierTypeError::new(format!(
@@ -1334,6 +1389,7 @@ fn require_ptr_with_space(
                 space,
                 nullability: Nullability::NonNull,
                 bounds,
+                ringbuf_ref,
             })
         }
         VerifierType::Ptr {
@@ -1471,7 +1527,7 @@ fn check_helper_ptr_arg_value(
 fn apply_helper_semantics(
     helper_id: u32,
     args: &[MirValue],
-    state: &VerifierState,
+    state: &mut VerifierState,
     slot_sizes: &HashMap<StackSlotId, i64>,
     errors: &mut Vec<VerifierTypeError>,
 ) {
@@ -1578,9 +1634,9 @@ fn apply_helper_semantics(
             }
         }
         BpfHelper::GetCurrentComm => {
-            let size = args
-                .get(1)
-                .and_then(|value| helper_positive_size_upper_bound(helper_id, 1, value, state, errors));
+            let size = args.get(1).and_then(|value| {
+                helper_positive_size_upper_bound(helper_id, 1, value, state, errors)
+            });
             if let Some(dst) = args.first() {
                 check_helper_ptr_arg_value(
                     helper_id,
@@ -1596,9 +1652,9 @@ fn apply_helper_semantics(
             }
         }
         BpfHelper::ProbeRead | BpfHelper::ProbeReadKernelStr | BpfHelper::ProbeReadUserStr => {
-            let size = args
-                .get(1)
-                .and_then(|value| helper_positive_size_upper_bound(helper_id, 1, value, state, errors));
+            let size = args.get(1).and_then(|value| {
+                helper_positive_size_upper_bound(helper_id, 1, value, state, errors)
+            });
             if let Some(dst) = args.first() {
                 check_helper_ptr_arg_value(
                     helper_id,
@@ -1631,10 +1687,28 @@ fn apply_helper_semantics(
                 );
             }
         }
+        BpfHelper::RingbufReserve => {
+            if let Some(map) = args.first() {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    0,
+                    map,
+                    "helper ringbuf_reserve map",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    None,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
+            if let Some(size_arg) = args.get(1) {
+                let _ = helper_positive_size_upper_bound(helper_id, 1, size_arg, state, errors);
+            }
+        }
         BpfHelper::RingbufOutput => {
-            let size = args
-                .get(2)
-                .and_then(|value| helper_positive_size_upper_bound(helper_id, 2, value, state, errors));
+            let size = args.get(2).and_then(|value| {
+                helper_positive_size_upper_bound(helper_id, 2, value, state, errors)
+            });
             if let Some(data) = args.get(1) {
                 check_helper_ptr_arg_value(
                     helper_id,
@@ -1649,10 +1723,53 @@ fn apply_helper_semantics(
                 );
             }
         }
+        BpfHelper::RingbufSubmit | BpfHelper::RingbufDiscard => {
+            if let Some(record) = args.first() {
+                match record {
+                    MirValue::VReg(vreg) => match state.get(*vreg) {
+                        VerifierType::Ptr {
+                            space: AddressSpace::Map,
+                            nullability: Nullability::NonNull,
+                            ringbuf_ref: Some(ref_id),
+                            ..
+                        } => {
+                            state.set_live_ringbuf_ref(ref_id, false);
+                        }
+                        VerifierType::Ptr {
+                            nullability: Nullability::MaybeNull,
+                            ..
+                        } => {
+                            errors.push(VerifierTypeError::new(format!(
+                                "helper {} arg0 may dereference null pointer v{} (add a null check)",
+                                helper_id, vreg.0
+                            )));
+                        }
+                        VerifierType::Ptr { .. } => {
+                            errors.push(VerifierTypeError::new(format!(
+                                "helper {} arg0 expects ringbuf record pointer",
+                                helper_id
+                            )));
+                        }
+                        _ => {
+                            errors.push(VerifierTypeError::new(format!(
+                                "helper {} arg0 expects ringbuf record pointer",
+                                helper_id
+                            )));
+                        }
+                    },
+                    _ => {
+                        errors.push(VerifierTypeError::new(format!(
+                            "helper {} arg0 expects ringbuf record pointer",
+                            helper_id
+                        )));
+                    }
+                }
+            }
+        }
         BpfHelper::PerfEventOutput => {
-            let size = args
-                .get(4)
-                .and_then(|value| helper_positive_size_upper_bound(helper_id, 4, value, state, errors));
+            let size = args.get(4).and_then(|value| {
+                helper_positive_size_upper_bound(helper_id, 4, value, state, errors)
+            });
             if let Some(data) = args.get(3) {
                 check_helper_ptr_arg_value(
                     helper_id,
@@ -1767,6 +1884,7 @@ fn value_type(
                 space: AddressSpace::Stack,
                 nullability: Nullability::NonNull,
                 bounds,
+                ringbuf_ref: None,
             }
         }
     }
@@ -1808,6 +1926,7 @@ fn verifier_type_from_mir(ty: &MirType) -> VerifierType {
             space: AddressSpace::Stack,
             nullability: Nullability::NonNull,
             bounds: None,
+            ringbuf_ref: None,
         },
         MirType::Ptr { address_space, .. } => VerifierType::Ptr {
             space: *address_space,
@@ -1817,6 +1936,7 @@ fn verifier_type_from_mir(ty: &MirType) -> VerifierType {
                 AddressSpace::Kernel | AddressSpace::User => Nullability::MaybeNull,
             },
             bounds: None,
+            ringbuf_ref: None,
         },
         MirType::Unknown => VerifierType::Unknown,
         _ => VerifierType::Scalar,
@@ -1835,11 +1955,13 @@ fn join_type(a: VerifierType, b: VerifierType) -> VerifierType {
                 space: sa,
                 nullability: na,
                 bounds: ba,
+                ringbuf_ref: ra,
             },
             Ptr {
                 space: sb,
                 nullability: nb,
                 bounds: bb,
+                ringbuf_ref: rb,
             },
         ) => {
             if sa != sb {
@@ -1847,10 +1969,12 @@ fn join_type(a: VerifierType, b: VerifierType) -> VerifierType {
             }
             let nullability = join_nullability(na, nb);
             let bounds = join_bounds(ba, bb);
+            let ringbuf_ref = join_ringbuf_ref(ra, rb);
             Ptr {
                 space: sa,
                 nullability,
                 bounds,
+                ringbuf_ref,
             }
         }
         (Scalar, Bool) | (Bool, Scalar) => Scalar,
@@ -1874,6 +1998,15 @@ fn join_bounds(a: Option<PtrBounds>, b: Option<PtrBounds>) -> Option<PtrBounds> 
             max: a.max.max(b.max),
             limit: a.limit,
         }),
+        _ => None,
+    }
+}
+
+fn join_ringbuf_ref(a: Option<VReg>, b: Option<VReg>) -> Option<VReg> {
+    match (a, b) {
+        (Some(a), Some(b)) if a == b => Some(a),
+        (Some(_), Some(_)) => None,
+        (None, None) => None,
         _ => None,
     }
 }
@@ -2515,13 +2648,11 @@ mod tests {
             if_false: done,
         };
 
-        func.block_mut(call)
-            .instructions
-            .push(MirInst::CallHelper {
-                dst,
-                helper: 1, // bpf_map_lookup_elem(map, key)
-                args: vec![MirValue::VReg(map), MirValue::StackSlot(key_slot)],
-            });
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 1, // bpf_map_lookup_elem(map, key)
+            args: vec![MirValue::VReg(map), MirValue::StackSlot(key_slot)],
+        });
         func.block_mut(call).terminator = MirInst::Return { val: None };
         func.block_mut(done).terminator = MirInst::Return { val: None };
 
@@ -2537,8 +2668,136 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected helper map pointer-space error");
         assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("helper map_lookup map expects pointer in [Stack, Map]")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_helper_ringbuf_reserve_submit_releases_reference() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let submit = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let record = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let submit_ret = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: record,
+                helper: 131, // bpf_ringbuf_reserve(map, size, flags)
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                ],
+            });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(record),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: submit,
+            if_false: done,
+        };
+
+        func.block_mut(submit)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: submit_ret,
+                helper: 132, // bpf_ringbuf_submit(data, flags)
+                args: vec![MirValue::VReg(record), MirValue::Const(0)],
+            });
+        func.block_mut(submit).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(submit_ret, MirType::I64);
+        verify_mir(&func, &types).expect("expected ringbuf reference to be released");
+    }
+
+    #[test]
+    fn test_helper_ringbuf_reserve_leak_is_rejected() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let leak = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let record = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: record,
+                helper: 131, // bpf_ringbuf_reserve(map, size, flags)
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                ],
+            });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(record),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: leak,
+            if_false: done,
+        };
+
+        func.block_mut(leak).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let err = verify_mir(&func, &HashMap::new()).expect_err("expected leak error");
+        assert!(
             err.iter()
-                .any(|e| e.message.contains("helper map_lookup map expects pointer in [Stack, Map]")),
+                .any(|e| e.message.contains("unreleased ringbuf record reference")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_helper_ringbuf_submit_requires_ringbuf_record_pointer() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 132, // bpf_ringbuf_submit(data, flags)
+                args: vec![MirValue::StackSlot(slot), MirValue::Const(0)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+        let err = verify_mir(&func, &types).expect_err("expected ringbuf pointer-kind error");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("helper 132 arg0 expects ringbuf record pointer")),
             "unexpected errors: {:?}",
             err
         );
@@ -2629,12 +2888,14 @@ mod tests {
             if_false: done,
         };
 
-        func.block_mut(check_upper).instructions.push(MirInst::BinOp {
-            dst: le_sixteen,
-            op: BinOpKind::Le,
-            lhs: MirValue::VReg(size),
-            rhs: MirValue::Const(16),
-        });
+        func.block_mut(check_upper)
+            .instructions
+            .push(MirInst::BinOp {
+                dst: le_sixteen,
+                op: BinOpKind::Le,
+                lhs: MirValue::VReg(size),
+                rhs: MirValue::Const(16),
+            });
         func.block_mut(check_upper).terminator = MirInst::Branch {
             cond: le_sixteen,
             if_true: call,
@@ -2656,8 +2917,9 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected helper dst bounds error");
         assert!(
-            err.iter()
-                .any(|e| e.message.contains("helper get_current_comm dst out of bounds")),
+            err.iter().any(|e| e
+                .message
+                .contains("helper get_current_comm dst out of bounds")),
             "unexpected errors: {:?}",
             err
         );
@@ -2691,12 +2953,14 @@ mod tests {
             if_false: done,
         };
 
-        func.block_mut(check_upper).instructions.push(MirInst::BinOp {
-            dst: le_eight,
-            op: BinOpKind::Le,
-            lhs: MirValue::VReg(size),
-            rhs: MirValue::Const(8),
-        });
+        func.block_mut(check_upper)
+            .instructions
+            .push(MirInst::BinOp {
+                dst: le_eight,
+                op: BinOpKind::Le,
+                lhs: MirValue::VReg(size),
+                rhs: MirValue::Const(8),
+            });
         func.block_mut(check_upper).terminator = MirInst::Branch {
             cond: le_eight,
             if_true: call,

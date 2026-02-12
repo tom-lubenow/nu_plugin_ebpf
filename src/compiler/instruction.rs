@@ -74,8 +74,14 @@ pub enum BpfHelper {
     PerfEventOutput = 25,
     /// long bpf_get_stackid(ctx, map, flags)
     GetStackId = 27,
-    /// void *bpf_ringbuf_output(map, data, size, flags)
+    /// long bpf_ringbuf_output(map, data, size, flags)
     RingbufOutput = 130,
+    /// void *bpf_ringbuf_reserve(map, size, flags)
+    RingbufReserve = 131,
+    /// void bpf_ringbuf_submit(data, flags)
+    RingbufSubmit = 132,
+    /// void bpf_ringbuf_discard(data, flags)
+    RingbufDiscard = 133,
     /// long bpf_probe_read_user_str(dst, size, unsafe_ptr)
     ProbeReadUserStr = 114,
     /// long bpf_probe_read_kernel_str(dst, size, unsafe_ptr)
@@ -134,6 +140,9 @@ impl BpfHelper {
             114 => Some(Self::ProbeReadUserStr),
             115 => Some(Self::ProbeReadKernelStr),
             130 => Some(Self::RingbufOutput),
+            131 => Some(Self::RingbufReserve),
+            132 => Some(Self::RingbufSubmit),
+            133 => Some(Self::RingbufDiscard),
             _ => None,
         }
     }
@@ -209,6 +218,18 @@ impl BpfHelper {
                 min_args: 4,
                 max_args: 4,
                 arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::RingbufReserve => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::PointerMaybeNull,
+            },
+            BpfHelper::RingbufSubmit | BpfHelper::RingbufDiscard => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::ProbeReadUserStr | BpfHelper::ProbeReadKernelStr => HelperSignature {

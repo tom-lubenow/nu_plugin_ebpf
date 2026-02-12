@@ -28,7 +28,8 @@ Last updated: 2026-02-12.
   - Added shared helper signatures for known helper IDs and wired signature-aware arg-count/type checks through type inference, VCC, and codegen.
   - Added typed helper return modeling (e.g., pointer return for `bpf_map_lookup_elem` helper calls).
   - Added helper-side pointer-space and range-aware size/bounds checks in the verifier, with matching VCC checks for map ops, probe-read variants, ringbuf output, perf-event output, and `get_current_comm`.
-  - Remaining: model deeper helper pointer-state transitions (provenance/nullability/mutability/ref-lifetime semantics) with kernel-verifier-level fidelity.
+  - Added initial helper ref-lifetime/provenance tracking in the verifier for ringbuf reserve/submit/discard, including leak detection at function exit.
+  - Remaining: extend pointer-state transitions to broader helper/kfunc families (provenance/nullability/mutability/ref-lifetime) with kernel-verifier-level fidelity.
 
 ## Roadmap to a general-purpose eBPF language
 
