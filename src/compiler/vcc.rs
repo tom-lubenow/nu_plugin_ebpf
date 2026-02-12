@@ -2482,7 +2482,10 @@ impl<'a> VccLowerer<'a> {
                 });
             }
             MirInst::ReadStr {
-                dst, ptr, max_len, ..
+                dst,
+                ptr,
+                user_space,
+                max_len,
             } => {
                 if *max_len == 0 {
                     return Err(VccError::new(
@@ -2490,6 +2493,7 @@ impl<'a> VccLowerer<'a> {
                         "read_str max_len must be positive",
                     ));
                 }
+                self.verify_read_str_ptr(*ptr, *user_space, out)?;
                 let ptr_reg = VccReg(ptr.0);
                 let tmp = self.temp_reg();
                 out.push(VccInst::PtrAdd {
@@ -3690,6 +3694,61 @@ impl<'a> VccLowerer<'a> {
             Ok(())
         }
     }
+
+    fn verify_read_str_ptr(
+        &mut self,
+        ptr: VReg,
+        user_space: bool,
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        let ptr_info = self.value_ptr_info(&MirValue::VReg(ptr)).ok_or_else(|| {
+            VccError::new(
+                VccErrorKind::TypeMismatch {
+                    expected: VccTypeClass::Ptr,
+                    actual: VccTypeClass::Unknown,
+                },
+                "read_str expects pointer value",
+            )
+        })?;
+        let effective_space = if ptr_info.space == VccAddrSpace::Unknown {
+            match self.types.get(&ptr) {
+                Some(MirType::Ptr { address_space, .. }) => match address_space {
+                    AddressSpace::Stack => VccAddrSpace::Stack(StackSlotId(u32::MAX)),
+                    AddressSpace::Map => VccAddrSpace::MapValue,
+                    AddressSpace::Kernel => VccAddrSpace::Kernel,
+                    AddressSpace::User => VccAddrSpace::User,
+                },
+                _ => VccAddrSpace::Unknown,
+            }
+        } else {
+            ptr_info.space
+        };
+
+        let (allow_stack, allow_map, allow_kernel, allow_user) = if user_space {
+            (false, false, false, true)
+        } else {
+            (true, true, true, false)
+        };
+        if !self.helper_space_allowed(
+            effective_space,
+            allow_stack,
+            allow_map,
+            allow_kernel,
+            allow_user,
+        ) {
+            let allowed =
+                self.helper_allowed_spaces_label(allow_stack, allow_map, allow_kernel, allow_user);
+            return Err(VccError::new(
+                VccErrorKind::PointerBounds,
+                format!(
+                    "read_str expects pointer in {allowed}, got {}",
+                    self.helper_space_name(effective_space)
+                ),
+            ));
+        }
+
+        self.check_ptr_range(ptr, 1, out)
+    }
 }
 
 fn record_field_size(ty: &MirType) -> usize {
@@ -4630,6 +4689,112 @@ mod tests {
         assert!(
             err.iter()
                 .any(|e| e.message.contains("load requires pointer in [Stack, Map]")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_read_str_rejects_non_user_ptr_for_user_space() {
+        let (mut func, entry) = new_mir_function();
+        let ptr = func.alloc_vreg();
+        func.param_count = 1;
+        let dst = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(entry).instructions.push(MirInst::ReadStr {
+            dst,
+            ptr,
+            user_space: true,
+            max_len: 16,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected read_str user ptr error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("read_str expects pointer in [User]")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_read_str_accepts_user_ptr_for_user_space() {
+        let (mut func, entry) = new_mir_function();
+        let ptr = func.alloc_vreg();
+        func.param_count = 1;
+        let dst = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(entry).instructions.push(MirInst::ReadStr {
+            dst,
+            ptr,
+            user_space: true,
+            max_len: 16,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::User,
+            },
+        );
+
+        verify_mir(&func, &types).expect("expected user-space read_str pointer to pass");
+    }
+
+    #[test]
+    fn test_verify_mir_read_str_rejects_user_ptr_for_kernel_space() {
+        let (mut func, entry) = new_mir_function();
+        let ptr = func.alloc_vreg();
+        func.param_count = 1;
+        let dst = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(entry).instructions.push(MirInst::ReadStr {
+            dst,
+            ptr,
+            user_space: false,
+            max_len: 16,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::User,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected read_str kernel ptr-space error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter().any(
+                |e| e
+                    .message
+                    .contains("read_str expects pointer in [Stack, Map, Kernel]")
+            ),
             "unexpected error messages: {:?}",
             err
         );
