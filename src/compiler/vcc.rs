@@ -188,6 +188,11 @@ pub enum VccInst {
     AssertScalar {
         value: VccValue,
     },
+    AssertPtrAccess {
+        ptr: VccReg,
+        size: VccValue,
+        op: &'static str,
+    },
     StackAddr {
         dst: VccReg,
         slot: StackSlotId,
@@ -424,9 +429,23 @@ impl VccVerifier {
         }
         if let VccValue::Reg(cond_reg) = cond {
             if let Some(refinement) = state.cond_refinement(cond_reg) {
-                let true_non_null = refinement.true_means_non_null;
-                self.refine_ptr_nullability(&mut true_state, refinement, true_non_null);
-                self.refine_ptr_nullability(&mut false_state, refinement, !true_non_null);
+                match refinement {
+                    VccCondRefinement::PtrNull {
+                        true_means_non_null,
+                        ..
+                    } => {
+                        self.refine_ptr_nullability(&mut true_state, refinement, true_means_non_null);
+                        self.refine_ptr_nullability(
+                            &mut false_state,
+                            refinement,
+                            !true_means_non_null,
+                        );
+                    }
+                    VccCondRefinement::ScalarCmpConst { reg, op, value } => {
+                        self.refine_scalar_compare_const(&mut true_state, reg, op, value, true);
+                        self.refine_scalar_compare_const(&mut false_state, reg, op, value, false);
+                    }
+                }
             }
         }
         (true_state, false_state)
@@ -441,7 +460,15 @@ impl VccVerifier {
         if !state.is_reachable() {
             return;
         }
-        let Ok(VccValueType::Ptr(mut ptr)) = state.reg_type(refinement.ptr_reg) else {
+        let VccCondRefinement::PtrNull {
+            ptr_reg,
+            ringbuf_ref,
+            ..
+        } = refinement
+        else {
+            return;
+        };
+        let Ok(VccValueType::Ptr(mut ptr)) = state.reg_type(ptr_reg) else {
             return;
         };
         if (non_null && ptr.nullability == VccNullability::Null)
@@ -456,11 +483,135 @@ impl VccVerifier {
             VccNullability::Null
         };
         if !non_null {
-            if let Some(ref_id) = refinement.ringbuf_ref {
+            if let Some(ref_id) = ringbuf_ref {
                 state.set_live_ringbuf_ref(ref_id, false);
             }
         }
-        state.set_reg(refinement.ptr_reg, VccValueType::Ptr(ptr));
+        state.set_reg(ptr_reg, VccValueType::Ptr(ptr));
+    }
+
+    fn refine_scalar_compare_const(
+        &self,
+        state: &mut VccState,
+        reg: VccReg,
+        op: VccBinOp,
+        value: i64,
+        take_true: bool,
+    ) {
+        if !state.is_reachable() {
+            return;
+        }
+        let effective_op = if take_true {
+            Some(op)
+        } else {
+            Self::invert_compare(op)
+        };
+        let Some(effective_op) = effective_op else {
+            return;
+        };
+        let Ok(ty) = state.reg_type(reg) else {
+            return;
+        };
+        let VccValueType::Scalar { range } = ty else {
+            return;
+        };
+        let Some(refined) = Self::refine_scalar_range(range, effective_op, value) else {
+            state.mark_unreachable();
+            return;
+        };
+        state.set_reg(reg, VccValueType::Scalar { range: refined });
+    }
+
+    fn invert_compare(op: VccBinOp) -> Option<VccBinOp> {
+        match op {
+            VccBinOp::Eq => Some(VccBinOp::Ne),
+            VccBinOp::Ne => Some(VccBinOp::Eq),
+            VccBinOp::Lt => Some(VccBinOp::Ge),
+            VccBinOp::Le => Some(VccBinOp::Gt),
+            VccBinOp::Gt => Some(VccBinOp::Le),
+            VccBinOp::Ge => Some(VccBinOp::Lt),
+            _ => None,
+        }
+    }
+
+    fn refine_scalar_range(
+        range: Option<VccRange>,
+        op: VccBinOp,
+        value: i64,
+    ) -> Option<Option<VccRange>> {
+        let current = range.unwrap_or(VccRange {
+            min: i64::MIN,
+            max: i64::MAX,
+        });
+        let maybe_refined = match op {
+            VccBinOp::Eq => {
+                if value < current.min || value > current.max {
+                    None
+                } else {
+                    Some(VccRange {
+                        min: value,
+                        max: value,
+                    })
+                }
+            }
+            VccBinOp::Ne => {
+                if current.min == current.max && current.min == value {
+                    None
+                } else {
+                    Some(current)
+                }
+            }
+            VccBinOp::Lt => {
+                let max = current.max.min(value.saturating_sub(1));
+                if current.min > max {
+                    None
+                } else {
+                    Some(VccRange {
+                        min: current.min,
+                        max,
+                    })
+                }
+            }
+            VccBinOp::Le => {
+                let max = current.max.min(value);
+                if current.min > max {
+                    None
+                } else {
+                    Some(VccRange {
+                        min: current.min,
+                        max,
+                    })
+                }
+            }
+            VccBinOp::Gt => {
+                let min = current.min.max(value.saturating_add(1));
+                if min > current.max {
+                    None
+                } else {
+                    Some(VccRange {
+                        min,
+                        max: current.max,
+                    })
+                }
+            }
+            VccBinOp::Ge => {
+                let min = current.min.max(value);
+                if min > current.max {
+                    None
+                } else {
+                    Some(VccRange {
+                        min,
+                        max: current.max,
+                    })
+                }
+            }
+            _ => Some(current),
+        }?;
+        if range.is_none() && maybe_refined.min == i64::MIN && maybe_refined.max == i64::MAX {
+            Some(None)
+        } else {
+            Some(Some(maybe_refined))
+        }
     }
 
     fn known_truthy(&self, cond: VccValue, state: &VccState) -> Option<bool> {
@@ -553,6 +704,65 @@ impl VccVerifier {
                 }
                 Err(err) => self.errors.push(err),
             },
+            VccInst::AssertPtrAccess { ptr, size, op } => {
+                let ptr_ty = match state.reg_type(*ptr) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                let ptr_info = match ptr_ty {
+                    VccValueType::Ptr(info) => {
+                        if let Err(err) = self.require_non_null_ptr(info, op) {
+                            self.errors.push(err);
+                            return;
+                        }
+                        info
+                    }
+                    other => {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::InvalidLoadStore,
+                            format!("{op} requires pointer operand (got {:?})", other.class()),
+                        ));
+                        return;
+                    }
+                };
+                let size_ty = match state.value_type(*size) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                if size_ty.class() != VccTypeClass::Scalar && size_ty.class() != VccTypeClass::Bool {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::TypeMismatch {
+                            expected: VccTypeClass::Scalar,
+                            actual: size_ty.class(),
+                        },
+                        format!("{op} size must be scalar"),
+                    ));
+                    return;
+                }
+                if let Some(size_range) = state.value_range(*size, size_ty) {
+                    if size_range.max <= 0 || size_range.min <= 0 {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::UnsupportedInstruction,
+                            format!("{op} size must be > 0"),
+                        ));
+                        return;
+                    }
+                    if let (VccAddrSpace::Stack(_), Some(bounds)) = (ptr_info.space, ptr_info.bounds) {
+                        if bounds.shifted_with_size(0, size_range.max).is_none() {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::PointerBounds,
+                                format!("{op} out of bounds"),
+                            ));
+                        }
+                    }
+                }
+            }
             VccInst::StackAddr { dst, slot, size } => {
                 let bounds = if *size > 0 {
                     Some(VccBounds {
@@ -592,6 +802,7 @@ impl VccVerifier {
                 match op {
                     VccBinOp::Eq | VccBinOp::Ne => {
                         let ptr_cmp = self.ptr_null_comparison(*lhs, lhs_ty, *rhs, rhs_ty);
+                        let scalar_cmp = self.scalar_const_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         let lhs_is_ptr = matches!(lhs_ty, VccValueType::Ptr(_));
                         let rhs_is_ptr = matches!(rhs_ty, VccValueType::Ptr(_));
                         if lhs_is_ptr || rhs_is_ptr {
@@ -655,15 +866,25 @@ impl VccVerifier {
                         if let Some((ptr_reg, ringbuf_ref)) = ptr_cmp {
                             state.set_cond_refinement(
                                 *dst,
-                                VccCondRefinement {
+                                VccCondRefinement::PtrNull {
                                     ptr_reg,
                                     ringbuf_ref,
                                     true_means_non_null: matches!(op, VccBinOp::Ne),
                                 },
                             );
+                        } else if let Some((reg, cmp_op, value)) = scalar_cmp {
+                            state.set_cond_refinement(
+                                *dst,
+                                VccCondRefinement::ScalarCmpConst {
+                                    reg,
+                                    op: cmp_op,
+                                    value,
+                                },
+                            );
                         }
                     }
                     VccBinOp::Lt | VccBinOp::Le | VccBinOp::Gt | VccBinOp::Ge => {
+                        let scalar_cmp = self.scalar_const_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         if lhs_ty.class() != VccTypeClass::Scalar
                             && lhs_ty.class() != VccTypeClass::Bool
                         {
@@ -689,6 +910,16 @@ impl VccVerifier {
                             return;
                         }
                         state.set_reg(*dst, VccValueType::Bool);
+                        if let Some((reg, cmp_op, value)) = scalar_cmp {
+                            state.set_cond_refinement(
+                                *dst,
+                                VccCondRefinement::ScalarCmpConst {
+                                    reg,
+                                    op: cmp_op,
+                                    value,
+                                },
+                            );
+                        }
                     }
                     _ => {
                         if lhs_ty.class() != VccTypeClass::Scalar
@@ -1023,6 +1254,67 @@ impl VccVerifier {
         }
     }
 
+    fn scalar_const_comparison(
+        &self,
+        lhs: VccValue,
+        lhs_ty: VccValueType,
+        rhs: VccValue,
+        rhs_ty: VccValueType,
+        op: VccBinOp,
+    ) -> Option<(VccReg, VccBinOp, i64)> {
+        if !matches!(
+            op,
+            VccBinOp::Eq | VccBinOp::Ne | VccBinOp::Lt | VccBinOp::Le | VccBinOp::Gt | VccBinOp::Ge
+        ) {
+            return None;
+        }
+        match (lhs, lhs_ty, rhs, rhs_ty) {
+            (VccValue::Reg(reg), left_ty, _, right_ty)
+                if Self::is_scalar_like(left_ty)
+                    && Self::const_scalar_value(rhs, right_ty).is_some() =>
+            {
+                let value = Self::const_scalar_value(rhs, right_ty)?;
+                Some((reg, op, value))
+            }
+            (_, left_ty, VccValue::Reg(reg), right_ty)
+                if Self::is_scalar_like(right_ty)
+                    && Self::const_scalar_value(lhs, left_ty).is_some() =>
+            {
+                let value = Self::const_scalar_value(lhs, left_ty)?;
+                Some((reg, Self::reverse_compare(op)?, value))
+            }
+            _ => None,
+        }
+    }
+
+    fn is_scalar_like(ty: VccValueType) -> bool {
+        matches!(ty.class(), VccTypeClass::Scalar | VccTypeClass::Bool)
+    }
+
+    fn const_scalar_value(value: VccValue, ty: VccValueType) -> Option<i64> {
+        match value {
+            VccValue::Imm(v) => Some(v),
+            VccValue::Reg(_) => match ty {
+                VccValueType::Scalar {
+                    range: Some(VccRange { min, max }),
+                } if min == max => Some(min),
+                _ => None,
+            },
+        }
+    }
+
+    fn reverse_compare(op: VccBinOp) -> Option<VccBinOp> {
+        match op {
+            VccBinOp::Eq => Some(VccBinOp::Eq),
+            VccBinOp::Ne => Some(VccBinOp::Ne),
+            VccBinOp::Lt => Some(VccBinOp::Gt),
+            VccBinOp::Le => Some(VccBinOp::Ge),
+            VccBinOp::Gt => Some(VccBinOp::Lt),
+            VccBinOp::Ge => Some(VccBinOp::Le),
+            _ => None,
+        }
+    }
+
     fn require_non_null_ptr(&self, ptr: VccPointerInfo, op: &str) -> Result<(), VccError> {
         match ptr.nullability {
             VccNullability::NonNull => Ok(()),
@@ -1055,10 +1347,17 @@ struct VccState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct VccCondRefinement {
-    ptr_reg: VccReg,
-    ringbuf_ref: Option<VccReg>,
-    true_means_non_null: bool,
+enum VccCondRefinement {
+    PtrNull {
+        ptr_reg: VccReg,
+        ringbuf_ref: Option<VccReg>,
+        true_means_non_null: bool,
+    },
+    ScalarCmpConst {
+        reg: VccReg,
+        op: VccBinOp,
+        value: i64,
+    },
 }
 
 impl VccState {
@@ -1118,8 +1417,10 @@ impl VccState {
                 *ty = VccValueType::Unknown;
             }
         }
-        self.cond_refinements
-            .retain(|_, info| info.ringbuf_ref != Some(id));
+        self.cond_refinements.retain(|_, info| match info {
+            VccCondRefinement::PtrNull { ringbuf_ref, .. } => *ringbuf_ref != Some(id),
+            VccCondRefinement::ScalarCmpConst { .. } => true,
+        });
     }
 
     fn merge_with(&self, other: &VccState) -> VccState {
@@ -2399,12 +2700,13 @@ impl<'a> VccLowerer<'a> {
         helper_id: u32,
         arg_idx: usize,
         arg: &MirValue,
-        op: &str,
+        op: &'static str,
         allow_stack: bool,
         allow_map: bool,
         allow_kernel: bool,
         allow_user: bool,
         access_size: Option<usize>,
+        dynamic_size: Option<&MirValue>,
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
         let ptr = self.value_ptr_info(arg).ok_or_else(|| {
@@ -2435,6 +2737,34 @@ impl<'a> VccLowerer<'a> {
                 MirValue::StackSlot(slot) => {
                     let ptr = self.stack_addr_temp(*slot, out);
                     self.check_ptr_range_reg(ptr, size, out)?;
+                }
+                MirValue::Const(_) => {
+                    return Err(VccError::new(
+                        VccErrorKind::TypeMismatch {
+                            expected: VccTypeClass::Ptr,
+                            actual: VccTypeClass::Scalar,
+                        },
+                        format!("helper {} arg{} expects pointer value", helper_id, arg_idx),
+                    ));
+                }
+            }
+        } else if let Some(size_arg) = dynamic_size {
+            let size_value = self.lower_value(size_arg, out);
+            match arg {
+                MirValue::VReg(vreg) => {
+                    out.push(VccInst::AssertPtrAccess {
+                        ptr: VccReg(vreg.0),
+                        size: size_value,
+                        op,
+                    });
+                }
+                MirValue::StackSlot(slot) => {
+                    let ptr = self.stack_addr_temp(*slot, out);
+                    out.push(VccInst::AssertPtrAccess {
+                        ptr,
+                        size: size_value,
+                        op,
+                    });
                 }
                 MirValue::Const(_) => {
                     return Err(VccError::new(
@@ -2551,6 +2881,7 @@ impl<'a> VccLowerer<'a> {
                         false,
                         false,
                         None,
+                        None,
                         out,
                     )?;
                 }
@@ -2565,6 +2896,7 @@ impl<'a> VccLowerer<'a> {
                         false,
                         false,
                         Some(1),
+                        None,
                         out,
                     )?;
                 }
@@ -2581,6 +2913,7 @@ impl<'a> VccLowerer<'a> {
                         false,
                         false,
                         None,
+                        None,
                         out,
                     )?;
                 }
@@ -2595,6 +2928,7 @@ impl<'a> VccLowerer<'a> {
                         false,
                         false,
                         Some(1),
+                        None,
                         out,
                     )?;
                 }
@@ -2609,6 +2943,7 @@ impl<'a> VccLowerer<'a> {
                         false,
                         false,
                         Some(1),
+                        None,
                         out,
                     )?;
                 }
@@ -2625,6 +2960,7 @@ impl<'a> VccLowerer<'a> {
                         false,
                         false,
                         None,
+                        None,
                         out,
                     )?;
                 }
@@ -2639,6 +2975,7 @@ impl<'a> VccLowerer<'a> {
                         false,
                         false,
                         Some(1),
+                        None,
                         out,
                     )?;
                 }
@@ -2660,6 +2997,7 @@ impl<'a> VccLowerer<'a> {
                         false,
                         false,
                         size,
+                        args.get(1),
                         out,
                     )?;
                 }
@@ -2681,6 +3019,7 @@ impl<'a> VccLowerer<'a> {
                         false,
                         false,
                         size,
+                        args.get(1),
                         out,
                     )?;
                 }
@@ -2701,6 +3040,7 @@ impl<'a> VccLowerer<'a> {
                         allow_kernel,
                         allow_user,
                         size,
+                        args.get(1),
                         out,
                     )?;
                 }
@@ -2716,6 +3056,7 @@ impl<'a> VccLowerer<'a> {
                         true,
                         false,
                         false,
+                        None,
                         None,
                         out,
                     )?;
@@ -2736,6 +3077,7 @@ impl<'a> VccLowerer<'a> {
                         false,
                         false,
                         None,
+                        None,
                         out,
                     )?;
                 }
@@ -2755,6 +3097,7 @@ impl<'a> VccLowerer<'a> {
                         false,
                         false,
                         size,
+                        args.get(2),
                         out,
                     )?;
                 }
@@ -2771,6 +3114,7 @@ impl<'a> VccLowerer<'a> {
                         true,
                         false,
                         None,
+                        None,
                         out,
                     )?;
                 }
@@ -2784,6 +3128,7 @@ impl<'a> VccLowerer<'a> {
                         true,
                         false,
                         false,
+                        None,
                         None,
                         out,
                     )?;
@@ -2812,6 +3157,7 @@ impl<'a> VccLowerer<'a> {
                         true,
                         false,
                         None,
+                        None,
                         out,
                     )?;
                 }
@@ -2825,6 +3171,7 @@ impl<'a> VccLowerer<'a> {
                         true,
                         false,
                         false,
+                        None,
                         None,
                         out,
                     )?;
@@ -2845,6 +3192,7 @@ impl<'a> VccLowerer<'a> {
                         false,
                         false,
                         size,
+                        args.get(4),
                         out,
                     )?;
                 }
@@ -2861,6 +3209,7 @@ impl<'a> VccLowerer<'a> {
                         true,
                         false,
                         None,
+                        None,
                         out,
                     )?;
                 }
@@ -2874,6 +3223,7 @@ impl<'a> VccLowerer<'a> {
                         true,
                         false,
                         false,
+                        None,
                         None,
                         out,
                     )?;
@@ -4251,6 +4601,122 @@ mod tests {
             "expected pointer bounds error, got {:?}",
             err
         );
+    }
+
+    #[test]
+    fn test_verify_mir_helper_get_current_comm_variable_size_range_checks_bounds() {
+        let (mut func, entry) = new_mir_function();
+        let check_upper = func.alloc_block();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+
+        let size = func.alloc_vreg();
+        func.param_count = 1;
+        let ge_one = func.alloc_vreg();
+        let le_sixteen = func.alloc_vreg();
+        let buf = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: ge_one,
+            op: BinOpKind::Ge,
+            lhs: MirValue::VReg(size),
+            rhs: MirValue::Const(1),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: ge_one,
+            if_true: check_upper,
+            if_false: done,
+        };
+
+        func.block_mut(check_upper).instructions.push(MirInst::BinOp {
+            dst: le_sixteen,
+            op: BinOpKind::Le,
+            lhs: MirValue::VReg(size),
+            rhs: MirValue::Const(16),
+        });
+        func.block_mut(check_upper).terminator = MirInst::Branch {
+            cond: le_sixteen,
+            if_true: call,
+            if_false: done,
+        };
+
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 16, // bpf_get_current_comm(buf, size)
+            args: vec![MirValue::StackSlot(buf), MirValue::VReg(size)],
+        });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(size, MirType::I64);
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper bounds error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("helper get_current_comm dst out of bounds")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_helper_get_current_comm_variable_size_range_within_bounds() {
+        let (mut func, entry) = new_mir_function();
+        let check_upper = func.alloc_block();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+
+        let size = func.alloc_vreg();
+        func.param_count = 1;
+        let ge_one = func.alloc_vreg();
+        let le_eight = func.alloc_vreg();
+        let buf = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: ge_one,
+            op: BinOpKind::Ge,
+            lhs: MirValue::VReg(size),
+            rhs: MirValue::Const(1),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: ge_one,
+            if_true: check_upper,
+            if_false: done,
+        };
+
+        func.block_mut(check_upper).instructions.push(MirInst::BinOp {
+            dst: le_eight,
+            op: BinOpKind::Le,
+            lhs: MirValue::VReg(size),
+            rhs: MirValue::Const(8),
+        });
+        func.block_mut(check_upper).terminator = MirInst::Branch {
+            cond: le_eight,
+            if_true: call,
+            if_false: done,
+        };
+
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 16, // bpf_get_current_comm(buf, size)
+            args: vec![MirValue::StackSlot(buf), MirValue::VReg(size)],
+        });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(size, MirType::I64);
+        types.insert(dst, MirType::I64);
+        verify_mir(&func, &types).expect("expected bounded helper size range to pass");
     }
 
     #[test]
