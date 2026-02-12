@@ -3035,6 +3035,119 @@ mod tests {
     }
 
     #[test]
+    fn test_helper_trace_printk_requires_positive_size() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let fmt = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 6, // bpf_trace_printk(fmt, fmt_size, ...)
+                args: vec![MirValue::StackSlot(fmt), MirValue::Const(0)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected non-positive size error");
+        assert!(
+            err.iter().any(|e| e.message.contains("helper 6 arg1 must be > 0")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_helper_trace_printk_checks_fmt_bounds() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let fmt = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 6, // bpf_trace_printk(fmt, fmt_size, ...)
+                args: vec![MirValue::StackSlot(fmt), MirValue::Const(16)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper fmt bounds error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("helper trace_printk fmt out of bounds")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_helper_trace_printk_rejects_user_fmt_pointer() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let fmt = func.alloc_vreg();
+        func.param_count = 1;
+        let cond = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(fmt),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: call,
+            if_false: done,
+        };
+
+        func.block_mut(call)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 6, // bpf_trace_printk(fmt, fmt_size, ...)
+                args: vec![MirValue::VReg(fmt), MirValue::Const(8)],
+            });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            fmt,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::User,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper fmt pointer-space error");
+        assert!(
+            err.iter().any(
+                |e| e
+                    .message
+                    .contains("helper trace_printk fmt expects pointer in [Stack, Map]")
+            ),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
     fn test_helper_get_current_comm_variable_size_range_checks_bounds() {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();
