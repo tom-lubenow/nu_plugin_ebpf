@@ -643,12 +643,14 @@ fn apply_inst(
             state.set_with_range(*dst, ty, range);
         }
         MirInst::MapLookup { dst, map, .. } => {
-            let bounds = map_value_limit(map).map(|limit| PtrBounds {
-                origin: PtrOrigin::Map,
-                min: 0,
-                max: 0,
-                limit,
-            });
+            let bounds = map_value_limit(map)
+                .or_else(|| map_value_limit_from_dst_type(types.get(dst)))
+                .map(|limit| PtrBounds {
+                    origin: PtrOrigin::Map,
+                    min: 0,
+                    max: 0,
+                    limit,
+                });
             state.set(
                 *dst,
                 VerifierType::Ptr {
@@ -1502,6 +1504,21 @@ fn map_value_limit(map: &MapRef) -> Option<i64> {
     }
 }
 
+fn map_value_limit_from_dst_type(dst_ty: Option<&MirType>) -> Option<i64> {
+    let pointee = match dst_ty {
+        Some(MirType::Ptr { pointee, .. }) => pointee.as_ref(),
+        _ => return None,
+    };
+    if matches!(pointee, MirType::Unknown) {
+        return None;
+    }
+    let size = pointee.size();
+    if size == 0 {
+        return None;
+    }
+    Some(size.saturating_sub(1) as i64)
+}
+
 fn join_range(a: ValueRange, b: ValueRange) -> ValueRange {
     match (a, b) {
         (ValueRange::Known { min: a_min, max: a_max }, ValueRange::Known { min: b_min, max: b_max }) => {
@@ -2158,6 +2175,131 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected map bounds error");
         assert!(err.iter().any(|e| e.message.contains("out of bounds")));
+    }
+
+    #[test]
+    fn test_unknown_map_uses_pointee_bounds_for_lookup_result() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let ok = func.alloc_block();
+        let bad = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+        let ptr = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapLookup {
+            dst: ptr,
+            map: MapRef {
+                name: "custom_map".to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: ok,
+            if_false: bad,
+        };
+
+        func.block_mut(ok).instructions.push(MirInst::Load {
+            dst,
+            ptr,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(ok).terminator = MirInst::Return { val: None };
+        func.block_mut(bad).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: 4,
+                }),
+                address_space: AddressSpace::Map,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected map bounds error");
+        assert!(err.iter().any(|e| e.message.contains("out of bounds")));
+    }
+
+    #[test]
+    fn test_unknown_map_pointee_bounds_allow_in_bounds_access() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let ok = func.alloc_block();
+        let bad = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+        let ptr = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapLookup {
+            dst: ptr,
+            map: MapRef {
+                name: "custom_map".to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: ok,
+            if_false: bad,
+        };
+
+        func.block_mut(ok).instructions.push(MirInst::Load {
+            dst,
+            ptr,
+            offset: 0,
+            ty: MirType::I32,
+        });
+        func.block_mut(ok).terminator = MirInst::Return { val: None };
+        func.block_mut(bad).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: 8,
+                }),
+                address_space: AddressSpace::Map,
+            },
+        );
+        types.insert(dst, MirType::I32);
+
+        verify_mir(&func, &types).expect("expected in-bounds access");
     }
 
     #[test]
