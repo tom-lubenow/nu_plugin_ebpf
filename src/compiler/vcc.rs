@@ -4801,6 +4801,100 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_mir_helper_pointer_arg_required() {
+        let (mut func, entry) = new_mir_function();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 16, // bpf_get_current_comm(buf, size)
+            args: vec![MirValue::Const(0), MirValue::Const(16)],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper pointer-arg error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("helper 16 arg0 expects pointer value")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_prune_impossible_const_compare_branch() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let impossible = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let slot = func.alloc_stack_slot(4, 1, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let idx = func.alloc_vreg();
+        let cmp = func.alloc_vreg();
+        let tmp_ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: idx,
+            src: MirValue::Const(5),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cmp,
+            op: BinOpKind::Lt,
+            lhs: MirValue::VReg(idx),
+            rhs: MirValue::Const(4),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: cmp,
+            if_true: impossible,
+            if_false: done,
+        };
+
+        func.block_mut(impossible).instructions.push(MirInst::BinOp {
+            dst: tmp_ptr,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::VReg(idx),
+        });
+        func.block_mut(impossible).instructions.push(MirInst::Load {
+            dst,
+            ptr: tmp_ptr,
+            offset: 0,
+            ty: MirType::I8,
+        });
+        func.block_mut(impossible).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            tmp_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(dst, MirType::I8);
+
+        verify_mir(&func, &types).expect("expected impossible branch to be pruned");
+    }
+
+    #[test]
     fn test_verify_mir_uninitialized_scalar_use_rejected() {
         let (mut func, entry) = new_mir_function();
         let lhs = func.alloc_vreg();
