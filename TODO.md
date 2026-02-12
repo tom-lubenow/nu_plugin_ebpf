@@ -29,6 +29,7 @@ Last updated: 2026-02-12.
   - Added typed helper return modeling (e.g., pointer return for `bpf_map_lookup_elem` helper calls).
   - Added helper-side pointer-space and range-aware size/bounds checks in the verifier, with matching VCC checks for map ops, probe-read variants, ringbuf output, perf-event output, `get_stackid`, `tail_call`, and `get_current_comm`.
   - Added initial helper ref-lifetime/provenance tracking in both verifier and VCC for ringbuf reserve/submit/discard (including branch-aware null-check refinement, leak detection at function exit, and pointer invalidation after release).
+  - VCC now tracks nullable pointer returns for map/ringbuf helper results and rejects dereference paths that skip a null check.
   - Remaining: extend pointer-state transitions to broader helper/kfunc families (provenance/nullability/mutability/ref-lifetime) with kernel-verifier-level fidelity.
 
 ## Roadmap to a general-purpose eBPF language

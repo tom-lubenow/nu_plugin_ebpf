@@ -114,8 +114,16 @@ pub enum VccTypeClass {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VccNullability {
+    NonNull,
+    MaybeNull,
+    Null,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VccPointerInfo {
     pub space: VccAddrSpace,
+    pub nullability: VccNullability,
     pub bounds: Option<VccBounds>,
     pub ringbuf_ref: Option<VccReg>,
 }
@@ -406,16 +414,34 @@ impl VccVerifier {
         let mut false_state = state.clone();
         if let VccValue::Reg(cond_reg) = cond {
             if let Some(refinement) = state.cond_refinement(cond_reg) {
-                if refinement.true_means_non_null {
-                    true_state.set_live_ringbuf_ref(refinement.ringbuf_ref, true);
-                    false_state.set_live_ringbuf_ref(refinement.ringbuf_ref, false);
-                } else {
-                    true_state.set_live_ringbuf_ref(refinement.ringbuf_ref, false);
-                    false_state.set_live_ringbuf_ref(refinement.ringbuf_ref, true);
-                }
+                let true_non_null = refinement.true_means_non_null;
+                self.refine_ptr_nullability(&mut true_state, refinement, true_non_null);
+                self.refine_ptr_nullability(&mut false_state, refinement, !true_non_null);
             }
         }
         (true_state, false_state)
+    }
+
+    fn refine_ptr_nullability(
+        &self,
+        state: &mut VccState,
+        refinement: VccCondRefinement,
+        non_null: bool,
+    ) {
+        let Ok(VccValueType::Ptr(mut ptr)) = state.reg_type(refinement.ptr_reg) else {
+            return;
+        };
+        ptr.nullability = if non_null {
+            VccNullability::NonNull
+        } else {
+            VccNullability::Null
+        };
+        if !non_null {
+            if let Some(ref_id) = refinement.ringbuf_ref {
+                state.set_live_ringbuf_ref(ref_id, false);
+            }
+        }
+        state.set_reg(refinement.ptr_reg, VccValueType::Ptr(ptr));
     }
 
     fn propagate_state(
@@ -497,6 +523,7 @@ impl VccVerifier {
                     *dst,
                     VccValueType::Ptr(VccPointerInfo {
                         space: VccAddrSpace::Stack(*slot),
+                        nullability: VccNullability::NonNull,
                         bounds,
                         ringbuf_ref: None,
                     }),
@@ -520,8 +547,7 @@ impl VccVerifier {
 
                 match op {
                     VccBinOp::Eq | VccBinOp::Ne => {
-                        let ringbuf_ref_cmp =
-                            self.ringbuf_null_comparison(*lhs, lhs_ty, *rhs, rhs_ty);
+                        let ptr_cmp = self.ptr_null_comparison(*lhs, lhs_ty, *rhs, rhs_ty);
                         let lhs_is_ptr = matches!(lhs_ty, VccValueType::Ptr(_));
                         let rhs_is_ptr = matches!(rhs_ty, VccValueType::Ptr(_));
                         if lhs_is_ptr || rhs_is_ptr {
@@ -582,11 +608,12 @@ impl VccVerifier {
                             return;
                         }
                         state.set_reg(*dst, VccValueType::Bool);
-                        if let Some(ref_id) = ringbuf_ref_cmp {
+                        if let Some((ptr_reg, ringbuf_ref)) = ptr_cmp {
                             state.set_cond_refinement(
                                 *dst,
                                 VccCondRefinement {
-                                    ringbuf_ref: ref_id,
+                                    ptr_reg,
+                                    ringbuf_ref,
                                     true_means_non_null: matches!(op, VccBinOp::Ne),
                                 },
                             );
@@ -705,6 +732,7 @@ impl VccVerifier {
                     *dst,
                     VccValueType::Ptr(VccPointerInfo {
                         space: base_ptr.space,
+                        nullability: base_ptr.nullability,
                         bounds,
                         ringbuf_ref: base_ptr.ringbuf_ref,
                     }),
@@ -725,6 +753,10 @@ impl VccVerifier {
                 };
                 match ptr_ty {
                     VccValueType::Ptr(ptr_info) => {
+                        if let Err(err) = self.require_non_null_ptr(ptr_info, "load") {
+                            self.errors.push(err);
+                            return;
+                        }
                         if let (VccAddrSpace::Stack(_), Some(bounds)) =
                             (ptr_info.space, ptr_info.bounds)
                         {
@@ -769,6 +801,10 @@ impl VccVerifier {
                 };
                 match ptr_ty {
                     VccValueType::Ptr(ptr_info) => {
+                        if let Err(err) = self.require_non_null_ptr(ptr_info, "store") {
+                            self.errors.push(err);
+                            return;
+                        }
                         if let (VccAddrSpace::Stack(_), Some(bounds)) =
                             (ptr_info.space, ptr_info.bounds)
                         {
@@ -830,6 +866,10 @@ impl VccVerifier {
                 };
                 match ty {
                     VccValueType::Ptr(info) if info.space == VccAddrSpace::RingBuf => {
+                        if let Err(err) = self.require_non_null_ptr(info, "ringbuf release") {
+                            self.errors.push(err);
+                            return;
+                        }
                         if let Some(ref_id) = info.ringbuf_ref {
                             if state.is_live_ringbuf_ref(ref_id) {
                                 state.invalidate_ringbuf_ref(ref_id);
@@ -899,17 +939,39 @@ impl VccVerifier {
         }
     }
 
-    fn ringbuf_null_comparison(
+    fn ptr_null_comparison(
         &self,
         lhs: VccValue,
         lhs_ty: VccValueType,
         rhs: VccValue,
         rhs_ty: VccValueType,
-    ) -> Option<VccReg> {
-        match (lhs_ty, rhs_ty) {
-            (VccValueType::Ptr(ptr), other) if self.is_null_scalar(rhs, other) => ptr.ringbuf_ref,
-            (other, VccValueType::Ptr(ptr)) if self.is_null_scalar(lhs, other) => ptr.ringbuf_ref,
+    ) -> Option<(VccReg, Option<VccReg>)> {
+        match (lhs, lhs_ty, rhs, rhs_ty) {
+            (VccValue::Reg(ptr_reg), VccValueType::Ptr(ptr), _, other)
+                if self.is_null_scalar(rhs, other) =>
+            {
+                Some((ptr_reg, ptr.ringbuf_ref))
+            }
+            (_, other, VccValue::Reg(ptr_reg), VccValueType::Ptr(ptr))
+                if self.is_null_scalar(lhs, other) =>
+            {
+                Some((ptr_reg, ptr.ringbuf_ref))
+            }
             _ => None,
+        }
+    }
+
+    fn require_non_null_ptr(&self, ptr: VccPointerInfo, op: &str) -> Result<(), VccError> {
+        match ptr.nullability {
+            VccNullability::NonNull => Ok(()),
+            VccNullability::Null => Err(VccError::new(
+                VccErrorKind::PointerBounds,
+                format!("{op} uses null pointer"),
+            )),
+            VccNullability::MaybeNull => Err(VccError::new(
+                VccErrorKind::PointerBounds,
+                format!("{op} may dereference null pointer (add a null check)"),
+            )),
         }
     }
 
@@ -931,7 +993,8 @@ struct VccState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct VccCondRefinement {
-    ringbuf_ref: VccReg,
+    ptr_reg: VccReg,
+    ringbuf_ref: Option<VccReg>,
     true_means_non_null: bool,
 }
 
@@ -983,7 +1046,8 @@ impl VccState {
                 *ty = VccValueType::Unknown;
             }
         }
-        self.cond_refinements.retain(|_, info| info.ringbuf_ref != id);
+        self.cond_refinements
+            .retain(|_, info| info.ringbuf_ref != Some(id));
     }
 
     fn merge_with(&self, other: &VccState) -> VccState {
@@ -1025,6 +1089,7 @@ impl VccState {
                 VccValueType::Scalar { .. } => VccValueType::Scalar { range: None },
                 VccValueType::Ptr(ptr) => VccValueType::Ptr(VccPointerInfo {
                     space: ptr.space,
+                    nullability: VccNullability::MaybeNull,
                     bounds: None,
                     ringbuf_ref: None,
                 }),
@@ -1133,14 +1198,24 @@ impl VccState {
                     (Some(a), Some(b)) if a == b => Some(a),
                     _ => None,
                 };
+                let nullability = Self::join_nullability(lp.nullability, rp.nullability);
                 VccValueType::Ptr(VccPointerInfo {
                     space: lp.space,
+                    nullability,
                     bounds,
                     ringbuf_ref,
                 })
             }
             (left, right) if left == right => left,
             _ => VccValueType::Unknown,
+        }
+    }
+
+    fn join_nullability(lhs: VccNullability, rhs: VccNullability) -> VccNullability {
+        match (lhs, rhs) {
+            (VccNullability::NonNull, VccNullability::NonNull) => VccNullability::NonNull,
+            (VccNullability::Null, VccNullability::Null) => VccNullability::Null,
+            _ => VccNullability::MaybeNull,
         }
     }
 }
@@ -1259,6 +1334,7 @@ impl<'a> VccLowerer<'a> {
                             dst_reg,
                             VccPointerInfo {
                                 space: VccAddrSpace::Stack(*slot),
+                                nullability: VccNullability::NonNull,
                                 bounds: stack_bounds(size),
                                 ringbuf_ref: None,
                             },
@@ -1449,6 +1525,7 @@ impl<'a> VccLowerer<'a> {
                         VccReg(dst.0),
                         VccPointerInfo {
                             space: VccAddrSpace::Stack(*slot),
+                            nullability: VccNullability::NonNull,
                             bounds: stack_bounds(size),
                             ringbuf_ref: None,
                         },
@@ -1495,11 +1572,15 @@ impl<'a> VccLowerer<'a> {
             }
             MirInst::MapLookup { dst, map, key } => {
                 self.verify_map_key(&map.name, *key, out)?;
-                let ty = self
+                let mut ty = self
                     .types
                     .get(dst)
                     .map(vcc_type_from_mir)
                     .unwrap_or(VccValueType::Unknown);
+                if let VccValueType::Ptr(mut info) = ty {
+                    info.nullability = VccNullability::MaybeNull;
+                    ty = VccValueType::Ptr(info);
+                }
                 out.push(VccInst::Assume {
                     dst: VccReg(dst.0),
                     ty,
@@ -1895,6 +1976,7 @@ impl<'a> VccLowerer<'a> {
             reg,
             VccPointerInfo {
                 space: VccAddrSpace::Stack(slot),
+                nullability: VccNullability::NonNull,
                 bounds: stack_bounds(size),
                 ringbuf_ref: None,
             },
@@ -1914,6 +1996,7 @@ impl<'a> VccLowerer<'a> {
                 let size = self.slot_sizes.get(slot).copied().unwrap_or(0) as i64;
                 Some(VccPointerInfo {
                     space: VccAddrSpace::Stack(*slot),
+                    nullability: VccNullability::NonNull,
                     bounds: stack_bounds(size),
                     ringbuf_ref: None,
                 })
@@ -1953,14 +2036,19 @@ impl<'a> VccLowerer<'a> {
                 if matches!(helper, Some(BpfHelper::RingbufReserve)) {
                     return VccValueType::Ptr(VccPointerInfo {
                         space: VccAddrSpace::RingBuf,
+                        nullability: VccNullability::MaybeNull,
                         bounds: None,
                         ringbuf_ref: Some(VccReg(dst.0)),
                     });
                 }
                 match inferred {
-                    Some(VccValueType::Ptr(info)) => VccValueType::Ptr(info),
+                    Some(VccValueType::Ptr(mut info)) => {
+                        info.nullability = VccNullability::MaybeNull;
+                        VccValueType::Ptr(info)
+                    }
                     _ => VccValueType::Ptr(VccPointerInfo {
                         space: VccAddrSpace::MapValue,
+                        nullability: VccNullability::MaybeNull,
                         bounds: None,
                         ringbuf_ref: None,
                     }),
@@ -2778,6 +2866,7 @@ fn vcc_type_from_mir(ty: &MirType) -> VccValueType {
                 AddressSpace::User => VccAddrSpace::User,
                 AddressSpace::Map => VccAddrSpace::MapValue,
             },
+            nullability: VccNullability::NonNull,
             bounds: None,
             ringbuf_ref: None,
         }),
@@ -3189,7 +3278,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_mir_helper_map_lookup_return_typed_without_dst_annotation() {
+    fn test_verify_mir_helper_map_lookup_requires_null_check_before_load() {
         let (mut func, entry) = new_mir_function();
         let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
         let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
@@ -3212,7 +3301,55 @@ mod tests {
         let mut types = HashMap::new();
         types.insert(dst, MirType::I64);
 
-        verify_mir(&func, &types).expect("expected helper return pointer modeling to pass");
+        let err = verify_mir(&func, &types).expect_err("expected helper null-check error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("may dereference null pointer")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_helper_map_lookup_null_check_then_load_ok() {
+        let (mut func, entry) = new_mir_function();
+        let load_block = func.alloc_block();
+        let done = func.alloc_block();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let ptr = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst: ptr,
+            helper: 1, // bpf_map_lookup_elem(map, key)
+            args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: load_block,
+            if_false: done,
+        };
+
+        func.block_mut(load_block).instructions.push(MirInst::Load {
+            dst,
+            ptr,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(load_block).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+        verify_mir(&func, &types).expect("expected helper null-checked load to pass");
     }
 
     #[test]
