@@ -6,11 +6,11 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use super::instruction::{HelperArgKind, HelperRetKind, HelperSignature};
+use super::instruction::{BpfHelper, HelperArgKind, HelperRetKind, HelperSignature};
 use super::mir::{
-    AddressSpace, BinOpKind, BlockId, MapRef, MirFunction, MirInst, MirType, MirValue, StackSlotId,
-    VReg, COUNTER_MAP_NAME, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, STRING_COUNTER_MAP_NAME,
-    TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
+    AddressSpace, BinOpKind, BlockId, COUNTER_MAP_NAME, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME,
+    MapRef, MirFunction, MirInst, MirType, MirValue, STRING_COUNTER_MAP_NAME, StackSlotId,
+    TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, VReg,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,10 +125,7 @@ impl VerifierState {
     }
 
     fn is_non_zero(&self, vreg: VReg) -> bool {
-        self.non_zero
-            .get(vreg.0 as usize)
-            .copied()
-            .unwrap_or(false)
+        self.non_zero.get(vreg.0 as usize).copied().unwrap_or(false)
     }
 
     fn not_equal_consts(&self, vreg: VReg) -> &[i64] {
@@ -266,9 +263,7 @@ pub fn verify_mir(
     func: &MirFunction,
     types: &HashMap<VReg, MirType>,
 ) -> Result<(), Vec<VerifierTypeError>> {
-    let total_vregs = func
-        .vreg_count
-        .max(func.param_count as u32) as usize;
+    let total_vregs = func.vreg_count.max(func.param_count as u32) as usize;
     let mut slot_sizes: HashMap<StackSlotId, i64> = HashMap::new();
     for slot in &func.stack_slots {
         let limit = slot.size.saturating_sub(1) as i64;
@@ -540,11 +535,10 @@ fn apply_inst(
                 state.set_not_equal_const(*dst, excluded);
             }
         }
-        MirInst::Load { dst, ptr, offset, .. } => {
-            let access_size = types
-                .get(dst)
-                .map(|ty| ty.size())
-                .unwrap_or(8);
+        MirInst::Load {
+            dst, ptr, offset, ..
+        } => {
+            let access_size = types.get(dst).map(|ty| ty.size()).unwrap_or(8);
             check_ptr_access(
                 *ptr,
                 "load",
@@ -560,7 +554,9 @@ fn apply_inst(
                 .unwrap_or(VerifierType::Scalar);
             state.set(*dst, ty);
         }
-        MirInst::Store { ptr, offset, ty, .. } => {
+        MirInst::Store {
+            ptr, offset, ty, ..
+        } => {
             let access_size = ty.size();
             check_ptr_access(
                 *ptr,
@@ -573,7 +569,10 @@ fn apply_inst(
             );
         }
         MirInst::LoadSlot { dst, .. } => {
-            if let MirInst::LoadSlot { slot, offset, ty, .. } = inst {
+            if let MirInst::LoadSlot {
+                slot, offset, ty, ..
+            } = inst
+            {
                 check_slot_access(*slot, *offset, ty.size(), slot_sizes, "load slot", errors);
             }
             let ty = types
@@ -583,7 +582,10 @@ fn apply_inst(
             state.set(*dst, ty);
         }
         MirInst::StoreSlot { .. } => {
-            if let MirInst::StoreSlot { slot, offset, ty, .. } = inst {
+            if let MirInst::StoreSlot {
+                slot, offset, ty, ..
+            } = inst
+            {
                 check_slot_access(*slot, *offset, ty.size(), slot_sizes, "store slot", errors);
             }
         }
@@ -597,7 +599,11 @@ fn apply_inst(
                     | BinOpKind::Gt
                     | BinOpKind::Ge
             ) {
-                state.set_with_range(*dst, VerifierType::Bool, ValueRange::Known { min: 0, max: 1 });
+                state.set_with_range(
+                    *dst,
+                    VerifierType::Bool,
+                    ValueRange::Known { min: 0, max: 1 },
+                );
                 if let Some(guard) = guard_from_compare(*op, lhs, rhs, state) {
                     state.guards.insert(*dst, guard);
                 }
@@ -646,6 +652,7 @@ fn apply_inst(
                         errors,
                     );
                 }
+                apply_helper_semantics(*helper, args, state, slot_sizes, errors);
 
                 let ty = match sig.ret_kind {
                     HelperRetKind::Scalar => types
@@ -653,12 +660,13 @@ fn apply_inst(
                         .map(verifier_type_from_mir)
                         .unwrap_or(VerifierType::Scalar),
                     HelperRetKind::PointerMaybeNull => {
-                        let bounds = map_value_limit_from_dst_type(types.get(dst)).map(|limit| PtrBounds {
-                            origin: PtrOrigin::Map,
-                            min: 0,
-                            max: 0,
-                            limit,
-                        });
+                        let bounds =
+                            map_value_limit_from_dst_type(types.get(dst)).map(|limit| PtrBounds {
+                                origin: PtrOrigin::Map,
+                                min: 0,
+                                max: 0,
+                                limit,
+                            });
                         VerifierType::Ptr {
                             space: AddressSpace::Map,
                             nullability: Nullability::MaybeNull,
@@ -751,8 +759,14 @@ fn apply_inst(
                 .get(dst)
                 .map(verifier_type_from_mir)
                 .unwrap_or(VerifierType::Scalar);
-            if let (VerifierType::Ptr { space: AddressSpace::Stack, nullability, .. }, Some(slot)) =
-                (ty, slot)
+            if let (
+                VerifierType::Ptr {
+                    space: AddressSpace::Stack,
+                    nullability,
+                    ..
+                },
+                Some(slot),
+            ) = (ty, slot)
             {
                 let bounds = slot_sizes.get(slot).copied().map(|limit| PtrBounds {
                     origin: PtrOrigin::Stack(*slot),
@@ -824,13 +838,7 @@ fn apply_inst(
         | MirInst::LoopBack { .. }
         | MirInst::Placeholder => {}
         MirInst::ListPush { list, .. } => {
-            require_ptr_with_space(
-                *list,
-                "list",
-                &[AddressSpace::Stack],
-                state,
-                errors,
-            );
+            require_ptr_with_space(*list, "list", &[AddressSpace::Stack], state, errors);
         }
         MirInst::StringAppend { dst_len, .. } | MirInst::IntToString { dst_len, .. } => {
             let ty = state.get(*dst_len);
@@ -942,9 +950,7 @@ fn guard_from_compare(
     state: &VerifierState,
 ) -> Option<Guard> {
     match (lhs, rhs) {
-        (MirValue::VReg(v), MirValue::Const(c)) => {
-            guard_from_compare_reg_const(op, *v, *c, state)
-        }
+        (MirValue::VReg(v), MirValue::Const(c)) => guard_from_compare_reg_const(op, *v, *c, state),
         (MirValue::Const(c), MirValue::VReg(v)) => {
             guard_from_compare_reg_const(swap_compare(op)?, *v, *c, state)
         }
@@ -960,7 +966,9 @@ fn guard_from_compare(
             };
             let lhs_ty = state.get(*lhs);
             let rhs_ty = state.get(*rhs);
-            if matches!(lhs_ty, VerifierType::Ptr { .. }) || matches!(rhs_ty, VerifierType::Ptr { .. }) {
+            if matches!(lhs_ty, VerifierType::Ptr { .. })
+                || matches!(rhs_ty, VerifierType::Ptr { .. })
+            {
                 return None;
             }
             Some(Guard::RangeCmp {
@@ -1333,8 +1341,8 @@ fn require_ptr_with_space(
             ..
         } => {
             errors.push(VerifierTypeError::new(format!(
-            "{op} uses null pointer v{}",
-            ptr.0
+                "{op} uses null pointer v{}",
+                ptr.0
             )));
             None
         }
@@ -1343,22 +1351,22 @@ fn require_ptr_with_space(
             ..
         } => {
             errors.push(VerifierTypeError::new(format!(
-            "{op} may dereference null pointer v{} (add a null check)",
-            ptr.0
+                "{op} may dereference null pointer v{} (add a null check)",
+                ptr.0
             )));
             None
         }
         VerifierType::Uninit => {
             errors.push(VerifierTypeError::new(format!(
-            "{op} uses uninitialized pointer v{}",
-            ptr.0
+                "{op} uses uninitialized pointer v{}",
+                ptr.0
             )));
             None
         }
         other => {
             errors.push(VerifierTypeError::new(format!(
-            "{op} requires pointer type, got {:?}",
-            other
+                "{op} requires pointer type, got {:?}",
+                other
             )));
             None
         }
@@ -1395,21 +1403,241 @@ fn check_helper_arg(
     }
 }
 
-fn check_ptr_access(
-    ptr: VReg,
-    op: &str,
-    allowed: &[AddressSpace],
-    offset: i32,
-    size: usize,
+fn helper_const_positive_size(
+    helper_id: u32,
+    arg_idx: usize,
+    value: &MirValue,
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
+) -> Option<usize> {
+    match value_range(value, state) {
+        ValueRange::Known { max, .. } if max <= 0 => {
+            errors.push(VerifierTypeError::new(format!(
+                "helper {} arg{} must be > 0",
+                helper_id, arg_idx
+            )));
+            None
+        }
+        ValueRange::Known { min, max } if min == max && min > 0 => usize::try_from(min).ok(),
+        _ => None,
+    }
+}
+
+fn check_helper_ptr_arg_value(
+    helper_id: u32,
+    arg_idx: usize,
+    arg: &MirValue,
+    op: &str,
+    allowed: &[AddressSpace],
+    access_size: Option<usize>,
+    state: &VerifierState,
+    slot_sizes: &HashMap<StackSlotId, i64>,
+    errors: &mut Vec<VerifierTypeError>,
 ) {
-    let Some(VerifierType::Ptr { space, bounds, .. }) =
-        require_ptr_with_space(ptr, op, allowed, state, errors)
-    else {
+    match arg {
+        MirValue::VReg(vreg) => {
+            let Some(VerifierType::Ptr { space, bounds, .. }) =
+                require_ptr_with_space(*vreg, op, allowed, state, errors)
+            else {
+                return;
+            };
+            if let Some(size) = access_size {
+                check_ptr_bounds(op, space, bounds, 0, size, errors);
+            }
+        }
+        MirValue::StackSlot(slot) => {
+            if !allowed.contains(&AddressSpace::Stack) {
+                errors.push(VerifierTypeError::new(format!(
+                    "{op} expects pointer in {:?}, got stack slot {}",
+                    allowed, slot.0
+                )));
+                return;
+            }
+            if let Some(size) = access_size {
+                check_slot_access(*slot, 0, size, slot_sizes, op, errors);
+            }
+        }
+        MirValue::Const(_) => {
+            errors.push(VerifierTypeError::new(format!(
+                "helper {} arg{} expects pointer value",
+                helper_id, arg_idx
+            )));
+        }
+    }
+}
+
+fn apply_helper_semantics(
+    helper_id: u32,
+    args: &[MirValue],
+    state: &VerifierState,
+    slot_sizes: &HashMap<StackSlotId, i64>,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some(helper) = BpfHelper::from_u32(helper_id) else {
         return;
     };
 
+    match helper {
+        BpfHelper::MapLookupElem => {
+            if let Some(key) = args.get(1) {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    1,
+                    key,
+                    "helper map_lookup key",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    None,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
+        }
+        BpfHelper::MapUpdateElem => {
+            if let Some(key) = args.get(1) {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    1,
+                    key,
+                    "helper map_update key",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    None,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
+            if let Some(val) = args.get(2) {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    2,
+                    val,
+                    "helper map_update value",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    None,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
+        }
+        BpfHelper::MapDeleteElem => {
+            if let Some(key) = args.get(1) {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    1,
+                    key,
+                    "helper map_delete key",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    None,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
+        }
+        BpfHelper::GetCurrentComm => {
+            let size = args
+                .get(1)
+                .and_then(|value| helper_const_positive_size(helper_id, 1, value, state, errors));
+            if let Some(dst) = args.first() {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    0,
+                    dst,
+                    "helper get_current_comm dst",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    size,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
+        }
+        BpfHelper::ProbeRead | BpfHelper::ProbeReadKernelStr | BpfHelper::ProbeReadUserStr => {
+            let size = args
+                .get(1)
+                .and_then(|value| helper_const_positive_size(helper_id, 1, value, state, errors));
+            if let Some(dst) = args.first() {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    0,
+                    dst,
+                    "helper probe_read dst",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    size,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
+            if let Some(src) = args.get(2) {
+                let allowed = if matches!(helper, BpfHelper::ProbeReadUserStr) {
+                    &[AddressSpace::User][..]
+                } else {
+                    &[AddressSpace::Kernel, AddressSpace::Stack, AddressSpace::Map][..]
+                };
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    2,
+                    src,
+                    "helper probe_read src",
+                    allowed,
+                    size,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
+        }
+        BpfHelper::RingbufOutput => {
+            let size = args
+                .get(2)
+                .and_then(|value| helper_const_positive_size(helper_id, 2, value, state, errors));
+            if let Some(data) = args.get(1) {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    1,
+                    data,
+                    "helper ringbuf_output data",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    size,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
+        }
+        BpfHelper::PerfEventOutput => {
+            let size = args
+                .get(4)
+                .and_then(|value| helper_const_positive_size(helper_id, 4, value, state, errors));
+            if let Some(data) = args.get(3) {
+                check_helper_ptr_arg_value(
+                    helper_id,
+                    3,
+                    data,
+                    "helper perf_event_output data",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    size,
+                    state,
+                    slot_sizes,
+                    errors,
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+fn check_ptr_bounds(
+    op: &str,
+    space: AddressSpace,
+    bounds: Option<PtrBounds>,
+    offset: i32,
+    size: usize,
+    errors: &mut Vec<VerifierTypeError>,
+) {
     let Some(bounds) = bounds else {
         return;
     };
@@ -1437,6 +1665,23 @@ fn check_ptr_access(
             bounds.limit
         )));
     }
+}
+
+fn check_ptr_access(
+    ptr: VReg,
+    op: &str,
+    allowed: &[AddressSpace],
+    offset: i32,
+    size: usize,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some(VerifierType::Ptr { space, bounds, .. }) =
+        require_ptr_with_space(ptr, op, allowed, state, errors)
+    else {
+        return;
+    };
+    check_ptr_bounds(op, space, bounds, offset, size, errors);
 }
 
 fn check_slot_access(
@@ -1594,10 +1839,9 @@ fn join_bounds(a: Option<PtrBounds>, b: Option<PtrBounds>) -> Option<PtrBounds> 
 
 fn map_value_limit(map: &MapRef) -> Option<i64> {
     match map.name.as_str() {
-        COUNTER_MAP_NAME
-        | STRING_COUNTER_MAP_NAME
-        | HISTOGRAM_MAP_NAME
-        | TIMESTAMP_MAP_NAME => Some(8 - 1),
+        COUNTER_MAP_NAME | STRING_COUNTER_MAP_NAME | HISTOGRAM_MAP_NAME | TIMESTAMP_MAP_NAME => {
+            Some(8 - 1)
+        }
         KSTACK_MAP_NAME | USTACK_MAP_NAME => Some((127 * 8) - 1),
         _ => None,
     }
@@ -1620,41 +1864,67 @@ fn map_value_limit_from_dst_type(dst_ty: Option<&MirType>) -> Option<i64> {
 
 fn join_range(a: ValueRange, b: ValueRange) -> ValueRange {
     match (a, b) {
-        (ValueRange::Known { min: a_min, max: a_max }, ValueRange::Known { min: b_min, max: b_max }) => {
+        (
             ValueRange::Known {
-                min: a_min.min(b_min),
-                max: a_max.max(b_max),
-            }
-        }
+                min: a_min,
+                max: a_max,
+            },
+            ValueRange::Known {
+                min: b_min,
+                max: b_max,
+            },
+        ) => ValueRange::Known {
+            min: a_min.min(b_min),
+            max: a_max.max(b_max),
+        },
         _ => ValueRange::Unknown,
     }
 }
 
 fn range_add(a: ValueRange, b: ValueRange) -> ValueRange {
     match (a, b) {
-        (ValueRange::Known { min: a_min, max: a_max }, ValueRange::Known { min: b_min, max: b_max }) => {
+        (
             ValueRange::Known {
-                min: a_min.saturating_add(b_min),
-                max: a_max.saturating_add(b_max),
-            }
-        }
+                min: a_min,
+                max: a_max,
+            },
+            ValueRange::Known {
+                min: b_min,
+                max: b_max,
+            },
+        ) => ValueRange::Known {
+            min: a_min.saturating_add(b_min),
+            max: a_max.saturating_add(b_max),
+        },
         _ => ValueRange::Unknown,
     }
 }
 
 fn range_sub(a: ValueRange, b: ValueRange) -> ValueRange {
     match (a, b) {
-        (ValueRange::Known { min: a_min, max: a_max }, ValueRange::Known { min: b_min, max: b_max }) => {
+        (
             ValueRange::Known {
-                min: a_min.saturating_sub(b_max),
-                max: a_max.saturating_sub(b_min),
-            }
-        }
+                min: a_min,
+                max: a_max,
+            },
+            ValueRange::Known {
+                min: b_min,
+                max: b_max,
+            },
+        ) => ValueRange::Known {
+            min: a_min.saturating_sub(b_max),
+            max: a_max.saturating_sub(b_min),
+        },
         _ => ValueRange::Unknown,
     }
 }
 
-fn range_for_binop(op: BinOpKind, lhs: &MirValue, rhs: &MirValue, state: &VerifierState) -> ValueRange {
+fn range_for_binop(
+    op: BinOpKind,
+    lhs: &MirValue,
+    rhs: &MirValue,
+    state: &VerifierState,
+) -> ValueRange {
     let lhs_range = value_range(lhs, state);
     let rhs_range = value_range(rhs, state);
     match op {
@@ -1696,7 +1966,16 @@ fn clamp_i128_to_i64(value: i128) -> i64 {
 
 fn range_mul(a: ValueRange, b: ValueRange) -> ValueRange {
     match (a, b) {
-        (ValueRange::Known { min: a_min, max: a_max }, ValueRange::Known { min: b_min, max: b_max }) => {
+        (
+            ValueRange::Known {
+                min: a_min,
+                max: a_max,
+            },
+            ValueRange::Known {
+                min: b_min,
+                max: b_max,
+            },
+        ) => {
             let candidates = [
                 (a_min as i128) * (b_min as i128),
                 (a_min as i128) * (b_max as i128),
@@ -1721,8 +2000,14 @@ fn range_mul(a: ValueRange, b: ValueRange) -> ValueRange {
 fn range_shift(lhs: ValueRange, rhs: ValueRange, is_left: bool) -> ValueRange {
     let (lhs_min, lhs_max, rhs_min, rhs_max) = match (lhs, rhs) {
         (
-            ValueRange::Known { min: lhs_min, max: lhs_max },
-            ValueRange::Known { min: rhs_min, max: rhs_max },
+            ValueRange::Known {
+                min: lhs_min,
+                max: lhs_max,
+            },
+            ValueRange::Known {
+                min: rhs_min,
+                max: rhs_max,
+            },
         ) => (lhs_min, lhs_max, rhs_min, rhs_max),
         _ => return ValueRange::Unknown,
     };
@@ -1755,7 +2040,16 @@ fn range_shift(lhs: ValueRange, rhs: ValueRange, is_left: bool) -> ValueRange {
 
 fn range_div(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
     match (lhs, rhs) {
-        (ValueRange::Known { min: lhs_min, max: lhs_max }, ValueRange::Known { min: rhs_min, max: rhs_max }) => {
+        (
+            ValueRange::Known {
+                min: lhs_min,
+                max: lhs_max,
+            },
+            ValueRange::Known {
+                min: rhs_min,
+                max: rhs_max,
+            },
+        ) => {
             if rhs_min <= 0 && rhs_max >= 0 {
                 return ValueRange::Unknown;
             }
@@ -1782,7 +2076,16 @@ fn range_div(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
 
 fn range_mod(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
     match (lhs, rhs) {
-        (ValueRange::Known { min: lhs_min, max: _lhs_max }, ValueRange::Known { min: rhs_min, max: rhs_max }) => {
+        (
+            ValueRange::Known {
+                min: lhs_min,
+                max: _lhs_max,
+            },
+            ValueRange::Known {
+                min: rhs_min,
+                max: rhs_max,
+            },
+        ) => {
             if rhs_min <= 0 || rhs_max <= 0 {
                 return ValueRange::Unknown;
             }
@@ -1790,7 +2093,10 @@ fn range_mod(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
                 return ValueRange::Unknown;
             }
             let max_mod = rhs_max.saturating_sub(1);
-            ValueRange::Known { min: 0, max: max_mod }
+            ValueRange::Known {
+                min: 0,
+                max: max_mod,
+            }
         }
         _ => ValueRange::Unknown,
     }
@@ -1799,8 +2105,14 @@ fn range_mod(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
 fn range_and(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
     let (lhs_min, lhs_max, rhs_min, rhs_max) = match (lhs, rhs) {
         (
-            ValueRange::Known { min: lhs_min, max: lhs_max },
-            ValueRange::Known { min: rhs_min, max: rhs_max },
+            ValueRange::Known {
+                min: lhs_min,
+                max: lhs_max,
+            },
+            ValueRange::Known {
+                min: rhs_min,
+                max: rhs_max,
+            },
         ) => (lhs_min, lhs_max, rhs_min, rhs_max),
         _ => return ValueRange::Unknown,
     };
@@ -1819,8 +2131,14 @@ fn range_and(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
 fn range_or(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
     let (lhs_min, lhs_max, rhs_min, rhs_max) = match (lhs, rhs) {
         (
-            ValueRange::Known { min: lhs_min, max: lhs_max },
-            ValueRange::Known { min: rhs_min, max: rhs_max },
+            ValueRange::Known {
+                min: lhs_min,
+                max: lhs_max,
+            },
+            ValueRange::Known {
+                min: rhs_min,
+                max: rhs_max,
+            },
         ) => (lhs_min, lhs_max, rhs_min, rhs_max),
         _ => return ValueRange::Unknown,
     };
@@ -1839,8 +2157,14 @@ fn range_or(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
 fn range_xor(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
     let (lhs_min, lhs_max, rhs_min, rhs_max) = match (lhs, rhs) {
         (
-            ValueRange::Known { min: lhs_min, max: lhs_max },
-            ValueRange::Known { min: rhs_min, max: rhs_max },
+            ValueRange::Known {
+                min: lhs_min,
+                max: lhs_max,
+            },
+            ValueRange::Known {
+                min: rhs_min,
+                max: rhs_max,
+            },
         ) => (lhs_min, lhs_max, rhs_min, rhs_max),
         _ => return ValueRange::Unknown,
     };
@@ -1890,9 +2214,7 @@ fn ptr_type_for_phi(args: &[(BlockId, VReg)], state: &VerifierState) -> Option<V
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::mir::{
-        MapKind, MapRef, MirType, StackSlotKind, COUNTER_MAP_NAME,
-    };
+    use crate::compiler::mir::{COUNTER_MAP_NAME, MapKind, MapRef, MirType, StackSlotKind};
 
     fn map_lookup_types(func: &MirFunction, vreg: VReg) -> HashMap<VReg, MirType> {
         let mut types = HashMap::new();
@@ -1941,9 +2263,10 @@ mod tests {
 
         let types = map_lookup_types(&func, dst);
         let err = verify_mir(&func, &types).expect_err("expected null-check error");
-        assert!(err
-            .iter()
-            .any(|e| e.message.contains("may dereference null")));
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("may dereference null"))
+        );
     }
 
     #[test]
@@ -2004,11 +2327,13 @@ mod tests {
         func.entry = entry;
 
         let dst = func.alloc_vreg();
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 16, // bpf_get_current_comm(buf, size)
-            args: vec![MirValue::Const(0), MirValue::Const(16)],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 16, // bpf_get_current_comm(buf, size)
+                args: vec![MirValue::Const(0), MirValue::Const(16)],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
@@ -2043,11 +2368,13 @@ mod tests {
             dst: key,
             src: MirValue::StackSlot(key_slot),
         });
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 1, // bpf_map_lookup_elem(map, key)
-            args: vec![MirValue::VReg(map), MirValue::VReg(key)],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 1, // bpf_map_lookup_elem(map, key)
+                args: vec![MirValue::VReg(map), MirValue::VReg(key)],
+            });
         func.block_mut(entry).instructions.push(MirInst::Load {
             dst: load_dst,
             ptr: dst,
@@ -2067,9 +2394,201 @@ mod tests {
         types.insert(load_dst, MirType::I64);
 
         let err = verify_mir(&func, &types).expect_err("expected helper null-check error");
-        assert!(err
-            .iter()
-            .any(|e| e.message.contains("may dereference null")));
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("may dereference null"))
+        );
+    }
+
+    #[test]
+    fn test_helper_get_current_comm_requires_positive_size() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let buf = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 16, // bpf_get_current_comm(buf, size)
+                args: vec![MirValue::StackSlot(buf), MirValue::Const(0)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected non-positive size error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("helper 16 arg1 must be > 0"))
+        );
+    }
+
+    #[test]
+    fn test_helper_get_current_comm_checks_dst_bounds() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let buf = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 16, // bpf_get_current_comm(buf, size)
+                args: vec![MirValue::StackSlot(buf), MirValue::Const(16)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper dst bounds error");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("helper get_current_comm dst out of bounds")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_helper_probe_read_user_str_rejects_stack_src() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 114, // bpf_probe_read_user_str(dst, size, unsafe_ptr)
+                args: vec![
+                    MirValue::StackSlot(dst_slot),
+                    MirValue::Const(8),
+                    MirValue::StackSlot(src_slot),
+                ],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected user source pointer error");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("helper probe_read src expects pointer in [User]")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_helper_ringbuf_output_checks_data_bounds() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let data_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 130, // bpf_ringbuf_output(map, data, size, flags)
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::StackSlot(data_slot),
+                    MirValue::Const(16),
+                    MirValue::Const(0),
+                ],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected helper data bounds error");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("helper ringbuf_output data out of bounds")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_helper_map_update_rejects_user_key_pointer() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let call_block = func.alloc_block();
+        let exit_block = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+        func.param_count = 1;
+        let cond = func.alloc_vreg();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let value_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(key),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: call_block,
+            if_false: exit_block,
+        };
+
+        func.block_mut(call_block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 2, // bpf_map_update_elem(map, key, value, flags)
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::VReg(key),
+                    MirValue::StackSlot(value_slot),
+                    MirValue::Const(0),
+                ],
+            });
+        func.block_mut(call_block).terminator = MirInst::Return { val: None };
+
+        func.block_mut(exit_block).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            key,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::User,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected map key pointer-space error");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("helper map_update key expects pointer in [Stack, Map]")),
+            "unexpected errors: {:?}",
+            err
+        );
     }
 
     #[test]
@@ -3003,12 +3522,14 @@ mod tests {
             if_false: done,
         };
 
-        func.block_mut(impossible).instructions.push(MirInst::BinOp {
-            dst: tmp_ptr,
-            op: BinOpKind::Add,
-            lhs: MirValue::VReg(ptr),
-            rhs: MirValue::VReg(idx),
-        });
+        func.block_mut(impossible)
+            .instructions
+            .push(MirInst::BinOp {
+                dst: tmp_ptr,
+                op: BinOpKind::Add,
+                lhs: MirValue::VReg(ptr),
+                rhs: MirValue::VReg(idx),
+            });
         func.block_mut(impossible).instructions.push(MirInst::Load {
             dst,
             ptr: tmp_ptr,
@@ -3221,24 +3742,28 @@ mod tests {
             if_false: skip_first,
         };
 
-        func.block_mut(after_first).instructions.push(MirInst::BinOp {
-            dst: neq3,
-            op: BinOpKind::Ne,
-            lhs: MirValue::VReg(idx),
-            rhs: MirValue::Const(3),
-        });
+        func.block_mut(after_first)
+            .instructions
+            .push(MirInst::BinOp {
+                dst: neq3,
+                op: BinOpKind::Ne,
+                lhs: MirValue::VReg(idx),
+                rhs: MirValue::Const(3),
+            });
         func.block_mut(after_first).terminator = MirInst::Branch {
             cond: neq3,
             if_true: after_second,
             if_false: skip_second,
         };
 
-        func.block_mut(after_second).instructions.push(MirInst::BinOp {
-            dst: eq1,
-            op: BinOpKind::Eq,
-            lhs: MirValue::VReg(idx),
-            rhs: MirValue::Const(1),
-        });
+        func.block_mut(after_second)
+            .instructions
+            .push(MirInst::BinOp {
+                dst: eq1,
+                op: BinOpKind::Eq,
+                lhs: MirValue::VReg(idx),
+                rhs: MirValue::Const(1),
+            });
         func.block_mut(after_second).terminator = MirInst::Branch {
             cond: eq1,
             if_true: bad,
