@@ -39,7 +39,7 @@ use crate::compiler::mir::{
     TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
 };
 use crate::compiler::mir_to_lir::lower_mir_to_lir;
-use crate::compiler::passes::{ListLowering, MirPass};
+use crate::compiler::passes::{ListLowering, MirPass, SsaDestruction};
 use crate::compiler::type_infer::{TypeInference, infer_subfunction_schemes};
 use crate::compiler::verifier_types;
 use crate::compiler::vcc;
@@ -2780,11 +2780,16 @@ pub fn compile_mir_to_ebpf_with_hints(
 ) -> Result<MirCompileResult, CompileError> {
     let mut program = mir.clone();
     let list_lowering = ListLowering;
+    let ssa_destruct = SsaDestruction;
     let cfg = CFG::build(&program.main);
     let _ = list_lowering.run(&mut program.main, &cfg);
+    let cfg = CFG::build(&program.main);
+    let _ = ssa_destruct.run(&mut program.main, &cfg);
     for subfn in &mut program.subfunctions {
         let cfg = CFG::build(subfn);
         let _ = list_lowering.run(subfn, &cfg);
+        let cfg = CFG::build(subfn);
+        let _ = ssa_destruct.run(subfn, &cfg);
     }
 
     verify_mir_program(&program, probe_ctx, type_hints)?;
@@ -3109,6 +3114,64 @@ mod tests {
         assert!(
             !result.bytecode.is_empty(),
             "MIR branch compile produced empty bytecode"
+        );
+    }
+
+    #[test]
+    fn test_mir_phi_compile_without_prepass() {
+        use crate::compiler::mir::*;
+
+        let mut func = MirFunction::new();
+
+        let mut entry = BasicBlock::new(BlockId(0));
+        entry.instructions.push(MirInst::Copy {
+            dst: VReg(0),
+            src: MirValue::Const(1),
+        });
+        entry.terminator = MirInst::Branch {
+            cond: VReg(0),
+            if_true: BlockId(1),
+            if_false: BlockId(2),
+        };
+
+        let mut left = BasicBlock::new(BlockId(1));
+        left.instructions.push(MirInst::Copy {
+            dst: VReg(1),
+            src: MirValue::Const(10),
+        });
+        left.terminator = MirInst::Jump { target: BlockId(3) };
+
+        let mut right = BasicBlock::new(BlockId(2));
+        right.instructions.push(MirInst::Copy {
+            dst: VReg(2),
+            src: MirValue::Const(20),
+        });
+        right.terminator = MirInst::Jump { target: BlockId(3) };
+
+        let mut join = BasicBlock::new(BlockId(3));
+        join.instructions.push(MirInst::Phi {
+            dst: VReg(3),
+            args: vec![(BlockId(1), VReg(1)), (BlockId(2), VReg(2))],
+        });
+        join.terminator = MirInst::Return {
+            val: Some(MirValue::VReg(VReg(3))),
+        };
+
+        func.blocks.push(entry);
+        func.blocks.push(left);
+        func.blocks.push(right);
+        func.blocks.push(join);
+        func.vreg_count = 4;
+
+        let program = MirProgram {
+            main: func,
+            subfunctions: vec![],
+        };
+
+        let result = compile_mir_to_ebpf(&program, None).unwrap();
+        assert!(
+            !result.bytecode.is_empty(),
+            "MIR with phi should compile via internal SSA destruction"
         );
     }
 
