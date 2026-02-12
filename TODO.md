@@ -18,9 +18,10 @@ Last updated: 2026-02-12.
   - Added generic map ELF emission + relocations from map-op usage (including key/value size inference and map-kind-aware defs for hash/array/per-cpu maps).
   - Expanded type/VCC checks to allow scalar or stack/map-pointer operands for generic map keys/values, with backend guards for unsupported map-kind helper usage.
 
-- [ ] Make map kind a first-class backend concern.
-  - Lowering carries `MapKind`, but map emission/codegen paths are still biased toward tracing maps.
-  - Use `MapKind` to drive ELF map defs, helper usage, and loader behavior consistently.
+- [x] Make map kind a first-class backend concern.
+  - Counter/string-counter map emission now preserves inferred `MapKind` (hash vs per-cpu hash) and rejects invalid kind usage at codegen time.
+  - Backend map defs are kind-aware for built-in and generic map paths, instead of only name-driven defaults.
+  - Loader counter readers now support both hash and per-cpu hash map types, aggregating per-cpu values consistently.
 
 - [ ] Replace opaque helper handling with typed helper semantics.
   - `CallHelper` remains too generic for robust verifier modeling and diagnostics.

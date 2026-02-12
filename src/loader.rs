@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use aya::maps::{HashMap as AyaHashMap, RingBuf};
+use aya::maps::{HashMap as AyaHashMap, PerCpuHashMap, RingBuf};
 use aya::programs::{KProbe, RawTracePoint, TracePoint, UProbe};
 use aya::{Ebpf, EbpfLoader};
 use thiserror::Error;
@@ -165,9 +165,9 @@ pub struct ActiveProbe {
     ebpf: Ebpf,
     /// Whether this probe has a ring buffer map for output
     has_ringbuf: bool,
-    /// Whether this probe has a counter hash map (integer keys)
+    /// Whether this probe has a counter map (hash or per-CPU hash, integer keys)
     has_counter_map: bool,
-    /// Whether this probe has a string counter hash map (string keys like $ctx.comm)
+    /// Whether this probe has a string counter map (hash or per-CPU hash)
     has_string_counter_map: bool,
     /// Whether this probe has a histogram hash map
     has_histogram_map: bool,
@@ -638,7 +638,7 @@ impl EbpfState {
         Some(BpfEventData::Record(fields))
     }
 
-    /// Helper to read all entries from an i64->i64 hash map
+    /// Helper to read all entries from an i64->i64 hash/per-CPU-hash map
     fn read_i64_hash_map(
         &self,
         id: u32,
@@ -655,12 +655,19 @@ impl EbpfState {
         let mut entries = Vec::new();
 
         if let Some(map) = probe.ebpf.map_mut(map_name) {
-            let hash_map: AyaHashMap<_, i64, i64> = AyaHashMap::try_from(map).map_err(|e| {
-                LoadError::MapNotFound(format!("Failed to convert {map_name} map: {e}"))
-            })?;
-
-            for (key, value) in hash_map.iter().filter_map(|item| item.ok()) {
-                entries.push((key, value));
+            if let Ok(hash_map) = AyaHashMap::<_, i64, i64>::try_from(&mut *map) {
+                for (key, value) in hash_map.iter().filter_map(|item| item.ok()) {
+                    entries.push((key, value));
+                }
+            } else if let Ok(per_cpu_hash_map) = PerCpuHashMap::<_, i64, i64>::try_from(&mut *map) {
+                for (key, values) in per_cpu_hash_map.iter().filter_map(|item| item.ok()) {
+                    let total = values.iter().copied().sum::<i64>();
+                    entries.push((key, total));
+                }
+            } else {
+                return Err(LoadError::MapNotFound(format!(
+                    "Failed to convert {map_name} map as hash/per-cpu hash"
+                )));
             }
         }
 
@@ -680,7 +687,8 @@ impl EbpfState {
 
     /// Read all counter entries from a probe's counter map (integer keys)
     ///
-    /// Returns all key-value pairs from the bpf-count hash map.
+    /// Supports both regular hash and per-CPU hash maps. Per-CPU values are
+    /// aggregated to a single total per key.
     pub fn get_counters(&self, id: u32) -> Result<Vec<CounterEntry>, LoadError> {
         let entries = self.read_i64_hash_map(id, |p| p.has_counter_map, "counters")?;
         Ok(entries
@@ -691,8 +699,8 @@ impl EbpfState {
 
     /// Read all counter entries from a probe's string counter map
     ///
-    /// Returns all key-value pairs from the bpf-count hash map with string keys
-    /// (e.g., process names from $ctx.comm).
+    /// Supports both regular hash and per-CPU hash maps. Per-CPU values are
+    /// aggregated to a single total per key.
     pub fn get_string_counters(&self, id: u32) -> Result<Vec<StringCounterEntry>, LoadError> {
         let mut probes = self.probes.lock().map_err(|_| LoadError::LockPoisoned)?;
         let probe = probes.get_mut(&id).ok_or(LoadError::ProbeNotFound(id))?;
@@ -705,18 +713,30 @@ impl EbpfState {
 
         if let Some(map) = probe.ebpf.map_mut("str_counters") {
             // String counter map uses [u8; 16] as key (comm is 16 bytes)
-            let hash_map: AyaHashMap<_, [u8; 16], i64> =
-                AyaHashMap::try_from(map).map_err(|e| {
-                    LoadError::MapNotFound(format!("Failed to convert str_counters map: {e}"))
-                })?;
-
-            for (key_bytes, count) in hash_map.iter().filter_map(|item| item.ok()) {
-                // Convert the key bytes to a string (null-terminated)
-                let key = std::str::from_utf8(&key_bytes)
-                    .unwrap_or("")
-                    .trim_end_matches('\0')
-                    .to_string();
-                entries.push(StringCounterEntry { key, count });
+            if let Ok(hash_map) = AyaHashMap::<_, [u8; 16], i64>::try_from(&mut *map) {
+                for (key_bytes, count) in hash_map.iter().filter_map(|item| item.ok()) {
+                    // Convert the key bytes to a string (null-terminated)
+                    let key = std::str::from_utf8(&key_bytes)
+                        .unwrap_or("")
+                        .trim_end_matches('\0')
+                        .to_string();
+                    entries.push(StringCounterEntry { key, count });
+                }
+            } else if let Ok(per_cpu_hash_map) =
+                PerCpuHashMap::<_, [u8; 16], i64>::try_from(&mut *map)
+            {
+                for (key_bytes, values) in per_cpu_hash_map.iter().filter_map(|item| item.ok()) {
+                    let key = std::str::from_utf8(&key_bytes)
+                        .unwrap_or("")
+                        .trim_end_matches('\0')
+                        .to_string();
+                    let count = values.iter().copied().sum::<i64>();
+                    entries.push(StringCounterEntry { key, count });
+                }
+            } else {
+                return Err(LoadError::MapNotFound(
+                    "Failed to convert str_counters map as hash/per-cpu hash".to_string(),
+                ));
             }
         }
 

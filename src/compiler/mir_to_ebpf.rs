@@ -109,10 +109,10 @@ pub struct MirToEbpfCompiler<'a> {
     relocations: Vec<MapRelocation>,
     /// Needs ring buffer map
     needs_ringbuf: bool,
-    /// Needs counter map
-    needs_counter_map: bool,
-    /// Needs string counter map
-    needs_string_counter_map: bool,
+    /// Counter map kind (numeric keys)
+    counter_map_kind: Option<MapKind>,
+    /// String counter map kind
+    string_counter_map_kind: Option<MapKind>,
     /// Needs histogram map
     needs_histogram_map: bool,
     /// Needs timestamp map
@@ -166,8 +166,8 @@ impl<'a> MirToEbpfCompiler<'a> {
             pending_jumps: Vec::new(),
             relocations: Vec::new(),
             needs_ringbuf: false,
-            needs_counter_map: false,
-            needs_string_counter_map: false,
+            counter_map_kind: None,
+            string_counter_map_kind: None,
             needs_histogram_map: false,
             needs_timestamp_map: false,
             needs_kstack_map: false,
@@ -265,28 +265,28 @@ impl<'a> MirToEbpfCompiler<'a> {
                 def: BpfMapDef::ring_buffer(256 * 1024),
             });
         }
-        if self.needs_counter_map {
+        if let Some(kind) = self.counter_map_kind {
             maps.push(EbpfMap {
                 name: COUNTER_MAP_NAME.to_string(),
-                def: BpfMapDef::counter_hash(),
+                def: self.build_counter_map_def(COUNTER_MAP_NAME, kind)?,
             });
         }
-        if self.needs_string_counter_map {
+        if let Some(kind) = self.string_counter_map_kind {
             maps.push(EbpfMap {
                 name: STRING_COUNTER_MAP_NAME.to_string(),
-                def: BpfMapDef::string_counter_hash(),
+                def: self.build_counter_map_def(STRING_COUNTER_MAP_NAME, kind)?,
             });
         }
         if self.needs_histogram_map {
             maps.push(EbpfMap {
                 name: HISTOGRAM_MAP_NAME.to_string(),
-                def: BpfMapDef::counter_hash(), // Same structure as counter: key=bucket, value=count
+                def: BpfMapDef::histogram_hash(),
             });
         }
         if self.needs_timestamp_map {
             maps.push(EbpfMap {
                 name: TIMESTAMP_MAP_NAME.to_string(),
-                def: BpfMapDef::counter_hash(), // key=tid, value=timestamp
+                def: BpfMapDef::timestamp_hash(),
             });
         }
         if self.needs_kstack_map {
@@ -1128,11 +1128,11 @@ impl<'a> MirToEbpfCompiler<'a> {
                 flags,
             } => {
                 if map.name == COUNTER_MAP_NAME {
-                    self.needs_counter_map = true;
+                    self.register_counter_map_kind(COUNTER_MAP_NAME, map.kind)?;
                     let key_reg = self.ensure_reg(*key)?;
                     self.compile_counter_map_update(&map.name, key_reg)?;
                 } else if map.name == STRING_COUNTER_MAP_NAME {
-                    self.needs_string_counter_map = true;
+                    self.register_counter_map_kind(STRING_COUNTER_MAP_NAME, map.kind)?;
                     let key_reg = self.ensure_reg(*key)?;
                     self.compile_counter_map_update(&map.name, key_reg)?;
                 } else {
@@ -2425,6 +2425,66 @@ impl<'a> MirToEbpfCompiler<'a> {
             .push(EbpfInsn::call(BpfHelper::MapUpdateElem));
 
         Ok(())
+    }
+
+    fn register_counter_map_kind(
+        &mut self,
+        map_name: &str,
+        kind: MapKind,
+    ) -> Result<(), CompileError> {
+        if !matches!(kind, MapKind::Hash | MapKind::PerCpuHash) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map '{}' only supports Hash/PerCpuHash kinds, got {:?}",
+                map_name, kind
+            )));
+        }
+
+        let slot = if map_name == COUNTER_MAP_NAME {
+            &mut self.counter_map_kind
+        } else if map_name == STRING_COUNTER_MAP_NAME {
+            &mut self.string_counter_map_kind
+        } else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "internal error: '{}' is not a counter map",
+                map_name
+            )));
+        };
+
+        if let Some(existing) = *slot {
+            if existing != kind {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "map '{}' used with conflicting kinds: {:?} vs {:?}",
+                    map_name, existing, kind
+                )));
+            }
+        } else {
+            *slot = Some(kind);
+        }
+
+        Ok(())
+    }
+
+    fn build_counter_map_def(
+        &self,
+        map_name: &str,
+        kind: MapKind,
+    ) -> Result<BpfMapDef, CompileError> {
+        let key_size = if map_name == STRING_COUNTER_MAP_NAME {
+            16
+        } else {
+            8
+        };
+        let value_size = 8;
+        let max_entries = 10240;
+
+        match kind {
+            MapKind::Hash => Ok(BpfMapDef::hash(key_size, value_size, max_entries)),
+            MapKind::PerCpuHash => Ok(BpfMapDef::per_cpu_hash(key_size, value_size, max_entries)),
+            _ => Err(CompileError::UnsupportedInstruction(format!(
+                "map '{}' only supports Hash/PerCpuHash kinds, got {:?}",
+                map_name, kind
+            ))),
+        }
     }
 
     fn is_builtin_map_name(name: &str) -> bool {
@@ -4640,6 +4700,142 @@ mod tests {
             .find(|m| m.name == STRING_COUNTER_MAP_NAME)
             .expect("Expected string counter map");
         assert_eq!(map.def.key_size, 16);
+    }
+
+    #[test]
+    fn test_counter_map_emits_per_cpu_kind() {
+        use crate::compiler::mir::*;
+
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(123),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+            map: MapRef {
+                name: COUNTER_MAP_NAME.to_string(),
+                kind: MapKind::PerCpuHash,
+            },
+            key,
+            val: key,
+            flags: 0,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let program = MirProgram {
+            main: func,
+            subfunctions: vec![],
+        };
+        let result = compile_mir_to_ebpf(&program, None).expect("counter map should compile");
+
+        let map = result
+            .maps
+            .iter()
+            .find(|m| m.name == COUNTER_MAP_NAME)
+            .expect("expected counters map");
+        assert_eq!(
+            map.def.map_type,
+            crate::compiler::elf::BpfMapType::PerCpuHash as u32
+        );
+    }
+
+    #[test]
+    fn test_counter_map_kind_conflict_rejected() {
+        use crate::compiler::mir::*;
+
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let key0 = func.alloc_vreg();
+        let key1 = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key0,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key1,
+            src: MirValue::Const(2),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+            map: MapRef {
+                name: COUNTER_MAP_NAME.to_string(),
+                kind: MapKind::Hash,
+            },
+            key: key0,
+            val: key0,
+            flags: 0,
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+            map: MapRef {
+                name: COUNTER_MAP_NAME.to_string(),
+                kind: MapKind::PerCpuHash,
+            },
+            key: key1,
+            val: key1,
+            flags: 0,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let program = MirProgram {
+            main: func,
+            subfunctions: vec![],
+        };
+        match compile_mir_to_ebpf(&program, None) {
+            Ok(_) => panic!("expected kind conflict"),
+            Err(err) => {
+                let msg = err.to_string();
+                assert!(
+                    msg.contains("conflicting kinds"),
+                    "unexpected error message: {msg}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_counter_map_rejects_non_hash_kind() {
+        use crate::compiler::mir::*;
+
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(9),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+            map: MapRef {
+                name: COUNTER_MAP_NAME.to_string(),
+                kind: MapKind::Array,
+            },
+            key,
+            val: key,
+            flags: 0,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let program = MirProgram {
+            main: func,
+            subfunctions: vec![],
+        };
+
+        match compile_mir_to_ebpf(&program, None) {
+            Ok(_) => panic!("expected kind rejection"),
+            Err(err) => {
+                let msg = err.to_string();
+                assert!(
+                    msg.contains("Hash/PerCpuHash"),
+                    "unexpected error message: {msg}"
+                );
+            }
+        }
     }
 
     #[test]
