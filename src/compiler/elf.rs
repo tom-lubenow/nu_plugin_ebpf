@@ -23,6 +23,7 @@ use super::instruction::EbpfBuilder;
 pub enum BpfMapType {
     Hash = 1,
     Array = 2,
+    ProgArray = 3,
     PerfEventArray = 4,
     StackTrace = 7,
     RingBuf = 27,
@@ -138,6 +139,18 @@ impl BpfMapDef {
             key_size: 0,             // Not used for ring buffers
             value_size: 0,           // Not used for ring buffers
             max_entries: size_bytes, // Buffer size in bytes (must be power of 2)
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a program array map for BPF tail calls
+    pub fn prog_array(max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::ProgArray as u32,
+            key_size: 4,      // u32 index
+            value_size: 4,    // u32 program FD
+            max_entries,
             map_flags: 0,
             pinning: BpfPinningType::None,
         }

@@ -24,8 +24,8 @@ use super::hindley_milner::{
     Constraint, HMType, Substitution, TypeScheme, TypeVar, TypeVarGenerator, UnifyError, unify,
 };
 use super::mir::{
-    AddressSpace, BasicBlock, BinOpKind, CtxField, MirFunction, MirInst, MirType, MirValue,
-    StackSlotId, StackSlotKind, StringAppendType, SubfunctionId, UnaryOpKind, VReg,
+    AddressSpace, BasicBlock, BinOpKind, CtxField, MapKind, MirFunction, MirInst, MirType,
+    MirValue, StackSlotId, StackSlotKind, StringAppendType, SubfunctionId, UnaryOpKind, VReg,
     STRING_COUNTER_MAP_NAME,
 };
 
@@ -984,7 +984,13 @@ impl<'a> TypeInference<'a> {
                 }
             }
 
-            MirInst::TailCall { index, .. } => {
+            MirInst::TailCall { prog_map, index } => {
+                if prog_map.kind != MapKind::ProgArray {
+                    errors.push(TypeError::new(format!(
+                        "tail call requires ProgArray map kind, got {:?} for '{}'",
+                        prog_map.kind, prog_map.name
+                    )));
+                }
                 let idx_ty = self.mir_type_for_value(index, types);
                 if !Self::mir_is_numeric(&idx_ty) {
                     errors.push(TypeError::new(format!(

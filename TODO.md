@@ -1,6 +1,6 @@
 # TODO
 
-Status legend: `[~]` in progress, `[ ]` todo.
+Status legend: `[x]` done, `[~]` in progress, `[ ]` todo.
 Last updated: 2026-02-12.
 
 ## Current compiler gaps
@@ -9,9 +9,9 @@ Last updated: 2026-02-12.
   - VCC is a mandatory gate, but the model is still incomplete versus kernel verifier behavior for broader program classes.
   - Expand tracked state beyond current pointer/stack/map/range model and tighten parity tests against real verifier outcomes.
 
-- [ ] Implement tail calls end-to-end.
-  - MIR/LIR support exists, but codegen still rejects tail calls.
-  - Add bytecode lowering, map relocation plumbing for `ProgArray`, and verifier-oriented negative/positive tests.
+- [x] Implement tail calls end-to-end.
+  - Implemented bytecode lowering to `bpf_tail_call` and failure fallback termination.
+  - Added `ProgArray` map emission and relocation plumbing, with positive/negative compiler tests.
 
 - [ ] Implement generic map operations end-to-end.
   - `MapLookup` / `MapDelete` are still rejected in codegen.

@@ -18,7 +18,7 @@
 //! 6. Compile blocks in reverse post-order
 //! 7. Fix up jumps and emit bytecode
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::compiler::CompileError;
 use crate::compiler::cfg::CFG;
@@ -33,8 +33,9 @@ use crate::compiler::hindley_milner::HMType;
 use crate::compiler::instruction::{BpfHelper, EbpfInsn, EbpfReg, opcode};
 use crate::compiler::lir::{LirBlock, LirFunction, LirInst, LirProgram};
 use crate::compiler::mir::{
-    BinOpKind, BlockId, CtxField, MirProgram, MirType, MirTypeHints, MirValue, RecordFieldDef,
-    StackSlot, StackSlotId, StackSlotKind, StringAppendType, SubfunctionId, UnaryOpKind, VReg,
+    BinOpKind, BlockId, CtxField, MapKind, MirProgram, MirType, MirTypeHints, MirValue,
+    RecordFieldDef, StackSlot, StackSlotId, StackSlotKind, StringAppendType, SubfunctionId,
+    UnaryOpKind, VReg,
     COUNTER_MAP_NAME, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME,
     TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
 };
@@ -101,6 +102,8 @@ pub struct MirToEbpfCompiler<'a> {
     needs_kstack_map: bool,
     /// Needs user stack trace map
     needs_ustack_map: bool,
+    /// Names of program array maps used for tail calls
+    tail_call_maps: BTreeSet<String>,
     /// Event schema for structured output
     event_schema: Option<EventSchema>,
     /// Available physical registers for allocation
@@ -136,6 +139,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             needs_timestamp_map: false,
             needs_kstack_map: false,
             needs_ustack_map: false,
+            tail_call_maps: BTreeSet::new(),
             event_schema: None,
             // Allow use of caller-saved regs; R9 remains reserved for the context pointer.
             available_regs: vec![
@@ -258,6 +262,18 @@ impl<'a> MirToEbpfCompiler<'a> {
             maps.push(EbpfMap {
                 name: USTACK_MAP_NAME.to_string(),
                 def: BpfMapDef::stack_trace_map(),
+            });
+        }
+        for map_name in &self.tail_call_maps {
+            if maps.iter().any(|m| m.name == *map_name) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "tail call map '{}' conflicts with an existing map name",
+                    map_name
+                )));
+            }
+            maps.push(EbpfMap {
+                name: map_name.clone(),
+                def: BpfMapDef::prog_array(1024),
             });
         }
 
@@ -1157,13 +1173,20 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.pending_jumps.push((jmp_idx, *header));
             }
 
-            LirInst::TailCall {
-                prog_map: _,
-                index: _,
-            } => {
-                return Err(CompileError::UnsupportedInstruction(
-                    "Tail calls not yet implemented in MIR compiler".into(),
-                ));
+            LirInst::TailCall { prog_map, index } => {
+                if prog_map.kind != MapKind::ProgArray {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "Tail call requires prog array map, got {:?} for '{}'",
+                        prog_map.kind, prog_map.name
+                    )));
+                }
+                self.tail_call_maps.insert(prog_map.name.clone());
+                self.compile_tail_call(&prog_map.name, index)?;
+                // Tail call helper does not return on success. If it does return, tail call failed;
+                // terminate the current function with a default 0.
+                self.instructions.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
+                self.restore_callee_saved();
+                self.instructions.push(EbpfInsn::exit());
             }
 
             LirInst::CallSubfn { subfn, args, .. } => {
@@ -1980,6 +2003,34 @@ impl<'a> MirToEbpfCompiler<'a> {
         self.instructions
             .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
 
+        Ok(())
+    }
+
+    /// Compile bpf_tail_call(ctx, prog_array, index)
+    fn compile_tail_call(&mut self, map_name: &str, index: &MirValue) -> Result<(), CompileError> {
+        // Load index into R3 before setting up helper args in R1/R2.
+        // This avoids clobbering when the index vreg is allocated to R1/R2.
+        let index_reg = self.value_to_reg(index)?;
+        if index_reg != EbpfReg::R3 {
+            self.instructions
+                .push(EbpfInsn::mov64_reg(EbpfReg::R3, index_reg));
+        }
+
+        // R1 = ctx (restore from R9 where we saved it at program start)
+        self.instructions
+            .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R9));
+
+        // R2 = prog array map fd (relocated by loader)
+        let reloc_offset = self.instructions.len() * 8;
+        let [insn1, insn2] = EbpfInsn::ld_map_fd(EbpfReg::R2);
+        self.instructions.push(insn1);
+        self.instructions.push(insn2);
+        self.relocations.push(MapRelocation {
+            insn_offset: reloc_offset,
+            map_name: map_name.to_string(),
+        });
+
+        self.instructions.push(EbpfInsn::call(BpfHelper::TailCall));
         Ok(())
     }
 
@@ -4147,6 +4198,84 @@ mod tests {
             .find(|m| m.name == STRING_COUNTER_MAP_NAME)
             .expect("Expected string counter map");
         assert_eq!(map.def.key_size, 16);
+    }
+
+    #[test]
+    fn test_tail_call_compiles_and_emits_prog_array_map() {
+        use crate::compiler::mir::*;
+
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let idx = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: idx,
+            src: MirValue::Const(3),
+        });
+        func.block_mut(entry).terminator = MirInst::TailCall {
+            prog_map: MapRef {
+                name: "tail_targets".to_string(),
+                kind: MapKind::ProgArray,
+            },
+            index: MirValue::VReg(idx),
+        };
+
+        let program = MirProgram {
+            main: func,
+            subfunctions: vec![],
+        };
+
+        let result = compile_mir_to_ebpf(&program, None).expect("tail call should compile");
+        let map = result
+            .maps
+            .iter()
+            .find(|m| m.name == "tail_targets")
+            .expect("expected prog array map");
+        assert_eq!(map.def.map_type, crate::compiler::elf::BpfMapType::ProgArray as u32);
+        assert!(result
+            .relocations
+            .iter()
+            .any(|r| r.map_name == "tail_targets"));
+
+        let has_tail_call_helper = result.bytecode.chunks(8).any(|chunk| {
+            chunk[0] == opcode::CALL
+                && i32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]])
+                    == BpfHelper::TailCall as i32
+        });
+        assert!(has_tail_call_helper, "expected bpf_tail_call helper call");
+    }
+
+    #[test]
+    fn test_tail_call_rejects_non_prog_array_map() {
+        use crate::compiler::mir::*;
+
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+        func.block_mut(entry).terminator = MirInst::TailCall {
+            prog_map: MapRef {
+                name: "bad_tail_map".to_string(),
+                kind: MapKind::Hash,
+            },
+            index: MirValue::Const(0),
+        };
+
+        let program = MirProgram {
+            main: func,
+            subfunctions: vec![],
+        };
+
+        match compile_mir_to_ebpf(&program, None) {
+            Ok(_) => panic!("expected non-prog-array map error, got Ok"),
+            Err(err) => {
+                let msg = err.to_string();
+                assert!(
+                    msg.contains("ProgArray") || msg.contains("prog array"),
+                    "unexpected error: {msg}"
+                );
+            }
+        }
     }
 
     #[test]

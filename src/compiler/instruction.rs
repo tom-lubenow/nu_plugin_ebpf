@@ -62,6 +62,8 @@ pub enum BpfHelper {
     TracePrintk = 6,
     /// u32 bpf_get_smp_processor_id(void)
     GetSmpProcessorId = 8,
+    /// long bpf_tail_call(ctx, prog_array_map, index)
+    TailCall = 12,
     /// u64 bpf_get_current_pid_tgid(void)
     GetCurrentPidTgid = 14,
     /// u64 bpf_get_current_uid_gid(void)
