@@ -302,8 +302,11 @@ pub fn verify_mir(
         let block = func.block(block_id);
 
         for inst in &block.instructions {
+            check_uses_initialized(inst, &state, &mut errors);
             apply_inst(inst, types, &slot_sizes, &mut state, &mut errors);
         }
+
+        check_uses_initialized(&block.terminator, &state, &mut errors);
 
         match &block.terminator {
             MirInst::Jump { target } => {
@@ -799,6 +802,21 @@ fn apply_inst(
                     );
                 }
             }
+        }
+    }
+}
+
+fn check_uses_initialized(
+    inst: &MirInst,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    for used in inst.uses() {
+        if matches!(state.get(used), VerifierType::Uninit) {
+            errors.push(VerifierTypeError::new(format!(
+                "instruction uses uninitialized v{}",
+                used.0
+            )));
         }
     }
 }
@@ -3400,5 +3418,55 @@ mod tests {
         types.insert(dst, MirType::I8);
 
         verify_mir(&func, &types).expect("expected vreg compare to refine range");
+    }
+
+    #[test]
+    fn test_uninitialized_scalar_use_rejected() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let lhs = func.alloc_vreg();
+        let rhs = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: rhs,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(lhs),
+            rhs: MirValue::VReg(rhs),
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected uninitialized-use error");
+        assert!(err.iter().any(|e| e.message.contains("uninitialized v")));
+    }
+
+    #[test]
+    fn test_uninitialized_branch_cond_rejected() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let left = func.alloc_block();
+        let right = func.alloc_block();
+        func.entry = entry;
+
+        let cond = func.alloc_vreg();
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: left,
+            if_false: right,
+        };
+        func.block_mut(left).terminator = MirInst::Return { val: None };
+        func.block_mut(right).terminator = MirInst::Return { val: None };
+
+        let types = HashMap::new();
+        let err = verify_mir(&func, &types).expect_err("expected uninitialized branch cond error");
+        assert!(err.iter().any(|e| e.message.contains("uninitialized v")));
     }
 }
