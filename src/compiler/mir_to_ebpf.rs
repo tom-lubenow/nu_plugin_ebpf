@@ -3828,6 +3828,70 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_register_pressure_codegen_stable() {
+        let ir = make_ir_block(vec![
+            Instruction::LoadLiteral {
+                dst: RegId::new(0),
+                lit: Literal::Int(1),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::Int(2),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(2),
+                lit: Literal::Int(3),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(3),
+                lit: Literal::Int(4),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(4),
+                lit: Literal::Int(5),
+            },
+            Instruction::BinaryOp {
+                lhs_dst: RegId::new(0),
+                op: Operator::Math(Math::Add),
+                rhs: RegId::new(1),
+            },
+            Instruction::BinaryOp {
+                lhs_dst: RegId::new(0),
+                op: Operator::Math(Math::Add),
+                rhs: RegId::new(2),
+            },
+            Instruction::BinaryOp {
+                lhs_dst: RegId::new(0),
+                op: Operator::Math(Math::Add),
+                rhs: RegId::new(3),
+            },
+            Instruction::BinaryOp {
+                lhs_dst: RegId::new(0),
+                op: Operator::Math(Math::Add),
+                rhs: RegId::new(4),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ]);
+
+        let mir_program =
+            lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
+
+        let mut baseline: Option<(Vec<u8>, usize)> = None;
+        for _ in 0..8 {
+            let result = compile_mir_to_ebpf(&mir_program, None).unwrap();
+            let signature = (result.bytecode, result.main_size);
+            if let Some(expected) = &baseline {
+                assert_eq!(
+                    &signature, expected,
+                    "codegen should be stable across repeated compilations"
+                );
+            } else {
+                baseline = Some(signature);
+            }
+        }
+    }
+
     /// Test that the linear scan allocator correctly handles simultaneous live ranges
     #[test]
     fn test_simultaneous_live_ranges() {
