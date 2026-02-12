@@ -10,7 +10,7 @@
 //! - Stack pointer arithmetic requires bounded scalar offsets.
 //! - Loads/stores require pointer operands and must respect stack bounds.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use crate::compiler::cfg::CFG;
 use crate::compiler::instruction::{BpfHelper, HelperArgKind, HelperRetKind, HelperSignature};
@@ -324,6 +324,8 @@ pub struct VccVerifier {
 }
 
 impl VccVerifier {
+    const MAX_STATE_UPDATES_PER_BLOCK: usize = 64;
+
     pub fn verify_function(self, func: &VccFunction) -> Result<(), Vec<VccError>> {
         self.verify_function_with_seed(func, HashMap::new())
     }
@@ -333,18 +335,90 @@ impl VccVerifier {
         func: &VccFunction,
         seed: HashMap<VccReg, VccValueType>,
     ) -> Result<(), Vec<VccError>> {
-        let mut state = VccState::with_seed(seed);
-        for block in &func.blocks {
+        let mut in_states: HashMap<VccBlockId, VccState> = HashMap::new();
+        let mut worklist: VecDeque<VccBlockId> = VecDeque::new();
+        let mut update_counts: HashMap<VccBlockId, usize> = HashMap::new();
+
+        in_states.insert(func.entry, VccState::with_seed(seed));
+        worklist.push_back(func.entry);
+
+        while let Some(block_id) = worklist.pop_front() {
+            let Some(mut state) = in_states.get(&block_id).cloned() else {
+                continue;
+            };
+            let block = func.block(block_id);
             for inst in &block.instructions {
                 self.verify_inst(inst, &mut state);
             }
             self.verify_terminator(&block.terminator, &mut state);
+
+            match &block.terminator {
+                VccTerminator::Jump { target } => {
+                    self.propagate_state(
+                        *target,
+                        &state,
+                        &mut in_states,
+                        &mut worklist,
+                        &mut update_counts,
+                    );
+                }
+                VccTerminator::Branch {
+                    if_true, if_false, ..
+                } => {
+                    self.propagate_state(
+                        *if_true,
+                        &state,
+                        &mut in_states,
+                        &mut worklist,
+                        &mut update_counts,
+                    );
+                    self.propagate_state(
+                        *if_false,
+                        &state,
+                        &mut in_states,
+                        &mut worklist,
+                        &mut update_counts,
+                    );
+                }
+                VccTerminator::Return { .. } => {}
+            }
         }
 
         if self.errors.is_empty() {
             Ok(())
         } else {
             Err(self.errors)
+        }
+    }
+
+    fn propagate_state(
+        &mut self,
+        block: VccBlockId,
+        state: &VccState,
+        in_states: &mut HashMap<VccBlockId, VccState>,
+        worklist: &mut VecDeque<VccBlockId>,
+        update_counts: &mut HashMap<VccBlockId, usize>,
+    ) {
+        let existing = in_states.get(&block).cloned();
+        let mut next_state = match existing.as_ref() {
+            None => state.clone(),
+            Some(existing) => existing.merge_with(state),
+        };
+
+        let updates = update_counts.get(&block).copied().unwrap_or(0);
+        if updates >= Self::MAX_STATE_UPDATES_PER_BLOCK {
+            next_state = next_state.widened();
+        }
+
+        let changed = match existing {
+            None => true,
+            Some(existing) => existing != next_state,
+        };
+
+        if changed {
+            in_states.insert(block, next_state);
+            *update_counts.entry(block).or_insert(0) += 1;
+            worklist.push_back(block);
         }
     }
 
@@ -742,7 +816,7 @@ impl VccVerifier {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct VccState {
     reg_types: HashMap<VccReg, VccValueType>,
 }
@@ -754,6 +828,39 @@ impl VccState {
 
     fn set_reg(&mut self, reg: VccReg, ty: VccValueType) {
         self.reg_types.insert(reg, ty);
+    }
+
+    fn merge_with(&self, other: &VccState) -> VccState {
+        let mut merged = self.reg_types.clone();
+        for (reg, rhs) in &other.reg_types {
+            match merged.get(reg).copied() {
+                Some(lhs) => {
+                    merged.insert(*reg, self.merge_types(lhs, *rhs));
+                }
+                None => {
+                    merged.insert(*reg, *rhs);
+                }
+            }
+        }
+        VccState { reg_types: merged }
+    }
+
+    fn widened(&self) -> VccState {
+        let mut widened = HashMap::new();
+        for (reg, ty) in &self.reg_types {
+            let widened_ty = match ty {
+                VccValueType::Scalar { .. } => VccValueType::Scalar { range: None },
+                VccValueType::Ptr(ptr) => VccValueType::Ptr(VccPointerInfo {
+                    space: ptr.space,
+                    bounds: None,
+                }),
+                VccValueType::Bool => VccValueType::Bool,
+                VccValueType::Unknown => VccValueType::Unknown,
+                VccValueType::Uninit => VccValueType::Uninit,
+            };
+            widened.insert(*reg, widened_ty);
+        }
+        VccState { reg_types: widened }
     }
 
     fn reg_type(&self, reg: VccReg) -> Result<VccValueType, VccError> {
@@ -2473,6 +2580,40 @@ mod tests {
         });
 
         verify_err(&func, VccErrorKind::UnknownOffset);
+    }
+
+    #[test]
+    fn test_unreachable_block_is_ignored() {
+        let mut func = VccFunction::new();
+        let entry = func.entry;
+        let unreachable = func.alloc_block();
+        let p0 = func.alloc_reg();
+        let p1 = func.alloc_reg();
+        let out = func.alloc_reg();
+
+        func.block_mut(entry).terminator = VccTerminator::Return { value: None };
+        func.block_mut(unreachable)
+            .instructions
+            .push(VccInst::StackAddr {
+                dst: p0,
+                slot: StackSlotId(0),
+                size: 16,
+            });
+        func.block_mut(unreachable)
+            .instructions
+            .push(VccInst::StackAddr {
+                dst: p1,
+                slot: StackSlotId(1),
+                size: 16,
+            });
+        func.block_mut(unreachable).instructions.push(VccInst::BinOp {
+            dst: out,
+            op: VccBinOp::Add,
+            lhs: VccValue::Reg(p0),
+            rhs: VccValue::Reg(p1),
+        });
+
+        verify_ok(&func);
     }
 
     fn new_mir_function() -> (MirFunction, BlockId) {
