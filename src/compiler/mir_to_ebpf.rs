@@ -38,7 +38,7 @@ use crate::compiler::mir::{
     COUNTER_MAP_NAME, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME,
     TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
 };
-use crate::compiler::mir_to_lir::lower_mir_to_lir;
+use crate::compiler::mir_to_lir::lower_mir_to_lir_checked;
 use crate::compiler::passes::{ListLowering, MirPass, SsaDestruction};
 use crate::compiler::type_infer::{TypeInference, infer_subfunction_schemes};
 use crate::compiler::verifier_types;
@@ -2793,7 +2793,7 @@ pub fn compile_mir_to_ebpf_with_hints(
     }
 
     verify_mir_program(&program, probe_ctx, type_hints)?;
-    let lir_program = lower_mir_to_lir(&program);
+    let lir_program = lower_mir_to_lir_checked(&program)?;
 
     let compiler = MirToEbpfCompiler::new(&lir_program, probe_ctx);
     compiler.compile()
@@ -2861,6 +2861,7 @@ fn verify_mir_program(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::mir_to_lir::lower_mir_to_lir;
     use crate::compiler::ir_to_mir::lower_ir_to_mir;
     use nu_protocol::RegId;
     use nu_protocol::ast::{Math, Operator};
@@ -4146,6 +4147,100 @@ mod tests {
             .find(|m| m.name == STRING_COUNTER_MAP_NAME)
             .expect("Expected string counter map");
         assert_eq!(map.def.key_size, 16);
+    }
+
+    #[test]
+    fn test_helper_call_rejects_more_than_five_args() {
+        use crate::compiler::mir::*;
+
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let mut args = Vec::new();
+        for n in 0..6 {
+            let v = func.alloc_vreg();
+            func.block_mut(entry).instructions.push(MirInst::Copy {
+                dst: v,
+                src: MirValue::Const(n),
+            });
+            args.push(MirValue::VReg(v));
+        }
+        let dst = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 14, // bpf_get_current_pid_tgid
+            args,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let program = MirProgram {
+            main: func,
+            subfunctions: vec![],
+        };
+
+        match compile_mir_to_ebpf(&program, None) {
+            Ok(_) => panic!("expected argument-limit error, got Ok"),
+            Err(err) => {
+                let msg = err.to_string();
+                assert!(
+                    msg.contains("at most 5 arguments"),
+                    "unexpected error: {msg}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_subfunction_call_rejects_more_than_five_args() {
+        use crate::compiler::mir::*;
+
+        let mut subfn = MirFunction::with_name("too_many_args");
+        subfn.param_count = 6;
+        let sub_entry = subfn.alloc_block();
+        subfn.entry = sub_entry;
+        subfn.block_mut(sub_entry).terminator = MirInst::Return {
+            val: Some(MirValue::Const(0)),
+        };
+
+        let mut main = MirFunction::new();
+        let entry = main.alloc_block();
+        main.entry = entry;
+
+        let mut args = Vec::new();
+        for n in 0..6 {
+            let v = main.alloc_vreg();
+            main.block_mut(entry).instructions.push(MirInst::Copy {
+                dst: v,
+                src: MirValue::Const(10 + n),
+            });
+            args.push(v);
+        }
+        let dst = main.alloc_vreg();
+        main.block_mut(entry).instructions.push(MirInst::CallSubfn {
+            dst,
+            subfn: SubfunctionId(0),
+            args,
+        });
+        main.block_mut(entry).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(dst)),
+        };
+
+        let program = MirProgram {
+            main,
+            subfunctions: vec![subfn],
+        };
+
+        match compile_mir_to_ebpf(&program, None) {
+            Ok(_) => panic!("expected argument-limit error, got Ok"),
+            Err(err) => {
+                let msg = err.to_string();
+                assert!(
+                    msg.contains("at most 5 arguments"),
+                    "unexpected error: {msg}"
+                );
+            }
+        }
     }
 
     // ==================== BPF-to-BPF Function Call Tests ====================

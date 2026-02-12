@@ -46,7 +46,7 @@ pub use hir::{
 };
 pub use hir_to_mir::{lower_hir_to_mir, lower_hir_to_mir_with_hints, MirLoweringResult};
 pub use ir_to_mir::{UserFunctionSig, UserParam, UserParamKind};
-pub use mir_to_lir::lower_mir_to_lir;
+pub use mir_to_lir::{lower_mir_to_lir, lower_mir_to_lir_checked};
 pub use mir_to_ebpf::{MirCompileResult, compile_mir_to_ebpf, compile_mir_to_ebpf_with_hints};
 pub use type_infer::{TypeError, TypeInference};
 pub use verifier_types::VerifierTypeError;

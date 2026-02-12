@@ -1768,6 +1768,73 @@ mod tests {
         func
     }
 
+    fn make_helper_call_clobber_function() -> MirFunction {
+        let mut func = MirFunction::new();
+        let bb0 = func.alloc_block();
+        func.entry = bb0;
+
+        let v_keep = func.alloc_vreg();
+        let v_ret = func.alloc_vreg();
+        let v_out = func.alloc_vreg();
+
+        func.block_mut(bb0).instructions.push(MirInst::Copy {
+            dst: v_keep,
+            src: MirValue::Const(7),
+        });
+        func.block_mut(bb0).instructions.push(MirInst::CallHelper {
+            dst: v_ret,
+            helper: 14, // bpf_get_current_pid_tgid
+            args: vec![],
+        });
+        func.block_mut(bb0).instructions.push(MirInst::BinOp {
+            dst: v_out,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(v_keep),
+            rhs: MirValue::VReg(v_ret),
+        });
+        func.block_mut(bb0).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(v_out)),
+        };
+
+        func
+    }
+
+    fn make_subfn_call_clobber_function() -> MirFunction {
+        let mut func = MirFunction::new();
+        let bb0 = func.alloc_block();
+        func.entry = bb0;
+
+        let v_keep = func.alloc_vreg();
+        let v_arg = func.alloc_vreg();
+        let v_ret = func.alloc_vreg();
+        let v_out = func.alloc_vreg();
+
+        func.block_mut(bb0).instructions.push(MirInst::Copy {
+            dst: v_keep,
+            src: MirValue::Const(11),
+        });
+        func.block_mut(bb0).instructions.push(MirInst::Copy {
+            dst: v_arg,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(bb0).instructions.push(MirInst::CallSubfn {
+            dst: v_ret,
+            subfn: crate::compiler::mir::SubfunctionId(0),
+            args: vec![v_arg],
+        });
+        func.block_mut(bb0).instructions.push(MirInst::BinOp {
+            dst: v_out,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(v_keep),
+            rhs: MirValue::VReg(v_ret),
+        });
+        func.block_mut(bb0).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(v_out)),
+        };
+
+        func
+    }
+
     #[test]
     fn test_list_register_allocation() {
         let func = make_list_function();
@@ -1873,6 +1940,72 @@ mod tests {
             ),
             "StringAppend integer source should avoid R1-R5 scratch regs, got {:?}",
             val_reg
+        );
+    }
+
+    #[test]
+    fn test_helper_call_clobber_constraints() {
+        let func = make_helper_call_clobber_function();
+        let available = vec![
+            EbpfReg::R1,
+            EbpfReg::R2,
+            EbpfReg::R3,
+            EbpfReg::R4,
+            EbpfReg::R5,
+            EbpfReg::R6,
+        ];
+
+        let result = allocate_registers(&func, available);
+        let keep_reg = result
+            .coloring
+            .get(&VReg(0))
+            .copied()
+            .expect("value live across helper call should be colored");
+
+        assert!(
+            !matches!(
+                keep_reg,
+                EbpfReg::R1
+                    | EbpfReg::R2
+                    | EbpfReg::R3
+                    | EbpfReg::R4
+                    | EbpfReg::R5
+            ),
+            "value live across helper call should avoid R1-R5, got {:?}",
+            keep_reg
+        );
+    }
+
+    #[test]
+    fn test_subfn_call_clobber_constraints() {
+        let func = make_subfn_call_clobber_function();
+        let available = vec![
+            EbpfReg::R1,
+            EbpfReg::R2,
+            EbpfReg::R3,
+            EbpfReg::R4,
+            EbpfReg::R5,
+            EbpfReg::R6,
+        ];
+
+        let result = allocate_registers(&func, available);
+        let keep_reg = result
+            .coloring
+            .get(&VReg(0))
+            .copied()
+            .expect("value live across subfn call should be colored");
+
+        assert!(
+            !matches!(
+                keep_reg,
+                EbpfReg::R1
+                    | EbpfReg::R2
+                    | EbpfReg::R3
+                    | EbpfReg::R4
+                    | EbpfReg::R5
+            ),
+            "value live across subfn call should avoid R1-R5, got {:?}",
+            keep_reg
         );
     }
 

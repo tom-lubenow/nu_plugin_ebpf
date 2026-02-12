@@ -5,6 +5,8 @@
 
 use std::collections::HashMap;
 
+use crate::compiler::CompileError;
+
 use super::instruction::EbpfReg;
 use super::lir::{LirBlock, LirFunction, LirInst, LirProgram};
 use super::mir::{MirFunction, MirInst, MirProgram, MirValue, VReg};
@@ -43,15 +45,27 @@ impl PhysRegs {
 }
 
 pub fn lower_mir_to_lir(program: &MirProgram) -> LirProgram {
-    let main = lower_function(&program.main);
-    let mut lir = LirProgram::new(main);
-    for subfn in &program.subfunctions {
-        lir.subfunctions.push(lower_function(subfn));
-    }
-    lir
+    lower_mir_to_lir_checked(program)
+        .expect("MIR-to-LIR lowering failed; use lower_mir_to_lir_checked to handle errors")
 }
 
-fn lower_function(mir: &MirFunction) -> LirFunction {
+pub fn lower_mir_to_lir_checked(program: &MirProgram) -> Result<LirProgram, CompileError> {
+    let main = lower_function(&program.main)?;
+    let mut lir = LirProgram::new(main);
+    for subfn in &program.subfunctions {
+        lir.subfunctions.push(lower_function(subfn)?);
+    }
+    Ok(lir)
+}
+
+fn lower_function(mir: &MirFunction) -> Result<LirFunction, CompileError> {
+    if mir.param_count > 5 {
+        return Err(CompileError::UnsupportedInstruction(format!(
+            "BPF subfunctions support at most 5 arguments, got {}",
+            mir.param_count
+        )));
+    }
+
     let mut func = LirFunction::new();
     func.name = mir.name.clone();
     func.entry = mir.entry;
@@ -75,10 +89,10 @@ fn lower_function(mir: &MirFunction) -> LirFunction {
     for block in &mir.blocks {
         let mut out = Vec::new();
         for inst in &block.instructions {
-            lower_inst(inst, &phys, &mut out, &mut func);
+            lower_inst(inst, &phys, &mut out, &mut func)?;
         }
         let mut term_out = Vec::new();
-        lower_inst(&block.terminator, &phys, &mut term_out, &mut func);
+        lower_inst(&block.terminator, &phys, &mut term_out, &mut func)?;
         let terminator = if term_out.len() == 1 {
             term_out.remove(0)
         } else {
@@ -91,12 +105,20 @@ fn lower_function(mir: &MirFunction) -> LirFunction {
         lir_block.terminator = terminator;
     }
 
-    func
+    Ok(func)
 }
 
-fn lower_inst(inst: &MirInst, phys: &PhysRegs, out: &mut Vec<LirInst>, func: &mut LirFunction) {
+fn lower_inst(
+    inst: &MirInst,
+    phys: &PhysRegs,
+    out: &mut Vec<LirInst>,
+    func: &mut LirFunction,
+) -> Result<(), CompileError> {
     match inst {
-        MirInst::Copy { dst, src } => out.push(LirInst::Copy { dst: *dst, src: src.clone() }),
+        MirInst::Copy { dst, src } => out.push(LirInst::Copy {
+            dst: *dst,
+            src: src.clone(),
+        }),
         MirInst::Load { dst, ptr, offset, ty } => {
             out.push(LirInst::Load {
                 dst: *dst,
@@ -145,6 +167,12 @@ fn lower_inst(inst: &MirInst, phys: &PhysRegs, out: &mut Vec<LirInst>, func: &mu
             });
         }
         MirInst::CallHelper { dst, helper, args } => {
+            if args.len() > 5 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "BPF helpers support at most 5 arguments, got {}",
+                    args.len()
+                )));
+            }
             let mut moves = Vec::new();
             let mut arg_regs = Vec::new();
             for (idx, arg) in args.iter().enumerate() {
@@ -154,7 +182,7 @@ fn lower_inst(inst: &MirInst, phys: &PhysRegs, out: &mut Vec<LirInst>, func: &mu
                     2 => EbpfReg::R3,
                     3 => EbpfReg::R4,
                     4 => EbpfReg::R5,
-                    _ => EbpfReg::R5,
+                    _ => unreachable!("helper args already bounded to at most 5"),
                 };
                 let dst_reg = phys.get(reg);
                 let src_vreg = match arg {
@@ -186,6 +214,12 @@ fn lower_inst(inst: &MirInst, phys: &PhysRegs, out: &mut Vec<LirInst>, func: &mu
             });
         }
         MirInst::CallSubfn { dst, subfn, args } => {
+            if args.len() > 5 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "BPF subfunctions support at most 5 arguments, got {}",
+                    args.len()
+                )));
+            }
             let mut moves = Vec::new();
             let mut arg_regs = Vec::new();
             for (idx, arg) in args.iter().enumerate() {
@@ -195,7 +229,7 @@ fn lower_inst(inst: &MirInst, phys: &PhysRegs, out: &mut Vec<LirInst>, func: &mu
                     2 => EbpfReg::R3,
                     3 => EbpfReg::R4,
                     4 => EbpfReg::R5,
-                    _ => EbpfReg::R5,
+                    _ => unreachable!("subfunction args already bounded to at most 5"),
                 };
                 let dst_reg = phys.get(reg);
                 moves.push((dst_reg, *arg));
@@ -368,5 +402,128 @@ fn lower_inst(inst: &MirInst, phys: &PhysRegs, out: &mut Vec<LirInst>, func: &mu
         }
         MirInst::Phi { dst, args } => out.push(LirInst::Phi { dst: *dst, args: args.clone() }),
         MirInst::Placeholder => out.push(LirInst::Placeholder),
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compiler::mir::{MirFunction, MirInst, MirProgram, MirValue, SubfunctionId};
+
+    #[test]
+    fn test_lower_rejects_helper_call_with_too_many_args() {
+        let mut main = MirFunction::new();
+        let entry = main.alloc_block();
+        main.entry = entry;
+
+        let mut args = Vec::new();
+        for n in 0..6 {
+            let v = main.alloc_vreg();
+            main.block_mut(entry).instructions.push(MirInst::Copy {
+                dst: v,
+                src: MirValue::Const(n),
+            });
+            args.push(MirValue::VReg(v));
+        }
+        let dst = main.alloc_vreg();
+        main.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 14,
+            args,
+        });
+        main.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let program = MirProgram {
+            main,
+            subfunctions: vec![],
+        };
+
+        let err =
+            lower_mir_to_lir_checked(&program).expect_err("expected helper arg-limit lowering error");
+        match err {
+            CompileError::UnsupportedInstruction(msg) => {
+                assert!(msg.contains("at most 5 arguments"));
+            }
+            other => panic!("expected unsupported-instruction error, got {other}"),
+        }
+    }
+
+    #[test]
+    fn test_lower_rejects_subfn_call_with_too_many_args() {
+        let mut subfn = MirFunction::with_name("sub");
+        subfn.param_count = 1;
+        let sub_entry = subfn.alloc_block();
+        subfn.entry = sub_entry;
+        subfn.block_mut(sub_entry).terminator = MirInst::Return {
+            val: Some(MirValue::Const(0)),
+        };
+
+        let mut main = MirFunction::new();
+        let entry = main.alloc_block();
+        main.entry = entry;
+
+        let mut args = Vec::new();
+        for n in 0..6 {
+            let v = main.alloc_vreg();
+            main.block_mut(entry).instructions.push(MirInst::Copy {
+                dst: v,
+                src: MirValue::Const(100 + n),
+            });
+            args.push(v);
+        }
+        let dst = main.alloc_vreg();
+        main.block_mut(entry).instructions.push(MirInst::CallSubfn {
+            dst,
+            subfn: SubfunctionId(0),
+            args,
+        });
+        main.block_mut(entry).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(dst)),
+        };
+
+        let program = MirProgram {
+            main,
+            subfunctions: vec![subfn],
+        };
+
+        let err =
+            lower_mir_to_lir_checked(&program).expect_err("expected subfn arg-limit lowering error");
+        match err {
+            CompileError::UnsupportedInstruction(msg) => {
+                assert!(msg.contains("at most 5 arguments"));
+            }
+            other => panic!("expected unsupported-instruction error, got {other}"),
+        }
+    }
+
+    #[test]
+    fn test_lower_rejects_subfunction_with_too_many_params() {
+        let mut main = MirFunction::new();
+        let entry = main.alloc_block();
+        main.entry = entry;
+        main.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut subfn = MirFunction::with_name("too_many_params");
+        subfn.param_count = 6;
+        let sub_entry = subfn.alloc_block();
+        subfn.entry = sub_entry;
+        subfn.block_mut(sub_entry).terminator = MirInst::Return {
+            val: Some(MirValue::Const(0)),
+        };
+
+        let program = MirProgram {
+            main,
+            subfunctions: vec![subfn],
+        };
+
+        let err = lower_mir_to_lir_checked(&program)
+            .expect_err("expected subfunction param-limit lowering error");
+        match err {
+            CompileError::UnsupportedInstruction(msg) => {
+                assert!(msg.contains("at most 5 arguments"));
+            }
+            other => panic!("expected unsupported-instruction error, got {other}"),
+        }
     }
 }
