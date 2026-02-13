@@ -26,7 +26,7 @@ Last updated: 2026-02-13.
 
 - [~] Replace opaque helper handling with typed helper semantics.
   - Added shared helper signatures for known helper IDs and wired signature-aware arg-count/type checks through type inference, VCC, and codegen.
-  - Added shared helper pointer-argument semantics metadata (allowed spaces and size-arg relationships), with verifier_types/VCC enforcement and type-inference pointer-space/positive-size diagnostics for earlier failures.
+  - Added shared helper pointer-argument semantics metadata (allowed spaces and size-arg relationships), with verifier_types/VCC enforcement and type-inference pointer-space/size diagnostics (including bounded stack/map access checks) for earlier failures.
   - Extended typed helper semantics coverage to `trace_printk` pointer-space/size/bounds checks through the shared metadata path.
   - Added typed helper return modeling (e.g., pointer return for `bpf_map_lookup_elem` helper calls).
   - Added helper-side pointer-space and range-aware size/bounds checks in the verifier, with matching VCC checks for map ops, probe-read variants, ringbuf output, perf-event output, `get_stackid`, `tail_call`, and `get_current_comm`.

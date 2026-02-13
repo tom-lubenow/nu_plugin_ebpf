@@ -666,6 +666,8 @@ impl<'a> TypeInference<'a> {
         args: &[MirValue],
         types: &HashMap<VReg, MirType>,
         value_ranges: &HashMap<VReg, ValueRange>,
+        stack_bounds: &HashMap<VReg, StackBounds>,
+        slot_sizes: &HashMap<StackSlotId, i64>,
         errors: &mut Vec<TypeError>,
     ) {
         let Some(helper) = BpfHelper::from_u32(helper_id) else {
@@ -673,9 +675,10 @@ impl<'a> TypeInference<'a> {
         };
 
         let semantics = helper.semantics();
+        let mut positive_size_bounds: [Option<usize>; 5] = [None; 5];
         for size_arg in semantics.positive_size_args {
             if let Some(value) = args.get(*size_arg) {
-                self.helper_positive_size_upper_bound(
+                positive_size_bounds[*size_arg] = self.helper_positive_size_upper_bound(
                     helper_id,
                     *size_arg,
                     value,
@@ -689,6 +692,11 @@ impl<'a> TypeInference<'a> {
             let Some(arg) = args.get(rule.arg_idx) else {
                 continue;
             };
+            let access_size = match (rule.fixed_size, rule.size_from_arg) {
+                (Some(size), _) => Some(size),
+                (None, Some(size_arg)) => positive_size_bounds[size_arg],
+                (None, None) => None,
+            };
             if matches!(arg, MirValue::Const(0))
                 && Self::helper_pointer_arg_allows_const_zero(helper_id, rule.arg_idx)
             {
@@ -696,7 +704,16 @@ impl<'a> TypeInference<'a> {
             }
             match arg {
                 MirValue::VReg(vreg) => match self.mir_type_for_vreg(*vreg, types) {
-                    MirType::Ptr { address_space, .. } => {
+                    MirType::Ptr {
+                        address_space,
+                        pointee,
+                    } => {
+                        let allowed = Self::helper_allowed_spaces_label(
+                            rule.allowed.allow_stack,
+                            rule.allowed.allow_map,
+                            rule.allowed.allow_kernel,
+                            rule.allowed.allow_user,
+                        );
                         if !Self::helper_ptr_space_allowed(
                             address_space,
                             rule.allowed.allow_stack,
@@ -704,16 +721,36 @@ impl<'a> TypeInference<'a> {
                             rule.allowed.allow_kernel,
                             rule.allowed.allow_user,
                         ) {
-                            let allowed = Self::helper_allowed_spaces_label(
-                                rule.allowed.allow_stack,
-                                rule.allowed.allow_map,
-                                rule.allowed.allow_kernel,
-                                rule.allowed.allow_user,
-                            );
                             errors.push(TypeError::new(format!(
                                 "{} expects pointer in {}, got {:?}",
                                 rule.op, allowed, address_space
                             )));
+                            continue;
+                        }
+                        if let Some(size) = access_size {
+                            match address_space {
+                                AddressSpace::Stack => {
+                                    if let Some(bounds) = stack_bounds.get(vreg) {
+                                        let end = bounds.max + size as i64 - 1;
+                                        if bounds.min < 0 || end > bounds.limit {
+                                            errors.push(TypeError::new(format!(
+                                                "{} requires {} bytes, stack pointer range [{}..{}] exceeds [0..{}]",
+                                                rule.op, size, bounds.min, bounds.max, bounds.limit
+                                            )));
+                                        }
+                                    }
+                                }
+                                AddressSpace::Map => {
+                                    let pointee_size = pointee.size();
+                                    if pointee_size > 0 && size > pointee_size {
+                                        errors.push(TypeError::new(format!(
+                                            "{} requires {} bytes, map value pointee is {} bytes",
+                                            rule.op, size, pointee_size
+                                        )));
+                                    }
+                                }
+                                AddressSpace::Kernel | AddressSpace::User => {}
+                            }
                         }
                     }
                     other => errors.push(TypeError::new(format!(
@@ -733,6 +770,16 @@ impl<'a> TypeInference<'a> {
                             "{} expects pointer in {}, got stack slot {}",
                             rule.op, allowed, slot.0
                         )));
+                        continue;
+                    }
+                    if let Some(size) = access_size {
+                        let slot_size = slot_sizes.get(slot).copied().unwrap_or(0);
+                        if size as i64 > slot_size {
+                            errors.push(TypeError::new(format!(
+                                "{} requires {} bytes, stack slot {} has {} bytes",
+                                rule.op, size, slot.0, slot_size
+                            )));
+                        }
                     }
                 }
                 MirValue::Const(_) => errors.push(TypeError::new(format!(
@@ -782,16 +829,29 @@ impl<'a> TypeInference<'a> {
         let list_caps = self.compute_list_caps(func);
         let value_ranges = self.compute_value_ranges(func, types, &list_caps);
         let stack_bounds = self.compute_stack_bounds(func, types, &value_ranges);
+        let slot_sizes: HashMap<StackSlotId, i64> = func
+            .stack_slots
+            .iter()
+            .map(|slot| (slot.id, slot.size as i64))
+            .collect();
 
         for block in &func.blocks {
             for inst in &block.instructions {
-                self.validate_inst(inst, types, &value_ranges, &stack_bounds, errors);
+                self.validate_inst(
+                    inst,
+                    types,
+                    &value_ranges,
+                    &stack_bounds,
+                    &slot_sizes,
+                    errors,
+                );
             }
             self.validate_inst(
                 &block.terminator,
                 types,
                 &value_ranges,
                 &stack_bounds,
+                &slot_sizes,
                 errors,
             );
         }
@@ -803,6 +863,7 @@ impl<'a> TypeInference<'a> {
         types: &HashMap<VReg, MirType>,
         value_ranges: &HashMap<VReg, ValueRange>,
         stack_bounds: &HashMap<VReg, StackBounds>,
+        slot_sizes: &HashMap<StackSlotId, i64>,
         errors: &mut Vec<TypeError>,
     ) {
         match inst {
@@ -1279,7 +1340,15 @@ impl<'a> TypeInference<'a> {
                             }
                         }
                     }
-                    self.validate_helper_semantics(*helper, args, types, value_ranges, errors);
+                    self.validate_helper_semantics(
+                        *helper,
+                        args,
+                        types,
+                        value_ranges,
+                        stack_bounds,
+                        slot_sizes,
+                        errors,
+                    );
                 } else if args.len() > 5 {
                     errors.push(TypeError::new(
                         "BPF helpers support at most 5 arguments".to_string(),
@@ -2766,6 +2835,32 @@ mod tests {
             .infer(&func)
             .expect_err("expected pointer-argument helper type error");
         assert!(errs.iter().any(|e| e.message.contains("expects pointer")));
+    }
+
+    #[test]
+    fn test_type_error_helper_get_current_comm_rejects_small_stack_slot() {
+        let mut func = make_test_function();
+        let buf_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetCurrentComm as u32,
+            args: vec![MirValue::StackSlot(buf_slot), MirValue::Const(16)],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected get_current_comm stack-size error");
+        assert!(
+            errs.iter().any(|e| e
+                .message
+                .contains("helper get_current_comm dst requires 16 bytes")),
+            "unexpected errors: {:?}",
+            errs
+        );
     }
 
     #[test]
