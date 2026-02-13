@@ -1996,6 +1996,37 @@ fn is_builtin_map_name(name: &str) -> bool {
     )
 }
 
+fn is_counter_map_name(name: &str) -> bool {
+    matches!(name, COUNTER_MAP_NAME | STRING_COUNTER_MAP_NAME)
+}
+
+fn check_counter_map_kind(
+    map: &MapRef,
+    seen: &mut HashMap<String, MapKind>,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    if !is_counter_map_name(&map.name) {
+        return;
+    }
+    if !matches!(map.kind, MapKind::Hash | MapKind::PerCpuHash) {
+        errors.push(VerifierTypeError::new(format!(
+            "map '{}' only supports Hash/PerCpuHash kinds, got {:?}",
+            map.name, map.kind
+        )));
+        return;
+    }
+    if let Some(existing) = seen.get(&map.name) {
+        if *existing != map.kind {
+            errors.push(VerifierTypeError::new(format!(
+                "map '{}' used with conflicting kinds: {:?} vs {:?}",
+                map.name, existing, map.kind
+            )));
+        }
+    } else {
+        seen.insert(map.name.clone(), map.kind);
+    }
+}
+
 fn infer_map_operand_size(
     vreg: VReg,
     what: &str,
@@ -2104,12 +2135,14 @@ fn check_generic_map_layout_constraints(
     types: &HashMap<VReg, MirType>,
 ) -> Vec<VerifierTypeError> {
     let mut specs: HashMap<String, VerifierMapLayoutSpec> = HashMap::new();
+    let mut counter_kinds: HashMap<String, MapKind> = HashMap::new();
     let mut errors = Vec::new();
 
     for block in &func.blocks {
         for inst in &block.instructions {
             match inst {
                 MirInst::MapLookup { dst, map, key } => {
+                    check_counter_map_kind(map, &mut counter_kinds, &mut errors);
                     let Some(key_size) =
                         infer_map_operand_size(*key, "map key", types, &mut errors)
                     else {
@@ -2125,6 +2158,7 @@ fn check_generic_map_layout_constraints(
                     );
                 }
                 MirInst::MapUpdate { map, key, val, .. } => {
+                    check_counter_map_kind(map, &mut counter_kinds, &mut errors);
                     let Some(key_size) =
                         infer_map_operand_size(*key, "map key", types, &mut errors)
                     else {
@@ -2144,6 +2178,7 @@ fn check_generic_map_layout_constraints(
                     );
                 }
                 MirInst::MapDelete { map, key } => {
+                    check_counter_map_kind(map, &mut counter_kinds, &mut errors);
                     let Some(key_size) =
                         infer_map_operand_size(*key, "map key", types, &mut errors)
                     else {
@@ -2950,6 +2985,98 @@ mod tests {
         );
 
         let err = verify_mir(&func, &types).expect_err("expected map kind conflict");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("used with conflicting kinds")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_counter_map_rejects_non_hash_kind() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+        let val = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: val,
+            src: MirValue::Const(2),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+            map: MapRef {
+                name: COUNTER_MAP_NAME.to_string(),
+                kind: MapKind::Array,
+            },
+            key,
+            val,
+            flags: 0,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let err = verify_mir(&func, &HashMap::new()).expect_err("expected counter map kind error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("only supports Hash/PerCpuHash kinds")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_counter_map_rejects_conflicting_kinds() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let key0 = func.alloc_vreg();
+        let key1 = func.alloc_vreg();
+        let val0 = func.alloc_vreg();
+        let val1 = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key0,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key1,
+            src: MirValue::Const(2),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: val0,
+            src: MirValue::Const(3),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: val1,
+            src: MirValue::Const(4),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+            map: MapRef {
+                name: COUNTER_MAP_NAME.to_string(),
+                kind: MapKind::Hash,
+            },
+            key: key0,
+            val: val0,
+            flags: 0,
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+            map: MapRef {
+                name: COUNTER_MAP_NAME.to_string(),
+                kind: MapKind::PerCpuHash,
+            },
+            key: key1,
+            val: val1,
+            flags: 0,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let err =
+            verify_mir(&func, &HashMap::new()).expect_err("expected counter map kind conflict");
         assert!(
             err.iter()
                 .any(|e| e.message.contains("used with conflicting kinds")),
