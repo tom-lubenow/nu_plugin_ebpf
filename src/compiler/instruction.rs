@@ -291,6 +291,8 @@ impl BpfHelper {
 
     pub const fn semantics(self) -> HelperSemantics {
         const STACK_MAP: HelperAllowedPtrSpaces = HelperAllowedPtrSpaces::new(true, true, false, false);
+        const STACK_ONLY: HelperAllowedPtrSpaces =
+            HelperAllowedPtrSpaces::new(true, false, false, false);
         const STACK_MAP_KERNEL: HelperAllowedPtrSpaces =
             HelperAllowedPtrSpaces::new(true, true, true, false);
         const KERNEL: HelperAllowedPtrSpaces = HelperAllowedPtrSpaces::new(false, false, true, false);
@@ -300,7 +302,7 @@ impl BpfHelper {
             HelperPtrArgRule {
                 arg_idx: 0,
                 op: "helper map_lookup map",
-                allowed: STACK_MAP,
+                allowed: STACK_ONLY,
                 fixed_size: None,
                 size_from_arg: None,
             },
@@ -317,7 +319,7 @@ impl BpfHelper {
             HelperPtrArgRule {
                 arg_idx: 0,
                 op: "helper map_update map",
-                allowed: STACK_MAP,
+                allowed: STACK_ONLY,
                 fixed_size: None,
                 size_from_arg: None,
             },
@@ -341,7 +343,7 @@ impl BpfHelper {
             HelperPtrArgRule {
                 arg_idx: 0,
                 op: "helper map_delete map",
-                allowed: STACK_MAP,
+                allowed: STACK_ONLY,
                 fixed_size: None,
                 size_from_arg: None,
             },
@@ -407,7 +409,7 @@ impl BpfHelper {
         const RINGBUF_RESERVE_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 0,
             op: "helper ringbuf_reserve map",
-            allowed: STACK_MAP,
+            allowed: STACK_ONLY,
             fixed_size: None,
             size_from_arg: None,
         }];
@@ -416,7 +418,7 @@ impl BpfHelper {
             HelperPtrArgRule {
                 arg_idx: 0,
                 op: "helper ringbuf_output map",
-                allowed: STACK_MAP,
+                allowed: STACK_ONLY,
                 fixed_size: None,
                 size_from_arg: None,
             },
@@ -440,7 +442,7 @@ impl BpfHelper {
             HelperPtrArgRule {
                 arg_idx: 1,
                 op: "helper tail_call map",
-                allowed: STACK_MAP,
+                allowed: STACK_ONLY,
                 fixed_size: None,
                 size_from_arg: None,
             },
@@ -457,7 +459,7 @@ impl BpfHelper {
             HelperPtrArgRule {
                 arg_idx: 1,
                 op: "helper perf_event_output map",
-                allowed: STACK_MAP,
+                allowed: STACK_ONLY,
                 fixed_size: None,
                 size_from_arg: None,
             },
@@ -481,7 +483,7 @@ impl BpfHelper {
             HelperPtrArgRule {
                 arg_idx: 1,
                 op: "helper get_stackid map",
-                allowed: STACK_MAP,
+                allowed: STACK_ONLY,
                 fixed_size: None,
                 size_from_arg: None,
             },

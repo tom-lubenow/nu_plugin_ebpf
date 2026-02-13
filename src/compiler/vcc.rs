@@ -6274,7 +6274,77 @@ mod tests {
         assert!(
             err.iter().any(
                 |e| e.message
-                    .contains("helper map_lookup map expects pointer in [Stack, Map]")
+                    .contains("helper map_lookup map expects pointer in [Stack]")
+            ),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_helper_map_update_rejects_map_lookup_value_as_map_arg() {
+        let (mut func, entry) = new_mir_function();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let value_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let lookup = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let update_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst: lookup,
+            helper: 1, // bpf_map_lookup_elem(map, key)
+            args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(lookup),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: call,
+            if_false: done,
+        };
+
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst: update_ret,
+            helper: 2, // bpf_map_update_elem(map, key, value, flags)
+            args: vec![
+                MirValue::VReg(lookup),
+                MirValue::StackSlot(key_slot),
+                MirValue::StackSlot(value_slot),
+                MirValue::Const(0),
+            ],
+        });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            lookup,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Map,
+            },
+        );
+        types.insert(update_ret, MirType::I64);
+
+        let err =
+            verify_mir(&func, &types).expect_err("expected map-value pointer map-arg rejection");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter().any(
+                |e| e
+                    .message
+                    .contains("helper map_update map expects pointer in [Stack]")
             ),
             "unexpected error messages: {:?}",
             err

@@ -40,6 +40,7 @@ Last updated: 2026-02-12.
   - VCC now models non-negative scalar `and`/`or`/`xor`/`shl`/`shr` ranges, improving bounds precision for computed pointer offsets.
   - Added MIR-level parity tests for stack pointer non-null assumptions and stack load/offset bounds (direct add, mul, shift, and bitwise-derived offsets).
   - VCC now enforces helper `size > 0` constraints for scalar vreg size args (not just literal immediates), matching verifier-side range behavior.
+  - Shared helper semantics now reject map-value pointers in helper map-handle argument positions (e.g., map args to map/ringbuf/perf/tail-call/get_stackid helpers), with parity tests across verifier_types and VCC.
   - VCC now propagates map-value bounds from built-in map semantics and pointee types, including pointer-arithmetic/load/store bounds checks for map-value pointers.
   - VCC now aligns direct memory access rules with verifier expectations by rejecting raw `load`/`store` on non stack/map pointer spaces.
   - Remaining: extend pointer-state transitions to broader helper/kfunc families (provenance/nullability/mutability/ref-lifetime) with kernel-verifier-level fidelity.
