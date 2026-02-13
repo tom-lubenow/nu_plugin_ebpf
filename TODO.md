@@ -62,10 +62,10 @@ Last updated: 2026-02-13.
 
 ## Research-backed compiler core work
 
-- [ ] Fix SSA destruction correctness with parallel-copy lowering.
-  - Replace naive phi elimination copy insertion with per-edge parallel copy sets and cycle-safe sequentialization.
-  - Add regression tests for lost-copy cases (multi-phi joins and loop-header swaps).
-  - Ensure critical edges are either split or handled so copies execute only on the intended edge.
+- [x] Fix SSA destruction correctness with parallel-copy lowering.
+  - Replaced naive phi elimination with per-edge parallel-copy sets and cycle-safe sequentialization.
+  - Added regression tests for lost-copy cases (multi-phi joins and loop-header swaps).
+  - Critical edges are now split so copies execute only on the intended control-flow edge.
 
 - [ ] Replace `ssa::rename_uses` exhaustive reconstruction with operand-mapper APIs.
   - Add `MirInst` operand walk/mutation helpers (for vreg uses and `MirValue` operands).
