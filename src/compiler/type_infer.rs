@@ -604,6 +604,145 @@ impl<'a> TypeInference<'a> {
         matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::KptrXchg)) && arg_idx == 1
     }
 
+    fn helper_ptr_space_allowed(
+        space: AddressSpace,
+        allow_stack: bool,
+        allow_map: bool,
+        allow_kernel: bool,
+        allow_user: bool,
+    ) -> bool {
+        match space {
+            AddressSpace::Stack => allow_stack,
+            AddressSpace::Map => allow_map,
+            AddressSpace::Kernel => allow_kernel,
+            AddressSpace::User => allow_user,
+        }
+    }
+
+    fn helper_allowed_spaces_label(
+        allow_stack: bool,
+        allow_map: bool,
+        allow_kernel: bool,
+        allow_user: bool,
+    ) -> &'static str {
+        match (allow_stack, allow_map, allow_kernel, allow_user) {
+            (true, true, false, false) => "[Stack, Map]",
+            (true, true, true, false) => "[Stack, Map, Kernel]",
+            (false, false, true, false) => "[Kernel]",
+            (false, false, false, true) => "[User]",
+            (true, false, false, false) => "[Stack]",
+            (false, true, false, false) => "[Map]",
+            (false, false, false, false) => "[]",
+            _ => "[Stack, Map, Kernel, User]",
+        }
+    }
+
+    fn helper_positive_size_upper_bound(
+        &self,
+        helper_id: u32,
+        arg_idx: usize,
+        value: &MirValue,
+        value_ranges: &HashMap<VReg, ValueRange>,
+        errors: &mut Vec<TypeError>,
+    ) -> Option<usize> {
+        match self.value_range_for(value, value_ranges) {
+            ValueRange::Known { min, max } => {
+                if max <= 0 || min <= 0 {
+                    errors.push(TypeError::new(format!(
+                        "helper {} arg{} must be > 0",
+                        helper_id, arg_idx
+                    )));
+                    return None;
+                }
+                usize::try_from(max).ok()
+            }
+            _ => None,
+        }
+    }
+
+    fn validate_helper_semantics(
+        &self,
+        helper_id: u32,
+        args: &[MirValue],
+        types: &HashMap<VReg, MirType>,
+        value_ranges: &HashMap<VReg, ValueRange>,
+        errors: &mut Vec<TypeError>,
+    ) {
+        let Some(helper) = BpfHelper::from_u32(helper_id) else {
+            return;
+        };
+
+        let semantics = helper.semantics();
+        for size_arg in semantics.positive_size_args {
+            if let Some(value) = args.get(*size_arg) {
+                self.helper_positive_size_upper_bound(
+                    helper_id,
+                    *size_arg,
+                    value,
+                    value_ranges,
+                    errors,
+                );
+            }
+        }
+
+        for rule in semantics.ptr_arg_rules {
+            let Some(arg) = args.get(rule.arg_idx) else {
+                continue;
+            };
+            if matches!(arg, MirValue::Const(0))
+                && Self::helper_pointer_arg_allows_const_zero(helper_id, rule.arg_idx)
+            {
+                continue;
+            }
+            match arg {
+                MirValue::VReg(vreg) => match self.mir_type_for_vreg(*vreg, types) {
+                    MirType::Ptr { address_space, .. } => {
+                        if !Self::helper_ptr_space_allowed(
+                            address_space,
+                            rule.allowed.allow_stack,
+                            rule.allowed.allow_map,
+                            rule.allowed.allow_kernel,
+                            rule.allowed.allow_user,
+                        ) {
+                            let allowed = Self::helper_allowed_spaces_label(
+                                rule.allowed.allow_stack,
+                                rule.allowed.allow_map,
+                                rule.allowed.allow_kernel,
+                                rule.allowed.allow_user,
+                            );
+                            errors.push(TypeError::new(format!(
+                                "{} expects pointer in {}, got {:?}",
+                                rule.op, allowed, address_space
+                            )));
+                        }
+                    }
+                    other => errors.push(TypeError::new(format!(
+                        "helper {} arg{} expects pointer value, got {:?}",
+                        helper_id, rule.arg_idx, other
+                    ))),
+                },
+                MirValue::StackSlot(slot) => {
+                    if !rule.allowed.allow_stack {
+                        let allowed = Self::helper_allowed_spaces_label(
+                            rule.allowed.allow_stack,
+                            rule.allowed.allow_map,
+                            rule.allowed.allow_kernel,
+                            rule.allowed.allow_user,
+                        );
+                        errors.push(TypeError::new(format!(
+                            "{} expects pointer in {}, got stack slot {}",
+                            rule.op, allowed, slot.0
+                        )));
+                    }
+                }
+                MirValue::Const(_) => errors.push(TypeError::new(format!(
+                    "helper {} arg{} expects pointer value",
+                    helper_id, rule.arg_idx
+                ))),
+            }
+        }
+    }
+
     fn is_const_zero(value: &MirValue) -> bool {
         matches!(value, MirValue::Const(c) if *c == 0)
     }
@@ -1140,6 +1279,7 @@ impl<'a> TypeInference<'a> {
                             }
                         }
                     }
+                    self.validate_helper_semantics(*helper, args, types, value_ranges, errors);
                 } else if args.len() > 5 {
                     errors.push(TypeError::new(
                         "BPF helpers support at most 5 arguments".to_string(),
@@ -2705,6 +2845,35 @@ mod tests {
                 other
             ),
         }
+    }
+
+    #[test]
+    fn test_type_error_helper_kptr_xchg_rejects_non_map_dst_arg0() {
+        let mut func = make_test_function();
+        let dst_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst_ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: dst_ptr,
+            src: MirValue::StackSlot(dst_slot),
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::KptrXchg as u32,
+            args: vec![MirValue::VReg(dst_ptr), MirValue::Const(0)],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected non-map kptr_xchg destination error");
+        assert!(errs.iter().any(|e| {
+            e.message
+                .contains("helper kptr_xchg dst expects pointer in [Map]")
+        }));
     }
 
     #[test]

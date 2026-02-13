@@ -26,7 +26,7 @@ Last updated: 2026-02-13.
 
 - [~] Replace opaque helper handling with typed helper semantics.
   - Added shared helper signatures for known helper IDs and wired signature-aware arg-count/type checks through type inference, VCC, and codegen.
-  - Added shared helper pointer-argument semantics metadata (allowed spaces and size-arg relationships) and wired both verifier_types and VCC to consume it.
+  - Added shared helper pointer-argument semantics metadata (allowed spaces and size-arg relationships), with verifier_types/VCC enforcement and type-inference pointer-space/positive-size diagnostics for earlier failures.
   - Extended typed helper semantics coverage to `trace_printk` pointer-space/size/bounds checks through the shared metadata path.
   - Added typed helper return modeling (e.g., pointer return for `bpf_map_lookup_elem` helper calls).
   - Added helper-side pointer-space and range-aware size/bounds checks in the verifier, with matching VCC checks for map ops, probe-read variants, ringbuf output, perf-event output, `get_stackid`, `tail_call`, and `get_current_comm`.
@@ -71,7 +71,7 @@ Last updated: 2026-02-13.
   - Shared helper semantics now reject map-value pointers in helper map-handle argument positions (e.g., map args to map/ringbuf/perf/tail-call/get_stackid helpers), with parity tests across verifier_types and VCC.
   - Typed helper coverage now includes `bpf_kptr_xchg` (helper ID `194`) with null-const arg handling, pointer-space checks, and kernel-pointer return modeling across type inference, verifier_types, and VCC.
   - `bpf_kptr_xchg` semantics now transfer tracked kfunc-ref ownership from arg1 to the helper return value, invalidating the source ref and enabling verifier-safe release of the swapped-out reference.
-  - `bpf_kptr_xchg` arg0 parity now enforces map-pointer destination slots (`[Map]`), rejecting stack-pointer destinations in verifier_types/VCC.
+  - `bpf_kptr_xchg` arg0 parity now enforces map-pointer destination slots (`[Map]`), rejecting stack-pointer destinations in verifier_types/VCC/type inference.
   - VCC now aligns typed pointer nullability with verifier_types (`Map`/`Kernel`/`User` pointers are `MaybeNull` until guarded), including parity tests for load/read_str/helper flows that require explicit null checks.
   - VCC now propagates map-value bounds from built-in map semantics and pointee types, including pointer-arithmetic/load/store bounds checks for map-value pointers.
   - VCC now aligns direct memory access rules with verifier expectations by rejecting raw `load`/`store` on non stack/map pointer spaces.
