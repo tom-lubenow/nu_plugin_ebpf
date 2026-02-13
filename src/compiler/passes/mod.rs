@@ -82,10 +82,10 @@ impl PassManager {
         for iteration in 0..self.max_iterations {
             let mut changed = false;
 
-            // Rebuild CFG for each iteration (passes may change the graph)
-            let cfg = CFG::build(func);
-
+            // Rebuild CFG before each pass so no pass observes stale graph
+            // analyses after an earlier pass mutates control flow.
             for pass in &self.passes {
+                let cfg = CFG::build(func);
                 if pass.run(func, &cfg) {
                     changed = true;
                     total_changes += 1;
@@ -248,6 +248,58 @@ mod tests {
         // Function should still be valid
         assert!(!func.blocks.is_empty());
         assert!(func.block(func.entry).terminator.is_terminator());
+    }
+
+    #[test]
+    fn test_pass_manager_rebuilds_cfg_between_passes() {
+        // bb0: branch v0 -> bb1, bb2
+        // bb1: jump bb3 (empty forwarding block)
+        // bb2: jump bb3 (empty forwarding block)
+        // bb3: return 0
+        //
+        // BranchOptimization threads bb1/bb2 to bb3 and rewrites bb0 to Jump bb3.
+        // DCE should then remove now-unreachable bb1/bb2 in the same iteration.
+        // This requires CFG rebuild between passes (not just between iterations).
+        let mut func = MirFunction::new();
+        let bb0 = func.alloc_block();
+        let bb1 = func.alloc_block();
+        let bb2 = func.alloc_block();
+        let bb3 = func.alloc_block();
+        func.entry = bb0;
+
+        let v0 = func.alloc_vreg();
+        func.block_mut(bb0).instructions.push(MirInst::Copy {
+            dst: v0,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(bb0).terminator = MirInst::Branch {
+            cond: v0,
+            if_true: bb1,
+            if_false: bb2,
+        };
+        func.block_mut(bb1).terminator = MirInst::Jump { target: bb3 };
+        func.block_mut(bb2).terminator = MirInst::Jump { target: bb3 };
+        func.block_mut(bb3).terminator = MirInst::Return {
+            val: Some(MirValue::Const(0)),
+        };
+
+        // Single iteration: if CFG were stale across passes, DCE would miss bb1/bb2.
+        let mut pm = PassManager::new().with_max_iterations(1);
+        pm.add_pass(BranchOptimization);
+        pm.add_pass(DeadCodeElimination);
+        let _changes = pm.run(&mut func);
+
+        assert!(matches!(
+            func.block(bb0).terminator,
+            MirInst::Jump { target } if target == bb3
+        ));
+        assert_eq!(
+            func.blocks.len(),
+            2,
+            "DCE should remove bb1/bb2 using fresh CFG in the same iteration"
+        );
+        assert!(!func.has_block(bb1));
+        assert!(!func.has_block(bb2));
     }
 
     #[test]

@@ -79,8 +79,9 @@ Last updated: 2026-02-13.
   - Constant propagation now tracks per-vreg lattice values together with executable CFG edges/reachable blocks.
   - Phi-derived constants are folded, constant branches are simplified, and unreachable blocks/phi inputs are pruned in one analysis/rewrite pass.
 
-- [ ] Make pass analysis freshness explicit.
-  - Add invalidation metadata (or per-pass rebuilds) so CFG-sensitive passes do not consume stale analyses after CFG mutations.
+- [x] Make pass analysis freshness explicit.
+  - PassManager now rebuilds CFG before each pass invocation (not just per-iteration), so CFG-sensitive passes do not consume stale analyses after earlier CFG-mutating passes.
+  - Added a regression test (`test_pass_manager_rebuilds_cfg_between_passes`) that fails under stale-CFG behavior when iterations are capped.
 
 - [ ] Add rematerialization for cheap spilled values.
   - Recompute simple constants/expressions at use sites instead of always using stack spill slots.
