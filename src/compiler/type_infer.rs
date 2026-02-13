@@ -2733,6 +2733,31 @@ mod tests {
     }
 
     #[test]
+    fn test_infer_kfunc_cpumask_create_pointer_return() {
+        let mut func = make_test_function();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_cpumask_create".to_string(),
+            btf_id: None,
+            args: vec![],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let types = ti
+            .infer(&func)
+            .expect("expected cpumask kfunc type inference");
+        match types.get(&dst) {
+            Some(MirType::Ptr { address_space, .. }) => {
+                assert_eq!(*address_space, AddressSpace::Kernel);
+            }
+            other => panic!("expected kernel pointer return, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn test_infer_subfunction_schemes_rejects_recursive_calls_with_guidance() {
         let mut subfn = MirFunction::with_name("rec");
         subfn.param_count = 1;

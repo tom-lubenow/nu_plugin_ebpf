@@ -291,6 +291,138 @@ impl KfuncSignature {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: KfuncRetKind::Void,
             }),
+            "bpf_cpumask_and" => Some(Self {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, P, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_cpumask_any_and_distribute" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_cpumask_any_distribute" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_cpumask_clear" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "bpf_cpumask_clear_cpu" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [S, P, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "bpf_cpumask_copy" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "bpf_cpumask_empty" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_cpumask_equal" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_cpumask_first" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_cpumask_first_and" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_cpumask_first_zero" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_cpumask_full" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_cpumask_intersects" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_cpumask_or" => Some(Self {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, P, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "bpf_cpumask_set_cpu" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [S, P, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "bpf_cpumask_setall" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "bpf_cpumask_subset" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_cpumask_test_and_clear_cpu" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [S, P, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_cpumask_test_and_set_cpu" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [S, P, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_cpumask_test_cpu" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [S, P, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_cpumask_weight" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_cpumask_xor" => Some(Self {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, P, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
             _ => None,
         }
     }
@@ -341,7 +473,42 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
     }
     if matches!(
         (kfunc, arg_idx),
-        ("bpf_cpumask_acquire", 0) | ("bpf_cpumask_release", 0)
+        ("bpf_cpumask_acquire", 0)
+            | ("bpf_cpumask_release", 0)
+            | ("bpf_cpumask_and", 0)
+            | ("bpf_cpumask_and", 1)
+            | ("bpf_cpumask_and", 2)
+            | ("bpf_cpumask_any_and_distribute", 0)
+            | ("bpf_cpumask_any_and_distribute", 1)
+            | ("bpf_cpumask_any_distribute", 0)
+            | ("bpf_cpumask_clear", 0)
+            | ("bpf_cpumask_clear_cpu", 1)
+            | ("bpf_cpumask_copy", 0)
+            | ("bpf_cpumask_copy", 1)
+            | ("bpf_cpumask_empty", 0)
+            | ("bpf_cpumask_equal", 0)
+            | ("bpf_cpumask_equal", 1)
+            | ("bpf_cpumask_first", 0)
+            | ("bpf_cpumask_first_and", 0)
+            | ("bpf_cpumask_first_and", 1)
+            | ("bpf_cpumask_first_zero", 0)
+            | ("bpf_cpumask_full", 0)
+            | ("bpf_cpumask_intersects", 0)
+            | ("bpf_cpumask_intersects", 1)
+            | ("bpf_cpumask_or", 0)
+            | ("bpf_cpumask_or", 1)
+            | ("bpf_cpumask_or", 2)
+            | ("bpf_cpumask_set_cpu", 1)
+            | ("bpf_cpumask_setall", 0)
+            | ("bpf_cpumask_subset", 0)
+            | ("bpf_cpumask_subset", 1)
+            | ("bpf_cpumask_test_and_clear_cpu", 1)
+            | ("bpf_cpumask_test_and_set_cpu", 1)
+            | ("bpf_cpumask_test_cpu", 1)
+            | ("bpf_cpumask_weight", 0)
+            | ("bpf_cpumask_xor", 0)
+            | ("bpf_cpumask_xor", 1)
+            | ("bpf_cpumask_xor", 2)
     ) {
         return Some(KfuncRefKind::Cpumask);
     }
@@ -1287,6 +1454,18 @@ mod tests {
     }
 
     #[test]
+    fn test_kfunc_signature_cpumask_and() {
+        let sig = KfuncSignature::for_name("bpf_cpumask_and")
+            .expect("expected bpf_cpumask_and kfunc signature");
+        assert_eq!(sig.min_args, 3);
+        assert_eq!(sig.max_args, 3);
+        assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
+        assert_eq!(sig.arg_kind(2), KfuncArgKind::Pointer);
+        assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+    }
+
+    #[test]
     fn test_kfunc_ref_kind_mappings() {
         assert_eq!(
             kfunc_acquire_ref_kind("bpf_task_from_pid"),
@@ -1322,6 +1501,10 @@ mod tests {
         );
         assert_eq!(
             kfunc_pointer_arg_ref_kind("bpf_cpumask_release", 0),
+            Some(KfuncRefKind::Cpumask)
+        );
+        assert_eq!(
+            kfunc_pointer_arg_ref_kind("bpf_cpumask_test_cpu", 1),
             Some(KfuncRefKind::Cpumask)
         );
         assert_eq!(kfunc_pointer_arg_ref_kind("bpf_task_from_pid", 0), None);
