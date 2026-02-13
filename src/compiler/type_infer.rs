@@ -591,6 +591,20 @@ impl<'a> TypeInference<'a> {
         }
     }
 
+    fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
+        matches!(
+            (kfunc, arg_idx),
+            ("bpf_task_acquire", 0)
+                | ("bpf_task_release", 0)
+                | ("bpf_task_get_cgroup1", 0)
+                | ("bpf_task_under_cgroup", 0)
+                | ("bpf_task_under_cgroup", 1)
+                | ("bpf_cgroup_acquire", 0)
+                | ("bpf_cgroup_ancestor", 0)
+                | ("bpf_cgroup_release", 0)
+        )
+    }
+
     fn is_const_zero(value: &MirValue) -> bool {
         matches!(value, MirValue::Const(c) if *c == 0)
     }
@@ -1163,14 +1177,24 @@ impl<'a> TypeInference<'a> {
                                 )));
                             }
                         }
-                        KfuncArgKind::Pointer => {
-                            if !matches!(arg_ty, MirType::Ptr { .. }) {
+                        KfuncArgKind::Pointer => match arg_ty {
+                            MirType::Ptr { address_space, .. } => {
+                                if Self::kfunc_pointer_arg_requires_kernel(kfunc, idx)
+                                    && address_space != AddressSpace::Kernel
+                                {
+                                    errors.push(TypeError::new(format!(
+                                        "kfunc '{}' arg{} expects kernel pointer, got {:?}",
+                                        kfunc, idx, address_space
+                                    )));
+                                }
+                            }
+                            _ => {
                                 errors.push(TypeError::new(format!(
                                     "kfunc '{}' arg{} expects pointer, got {:?}",
                                     kfunc, idx, arg_ty
                                 )));
                             }
-                        }
+                        },
                     }
                 }
             }
@@ -2684,6 +2708,37 @@ mod tests {
             .infer(&func)
             .expect_err("expected pointer-argument kfunc type error");
         assert!(errs.iter().any(|e| e.message.contains("expects pointer")));
+    }
+
+    #[test]
+    fn test_type_error_kfunc_pointer_argument_requires_kernel_space() {
+        let mut func = make_test_function();
+        let ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        block.instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_task_acquire".to_string(),
+            btf_id: None,
+            args: vec![ptr],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected kernel-pointer kfunc type error");
+        assert!(
+            errs.iter()
+                .any(|e| e.message.contains("arg0 expects kernel pointer")),
+            "unexpected errors: {:?}",
+            errs
+        );
     }
 
     #[test]
