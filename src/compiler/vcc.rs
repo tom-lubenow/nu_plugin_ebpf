@@ -17,7 +17,8 @@ use crate::compiler::instruction::{BpfHelper, HelperArgKind, HelperRetKind, Help
 use crate::compiler::mir::{
     AddressSpace, BinOpKind, MapKind, MirFunction, MirInst, MirType, MirValue, COUNTER_MAP_NAME,
     HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, STRING_COUNTER_MAP_NAME, TIMESTAMP_MAP_NAME,
-    USTACK_MAP_NAME, StackSlotId, StackSlotKind, StringAppendType, UnaryOpKind, VReg,
+    USTACK_MAP_NAME, RINGBUF_MAP_NAME, StackSlotId, StackSlotKind, StringAppendType, UnaryOpKind,
+    VReg,
 };
 use crate::compiler::passes::{ListLowering, MirPass};
 
@@ -2204,6 +2205,10 @@ impl VccState {
 }
 
 pub fn verify_mir(func: &MirFunction, types: &HashMap<VReg, MirType>) -> Result<(), Vec<VccError>> {
+    let early_errors = check_generic_map_layout_constraints(func, types);
+    if !early_errors.is_empty() {
+        return Err(early_errors);
+    }
     let list_max = collect_list_max(func);
     let mut verify_func = func.clone();
     let cfg = CFG::build(&verify_func);
@@ -3729,6 +3734,205 @@ fn supports_generic_map_kind(kind: MapKind) -> bool {
         kind,
         MapKind::Hash | MapKind::Array | MapKind::PerCpuHash | MapKind::PerCpuArray
     )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct VccMapLayoutSpec {
+    kind: MapKind,
+    key_size: u32,
+    value_size: u32,
+    value_size_defaulted: bool,
+}
+
+fn is_builtin_map_name(name: &str) -> bool {
+    matches!(
+        name,
+        RINGBUF_MAP_NAME
+            | COUNTER_MAP_NAME
+            | STRING_COUNTER_MAP_NAME
+            | HISTOGRAM_MAP_NAME
+            | TIMESTAMP_MAP_NAME
+            | KSTACK_MAP_NAME
+            | USTACK_MAP_NAME
+    )
+}
+
+fn infer_map_operand_size(
+    vreg: VReg,
+    what: &str,
+    types: &HashMap<VReg, MirType>,
+    errors: &mut Vec<VccError>,
+) -> Option<usize> {
+    match types.get(&vreg) {
+        Some(MirType::Ptr { pointee, .. }) => Some(pointee.size().max(1)),
+        Some(ty) => {
+            let size = match ty.size() {
+                0 => 8,
+                n => n,
+            };
+            if size > 8 {
+                errors.push(VccError::new(
+                    VccErrorKind::UnsupportedInstruction,
+                    format!(
+                        "{what} v{} has size {} bytes and must be passed as a pointer",
+                        vreg.0, size
+                    ),
+                ));
+                None
+            } else {
+                Some(size)
+            }
+        }
+        None => Some(8),
+    }
+}
+
+fn infer_map_lookup_value_size(dst: VReg, types: &HashMap<VReg, MirType>) -> usize {
+    match types.get(&dst) {
+        Some(MirType::Ptr { pointee, .. }) => pointee.size().max(1),
+        _ => 8,
+    }
+}
+
+fn register_generic_map_layout_spec(
+    map: &crate::compiler::mir::MapRef,
+    key_size: usize,
+    value_size: Option<usize>,
+    specs: &mut HashMap<String, VccMapLayoutSpec>,
+    errors: &mut Vec<VccError>,
+) {
+    if is_builtin_map_name(&map.name) {
+        return;
+    }
+    if !supports_generic_map_kind(map.kind) {
+        errors.push(VccError::new(
+            VccErrorKind::UnsupportedInstruction,
+            format!(
+                "map operations do not support map kind {:?} for '{}'",
+                map.kind, map.name
+            ),
+        ));
+        return;
+    }
+
+    let mut inferred_key_size = key_size.max(1) as u32;
+    if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
+        inferred_key_size = 4;
+    }
+    let (inferred_value_size, defaulted) = match value_size {
+        Some(size) => (size.max(1) as u32, false),
+        None => (8, true),
+    };
+
+    match specs.get_mut(&map.name) {
+        Some(spec) => {
+            if spec.kind != map.kind {
+                errors.push(VccError::new(
+                    VccErrorKind::UnsupportedInstruction,
+                    format!(
+                        "map '{}' used with conflicting kinds: {:?} vs {:?}",
+                        map.name, spec.kind, map.kind
+                    ),
+                ));
+                return;
+            }
+            if spec.key_size != inferred_key_size {
+                errors.push(VccError::new(
+                    VccErrorKind::UnsupportedInstruction,
+                    format!(
+                        "map '{}' used with conflicting key sizes: {} vs {}",
+                        map.name, spec.key_size, inferred_key_size
+                    ),
+                ));
+                return;
+            }
+            if spec.value_size != inferred_value_size {
+                if spec.value_size_defaulted && !defaulted {
+                    spec.value_size = inferred_value_size;
+                    spec.value_size_defaulted = false;
+                } else if !(defaulted && !spec.value_size_defaulted) {
+                    errors.push(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!(
+                            "map '{}' used with conflicting value sizes: {} vs {}",
+                            map.name, spec.value_size, inferred_value_size
+                        ),
+                    ));
+                }
+            }
+        }
+        None => {
+            specs.insert(
+                map.name.clone(),
+                VccMapLayoutSpec {
+                    kind: map.kind,
+                    key_size: inferred_key_size,
+                    value_size: inferred_value_size,
+                    value_size_defaulted: defaulted,
+                },
+            );
+        }
+    }
+}
+
+fn check_generic_map_layout_constraints(
+    func: &MirFunction,
+    types: &HashMap<VReg, MirType>,
+) -> Vec<VccError> {
+    let mut specs: HashMap<String, VccMapLayoutSpec> = HashMap::new();
+    let mut errors = Vec::new();
+
+    for block in &func.blocks {
+        for inst in &block.instructions {
+            match inst {
+                MirInst::MapLookup { dst, map, key } => {
+                    let Some(key_size) =
+                        infer_map_operand_size(*key, "map key", types, &mut errors)
+                    else {
+                        continue;
+                    };
+                    let value_size = infer_map_lookup_value_size(*dst, types);
+                    register_generic_map_layout_spec(
+                        map,
+                        key_size,
+                        Some(value_size),
+                        &mut specs,
+                        &mut errors,
+                    );
+                }
+                MirInst::MapUpdate { map, key, val, .. } => {
+                    let Some(key_size) =
+                        infer_map_operand_size(*key, "map key", types, &mut errors)
+                    else {
+                        continue;
+                    };
+                    let Some(value_size) =
+                        infer_map_operand_size(*val, "map value", types, &mut errors)
+                    else {
+                        continue;
+                    };
+                    register_generic_map_layout_spec(
+                        map,
+                        key_size,
+                        Some(value_size),
+                        &mut specs,
+                        &mut errors,
+                    );
+                }
+                MirInst::MapDelete { map, key } => {
+                    let Some(key_size) =
+                        infer_map_operand_size(*key, "map key", types, &mut errors)
+                    else {
+                        continue;
+                    };
+                    register_generic_map_layout_spec(map, key_size, None, &mut specs, &mut errors);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    errors
 }
 
 fn map_value_limit_from_dst_type(dst_ty: Option<&MirType>) -> Option<i64> {
@@ -6570,6 +6774,126 @@ mod tests {
                     && e
                         .message
                         .contains("map value v1 has size 24 bytes and must be passed as a pointer")
+            ),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_map_ops_reject_conflicting_map_kinds() {
+        let (mut func, entry) = new_mir_function();
+        let key0 = func.alloc_vreg();
+        let key1 = func.alloc_vreg();
+        let dst0 = func.alloc_vreg();
+        let dst1 = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key0,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key1,
+            src: MirValue::Const(2),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapLookup {
+            dst: dst0,
+            map: MapRef {
+                name: "m".to_string(),
+                kind: MapKind::Hash,
+            },
+            key: key0,
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapLookup {
+            dst: dst1,
+            map: MapRef {
+                name: "m".to_string(),
+                kind: MapKind::Array,
+            },
+            key: key1,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            dst0,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Map,
+            },
+        );
+        types.insert(
+            dst1,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Map,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected map kind conflict");
+        assert!(
+            err.iter().any(
+                |e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains("used with conflicting kinds")
+            ),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_map_ops_reject_conflicting_value_sizes() {
+        let (mut func, entry) = new_mir_function();
+        let key0 = func.alloc_vreg();
+        let key1 = func.alloc_vreg();
+        let val = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key0,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key1,
+            src: MirValue::Const(2),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: val,
+            src: MirValue::Const(7),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+            map: MapRef {
+                name: "m".to_string(),
+                kind: MapKind::Hash,
+            },
+            key: key0,
+            val,
+            flags: 0,
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapLookup {
+            dst,
+            map: MapRef {
+                name: "m".to_string(),
+                kind: MapKind::Hash,
+            },
+            key: key1,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            dst,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I32),
+                address_space: AddressSpace::Map,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected map value-size conflict");
+        assert!(
+            err.iter().any(
+                |e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains("used with conflicting value sizes")
             ),
             "unexpected error messages: {:?}",
             err
