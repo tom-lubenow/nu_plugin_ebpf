@@ -315,6 +315,13 @@ pub fn verify_mir(
     let mut in_states: HashMap<BlockId, VerifierState> = HashMap::new();
     let mut worklist: VecDeque<BlockId> = VecDeque::new();
     let mut errors = Vec::new();
+    if func.param_count > 5 {
+        errors.push(VerifierTypeError::new(format!(
+            "BPF subfunctions support at most 5 arguments, got {}",
+            func.param_count
+        )));
+        return Err(errors);
+    }
     errors.extend(check_generic_map_layout_constraints(func, types));
     if !errors.is_empty() {
         return Err(errors);
@@ -3197,6 +3204,23 @@ mod tests {
 
         let err =
             verify_mir(&func, &types).expect_err("expected helper-argument count rejection");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("at most 5 arguments")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_rejects_more_than_five_params() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+        func.param_count = 6;
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let err = verify_mir(&func, &HashMap::new()).expect_err("expected param-count error");
         assert!(
             err.iter()
                 .any(|e| e.message.contains("at most 5 arguments")),

@@ -2205,6 +2205,15 @@ impl VccState {
 }
 
 pub fn verify_mir(func: &MirFunction, types: &HashMap<VReg, MirType>) -> Result<(), Vec<VccError>> {
+    if func.param_count > 5 {
+        return Err(vec![VccError::new(
+            VccErrorKind::UnsupportedInstruction,
+            format!(
+                "BPF subfunctions support at most 5 arguments, got {}",
+                func.param_count
+            ),
+        )]);
+    }
     let early_errors = check_generic_map_layout_constraints(func, types);
     if !early_errors.is_empty() {
         return Err(early_errors);
@@ -8501,6 +8510,23 @@ mod tests {
 
         let err =
             verify_mir(&func, &types).expect_err("expected helper-argument count rejection");
+        assert!(
+            err.iter().any(
+                |e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains("at most 5 arguments")
+            ),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_rejects_more_than_five_params() {
+        let (mut func, entry) = new_mir_function();
+        func.param_count = 6;
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let err = verify_mir(&func, &HashMap::new()).expect_err("expected param-count error");
         assert!(
             err.iter().any(
                 |e| e.kind == VccErrorKind::UnsupportedInstruction
