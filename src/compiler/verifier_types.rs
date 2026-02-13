@@ -863,6 +863,13 @@ fn apply_inst(
                                 kfunc_ref: None,
                             }
                         }
+                        Some(BpfHelper::KptrXchg) => VerifierType::Ptr {
+                            space: AddressSpace::Kernel,
+                            nullability: Nullability::MaybeNull,
+                            bounds: None,
+                            ringbuf_ref: None,
+                            kfunc_ref: None,
+                        },
                         _ => {
                             let bounds =
                                 map_value_limit_from_dst_type(types.get(dst)).map(|limit| {
@@ -1774,6 +1781,9 @@ fn check_helper_arg(
             }
         }
         HelperArgKind::Pointer => {
+            if helper_pointer_arg_allows_const_zero(helper_id, arg_idx, arg) {
+                return;
+            }
             if !matches!(ty, VerifierType::Ptr { .. }) {
                 errors.push(VerifierTypeError::new(format!(
                     "helper {} arg{} expects pointer, got {:?}",
@@ -1782,6 +1792,12 @@ fn check_helper_arg(
             }
         }
     }
+}
+
+fn helper_pointer_arg_allows_const_zero(helper_id: u32, arg_idx: usize, arg: &MirValue) -> bool {
+    matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::KptrXchg))
+        && arg_idx == 1
+        && matches!(arg, MirValue::Const(0))
 }
 
 fn check_kfunc_arg(
@@ -1882,6 +1898,9 @@ fn check_helper_ptr_arg_value(
     slot_sizes: &HashMap<StackSlotId, i64>,
     errors: &mut Vec<VerifierTypeError>,
 ) {
+    if helper_pointer_arg_allows_const_zero(helper_id, arg_idx, arg) {
+        return;
+    }
     let allowed = helper_allowed_spaces(allow_stack, allow_map, allow_kernel, allow_user);
     match arg {
         MirValue::VReg(vreg) => {
@@ -6453,6 +6472,86 @@ mod tests {
         let types = HashMap::new();
         let err = verify_mir(&func, &types).expect_err("expected uninitialized branch cond error");
         assert!(err.iter().any(|e| e.message.contains("uninitialized v")));
+    }
+
+    #[test]
+    fn test_helper_kptr_xchg_allows_null_const_arg1() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+        func.param_count = 1;
+
+        let dst_ptr = func.alloc_vreg();
+        let swapped = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: swapped,
+                helper: BpfHelper::KptrXchg as u32,
+                args: vec![MirValue::VReg(dst_ptr), MirValue::Const(0)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            dst_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            swapped,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        verify_mir(&func, &types).expect("expected kptr_xchg null-pointer arg acceptance");
+    }
+
+    #[test]
+    fn test_helper_kptr_xchg_rejects_non_null_scalar_arg1() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+        func.param_count = 1;
+
+        let dst_ptr = func.alloc_vreg();
+        let swapped = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: swapped,
+                helper: BpfHelper::KptrXchg as u32,
+                args: vec![MirValue::VReg(dst_ptr), MirValue::Const(1)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            dst_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            swapped,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected helper pointer-arg error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("helper 194 arg1 expects pointer")),
+            "unexpected errors: {:?}",
+            err
+        );
     }
 
     #[test]

@@ -82,6 +82,8 @@ pub enum BpfHelper {
     RingbufSubmit = 132,
     /// void bpf_ringbuf_discard(data, flags)
     RingbufDiscard = 133,
+    /// void *bpf_kptr_xchg(dst, ptr)
+    KptrXchg = 194,
     /// long bpf_probe_read_user_str(dst, size, unsafe_ptr)
     ProbeReadUserStr = 114,
     /// long bpf_probe_read_kernel_str(dst, size, unsafe_ptr)
@@ -847,6 +849,7 @@ impl BpfHelper {
             131 => Some(Self::RingbufReserve),
             132 => Some(Self::RingbufSubmit),
             133 => Some(Self::RingbufDiscard),
+            194 => Some(Self::KptrXchg),
             _ => None,
         }
     }
@@ -935,6 +938,12 @@ impl BpfHelper {
                 max_args: 2,
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::KptrXchg => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::PointerMaybeNull,
             },
             BpfHelper::ProbeReadUserStr | BpfHelper::ProbeReadKernelStr => HelperSignature {
                 min_args: 3,
@@ -1147,6 +1156,23 @@ impl BpfHelper {
             },
         ];
 
+        const KPTR_XCHG_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper kptr_xchg dst",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper kptr_xchg ptr",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+        ];
+
         match self {
             BpfHelper::MapLookupElem => HelperSemantics {
                 ptr_arg_rules: MAP_LOOKUP_RULES,
@@ -1210,6 +1236,11 @@ impl BpfHelper {
             },
             BpfHelper::GetStackId => HelperSemantics {
                 ptr_arg_rules: GET_STACKID_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::KptrXchg => HelperSemantics {
+                ptr_arg_rules: KPTR_XCHG_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
@@ -1732,6 +1763,17 @@ mod tests {
         let bytes = insn.encode();
         // opcode=0x85, src_reg=2 (BPF_PSEUDO_KFUNC_CALL), imm=1234
         assert_eq!(bytes, [0x85, 0x20, 0x00, 0x00, 0xd2, 0x04, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn test_helper_signature_kptr_xchg() {
+        let sig = HelperSignature::for_id(BpfHelper::KptrXchg as u32)
+            .expect("expected bpf_kptr_xchg helper signature");
+        assert_eq!(sig.min_args, 2);
+        assert_eq!(sig.max_args, 2);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+        assert_eq!(sig.ret_kind, HelperRetKind::PointerMaybeNull);
     }
 
     #[test]

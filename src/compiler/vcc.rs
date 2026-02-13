@@ -3408,6 +3408,15 @@ impl<'a> VccLowerer<'a> {
                         kfunc_ref: None,
                     });
                 }
+                if matches!(helper, Some(BpfHelper::KptrXchg)) {
+                    return VccValueType::Ptr(VccPointerInfo {
+                        space: VccAddrSpace::Kernel,
+                        nullability: VccNullability::MaybeNull,
+                        bounds: None,
+                        ringbuf_ref: None,
+                        kfunc_ref: None,
+                    });
+                }
                 match inferred {
                     Some(VccValueType::Ptr(mut info)) => {
                         info.nullability = VccNullability::MaybeNull;
@@ -3706,6 +3715,16 @@ impl<'a> VccLowerer<'a> {
         kfunc_pointer_arg_ref_kind(kfunc, arg_idx)
     }
 
+    fn helper_pointer_arg_allows_const_zero(
+        helper_id: u32,
+        arg_idx: usize,
+        arg: &MirValue,
+    ) -> bool {
+        matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::KptrXchg))
+            && arg_idx == 1
+            && matches!(arg, MirValue::Const(0))
+    }
+
     fn verify_helper_arg_value(
         &mut self,
         helper_id: u32,
@@ -3730,13 +3749,19 @@ impl<'a> VccLowerer<'a> {
                 )),
             },
             HelperArgKind::Pointer => match arg {
-                MirValue::Const(_) => Err(VccError::new(
-                    VccErrorKind::TypeMismatch {
-                        expected: VccTypeClass::Ptr,
-                        actual: VccTypeClass::Scalar,
-                    },
-                    format!("helper {} arg{} expects pointer value", helper_id, arg_idx),
-                )),
+                MirValue::Const(_) => {
+                    if Self::helper_pointer_arg_allows_const_zero(helper_id, arg_idx, arg) {
+                        Ok(())
+                    } else {
+                        Err(VccError::new(
+                            VccErrorKind::TypeMismatch {
+                                expected: VccTypeClass::Ptr,
+                                actual: VccTypeClass::Scalar,
+                            },
+                            format!("helper {} arg{} expects pointer value", helper_id, arg_idx),
+                        ))
+                    }
+                }
                 MirValue::VReg(vreg) => self.check_ptr_range(*vreg, 1, out),
                 MirValue::StackSlot(_) => Ok(()),
             },
@@ -3835,6 +3860,9 @@ impl<'a> VccLowerer<'a> {
         dynamic_size: Option<&MirValue>,
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
+        if Self::helper_pointer_arg_allows_const_zero(helper_id, arg_idx, arg) {
+            return Ok(());
+        }
         let ptr = self.value_ptr_info(arg).ok_or_else(|| {
             VccError::new(
                 VccErrorKind::TypeMismatch {
@@ -9133,6 +9161,78 @@ mod tests {
             err.iter()
                 .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
                     && e.message.contains("at most 5 arguments")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_helper_kptr_xchg_allows_null_const_arg1() {
+        let (mut func, entry) = new_mir_function();
+        let dst_ptr = func.alloc_vreg();
+        let swapped = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: swapped,
+                helper: BpfHelper::KptrXchg as u32,
+                args: vec![MirValue::VReg(dst_ptr), MirValue::Const(0)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            dst_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            swapped,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        verify_mir(&func, &types).expect("expected kptr_xchg null-pointer arg acceptance");
+    }
+
+    #[test]
+    fn test_verify_mir_helper_kptr_xchg_rejects_non_null_scalar_arg1() {
+        let (mut func, entry) = new_mir_function();
+        let dst_ptr = func.alloc_vreg();
+        let swapped = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: swapped,
+                helper: BpfHelper::KptrXchg as u32,
+                args: vec![MirValue::VReg(dst_ptr), MirValue::Const(1)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            dst_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            swapped,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected helper pointer-arg rejection");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("helper 194 arg1 expects pointer value")),
             "unexpected error messages: {:?}",
             err
         );

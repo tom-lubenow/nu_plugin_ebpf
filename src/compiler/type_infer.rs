@@ -24,8 +24,8 @@ use super::hindley_milner::{
     Constraint, HMType, Substitution, TypeScheme, TypeVar, TypeVarGenerator, UnifyError, unify,
 };
 use super::instruction::{
-    HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncRetKind, KfuncSignature,
-    kfunc_pointer_arg_requires_kernel as kfunc_pointer_arg_requires_kernel_shared,
+    BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncRetKind,
+    KfuncSignature, kfunc_pointer_arg_requires_kernel as kfunc_pointer_arg_requires_kernel_shared,
 };
 use super::mir::{
     AddressSpace, BasicBlock, BinOpKind, CtxField, MapKind, MirFunction, MirInst, MirType,
@@ -314,9 +314,13 @@ impl<'a> TypeInference<'a> {
                         }
                         HelperRetKind::PointerMaybeNull => {
                             let pointee = HMType::Var(self.tvar_gen.fresh());
+                            let address_space = match BpfHelper::from_u32(*helper) {
+                                Some(BpfHelper::KptrXchg) => AddressSpace::Kernel,
+                                _ => AddressSpace::Map,
+                            };
                             let ptr_ty = HMType::Ptr {
                                 pointee: Box::new(pointee),
-                                address_space: AddressSpace::Map,
+                                address_space,
                             };
                             self.constrain(dst_ty, ptr_ty, "helper_call_ptr_ret");
                         }
@@ -594,6 +598,10 @@ impl<'a> TypeInference<'a> {
 
     fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
         kfunc_pointer_arg_requires_kernel_shared(kfunc, arg_idx)
+    }
+
+    fn helper_pointer_arg_allows_const_zero(helper_id: u32, arg_idx: usize) -> bool {
+        matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::KptrXchg)) && arg_idx == 1
     }
 
     fn is_const_zero(value: &MirValue) -> bool {
@@ -1119,7 +1127,11 @@ impl<'a> TypeInference<'a> {
                                 }
                             }
                             HelperArgKind::Pointer => {
-                                if !matches!(arg_ty, MirType::Ptr { .. }) {
+                                let is_const_zero = matches!(arg, MirValue::Const(0));
+                                if !matches!(arg_ty, MirType::Ptr { .. })
+                                    && !(is_const_zero
+                                        && Self::helper_pointer_arg_allows_const_zero(*helper, idx))
+                                {
                                     errors.push(TypeError::new(format!(
                                         "helper {} arg{} expects pointer, got {:?}",
                                         helper, idx, arg_ty
@@ -2648,6 +2660,38 @@ mod tests {
                 assert_eq!(*address_space, AddressSpace::Map);
             }
             other => panic!("Expected helper map lookup pointer return, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_infer_helper_kptr_xchg_returns_kernel_pointer() {
+        let mut func = make_test_function();
+        let dst_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst_ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: dst_ptr,
+            src: MirValue::StackSlot(dst_slot),
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::KptrXchg as u32,
+            args: vec![MirValue::VReg(dst_ptr), MirValue::Const(0)],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let types = ti.infer(&func).unwrap();
+        match types.get(&dst) {
+            Some(MirType::Ptr { address_space, .. }) => {
+                assert_eq!(*address_space, AddressSpace::Kernel);
+            }
+            other => panic!(
+                "Expected helper kptr_xchg kernel pointer return, got {:?}",
+                other
+            ),
         }
     }
 
