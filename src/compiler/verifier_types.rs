@@ -6644,6 +6644,48 @@ mod tests {
     }
 
     #[test]
+    fn test_kfunc_rbtree_first_requires_kernel_space() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+        func.param_count = 1;
+
+        let stack_ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_rbtree_first".to_string(),
+            btf_id: None,
+            args: vec![stack_ptr],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            stack_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            dst,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected kernel-pointer kfunc arg error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("arg0 expects kernel pointer")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
     fn test_kfunc_cpumask_and_requires_pointer_args() {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();

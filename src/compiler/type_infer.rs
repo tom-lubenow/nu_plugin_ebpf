@@ -2822,6 +2822,37 @@ mod tests {
     }
 
     #[test]
+    fn test_type_error_kfunc_rbtree_first_requires_kernel_space() {
+        let mut func = make_test_function();
+        let root = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: root,
+            src: MirValue::StackSlot(slot),
+        });
+        block.instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_rbtree_first".to_string(),
+            btf_id: None,
+            args: vec![root],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected rbtree_first kernel-pointer kfunc type error");
+        assert!(
+            errs.iter()
+                .any(|e| e.message.contains("arg0 expects kernel pointer")),
+            "unexpected errors: {:?}",
+            errs
+        );
+    }
+
+    #[test]
     fn test_infer_kfunc_cpumask_create_pointer_return() {
         let mut func = make_test_function();
         let dst = func.alloc_vreg();
