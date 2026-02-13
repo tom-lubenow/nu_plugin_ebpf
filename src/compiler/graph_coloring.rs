@@ -29,347 +29,36 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use super::cfg::{CFG, LoopInfo};
+use super::cfg::{
+    AnalysisCfg, BlockLiveness, CFG, CfgBlock, CfgFunction, CfgInst, GenericLoopInfo, LoopInfo,
+};
 use super::instruction::EbpfReg;
 use super::lir::{LirBlock, LirFunction, LirInst};
 use super::mir::{
-    BasicBlock, BlockId, MirFunction, MirInst, MirValue, StackSlot, StackSlotId, StackSlotKind,
-    VReg,
+    BlockId, MirFunction, MirInst, MirValue, StackSlot, StackSlotId, StackSlotKind, VReg,
 };
 use super::reg_info;
 
-pub trait RegAllocInst {
-    fn defs(&self) -> Vec<VReg>;
-    fn uses(&self) -> Vec<VReg>;
+pub trait RegAllocInst: CfgInst {
     fn move_pairs(&self) -> Vec<(VReg, VReg)>;
     fn call_clobbers(&self) -> &'static [EbpfReg];
     fn scratch_clobbers(&self) -> &'static [EbpfReg];
 }
 
-pub trait RegAllocBlock {
-    type Inst: RegAllocInst;
-    fn id(&self) -> BlockId;
-    fn instructions(&self) -> &[Self::Inst];
-    fn terminator(&self) -> &Self::Inst;
-    fn successors(&self) -> Vec<BlockId>;
-}
-
-pub trait RegAllocFunction {
-    type Inst: RegAllocInst;
-    type Block: RegAllocBlock<Inst = Self::Inst>;
-    fn entry(&self) -> BlockId;
-    fn blocks(&self) -> &[Self::Block];
-    fn block(&self, id: BlockId) -> &Self::Block;
-    fn has_block(&self, id: BlockId) -> bool;
+pub trait RegAllocFunction: CfgFunction {
     fn vreg_count(&self) -> u32;
     fn param_count(&self) -> usize;
 }
 
-#[derive(Debug)]
-struct AllocCfg {
-    #[allow(dead_code)]
-    entry: BlockId,
-    predecessors: HashMap<BlockId, Vec<BlockId>>,
-    successors: HashMap<BlockId, Vec<BlockId>>,
-    rpo: Vec<BlockId>,
-    post_order: Vec<BlockId>,
-}
-
-impl AllocCfg {
-    fn build<F: RegAllocFunction>(func: &F) -> Self {
-        let mut cfg = AllocCfg {
-            entry: func.entry(),
-            predecessors: HashMap::new(),
-            successors: HashMap::new(),
-            rpo: Vec::new(),
-            post_order: Vec::new(),
-        };
-
-        for block in func.blocks() {
-            cfg.predecessors.insert(block.id(), Vec::new());
-            cfg.successors.insert(block.id(), Vec::new());
-        }
-
-        for block in func.blocks() {
-            let succs = block.successors();
-            cfg.successors.insert(block.id(), succs.clone());
-            for succ in succs {
-                cfg.predecessors.entry(succ).or_default().push(block.id());
-            }
-        }
-
-        cfg.compute_post_order(func);
-        cfg
-    }
-
-    fn compute_post_order<F: RegAllocFunction>(&mut self, func: &F) {
-        let mut visited = HashSet::new();
-        let mut post_order = Vec::new();
-
-        fn dfs<F: RegAllocFunction>(
-            block_id: BlockId,
-            func: &F,
-            cfg: &AllocCfg,
-            visited: &mut HashSet<BlockId>,
-            post_order: &mut Vec<BlockId>,
-        ) {
-            if visited.contains(&block_id) {
-                return;
-            }
-            visited.insert(block_id);
-
-            if let Some(succs) = cfg.successors.get(&block_id) {
-                for &succ in succs {
-                    if func.has_block(succ) {
-                        dfs(succ, func, cfg, visited, post_order);
-                    }
-                }
-            }
-
-            post_order.push(block_id);
-        }
-
-        dfs(func.entry(), func, self, &mut visited, &mut post_order);
-        self.post_order = post_order.clone();
-        self.rpo = post_order.into_iter().rev().collect();
-    }
-}
-
-pub(crate) fn compute_loop_depths<F: RegAllocFunction>(func: &F) -> HashMap<BlockId, usize> {
-    let cfg = AllocCfg::build(func);
-    compute_loop_depths_with_cfg(func, &cfg)
-}
-
-fn compute_loop_depths_with_cfg<F: RegAllocFunction>(
-    func: &F,
-    cfg: &AllocCfg,
-) -> HashMap<BlockId, usize> {
-    let mut loop_depth: HashMap<BlockId, usize> = HashMap::new();
-    for block in func.blocks() {
-        loop_depth.insert(block.id(), 0);
-    }
-
-    if cfg.rpo.is_empty() {
-        return loop_depth;
-    }
-
-    let idom = compute_idom(func, cfg);
-
-    let dominates = |a: BlockId, b: BlockId| -> bool {
-        if a == b {
-            return true;
-        }
-        let mut current = b;
-        while let Some(&dom) = idom.get(&current) {
-            if dom == a {
-                return true;
-            }
-            if dom == current {
-                break;
-            }
-            current = dom;
-        }
-        false
-    };
-
-    let mut loops: HashMap<BlockId, HashSet<BlockId>> = HashMap::new();
-
-    for &block_id in &cfg.rpo {
-        let succs = cfg.successors.get(&block_id).cloned().unwrap_or_default();
-        for succ in succs {
-            if dominates(succ, block_id) {
-                let mut loop_blocks = HashSet::new();
-                loop_blocks.insert(succ);
-
-                let mut worklist = VecDeque::new();
-                if block_id != succ {
-                    loop_blocks.insert(block_id);
-                    worklist.push_back(block_id);
-                }
-
-                while let Some(node) = worklist.pop_front() {
-                    for &pred in cfg.predecessors.get(&node).unwrap_or(&Vec::new()) {
-                        if !loop_blocks.contains(&pred) {
-                            loop_blocks.insert(pred);
-                            worklist.push_back(pred);
-                        }
-                    }
-                }
-
-                loops.entry(succ).or_default().extend(loop_blocks);
-            }
-        }
-    }
-
-    for blocks in loops.values() {
-        for &block in blocks {
-            *loop_depth.entry(block).or_insert(0) += 1;
-        }
-    }
-
-    loop_depth
-}
-
-fn compute_idom<F: RegAllocFunction>(func: &F, cfg: &AllocCfg) -> HashMap<BlockId, BlockId> {
-    let entry = func.entry();
-    let rpo_index: HashMap<BlockId, usize> =
-        cfg.rpo.iter().enumerate().map(|(i, &b)| (b, i)).collect();
-
-    let mut doms: HashMap<BlockId, Option<BlockId>> = HashMap::new();
-    for block in func.blocks() {
-        doms.insert(block.id(), None);
-    }
-    doms.insert(entry, Some(entry));
-
-    let mut changed = true;
-    while changed {
-        changed = false;
-        for &block_id in &cfg.rpo {
-            if block_id == entry {
-                continue;
-            }
-
-            let preds = cfg.predecessors.get(&block_id).cloned().unwrap_or_default();
-            let mut new_idom = None;
-            for &pred in &preds {
-                if doms.get(&pred).and_then(|d| *d).is_some() {
-                    new_idom = Some(pred);
-                    break;
-                }
-            }
-
-            if let Some(mut idom) = new_idom {
-                for &pred in &preds {
-                    if pred == idom {
-                        continue;
-                    }
-                    if doms.get(&pred).and_then(|d| *d).is_some() {
-                        idom = intersect(pred, idom, &doms, &rpo_index);
-                    }
-                }
-
-                if doms.get(&block_id).and_then(|d| *d) != Some(idom) {
-                    doms.insert(block_id, Some(idom));
-                    changed = true;
-                }
-            }
-        }
-    }
-
-    let mut idom = HashMap::new();
-    for (block_id, dom) in doms {
-        if let Some(parent) = dom
-            && block_id != parent
-        {
-            idom.insert(block_id, parent);
-        }
-    }
-
-    idom
-}
-
-fn intersect(
-    b1: BlockId,
-    b2: BlockId,
-    doms: &HashMap<BlockId, Option<BlockId>>,
-    rpo_index: &HashMap<BlockId, usize>,
-) -> BlockId {
-    let get_idx = |b: BlockId| rpo_index.get(&b).copied().unwrap_or(usize::MAX);
-
-    let mut finger1 = b1;
-    let mut finger2 = b2;
-
-    while finger1 != finger2 {
-        while get_idx(finger1) > get_idx(finger2) {
-            match doms.get(&finger1).and_then(|d| *d) {
-                Some(dom) if dom != finger1 => finger1 = dom,
-                _ => return finger2,
-            }
-        }
-        while get_idx(finger2) > get_idx(finger1) {
-            match doms.get(&finger2).and_then(|d| *d) {
-                Some(dom) if dom != finger2 => finger2 = dom,
-                _ => return finger1,
-            }
-        }
-    }
-    finger1
-}
-
-#[derive(Debug)]
-struct AllocLiveness {
-    live_in: HashMap<BlockId, HashSet<VReg>>,
-    live_out: HashMap<BlockId, HashSet<VReg>>,
-}
-
-impl AllocLiveness {
-    fn compute<F: RegAllocFunction>(func: &F, cfg: &AllocCfg) -> Self {
-        let mut info = AllocLiveness {
-            live_in: HashMap::new(),
-            live_out: HashMap::new(),
-        };
-
-        for block in func.blocks() {
-            info.live_in.insert(block.id(), HashSet::new());
-            info.live_out.insert(block.id(), HashSet::new());
-        }
-
-        let mut changed = true;
-        while changed {
-            changed = false;
-
-            for &block_id in cfg.post_order.iter() {
-                let block = func.block(block_id);
-
-                let mut live_out = HashSet::new();
-                for succ_id in block.successors() {
-                    if let Some(succ_live_in) = info.live_in.get(&succ_id) {
-                        live_out.extend(succ_live_in);
-                    }
-                }
-
-                let mut live_in = live_out.clone();
-
-                for def in block.terminator().defs() {
-                    live_in.remove(&def);
-                }
-                for use_vreg in block.terminator().uses() {
-                    live_in.insert(use_vreg);
-                }
-
-                for inst in block.instructions().iter().rev() {
-                    for def in inst.defs() {
-                        live_in.remove(&def);
-                    }
-                    for use_vreg in inst.uses() {
-                        live_in.insert(use_vreg);
-                    }
-                }
-
-                let old_in = info.live_in.get(&block_id).cloned().unwrap_or_default();
-                let old_out = info.live_out.get(&block_id).cloned().unwrap_or_default();
-
-                if live_in != old_in || live_out != old_out {
-                    changed = true;
-                    info.live_in.insert(block_id, live_in);
-                    info.live_out.insert(block_id, live_out);
-                }
-            }
-        }
-
-        info
-    }
+pub(crate) fn compute_loop_depths<F: RegAllocFunction>(func: &F) -> HashMap<BlockId, usize>
+where
+    F::Inst: RegAllocInst,
+{
+    let cfg = AnalysisCfg::build(func);
+    GenericLoopInfo::compute(func, &cfg).loop_depth
 }
 
 impl RegAllocInst for MirInst {
-    fn defs(&self) -> Vec<VReg> {
-        self.def().into_iter().collect()
-    }
-
-    fn uses(&self) -> Vec<VReg> {
-        self.uses()
-    }
-
     fn move_pairs(&self) -> Vec<(VReg, VReg)> {
         match self {
             MirInst::Copy {
@@ -390,14 +79,6 @@ impl RegAllocInst for MirInst {
 }
 
 impl RegAllocInst for LirInst {
-    fn defs(&self) -> Vec<VReg> {
-        self.defs()
-    }
-
-    fn uses(&self) -> Vec<VReg> {
-        self.uses()
-    }
-
     fn move_pairs(&self) -> Vec<(VReg, VReg)> {
         self.move_pairs()
     }
@@ -411,38 +92,37 @@ impl RegAllocInst for LirInst {
     }
 }
 
-impl RegAllocBlock for BasicBlock {
-    type Inst = MirInst;
+impl CfgInst for LirInst {
+    fn defs(&self) -> Vec<VReg> {
+        self.defs()
+    }
+
+    fn uses(&self) -> Vec<VReg> {
+        self.uses()
+    }
+}
+
+impl CfgBlock for LirBlock {
+    type Inst = LirInst;
+
     fn id(&self) -> BlockId {
         self.id
     }
+
     fn instructions(&self) -> &[Self::Inst] {
         &self.instructions
     }
+
     fn terminator(&self) -> &Self::Inst {
         &self.terminator
     }
+
     fn successors(&self) -> Vec<BlockId> {
         self.successors()
     }
 }
 
 impl RegAllocFunction for MirFunction {
-    type Inst = MirInst;
-    type Block = super::mir::BasicBlock;
-
-    fn entry(&self) -> BlockId {
-        self.entry
-    }
-    fn blocks(&self) -> &[Self::Block] {
-        &self.blocks
-    }
-    fn block(&self, id: BlockId) -> &Self::Block {
-        self.block(id)
-    }
-    fn has_block(&self, id: BlockId) -> bool {
-        self.has_block(id)
-    }
     fn vreg_count(&self) -> u32 {
         self.vreg_count
     }
@@ -451,38 +131,28 @@ impl RegAllocFunction for MirFunction {
     }
 }
 
-impl RegAllocBlock for LirBlock {
-    type Inst = LirInst;
-    fn id(&self) -> BlockId {
-        self.id
-    }
-    fn instructions(&self) -> &[Self::Inst] {
-        &self.instructions
-    }
-    fn terminator(&self) -> &Self::Inst {
-        &self.terminator
-    }
-    fn successors(&self) -> Vec<BlockId> {
-        self.successors()
-    }
-}
-
-impl RegAllocFunction for LirFunction {
+impl CfgFunction for LirFunction {
     type Inst = LirInst;
     type Block = LirBlock;
 
     fn entry(&self) -> BlockId {
         self.entry
     }
+
     fn blocks(&self) -> &[Self::Block] {
         &self.blocks
     }
+
     fn block(&self, id: BlockId) -> &Self::Block {
-        self.block(id)
+        LirFunction::block(self, id)
     }
+
     fn has_block(&self, id: BlockId) -> bool {
-        self.has_block(id)
+        LirFunction::has_block(self, id)
     }
+}
+
+impl RegAllocFunction for LirFunction {
     fn vreg_count(&self) -> u32 {
         self.vreg_count
     }
@@ -710,9 +380,12 @@ impl GraphColoringAllocator {
         &mut self,
         func: &F,
         loop_depths: Option<&HashMap<BlockId, usize>>,
-    ) -> ColoringResult {
-        let cfg = AllocCfg::build(func);
-        let liveness = AllocLiveness::compute(func, &cfg);
+    ) -> ColoringResult
+    where
+        F::Inst: RegAllocInst,
+    {
+        let cfg = AnalysisCfg::build(func);
+        let liveness = BlockLiveness::compute(func, &cfg);
 
         // Build interference graph
         self.build(func, &cfg, &liveness);
@@ -809,7 +482,10 @@ impl GraphColoringAllocator {
     }
 
     /// Build the interference graph from liveness information
-    fn build<F: RegAllocFunction>(&mut self, func: &F, cfg: &AllocCfg, liveness: &AllocLiveness) {
+    fn build<F: RegAllocFunction>(&mut self, func: &F, cfg: &AnalysisCfg, liveness: &BlockLiveness)
+    where
+        F::Inst: RegAllocInst,
+    {
         // Add all vregs as nodes
         let total_vregs = func.vreg_count().max(func.param_count() as u32);
         for i in 0..total_vregs {
@@ -863,9 +539,11 @@ impl GraphColoringAllocator {
     fn build_interference_from_liveness<F: RegAllocFunction>(
         &mut self,
         func: &F,
-        cfg: &AllocCfg,
-        liveness: &AllocLiveness,
-    ) {
+        cfg: &AnalysisCfg,
+        liveness: &BlockLiveness,
+    ) where
+        F::Inst: RegAllocInst,
+    {
         let block_order = &cfg.rpo;
 
         for &block_id in block_order {
@@ -992,9 +670,11 @@ impl GraphColoringAllocator {
     fn compute_spill_costs<F: RegAllocFunction>(
         &mut self,
         func: &F,
-        cfg: &AllocCfg,
+        cfg: &AnalysisCfg,
         loop_depths: Option<&HashMap<BlockId, usize>>,
-    ) {
+    ) where
+        F::Inst: RegAllocInst,
+    {
         let total_vregs = func.vreg_count().max(func.param_count() as u32);
         for i in 0..total_vregs {
             let vreg = VReg(i);
@@ -1664,8 +1344,8 @@ mod tests {
         // v2 = v0 + v1  <-- v0 and v1 are both live here, so they interfere
         // return v2
         let func = make_simple_function();
-        let cfg = AllocCfg::build(&func);
-        let liveness = AllocLiveness::compute(&func, &cfg);
+        let cfg = AnalysisCfg::build(&func);
+        let liveness = BlockLiveness::compute(&func, &cfg);
         let mut allocator = GraphColoringAllocator::new(vec![EbpfReg::R6, EbpfReg::R7]);
         allocator.build(&func, &cfg, &liveness);
 
@@ -1876,8 +1556,8 @@ mod tests {
     #[test]
     fn test_list_interference() {
         let func = make_list_function();
-        let cfg = AllocCfg::build(&func);
-        let liveness = AllocLiveness::compute(&func, &cfg);
+        let cfg = AnalysisCfg::build(&func);
+        let liveness = BlockLiveness::compute(&func, &cfg);
         let mut allocator =
             GraphColoringAllocator::new(vec![EbpfReg::R6, EbpfReg::R7, EbpfReg::R8]);
         allocator.build(&func, &cfg, &liveness);

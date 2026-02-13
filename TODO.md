@@ -71,9 +71,9 @@ Last updated: 2026-02-13.
   - Added `MirValue::visit_vregs_mut` / `MirValue::map_vregs` and `MirInst::visit_uses_mut` / `MirInst::map_uses` helpers.
   - Switched SSA rename and copy propagation to these helpers so new MIR operand sites are centralized in one API.
 
-- [ ] Unify duplicated CFG/dominance/liveness analysis infrastructure.
-  - Extract shared algorithms from `cfg.rs` and `graph_coloring.rs` behind small traits/adapters.
-  - Keep a single implementation of immediate-dominator and core liveness dataflow logic.
+- [x] Unify duplicated CFG/dominance/liveness analysis infrastructure.
+  - Extracted shared generic CFG/liveness/loop analysis in `cfg.rs` behind `CfgInst`/`CfgBlock`/`CfgFunction` adapters (`AnalysisCfg`, `BlockLiveness`, `GenericLoopInfo`).
+  - `graph_coloring.rs` now reuses this shared analysis instead of private `AllocCfg`/`AllocLiveness`, and MIR `CFG`/`LivenessInfo` now consume the same core idom/liveness algorithms.
 
 - [ ] Upgrade constant propagation from local folding to SSA-aware SCCP.
   - Track constant lattice values and CFG reachability together.

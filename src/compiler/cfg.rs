@@ -8,7 +8,400 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use super::mir::{BlockId, MirFunction, VReg};
+use super::mir::{BasicBlock, BlockId, MirFunction, MirInst, VReg};
+
+/// Instruction adapter for generic CFG/liveness analysis.
+pub trait CfgInst {
+    fn defs(&self) -> Vec<VReg>;
+    fn uses(&self) -> Vec<VReg>;
+}
+
+/// Basic block adapter for generic CFG/liveness analysis.
+pub trait CfgBlock {
+    type Inst: CfgInst;
+    fn id(&self) -> BlockId;
+    fn instructions(&self) -> &[Self::Inst];
+    fn terminator(&self) -> &Self::Inst;
+    fn successors(&self) -> Vec<BlockId>;
+}
+
+/// Function adapter for generic CFG/liveness analysis.
+pub trait CfgFunction {
+    type Inst: CfgInst;
+    type Block: CfgBlock<Inst = Self::Inst>;
+    fn entry(&self) -> BlockId;
+    fn blocks(&self) -> &[Self::Block];
+    fn block(&self, id: BlockId) -> &Self::Block;
+    fn has_block(&self, id: BlockId) -> bool;
+}
+
+impl CfgInst for MirInst {
+    fn defs(&self) -> Vec<VReg> {
+        self.def().into_iter().collect()
+    }
+
+    fn uses(&self) -> Vec<VReg> {
+        self.uses()
+    }
+}
+
+impl CfgBlock for BasicBlock {
+    type Inst = MirInst;
+
+    fn id(&self) -> BlockId {
+        self.id
+    }
+
+    fn instructions(&self) -> &[Self::Inst] {
+        &self.instructions
+    }
+
+    fn terminator(&self) -> &Self::Inst {
+        &self.terminator
+    }
+
+    fn successors(&self) -> Vec<BlockId> {
+        self.successors()
+    }
+}
+
+impl CfgFunction for MirFunction {
+    type Inst = MirInst;
+    type Block = BasicBlock;
+
+    fn entry(&self) -> BlockId {
+        self.entry
+    }
+
+    fn blocks(&self) -> &[Self::Block] {
+        &self.blocks
+    }
+
+    fn block(&self, id: BlockId) -> &Self::Block {
+        MirFunction::block(self, id)
+    }
+
+    fn has_block(&self, id: BlockId) -> bool {
+        MirFunction::has_block(self, id)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AnalysisCfg {
+    pub entry: BlockId,
+    pub predecessors: HashMap<BlockId, Vec<BlockId>>,
+    pub successors: HashMap<BlockId, Vec<BlockId>>,
+    pub idom: HashMap<BlockId, BlockId>,
+    pub rpo: Vec<BlockId>,
+    pub post_order: Vec<BlockId>,
+}
+
+impl AnalysisCfg {
+    pub fn build<F: CfgFunction>(func: &F) -> Self {
+        let mut cfg = AnalysisCfg {
+            entry: func.entry(),
+            predecessors: HashMap::new(),
+            successors: HashMap::new(),
+            idom: HashMap::new(),
+            rpo: Vec::new(),
+            post_order: Vec::new(),
+        };
+
+        for block in func.blocks() {
+            cfg.predecessors.insert(block.id(), Vec::new());
+            cfg.successors.insert(block.id(), Vec::new());
+        }
+
+        for block in func.blocks() {
+            let succs = block.successors();
+            cfg.successors.insert(block.id(), succs.clone());
+            for succ in succs {
+                cfg.predecessors.entry(succ).or_default().push(block.id());
+            }
+        }
+
+        cfg.compute_post_order(func);
+        cfg.compute_dominators(func);
+        cfg
+    }
+
+    fn compute_post_order<F: CfgFunction>(&mut self, func: &F) {
+        let mut visited = HashSet::new();
+        let mut post_order = Vec::new();
+
+        fn dfs<F: CfgFunction>(
+            block_id: BlockId,
+            func: &F,
+            cfg: &AnalysisCfg,
+            visited: &mut HashSet<BlockId>,
+            post_order: &mut Vec<BlockId>,
+        ) {
+            if visited.contains(&block_id) {
+                return;
+            }
+            visited.insert(block_id);
+
+            if let Some(succs) = cfg.successors.get(&block_id) {
+                for &succ in succs {
+                    if func.has_block(succ) {
+                        dfs(succ, func, cfg, visited, post_order);
+                    }
+                }
+            }
+
+            post_order.push(block_id);
+        }
+
+        dfs(func.entry(), func, self, &mut visited, &mut post_order);
+        self.post_order = post_order.clone();
+        self.rpo = post_order.into_iter().rev().collect();
+    }
+
+    fn compute_dominators<F: CfgFunction>(&mut self, func: &F) {
+        if func.blocks().is_empty() {
+            return;
+        }
+
+        self.idom = compute_idom(func.entry(), func.blocks(), &self.predecessors, &self.rpo);
+    }
+
+    pub fn dominates(&self, a: BlockId, b: BlockId) -> bool {
+        dominates_in_idom(a, b, &self.idom)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct BlockLiveness {
+    pub live_in: HashMap<BlockId, HashSet<VReg>>,
+    pub live_out: HashMap<BlockId, HashSet<VReg>>,
+}
+
+impl BlockLiveness {
+    pub fn compute<F: CfgFunction>(func: &F, cfg: &AnalysisCfg) -> Self {
+        let mut info = BlockLiveness {
+            live_in: HashMap::new(),
+            live_out: HashMap::new(),
+        };
+
+        for block in func.blocks() {
+            info.live_in.insert(block.id(), HashSet::new());
+            info.live_out.insert(block.id(), HashSet::new());
+        }
+
+        let mut changed = true;
+        while changed {
+            changed = false;
+
+            for &block_id in &cfg.post_order {
+                let block = func.block(block_id);
+
+                let mut live_out = HashSet::new();
+                for succ_id in block.successors() {
+                    if let Some(succ_live_in) = info.live_in.get(&succ_id) {
+                        live_out.extend(succ_live_in);
+                    }
+                }
+
+                let mut live_in = live_out.clone();
+
+                for def in block.terminator().defs() {
+                    live_in.remove(&def);
+                }
+                for use_vreg in block.terminator().uses() {
+                    live_in.insert(use_vreg);
+                }
+
+                for inst in block.instructions().iter().rev() {
+                    for def in inst.defs() {
+                        live_in.remove(&def);
+                    }
+                    for use_vreg in inst.uses() {
+                        live_in.insert(use_vreg);
+                    }
+                }
+
+                let old_live_in = info.live_in.get(&block_id).cloned().unwrap_or_default();
+                let old_live_out = info.live_out.get(&block_id).cloned().unwrap_or_default();
+
+                if live_in != old_live_in || live_out != old_live_out {
+                    changed = true;
+                    info.live_in.insert(block_id, live_in);
+                    info.live_out.insert(block_id, live_out);
+                }
+            }
+        }
+
+        info
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GenericLoopInfo {
+    pub loops: HashMap<BlockId, HashSet<BlockId>>,
+    pub loop_depth: HashMap<BlockId, usize>,
+}
+
+impl GenericLoopInfo {
+    pub fn compute<F: CfgFunction>(func: &F, cfg: &AnalysisCfg) -> Self {
+        let mut info = GenericLoopInfo {
+            loops: HashMap::new(),
+            loop_depth: HashMap::new(),
+        };
+
+        for block in func.blocks() {
+            info.loop_depth.insert(block.id(), 0);
+        }
+
+        let mut back_edges: Vec<(BlockId, BlockId)> = Vec::new();
+        for block in func.blocks() {
+            for &succ in cfg.successors.get(&block.id()).unwrap_or(&Vec::new()) {
+                if cfg.dominates(succ, block.id()) {
+                    back_edges.push((block.id(), succ));
+                }
+            }
+        }
+
+        for (tail, header) in back_edges {
+            let mut loop_blocks = HashSet::new();
+            loop_blocks.insert(header);
+
+            let mut worklist = VecDeque::new();
+            if tail != header {
+                loop_blocks.insert(tail);
+                worklist.push_back(tail);
+            }
+
+            while let Some(block) = worklist.pop_front() {
+                for &pred in cfg.predecessors.get(&block).unwrap_or(&Vec::new()) {
+                    if !loop_blocks.contains(&pred) {
+                        loop_blocks.insert(pred);
+                        worklist.push_back(pred);
+                    }
+                }
+            }
+
+            info.loops.entry(header).or_default().extend(loop_blocks);
+        }
+
+        for blocks in info.loops.values() {
+            for &block in blocks {
+                *info.loop_depth.entry(block).or_insert(0) += 1;
+            }
+        }
+
+        info
+    }
+}
+
+fn compute_idom<B>(
+    entry: BlockId,
+    blocks: &[B],
+    predecessors: &HashMap<BlockId, Vec<BlockId>>,
+    rpo: &[BlockId],
+) -> HashMap<BlockId, BlockId>
+where
+    B: CfgBlock,
+{
+    let rpo_index: HashMap<BlockId, usize> = rpo.iter().enumerate().map(|(i, &b)| (b, i)).collect();
+
+    let mut doms: HashMap<BlockId, Option<BlockId>> = HashMap::new();
+    for block in blocks {
+        doms.insert(block.id(), None);
+    }
+    doms.insert(entry, Some(entry));
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+
+        for &block_id in rpo {
+            if block_id == entry {
+                continue;
+            }
+
+            let preds = predecessors.get(&block_id).cloned().unwrap_or_default();
+            let mut new_idom = None;
+
+            for &pred in &preds {
+                if doms.get(&pred).and_then(|d| *d).is_some() {
+                    new_idom = Some(pred);
+                    break;
+                }
+            }
+
+            if let Some(mut idom) = new_idom {
+                for &pred in &preds {
+                    if pred == idom {
+                        continue;
+                    }
+                    if doms.get(&pred).and_then(|d| *d).is_some() {
+                        idom = intersect(pred, idom, &doms, &rpo_index);
+                    }
+                }
+
+                if doms.get(&block_id).and_then(|d| *d) != Some(idom) {
+                    doms.insert(block_id, Some(idom));
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    let mut idom = HashMap::new();
+    for (block_id, dom) in doms {
+        if let Some(parent) = dom
+            && block_id != parent
+        {
+            idom.insert(block_id, parent);
+        }
+    }
+    idom
+}
+
+fn intersect(
+    b1: BlockId,
+    b2: BlockId,
+    doms: &HashMap<BlockId, Option<BlockId>>,
+    rpo_index: &HashMap<BlockId, usize>,
+) -> BlockId {
+    let get_idx = |b: BlockId| rpo_index.get(&b).copied().unwrap_or(usize::MAX);
+
+    let mut finger1 = b1;
+    let mut finger2 = b2;
+
+    while finger1 != finger2 {
+        while get_idx(finger1) > get_idx(finger2) {
+            match doms.get(&finger1).and_then(|d| *d) {
+                Some(dom) if dom != finger1 => finger1 = dom,
+                _ => return finger2,
+            }
+        }
+        while get_idx(finger2) > get_idx(finger1) {
+            match doms.get(&finger2).and_then(|d| *d) {
+                Some(dom) if dom != finger2 => finger2 = dom,
+                _ => return finger1,
+            }
+        }
+    }
+    finger1
+}
+
+fn dominates_in_idom(a: BlockId, b: BlockId, idom: &HashMap<BlockId, BlockId>) -> bool {
+    if a == b {
+        return true;
+    }
+    let mut current = b;
+    while let Some(&dom) = idom.get(&current) {
+        if dom == a {
+            return true;
+        }
+        if dom == current {
+            break;
+        }
+        current = dom;
+    }
+    false
+}
 
 /// Control Flow Graph built from MIR
 #[derive(Debug)]
@@ -32,151 +425,22 @@ pub struct CFG {
 impl CFG {
     /// Build a CFG from a MIR function
     pub fn build(func: &MirFunction) -> Self {
+        let analysis = AnalysisCfg::build(func);
+
         let mut cfg = CFG {
-            entry: func.entry,
-            predecessors: HashMap::new(),
-            successors: HashMap::new(),
-            idom: HashMap::new(),
-            rpo: Vec::new(),
-            post_order: Vec::new(),
+            entry: analysis.entry,
+            predecessors: analysis.predecessors,
+            successors: analysis.successors,
+            idom: analysis.idom,
+            rpo: analysis.rpo,
+            post_order: analysis.post_order,
             dominance_frontiers: HashMap::new(),
         };
-
-        // Initialize empty predecessor/successor lists for all blocks
-        for block in &func.blocks {
-            cfg.predecessors.insert(block.id, Vec::new());
-            cfg.successors.insert(block.id, Vec::new());
-        }
-
-        // Compute successors from terminators
-        for block in &func.blocks {
-            let succs = block.successors();
-            cfg.successors.insert(block.id, succs.clone());
-
-            // Add this block as predecessor to each successor
-            for succ in succs {
-                cfg.predecessors.entry(succ).or_default().push(block.id);
-            }
-        }
-
-        // Compute post-order and reverse post-order
-        cfg.compute_post_order(func);
-
-        // Compute dominators
-        cfg.compute_dominators(func);
 
         // Compute dominance frontiers (needed for SSA construction)
         cfg.compute_dominance_frontiers(func);
 
         cfg
-    }
-
-    /// Compute post-order traversal using DFS
-    fn compute_post_order(&mut self, func: &MirFunction) {
-        let mut visited = HashSet::new();
-        let mut post_order = Vec::new();
-
-        fn dfs(
-            block_id: BlockId,
-            func: &MirFunction,
-            cfg: &CFG,
-            visited: &mut HashSet<BlockId>,
-            post_order: &mut Vec<BlockId>,
-        ) {
-            if visited.contains(&block_id) {
-                return;
-            }
-            visited.insert(block_id);
-
-            // Visit successors first
-            if let Some(succs) = cfg.successors.get(&block_id) {
-                for &succ in succs {
-                    // Use has_block() to check existence - block IDs may not match indices after DCE
-                    if func.has_block(succ) {
-                        dfs(succ, func, cfg, visited, post_order);
-                    }
-                }
-            }
-
-            // Add to post-order after visiting all successors
-            post_order.push(block_id);
-        }
-
-        dfs(func.entry, func, self, &mut visited, &mut post_order);
-
-        self.post_order = post_order.clone();
-        self.rpo = post_order.into_iter().rev().collect();
-    }
-
-    /// Compute immediate dominators using the Cooper-Harvey-Kennedy algorithm
-    fn compute_dominators(&mut self, func: &MirFunction) {
-        if func.blocks.is_empty() {
-            return;
-        }
-
-        // Map block IDs to RPO indices
-        let rpo_index: HashMap<BlockId, usize> =
-            self.rpo.iter().enumerate().map(|(i, &b)| (b, i)).collect();
-
-        // Initialize: entry dominates itself
-        let mut doms: HashMap<BlockId, Option<BlockId>> = HashMap::new();
-        for block in &func.blocks {
-            doms.insert(block.id, None);
-        }
-        doms.insert(func.entry, Some(func.entry));
-
-        // Iterate until fixed point
-        let mut changed = true;
-        while changed {
-            changed = false;
-
-            for &block_id in &self.rpo {
-                if block_id == func.entry {
-                    continue;
-                }
-
-                // Find first processed predecessor
-                let preds = self
-                    .predecessors
-                    .get(&block_id)
-                    .cloned()
-                    .unwrap_or_default();
-                let mut new_idom = None;
-
-                for &pred in &preds {
-                    if doms.get(&pred).and_then(|d| *d).is_some() {
-                        new_idom = Some(pred);
-                        break;
-                    }
-                }
-
-                if let Some(mut idom) = new_idom {
-                    // Intersect with other predecessors
-                    for &pred in &preds {
-                        if pred == idom {
-                            continue;
-                        }
-                        if doms.get(&pred).and_then(|d| *d).is_some() {
-                            idom = self.intersect(pred, idom, &doms, &rpo_index);
-                        }
-                    }
-
-                    if doms.get(&block_id).and_then(|d| *d) != Some(idom) {
-                        doms.insert(block_id, Some(idom));
-                        changed = true;
-                    }
-                }
-            }
-        }
-
-        // Store results
-        for (block_id, dom) in doms {
-            if let Some(idom) = dom
-                && block_id != idom
-            {
-                self.idom.insert(block_id, idom);
-            }
-        }
     }
 
     /// Compute dominance frontiers using the Cooper-Harvey-Kennedy algorithm
@@ -240,55 +504,9 @@ impl CFG {
             .unwrap_or_default()
     }
 
-    /// Find common dominator (intersection in dominator tree)
-    /// Uses finger-based algorithm: walk up the dominator tree from both nodes
-    fn intersect(
-        &self,
-        b1: BlockId,
-        b2: BlockId,
-        doms: &HashMap<BlockId, Option<BlockId>>,
-        rpo_index: &HashMap<BlockId, usize>,
-    ) -> BlockId {
-        // Use RPO index: lower index = earlier in RPO = dominates more
-        let get_idx = |b: BlockId| rpo_index.get(&b).copied().unwrap_or(usize::MAX);
-
-        let mut finger1 = b1;
-        let mut finger2 = b2;
-
-        while finger1 != finger2 {
-            // Move the finger with higher RPO index up the dominator tree
-            while get_idx(finger1) > get_idx(finger2) {
-                match doms.get(&finger1).and_then(|d| *d) {
-                    Some(dom) if dom != finger1 => finger1 = dom,
-                    _ => return finger2, // Reached entry or undefined
-                }
-            }
-            while get_idx(finger2) > get_idx(finger1) {
-                match doms.get(&finger2).and_then(|d| *d) {
-                    Some(dom) if dom != finger2 => finger2 = dom,
-                    _ => return finger1, // Reached entry or undefined
-                }
-            }
-        }
-        finger1
-    }
-
     /// Check if block A dominates block B
     pub fn dominates(&self, a: BlockId, b: BlockId) -> bool {
-        if a == b {
-            return true;
-        }
-        let mut current = b;
-        while let Some(&idom) = self.idom.get(&current) {
-            if idom == a {
-                return true;
-            }
-            if idom == current {
-                break; // Entry block
-            }
-            current = idom;
-        }
-        false
+        dominates_in_idom(a, b, &self.idom)
     }
 
     /// Get all blocks reachable from entry
@@ -312,18 +530,22 @@ pub struct LivenessInfo {
 impl LivenessInfo {
     /// Compute liveness information for a MIR function
     pub fn compute(func: &MirFunction, cfg: &CFG) -> Self {
+        let analysis_cfg = AnalysisCfg {
+            entry: cfg.entry,
+            predecessors: cfg.predecessors.clone(),
+            successors: cfg.successors.clone(),
+            idom: cfg.idom.clone(),
+            rpo: cfg.rpo.clone(),
+            post_order: cfg.post_order.clone(),
+        };
+        let block_liveness = BlockLiveness::compute(func, &analysis_cfg);
+
         let mut info = LivenessInfo {
-            live_in: HashMap::new(),
-            live_out: HashMap::new(),
+            live_in: block_liveness.live_in,
+            live_out: block_liveness.live_out,
             defs: HashMap::new(),
             uses: HashMap::new(),
         };
-
-        // Initialize empty sets
-        for block in &func.blocks {
-            info.live_in.insert(block.id, HashSet::new());
-            info.live_out.insert(block.id, HashSet::new());
-        }
 
         // First pass: collect defs and uses
         for block in &func.blocks {
@@ -345,59 +567,6 @@ impl LivenessInfo {
                     .entry(use_vreg)
                     .or_default()
                     .push((block.id, term_idx));
-            }
-        }
-
-        // Compute live-in and live-out using backward dataflow analysis
-        // live_in[B] = use[B] ∪ (live_out[B] - def[B])
-        // live_out[B] = ∪ live_in[S] for all successors S of B
-
-        let mut changed = true;
-        while changed {
-            changed = false;
-
-            // Process blocks in reverse post-order (for backward analysis)
-            for &block_id in cfg.post_order.iter() {
-                let block = func.block(block_id);
-
-                // Compute live_out = union of live_in of all successors
-                let mut live_out: HashSet<VReg> = HashSet::new();
-                for succ_id in block.successors() {
-                    if let Some(succ_live_in) = info.live_in.get(&succ_id) {
-                        live_out.extend(succ_live_in);
-                    }
-                }
-
-                // Compute live_in = use ∪ (live_out - def)
-                let mut live_in = live_out.clone();
-
-                // Process terminator first (it's "after" regular instructions)
-                if let Some(def) = block.terminator.def() {
-                    live_in.remove(&def);
-                }
-                for use_vreg in block.terminator.uses() {
-                    live_in.insert(use_vreg);
-                }
-
-                // Process instructions in reverse order
-                for inst in block.instructions.iter().rev() {
-                    if let Some(def) = inst.def() {
-                        live_in.remove(&def);
-                    }
-                    for use_vreg in inst.uses() {
-                        live_in.insert(use_vreg);
-                    }
-                }
-
-                // Check for changes
-                let old_live_in = info.live_in.get(&block_id).cloned().unwrap_or_default();
-                let old_live_out = info.live_out.get(&block_id).cloned().unwrap_or_default();
-
-                if live_in != old_live_in || live_out != old_live_out {
-                    changed = true;
-                    info.live_in.insert(block_id, live_in);
-                    info.live_out.insert(block_id, live_out);
-                }
             }
         }
 
@@ -546,61 +715,19 @@ pub struct LoopInfo {
 impl LoopInfo {
     /// Detect natural loops in the CFG
     pub fn compute(func: &MirFunction, cfg: &CFG) -> Self {
-        let mut info = LoopInfo {
-            loops: HashMap::new(),
-            loop_depth: HashMap::new(),
+        let analysis_cfg = AnalysisCfg {
+            entry: cfg.entry,
+            predecessors: cfg.predecessors.clone(),
+            successors: cfg.successors.clone(),
+            idom: cfg.idom.clone(),
+            rpo: cfg.rpo.clone(),
+            post_order: cfg.post_order.clone(),
         };
-
-        // Initialize depths
-        for block in &func.blocks {
-            info.loop_depth.insert(block.id, 0);
+        let generic = GenericLoopInfo::compute(func, &analysis_cfg);
+        LoopInfo {
+            loops: generic.loops,
+            loop_depth: generic.loop_depth,
         }
-
-        // Find back edges: edge from B to H where H dominates B
-        let mut back_edges: Vec<(BlockId, BlockId)> = Vec::new();
-
-        for block in &func.blocks {
-            for &succ in cfg.successors.get(&block.id).unwrap_or(&Vec::new()) {
-                if cfg.dominates(succ, block.id) {
-                    // succ -> block is a back edge, succ is the loop header
-                    back_edges.push((block.id, succ));
-                }
-            }
-        }
-
-        // For each back edge, find the natural loop
-        for (tail, header) in back_edges {
-            let mut loop_blocks = HashSet::new();
-            loop_blocks.insert(header);
-
-            // Find all blocks that can reach tail without going through header
-            let mut worklist = VecDeque::new();
-            if tail != header {
-                loop_blocks.insert(tail);
-                worklist.push_back(tail);
-            }
-
-            while let Some(block) = worklist.pop_front() {
-                for &pred in cfg.predecessors.get(&block).unwrap_or(&Vec::new()) {
-                    if !loop_blocks.contains(&pred) {
-                        loop_blocks.insert(pred);
-                        worklist.push_back(pred);
-                    }
-                }
-            }
-
-            // Merge with existing loop for this header (loops can have multiple back edges)
-            info.loops.entry(header).or_default().extend(loop_blocks);
-        }
-
-        // Compute loop depths
-        for blocks in info.loops.values() {
-            for &block in blocks {
-                *info.loop_depth.entry(block).or_insert(0) += 1;
-            }
-        }
-
-        info
     }
 
     /// Check if a block is a loop header
