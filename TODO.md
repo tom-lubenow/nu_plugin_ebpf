@@ -47,6 +47,7 @@ Last updated: 2026-02-12.
   - Verifier parity now enforces generic map key/value scalar-operand size constraints (`<= 8` bytes unless passed as pointers), matching backend `map_operand_layout` behavior with verifier_types/VCC regression tests.
   - Verifier parity now enforces generic map layout consistency across operations (kind/key-size/value-size conflict detection), matching backend `register_generic_map_spec` behavior with verifier_types/VCC regression tests.
   - Verifier parity now enforces built-in counter-map kind restrictions and conflicts (`counters`/`str_counters` require `Hash` or `PerCpuHash`, with no mixed-kind usage).
+  - Verifier parity now enforces string-counter key shape requirements (stack/map pointer with in-bounds 16-byte access) instead of allowing scalar keys.
   - Verifier parity now enforces the generic helper argument cap (`<= 5` args) for unknown helper IDs in both verifier_types and VCC.
   - Verifier parity now enforces the MIR function parameter cap (`<= 5`) that backend BPF subfunction lowering requires, with verifier_types/VCC regression tests.
   - Verifier parity now enforces `CallSubfn` argument limits (`<= 5`) before MIR->LIR lowering, with verifier_types/VCC regression tests.

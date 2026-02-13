@@ -4122,7 +4122,7 @@ mod tests {
     use super::*;
     use crate::compiler::mir::{
         AddressSpace, BlockId, MapKind, MapRef, MirFunction, MirInst, MirType, MirValue,
-        StackSlotKind, StringAppendType,
+        StackSlotKind, StringAppendType, STRING_COUNTER_MAP_NAME,
     };
     use std::collections::HashMap;
 
@@ -6830,6 +6830,42 @@ mod tests {
                     && e
                         .message
                         .contains("map value v1 has size 24 bytes and must be passed as a pointer")
+            ),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_string_counter_map_requires_pointer_key() {
+        let (mut func, entry) = new_mir_function();
+        let key = func.alloc_vreg();
+        let val = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: val,
+            src: MirValue::Const(2),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+            map: MapRef {
+                name: STRING_COUNTER_MAP_NAME.to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+            val,
+            flags: 0,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let err = verify_mir(&func, &HashMap::new()).expect_err("expected pointer-key error");
+        assert!(
+            err.iter().any(
+                |e| matches!(e.kind, VccErrorKind::TypeMismatch { .. })
+                    && e.message.contains("expected pointer value")
             ),
             "unexpected error messages: {:?}",
             err

@@ -831,6 +831,25 @@ fn apply_inst(
                 )));
             }
             check_map_operand_scalar_size(*key, "map key", types, errors);
+            if map.name == STRING_COUNTER_MAP_NAME {
+                check_ptr_access(
+                    *key,
+                    "map key",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    0,
+                    16,
+                    state,
+                    errors,
+                );
+            } else if let VerifierType::Ptr { .. } = state.get(*key) {
+                require_ptr_with_space(
+                    *key,
+                    "map key",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    state,
+                    errors,
+                );
+            }
             let bounds = map_value_limit(map)
                 .or_else(|| map_value_limit_from_dst_type(types.get(dst)))
                 .map(|limit| PtrBounds {
@@ -967,7 +986,17 @@ fn apply_inst(
             }
             check_map_operand_scalar_size(*key, "map key", types, errors);
             check_map_operand_scalar_size(*val, "map value", types, errors);
-            if let VerifierType::Ptr { .. } = state.get(*key) {
+            if map.name == STRING_COUNTER_MAP_NAME {
+                check_ptr_access(
+                    *key,
+                    "map key",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    0,
+                    16,
+                    state,
+                    errors,
+                );
+            } else if let VerifierType::Ptr { .. } = state.get(*key) {
                 require_ptr_with_space(
                     *key,
                     "map key",
@@ -990,7 +1019,17 @@ fn apply_inst(
                 )));
             }
             check_map_operand_scalar_size(*key, "map key", types, errors);
-            if let VerifierType::Ptr { .. } = state.get(*key) {
+            if map.name == STRING_COUNTER_MAP_NAME {
+                check_ptr_access(
+                    *key,
+                    "map key",
+                    &[AddressSpace::Stack, AddressSpace::Map],
+                    0,
+                    16,
+                    state,
+                    errors,
+                );
+            } else if let VerifierType::Ptr { .. } = state.get(*key) {
                 require_ptr_with_space(
                     *key,
                     "map key",
@@ -2604,7 +2643,9 @@ fn ptr_type_for_phi(args: &[(BlockId, VReg)], state: &VerifierState) -> Option<V
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::mir::{COUNTER_MAP_NAME, MapKind, MapRef, MirType, StackSlotKind};
+    use crate::compiler::mir::{
+        COUNTER_MAP_NAME, MapKind, MapRef, MirType, StackSlotKind, STRING_COUNTER_MAP_NAME,
+    };
 
     fn map_lookup_types(func: &MirFunction, vreg: VReg) -> HashMap<VReg, MirType> {
         let mut types = HashMap::new();
@@ -2946,6 +2987,42 @@ mod tests {
                     .message
                     .contains("map value v1 has size 24 bytes and must be passed as a pointer")
             ),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_string_counter_map_requires_pointer_key() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+        let val = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: val,
+            src: MirValue::Const(2),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+            map: MapRef {
+                name: STRING_COUNTER_MAP_NAME.to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+            val,
+            flags: 0,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let err = verify_mir(&func, &HashMap::new()).expect_err("expected pointer-key error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("map key requires pointer type")),
             "unexpected errors: {:?}",
             err
         );
