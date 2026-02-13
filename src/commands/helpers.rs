@@ -8,6 +8,7 @@
 //! - stop-timer: Stop timer and return elapsed nanoseconds
 //! - read-str: Read string from userspace memory pointer
 //! - read-kernel-str: Read string from kernel memory pointer
+//! - kfunc-call: Invoke a typed kernel kfunc by name
 
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
 use nu_protocol::{
@@ -176,6 +177,64 @@ data structures. For most cases, use read-str instead."#
             Value::string("<kernel string>", call.head),
             None,
         ))
+    }
+}
+
+#[derive(Clone)]
+pub struct KfuncCall;
+
+impl PluginCommand for KfuncCall {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "kfunc-call"
+    }
+
+    fn description(&self) -> &str {
+        "Call a kernel kfunc by name from an eBPF closure."
+    }
+
+    fn extra_description(&self) -> &str {
+        r#"Advanced helper for invoking BTF-described kernel kfuncs.
+The first positional argument must be a literal kfunc name.
+If omitted, --btf-id is resolved automatically from kernel BTF."#
+    }
+
+    fn signature(&self) -> Signature {
+        Signature::build("kfunc-call")
+            .input_output_types(vec![(Type::Any, Type::Any), (Type::Nothing, Type::Any)])
+            .required("name", SyntaxShape::String, "Kernel kfunc symbol name")
+            .rest(
+                "args",
+                SyntaxShape::Any,
+                "Additional kfunc arguments (up to 5 total with pipeline input)",
+            )
+            .named(
+                "btf-id",
+                SyntaxShape::Int,
+                "Optional explicit kernel BTF function ID",
+                None,
+            )
+            .category(Category::Experimental)
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "ebpf attach 'kprobe:do_exit' {|ctx| $ctx.arg0 | kfunc-call bpf_task_release }",
+            description: "Call a typed kfunc with pipeline input as arg0",
+            result: None,
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        _input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        // Stub for non-eBPF execution (e.g., help display).
+        Ok(PipelineData::Value(Value::int(0, call.head), None))
     }
 }
 

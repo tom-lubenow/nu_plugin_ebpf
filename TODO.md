@@ -103,7 +103,8 @@ Last updated: 2026-02-13.
   - Added typed `CallKfunc` MIR/LIR support with backend lowering to `BPF_PSEUDO_KFUNC_CALL`.
   - Added optional explicit kfunc BTF IDs plus kernel-BTF name lookup fallback in codegen.
   - Added initial typed kfunc signatures wired through type inference, verifier_types, and VCC.
-  - Remaining: expand signature coverage and pointer/ref-lifetime semantics from richer BTF metadata, and expose user-facing kfunc invocation ergonomics.
+  - Added user-facing `kfunc-call` closure helper with literal-name lowering and optional `--btf-id`.
+  - Remaining: expand signature coverage and pointer/ref-lifetime semantics from richer BTF metadata.
 
 - [ ] Improve control-flow expressiveness safely.
   - Keep bounded-loop guarantees while supporting more realistic higher-level control patterns.

@@ -22,6 +22,7 @@
 //! - [`Histogram`] - Add to log2 histogram
 //! - [`ReadStr`] / [`ReadKernelStr`] - Read strings from pointers
 //! - [`StartTimer`] / [`StopTimer`] - Latency measurement
+//! - [`KfuncCall`] - Invoke typed kernel kfuncs
 
 mod attach;
 mod counters;
@@ -61,7 +62,9 @@ pub(crate) fn validate_probe_id(id: i64, span: Span) -> Result<u32, LabeledError
 pub use attach::EbpfAttach;
 pub use counters::EbpfCounters;
 pub use detach::EbpfDetach;
-pub use helpers::{Count, Emit, Histogram, ReadKernelStr, ReadStr, StartTimer, StopTimer};
+pub use helpers::{
+    Count, Emit, Histogram, KfuncCall, ReadKernelStr, ReadStr, StartTimer, StopTimer,
+};
 pub use histogram::EbpfHistogram;
 pub use list::EbpfList;
 pub use setup::EbpfSetup;

@@ -3,13 +3,13 @@
 use std::collections::{HashMap, HashSet};
 
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
+use nu_protocol::casing::Casing;
 use nu_protocol::engine::Closure;
 use nu_protocol::ir::IrBlock;
 use nu_protocol::{
-    BlockId, Category, DeclId, Example, IntoSpanned, LabeledError, PipelineData, Record,
-    Signature, Span, Spanned, SyntaxShape, Type, Value, record,
+    BlockId, Category, DeclId, Example, IntoSpanned, LabeledError, PipelineData, Record, Signature,
+    Span, Spanned, SyntaxShape, Type, Value, record,
 };
-use nu_protocol::casing::Casing;
 
 use crate::EbpfPlugin;
 use crate::compiler::{
@@ -27,6 +27,7 @@ const EBPF_COMMANDS: &[&str] = &[
     "stop-timer",
     "read-str",
     "read-kernel-str",
+    "kfunc-call",
     // Also include common nushell commands used in closures
     "where",
     "each",
@@ -91,16 +92,14 @@ fn fetch_closure_irs(
 
 fn parse_view_ir_json(json: &str, span: Span) -> Result<IrBlock, LabeledError> {
     let value: serde_json::Value = serde_json::from_str(json).map_err(|e| {
-        LabeledError::new("Failed to parse 'view ir --json' output")
-            .with_label(e.to_string(), span)
+        LabeledError::new("Failed to parse 'view ir --json' output").with_label(e.to_string(), span)
     })?;
     let ir_value = value.get("ir_block").ok_or_else(|| {
         LabeledError::new("Missing ir_block in 'view ir --json' output")
             .with_label("Expected ir_block field", span)
     })?;
     let ir_block: IrBlock = serde_json::from_value(ir_value.clone()).map_err(|e| {
-        LabeledError::new("Failed to decode 'view ir --json' block")
-            .with_label(e.to_string(), span)
+        LabeledError::new("Failed to decode 'view ir --json' block").with_label(e.to_string(), span)
     })?;
     Ok(ir_block)
 }
@@ -113,8 +112,7 @@ fn fetch_decl_ir(
     let view_ir_decl = engine
         .find_decl("view ir")
         .map_err(|e| {
-            LabeledError::new("Failed to look up 'view ir'")
-                .with_label(e.to_string(), span)
+            LabeledError::new("Failed to look up 'view ir'").with_label(e.to_string(), span)
         })?
         .ok_or_else(|| {
             LabeledError::new("Required command 'view ir' not found")
@@ -129,20 +127,16 @@ fn fetch_decl_ir(
     let data = engine
         .call_decl(view_ir_decl, eval, PipelineData::empty(), true, false)
         .map_err(|e| {
-            LabeledError::new("Failed to run 'view ir'")
-                .with_label(e.to_string(), span)
+            LabeledError::new("Failed to run 'view ir'").with_label(e.to_string(), span)
         })?;
     let value = data.into_value(span).map_err(|e| {
-        LabeledError::new("Failed to decode 'view ir' output")
-            .with_label(e.to_string(), span)
+        LabeledError::new("Failed to decode 'view ir' output").with_label(e.to_string(), span)
     })?;
     let json = match value {
         Value::String { val, .. } => val,
         _ => {
-            return Err(LabeledError::new("Unexpected 'view ir' output type").with_label(
-                "Expected string output from view ir --json",
-                span,
-            ));
+            return Err(LabeledError::new("Unexpected 'view ir' output type")
+                .with_label("Expected string output from view ir --json", span));
         }
     };
 
@@ -161,9 +155,7 @@ fn collect_user_function_irs(
     let mut pending = Vec::new();
     let mut seen = HashSet::new();
 
-    let scan_block = |block: &IrBlock,
-                      seen: &mut HashSet<DeclId>,
-                      pending: &mut Vec<DeclId>| {
+    let scan_block = |block: &IrBlock, seen: &mut HashSet<DeclId>, pending: &mut Vec<DeclId>| {
         for decl_id in extract_call_decl_ids(block) {
             if decl_names.contains_key(&decl_id) {
                 continue;
@@ -269,8 +261,7 @@ fn fetch_user_function_signatures(
     let scope_decl = engine
         .find_decl("scope commands")
         .map_err(|e| {
-            LabeledError::new("Failed to look up 'scope commands'")
-                .with_label(e.to_string(), span)
+            LabeledError::new("Failed to look up 'scope commands'").with_label(e.to_string(), span)
         })?
         .ok_or_else(|| {
             LabeledError::new("Required command 'scope commands' not found")
@@ -281,8 +272,7 @@ fn fetch_user_function_signatures(
     let data = engine
         .call_decl(scope_decl, call, PipelineData::empty(), true, false)
         .map_err(|e| {
-            LabeledError::new("Failed to run 'scope commands'")
-                .with_label(e.to_string(), span)
+            LabeledError::new("Failed to run 'scope commands'").with_label(e.to_string(), span)
         })?;
     let value = data.into_value(span).map_err(|e| {
         LabeledError::new("Failed to decode 'scope commands' output")
@@ -292,10 +282,8 @@ fn fetch_user_function_signatures(
     let list = match value {
         Value::List { vals, .. } => vals,
         _ => {
-            return Err(LabeledError::new("Unexpected 'scope commands' output type").with_label(
-                "Expected list output from scope commands",
-                span,
-            ));
+            return Err(LabeledError::new("Unexpected 'scope commands' output type")
+                .with_label("Expected list output from scope commands", span));
         }
     };
 
@@ -381,6 +369,9 @@ Aggregation commands:
 Timing commands:
   start-timer       - Record timestamp (use with --pin for cross-probe timing)
   stop-timer        - Calculate elapsed nanoseconds since start-timer
+
+Advanced commands:
+  kfunc-call        - Call a typed kernel kfunc by name (optional --btf-id)
 
 Flags:
   --stream (-s)     Stream events in real-time. The command blocks and yields
@@ -651,16 +642,13 @@ fn run_attach(
     }
 
     // Compile MIR to eBPF
-    let compile_result = compile_mir_to_ebpf_with_hints(
-        &mir_program,
-        Some(&probe_context),
-        Some(&type_hints),
-    )
-    .map_err(|e| {
-        LabeledError::new("eBPF compilation failed")
-            .with_label(e.to_string(), call.head)
-            .with_help("Check that the closure uses supported BPF operations")
-    })?;
+    let compile_result =
+        compile_mir_to_ebpf_with_hints(&mir_program, Some(&probe_context), Some(&type_hints))
+            .map_err(|e| {
+                LabeledError::new("eBPF compilation failed")
+                    .with_label(e.to_string(), call.head)
+                    .with_help("Check that the closure uses supported BPF operations")
+            })?;
 
     let mut program = EbpfProgram::with_maps(
         prog_type,

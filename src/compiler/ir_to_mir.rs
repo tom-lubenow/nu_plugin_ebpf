@@ -7,15 +7,15 @@ use std::collections::{HashMap, HashSet};
 
 use nu_protocol::ast::{CellPath, PathMember, Pattern, RangeInclusion};
 use nu_protocol::ir::IrBlock;
-use nu_protocol::{BlockId as NuBlockId, DeclId, RegId, Value, VarId, IN_VARIABLE_ID};
+use nu_protocol::{BlockId as NuBlockId, DeclId, IN_VARIABLE_ID, RegId, Value, VarId};
 
 use super::CompileError;
 use super::elf::ProbeContext;
+use super::hindley_milner::HMType;
 use super::hir::{
     HirBlockId, HirCallArgs, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
     lower_ir_to_hir,
 };
-use super::hindley_milner::HMType;
 use super::hir_type_infer::HirTypeInfo;
 use super::mir::{
     BasicBlock, BinOpKind, BlockId, CtxField, MapKind, MapRef, MirFunction, MirInst, MirProgram,
@@ -342,7 +342,9 @@ impl<'a> HirToMirLowering<'a> {
             let vreg = self.func.alloc_vreg();
             self.reg_map.insert(reg_id, vreg);
             if let Some(hint) = self.current_type_hints.get(&reg_id) {
-                self.vreg_type_hints.entry(vreg).or_insert_with(|| hint.clone());
+                self.vreg_type_hints
+                    .entry(vreg)
+                    .or_insert_with(|| hint.clone());
             }
             vreg
         }
@@ -359,7 +361,11 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     fn stack_slot_size(&self, slot: StackSlotId) -> Option<usize> {
-        self.func.stack_slots.iter().find(|s| s.id == slot).map(|s| s.size)
+        self.func
+            .stack_slots
+            .iter()
+            .find(|s| s.id == slot)
+            .map(|s| s.size)
     }
 
     fn ensure_string_slot_capacity(
@@ -383,9 +389,7 @@ impl<'a> HirToMirLowering<'a> {
             .stack_slots
             .iter_mut()
             .find(|s| s.id == slot)
-            .ok_or_else(|| {
-                CompileError::UnsupportedInstruction("string slot not found".into())
-            })?;
+            .ok_or_else(|| CompileError::UnsupportedInstruction("string slot not found".into()))?;
 
         if needed > slot_entry.size {
             let old_size = slot_entry.size;
@@ -424,12 +428,9 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         for block in &hir.blocks {
-            self.current_block = *self
-                .hir_block_map
-                .get(&block.id)
-                .ok_or_else(|| {
-                    CompileError::UnsupportedInstruction("HIR block mapping missing".into())
-                })?;
+            self.current_block = *self.hir_block_map.get(&block.id).ok_or_else(|| {
+                CompileError::UnsupportedInstruction("HIR block mapping missing".into())
+            })?;
 
             if let Some(inits) = self.loop_body_inits.remove(&self.current_block) {
                 for (dst, src) in inits {
@@ -630,18 +631,15 @@ impl<'a> HirToMirLowering<'a> {
 
             // === String Interpolation ===
             HirStmt::StringAppend { src_dst, val } => {
-                let dst_slot = self
-                    .get_metadata(*src_dst)
-                    .and_then(|m| m.string_slot);
+                let dst_slot = self.get_metadata(*src_dst).and_then(|m| m.string_slot);
                 let val_meta = self.get_metadata(*val).cloned();
 
                 // For string append, we need:
                 // 1. A string buffer (from Literal::String or a built interpolation)
                 // 2. A value to append (string, int, etc.)
                 if let Some(slot) = dst_slot {
-                    let len_vreg_existing = self
-                        .get_metadata(*src_dst)
-                        .and_then(|m| m.string_len_vreg);
+                    let len_vreg_existing =
+                        self.get_metadata(*src_dst).and_then(|m| m.string_len_vreg);
                     let len_was_missing = len_vreg_existing.is_none();
                     let len_vreg = len_vreg_existing.unwrap_or_else(|| {
                         let len_vreg = self.func.alloc_vreg();
@@ -1265,11 +1263,7 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     /// Lower LoadLiteral instruction
-    fn lower_load_literal(
-        &mut self,
-        dst: RegId,
-        lit: &HirLiteral,
-    ) -> Result<(), CompileError> {
+    fn lower_load_literal(&mut self, dst: RegId, lit: &HirLiteral) -> Result<(), CompileError> {
         let dst_vreg = self.get_vreg(dst);
 
         match lit {
@@ -1708,6 +1702,7 @@ impl<'a> HirToMirLowering<'a> {
 
     /// Lower Call instruction (emit, count, etc. or user-defined functions)
     fn lower_call(&mut self, decl_id: DeclId, src_dst: RegId) -> Result<(), CompileError> {
+        let src_dst_had_value = self.reg_map.contains_key(&src_dst.get());
         let dst_vreg = self.get_vreg(src_dst);
 
         if self.user_functions.contains_key(&decl_id) {
@@ -1964,6 +1959,82 @@ impl<'a> HirToMirLowering<'a> {
                 });
             }
 
+            "kfunc-call" => {
+                if !self.named_flags.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "kfunc-call does not accept flags".into(),
+                    ));
+                }
+
+                let (_, name_reg) = self.positional_args.first().copied().ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "kfunc-call requires a literal kfunc name as the first positional argument"
+                            .into(),
+                    )
+                })?;
+
+                let kfunc = self
+                    .get_metadata(name_reg)
+                    .and_then(|m| m.literal_string.clone())
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "kfunc-call requires first positional argument to be a string literal"
+                                .into(),
+                        )
+                    })?;
+
+                let btf_id = if let Some((_, reg)) = self.named_args.get("btf-id") {
+                    let raw = self
+                        .get_metadata(*reg)
+                        .and_then(|m| m.literal_int)
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "kfunc-call --btf-id must be a compile-time integer literal".into(),
+                            )
+                        })?;
+                    Some(u32::try_from(raw).map_err(|_| {
+                        CompileError::UnsupportedInstruction(
+                            "kfunc-call --btf-id must be >= 0".into(),
+                        )
+                    })?)
+                } else {
+                    None
+                };
+
+                for key in self.named_args.keys() {
+                    if key != "btf-id" {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "kfunc-call does not accept named argument '{}'",
+                            key
+                        )));
+                    }
+                }
+
+                let mut args = Vec::new();
+                if let Some(input) = self.pipeline_input {
+                    args.push(input);
+                } else if src_dst_had_value {
+                    args.push(dst_vreg);
+                }
+
+                for (arg_vreg, _) in self.positional_args.iter().skip(1) {
+                    args.push(*arg_vreg);
+                }
+
+                if args.len() > 5 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "BPF kfunc calls support at most 5 arguments".into(),
+                    ));
+                }
+
+                self.emit(MirInst::CallKfunc {
+                    dst: dst_vreg,
+                    kfunc,
+                    btf_id,
+                    args,
+                });
+            }
+
             "where" => {
                 // where { condition } - filter pipeline by condition
                 // Get the pipeline input (value to filter)
@@ -2060,9 +2131,11 @@ impl<'a> HirToMirLowering<'a> {
                     if let Some(meta) = meta {
                         if let Some((_slot, max_len)) = meta.list_buffer {
                             // Create a new list for output
-                            let out_slot = self
-                                .func
-                                .alloc_stack_slot(align_to_eight(8 + max_len * 8), 8, StackSlotKind::ListBuffer);
+                            let out_slot = self.func.alloc_stack_slot(
+                                align_to_eight(8 + max_len * 8),
+                                8,
+                                StackSlotKind::ListBuffer,
+                            );
                             self.emit(MirInst::ListNew {
                                 dst: dst_vreg,
                                 buffer: out_slot,
@@ -2243,7 +2316,10 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
-    fn get_or_create_subfunction(&mut self, decl_id: DeclId) -> Result<SubfunctionId, CompileError> {
+    fn get_or_create_subfunction(
+        &mut self,
+        decl_id: DeclId,
+    ) -> Result<SubfunctionId, CompileError> {
         if let Some(&subfn_id) = self.subfunction_registry.get(&decl_id) {
             return Ok(subfn_id);
         }
@@ -2505,12 +2581,9 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         for block in &hir.blocks {
-            self.current_block = *self
-                .hir_block_map
-                .get(&block.id)
-                .ok_or_else(|| {
-                    CompileError::UnsupportedInstruction("HIR block mapping missing".into())
-                })?;
+            self.current_block = *self.hir_block_map.get(&block.id).ok_or_else(|| {
+                CompileError::UnsupportedInstruction("HIR block mapping missing".into())
+            })?;
 
             if let Some(inits) = self.loop_body_inits.remove(&self.current_block) {
                 for (dst, src) in inits {
@@ -2636,7 +2709,8 @@ impl<'a> HirToMirLowering<'a> {
             subfunctions: self.subfunction_hints,
         };
         if hints.subfunctions.len() < program.subfunctions.len() {
-            hints.subfunctions
+            hints
+                .subfunctions
                 .resize_with(program.subfunctions.len(), HashMap::new);
         }
         (program, hints)
@@ -2676,7 +2750,10 @@ pub fn lower_hir_to_mir_with_hints(
     );
     lowering.lower_block(&hir.main)?;
     let (program, type_hints) = lowering.finish_with_hints();
-    Ok(MirLoweringResult { program, type_hints })
+    Ok(MirLoweringResult {
+        program,
+        type_hints,
+    })
 }
 
 pub fn lower_hir_to_mir(
@@ -2686,8 +2763,14 @@ pub fn lower_hir_to_mir(
 ) -> Result<MirProgram, CompileError> {
     let empty_user_functions = HashMap::new();
     let empty_signatures = HashMap::new();
-    let result =
-        lower_hir_to_mir_with_hints(hir, probe_ctx, decl_names, None, &empty_user_functions, &empty_signatures)?;
+    let result = lower_hir_to_mir_with_hints(
+        hir,
+        probe_ctx,
+        decl_names,
+        None,
+        &empty_user_functions,
+        &empty_signatures,
+    )?;
     Ok(result.program)
 }
 
@@ -2909,6 +2992,239 @@ mod tests {
         assert_eq!(uses.len(), 2);
         assert!(uses.contains(&list_ptr));
         assert!(uses.contains(&idx_vreg));
+    }
+
+    #[test]
+    fn test_kfunc_call_lowers_with_explicit_btf_id() {
+        use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
+        use nu_protocol::{DeclId, RegId};
+        use std::sync::Arc;
+
+        let kfunc_name = b"bpf_cgroup_ancestor";
+        let named_arg = b"btf-id";
+        let mut data = Vec::new();
+        let kfunc_start = data.len();
+        data.extend_from_slice(kfunc_name);
+        let named_start = data.len();
+        data.extend_from_slice(named_arg);
+        let data: Arc<[u8]> = data.into();
+
+        let main_ir = IrBlock {
+            instructions: vec![
+                Instruction::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: Literal::Int(123),
+                },
+                Instruction::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: Literal::String(DataSlice {
+                        start: kfunc_start as u32,
+                        len: kfunc_name.len() as u32,
+                    }),
+                },
+                Instruction::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: Literal::Int(7),
+                },
+                Instruction::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: Literal::Int(4242),
+                },
+                Instruction::PushPositional { src: RegId::new(1) },
+                Instruction::PushPositional { src: RegId::new(2) },
+                Instruction::PushNamed {
+                    name: DataSlice {
+                        start: named_start as u32,
+                        len: named_arg.len() as u32,
+                    },
+                    src: RegId::new(3),
+                },
+                Instruction::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![],
+            data,
+            ast: vec![],
+            comments: vec![],
+            register_count: 4,
+            file_count: 0,
+        };
+
+        let hir_program = HirProgram::new(
+            HirFunction::from_ir_block(main_ir).unwrap(),
+            HashMap::new(),
+            vec![],
+            None,
+        );
+
+        let mut decl_names = HashMap::new();
+        decl_names.insert(DeclId::new(42), "kfunc-call".to_string());
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir_program,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("kfunc-call lowering should succeed");
+
+        let entry = result.program.main.entry;
+        let block = result.program.main.block(entry);
+        let call = block
+            .instructions
+            .iter()
+            .find_map(|inst| match inst {
+                MirInst::CallKfunc {
+                    kfunc,
+                    btf_id,
+                    args,
+                    ..
+                } => Some((kfunc, btf_id, args)),
+                _ => None,
+            })
+            .expect("expected lowered kfunc call");
+
+        assert_eq!(call.0, "bpf_cgroup_ancestor");
+        assert_eq!(*call.1, Some(4242));
+        assert_eq!(call.2.len(), 2, "pipeline input + 1 positional arg");
+    }
+
+    #[test]
+    fn test_kfunc_call_without_pipeline_does_not_inject_src_dst() {
+        use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
+        use nu_protocol::{DeclId, RegId};
+        use std::sync::Arc;
+
+        let kfunc_name = b"bpf_task_release";
+        let data: Arc<[u8]> = kfunc_name.to_vec().into();
+
+        let main_ir = IrBlock {
+            instructions: vec![
+                Instruction::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: Literal::String(DataSlice {
+                        start: 0,
+                        len: kfunc_name.len() as u32,
+                    }),
+                },
+                Instruction::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: Literal::Int(99),
+                },
+                Instruction::PushPositional { src: RegId::new(1) },
+                Instruction::PushPositional { src: RegId::new(2) },
+                Instruction::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![],
+            data,
+            ast: vec![],
+            comments: vec![],
+            register_count: 3,
+            file_count: 0,
+        };
+
+        let hir_program = HirProgram::new(
+            HirFunction::from_ir_block(main_ir).unwrap(),
+            HashMap::new(),
+            vec![],
+            None,
+        );
+
+        let mut decl_names = HashMap::new();
+        decl_names.insert(DeclId::new(42), "kfunc-call".to_string());
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir_program,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("kfunc-call lowering should succeed");
+
+        let entry = result.program.main.entry;
+        let block = result.program.main.block(entry);
+        let call = block
+            .instructions
+            .iter()
+            .find_map(|inst| match inst {
+                MirInst::CallKfunc { args, .. } => Some(args),
+                _ => None,
+            })
+            .expect("expected lowered kfunc call");
+
+        assert_eq!(
+            call.len(),
+            1,
+            "only explicit positional arg should be passed"
+        );
+    }
+
+    #[test]
+    fn test_kfunc_call_requires_literal_string_name() {
+        use nu_protocol::ir::{Instruction, IrBlock, Literal};
+        use nu_protocol::{DeclId, RegId};
+        use std::sync::Arc;
+
+        let main_ir = IrBlock {
+            instructions: vec![
+                Instruction::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: Literal::Int(1),
+                },
+                Instruction::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: Literal::Int(99),
+                },
+                Instruction::PushPositional { src: RegId::new(1) },
+                Instruction::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![],
+            data: Arc::from([]),
+            ast: vec![],
+            comments: vec![],
+            register_count: 2,
+            file_count: 0,
+        };
+
+        let hir_program = HirProgram::new(
+            HirFunction::from_ir_block(main_ir).unwrap(),
+            HashMap::new(),
+            vec![],
+            None,
+        );
+
+        let mut decl_names = HashMap::new();
+        decl_names.insert(DeclId::new(42), "kfunc-call".to_string());
+
+        match lower_hir_to_mir_with_hints(
+            &hir_program,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        ) {
+            Err(CompileError::UnsupportedInstruction(msg)) => {
+                assert!(msg.contains("first positional argument to be a string literal"));
+            }
+            Err(other) => panic!("unexpected error: {other:?}"),
+            Ok(_) => panic!("expected literal string error"),
+        }
     }
 
     #[test]

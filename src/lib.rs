@@ -45,6 +45,7 @@ impl Plugin for EbpfPlugin {
             Box::new(StopTimer),
             Box::new(ReadStr),
             Box::new(ReadKernelStr),
+            Box::new(KfuncCall),
         ]
     }
 }
