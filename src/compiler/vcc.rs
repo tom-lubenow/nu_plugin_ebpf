@@ -126,6 +126,21 @@ pub enum VccNullability {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KfuncRefKind {
+    Task,
+    Cgroup,
+}
+
+impl KfuncRefKind {
+    fn label(self) -> &'static str {
+        match self {
+            KfuncRefKind::Task => "task",
+            KfuncRefKind::Cgroup => "cgroup",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VccPointerInfo {
     pub space: VccAddrSpace,
     pub nullability: VccNullability,
@@ -243,9 +258,11 @@ pub enum VccInst {
     },
     KfuncAcquire {
         id: VccReg,
+        kind: KfuncRefKind,
     },
     KfuncRelease {
         ptr: VccValue,
+        kind: KfuncRefKind,
     },
 }
 
@@ -512,7 +529,7 @@ impl VccVerifier {
                 state.set_live_ringbuf_ref(ref_id, false);
             }
             if let Some(ref_id) = kfunc_ref {
-                state.set_live_kfunc_ref(ref_id, false);
+                state.set_live_kfunc_ref(ref_id, false, None);
             }
         }
         state.set_reg(ptr_reg, VccValueType::Ptr(ptr));
@@ -1572,10 +1589,10 @@ impl VccVerifier {
                     }
                 }
             }
-            VccInst::KfuncAcquire { id } => {
-                state.set_live_kfunc_ref(*id, true);
+            VccInst::KfuncAcquire { id, kind } => {
+                state.set_live_kfunc_ref(*id, true, Some(*kind));
             }
-            VccInst::KfuncRelease { ptr } => {
+            VccInst::KfuncRelease { ptr, kind } => {
                 let ty = match state.value_type(*ptr) {
                     Ok(ty) => ty,
                     Err(err) => {
@@ -1590,12 +1607,25 @@ impl VccVerifier {
                             return;
                         }
                         if let Some(ref_id) = info.kfunc_ref {
-                            if state.is_live_kfunc_ref(ref_id) {
-                                state.invalidate_kfunc_ref(ref_id);
-                            } else {
+                            if !state.is_live_kfunc_ref(ref_id) {
                                 self.errors.push(VccError::new(
                                     VccErrorKind::PointerBounds,
                                     "kfunc reference already released",
+                                ));
+                                return;
+                            }
+                            let actual_kind = state.kfunc_ref_kind(ref_id);
+                            if actual_kind == Some(*kind) {
+                                state.invalidate_kfunc_ref(ref_id);
+                            } else {
+                                let expected = kind.label();
+                                let actual = actual_kind.map(|k| k.label()).unwrap_or("unknown");
+                                self.errors.push(VccError::new(
+                                    VccErrorKind::PointerBounds,
+                                    format!(
+                                        "kfunc release expects {} reference, got {} reference",
+                                        expected, actual
+                                    ),
                                 ));
                             }
                         } else {
@@ -1606,9 +1636,13 @@ impl VccVerifier {
                         }
                     }
                     VccValueType::Ptr(_) => {
+                        let expected = kind.label();
                         self.errors.push(VccError::new(
                             VccErrorKind::PointerBounds,
-                            "kfunc release requires kernel task reference pointer",
+                            format!(
+                                "kfunc release requires kernel {} reference pointer",
+                                expected
+                            ),
                         ));
                     }
                     other => {
@@ -1818,7 +1852,7 @@ struct VccState {
     reg_types: HashMap<VccReg, VccValueType>,
     not_equal_consts: HashMap<VccReg, Vec<i64>>,
     live_ringbuf_refs: HashMap<VccReg, bool>,
-    live_kfunc_refs: HashMap<VccReg, bool>,
+    live_kfunc_refs: HashMap<VccReg, KfuncRefKind>,
     cond_refinements: HashMap<VccReg, VccCondRefinement>,
     reachable: bool,
 }
@@ -1910,8 +1944,16 @@ impl VccState {
         self.live_ringbuf_refs.insert(id, live);
     }
 
-    fn set_live_kfunc_ref(&mut self, id: VccReg, live: bool) {
-        self.live_kfunc_refs.insert(id, live);
+    fn set_live_kfunc_ref(&mut self, id: VccReg, live: bool, kind: Option<KfuncRefKind>) {
+        if live {
+            if let Some(kind) = kind {
+                self.live_kfunc_refs.insert(id, kind);
+            } else {
+                self.live_kfunc_refs.remove(&id);
+            }
+        } else {
+            self.live_kfunc_refs.remove(&id);
+        }
     }
 
     fn set_cond_refinement(&mut self, reg: VccReg, refinement: VccCondRefinement) {
@@ -1934,14 +1976,15 @@ impl VccState {
     }
 
     fn is_live_kfunc_ref(&self, id: VccReg) -> bool {
-        self.live_kfunc_refs.get(&id).copied().unwrap_or(false)
+        self.live_kfunc_refs.contains_key(&id)
     }
 
     fn has_live_kfunc_refs(&self) -> bool {
-        self.live_kfunc_refs
-            .values()
-            .copied()
-            .any(std::convert::identity)
+        !self.live_kfunc_refs.is_empty()
+    }
+
+    fn kfunc_ref_kind(&self, id: VccReg) -> Option<KfuncRefKind> {
+        self.live_kfunc_refs.get(&id).copied()
     }
 
     fn invalidate_ringbuf_ref(&mut self, id: VccReg) {
@@ -1967,7 +2010,7 @@ impl VccState {
     }
 
     fn invalidate_kfunc_ref(&mut self, id: VccReg) {
-        self.set_live_kfunc_ref(id, false);
+        self.set_live_kfunc_ref(id, false, None);
         for (reg, ty) in self.reg_types.iter_mut() {
             let matches_ref = matches!(
                 ty,
@@ -2012,9 +2055,8 @@ impl VccState {
             live_ringbuf_refs.insert(*id, current || *live);
         }
         let mut live_kfunc_refs = self.live_kfunc_refs.clone();
-        for (id, live) in &other.live_kfunc_refs {
-            let current = live_kfunc_refs.get(id).copied().unwrap_or(false);
-            live_kfunc_refs.insert(*id, current || *live);
+        for (id, kind) in &other.live_kfunc_refs {
+            live_kfunc_refs.entry(*id).or_insert(*kind);
         }
         let mut cond_refinements = HashMap::new();
         for (reg, left) in &self.cond_refinements {
@@ -2882,13 +2924,17 @@ impl<'a> VccLowerer<'a> {
                 if let VccValueType::Ptr(info) = ty {
                     self.ptr_regs.insert(VccReg(dst.0), info);
                 }
-                if Self::kfunc_acquires_reference(kfunc) {
-                    out.push(VccInst::KfuncAcquire { id: VccReg(dst.0) });
+                if let Some(kind) = Self::kfunc_acquire_kind(kfunc) {
+                    out.push(VccInst::KfuncAcquire {
+                        id: VccReg(dst.0),
+                        kind,
+                    });
                 }
-                if Self::kfunc_releases_reference(kfunc) {
+                if let Some(kind) = Self::kfunc_release_kind(kfunc) {
                     if let Some(arg0) = args.first() {
                         out.push(VccInst::KfuncRelease {
                             ptr: VccValue::Reg(VccReg(arg0.0)),
+                            kind,
                         });
                     }
                 }
@@ -3333,7 +3379,7 @@ impl<'a> VccLowerer<'a> {
             KfuncRetKind::PointerMaybeNull => match inferred {
                 Some(VccValueType::Ptr(mut info)) => {
                     info.nullability = VccNullability::MaybeNull;
-                    if Self::kfunc_acquires_reference(kfunc) {
+                    if Self::kfunc_acquire_kind(kfunc).is_some() {
                         info.kfunc_ref = Some(VccReg(dst.0));
                     }
                     VccValueType::Ptr(info)
@@ -3343,7 +3389,7 @@ impl<'a> VccLowerer<'a> {
                     nullability: VccNullability::MaybeNull,
                     bounds: None,
                     ringbuf_ref: None,
-                    kfunc_ref: if Self::kfunc_acquires_reference(kfunc) {
+                    kfunc_ref: if Self::kfunc_acquire_kind(kfunc).is_some() {
                         Some(VccReg(dst.0))
                     } else {
                         None
@@ -3353,20 +3399,24 @@ impl<'a> VccLowerer<'a> {
         }
     }
 
-    fn kfunc_acquires_reference(kfunc: &str) -> bool {
-        matches!(
-            kfunc,
-            "bpf_task_acquire"
-                | "bpf_task_from_pid"
-                | "bpf_task_from_vpid"
-                | "bpf_task_get_cgroup1"
-                | "bpf_cgroup_acquire"
-                | "bpf_cgroup_from_id"
-        )
+    fn kfunc_acquire_kind(kfunc: &str) -> Option<KfuncRefKind> {
+        match kfunc {
+            "bpf_task_acquire" | "bpf_task_from_pid" | "bpf_task_from_vpid" => {
+                Some(KfuncRefKind::Task)
+            }
+            "bpf_task_get_cgroup1" | "bpf_cgroup_acquire" | "bpf_cgroup_from_id" => {
+                Some(KfuncRefKind::Cgroup)
+            }
+            _ => None,
+        }
     }
 
-    fn kfunc_releases_reference(kfunc: &str) -> bool {
-        matches!(kfunc, "bpf_task_release" | "bpf_cgroup_release")
+    fn kfunc_release_kind(kfunc: &str) -> Option<KfuncRefKind> {
+        match kfunc {
+            "bpf_task_release" => Some(KfuncRefKind::Task),
+            "bpf_cgroup_release" => Some(KfuncRefKind::Cgroup),
+            _ => None,
+        }
     }
 
     fn maybe_assume_list_len(&mut self, dst: VReg, ptr: VReg, offset: i32, out: &mut Vec<VccInst>) {
@@ -3533,7 +3583,7 @@ impl<'a> VccLowerer<'a> {
             match sig.arg_kind(idx) {
                 KfuncArgKind::Scalar => self.assert_scalar_reg(*arg, out),
                 KfuncArgKind::Pointer => {
-                    if Self::kfunc_releases_reference(kfunc) && idx == 0 {
+                    if Self::kfunc_release_kind(kfunc).is_some() && idx == 0 {
                         self.check_ptr_range(*arg, 1, out)?;
                     } else {
                         self.require_pointer_reg(*arg)?;
@@ -9255,6 +9305,75 @@ mod tests {
                 e.message.contains("kfunc release pointer is not tracked")
                     || e.message.contains("expects acquired task reference")
             }),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_kfunc_task_release_rejects_cgroup_reference() {
+        let (mut func, entry) = new_mir_function();
+        let release = func.alloc_block();
+        let done = func.alloc_block();
+
+        let cgid = func.alloc_vreg();
+        let cgroup = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: cgid,
+            src: MirValue::Const(42),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: cgroup,
+            kfunc: "bpf_cgroup_from_id".to_string(),
+            btf_id: None,
+            args: vec![cgid],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(cgroup),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: release,
+            if_false: done,
+        };
+
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_task_release".to_string(),
+                btf_id: None,
+                args: vec![cgroup],
+            });
+        func.block_mut(release).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(cgid, MirType::I64);
+        types.insert(
+            cgroup,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(release_ret, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected mixed-reference error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("expects task reference")),
+            "unexpected error messages: {:?}",
+            err
+        );
+        assert!(
+            err.iter().any(|e| e.message.contains("cgroup reference")),
             "unexpected error messages: {:?}",
             err
         );

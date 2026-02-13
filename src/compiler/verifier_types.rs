@@ -36,6 +36,21 @@ enum PtrOrigin {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KfuncRefKind {
+    Task,
+    Cgroup,
+}
+
+impl KfuncRefKind {
+    fn label(self) -> &'static str {
+        match self {
+            KfuncRefKind::Task => "task",
+            KfuncRefKind::Cgroup => "cgroup",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PtrBounds {
     origin: PtrOrigin,
     min: i64,
@@ -88,6 +103,7 @@ struct VerifierState {
     not_equal: Vec<Vec<i64>>,
     live_ringbuf_refs: Vec<bool>,
     live_kfunc_refs: Vec<bool>,
+    kfunc_ref_kinds: Vec<Option<KfuncRefKind>>,
     reachable: bool,
     guards: HashMap<VReg, Guard>,
 }
@@ -103,6 +119,7 @@ impl VerifierState {
             not_equal: vec![Vec::new(); total_vregs],
             live_ringbuf_refs: vec![false; total_vregs],
             live_kfunc_refs: vec![false; total_vregs],
+            kfunc_ref_kinds: vec![None; total_vregs],
             reachable: true,
             guards: HashMap::new(),
         }
@@ -116,6 +133,7 @@ impl VerifierState {
             not_equal: self.not_equal.clone(),
             live_ringbuf_refs: self.live_ringbuf_refs.clone(),
             live_kfunc_refs: self.live_kfunc_refs.clone(),
+            kfunc_ref_kinds: self.kfunc_ref_kinds.clone(),
             reachable: self.reachable,
             guards: HashMap::new(),
         }
@@ -200,9 +218,12 @@ impl VerifierState {
         }
     }
 
-    fn set_live_kfunc_ref(&mut self, id: VReg, live: bool) {
+    fn set_live_kfunc_ref(&mut self, id: VReg, live: bool, kind: Option<KfuncRefKind>) {
         if let Some(slot) = self.live_kfunc_refs.get_mut(id.0 as usize) {
             *slot = live;
+        }
+        if let Some(slot) = self.kfunc_ref_kinds.get_mut(id.0 as usize) {
+            *slot = if live { kind } else { None };
         }
     }
 
@@ -228,7 +249,7 @@ impl VerifierState {
     }
 
     fn invalidate_kfunc_ref(&mut self, id: VReg) {
-        self.set_live_kfunc_ref(id, false);
+        self.set_live_kfunc_ref(id, false, None);
         for idx in 0..self.regs.len() {
             let reg = VReg(idx as u32);
             let is_ref = matches!(
@@ -267,6 +288,10 @@ impl VerifierState {
             .get(id.0 as usize)
             .copied()
             .unwrap_or(false)
+    }
+
+    fn kfunc_ref_kind(&self, id: VReg) -> Option<KfuncRefKind> {
+        self.kfunc_ref_kinds.get(id.0 as usize).copied().flatten()
     }
 
     fn is_reachable(&self) -> bool {
@@ -318,8 +343,30 @@ impl VerifierState {
             live_ringbuf_refs.push(self.live_ringbuf_refs[i] || other.live_ringbuf_refs[i]);
         }
         let mut live_kfunc_refs = Vec::with_capacity(self.live_kfunc_refs.len());
+        let mut kfunc_ref_kinds = Vec::with_capacity(self.kfunc_ref_kinds.len());
         for i in 0..self.live_kfunc_refs.len() {
-            live_kfunc_refs.push(self.live_kfunc_refs[i] || other.live_kfunc_refs[i]);
+            let left_live = self.live_kfunc_refs[i];
+            let right_live = other.live_kfunc_refs[i];
+            let live = left_live || right_live;
+            live_kfunc_refs.push(live);
+
+            let left_kind = if left_live {
+                self.kfunc_ref_kinds[i]
+            } else {
+                None
+            };
+            let right_kind = if right_live {
+                other.kfunc_ref_kinds[i]
+            } else {
+                None
+            };
+            let merged_kind = match (left_kind, right_kind) {
+                (Some(a), Some(b)) if a == b => Some(a),
+                (Some(a), None) | (None, Some(a)) => Some(a),
+                (Some(_), Some(_)) => None,
+                (None, None) => None,
+            };
+            kfunc_ref_kinds.push(merged_kind);
         }
         VerifierState {
             regs,
@@ -328,6 +375,7 @@ impl VerifierState {
             not_equal,
             live_ringbuf_refs,
             live_kfunc_refs,
+            kfunc_ref_kinds,
             reachable: true,
             guards: HashMap::new(),
         }
@@ -497,6 +545,7 @@ fn propagate_state(
                 || merged.not_equal != existing.not_equal
                 || merged.live_ringbuf_refs != existing.live_ringbuf_refs
                 || merged.live_kfunc_refs != existing.live_kfunc_refs
+                || merged.kfunc_ref_kinds != existing.kfunc_ref_kinds
                 || merged.reachable != existing.reachable
             {
                 in_states.insert(block, merged);
@@ -550,7 +599,7 @@ fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool
                             next.set_live_ringbuf_ref(ref_id, false);
                         }
                         if let Some(ref_id) = kfunc_ref {
-                            next.set_live_kfunc_ref(ref_id, false);
+                            next.set_live_kfunc_ref(ref_id, false, None);
                         }
                     }
                     next.set(
@@ -896,16 +945,20 @@ fn apply_inst(
                     .map(verifier_type_from_mir)
                     .unwrap_or(VerifierType::Scalar),
                 KfuncRetKind::PointerMaybeNull => {
-                    let is_ref_acquire = kfunc_acquires_reference(kfunc);
-                    if is_ref_acquire {
-                        state.set_live_kfunc_ref(*dst, true);
+                    let acquire_kind = kfunc_acquire_kind(kfunc);
+                    if let Some(kind) = acquire_kind {
+                        state.set_live_kfunc_ref(*dst, true, Some(kind));
                     }
                     VerifierType::Ptr {
                         space: AddressSpace::Kernel,
                         nullability: Nullability::MaybeNull,
                         bounds: None,
                         ringbuf_ref: None,
-                        kfunc_ref: if is_ref_acquire { Some(*dst) } else { None },
+                        kfunc_ref: if acquire_kind.is_some() {
+                            Some(*dst)
+                        } else {
+                            None
+                        },
                     }
                 }
             };
@@ -1963,9 +2016,9 @@ fn apply_kfunc_semantics(
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
-    if !kfunc_releases_reference(kfunc) {
+    let Some(expected_kind) = kfunc_release_kind(kfunc) else {
         return;
-    }
+    };
     let Some(ptr) = args.first() else {
         return;
     };
@@ -1977,12 +2030,22 @@ fn apply_kfunc_semantics(
             kfunc_ref: Some(ref_id),
             ..
         } => {
-            if state.is_live_kfunc_ref(ref_id) {
-                state.invalidate_kfunc_ref(ref_id);
-            } else {
+            if !state.is_live_kfunc_ref(ref_id) {
                 errors.push(VerifierTypeError::new(format!(
                     "kfunc '{}' arg0 reference already released",
                     kfunc
+                )));
+                return;
+            }
+            let actual_kind = state.kfunc_ref_kind(ref_id);
+            if actual_kind == Some(expected_kind) {
+                state.invalidate_kfunc_ref(ref_id);
+            } else {
+                let expected = expected_kind.label();
+                let actual = actual_kind.map(|k| k.label()).unwrap_or("unknown");
+                errors.push(VerifierTypeError::new(format!(
+                    "kfunc '{}' arg0 expects acquired {} reference, got {} reference",
+                    kfunc, expected, actual
                 )));
             }
         }
@@ -2000,9 +2063,10 @@ fn apply_kfunc_semantics(
             space: AddressSpace::Kernel,
             ..
         } => {
+            let expected = expected_kind.label();
             errors.push(VerifierTypeError::new(format!(
-                "kfunc '{}' arg0 expects acquired reference",
-                kfunc
+                "kfunc '{}' arg0 expects acquired {} reference",
+                kfunc, expected
             )));
         }
         VerifierType::Ptr { space, .. } => {
@@ -2012,28 +2076,31 @@ fn apply_kfunc_semantics(
             )));
         }
         _ => {
+            let expected = expected_kind.label();
             errors.push(VerifierTypeError::new(format!(
-                "kfunc '{}' arg0 expects acquired reference pointer",
-                kfunc
+                "kfunc '{}' arg0 expects acquired {} reference pointer",
+                kfunc, expected
             )));
         }
     }
 }
 
-fn kfunc_acquires_reference(kfunc: &str) -> bool {
-    matches!(
-        kfunc,
-        "bpf_task_acquire"
-            | "bpf_task_from_pid"
-            | "bpf_task_from_vpid"
-            | "bpf_task_get_cgroup1"
-            | "bpf_cgroup_acquire"
-            | "bpf_cgroup_from_id"
-    )
+fn kfunc_acquire_kind(kfunc: &str) -> Option<KfuncRefKind> {
+    match kfunc {
+        "bpf_task_acquire" | "bpf_task_from_pid" | "bpf_task_from_vpid" => Some(KfuncRefKind::Task),
+        "bpf_task_get_cgroup1" | "bpf_cgroup_acquire" | "bpf_cgroup_from_id" => {
+            Some(KfuncRefKind::Cgroup)
+        }
+        _ => None,
+    }
 }
 
-fn kfunc_releases_reference(kfunc: &str) -> bool {
-    matches!(kfunc, "bpf_task_release" | "bpf_cgroup_release")
+fn kfunc_release_kind(kfunc: &str) -> Option<KfuncRefKind> {
+    match kfunc {
+        "bpf_task_release" => Some(KfuncRefKind::Task),
+        "bpf_cgroup_release" => Some(KfuncRefKind::Cgroup),
+        _ => None,
+    }
 }
 
 fn check_ptr_bounds(
@@ -6664,9 +6731,81 @@ mod tests {
         let err = verify_mir(&func, &types).expect_err("expected tracked-reference error");
         assert!(
             err.iter().any(|e| {
-                e.message.contains("expects acquired reference")
+                e.message.contains("expects acquired task reference")
+                    || e.message.contains("expects acquired reference")
                     || e.message.contains("reference already released")
             }),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_kfunc_task_release_rejects_cgroup_reference() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let release = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let cgid = func.alloc_vreg();
+        let cgroup = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: cgid,
+            src: MirValue::Const(42),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: cgroup,
+            kfunc: "bpf_cgroup_from_id".to_string(),
+            btf_id: None,
+            args: vec![cgid],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(cgroup),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: release,
+            if_false: done,
+        };
+
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_task_release".to_string(),
+                btf_id: None,
+                args: vec![cgroup],
+            });
+        func.block_mut(release).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(cgid, MirType::I64);
+        types.insert(
+            cgroup,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(release_ret, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected mixed-reference error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("expects acquired task reference")),
+            "unexpected errors: {:?}",
+            err
+        );
+        assert!(
+            err.iter().any(|e| e.message.contains("cgroup reference")),
             "unexpected errors: {:?}",
             err
         );
