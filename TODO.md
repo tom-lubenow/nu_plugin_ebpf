@@ -43,6 +43,7 @@ Last updated: 2026-02-12.
   - Verifier parity now enforces scalar-only indices for `MirInst::TailCall` terminators, with matching verifier_types/VCC regression tests.
   - Verifier parity now enforces `MirInst::TailCall` map-kind requirements (`ProgArray` only) before backend codegen, with matching verifier_types/VCC regression tests.
   - Verifier parity now enforces generic map-operation kind constraints (reject unsupported kinds; reject `MapDelete` on array/per-cpu-array kinds) before backend codegen, with matching verifier_types/VCC regression tests.
+  - Verifier parity now enforces `MapUpdate` flags range checks (`<= i32::MAX`) before backend codegen, with matching verifier_types/VCC regression tests.
   - Shared helper semantics now reject map-value pointers in helper map-handle argument positions (e.g., map args to map/ringbuf/perf/tail-call/get_stackid helpers), with parity tests across verifier_types and VCC.
   - VCC now aligns typed pointer nullability with verifier_types (`Map`/`Kernel`/`User` pointers are `MaybeNull` until guarded), including parity tests for load/read_str/helper flows that require explicit null checks.
   - VCC now propagates map-value bounds from built-in map semantics and pointee types, including pointer-arithmetic/load/store bounds checks for map-value pointers.

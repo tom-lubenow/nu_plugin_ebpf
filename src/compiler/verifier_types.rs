@@ -918,11 +918,19 @@ fn apply_inst(
                 }
             }
         }
-        MirInst::MapUpdate { map, key, .. } => {
+        MirInst::MapUpdate {
+            map, key, flags, ..
+        } => {
             if !supports_generic_map_kind(map.kind) {
                 errors.push(VerifierTypeError::new(format!(
                     "map operations do not support map kind {:?} for '{}'",
                     map.kind, map.name
+                )));
+            }
+            if *flags > i32::MAX as u64 {
+                errors.push(VerifierTypeError::new(format!(
+                    "map update flags {} exceed supported 32-bit immediate range",
+                    flags
                 )));
             }
             if let VerifierType::Ptr { .. } = state.get(*key) {
@@ -2523,6 +2531,45 @@ mod tests {
         assert!(
             err.iter()
                 .any(|e| e.message.contains("map delete is not supported for array map kind")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_map_update_rejects_out_of_range_flags() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+        let val = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: val,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+            map: MapRef {
+                name: "m".to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+            val,
+            flags: (i32::MAX as u64) + 1,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let err = verify_mir(&func, &HashMap::new()).expect_err("expected map-update flags error");
+        assert!(
+            err.iter().any(
+                |e| e
+                    .message
+                    .contains("exceed supported 32-bit immediate range")
+            ),
             "unexpected errors: {:?}",
             err
         );

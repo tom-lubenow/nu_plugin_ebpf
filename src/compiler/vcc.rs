@@ -2599,13 +2599,27 @@ impl<'a> VccLowerer<'a> {
                     self.ptr_regs.insert(VccReg(dst.0), info);
                 }
             }
-            MirInst::MapUpdate { map, key, val, .. } => {
+            MirInst::MapUpdate {
+                map,
+                key,
+                val,
+                flags,
+            } => {
                 if !supports_generic_map_kind(map.kind) {
                     return Err(VccError::new(
                         VccErrorKind::UnsupportedInstruction,
                         format!(
                             "map operations do not support map kind {:?} for '{}'",
                             map.kind, map.name
+                        ),
+                    ));
+                }
+                if *flags > i32::MAX as u64 {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!(
+                            "map update flags {} exceed supported 32-bit immediate range",
+                            flags
                         ),
                     ));
                 }
@@ -6402,6 +6416,42 @@ mod tests {
             err.iter().any(
                 |e| e.kind == VccErrorKind::UnsupportedInstruction
                     && e.message.contains("map delete is not supported for array map kind")
+            ),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_map_update_rejects_out_of_range_flags() {
+        let (mut func, entry) = new_mir_function();
+        let key = func.alloc_vreg();
+        let val = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: val,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+            map: MapRef {
+                name: "m".to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+            val,
+            flags: (i32::MAX as u64) + 1,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let err = verify_mir(&func, &HashMap::new()).expect_err("expected map-update flags error");
+        assert!(
+            err.iter().any(
+                |e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains("exceed supported 32-bit immediate range")
             ),
             "unexpected error messages: {:?}",
             err
