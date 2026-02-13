@@ -99,9 +99,11 @@ Last updated: 2026-02-13.
   - Add missing map definitions and loader plumbing for commonly used map families.
   - Validate map capability compatibility per program type and kernel version.
 
-- [ ] Add kfunc and richer BTF-driven typing support.
-  - Model typed kfunc calls similarly to helpers, with verifier-aware pointer/state transitions.
-  - Improve BTF usage so type information can drive safer IR generation and diagnostics.
+- [~] Add kfunc and richer BTF-driven typing support.
+  - Added typed `CallKfunc` MIR/LIR support with backend lowering to `BPF_PSEUDO_KFUNC_CALL`.
+  - Added optional explicit kfunc BTF IDs plus kernel-BTF name lookup fallback in codegen.
+  - Added initial typed kfunc signatures wired through type inference, verifier_types, and VCC.
+  - Remaining: expand signature coverage and pointer/ref-lifetime semantics from richer BTF metadata, and expose user-facing kfunc invocation ergonomics.
 
 - [ ] Improve control-flow expressiveness safely.
   - Keep bounded-loop guarantees while supporting more realistic higher-level control patterns.
