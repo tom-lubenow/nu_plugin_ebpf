@@ -2554,6 +2554,15 @@ impl<'a> VccLowerer<'a> {
                 });
             }
             MirInst::MapLookup { dst, map, key } => {
+                if !supports_generic_map_kind(map.kind) {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!(
+                            "map operations do not support map kind {:?} for '{}'",
+                            map.kind, map.name
+                        ),
+                    ));
+                }
                 self.verify_map_key(&map.name, *key, out)?;
                 let inferred = self
                     .types
@@ -2591,10 +2600,37 @@ impl<'a> VccLowerer<'a> {
                 }
             }
             MirInst::MapUpdate { map, key, val, .. } => {
+                if !supports_generic_map_kind(map.kind) {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!(
+                            "map operations do not support map kind {:?} for '{}'",
+                            map.kind, map.name
+                        ),
+                    ));
+                }
                 self.verify_map_key(&map.name, *key, out)?;
                 self.verify_map_value(*val, out)?;
             }
             MirInst::MapDelete { map, key } => {
+                if !supports_generic_map_kind(map.kind) {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!(
+                            "map operations do not support map kind {:?} for '{}'",
+                            map.kind, map.name
+                        ),
+                    ));
+                }
+                if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!(
+                            "map delete is not supported for array map kind {:?} ('{}')",
+                            map.kind, map.name
+                        ),
+                    ));
+                }
                 self.verify_map_key(&map.name, *key, out)?;
             }
             MirInst::EmitEvent { data, size } => {
@@ -3650,6 +3686,13 @@ fn map_value_limit(map_name: &str) -> Option<i64> {
         KSTACK_MAP_NAME | USTACK_MAP_NAME => Some((127 * 8) - 1),
         _ => None,
     }
+}
+
+fn supports_generic_map_kind(kind: MapKind) -> bool {
+    matches!(
+        kind,
+        MapKind::Hash | MapKind::Array | MapKind::PerCpuHash | MapKind::PerCpuArray
+    )
 }
 
 fn map_value_limit_from_dst_type(dst_ty: Option<&MirType>) -> Option<i64> {
@@ -6291,6 +6334,75 @@ mod tests {
         assert!(
             err.iter()
                 .any(|e| e.message.contains("may dereference null pointer")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_map_lookup_rejects_unsupported_map_kind() {
+        let (mut func, entry) = new_mir_function();
+        let key = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapLookup {
+            dst,
+            map: MapRef {
+                name: "events".to_string(),
+                kind: MapKind::RingBuf,
+            },
+            key,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            dst,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Map,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected unsupported map-kind error");
+        assert!(
+            err.iter().any(
+                |e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains("map operations do not support map kind")
+            ),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_map_delete_rejects_array_map_kind() {
+        let (mut func, entry) = new_mir_function();
+        let key = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapDelete {
+            map: MapRef {
+                name: "arr".to_string(),
+                kind: MapKind::Array,
+            },
+            key,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let err = verify_mir(&func, &HashMap::new()).expect_err("expected array delete error");
+        assert!(
+            err.iter().any(
+                |e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains("map delete is not supported for array map kind")
+            ),
             "unexpected error messages: {:?}",
             err
         );
