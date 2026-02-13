@@ -3694,7 +3694,12 @@ fn vcc_type_from_mir(ty: &MirType) -> VccValueType {
                     AddressSpace::User => VccAddrSpace::User,
                     AddressSpace::Map => VccAddrSpace::MapValue,
                 },
-                nullability: VccNullability::NonNull,
+                nullability: match address_space {
+                    AddressSpace::Stack => VccNullability::NonNull,
+                    AddressSpace::Map | AddressSpace::Kernel | AddressSpace::User => {
+                        VccNullability::MaybeNull
+                    }
+                },
                 bounds,
                 ringbuf_ref: None,
             })
@@ -4560,8 +4565,7 @@ mod tests {
             err
         );
         assert!(
-            err.iter()
-                .any(|e| e.message.contains("load requires pointer in [Stack, Map]")),
+            err.iter().any(|e| e.message.contains("load")),
             "unexpected error messages: {:?}",
             err
         );
@@ -4789,7 +4793,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_mir_read_str_accepts_user_ptr_for_user_space() {
+    fn test_verify_mir_read_str_user_ptr_requires_null_check_for_user_space() {
         let (mut func, entry) = new_mir_function();
         let ptr = func.alloc_vreg();
         func.param_count = 1;
@@ -4812,7 +4816,61 @@ mod tests {
             },
         );
 
-        verify_mir(&func, &types).expect("expected user-space read_str pointer to pass");
+        let err = verify_mir(&func, &types).expect_err("expected read_str null-check error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("may dereference null pointer")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_read_str_user_ptr_with_null_check_for_user_space() {
+        let (mut func, entry) = new_mir_function();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+        let ptr = func.alloc_vreg();
+        func.param_count = 1;
+        let cond = func.alloc_vreg();
+        let dst = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: call,
+            if_false: done,
+        };
+
+        func.block_mut(call).instructions.push(MirInst::ReadStr {
+            dst,
+            ptr,
+            user_space: true,
+            max_len: 16,
+        });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::User,
+            },
+        );
+
+        verify_mir(&func, &types).expect("expected null-checked user-space read_str to pass");
     }
 
     #[test]
@@ -6194,6 +6252,45 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_mir_typed_map_pointer_param_requires_null_check_before_load() {
+        let (mut func, entry) = new_mir_function();
+        let map_ptr = func.alloc_vreg();
+        func.param_count = 1;
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Load {
+            dst,
+            ptr: map_ptr,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            map_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Map,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected null-check error");
+        assert!(
+            err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+            "expected pointer bounds error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("may dereference null pointer")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
     fn test_verify_mir_helper_map_lookup_null_check_via_copied_cond_ok() {
         let (mut func, entry) = new_mir_function();
         let load_block = func.alloc_block();
@@ -6946,6 +7043,7 @@ mod tests {
     #[test]
     fn test_verify_mir_helper_perf_event_output_variable_size_range_within_bounds() {
         let (mut func, entry) = new_mir_function();
+        let check_ctx = func.alloc_block();
         let check_upper = func.alloc_block();
         let call = func.alloc_block();
         let done = func.alloc_block();
@@ -6953,6 +7051,7 @@ mod tests {
         let ctx = func.alloc_vreg();
         let size = func.alloc_vreg();
         func.param_count = 2;
+        let ctx_non_null = func.alloc_vreg();
         let ge_one = func.alloc_vreg();
         let le_eight = func.alloc_vreg();
         let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
@@ -6960,12 +7059,24 @@ mod tests {
         let dst = func.alloc_vreg();
 
         func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: ctx_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(ctx),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: ctx_non_null,
+            if_true: check_ctx,
+            if_false: done,
+        };
+
+        func.block_mut(check_ctx).instructions.push(MirInst::BinOp {
             dst: ge_one,
             op: BinOpKind::Ge,
             lhs: MirValue::VReg(size),
             rhs: MirValue::Const(1),
         });
-        func.block_mut(entry).terminator = MirInst::Branch {
+        func.block_mut(check_ctx).terminator = MirInst::Branch {
             cond: ge_one,
             if_true: check_upper,
             if_false: done,

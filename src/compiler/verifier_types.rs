@@ -2378,6 +2378,42 @@ mod tests {
     }
 
     #[test]
+    fn test_typed_map_pointer_param_requires_null_check_before_load() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let map_ptr = func.alloc_vreg();
+        func.param_count = 1;
+        let dst = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Load {
+            dst,
+            ptr: map_ptr,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            map_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Map,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected null-check error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("may dereference null pointer")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
     fn test_helper_pointer_arg_required() {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();
@@ -3657,6 +3693,87 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected user ptr error");
         assert!(err.iter().any(|e| e.message.contains("read_str")));
+    }
+
+    #[test]
+    fn test_read_str_user_ptr_requires_null_check_for_user_space() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let ptr = func.alloc_vreg();
+        func.param_count = 1;
+        let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        func.block_mut(entry).instructions.push(MirInst::ReadStr {
+            dst: slot,
+            ptr,
+            user_space: true,
+            max_len: 16,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::User,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected read_str null-check error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("may dereference null pointer")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_read_str_user_ptr_with_null_check_for_user_space() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let ptr = func.alloc_vreg();
+        func.param_count = 1;
+        let cond = func.alloc_vreg();
+        let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: call,
+            if_false: done,
+        };
+
+        func.block_mut(call).instructions.push(MirInst::ReadStr {
+            dst: slot,
+            ptr,
+            user_space: true,
+            max_len: 16,
+        });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::User,
+            },
+        );
+
+        verify_mir(&func, &types).expect("expected null-checked read_str user pointer to pass");
     }
 
     #[test]
