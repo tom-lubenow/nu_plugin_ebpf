@@ -118,6 +118,7 @@ pub enum KfuncRefKind {
     Task,
     Cgroup,
     Cpumask,
+    Object,
 }
 
 impl KfuncRefKind {
@@ -126,6 +127,7 @@ impl KfuncRefKind {
             KfuncRefKind::Task => "task",
             KfuncRefKind::Cgroup => "cgroup",
             KfuncRefKind::Cpumask => "cpumask",
+            KfuncRefKind::Object => "object",
         }
     }
 }
@@ -272,6 +274,24 @@ impl KfuncSignature {
                 max_args: 1,
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: KfuncRetKind::Void,
+            }),
+            "bpf_obj_drop_impl" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "bpf_obj_new_impl" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [S, P, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "bpf_refcount_acquire_impl" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
             }),
             "bpf_cpumask_create" => Some(Self {
                 min_args: 0,
@@ -582,6 +602,7 @@ pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
         "bpf_task_get_cgroup1" | "bpf_cgroup_acquire" | "bpf_cgroup_from_id" => {
             Some(KfuncRefKind::Cgroup)
         }
+        "bpf_obj_new_impl" | "bpf_refcount_acquire_impl" => Some(KfuncRefKind::Object),
         "bpf_cpumask_create" | "bpf_cpumask_acquire" => Some(KfuncRefKind::Cpumask),
         _ => None,
     }
@@ -591,6 +612,7 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
     match kfunc {
         "bpf_task_release" => Some(KfuncRefKind::Task),
         "bpf_cgroup_release" => Some(KfuncRefKind::Cgroup),
+        "bpf_obj_drop_impl" => Some(KfuncRefKind::Object),
         "bpf_cpumask_release" => Some(KfuncRefKind::Cpumask),
         _ => None,
     }
@@ -618,6 +640,12 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
             | ("bpf_cgroup_release", 0)
     ) {
         return Some(KfuncRefKind::Cgroup);
+    }
+    if matches!(
+        (kfunc, arg_idx),
+        ("bpf_obj_drop_impl", 0) | ("bpf_refcount_acquire_impl", 0)
+    ) {
+        return Some(KfuncRefKind::Object);
     }
     if matches!(
         (kfunc, arg_idx),
@@ -1606,6 +1634,25 @@ mod tests {
     }
 
     #[test]
+    fn test_kfunc_signature_object_impls() {
+        let sig = KfuncSignature::for_name("bpf_obj_new_impl")
+            .expect("expected bpf_obj_new_impl kfunc signature");
+        assert_eq!(sig.min_args, 2);
+        assert_eq!(sig.max_args, 2);
+        assert_eq!(sig.arg_kind(0), KfuncArgKind::Scalar);
+        assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
+        assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
+
+        let sig = KfuncSignature::for_name("bpf_obj_drop_impl")
+            .expect("expected bpf_obj_drop_impl kfunc signature");
+        assert_eq!(sig.min_args, 2);
+        assert_eq!(sig.max_args, 2);
+        assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
+        assert_eq!(sig.ret_kind, KfuncRetKind::Void);
+    }
+
+    #[test]
     fn test_kfunc_signature_cpumask_and() {
         let sig = KfuncSignature::for_name("bpf_cpumask_and")
             .expect("expected bpf_cpumask_and kfunc signature");
@@ -1638,12 +1685,20 @@ mod tests {
             Some(KfuncRefKind::Cgroup)
         );
         assert_eq!(
+            kfunc_acquire_ref_kind("bpf_obj_new_impl"),
+            Some(KfuncRefKind::Object)
+        );
+        assert_eq!(
             kfunc_release_ref_kind("bpf_task_release"),
             Some(KfuncRefKind::Task)
         );
         assert_eq!(
             kfunc_release_ref_kind("bpf_cgroup_release"),
             Some(KfuncRefKind::Cgroup)
+        );
+        assert_eq!(
+            kfunc_release_ref_kind("bpf_obj_drop_impl"),
+            Some(KfuncRefKind::Object)
         );
         assert_eq!(
             kfunc_release_ref_kind("bpf_cpumask_release"),
@@ -1660,6 +1715,10 @@ mod tests {
         assert_eq!(
             kfunc_pointer_arg_ref_kind("bpf_task_under_cgroup", 1),
             Some(KfuncRefKind::Cgroup)
+        );
+        assert_eq!(
+            kfunc_pointer_arg_ref_kind("bpf_obj_drop_impl", 0),
+            Some(KfuncRefKind::Object)
         );
         assert_eq!(
             kfunc_pointer_arg_ref_kind("bpf_cpumask_release", 0),

@@ -52,6 +52,7 @@ Last updated: 2026-02-13.
   - VCC parity now mirrors `bpf_task_acquire`/`bpf_task_release` reference lifetimes (tracked refs, null-branch drop, leak checks, and pointer invalidation after release).
   - Ref-lifetime tracking now also covers common task/cgroup kfunc acquire/release families (`bpf_task_from_pid`, `bpf_task_from_vpid`, `bpf_task_get_cgroup1`, `bpf_cgroup_acquire`, `bpf_cgroup_from_id` with corresponding release checks).
   - Ref-lifetime tracking now also covers cpumask kfunc acquire/release (`bpf_cpumask_create` / `bpf_cpumask_acquire` / `bpf_cpumask_release`) with verifier_types/VCC parity tests.
+  - Ref-lifetime tracking now also covers object/refcount impl kfuncs (`bpf_obj_new_impl` / `bpf_refcount_acquire_impl` / `bpf_obj_drop_impl`) with verifier_types/VCC parity tests.
   - Built-in typed kfunc signature coverage now includes a broader `bpf_cpumask_*` operation set (logical/inspection/mutation helpers), with shared pointer-family metadata reused by type_infer/verifier/VCC.
   - Built-in typed kfunc signature coverage now includes a core `scx_bpf_*` subset (CPU perf/node queries, DSQ management, CPU picking, and task-state helpers) with shared task/cpumask pointer-family checks.
   - Verifier/VCC kfunc ref-lifetime parity now tracks acquired reference kind (`task` vs `cgroup`), preserves unknown-kind merges across CFG joins, and rejects mixed-family releases (`bpf_task_release` vs `bpf_cgroup_release`).
