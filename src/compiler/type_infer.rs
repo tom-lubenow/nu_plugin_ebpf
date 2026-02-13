@@ -25,7 +25,7 @@ use super::hindley_milner::{
 };
 use super::instruction::{
     HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncRetKind, KfuncSignature,
-    kfunc_pointer_arg_ref_kind,
+    kfunc_pointer_arg_requires_kernel as kfunc_pointer_arg_requires_kernel_shared,
 };
 use super::mir::{
     AddressSpace, BasicBlock, BinOpKind, CtxField, MapKind, MirFunction, MirInst, MirType,
@@ -593,7 +593,7 @@ impl<'a> TypeInference<'a> {
     }
 
     fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
-        kfunc_pointer_arg_ref_kind(kfunc, arg_idx).is_some()
+        kfunc_pointer_arg_requires_kernel_shared(kfunc, arg_idx)
     }
 
     fn is_const_zero(value: &MirValue) -> bool {
@@ -2724,6 +2724,53 @@ mod tests {
         let errs = ti
             .infer(&func)
             .expect_err("expected kernel-pointer kfunc type error");
+        assert!(
+            errs.iter()
+                .any(|e| e.message.contains("arg0 expects kernel pointer")),
+            "unexpected errors: {:?}",
+            errs
+        );
+    }
+
+    #[test]
+    fn test_type_error_kfunc_list_push_front_requires_kernel_space() {
+        let mut func = make_test_function();
+        let head = func.alloc_vreg();
+        let node = func.alloc_vreg();
+        let meta = func.alloc_vreg();
+        let off = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let head_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let node_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: head,
+            src: MirValue::StackSlot(head_slot),
+        });
+        block.instructions.push(MirInst::Copy {
+            dst: node,
+            src: MirValue::StackSlot(node_slot),
+        });
+        block.instructions.push(MirInst::Copy {
+            dst: meta,
+            src: MirValue::Const(0),
+        });
+        block.instructions.push(MirInst::Copy {
+            dst: off,
+            src: MirValue::Const(0),
+        });
+        block.instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_list_push_front_impl".to_string(),
+            btf_id: None,
+            args: vec![head, node, meta, off],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected list-push-front kernel-pointer kfunc type error");
         assert!(
             errs.iter()
                 .any(|e| e.message.contains("arg0 expects kernel pointer")),

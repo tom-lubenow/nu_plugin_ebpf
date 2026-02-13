@@ -9,6 +9,7 @@ use std::collections::{HashMap, VecDeque};
 use super::instruction::{
     BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncRefKind,
     KfuncRetKind, KfuncSignature, kfunc_acquire_ref_kind, kfunc_pointer_arg_ref_kind,
+    kfunc_pointer_arg_requires_kernel as kfunc_pointer_arg_requires_kernel_shared,
     kfunc_release_ref_kind,
 };
 use super::mir::{
@@ -1838,7 +1839,7 @@ fn check_kfunc_arg(
 }
 
 fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
-    kfunc_pointer_arg_expected_ref_kind(kfunc, arg_idx).is_some()
+    kfunc_pointer_arg_requires_kernel_shared(kfunc, arg_idx)
 }
 
 fn kfunc_pointer_arg_expected_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRefKind> {
@@ -6542,6 +6543,54 @@ mod tests {
                 address_space: AddressSpace::Kernel,
             },
         );
+
+        let err = verify_mir(&func, &types).expect_err("expected kernel-pointer kfunc arg error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("arg0 expects kernel pointer")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_kfunc_list_push_front_requires_kernel_space() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+        func.param_count = 1;
+
+        let stack_ptr = func.alloc_vreg();
+        let meta = func.alloc_vreg();
+        let off = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: meta,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: off,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_list_push_front_impl".to_string(),
+            btf_id: None,
+            args: vec![stack_ptr, stack_ptr, meta, off],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            stack_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(meta, MirType::I64);
+        types.insert(off, MirType::I64);
+        types.insert(dst, MirType::I64);
 
         let err = verify_mir(&func, &types).expect_err("expected kernel-pointer kfunc arg error");
         assert!(

@@ -753,6 +753,26 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
     None
 }
 
+pub fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
+    if kfunc_pointer_arg_ref_kind(kfunc, arg_idx).is_some() {
+        return true;
+    }
+    matches!(
+        (kfunc, arg_idx),
+        ("bpf_list_push_front_impl", 0)
+            | ("bpf_list_push_front_impl", 1)
+            | ("bpf_list_push_back_impl", 0)
+            | ("bpf_list_push_back_impl", 1)
+            | ("bpf_list_pop_front", 0)
+            | ("bpf_list_pop_back", 0)
+            | ("bpf_rbtree_remove", 0)
+            | ("bpf_rbtree_remove", 1)
+            | ("bpf_rbtree_add_impl", 0)
+            | ("bpf_rbtree_add_impl", 1)
+            | ("bpf_rbtree_first", 0)
+    )
+}
+
 impl BpfHelper {
     pub const fn from_u32(helper_id: u32) -> Option<Self> {
         match helper_id {
@@ -1843,6 +1863,25 @@ mod tests {
             Some(KfuncRefKind::Cpumask)
         );
         assert_eq!(kfunc_pointer_arg_ref_kind("bpf_task_from_pid", 0), None);
+    }
+
+    #[test]
+    fn test_kfunc_pointer_arg_requires_kernel_mappings() {
+        assert!(kfunc_pointer_arg_requires_kernel("bpf_task_release", 0));
+        assert!(kfunc_pointer_arg_requires_kernel(
+            "bpf_list_push_front_impl",
+            0
+        ));
+        assert!(kfunc_pointer_arg_requires_kernel(
+            "bpf_list_push_front_impl",
+            1
+        ));
+        assert!(kfunc_pointer_arg_requires_kernel("bpf_rbtree_first", 0));
+        assert!(!kfunc_pointer_arg_requires_kernel(
+            "bpf_list_push_front_impl",
+            2
+        ));
+        assert!(!kfunc_pointer_arg_requires_kernel("bpf_obj_new_impl", 1));
     }
 
     #[test]
