@@ -3913,15 +3913,31 @@ impl<'a> VccLowerer<'a> {
                 format!("helper {} arg{} expects pointer value", helper_id, arg_idx),
             )
         })?;
+        let effective_space = if ptr.space == VccAddrSpace::Unknown {
+            match arg {
+                MirValue::VReg(vreg) => self
+                    .effective_ptr_space(*vreg)
+                    .unwrap_or(VccAddrSpace::Unknown),
+                _ => ptr.space,
+            }
+        } else {
+            ptr.space
+        };
 
-        if !self.helper_space_allowed(ptr.space, allow_stack, allow_map, allow_kernel, allow_user) {
+        if !self.helper_space_allowed(
+            effective_space,
+            allow_stack,
+            allow_map,
+            allow_kernel,
+            allow_user,
+        ) {
             let allowed =
                 self.helper_allowed_spaces_label(allow_stack, allow_map, allow_kernel, allow_user);
             return Err(VccError::new(
                 VccErrorKind::PointerBounds,
                 format!(
                     "{op} expects pointer in {allowed}, got {}",
-                    self.helper_space_name(ptr.space)
+                    self.helper_space_name(effective_space)
                 ),
             ));
         }
@@ -9314,19 +9330,27 @@ mod tests {
     #[test]
     fn test_verify_mir_helper_kptr_xchg_rejects_non_map_dst_arg0() {
         let (mut func, entry) = new_mir_function();
-        let dst_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        func.param_count = 1;
 
+        let dst_ptr = func.alloc_vreg();
         let swapped = func.alloc_vreg();
         func.block_mut(entry)
             .instructions
             .push(MirInst::CallHelper {
                 dst: swapped,
                 helper: BpfHelper::KptrXchg as u32,
-                args: vec![MirValue::StackSlot(dst_slot), MirValue::Const(0)],
+                args: vec![MirValue::VReg(dst_ptr), MirValue::Const(0)],
             });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
+        types.insert(
+            dst_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Stack,
+            },
+        );
         types.insert(
             swapped,
             MirType::Ptr {
