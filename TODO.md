@@ -87,8 +87,9 @@ Last updated: 2026-02-13.
   - Spilled vregs with pure constant/stack-address definitions are now rematerialized at use sites instead of always reloading from spill slots.
   - Codegen now writes non-rematerialized spilled defs back to stack consistently, with tests covering both remat and non-remat spill paths.
 
-- [ ] Move block lookup from linear search to O(1) access.
-  - If IDs remain index-stable, index blocks directly; otherwise maintain an explicit ID-to-index map.
+- [x] Move block lookup from linear search to O(1) access.
+  - `MirFunction`/`LirFunction` now do index-first block lookup by `BlockId` (`id -> blocks[id]`) and only fall back when block IDs are no longer index-stable.
+  - Added regression tests for the fallback path after simulated block removal/reordering.
 
 ## Roadmap to a general-purpose eBPF language
 

@@ -126,6 +126,11 @@ impl LirFunction {
     }
 
     pub fn block_mut(&mut self, id: BlockId) -> &mut LirBlock {
+        let idx = id.0 as usize;
+        let fast_path = self.blocks.get(idx).is_some_and(|b| b.id == id);
+        if fast_path {
+            return &mut self.blocks[idx];
+        }
         self.blocks
             .iter_mut()
             .find(|b| b.id == id)
@@ -133,6 +138,12 @@ impl LirFunction {
     }
 
     pub fn block(&self, id: BlockId) -> &LirBlock {
+        let idx = id.0 as usize;
+        if let Some(block) = self.blocks.get(idx)
+            && block.id == id
+        {
+            return block;
+        }
         self.blocks
             .iter()
             .find(|b| b.id == id)
@@ -140,6 +151,10 @@ impl LirFunction {
     }
 
     pub fn has_block(&self, id: BlockId) -> bool {
+        let idx = id.0 as usize;
+        if self.blocks.get(idx).is_some_and(|b| b.id == id) {
+            return true;
+        }
         self.blocks.iter().any(|b| b.id == id)
     }
 }
@@ -543,5 +558,28 @@ const SCRATCH_HISTOGRAM: [EbpfReg; 2] = [EbpfReg::R1, EbpfReg::R2];
 impl fmt::Display for LirInst {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_block_lookup_index_fast_path_and_fallback() {
+        let mut func = LirFunction::new();
+        let b0 = func.alloc_block();
+        let b1 = func.alloc_block();
+
+        assert_eq!(func.block(b1).id, b1);
+
+        // Simulate non-index-stable ordering after block rewrites/removals.
+        func.blocks.remove(0);
+
+        assert!(!func.has_block(b0));
+        assert!(func.has_block(b1));
+        assert_eq!(func.block(b1).id, b1);
+        func.block_mut(b1).terminator = LirInst::Return { val: None };
+        assert!(matches!(func.block(b1).terminator, LirInst::Return { .. }));
     }
 }

@@ -941,6 +941,11 @@ impl MirFunction {
 
     /// Get a mutable reference to a block
     pub fn block_mut(&mut self, id: BlockId) -> &mut BasicBlock {
+        let idx = id.0 as usize;
+        let fast_path = self.blocks.get(idx).is_some_and(|b| b.id == id);
+        if fast_path {
+            return &mut self.blocks[idx];
+        }
         self.blocks
             .iter_mut()
             .find(|b| b.id == id)
@@ -949,6 +954,12 @@ impl MirFunction {
 
     /// Get a reference to a block
     pub fn block(&self, id: BlockId) -> &BasicBlock {
+        let idx = id.0 as usize;
+        if let Some(block) = self.blocks.get(idx)
+            && block.id == id
+        {
+            return block;
+        }
         self.blocks
             .iter()
             .find(|b| b.id == id)
@@ -957,6 +968,10 @@ impl MirFunction {
 
     /// Check if a block exists
     pub fn has_block(&self, id: BlockId) -> bool {
+        let idx = id.0 as usize;
+        if self.blocks.get(idx).is_some_and(|b| b.id == id) {
+            return true;
+        }
         self.blocks.iter().any(|b| b.id == id)
     }
 }
@@ -1006,5 +1021,28 @@ impl MirProgram {
     /// Get a mutable reference to a subfunction by ID
     pub fn get_subfunction_mut(&mut self, id: SubfunctionId) -> Option<&mut MirFunction> {
         self.subfunctions.get_mut(id.0 as usize)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_block_lookup_index_fast_path_and_fallback() {
+        let mut func = MirFunction::new();
+        let b0 = func.alloc_block();
+        let b1 = func.alloc_block();
+
+        assert_eq!(func.block(b1).id, b1);
+
+        // Simulate non-index-stable ordering after block rewrites/removals.
+        func.blocks.remove(0);
+
+        assert!(!func.has_block(b0));
+        assert!(func.has_block(b1));
+        assert_eq!(func.block(b1).id, b1);
+        func.block_mut(b1).terminator = MirInst::Return { val: None };
+        assert!(matches!(func.block(b1).terminator, MirInst::Return { .. }));
     }
 }
