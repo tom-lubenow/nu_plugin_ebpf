@@ -67,9 +67,9 @@ Last updated: 2026-02-13.
   - Added regression tests for lost-copy cases (multi-phi joins and loop-header swaps).
   - Critical edges are now split so copies execute only on the intended control-flow edge.
 
-- [ ] Replace `ssa::rename_uses` exhaustive reconstruction with operand-mapper APIs.
-  - Add `MirInst` operand walk/mutation helpers (for vreg uses and `MirValue` operands).
-  - Reuse these helpers in SSA rename and follow-on passes to reduce maintenance hazards when instructions evolve.
+- [x] Replace `ssa::rename_uses` exhaustive reconstruction with operand-mapper APIs.
+  - Added `MirValue::visit_vregs_mut` / `MirValue::map_vregs` and `MirInst::visit_uses_mut` / `MirInst::map_uses` helpers.
+  - Switched SSA rename and copy propagation to these helpers so new MIR operand sites are centralized in one API.
 
 - [ ] Unify duplicated CFG/dominance/liveness analysis infrastructure.
   - Extract shared algorithms from `cfg.rs` and `graph_coloring.rs` behind small traits/adapters.

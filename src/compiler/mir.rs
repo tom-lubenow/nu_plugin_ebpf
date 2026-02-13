@@ -239,6 +239,28 @@ impl fmt::Display for MirValue {
     }
 }
 
+impl MirValue {
+    /// Visit virtual registers referenced by this value.
+    pub fn visit_vregs_mut<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&mut VReg),
+    {
+        if let MirValue::VReg(vreg) = self {
+            f(vreg);
+        }
+    }
+
+    /// Return a copy of this value with all referenced virtual registers rewritten.
+    pub fn map_vregs<F>(&self, mut map: F) -> MirValue
+    where
+        F: FnMut(VReg) -> VReg,
+    {
+        let mut cloned = self.clone();
+        cloned.visit_vregs_mut(|vreg| *vreg = map(*vreg));
+        cloned
+    }
+}
+
 /// Binary operation kinds
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinOpKind {
@@ -580,6 +602,112 @@ impl MirInst {
                 | MirInst::Return { .. }
                 | MirInst::TailCall { .. }
         )
+    }
+
+    /// Visit all virtual registers used as operands by this instruction.
+    ///
+    /// This walks use sites only (not destination definitions) so passes can
+    /// safely rewrite operands in-place.
+    pub fn visit_uses_mut<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&mut VReg),
+    {
+        macro_rules! visit_value {
+            ($value:expr) => {
+                if let MirValue::VReg(vreg) = $value {
+                    f(vreg);
+                }
+            };
+        }
+
+        match self {
+            MirInst::Copy { src, .. } => visit_value!(src),
+            MirInst::Load { ptr, .. } => f(ptr),
+            MirInst::Store { ptr, val, .. } => {
+                f(ptr);
+                visit_value!(val);
+            }
+            MirInst::LoadSlot { .. } => {}
+            MirInst::StoreSlot { val, .. } => visit_value!(val),
+            MirInst::BinOp { lhs, rhs, .. } => {
+                visit_value!(lhs);
+                visit_value!(rhs);
+            }
+            MirInst::UnaryOp { src, .. } => visit_value!(src),
+            MirInst::CallHelper { args, .. } => {
+                for arg in args {
+                    visit_value!(arg);
+                }
+            }
+            MirInst::CallKfunc { args, .. } | MirInst::CallSubfn { args, .. } => {
+                for arg in args {
+                    f(arg);
+                }
+            }
+            MirInst::MapLookup { key, .. } => f(key),
+            MirInst::MapUpdate { key, val, .. } => {
+                f(key);
+                f(val);
+            }
+            MirInst::MapDelete { key, .. } => f(key),
+            MirInst::Histogram { value, .. } => f(value),
+            MirInst::StartTimer => {}
+            MirInst::StopTimer { .. } => {}
+            MirInst::EmitEvent { data, .. } => f(data),
+            MirInst::EmitRecord { fields } => {
+                for field in fields {
+                    f(&mut field.value);
+                }
+            }
+            MirInst::LoadCtxField { .. } => {}
+            MirInst::ReadStr { ptr, .. } => f(ptr),
+            MirInst::StrCmp { .. } => {}
+            MirInst::RecordStore { val, .. } => visit_value!(val),
+            MirInst::ListNew { .. } => {}
+            MirInst::ListPush { list, item } => {
+                f(list);
+                f(item);
+            }
+            MirInst::ListLen { list, .. } => f(list),
+            MirInst::ListGet { list, idx, .. } => {
+                f(list);
+                visit_value!(idx);
+            }
+            MirInst::Jump { .. } => {}
+            MirInst::Branch { cond, .. } => f(cond),
+            MirInst::Return { val } => {
+                if let Some(value) = val {
+                    visit_value!(value);
+                }
+            }
+            MirInst::TailCall { index, .. } => visit_value!(index),
+            MirInst::LoopHeader { .. } => {}
+            MirInst::LoopBack { counter, .. } => f(counter),
+            MirInst::Placeholder => {}
+            MirInst::Phi { args, .. } => {
+                for (_, vreg) in args {
+                    f(vreg);
+                }
+            }
+            MirInst::StringAppend { dst_len, val, .. } => {
+                f(dst_len);
+                visit_value!(val);
+            }
+            MirInst::IntToString { dst_len, val, .. } => {
+                f(dst_len);
+                f(val);
+            }
+        }
+    }
+
+    /// Return a copy of this instruction with all operand vregs rewritten.
+    pub fn map_uses<F>(&self, mut map: F) -> MirInst
+    where
+        F: FnMut(VReg) -> VReg,
+    {
+        let mut cloned = self.clone();
+        cloned.visit_uses_mut(|vreg| *vreg = map(*vreg));
+        cloned
     }
 
     /// Returns the destination register if this instruction writes to one

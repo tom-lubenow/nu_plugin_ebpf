@@ -17,7 +17,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::MirPass;
 use crate::compiler::cfg::CFG;
-use crate::compiler::mir::{BlockId, MirFunction, MirInst, MirValue, RecordFieldDef, VReg};
+use crate::compiler::mir::{BlockId, MirFunction, MirInst, VReg};
 
 /// SSA construction pass
 ///
@@ -299,256 +299,11 @@ impl<'a> SsaBuilder<'a> {
 
     /// Rename all uses in an instruction to their current versions
     fn rename_uses(&self, inst: &MirInst) -> MirInst {
-        match inst {
-            MirInst::Copy { dst, src } => MirInst::Copy {
-                dst: *dst,
-                src: self.rename_value(src),
-            },
-            MirInst::BinOp { dst, op, lhs, rhs } => MirInst::BinOp {
-                dst: *dst,
-                op: *op,
-                lhs: self.rename_value(lhs),
-                rhs: self.rename_value(rhs),
-            },
-            MirInst::UnaryOp { dst, op, src } => MirInst::UnaryOp {
-                dst: *dst,
-                op: *op,
-                src: self.rename_value(src),
-            },
-            MirInst::Load {
-                dst,
-                ptr,
-                offset,
-                ty,
-            } => MirInst::Load {
-                dst: *dst,
-                ptr: self.rename_vreg(*ptr),
-                offset: *offset,
-                ty: ty.clone(),
-            },
-            MirInst::Store {
-                ptr,
-                offset,
-                val,
-                ty,
-            } => MirInst::Store {
-                ptr: self.rename_vreg(*ptr),
-                offset: *offset,
-                val: self.rename_value(val),
-                ty: ty.clone(),
-            },
-            MirInst::LoadSlot {
-                dst,
-                slot,
-                offset,
-                ty,
-            } => MirInst::LoadSlot {
-                dst: *dst,
-                slot: *slot,
-                offset: *offset,
-                ty: ty.clone(),
-            },
-            MirInst::StoreSlot {
-                slot,
-                offset,
-                val,
-                ty,
-            } => MirInst::StoreSlot {
-                slot: *slot,
-                offset: *offset,
-                val: self.rename_value(val),
-                ty: ty.clone(),
-            },
-            MirInst::LoadCtxField { dst, field, slot } => MirInst::LoadCtxField {
-                dst: *dst,
-                field: field.clone(),
-                slot: *slot,
-            },
-            MirInst::Jump { target } => MirInst::Jump { target: *target },
-            MirInst::Branch {
-                cond,
-                if_true,
-                if_false,
-            } => MirInst::Branch {
-                cond: self.rename_vreg(*cond),
-                if_true: *if_true,
-                if_false: *if_false,
-            },
-            MirInst::Return { val } => MirInst::Return {
-                val: val.as_ref().map(|v| self.rename_value(v)),
-            },
-            MirInst::CallHelper { dst, helper, args } => MirInst::CallHelper {
-                dst: *dst,
-                helper: *helper,
-                args: args.iter().map(|v| self.rename_value(v)).collect(),
-            },
-            MirInst::CallKfunc {
-                dst,
-                kfunc,
-                btf_id,
-                args,
-            } => MirInst::CallKfunc {
-                dst: *dst,
-                kfunc: kfunc.clone(),
-                btf_id: *btf_id,
-                args: args.iter().map(|v| self.rename_vreg(*v)).collect(),
-            },
-            MirInst::CallSubfn { dst, subfn, args } => MirInst::CallSubfn {
-                dst: *dst,
-                subfn: *subfn,
-                args: args.iter().map(|v| self.rename_vreg(*v)).collect(),
-            },
-            MirInst::MapLookup { dst, map, key } => MirInst::MapLookup {
-                dst: *dst,
-                map: map.clone(),
-                key: self.rename_vreg(*key),
-            },
-            MirInst::MapUpdate {
-                map,
-                key,
-                val,
-                flags,
-            } => MirInst::MapUpdate {
-                map: map.clone(),
-                key: self.rename_vreg(*key),
-                val: self.rename_vreg(*val),
-                flags: *flags,
-            },
-            MirInst::MapDelete { map, key } => MirInst::MapDelete {
-                map: map.clone(),
-                key: self.rename_vreg(*key),
-            },
-            MirInst::EmitEvent { data, size } => MirInst::EmitEvent {
-                data: self.rename_vreg(*data),
-                size: *size,
-            },
-            MirInst::EmitRecord { fields } => MirInst::EmitRecord {
-                fields: fields
-                    .iter()
-                    .map(|f| RecordFieldDef {
-                        name: f.name.clone(),
-                        value: self.rename_vreg(f.value),
-                        ty: f.ty.clone(),
-                    })
-                    .collect(),
-            },
-            MirInst::ReadStr {
-                dst,
-                ptr,
-                user_space,
-                max_len,
-            } => MirInst::ReadStr {
-                dst: *dst,
-                ptr: self.rename_vreg(*ptr),
-                user_space: *user_space,
-                max_len: *max_len,
-            },
-            MirInst::StrCmp { dst, lhs, rhs, len } => MirInst::StrCmp {
-                dst: *dst,
-                lhs: *lhs, // StackSlotId, not VReg
-                rhs: *rhs, // StackSlotId, not VReg
-                len: *len,
-            },
-            MirInst::RecordStore {
-                buffer,
-                field_offset,
-                val,
-                ty,
-            } => MirInst::RecordStore {
-                buffer: *buffer,
-                field_offset: *field_offset,
-                val: self.rename_value(val),
-                ty: ty.clone(),
-            },
-            MirInst::ListNew {
-                dst,
-                buffer,
-                max_len,
-            } => MirInst::ListNew {
-                dst: *dst,
-                buffer: *buffer,
-                max_len: *max_len,
-            },
-            MirInst::ListPush { list, item } => MirInst::ListPush {
-                list: self.rename_vreg(*list),
-                item: self.rename_vreg(*item),
-            },
-            MirInst::ListLen { dst, list } => MirInst::ListLen {
-                dst: *dst,
-                list: self.rename_vreg(*list),
-            },
-            MirInst::ListGet { dst, list, idx } => MirInst::ListGet {
-                dst: *dst,
-                list: self.rename_vreg(*list),
-                idx: self.rename_value(idx),
-            },
-            MirInst::Histogram { value } => MirInst::Histogram {
-                value: self.rename_vreg(*value),
-            },
-            MirInst::StartTimer => MirInst::StartTimer,
-            MirInst::StopTimer { dst } => MirInst::StopTimer { dst: *dst },
-            MirInst::TailCall { prog_map, index } => MirInst::TailCall {
-                prog_map: prog_map.clone(),
-                index: self.rename_value(index),
-            },
-            MirInst::LoopHeader {
-                counter,
-                limit,
-                body,
-                exit,
-            } => MirInst::LoopHeader {
-                counter: *counter,
-                limit: *limit,
-                body: *body,
-                exit: *exit,
-            },
-            MirInst::LoopBack {
-                counter,
-                step,
-                header,
-            } => MirInst::LoopBack {
-                counter: self.rename_vreg(*counter),
-                step: *step,
-                header: *header,
-            },
-            MirInst::StringAppend {
-                dst_buffer,
-                dst_len,
-                val,
-                val_type,
-            } => MirInst::StringAppend {
-                dst_buffer: *dst_buffer,
-                dst_len: self.rename_vreg(*dst_len),
-                val: self.rename_value(val),
-                val_type: val_type.clone(),
-            },
-            MirInst::IntToString {
-                dst_buffer,
-                dst_len,
-                val,
-            } => MirInst::IntToString {
-                dst_buffer: *dst_buffer,
-                dst_len: self.rename_vreg(*dst_len),
-                val: self.rename_vreg(*val),
-            },
-            MirInst::Phi { dst, args } => {
-                // Phi args are handled separately by fill_phi_args
-                MirInst::Phi {
-                    dst: *dst,
-                    args: args.clone(),
-                }
-            }
-            MirInst::Placeholder => MirInst::Placeholder,
+        if matches!(inst, MirInst::Phi { .. }) {
+            // Phi args are handled separately by fill_phi_args.
+            return inst.clone();
         }
-    }
-
-    /// Rename a MirValue
-    fn rename_value(&self, val: &MirValue) -> MirValue {
-        match val {
-            MirValue::VReg(vreg) => MirValue::VReg(self.rename_vreg(*vreg)),
-            MirValue::Const(c) => MirValue::Const(*c),
-            MirValue::StackSlot(s) => MirValue::StackSlot(s.clone()),
-        }
+        inst.map_uses(|vreg| self.rename_vreg(vreg))
     }
 
     /// Rename a vreg to its current version
@@ -616,7 +371,7 @@ fn update_def(inst: &mut MirInst, new_dst: VReg) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::mir::BinOpKind;
+    use crate::compiler::mir::{BinOpKind, MirValue};
 
     fn make_diamond_function() -> MirFunction {
         // bb0: v0 = 1; branch v0 -> bb1, bb2
