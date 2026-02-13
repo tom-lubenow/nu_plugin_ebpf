@@ -60,7 +60,7 @@ Last updated: 2026-02-13.
   - Built-in typed kfunc signature coverage now includes a core `scx_bpf_*` subset (CPU perf/node queries, DSQ management, CPU picking, and task-state helpers) with shared task/cpumask pointer-family checks.
   - Verifier/VCC kfunc ref-lifetime parity now tracks acquired reference kind (`task` vs `cgroup`), preserves unknown-kind merges across CFG joins, and rejects mixed-family releases (`bpf_task_release` vs `bpf_cgroup_release`).
   - Verifier/VCC now enforce kernel-pointer address-space requirements for task/cgroup kfunc pointer arguments (e.g., reject stack/map/user pointers for acquire/release/ancestry helpers).
-  - Type inference, verifier_types, and VCC now share kfunc pointer-space metadata so non-ref kfuncs (e.g., `bpf_list_*` / `bpf_rbtree_*`) can enforce kernel-pointer argument requirements consistently.
+  - Type inference, verifier_types, and VCC now share kfunc pointer-space metadata so non-ref kfuncs (e.g., `bpf_list_*` / `bpf_rbtree_*` / `bpf_path_d_path`) can enforce kernel-pointer argument requirements consistently.
   - Verifier/VCC now enforce task-vs-cgroup provenance on tracked kfunc reference arguments for task/cgroup kfuncs (not just release sites).
   - Type inference now mirrors kernel-pointer address-space checks for task/cgroup kfunc pointer arguments so these failures are reported earlier.
   - Shared kfunc ref-family metadata is now centralized in `instruction.rs` and consumed by type inference, verifier_types, and VCC to keep task/cgroup semantics in sync.

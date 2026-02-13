@@ -797,6 +797,7 @@ pub fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
             | ("bpf_list_push_back_impl", 1)
             | ("bpf_list_pop_front", 0)
             | ("bpf_list_pop_back", 0)
+            | ("bpf_path_d_path", 0)
             | ("bpf_rbtree_remove", 0)
             | ("bpf_rbtree_remove", 1)
             | ("bpf_rbtree_add_impl", 0)
@@ -1943,6 +1944,7 @@ mod tests {
             1
         ));
         assert!(kfunc_pointer_arg_requires_kernel("bpf_rbtree_first", 0));
+        assert!(kfunc_pointer_arg_requires_kernel("bpf_path_d_path", 0));
         assert!(!kfunc_pointer_arg_requires_kernel(
             "bpf_list_push_front_impl",
             2

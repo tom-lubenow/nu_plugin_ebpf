@@ -6602,6 +6602,48 @@ mod tests {
     }
 
     #[test]
+    fn test_kfunc_path_d_path_requires_kernel_path_arg() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+        func.param_count = 1;
+
+        let stack_ptr = func.alloc_vreg();
+        let size = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: size,
+            src: MirValue::Const(32),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_path_d_path".to_string(),
+            btf_id: None,
+            args: vec![stack_ptr, stack_ptr, size],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            stack_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(size, MirType::I64);
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected kernel-pointer kfunc arg error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("arg0 expects kernel pointer")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
     fn test_kfunc_cpumask_and_requires_pointer_args() {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();

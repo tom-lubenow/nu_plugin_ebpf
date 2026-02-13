@@ -2780,6 +2780,48 @@ mod tests {
     }
 
     #[test]
+    fn test_type_error_kfunc_path_d_path_requires_kernel_path_arg() {
+        let mut func = make_test_function();
+        let path = func.alloc_vreg();
+        let buf = func.alloc_vreg();
+        let size = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let path_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let buf_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: path,
+            src: MirValue::StackSlot(path_slot),
+        });
+        block.instructions.push(MirInst::Copy {
+            dst: buf,
+            src: MirValue::StackSlot(buf_slot),
+        });
+        block.instructions.push(MirInst::Copy {
+            dst: size,
+            src: MirValue::Const(32),
+        });
+        block.instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_path_d_path".to_string(),
+            btf_id: None,
+            args: vec![path, buf, size],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected path_d_path kernel-pointer kfunc type error");
+        assert!(
+            errs.iter()
+                .any(|e| e.message.contains("arg0 expects kernel pointer")),
+            "unexpected errors: {:?}",
+            errs
+        );
+    }
+
+    #[test]
     fn test_infer_kfunc_cpumask_create_pointer_return() {
         let mut func = make_test_function();
         let dst = func.alloc_vreg();
