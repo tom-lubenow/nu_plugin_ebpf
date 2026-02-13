@@ -5595,16 +5595,25 @@ mod tests {
 
         let mut func = MirFunction::new();
         let entry = func.alloc_block();
+        let release = func.alloc_block();
+        let done = func.alloc_block();
         func.entry = entry;
 
+        let cgid = func.alloc_vreg();
         let ptr = func.alloc_vreg();
         let level = func.alloc_vreg();
         let dst = func.alloc_vreg();
-        let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
-
+        let cond = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
         func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: cgid,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
             dst: ptr,
-            src: MirValue::StackSlot(slot),
+            kfunc: "bpf_cgroup_from_id".to_string(),
+            btf_id: None,
+            args: vec![cgid],
         });
         func.block_mut(entry).instructions.push(MirInst::Copy {
             dst: level,
@@ -5616,7 +5625,27 @@ mod tests {
             btf_id: Some(321),
             args: vec![ptr, level],
         });
-        func.block_mut(entry).terminator = MirInst::Return { val: None };
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: release,
+            if_false: done,
+        };
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_cgroup_release".to_string(),
+                btf_id: None,
+                args: vec![ptr],
+            });
+        func.block_mut(release).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
 
         let program = MirProgram {
             main: func,

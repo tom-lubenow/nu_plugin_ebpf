@@ -1815,15 +1815,39 @@ fn check_kfunc_arg(
                 )));
             }
         }
-        KfuncArgKind::Pointer => {
-            if !matches!(ty, VerifierType::Ptr { .. }) {
+        KfuncArgKind::Pointer => match ty {
+            VerifierType::Ptr { space, .. } => {
+                if kfunc_pointer_arg_requires_kernel(kfunc, arg_idx)
+                    && space != AddressSpace::Kernel
+                {
+                    errors.push(VerifierTypeError::new(format!(
+                        "kfunc '{}' arg{} expects kernel pointer, got {:?}",
+                        kfunc, arg_idx, space
+                    )));
+                }
+            }
+            _ => {
                 errors.push(VerifierTypeError::new(format!(
                     "kfunc '{}' arg{} expects pointer, got {:?}",
                     kfunc, arg_idx, ty
                 )));
             }
-        }
+        },
     }
+}
+
+fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
+    matches!(
+        (kfunc, arg_idx),
+        ("bpf_task_acquire", 0)
+            | ("bpf_task_release", 0)
+            | ("bpf_task_get_cgroup1", 0)
+            | ("bpf_task_under_cgroup", 0)
+            | ("bpf_task_under_cgroup", 1)
+            | ("bpf_cgroup_acquire", 0)
+            | ("bpf_cgroup_ancestor", 0)
+            | ("bpf_cgroup_release", 0)
+    )
 }
 
 fn helper_positive_size_upper_bound(
@@ -6499,6 +6523,48 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected kfunc pointer-arg error");
         assert!(err.iter().any(|e| e.message.contains("expects pointer")));
+    }
+
+    #[test]
+    fn test_kfunc_pointer_argument_requires_kernel_space() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+        func.param_count = 1;
+
+        let task_ptr = func.alloc_vreg();
+        let acquired = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: acquired,
+            kfunc: "bpf_task_acquire".to_string(),
+            btf_id: None,
+            args: vec![task_ptr],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            task_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            acquired,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected kernel-pointer kfunc arg error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("arg0 expects kernel pointer")),
+            "unexpected errors: {:?}",
+            err
+        );
     }
 
     #[test]

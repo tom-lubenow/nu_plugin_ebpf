@@ -3587,16 +3587,78 @@ impl<'a> VccLowerer<'a> {
             match sig.arg_kind(idx) {
                 KfuncArgKind::Scalar => self.assert_scalar_reg(*arg, out),
                 KfuncArgKind::Pointer => {
+                    self.require_pointer_reg(*arg)?;
+                    self.verify_kfunc_ptr_arg_space(kfunc, idx, *arg)?;
                     if Self::kfunc_release_kind(kfunc).is_some() && idx == 0 {
                         self.check_ptr_range(*arg, 1, out)?;
-                    } else {
-                        self.require_pointer_reg(*arg)?;
                     }
                 }
             }
         }
 
         Ok(())
+    }
+
+    fn verify_kfunc_ptr_arg_space(
+        &self,
+        kfunc: &str,
+        arg_idx: usize,
+        arg: VReg,
+    ) -> Result<(), VccError> {
+        if !Self::kfunc_pointer_arg_requires_kernel(kfunc, arg_idx) {
+            return Ok(());
+        }
+        let space = self.effective_ptr_space(arg).ok_or_else(|| {
+            VccError::new(
+                VccErrorKind::TypeMismatch {
+                    expected: VccTypeClass::Ptr,
+                    actual: VccTypeClass::Unknown,
+                },
+                "expected pointer value",
+            )
+        })?;
+        if space != VccAddrSpace::Kernel {
+            return Err(VccError::new(
+                VccErrorKind::PointerBounds,
+                format!(
+                    "kfunc '{}' arg{} expects pointer in [Kernel], got {}",
+                    kfunc,
+                    arg_idx,
+                    self.helper_space_name(space)
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    fn effective_ptr_space(&self, reg: VReg) -> Option<VccAddrSpace> {
+        let ptr_info = self.value_ptr_info(&MirValue::VReg(reg))?;
+        if ptr_info.space != VccAddrSpace::Unknown {
+            return Some(ptr_info.space);
+        }
+        match self.types.get(&reg) {
+            Some(MirType::Ptr { address_space, .. }) => Some(match address_space {
+                AddressSpace::Stack => VccAddrSpace::Stack(StackSlotId(u32::MAX)),
+                AddressSpace::Map => VccAddrSpace::MapValue,
+                AddressSpace::Kernel => VccAddrSpace::Kernel,
+                AddressSpace::User => VccAddrSpace::User,
+            }),
+            _ => Some(VccAddrSpace::Unknown),
+        }
+    }
+
+    fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
+        matches!(
+            (kfunc, arg_idx),
+            ("bpf_task_acquire", 0)
+                | ("bpf_task_release", 0)
+                | ("bpf_task_get_cgroup1", 0)
+                | ("bpf_task_under_cgroup", 0)
+                | ("bpf_task_under_cgroup", 1)
+                | ("bpf_cgroup_acquire", 0)
+                | ("bpf_cgroup_ancestor", 0)
+                | ("bpf_cgroup_release", 0)
+        )
     }
 
     fn verify_helper_arg_value(
@@ -9081,6 +9143,46 @@ mod tests {
         assert!(err.iter().any(|e| {
             e.message.contains("expects pointer") || e.message.contains("expected pointer value")
         }));
+    }
+
+    #[test]
+    fn test_verify_mir_kfunc_pointer_argument_requires_kernel_space() {
+        let (mut func, entry) = new_mir_function();
+        func.param_count = 1;
+
+        let task_ptr = func.alloc_vreg();
+        let acquired = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: acquired,
+            kfunc: "bpf_task_acquire".to_string(),
+            btf_id: None,
+            args: vec![task_ptr],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            task_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(
+            acquired,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected kernel-pointer kfunc arg error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("arg0 expects pointer in [Kernel]")),
+            "unexpected error messages: {:?}",
+            err
+        );
     }
 
     #[test]
