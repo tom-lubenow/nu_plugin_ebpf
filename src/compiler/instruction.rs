@@ -208,11 +208,53 @@ impl KfuncSignature {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: KfuncRetKind::Void,
             }),
+            "bpf_task_from_pid" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "bpf_task_from_vpid" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "bpf_task_get_cgroup1" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "bpf_task_under_cgroup" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_cgroup_acquire" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
             "bpf_cgroup_ancestor" => Some(Self {
                 min_args: 2,
                 max_args: 2,
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "bpf_cgroup_from_id" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "bpf_cgroup_release" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
             }),
             _ => None,
         }
@@ -344,12 +386,14 @@ impl BpfHelper {
     }
 
     pub const fn semantics(self) -> HelperSemantics {
-        const STACK_MAP: HelperAllowedPtrSpaces = HelperAllowedPtrSpaces::new(true, true, false, false);
+        const STACK_MAP: HelperAllowedPtrSpaces =
+            HelperAllowedPtrSpaces::new(true, true, false, false);
         const STACK_ONLY: HelperAllowedPtrSpaces =
             HelperAllowedPtrSpaces::new(true, false, false, false);
         const STACK_MAP_KERNEL: HelperAllowedPtrSpaces =
             HelperAllowedPtrSpaces::new(true, true, true, false);
-        const KERNEL: HelperAllowedPtrSpaces = HelperAllowedPtrSpaces::new(false, false, true, false);
+        const KERNEL: HelperAllowedPtrSpaces =
+            HelperAllowedPtrSpaces::new(false, false, true, false);
         const USER: HelperAllowedPtrSpaces = HelperAllowedPtrSpaces::new(false, false, false, true);
 
         const MAP_LOOKUP_RULES: &[HelperPtrArgRule] = &[
@@ -1128,6 +1172,26 @@ mod tests {
         let bytes = insn.encode();
         // opcode=0x85, src_reg=2 (BPF_PSEUDO_KFUNC_CALL), imm=1234
         assert_eq!(bytes, [0x85, 0x20, 0x00, 0x00, 0xd2, 0x04, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn test_kfunc_signature_task_from_pid() {
+        let sig = KfuncSignature::for_name("bpf_task_from_pid")
+            .expect("expected bpf_task_from_pid kfunc signature");
+        assert_eq!(sig.min_args, 1);
+        assert_eq!(sig.max_args, 1);
+        assert_eq!(sig.arg_kind(0), KfuncArgKind::Scalar);
+        assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
+    }
+
+    #[test]
+    fn test_kfunc_signature_cgroup_release() {
+        let sig = KfuncSignature::for_name("bpf_cgroup_release")
+            .expect("expected bpf_cgroup_release kfunc signature");
+        assert_eq!(sig.min_args, 1);
+        assert_eq!(sig.max_args, 1);
+        assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+        assert_eq!(sig.ret_kind, KfuncRetKind::Void);
     }
 
     #[test]
