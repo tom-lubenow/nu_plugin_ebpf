@@ -10131,6 +10131,68 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_mir_kfunc_refcount_acquire_rejects_task_reference() {
+        let (mut func, entry) = new_mir_function();
+
+        let meta = func.alloc_vreg();
+        let pid = func.alloc_vreg();
+        let task = func.alloc_vreg();
+        let acquired = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: meta,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: pid,
+            src: MirValue::Const(123),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: task,
+            kfunc: "bpf_task_from_pid".to_string(),
+            btf_id: None,
+            args: vec![pid],
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: acquired,
+            kfunc: "bpf_refcount_acquire_impl".to_string(),
+            btf_id: None,
+            args: vec![task, meta],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(meta, MirType::I64);
+        types.insert(pid, MirType::I64);
+        types.insert(
+            task,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(
+            acquired,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected kfunc provenance mismatch error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("arg0 expects object reference")),
+            "unexpected error messages: {:?}",
+            err
+        );
+        assert!(
+            err.iter().any(|e| e.message.contains("task reference")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
     fn test_verify_mir_kfunc_task_release_requires_tracked_reference() {
         let (mut func, entry) = new_mir_function();
         let release = func.alloc_block();
