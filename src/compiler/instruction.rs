@@ -119,6 +119,7 @@ pub enum KfuncRefKind {
     Cgroup,
     Cpumask,
     Object,
+    File,
 }
 
 impl KfuncRefKind {
@@ -128,6 +129,7 @@ impl KfuncRefKind {
             KfuncRefKind::Cgroup => "cgroup",
             KfuncRefKind::Cpumask => "cpumask",
             KfuncRefKind::Object => "object",
+            KfuncRefKind::File => "file",
         }
     }
 }
@@ -273,6 +275,30 @@ impl KfuncSignature {
                 min_args: 1,
                 max_args: 1,
                 arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "bpf_get_task_exe_file" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "bpf_put_file" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "bpf_path_d_path" => Some(Self {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_throw" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [S, S, S, S, S],
                 ret_kind: KfuncRetKind::Void,
             }),
             "bpf_obj_drop_impl" => Some(Self {
@@ -656,6 +682,7 @@ pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
         "bpf_task_get_cgroup1" | "bpf_cgroup_acquire" | "bpf_cgroup_from_id" => {
             Some(KfuncRefKind::Cgroup)
         }
+        "bpf_get_task_exe_file" => Some(KfuncRefKind::File),
         "bpf_obj_new_impl" | "bpf_refcount_acquire_impl" | "bpf_percpu_obj_new_impl" => {
             Some(KfuncRefKind::Object)
         }
@@ -668,6 +695,7 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
     match kfunc {
         "bpf_task_release" => Some(KfuncRefKind::Task),
         "bpf_cgroup_release" => Some(KfuncRefKind::Cgroup),
+        "bpf_put_file" => Some(KfuncRefKind::File),
         "bpf_obj_drop_impl" | "bpf_percpu_obj_drop_impl" => Some(KfuncRefKind::Object),
         "bpf_cpumask_release" => Some(KfuncRefKind::Cpumask),
         _ => None,
@@ -681,6 +709,7 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
             | ("bpf_task_release", 0)
             | ("bpf_task_get_cgroup1", 0)
             | ("bpf_task_under_cgroup", 0)
+            | ("bpf_get_task_exe_file", 0)
             | ("scx_bpf_dsq_insert", 0)
             | ("scx_bpf_dsq_insert_vtime", 0)
             | ("scx_bpf_task_cpu", 0)
@@ -704,6 +733,9 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
             | ("bpf_percpu_obj_drop_impl", 0)
     ) {
         return Some(KfuncRefKind::Object);
+    }
+    if matches!((kfunc, arg_idx), ("bpf_put_file", 0)) {
+        return Some(KfuncRefKind::File);
     }
     if matches!(
         (kfunc, arg_idx),
@@ -1739,6 +1771,23 @@ mod tests {
     }
 
     #[test]
+    fn test_kfunc_signature_file_kfuncs() {
+        let sig = KfuncSignature::for_name("bpf_get_task_exe_file")
+            .expect("expected bpf_get_task_exe_file kfunc signature");
+        assert_eq!(sig.min_args, 1);
+        assert_eq!(sig.max_args, 1);
+        assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+        assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
+
+        let sig = KfuncSignature::for_name("bpf_put_file")
+            .expect("expected bpf_put_file kfunc signature");
+        assert_eq!(sig.min_args, 1);
+        assert_eq!(sig.max_args, 1);
+        assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+        assert_eq!(sig.ret_kind, KfuncRetKind::Void);
+    }
+
+    #[test]
     fn test_kfunc_signature_kptr_container_impls() {
         let sig = KfuncSignature::for_name("bpf_percpu_obj_new_impl")
             .expect("expected bpf_percpu_obj_new_impl kfunc signature");
@@ -1799,6 +1848,10 @@ mod tests {
             Some(KfuncRefKind::Cgroup)
         );
         assert_eq!(
+            kfunc_acquire_ref_kind("bpf_get_task_exe_file"),
+            Some(KfuncRefKind::File)
+        );
+        assert_eq!(
             kfunc_acquire_ref_kind("bpf_obj_new_impl"),
             Some(KfuncRefKind::Object)
         );
@@ -1813,6 +1866,10 @@ mod tests {
         assert_eq!(
             kfunc_release_ref_kind("bpf_cgroup_release"),
             Some(KfuncRefKind::Cgroup)
+        );
+        assert_eq!(
+            kfunc_release_ref_kind("bpf_put_file"),
+            Some(KfuncRefKind::File)
         );
         assert_eq!(
             kfunc_release_ref_kind("bpf_obj_drop_impl"),
@@ -1835,8 +1892,16 @@ mod tests {
             Some(KfuncRefKind::Task)
         );
         assert_eq!(
+            kfunc_pointer_arg_ref_kind("bpf_get_task_exe_file", 0),
+            Some(KfuncRefKind::Task)
+        );
+        assert_eq!(
             kfunc_pointer_arg_ref_kind("bpf_task_under_cgroup", 1),
             Some(KfuncRefKind::Cgroup)
+        );
+        assert_eq!(
+            kfunc_pointer_arg_ref_kind("bpf_put_file", 0),
+            Some(KfuncRefKind::File)
         );
         assert_eq!(
             kfunc_pointer_arg_ref_kind("bpf_obj_drop_impl", 0),
@@ -1868,6 +1933,7 @@ mod tests {
     #[test]
     fn test_kfunc_pointer_arg_requires_kernel_mappings() {
         assert!(kfunc_pointer_arg_requires_kernel("bpf_task_release", 0));
+        assert!(kfunc_pointer_arg_requires_kernel("bpf_put_file", 0));
         assert!(kfunc_pointer_arg_requires_kernel(
             "bpf_list_push_front_impl",
             0
