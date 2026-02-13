@@ -790,8 +790,20 @@ fn apply_inst(
                 state.set_with_range(*dst, ty, ValueRange::Unknown);
             }
         }
-        MirInst::CallSubfn { dst, .. }
-        | MirInst::StrCmp { dst, .. }
+        MirInst::CallSubfn { dst, args, .. } => {
+            if args.len() > 5 {
+                errors.push(VerifierTypeError::new(format!(
+                    "BPF subfunctions support at most 5 arguments, got {}",
+                    args.len()
+                )));
+            }
+            let ty = types
+                .get(dst)
+                .map(verifier_type_from_mir)
+                .unwrap_or(VerifierType::Scalar);
+            state.set_with_range(*dst, ty, ValueRange::Unknown);
+        }
+        MirInst::StrCmp { dst, .. }
         | MirInst::StopTimer { dst, .. }
         | MirInst::LoopHeader { counter: dst, .. }
         | MirInst::Phi { dst, .. } => {
@@ -3221,6 +3233,40 @@ mod tests {
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let err = verify_mir(&func, &HashMap::new()).expect_err("expected param-count error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("at most 5 arguments")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_rejects_subfn_calls_with_more_than_five_args() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let dst = func.alloc_vreg();
+        let mut args = Vec::new();
+        for i in 0..6 {
+            let v = func.alloc_vreg();
+            func.block_mut(entry).instructions.push(MirInst::Copy {
+                dst: v,
+                src: MirValue::Const(i),
+            });
+            args.push(v);
+        }
+        func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+            dst,
+            subfn: crate::compiler::mir::SubfunctionId(0),
+            args,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+        let err = verify_mir(&func, &types).expect_err("expected subfunction-arg count error");
         assert!(
             err.iter()
                 .any(|e| e.message.contains("at most 5 arguments")),

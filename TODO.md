@@ -49,6 +49,7 @@ Last updated: 2026-02-12.
   - Verifier parity now enforces built-in counter-map kind restrictions and conflicts (`counters`/`str_counters` require `Hash` or `PerCpuHash`, with no mixed-kind usage).
   - Verifier parity now enforces the generic helper argument cap (`<= 5` args) for unknown helper IDs in both verifier_types and VCC.
   - Verifier parity now enforces the MIR function parameter cap (`<= 5`) that backend BPF subfunction lowering requires, with verifier_types/VCC regression tests.
+  - Verifier parity now enforces `CallSubfn` argument limits (`<= 5`) before MIR->LIR lowering, with verifier_types/VCC regression tests.
   - Shared helper semantics now reject map-value pointers in helper map-handle argument positions (e.g., map args to map/ringbuf/perf/tail-call/get_stackid helpers), with parity tests across verifier_types and VCC.
   - VCC now aligns typed pointer nullability with verifier_types (`Map`/`Kernel`/`User` pointers are `MaybeNull` until guarded), including parity tests for load/read_str/helper flows that require explicit null checks.
   - VCC now propagates map-value bounds from built-in map semantics and pointee types, including pointer-arithmetic/load/store bounds checks for map-value pointers.

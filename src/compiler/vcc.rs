@@ -2718,7 +2718,13 @@ impl<'a> VccLowerer<'a> {
                     }
                 }
             }
-            MirInst::CallSubfn { dst, .. } => {
+            MirInst::CallSubfn { dst, args, .. } => {
+                if args.len() > 5 {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!("BPF subfunctions support at most 5 arguments, got {}", args.len()),
+                    ));
+                }
                 let ty = self
                     .types
                     .get(dst)
@@ -8527,6 +8533,39 @@ mod tests {
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let err = verify_mir(&func, &HashMap::new()).expect_err("expected param-count error");
+        assert!(
+            err.iter().any(
+                |e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains("at most 5 arguments")
+            ),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_rejects_subfn_calls_with_more_than_five_args() {
+        let (mut func, entry) = new_mir_function();
+        let dst = func.alloc_vreg();
+        let mut args = Vec::new();
+        for i in 0..6 {
+            let v = func.alloc_vreg();
+            func.block_mut(entry).instructions.push(MirInst::Copy {
+                dst: v,
+                src: MirValue::Const(i),
+            });
+            args.push(v);
+        }
+        func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+            dst,
+            subfn: crate::compiler::mir::SubfunctionId(0),
+            args,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+        let err = verify_mir(&func, &types).expect_err("expected subfunction-arg count error");
         assert!(
             err.iter().any(
                 |e| e.kind == VccErrorKind::UnsupportedInstruction
