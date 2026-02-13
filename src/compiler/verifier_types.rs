@@ -54,6 +54,7 @@ enum VerifierType {
         nullability: Nullability,
         bounds: Option<PtrBounds>,
         ringbuf_ref: Option<VReg>,
+        kfunc_ref: Option<VReg>,
     },
 }
 
@@ -86,6 +87,7 @@ struct VerifierState {
     non_zero: Vec<bool>,
     not_equal: Vec<Vec<i64>>,
     live_ringbuf_refs: Vec<bool>,
+    live_kfunc_refs: Vec<bool>,
     reachable: bool,
     guards: HashMap<VReg, Guard>,
 }
@@ -100,6 +102,7 @@ impl VerifierState {
             non_zero: vec![false; total_vregs],
             not_equal: vec![Vec::new(); total_vregs],
             live_ringbuf_refs: vec![false; total_vregs],
+            live_kfunc_refs: vec![false; total_vregs],
             reachable: true,
             guards: HashMap::new(),
         }
@@ -112,6 +115,7 @@ impl VerifierState {
             non_zero: self.non_zero.clone(),
             not_equal: self.not_equal.clone(),
             live_ringbuf_refs: self.live_ringbuf_refs.clone(),
+            live_kfunc_refs: self.live_kfunc_refs.clone(),
             reachable: self.reachable,
             guards: HashMap::new(),
         }
@@ -196,6 +200,12 @@ impl VerifierState {
         }
     }
 
+    fn set_live_kfunc_ref(&mut self, id: VReg, live: bool) {
+        if let Some(slot) = self.live_kfunc_refs.get_mut(id.0 as usize) {
+            *slot = live;
+        }
+    }
+
     fn invalidate_ringbuf_ref(&mut self, id: VReg) {
         self.set_live_ringbuf_ref(id, false);
         for idx in 0..self.regs.len() {
@@ -217,11 +227,46 @@ impl VerifierState {
         }
     }
 
+    fn invalidate_kfunc_ref(&mut self, id: VReg) {
+        self.set_live_kfunc_ref(id, false);
+        for idx in 0..self.regs.len() {
+            let reg = VReg(idx as u32);
+            let is_ref = matches!(
+                self.regs[idx],
+                VerifierType::Ptr {
+                    kfunc_ref: Some(ref_id),
+                    ..
+                } if ref_id == id
+            );
+            if is_ref {
+                self.regs[idx] = VerifierType::Unknown;
+                self.ranges[idx] = ValueRange::Unknown;
+                self.non_zero[idx] = false;
+                self.not_equal[idx].clear();
+                self.guards.remove(&reg);
+            }
+        }
+    }
+
     fn has_live_ringbuf_refs(&self) -> bool {
         self.live_ringbuf_refs
             .iter()
             .copied()
             .any(std::convert::identity)
+    }
+
+    fn has_live_kfunc_refs(&self) -> bool {
+        self.live_kfunc_refs
+            .iter()
+            .copied()
+            .any(std::convert::identity)
+    }
+
+    fn is_live_kfunc_ref(&self, id: VReg) -> bool {
+        self.live_kfunc_refs
+            .get(id.0 as usize)
+            .copied()
+            .unwrap_or(false)
     }
 
     fn is_reachable(&self) -> bool {
@@ -272,12 +317,17 @@ impl VerifierState {
         for i in 0..self.live_ringbuf_refs.len() {
             live_ringbuf_refs.push(self.live_ringbuf_refs[i] || other.live_ringbuf_refs[i]);
         }
+        let mut live_kfunc_refs = Vec::with_capacity(self.live_kfunc_refs.len());
+        for i in 0..self.live_kfunc_refs.len() {
+            live_kfunc_refs.push(self.live_kfunc_refs[i] || other.live_kfunc_refs[i]);
+        }
         VerifierState {
             regs,
             ranges,
             non_zero,
             not_equal,
             live_ringbuf_refs,
+            live_kfunc_refs,
             reachable: true,
             guards: HashMap::new(),
         }
@@ -382,6 +432,11 @@ pub fn verify_mir(
                         "unreleased ringbuf record reference at function exit",
                     ));
                 }
+                if state.has_live_kfunc_refs() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased kfunc reference at function exit",
+                    ));
+                }
             }
             MirInst::TailCall { prog_map, index } => {
                 if prog_map.kind != MapKind::ProgArray {
@@ -400,6 +455,11 @@ pub fn verify_mir(
                 if state.has_live_ringbuf_refs() {
                     errors.push(VerifierTypeError::new(
                         "unreleased ringbuf record reference at function exit",
+                    ));
+                }
+                if state.has_live_kfunc_refs() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased kfunc reference at function exit",
                     ));
                 }
             }
@@ -436,6 +496,7 @@ fn propagate_state(
                 || merged.non_zero != existing.non_zero
                 || merged.not_equal != existing.not_equal
                 || merged.live_ringbuf_refs != existing.live_ringbuf_refs
+                || merged.live_kfunc_refs != existing.live_kfunc_refs
                 || merged.reachable != existing.reachable
             {
                 in_states.insert(block, merged);
@@ -470,6 +531,7 @@ fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool
                     nullability,
                     bounds,
                     ringbuf_ref,
+                    kfunc_ref,
                 } = current
                 {
                     if (wants_non_null && nullability == Nullability::Null)
@@ -487,6 +549,9 @@ fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool
                         if let Some(ref_id) = ringbuf_ref {
                             next.set_live_ringbuf_ref(ref_id, false);
                         }
+                        if let Some(ref_id) = kfunc_ref {
+                            next.set_live_kfunc_ref(ref_id, false);
+                        }
                     }
                     next.set(
                         ptr,
@@ -495,6 +560,7 @@ fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool
                             nullability,
                             bounds,
                             ringbuf_ref,
+                            kfunc_ref,
                         },
                     );
                 }
@@ -758,6 +824,7 @@ fn apply_inst(
                                 nullability: Nullability::MaybeNull,
                                 bounds: None,
                                 ringbuf_ref: Some(*dst),
+                                kfunc_ref: None,
                             }
                         }
                         _ => {
@@ -775,6 +842,7 @@ fn apply_inst(
                                 nullability: Nullability::MaybeNull,
                                 bounds,
                                 ringbuf_ref: None,
+                                kfunc_ref: None,
                             }
                         }
                     },
@@ -794,10 +862,7 @@ fn apply_inst(
             }
         }
         MirInst::CallKfunc {
-            dst,
-            kfunc,
-            args,
-            ..
+            dst, kfunc, args, ..
         } => {
             let Some(sig) = KfuncSignature::for_name(kfunc) else {
                 errors.push(VerifierTypeError::new(format!(
@@ -823,18 +888,26 @@ fn apply_inst(
             for (idx, arg) in args.iter().take(sig.max_args.min(5)).enumerate() {
                 check_kfunc_arg(kfunc, idx, *arg, sig.arg_kind(idx), state, errors);
             }
+            apply_kfunc_semantics(kfunc, args, state, errors);
 
             let ty = match sig.ret_kind {
                 KfuncRetKind::Scalar | KfuncRetKind::Void => types
                     .get(dst)
                     .map(verifier_type_from_mir)
                     .unwrap_or(VerifierType::Scalar),
-                KfuncRetKind::PointerMaybeNull => VerifierType::Ptr {
-                    space: AddressSpace::Kernel,
-                    nullability: Nullability::MaybeNull,
-                    bounds: None,
-                    ringbuf_ref: None,
-                },
+                KfuncRetKind::PointerMaybeNull => {
+                    let is_ref_acquire = kfunc == "bpf_task_acquire";
+                    if is_ref_acquire {
+                        state.set_live_kfunc_ref(*dst, true);
+                    }
+                    VerifierType::Ptr {
+                        space: AddressSpace::Kernel,
+                        nullability: Nullability::MaybeNull,
+                        bounds: None,
+                        ringbuf_ref: None,
+                        kfunc_ref: if is_ref_acquire { Some(*dst) } else { None },
+                    }
+                }
             };
             state.set_with_range(*dst, ty, ValueRange::Unknown);
         }
@@ -913,6 +986,7 @@ fn apply_inst(
                     nullability: Nullability::MaybeNull,
                     bounds,
                     ringbuf_ref: None,
+                    kfunc_ref: None,
                 },
             );
         }
@@ -930,6 +1004,7 @@ fn apply_inst(
                     nullability: Nullability::NonNull,
                     bounds,
                     ringbuf_ref: None,
+                    kfunc_ref: None,
                 },
             );
         }
@@ -974,6 +1049,7 @@ fn apply_inst(
                     nullability,
                     bounds,
                     ringbuf_ref: None,
+                    kfunc_ref: None,
                 };
             }
             state.set(*dst, ty);
@@ -1178,6 +1254,7 @@ fn pointer_arith_result(
         nullability,
         bounds,
         ringbuf_ref,
+        kfunc_ref,
     } = ptr_ty
     {
         let bounds = match (bounds, offset_range) {
@@ -1197,6 +1274,7 @@ fn pointer_arith_result(
             nullability,
             bounds,
             ringbuf_ref,
+            kfunc_ref,
         });
     }
 
@@ -1583,6 +1661,7 @@ fn require_ptr_with_space(
             space,
             bounds,
             ringbuf_ref,
+            kfunc_ref,
         } => {
             if !allowed.contains(&space) {
                 errors.push(VerifierTypeError::new(format!(
@@ -1595,6 +1674,7 @@ fn require_ptr_with_space(
                 nullability: Nullability::NonNull,
                 bounds,
                 ringbuf_ref,
+                kfunc_ref,
             })
         }
         VerifierType::Ptr {
@@ -1770,13 +1850,20 @@ fn helper_allowed_spaces(
 ) -> &'static [AddressSpace] {
     match (allow_stack, allow_map, allow_kernel, allow_user) {
         (true, true, false, false) => &[AddressSpace::Stack, AddressSpace::Map],
-        (true, true, true, false) => &[AddressSpace::Stack, AddressSpace::Map, AddressSpace::Kernel],
+        (true, true, true, false) => {
+            &[AddressSpace::Stack, AddressSpace::Map, AddressSpace::Kernel]
+        }
         (false, false, true, false) => &[AddressSpace::Kernel],
         (false, false, false, true) => &[AddressSpace::User],
         (true, false, false, false) => &[AddressSpace::Stack],
         (false, true, false, false) => &[AddressSpace::Map],
         (false, false, false, false) => &[],
-        _ => &[AddressSpace::Stack, AddressSpace::Map, AddressSpace::Kernel, AddressSpace::User],
+        _ => &[
+            AddressSpace::Stack,
+            AddressSpace::Map,
+            AddressSpace::Kernel,
+            AddressSpace::User,
+        ],
     }
 }
 
@@ -1867,6 +1954,68 @@ fn apply_helper_semantics(
                 }
             }
         }
+    }
+}
+
+fn apply_kfunc_semantics(
+    kfunc: &str,
+    args: &[VReg],
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    match kfunc {
+        "bpf_task_release" => {
+            let Some(task) = args.first() else {
+                return;
+            };
+
+            match state.get(*task) {
+                VerifierType::Ptr {
+                    space: AddressSpace::Kernel,
+                    nullability: Nullability::NonNull,
+                    kfunc_ref: Some(ref_id),
+                    ..
+                } => {
+                    if state.is_live_kfunc_ref(ref_id) {
+                        state.invalidate_kfunc_ref(ref_id);
+                    } else {
+                        errors.push(VerifierTypeError::new(
+                            "kfunc 'bpf_task_release' arg0 reference already released",
+                        ));
+                    }
+                }
+                VerifierType::Ptr {
+                    space: AddressSpace::Kernel,
+                    nullability: Nullability::MaybeNull,
+                    ..
+                } => {
+                    errors.push(VerifierTypeError::new(format!(
+                        "kfunc 'bpf_task_release' arg0 may dereference null pointer v{} (add a null check)",
+                        task.0
+                    )));
+                }
+                VerifierType::Ptr {
+                    space: AddressSpace::Kernel,
+                    ..
+                } => {
+                    errors.push(VerifierTypeError::new(
+                        "kfunc 'bpf_task_release' arg0 expects acquired task reference",
+                    ));
+                }
+                VerifierType::Ptr { space, .. } => {
+                    errors.push(VerifierTypeError::new(format!(
+                        "kfunc 'bpf_task_release' arg0 expects kernel pointer, got {:?}",
+                        space
+                    )));
+                }
+                _ => {
+                    errors.push(VerifierTypeError::new(
+                        "kfunc 'bpf_task_release' arg0 expects acquired task reference pointer",
+                    ));
+                }
+            }
+        }
+        _ => {}
     }
 }
 
@@ -1967,6 +2116,7 @@ fn value_type(
                 nullability: Nullability::NonNull,
                 bounds,
                 ringbuf_ref: None,
+                kfunc_ref: None,
             }
         }
     }
@@ -2009,6 +2159,7 @@ fn verifier_type_from_mir(ty: &MirType) -> VerifierType {
             nullability: Nullability::NonNull,
             bounds: None,
             ringbuf_ref: None,
+            kfunc_ref: None,
         },
         MirType::Ptr { address_space, .. } => VerifierType::Ptr {
             space: *address_space,
@@ -2019,6 +2170,7 @@ fn verifier_type_from_mir(ty: &MirType) -> VerifierType {
             },
             bounds: None,
             ringbuf_ref: None,
+            kfunc_ref: None,
         },
         MirType::Unknown => VerifierType::Unknown,
         _ => VerifierType::Scalar,
@@ -2038,12 +2190,14 @@ fn join_type(a: VerifierType, b: VerifierType) -> VerifierType {
                 nullability: na,
                 bounds: ba,
                 ringbuf_ref: ra,
+                kfunc_ref: ka,
             },
             Ptr {
                 space: sb,
                 nullability: nb,
                 bounds: bb,
                 ringbuf_ref: rb,
+                kfunc_ref: kb,
             },
         ) => {
             if sa != sb {
@@ -2052,11 +2206,13 @@ fn join_type(a: VerifierType, b: VerifierType) -> VerifierType {
             let nullability = join_nullability(na, nb);
             let bounds = join_bounds(ba, bb);
             let ringbuf_ref = join_ringbuf_ref(ra, rb);
+            let kfunc_ref = join_kfunc_ref(ka, kb);
             Ptr {
                 space: sa,
                 nullability,
                 bounds,
                 ringbuf_ref,
+                kfunc_ref,
             }
         }
         (Scalar, Bool) | (Bool, Scalar) => Scalar,
@@ -2085,6 +2241,15 @@ fn join_bounds(a: Option<PtrBounds>, b: Option<PtrBounds>) -> Option<PtrBounds> 
 }
 
 fn join_ringbuf_ref(a: Option<VReg>, b: Option<VReg>) -> Option<VReg> {
+    match (a, b) {
+        (Some(a), Some(b)) if a == b => Some(a),
+        (Some(_), Some(_)) => None,
+        (None, None) => None,
+        _ => None,
+    }
+}
+
+fn join_kfunc_ref(a: Option<VReg>, b: Option<VReg>) -> Option<VReg> {
     match (a, b) {
         (Some(a), Some(b)) if a == b => Some(a),
         (Some(_), Some(_)) => None,
@@ -2721,7 +2886,7 @@ fn ptr_type_for_phi(args: &[(BlockId, VReg)], state: &VerifierState) -> Option<V
 mod tests {
     use super::*;
     use crate::compiler::mir::{
-        COUNTER_MAP_NAME, MapKind, MapRef, MirType, StackSlotKind, STRING_COUNTER_MAP_NAME,
+        COUNTER_MAP_NAME, MapKind, MapRef, MirType, STRING_COUNTER_MAP_NAME, StackSlotKind,
     };
 
     fn map_lookup_types(func: &MirFunction, vreg: VReg) -> HashMap<VReg, MirType> {
@@ -2925,8 +3090,9 @@ mod tests {
 
         let err = verify_mir(&func, &HashMap::new()).expect_err("expected array delete error");
         assert!(
-            err.iter()
-                .any(|e| e.message.contains("map delete is not supported for array map kind")),
+            err.iter().any(|e| e
+                .message
+                .contains("map delete is not supported for array map kind")),
             "unexpected errors: {:?}",
             err
         );
@@ -2961,11 +3127,9 @@ mod tests {
 
         let err = verify_mir(&func, &HashMap::new()).expect_err("expected map-update flags error");
         assert!(
-            err.iter().any(
-                |e| e
-                    .message
-                    .contains("exceed supported 32-bit immediate range")
-            ),
+            err.iter().any(|e| e
+                .message
+                .contains("exceed supported 32-bit immediate range")),
             "unexpected errors: {:?}",
             err
         );
@@ -3011,11 +3175,9 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected map key size error");
         assert!(
-            err.iter().any(
-                |e| e
-                    .message
-                    .contains("map key v0 has size 16 bytes and must be passed as a pointer")
-            ),
+            err.iter().any(|e| e
+                .message
+                .contains("map key v0 has size 16 bytes and must be passed as a pointer")),
             "unexpected errors: {:?}",
             err
         );
@@ -3059,11 +3221,9 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected map value size error");
         assert!(
-            err.iter().any(
-                |e| e
-                    .message
-                    .contains("map value v1 has size 24 bytes and must be passed as a pointer")
-            ),
+            err.iter().any(|e| e
+                .message
+                .contains("map value v1 has size 24 bytes and must be passed as a pointer")),
             "unexpected errors: {:?}",
             err
         );
@@ -3351,25 +3511,26 @@ mod tests {
         func.entry = entry;
 
         let dst = func.alloc_vreg();
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 9999,
-            args: vec![
-                MirValue::Const(0),
-                MirValue::Const(1),
-                MirValue::Const(2),
-                MirValue::Const(3),
-                MirValue::Const(4),
-                MirValue::Const(5),
-            ],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 9999,
+                args: vec![
+                    MirValue::Const(0),
+                    MirValue::Const(1),
+                    MirValue::Const(2),
+                    MirValue::Const(3),
+                    MirValue::Const(4),
+                    MirValue::Const(5),
+                ],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
         types.insert(dst, MirType::I64);
 
-        let err =
-            verify_mir(&func, &types).expect_err("expected helper-argument count rejection");
+        let err = verify_mir(&func, &types).expect_err("expected helper-argument count rejection");
         assert!(
             err.iter()
                 .any(|e| e.message.contains("at most 5 arguments")),
@@ -3644,8 +3805,9 @@ mod tests {
         let err =
             verify_mir(&func, &types).expect_err("expected map-value pointer map-arg rejection");
         assert!(
-            err.iter()
-                .any(|e| e.message.contains("helper map_update map expects pointer in [Stack]")),
+            err.iter().any(|e| e
+                .message
+                .contains("helper map_update map expects pointer in [Stack]")),
             "unexpected errors: {:?}",
             err
         );
@@ -3962,8 +4124,9 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected helper ctx pointer-space error");
         assert!(
-            err.iter()
-                .any(|e| e.message.contains("helper perf_event_output ctx expects pointer in [Kernel]")),
+            err.iter().any(|e| e
+                .message
+                .contains("helper perf_event_output ctx expects pointer in [Kernel]")),
             "unexpected errors: {:?}",
             err
         );
@@ -4019,8 +4182,9 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected helper ctx pointer-space error");
         assert!(
-            err.iter()
-                .any(|e| e.message.contains("helper get_stackid ctx expects pointer in [Kernel]")),
+            err.iter().any(|e| e
+                .message
+                .contains("helper get_stackid ctx expects pointer in [Kernel]")),
             "unexpected errors: {:?}",
             err
         );
@@ -4076,8 +4240,9 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected helper ctx pointer-space error");
         assert!(
-            err.iter()
-                .any(|e| e.message.contains("helper tail_call ctx expects pointer in [Kernel]")),
+            err.iter().any(|e| e
+                .message
+                .contains("helper tail_call ctx expects pointer in [Kernel]")),
             "unexpected errors: {:?}",
             err
         );
@@ -4210,7 +4375,8 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected non-positive size error");
         assert!(
-            err.iter().any(|e| e.message.contains("helper 6 arg1 must be > 0")),
+            err.iter()
+                .any(|e| e.message.contains("helper 6 arg1 must be > 0")),
             "unexpected errors: {:?}",
             err
         );
@@ -4269,13 +4435,11 @@ mod tests {
             if_false: done,
         };
 
-        func.block_mut(call)
-            .instructions
-            .push(MirInst::CallHelper {
-                dst,
-                helper: 6, // bpf_trace_printk(fmt, fmt_size, ...)
-                args: vec![MirValue::VReg(fmt), MirValue::Const(8)],
-            });
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 6, // bpf_trace_printk(fmt, fmt_size, ...)
+            args: vec![MirValue::VReg(fmt), MirValue::Const(8)],
+        });
         func.block_mut(call).terminator = MirInst::Return { val: None };
         func.block_mut(done).terminator = MirInst::Return { val: None };
 
@@ -4291,11 +4455,9 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected helper fmt pointer-space error");
         assert!(
-            err.iter().any(
-                |e| e
-                    .message
-                    .contains("helper trace_printk fmt expects pointer in [Stack, Map]")
-            ),
+            err.iter().any(|e| e
+                .message
+                .contains("helper trace_printk fmt expects pointer in [Stack, Map]")),
             "unexpected errors: {:?}",
             err
         );
@@ -6253,5 +6415,163 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected kfunc pointer-arg error");
         assert!(err.iter().any(|e| e.message.contains("expects pointer")));
+    }
+
+    #[test]
+    fn test_kfunc_task_acquire_release_semantics() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let release = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+        func.param_count = 1;
+
+        let task = VReg(0);
+        let acquired = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: acquired,
+            kfunc: "bpf_task_acquire".to_string(),
+            btf_id: None,
+            args: vec![task],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(acquired),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: release,
+            if_false: done,
+        };
+
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_task_release".to_string(),
+                btf_id: None,
+                args: vec![acquired],
+            });
+        func.block_mut(release).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            task,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(
+            acquired,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(release_ret, MirType::I64);
+
+        verify_mir(&func, &types).expect("expected kfunc reference to be released");
+    }
+
+    #[test]
+    fn test_kfunc_task_acquire_leak_rejected() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let leak = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+        func.param_count = 1;
+
+        let task = VReg(0);
+        let acquired = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: acquired,
+            kfunc: "bpf_task_acquire".to_string(),
+            btf_id: None,
+            args: vec![task],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(acquired),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: leak,
+            if_false: done,
+        };
+
+        func.block_mut(leak).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            task,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(
+            acquired,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected kfunc reference leak error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("unreleased kfunc reference")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_kfunc_task_release_requires_tracked_reference() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+        func.param_count = 1;
+
+        let task = VReg(0);
+        let dst = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_task_release".to_string(),
+            btf_id: None,
+            args: vec![task],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            task,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected tracked-reference error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("expects acquired task reference")),
+            "unexpected errors: {:?}",
+            err
+        );
     }
 }
