@@ -2758,6 +2758,73 @@ mod tests {
     }
 
     #[test]
+    fn test_infer_kfunc_obj_new_pointer_return() {
+        let mut func = make_test_function();
+        let type_id = func.alloc_vreg();
+        let meta = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let meta_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: type_id,
+            src: MirValue::Const(1),
+        });
+        block.instructions.push(MirInst::Copy {
+            dst: meta,
+            src: MirValue::StackSlot(meta_slot),
+        });
+        block.instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_obj_new_impl".to_string(),
+            btf_id: None,
+            args: vec![type_id, meta],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let types = ti
+            .infer(&func)
+            .expect("expected object-new kfunc type inference");
+        match types.get(&dst) {
+            Some(MirType::Ptr { address_space, .. }) => {
+                assert_eq!(*address_space, AddressSpace::Kernel);
+            }
+            other => panic!("expected kernel pointer return, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_type_error_kfunc_obj_drop_requires_kernel_space() {
+        let mut func = make_test_function();
+        let ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        block.instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_obj_drop_impl".to_string(),
+            btf_id: None,
+            args: vec![ptr, ptr],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected object-drop kernel-pointer kfunc type error");
+        assert!(
+            errs.iter()
+                .any(|e| e.message.contains("arg0 expects kernel pointer")),
+            "unexpected errors: {:?}",
+            errs
+        );
+    }
+
+    #[test]
     fn test_infer_subfunction_schemes_rejects_recursive_calls_with_guidance() {
         let mut subfn = MirFunction::with_name("rec");
         subfn.param_count = 1;
