@@ -362,7 +362,21 @@ pub fn verify_mir(
                 propagate_state(*if_true, &true_state, &mut in_states, &mut worklist);
                 propagate_state(*if_false, &false_state, &mut in_states, &mut worklist);
             }
-            MirInst::Return { .. } | MirInst::TailCall { .. } => {
+            MirInst::Return { .. } => {
+                if state.has_live_ringbuf_refs() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased ringbuf record reference at function exit",
+                    ));
+                }
+            }
+            MirInst::TailCall { index, .. } => {
+                let index_ty = value_type(index, &state, &slot_sizes);
+                if !matches!(index_ty, VerifierType::Scalar | VerifierType::Bool) {
+                    errors.push(VerifierTypeError::new(format!(
+                        "tail_call index expects scalar, got {:?}",
+                        index_ty
+                    )));
+                }
                 if state.has_live_ringbuf_refs() {
                     errors.push(VerifierTypeError::new(
                         "unreleased ringbuf record reference at function exit",
@@ -3039,6 +3053,30 @@ mod tests {
         assert!(
             err.iter()
                 .any(|e| e.message.contains("helper tail_call ctx expects pointer in [Kernel]")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_tail_call_rejects_pointer_index() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let index_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        func.block_mut(entry).terminator = MirInst::TailCall {
+            prog_map: MapRef {
+                name: "jumps".to_string(),
+                kind: MapKind::ProgArray,
+            },
+            index: MirValue::StackSlot(index_slot),
+        };
+
+        let err = verify_mir(&func, &HashMap::new()).expect_err("expected tail-call index error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("tail_call index expects scalar")),
             "unexpected errors: {:?}",
             err
         );

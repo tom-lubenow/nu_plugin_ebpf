@@ -7099,6 +7099,34 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_mir_tail_call_rejects_pointer_index() {
+        let (mut func, entry) = new_mir_function();
+        let index_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(entry).terminator = MirInst::TailCall {
+            prog_map: MapRef {
+                name: "jumps".to_string(),
+                kind: MapKind::ProgArray,
+            },
+            index: MirValue::StackSlot(index_slot),
+        };
+
+        let err = verify_mir(&func, &HashMap::new()).expect_err("expected tail-call index error");
+        assert!(
+            err.iter()
+                .any(|e| matches!(e.kind, VccErrorKind::TypeMismatch { .. })),
+            "expected type mismatch error, got {:?}",
+            err
+        );
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("expected scalar value")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
     fn test_verify_mir_helper_get_current_comm_positive_size_required() {
         let (mut func, entry) = new_mir_function();
         let dst = func.alloc_vreg();
