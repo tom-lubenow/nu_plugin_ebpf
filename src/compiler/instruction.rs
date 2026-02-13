@@ -301,6 +301,24 @@ impl KfuncSignature {
                 arg_kinds: [S, S, S, S, S],
                 ret_kind: KfuncRetKind::Void,
             }),
+            "bpf_iter_task_vma_new" => Some(Self {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_iter_task_vma_next" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "bpf_iter_task_vma_destroy" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
             "bpf_obj_drop_impl" => Some(Self {
                 min_args: 2,
                 max_args: 2,
@@ -710,6 +728,7 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
             | ("bpf_task_get_cgroup1", 0)
             | ("bpf_task_under_cgroup", 0)
             | ("bpf_get_task_exe_file", 0)
+            | ("bpf_iter_task_vma_new", 1)
             | ("scx_bpf_dsq_insert", 0)
             | ("scx_bpf_dsq_insert_vtime", 0)
             | ("scx_bpf_task_cpu", 0)
@@ -1817,6 +1836,32 @@ mod tests {
     }
 
     #[test]
+    fn test_kfunc_signature_task_vma_iter_kfuncs() {
+        let sig = KfuncSignature::for_name("bpf_iter_task_vma_new")
+            .expect("expected bpf_iter_task_vma_new kfunc signature");
+        assert_eq!(sig.min_args, 3);
+        assert_eq!(sig.max_args, 3);
+        assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
+        assert_eq!(sig.arg_kind(2), KfuncArgKind::Scalar);
+        assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
+        let sig = KfuncSignature::for_name("bpf_iter_task_vma_next")
+            .expect("expected bpf_iter_task_vma_next kfunc signature");
+        assert_eq!(sig.min_args, 1);
+        assert_eq!(sig.max_args, 1);
+        assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+        assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
+
+        let sig = KfuncSignature::for_name("bpf_iter_task_vma_destroy")
+            .expect("expected bpf_iter_task_vma_destroy kfunc signature");
+        assert_eq!(sig.min_args, 1);
+        assert_eq!(sig.max_args, 1);
+        assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+        assert_eq!(sig.ret_kind, KfuncRetKind::Void);
+    }
+
+    #[test]
     fn test_kfunc_signature_cpumask_and() {
         let sig = KfuncSignature::for_name("bpf_cpumask_and")
             .expect("expected bpf_cpumask_and kfunc signature");
@@ -1897,6 +1942,10 @@ mod tests {
             Some(KfuncRefKind::Task)
         );
         assert_eq!(
+            kfunc_pointer_arg_ref_kind("bpf_iter_task_vma_new", 1),
+            Some(KfuncRefKind::Task)
+        );
+        assert_eq!(
             kfunc_pointer_arg_ref_kind("bpf_task_under_cgroup", 1),
             Some(KfuncRefKind::Cgroup)
         );
@@ -1945,6 +1994,14 @@ mod tests {
         ));
         assert!(kfunc_pointer_arg_requires_kernel("bpf_rbtree_first", 0));
         assert!(kfunc_pointer_arg_requires_kernel("bpf_path_d_path", 0));
+        assert!(kfunc_pointer_arg_requires_kernel(
+            "bpf_iter_task_vma_new",
+            1
+        ));
+        assert!(!kfunc_pointer_arg_requires_kernel(
+            "bpf_iter_task_vma_new",
+            0
+        ));
         assert!(!kfunc_pointer_arg_requires_kernel(
             "bpf_list_push_front_impl",
             2

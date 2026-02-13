@@ -6796,6 +6796,73 @@ mod tests {
     }
 
     #[test]
+    fn test_kfunc_iter_task_vma_new_rejects_cgroup_reference_for_task_arg() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+        func.param_count = 1;
+
+        let it = func.alloc_vreg();
+        let cgid = func.alloc_vreg();
+        let cgroup = func.alloc_vreg();
+        let addr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: cgid,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: addr,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: cgroup,
+            kfunc: "bpf_cgroup_from_id".to_string(),
+            btf_id: None,
+            args: vec![cgid],
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_iter_task_vma_new".to_string(),
+            btf_id: None,
+            args: vec![it, cgroup, addr],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            it,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(cgid, MirType::I64);
+        types.insert(
+            cgroup,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(addr, MirType::I64);
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected kfunc provenance mismatch error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("arg1 expects task reference")),
+            "unexpected errors: {:?}",
+            err
+        );
+        assert!(
+            err.iter().any(|e| e.message.contains("cgroup reference")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
     fn test_kfunc_task_acquire_release_semantics() {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();

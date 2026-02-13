@@ -2954,6 +2954,37 @@ mod tests {
     }
 
     #[test]
+    fn test_infer_kfunc_iter_task_vma_next_pointer_return() {
+        let mut func = make_test_function();
+        let it = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: it,
+            src: MirValue::StackSlot(slot),
+        });
+        block.instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_iter_task_vma_next".to_string(),
+            btf_id: None,
+            args: vec![it],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let types = ti
+            .infer(&func)
+            .expect("expected iter_task_vma_next kfunc type inference");
+        match types.get(&dst) {
+            Some(MirType::Ptr { address_space, .. }) => {
+                assert_eq!(*address_space, AddressSpace::Kernel);
+            }
+            other => panic!("expected kernel pointer return, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn test_type_error_kfunc_obj_drop_requires_kernel_space() {
         let mut func = make_test_function();
         let ptr = func.alloc_vreg();
