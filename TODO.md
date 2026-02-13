@@ -1,7 +1,7 @@
 # TODO
 
 Status legend: `[x]` done, `[~]` in progress, `[ ]` todo.
-Last updated: 2026-02-12.
+Last updated: 2026-02-13.
 
 ## Current compiler gaps
 
@@ -56,6 +56,34 @@ Last updated: 2026-02-12.
   - VCC now propagates map-value bounds from built-in map semantics and pointee types, including pointer-arithmetic/load/store bounds checks for map-value pointers.
   - VCC now aligns direct memory access rules with verifier expectations by rejecting raw `load`/`store` on non stack/map pointer spaces.
   - Remaining: extend pointer-state transitions to broader helper/kfunc families (provenance/nullability/mutability/ref-lifetime) with kernel-verifier-level fidelity.
+
+## Research-backed compiler core work
+
+- [ ] Fix SSA destruction correctness with parallel-copy lowering.
+  - Replace naive phi elimination copy insertion with per-edge parallel copy sets and cycle-safe sequentialization.
+  - Add regression tests for lost-copy cases (multi-phi joins and loop-header swaps).
+  - Ensure critical edges are either split or handled so copies execute only on the intended edge.
+
+- [ ] Replace `ssa::rename_uses` exhaustive reconstruction with operand-mapper APIs.
+  - Add `MirInst` operand walk/mutation helpers (for vreg uses and `MirValue` operands).
+  - Reuse these helpers in SSA rename and follow-on passes to reduce maintenance hazards when instructions evolve.
+
+- [ ] Unify duplicated CFG/dominance/liveness analysis infrastructure.
+  - Extract shared algorithms from `cfg.rs` and `graph_coloring.rs` behind small traits/adapters.
+  - Keep a single implementation of immediate-dominator and core liveness dataflow logic.
+
+- [ ] Upgrade constant propagation from local folding to SSA-aware SCCP.
+  - Track constant lattice values and CFG reachability together.
+  - Fold phi-driven constants and prune unreachable edges in one analysis.
+
+- [ ] Make pass analysis freshness explicit.
+  - Add invalidation metadata (or per-pass rebuilds) so CFG-sensitive passes do not consume stale analyses after CFG mutations.
+
+- [ ] Add rematerialization for cheap spilled values.
+  - Recompute simple constants/expressions at use sites instead of always using stack spill slots.
+
+- [ ] Move block lookup from linear search to O(1) access.
+  - If IDs remain index-stable, index blocks directly; otherwise maintain an explicit ID-to-index map.
 
 ## Roadmap to a general-purpose eBPF language
 
