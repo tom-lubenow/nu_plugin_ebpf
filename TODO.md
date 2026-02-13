@@ -75,9 +75,9 @@ Last updated: 2026-02-13.
   - Extracted shared generic CFG/liveness/loop analysis in `cfg.rs` behind `CfgInst`/`CfgBlock`/`CfgFunction` adapters (`AnalysisCfg`, `BlockLiveness`, `GenericLoopInfo`).
   - `graph_coloring.rs` now reuses this shared analysis instead of private `AllocCfg`/`AllocLiveness`, and MIR `CFG`/`LivenessInfo` now consume the same core idom/liveness algorithms.
 
-- [ ] Upgrade constant propagation from local folding to SSA-aware SCCP.
-  - Track constant lattice values and CFG reachability together.
-  - Fold phi-driven constants and prune unreachable edges in one analysis.
+- [x] Upgrade constant propagation from local folding to SSA-aware SCCP.
+  - Constant propagation now tracks per-vreg lattice values together with executable CFG edges/reachable blocks.
+  - Phi-derived constants are folded, constant branches are simplified, and unreachable blocks/phi inputs are pruned in one analysis/rewrite pass.
 
 - [ ] Make pass analysis freshness explicit.
   - Add invalidation metadata (or per-pass rebuilds) so CFG-sensitive passes do not consume stale analyses after CFG mutations.

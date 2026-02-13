@@ -1,43 +1,55 @@
-//! Constant Folding pass
+//! Constant Folding / SCCP pass
 //!
-//! This pass evaluates constant expressions at compile time:
-//! - Binary operations on constants
-//! - Copy of constants (propagation)
-//! - Simplifies branches on constant conditions
+//! This pass performs sparse conditional constant propagation (SCCP):
+//! - Tracks per-vreg constant lattice values
+//! - Tracks executable CFG edges from branch feasibility
+//! - Folds constant expressions (including phi-derived constants)
+//! - Simplifies branches and prunes unreachable blocks/phi inputs
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::MirPass;
 use crate::compiler::cfg::CFG;
-use crate::compiler::mir::{BinOpKind, MirFunction, MirInst, MirValue, UnaryOpKind, VReg};
+use crate::compiler::mir::{BinOpKind, BlockId, MirFunction, MirInst, MirValue, UnaryOpKind, VReg};
 
-/// Constant Folding pass
+/// Constant Folding pass (implemented as SCCP)
 pub struct ConstantFolding;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LatticeValue {
+    /// Value has not been discovered yet
+    Unknown,
+    /// Value is provably a specific constant
+    Constant(i64),
+    /// Value is not a compile-time constant
+    Overdefined,
+}
+
+#[derive(Debug, Default)]
+struct SccpResult {
+    values: HashMap<VReg, LatticeValue>,
+    reachable_blocks: HashSet<BlockId>,
+    executable_edges: HashSet<(BlockId, BlockId)>,
+}
 
 impl MirPass for ConstantFolding {
     fn name(&self) -> &str {
         "const_fold"
     }
 
-    fn run(&self, func: &mut MirFunction, _cfg: &CFG) -> bool {
+    fn run(&self, func: &mut MirFunction, cfg: &CFG) -> bool {
+        if func.blocks.is_empty() {
+            return false;
+        }
+
+        let sccp = self.run_sccp(func, cfg);
+
         let mut changed = false;
-
-        // Track known constant values
-        let mut constants: HashMap<VReg, i64> = HashMap::new();
-
-        // Process each block
-        for block in &mut func.blocks {
-            // Fold instructions
-            for inst in &mut block.instructions {
-                if self.fold_instruction(inst, &mut constants) {
-                    changed = true;
-                }
-            }
-
-            // Fold terminator (simplify constant branches)
-            if self.fold_terminator(&mut block.terminator, &constants) {
-                changed = true;
-            }
+        if self.rewrite_with_constants(func, &sccp.values, &sccp.executable_edges) {
+            changed = true;
+        }
+        if self.remove_unreachable_blocks(func, &sccp.reachable_blocks) {
+            changed = true;
         }
 
         changed
@@ -45,107 +57,396 @@ impl MirPass for ConstantFolding {
 }
 
 impl ConstantFolding {
-    /// Try to fold a single instruction
-    fn fold_instruction(&self, inst: &mut MirInst, constants: &mut HashMap<VReg, i64>) -> bool {
-        match inst {
-            // Copy of constant - track it
-            MirInst::Copy {
-                dst,
-                src: MirValue::Const(c),
-            } => {
-                constants.insert(*dst, *c);
-                false // No change to the instruction itself
-            }
+    fn run_sccp(&self, func: &MirFunction, cfg: &CFG) -> SccpResult {
+        let mut result = SccpResult::default();
 
-            // Copy of known constant vreg - replace with constant
-            MirInst::Copy {
-                dst,
-                src: MirValue::VReg(v),
-            } => {
-                if let Some(&c) = constants.get(v) {
-                    constants.insert(*dst, c);
-                    *inst = MirInst::Copy {
-                        dst: *dst,
-                        src: MirValue::Const(c),
-                    };
-                    true
-                } else {
-                    false
+        if !func.has_block(cfg.entry) {
+            return result;
+        }
+
+        result.reachable_blocks.insert(cfg.entry);
+
+        let mut changed = true;
+        while changed {
+            changed = false;
+
+            for &block_id in &cfg.rpo {
+                if !result.reachable_blocks.contains(&block_id) {
+                    continue;
                 }
-            }
 
-            // Binary operation with constant operands
-            MirInst::BinOp { dst, op, lhs, rhs } => {
-                let lhs_val = self.get_const_value(lhs, constants);
-                let rhs_val = self.get_const_value(rhs, constants);
+                let block = func.block(block_id);
 
-                match (lhs_val, rhs_val) {
-                    (Some(l), Some(r)) => {
-                        // Both operands are constants - evaluate at compile time
-                        if let Some(result) = self.eval_binop(*op, l, r) {
-                            constants.insert(*dst, result);
-                            *inst = MirInst::Copy {
-                                dst: *dst,
-                                src: MirValue::Const(result),
-                            };
-                            true
-                        } else {
-                            false
+                // Phi nodes are evaluated from executable incoming edges only.
+                for inst in &block.instructions {
+                    match inst {
+                        MirInst::Phi { dst, args } => {
+                            let lattice = self.eval_phi(
+                                block_id,
+                                args,
+                                &result.executable_edges,
+                                &result.values,
+                            );
+                            if self.update_lattice(&mut result.values, *dst, lattice) {
+                                changed = true;
+                            }
+                        }
+                        _ => {
+                            if let Some(dst) = inst.def() {
+                                let lattice = self.eval_instruction(inst, &result.values);
+                                if self.update_lattice(&mut result.values, dst, lattice) {
+                                    changed = true;
+                                }
+                            }
                         }
                     }
-                    (Some(l), None) => {
-                        // LHS is constant - propagate only if not already a constant
-                        if !matches!(lhs, MirValue::Const(_)) {
-                            *lhs = MirValue::Const(l);
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    (None, Some(r)) => {
-                        // RHS is constant - propagate only if not already a constant
-                        if !matches!(rhs, MirValue::Const(_)) {
-                            *rhs = MirValue::Const(r);
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    (None, None) => false,
+                }
+
+                if self.mark_successors_executable(
+                    block_id,
+                    &block.terminator,
+                    &result.values,
+                    &mut result.reachable_blocks,
+                    &mut result.executable_edges,
+                ) {
+                    changed = true;
                 }
             }
+        }
 
-            // Unary operation on constant
-            MirInst::UnaryOp { dst, op, src } => {
-                let src_val = self.get_const_value(src, constants);
+        result
+    }
 
-                if let Some(s) = src_val
-                    && let Some(result) = self.eval_unaryop(*op, s)
-                {
-                    constants.insert(*dst, result);
-                    *inst = MirInst::Copy {
-                        dst: *dst,
-                        src: MirValue::Const(result),
-                    };
-                    return true;
-                }
-                false
+    fn eval_phi(
+        &self,
+        block_id: BlockId,
+        args: &[(BlockId, VReg)],
+        executable_edges: &HashSet<(BlockId, BlockId)>,
+        values: &HashMap<VReg, LatticeValue>,
+    ) -> LatticeValue {
+        let mut merged = LatticeValue::Unknown;
+        let mut any_incoming = false;
+
+        for &(pred, src) in args {
+            if !executable_edges.contains(&(pred, block_id)) {
+                continue;
             }
+            any_incoming = true;
+            let src_val = values.get(&src).copied().unwrap_or(LatticeValue::Unknown);
+            merged = Self::merge_lattice(merged, src_val);
+            if merged == LatticeValue::Overdefined {
+                return merged;
+            }
+        }
 
-            _ => false,
+        if any_incoming {
+            merged
+        } else {
+            LatticeValue::Unknown
         }
     }
 
-    /// Try to simplify a terminator with constant condition
-    fn fold_terminator(&self, term: &mut MirInst, constants: &HashMap<VReg, i64>) -> bool {
+    fn eval_instruction(
+        &self,
+        inst: &MirInst,
+        values: &HashMap<VReg, LatticeValue>,
+    ) -> LatticeValue {
+        match inst {
+            MirInst::Copy { src, .. } => self.operand_lattice(src, values),
+            MirInst::BinOp { op, lhs, rhs, .. } => {
+                let lhs_val = self.operand_lattice(lhs, values);
+                let rhs_val = self.operand_lattice(rhs, values);
+
+                match (lhs_val, rhs_val) {
+                    (LatticeValue::Constant(l), LatticeValue::Constant(r)) => self
+                        .eval_binop(*op, l, r)
+                        .map(LatticeValue::Constant)
+                        .unwrap_or(LatticeValue::Overdefined),
+                    (LatticeValue::Overdefined, _) | (_, LatticeValue::Overdefined) => {
+                        LatticeValue::Overdefined
+                    }
+                    _ => LatticeValue::Unknown,
+                }
+            }
+            MirInst::UnaryOp { op, src, .. } => {
+                let src_val = self.operand_lattice(src, values);
+                match src_val {
+                    LatticeValue::Constant(v) => self
+                        .eval_unaryop(*op, v)
+                        .map(LatticeValue::Constant)
+                        .unwrap_or(LatticeValue::Overdefined),
+                    LatticeValue::Overdefined => LatticeValue::Overdefined,
+                    LatticeValue::Unknown => LatticeValue::Unknown,
+                }
+            }
+            MirInst::Phi { .. } => unreachable!("phi is handled separately"),
+            _ => LatticeValue::Overdefined,
+        }
+    }
+
+    fn mark_successors_executable(
+        &self,
+        block_id: BlockId,
+        term: &MirInst,
+        values: &HashMap<VReg, LatticeValue>,
+        reachable_blocks: &mut HashSet<BlockId>,
+        executable_edges: &mut HashSet<(BlockId, BlockId)>,
+    ) -> bool {
+        let mut changed = false;
+
+        match term {
+            MirInst::Jump { target } => {
+                if self.mark_edge(block_id, *target, reachable_blocks, executable_edges) {
+                    changed = true;
+                }
+            }
+            MirInst::Branch {
+                cond,
+                if_true,
+                if_false,
+            } => {
+                match values.get(cond).copied().unwrap_or(LatticeValue::Unknown) {
+                    LatticeValue::Constant(c) => {
+                        let target = if c != 0 { *if_true } else { *if_false };
+                        if self.mark_edge(block_id, target, reachable_blocks, executable_edges) {
+                            changed = true;
+                        }
+                    }
+                    // Unknown: defer edge executability until condition becomes known.
+                    LatticeValue::Unknown => {}
+                    // Overdefined: both outcomes are feasible.
+                    LatticeValue::Overdefined => {
+                        if self.mark_edge(block_id, *if_true, reachable_blocks, executable_edges) {
+                            changed = true;
+                        }
+                        if self.mark_edge(block_id, *if_false, reachable_blocks, executable_edges) {
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            MirInst::LoopHeader { body, exit, .. } => {
+                if self.mark_edge(block_id, *body, reachable_blocks, executable_edges) {
+                    changed = true;
+                }
+                if self.mark_edge(block_id, *exit, reachable_blocks, executable_edges) {
+                    changed = true;
+                }
+            }
+            MirInst::LoopBack { header, .. } => {
+                if self.mark_edge(block_id, *header, reachable_blocks, executable_edges) {
+                    changed = true;
+                }
+            }
+            MirInst::Return { .. } | MirInst::TailCall { .. } | MirInst::Placeholder => {}
+            _ => {}
+        }
+
+        changed
+    }
+
+    fn mark_edge(
+        &self,
+        from: BlockId,
+        to: BlockId,
+        reachable_blocks: &mut HashSet<BlockId>,
+        executable_edges: &mut HashSet<(BlockId, BlockId)>,
+    ) -> bool {
+        let mut changed = false;
+        if executable_edges.insert((from, to)) {
+            changed = true;
+        }
+        if reachable_blocks.insert(to) {
+            changed = true;
+        }
+        changed
+    }
+
+    fn update_lattice(
+        &self,
+        values: &mut HashMap<VReg, LatticeValue>,
+        vreg: VReg,
+        new_value: LatticeValue,
+    ) -> bool {
+        let current = values.get(&vreg).copied().unwrap_or(LatticeValue::Unknown);
+        let merged = Self::merge_lattice(current, new_value);
+        if merged != current {
+            values.insert(vreg, merged);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn merge_lattice(a: LatticeValue, b: LatticeValue) -> LatticeValue {
+        match (a, b) {
+            (LatticeValue::Overdefined, _) | (_, LatticeValue::Overdefined) => {
+                LatticeValue::Overdefined
+            }
+            (LatticeValue::Unknown, x) | (x, LatticeValue::Unknown) => x,
+            (LatticeValue::Constant(c1), LatticeValue::Constant(c2)) => {
+                if c1 == c2 {
+                    LatticeValue::Constant(c1)
+                } else {
+                    LatticeValue::Overdefined
+                }
+            }
+        }
+    }
+
+    fn operand_lattice(
+        &self,
+        val: &MirValue,
+        values: &HashMap<VReg, LatticeValue>,
+    ) -> LatticeValue {
+        match val {
+            MirValue::Const(c) => LatticeValue::Constant(*c),
+            MirValue::VReg(v) => values.get(v).copied().unwrap_or(LatticeValue::Unknown),
+            MirValue::StackSlot(_) => LatticeValue::Overdefined,
+        }
+    }
+
+    fn value_for_vreg(&self, vreg: VReg, values: &HashMap<VReg, LatticeValue>) -> MirValue {
+        match values.get(&vreg).copied().unwrap_or(LatticeValue::Unknown) {
+            LatticeValue::Constant(c) => MirValue::Const(c),
+            _ => MirValue::VReg(vreg),
+        }
+    }
+
+    fn const_for_vreg(&self, vreg: VReg, values: &HashMap<VReg, LatticeValue>) -> Option<i64> {
+        match values.get(&vreg).copied().unwrap_or(LatticeValue::Unknown) {
+            LatticeValue::Constant(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    fn rewrite_with_constants(
+        &self,
+        func: &mut MirFunction,
+        values: &HashMap<VReg, LatticeValue>,
+        executable_edges: &HashSet<(BlockId, BlockId)>,
+    ) -> bool {
+        let mut changed = false;
+
+        for block in &mut func.blocks {
+            for inst in &mut block.instructions {
+                if self.rewrite_instruction(inst, block.id, values, executable_edges) {
+                    changed = true;
+                }
+            }
+
+            if self.rewrite_terminator(&mut block.terminator, values) {
+                changed = true;
+            }
+        }
+
+        changed
+    }
+
+    fn rewrite_instruction(
+        &self,
+        inst: &mut MirInst,
+        block_id: BlockId,
+        values: &HashMap<VReg, LatticeValue>,
+        executable_edges: &HashSet<(BlockId, BlockId)>,
+    ) -> bool {
+        let mut changed = false;
+
+        if let MirInst::Phi { dst, args } = inst {
+            let before = args.len();
+            args.retain(|(pred, _)| executable_edges.contains(&(*pred, block_id)));
+            if args.len() != before {
+                changed = true;
+            }
+
+            if let Some(c) = self.const_for_vreg(*dst, values) {
+                *inst = MirInst::Copy {
+                    dst: *dst,
+                    src: MirValue::Const(c),
+                };
+                return true;
+            }
+
+            if args.len() == 1 {
+                let src = self.value_for_vreg(args[0].1, values);
+                *inst = MirInst::Copy { dst: *dst, src };
+                return true;
+            }
+
+            return changed;
+        }
+
+        if let Some(dst) = inst.def()
+            && let Some(c) = self.const_for_vreg(dst, values)
+        {
+            match inst {
+                MirInst::Copy {
+                    dst: existing_dst,
+                    src: MirValue::Const(existing_c),
+                } if *existing_dst == dst && *existing_c == c => {}
+                _ => {
+                    *inst = MirInst::Copy {
+                        dst,
+                        src: MirValue::Const(c),
+                    };
+                    return true;
+                }
+            }
+        }
+
+        match inst {
+            MirInst::Copy { src, .. } => {
+                if self.rewrite_value(src, values) {
+                    changed = true;
+                }
+            }
+            MirInst::BinOp { lhs, rhs, .. } => {
+                if self.rewrite_value(lhs, values) {
+                    changed = true;
+                }
+                if self.rewrite_value(rhs, values) {
+                    changed = true;
+                }
+            }
+            MirInst::UnaryOp { src, .. } => {
+                if self.rewrite_value(src, values) {
+                    changed = true;
+                }
+            }
+            MirInst::Store { val, .. }
+            | MirInst::StoreSlot { val, .. }
+            | MirInst::RecordStore { val, .. }
+            | MirInst::StringAppend { val, .. } => {
+                if self.rewrite_value(val, values) {
+                    changed = true;
+                }
+            }
+            MirInst::CallHelper { args, .. } => {
+                for arg in args {
+                    if self.rewrite_value(arg, values) {
+                        changed = true;
+                    }
+                }
+            }
+            MirInst::ListGet { idx, .. } | MirInst::TailCall { index: idx, .. } => {
+                if self.rewrite_value(idx, values) {
+                    changed = true;
+                }
+            }
+            _ => {}
+        }
+
+        changed
+    }
+
+    fn rewrite_terminator(&self, term: &mut MirInst, values: &HashMap<VReg, LatticeValue>) -> bool {
         match term {
             MirInst::Branch {
                 cond,
                 if_true,
                 if_false,
             } => {
-                if let Some(&c) = constants.get(cond) {
-                    // Condition is known at compile time
+                if let Some(c) = self.const_for_vreg(*cond, values) {
                     let target = if c != 0 { *if_true } else { *if_false };
                     *term = MirInst::Jump { target };
                     true
@@ -153,17 +454,36 @@ impl ConstantFolding {
                     false
                 }
             }
+            MirInst::Return { val } => {
+                if let Some(value) = val {
+                    self.rewrite_value(value, values)
+                } else {
+                    false
+                }
+            }
+            MirInst::TailCall { index, .. } => self.rewrite_value(index, values),
             _ => false,
         }
     }
 
-    /// Get the constant value of an operand, if known
-    fn get_const_value(&self, val: &MirValue, constants: &HashMap<VReg, i64>) -> Option<i64> {
-        match val {
-            MirValue::Const(c) => Some(*c),
-            MirValue::VReg(v) => constants.get(v).copied(),
-            MirValue::StackSlot(_) => None,
+    fn rewrite_value(&self, value: &mut MirValue, values: &HashMap<VReg, LatticeValue>) -> bool {
+        if let MirValue::VReg(vreg) = value
+            && let Some(c) = self.const_for_vreg(*vreg, values)
+        {
+            *value = MirValue::Const(c);
+            return true;
         }
+        false
+    }
+
+    fn remove_unreachable_blocks(
+        &self,
+        func: &mut MirFunction,
+        reachable: &HashSet<BlockId>,
+    ) -> bool {
+        let before = func.blocks.len();
+        func.blocks.retain(|block| reachable.contains(&block.id));
+        func.blocks.len() < before
     }
 
     /// Evaluate a binary operation on constants
@@ -213,7 +533,6 @@ impl ConstantFolding {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::mir::BlockId;
 
     fn make_constant_add_function() -> MirFunction {
         // v0 = 2
@@ -253,7 +572,7 @@ mod tests {
         // v0 = 1
         // if v0 goto bb1 else bb2  <- should fold to: goto bb1
         // bb1: return 1
-        // bb2: return 0
+        // bb2: return 0 (unreachable)
         let mut func = MirFunction::new();
         let bb0 = func.alloc_block();
         let bb1 = func.alloc_block();
@@ -277,6 +596,64 @@ mod tests {
         };
         func.block_mut(bb2).terminator = MirInst::Return {
             val: Some(MirValue::Const(0)),
+        };
+
+        func
+    }
+
+    fn make_phi_constant_function() -> MirFunction {
+        // bb0: c = helper(); branch c -> bb1, bb2
+        // bb1: v1 = 5; jump bb3
+        // bb2: v2 = 5; jump bb3
+        // bb3: v3 = phi(v1:bb1, v2:bb2); v4 = v3 + 1; return v4
+        let mut func = MirFunction::new();
+        let bb0 = func.alloc_block();
+        let bb1 = func.alloc_block();
+        let bb2 = func.alloc_block();
+        let bb3 = func.alloc_block();
+        func.entry = bb0;
+
+        let cond = func.alloc_vreg();
+        let v1 = func.alloc_vreg();
+        let v2 = func.alloc_vreg();
+        let v3 = func.alloc_vreg();
+        let v4 = func.alloc_vreg();
+
+        func.block_mut(bb0).instructions.push(MirInst::CallHelper {
+            dst: cond,
+            helper: 14,
+            args: vec![],
+        });
+        func.block_mut(bb0).terminator = MirInst::Branch {
+            cond,
+            if_true: bb1,
+            if_false: bb2,
+        };
+
+        func.block_mut(bb1).instructions.push(MirInst::Copy {
+            dst: v1,
+            src: MirValue::Const(5),
+        });
+        func.block_mut(bb1).terminator = MirInst::Jump { target: bb3 };
+
+        func.block_mut(bb2).instructions.push(MirInst::Copy {
+            dst: v2,
+            src: MirValue::Const(5),
+        });
+        func.block_mut(bb2).terminator = MirInst::Jump { target: bb3 };
+
+        func.block_mut(bb3).instructions.push(MirInst::Phi {
+            dst: v3,
+            args: vec![(bb1, v1), (bb2, v2)],
+        });
+        func.block_mut(bb3).instructions.push(MirInst::BinOp {
+            dst: v4,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(v3),
+            rhs: MirValue::Const(1),
+        });
+        func.block_mut(bb3).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(v4)),
         };
 
         func
@@ -313,13 +690,51 @@ mod tests {
 
         assert!(changed);
 
-        // The terminator should now be: Jump { target: bb1 }
+        // The entry terminator should now be: Jump { target: bb1 }
         let block = func.block(func.entry);
         match &block.terminator {
             MirInst::Jump { target } => {
                 assert_eq!(*target, BlockId(1)); // bb1
             }
             other => panic!("Expected Jump, got {:?}", other),
+        }
+
+        // bb2 should be removed as unreachable.
+        assert_eq!(func.blocks.len(), 2);
+        assert!(!func.has_block(BlockId(2)));
+    }
+
+    #[test]
+    fn test_phi_driven_constant_propagation() {
+        let mut func = make_phi_constant_function();
+        let cfg = CFG::build(&func);
+        let cf = ConstantFolding;
+
+        let changed = cf.run(&mut func, &cfg);
+        assert!(changed);
+
+        let bb3 = func.block(BlockId(3));
+        match &bb3.instructions[0] {
+            MirInst::Copy {
+                src: MirValue::Const(5),
+                ..
+            } => {}
+            other => panic!("Expected phi to fold to const copy, got {:?}", other),
+        }
+
+        match &bb3.instructions[1] {
+            MirInst::Copy {
+                src: MirValue::Const(6),
+                ..
+            } => {}
+            other => panic!("Expected add to fold to const copy, got {:?}", other),
+        }
+
+        match &bb3.terminator {
+            MirInst::Return {
+                val: Some(MirValue::Const(6)),
+            } => {}
+            other => panic!("Expected return const 6, got {:?}", other),
         }
     }
 
