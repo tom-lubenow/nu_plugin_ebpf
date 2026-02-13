@@ -845,7 +845,8 @@ fn apply_inst(
                         errors,
                     );
                 }
-                apply_helper_semantics(*helper, args, state, slot_sizes, errors);
+                let helper_kfunc_acquire_kind =
+                    apply_helper_semantics(*helper, args, state, slot_sizes, errors);
 
                 let ty = match sig.ret_kind {
                     HelperRetKind::Scalar => types
@@ -868,7 +869,10 @@ fn apply_inst(
                             nullability: Nullability::MaybeNull,
                             bounds: None,
                             ringbuf_ref: None,
-                            kfunc_ref: None,
+                            kfunc_ref: helper_kfunc_acquire_kind.map(|kind| {
+                                state.set_live_kfunc_ref(*dst, true, Some(kind));
+                                *dst
+                            }),
                         },
                         _ => {
                             let bounds =
@@ -1965,12 +1969,13 @@ fn apply_helper_semantics(
     state: &mut VerifierState,
     slot_sizes: &HashMap<StackSlotId, i64>,
     errors: &mut Vec<VerifierTypeError>,
-) {
+) -> Option<KfuncRefKind> {
     let Some(helper) = BpfHelper::from_u32(helper_id) else {
-        return;
+        return None;
     };
 
     let semantics = helper.semantics();
+    let mut kptr_xchg_acquire_kind = None;
     let mut positive_size_bounds: [Option<usize>; 5] = [None; 5];
     for size_arg in semantics.positive_size_args {
         if let Some(value) = args.get(*size_arg) {
@@ -2047,6 +2052,26 @@ fn apply_helper_semantics(
             }
         }
     }
+
+    if matches!(helper, BpfHelper::KptrXchg)
+        && let Some(MirValue::VReg(src)) = args.get(1)
+        && let VerifierType::Ptr {
+            kfunc_ref: Some(ref_id),
+            ..
+        } = state.get(*src)
+    {
+        if state.is_live_kfunc_ref(ref_id) {
+            kptr_xchg_acquire_kind = state.kfunc_ref_kind(ref_id);
+            state.invalidate_kfunc_ref(ref_id);
+        } else {
+            errors.push(VerifierTypeError::new(format!(
+                "helper {} arg1 reference already released",
+                helper_id
+            )));
+        }
+    }
+
+    kptr_xchg_acquire_kind
 }
 
 fn apply_kfunc_semantics(
@@ -6552,6 +6577,104 @@ mod tests {
             "unexpected errors: {:?}",
             err
         );
+    }
+
+    #[test]
+    fn test_helper_kptr_xchg_transfers_reference_and_releases_old_value() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let swap = func.alloc_block();
+        let release_old = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+        func.param_count = 1;
+
+        let dst_ptr = func.alloc_vreg();
+        let pid = func.alloc_vreg();
+        let task = func.alloc_vreg();
+        let task_non_null = func.alloc_vreg();
+        let swapped = func.alloc_vreg();
+        let swapped_non_null = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: pid,
+            src: MirValue::Const(123),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: task,
+            kfunc: "bpf_task_from_pid".to_string(),
+            btf_id: None,
+            args: vec![pid],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: task_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(task),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: task_non_null,
+            if_true: swap,
+            if_false: done,
+        };
+
+        func.block_mut(swap).instructions.push(MirInst::CallHelper {
+            dst: swapped,
+            helper: BpfHelper::KptrXchg as u32,
+            args: vec![MirValue::VReg(dst_ptr), MirValue::VReg(task)],
+        });
+        func.block_mut(swap).instructions.push(MirInst::BinOp {
+            dst: swapped_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(swapped),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(swap).terminator = MirInst::Branch {
+            cond: swapped_non_null,
+            if_true: release_old,
+            if_false: done,
+        };
+
+        func.block_mut(release_old)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_task_release".to_string(),
+                btf_id: None,
+                args: vec![swapped],
+            });
+        func.block_mut(release_old).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            dst_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(pid, MirType::I64);
+        types.insert(
+            task,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(task_non_null, MirType::Bool);
+        types.insert(
+            swapped,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(swapped_non_null, MirType::Bool);
+        types.insert(release_ret, MirType::I64);
+
+        verify_mir(&func, &types).expect("expected kptr_xchg transfer/release semantics");
     }
 
     #[test]
