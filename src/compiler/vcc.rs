@@ -15,7 +15,7 @@ use std::collections::{HashMap, VecDeque};
 use crate::compiler::cfg::CFG;
 use crate::compiler::instruction::{BpfHelper, HelperArgKind, HelperRetKind, HelperSignature};
 use crate::compiler::mir::{
-    AddressSpace, BinOpKind, MirFunction, MirInst, MirType, MirValue, COUNTER_MAP_NAME,
+    AddressSpace, BinOpKind, MapKind, MirFunction, MirInst, MirType, MirValue, COUNTER_MAP_NAME,
     HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, STRING_COUNTER_MAP_NAME, TIMESTAMP_MAP_NAME,
     USTACK_MAP_NAME, StackSlotId, StackSlotKind, StringAppendType, UnaryOpKind, VReg,
 };
@@ -2903,7 +2903,13 @@ impl<'a> VccLowerer<'a> {
                 let vcc_val = val.as_ref().map(|v| self.lower_value(v, out));
                 Ok(VccTerminator::Return { value: vcc_val })
             }
-            MirInst::TailCall { index, .. } => {
+            MirInst::TailCall { prog_map, index } => {
+                if prog_map.kind != MapKind::ProgArray {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!("tail_call requires ProgArray map, got {:?}", prog_map.kind),
+                    ));
+                }
                 let vcc_val = self.lower_value(index, out);
                 out.push(VccInst::AssertScalar { value: vcc_val });
                 Ok(VccTerminator::Return { value: None })
@@ -7232,6 +7238,29 @@ mod tests {
         assert!(
             err.iter()
                 .any(|e| e.message.contains("expected scalar value")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_tail_call_rejects_non_prog_array_map_kind() {
+        let (mut func, entry) = new_mir_function();
+        func.block_mut(entry).terminator = MirInst::TailCall {
+            prog_map: MapRef {
+                name: "not_prog_array".to_string(),
+                kind: MapKind::Hash,
+            },
+            index: MirValue::Const(0),
+        };
+
+        let err =
+            verify_mir(&func, &HashMap::new()).expect_err("expected non-ProgArray tail_call error");
+        assert!(
+            err.iter().any(
+                |e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains("tail_call requires ProgArray map")
+            ),
             "unexpected error messages: {:?}",
             err
         );

@@ -9,7 +9,7 @@ use std::collections::{HashMap, VecDeque};
 use super::instruction::{BpfHelper, HelperArgKind, HelperRetKind, HelperSignature};
 use super::mir::{
     AddressSpace, BinOpKind, BlockId, COUNTER_MAP_NAME, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME,
-    MapRef, MirFunction, MirInst, MirType, MirValue, STRING_COUNTER_MAP_NAME, StackSlotId,
+    MapKind, MapRef, MirFunction, MirInst, MirType, MirValue, STRING_COUNTER_MAP_NAME, StackSlotId,
     TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, VReg,
 };
 
@@ -369,7 +369,13 @@ pub fn verify_mir(
                     ));
                 }
             }
-            MirInst::TailCall { index, .. } => {
+            MirInst::TailCall { prog_map, index } => {
+                if prog_map.kind != MapKind::ProgArray {
+                    errors.push(VerifierTypeError::new(format!(
+                        "tail_call requires ProgArray map, got {:?}",
+                        prog_map.kind
+                    )));
+                }
                 let index_ty = value_type(index, &state, &slot_sizes);
                 if !matches!(index_ty, VerifierType::Scalar | VerifierType::Bool) {
                     errors.push(VerifierTypeError::new(format!(
@@ -3113,6 +3119,30 @@ mod tests {
         assert!(
             err.iter()
                 .any(|e| e.message.contains("tail_call index expects scalar")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_tail_call_rejects_non_prog_array_map_kind() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        func.block_mut(entry).terminator = MirInst::TailCall {
+            prog_map: MapRef {
+                name: "not_prog_array".to_string(),
+                kind: MapKind::Hash,
+            },
+            index: MirValue::Const(0),
+        };
+
+        let err =
+            verify_mir(&func, &HashMap::new()).expect_err("expected non-ProgArray tail_call error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("tail_call requires ProgArray map")),
             "unexpected errors: {:?}",
             err
         );
