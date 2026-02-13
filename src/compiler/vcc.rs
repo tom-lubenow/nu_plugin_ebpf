@@ -264,6 +264,12 @@ pub enum VccInst {
         ptr: VccValue,
         kind: KfuncRefKind,
     },
+    KfuncExpectRefKind {
+        ptr: VccValue,
+        arg_idx: usize,
+        kind: KfuncRefKind,
+        kfunc: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1652,6 +1658,68 @@ impl VccVerifier {
                                 actual: other.class(),
                             },
                             "kfunc release requires pointer operand",
+                        ));
+                    }
+                }
+            }
+            VccInst::KfuncExpectRefKind {
+                ptr,
+                arg_idx,
+                kind,
+                kfunc,
+            } => {
+                let ty = match state.value_type(*ptr) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                match ty {
+                    VccValueType::Ptr(info) if info.space == VccAddrSpace::Kernel => {
+                        if let Some(ref_id) = info.kfunc_ref {
+                            if !state.is_live_kfunc_ref(ref_id) {
+                                self.errors.push(VccError::new(
+                                    VccErrorKind::PointerBounds,
+                                    format!(
+                                        "kfunc '{}' arg{} reference already released",
+                                        kfunc, arg_idx
+                                    ),
+                                ));
+                                return;
+                            }
+                            let actual_kind = state.kfunc_ref_kind(ref_id);
+                            if actual_kind != Some(*kind) {
+                                let expected = kind.label();
+                                let actual = actual_kind.map(|k| k.label()).unwrap_or("unknown");
+                                self.errors.push(VccError::new(
+                                    VccErrorKind::PointerBounds,
+                                    format!(
+                                        "kfunc '{}' arg{} expects {} reference, got {} reference",
+                                        kfunc, arg_idx, expected, actual
+                                    ),
+                                ));
+                            }
+                        }
+                    }
+                    VccValueType::Ptr(info) => {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::PointerBounds,
+                            format!(
+                                "kfunc '{}' arg{} expects pointer in [Kernel], got {}",
+                                kfunc,
+                                arg_idx,
+                                Self::space_name(info.space)
+                            ),
+                        ));
+                    }
+                    other => {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::TypeMismatch {
+                                expected: VccTypeClass::Ptr,
+                                actual: other.class(),
+                            },
+                            format!("kfunc '{}' arg{} expects pointer value", kfunc, arg_idx),
                         ));
                     }
                 }
@@ -3589,6 +3657,14 @@ impl<'a> VccLowerer<'a> {
                 KfuncArgKind::Pointer => {
                     self.require_pointer_reg(*arg)?;
                     self.verify_kfunc_ptr_arg_space(kfunc, idx, *arg)?;
+                    if let Some(kind) = Self::kfunc_pointer_arg_expected_ref_kind(kfunc, idx) {
+                        out.push(VccInst::KfuncExpectRefKind {
+                            ptr: VccValue::Reg(VccReg(arg.0)),
+                            arg_idx: idx,
+                            kind,
+                            kfunc: kfunc.to_string(),
+                        });
+                    }
                     if Self::kfunc_release_kind(kfunc).is_some() && idx == 0 {
                         self.check_ptr_range(*arg, 1, out)?;
                     }
@@ -3648,17 +3724,29 @@ impl<'a> VccLowerer<'a> {
     }
 
     fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
-        matches!(
+        Self::kfunc_pointer_arg_expected_ref_kind(kfunc, arg_idx).is_some()
+    }
+
+    fn kfunc_pointer_arg_expected_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRefKind> {
+        if matches!(
             (kfunc, arg_idx),
             ("bpf_task_acquire", 0)
                 | ("bpf_task_release", 0)
                 | ("bpf_task_get_cgroup1", 0)
                 | ("bpf_task_under_cgroup", 0)
-                | ("bpf_task_under_cgroup", 1)
+        ) {
+            return Some(KfuncRefKind::Task);
+        }
+        if matches!(
+            (kfunc, arg_idx),
+            ("bpf_task_under_cgroup", 1)
                 | ("bpf_cgroup_acquire", 0)
                 | ("bpf_cgroup_ancestor", 0)
                 | ("bpf_cgroup_release", 0)
-        )
+        ) {
+            return Some(KfuncRefKind::Cgroup);
+        }
+        None
     }
 
     fn verify_helper_arg_value(
@@ -9180,6 +9268,62 @@ mod tests {
         assert!(
             err.iter()
                 .any(|e| e.message.contains("arg0 expects pointer in [Kernel]")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_kfunc_task_acquire_rejects_cgroup_reference_argument() {
+        let (mut func, entry) = new_mir_function();
+
+        let cgid = func.alloc_vreg();
+        let cgroup = func.alloc_vreg();
+        let acquired_task = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: cgid,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: cgroup,
+            kfunc: "bpf_cgroup_from_id".to_string(),
+            btf_id: None,
+            args: vec![cgid],
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: acquired_task,
+            kfunc: "bpf_task_acquire".to_string(),
+            btf_id: None,
+            args: vec![cgroup],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(cgid, MirType::I64);
+        types.insert(
+            cgroup,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(
+            acquired_task,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected kfunc provenance mismatch error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("arg0 expects task reference")),
+            "unexpected error messages: {:?}",
+            err
+        );
+        assert!(
+            err.iter().any(|e| e.message.contains("cgroup reference")),
             "unexpected error messages: {:?}",
             err
         );

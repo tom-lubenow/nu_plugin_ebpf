@@ -1816,7 +1816,9 @@ fn check_kfunc_arg(
             }
         }
         KfuncArgKind::Pointer => match ty {
-            VerifierType::Ptr { space, .. } => {
+            VerifierType::Ptr {
+                space, kfunc_ref, ..
+            } => {
                 if kfunc_pointer_arg_requires_kernel(kfunc, arg_idx)
                     && space != AddressSpace::Kernel
                 {
@@ -1824,6 +1826,19 @@ fn check_kfunc_arg(
                         "kfunc '{}' arg{} expects kernel pointer, got {:?}",
                         kfunc, arg_idx, space
                     )));
+                }
+                if let Some(expected_kind) = kfunc_pointer_arg_expected_ref_kind(kfunc, arg_idx) {
+                    if let Some(ref_id) = kfunc_ref {
+                        let actual_kind = state.kfunc_ref_kind(ref_id);
+                        if actual_kind != Some(expected_kind) {
+                            let expected = expected_kind.label();
+                            let actual = actual_kind.map(|k| k.label()).unwrap_or("unknown");
+                            errors.push(VerifierTypeError::new(format!(
+                                "kfunc '{}' arg{} expects {} reference, got {} reference",
+                                kfunc, arg_idx, expected, actual
+                            )));
+                        }
+                    }
                 }
             }
             _ => {
@@ -1837,17 +1852,29 @@ fn check_kfunc_arg(
 }
 
 fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
-    matches!(
+    kfunc_pointer_arg_expected_ref_kind(kfunc, arg_idx).is_some()
+}
+
+fn kfunc_pointer_arg_expected_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRefKind> {
+    if matches!(
         (kfunc, arg_idx),
         ("bpf_task_acquire", 0)
             | ("bpf_task_release", 0)
             | ("bpf_task_get_cgroup1", 0)
             | ("bpf_task_under_cgroup", 0)
-            | ("bpf_task_under_cgroup", 1)
+    ) {
+        return Some(KfuncRefKind::Task);
+    }
+    if matches!(
+        (kfunc, arg_idx),
+        ("bpf_task_under_cgroup", 1)
             | ("bpf_cgroup_acquire", 0)
             | ("bpf_cgroup_ancestor", 0)
             | ("bpf_cgroup_release", 0)
-    )
+    ) {
+        return Some(KfuncRefKind::Cgroup);
+    }
+    None
 }
 
 fn helper_positive_size_upper_bound(
@@ -6562,6 +6589,64 @@ mod tests {
         assert!(
             err.iter()
                 .any(|e| e.message.contains("arg0 expects kernel pointer")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_kfunc_task_acquire_rejects_cgroup_reference_argument() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let cgid = func.alloc_vreg();
+        let cgroup = func.alloc_vreg();
+        let acquired_task = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: cgid,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: cgroup,
+            kfunc: "bpf_cgroup_from_id".to_string(),
+            btf_id: None,
+            args: vec![cgid],
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: acquired_task,
+            kfunc: "bpf_task_acquire".to_string(),
+            btf_id: None,
+            args: vec![cgroup],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(cgid, MirType::I64);
+        types.insert(
+            cgroup,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(
+            acquired_task,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected kfunc provenance mismatch error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("arg0 expects task reference")),
+            "unexpected errors: {:?}",
+            err
+        );
+        assert!(
+            err.iter().any(|e| e.message.contains("cgroup reference")),
             "unexpected errors: {:?}",
             err
         );

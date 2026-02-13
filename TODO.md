@@ -53,6 +53,7 @@ Last updated: 2026-02-13.
   - Ref-lifetime tracking now also covers common task/cgroup kfunc acquire/release families (`bpf_task_from_pid`, `bpf_task_from_vpid`, `bpf_task_get_cgroup1`, `bpf_cgroup_acquire`, `bpf_cgroup_from_id` with corresponding release checks).
   - Verifier/VCC kfunc ref-lifetime parity now tracks acquired reference kind (`task` vs `cgroup`), preserves unknown-kind merges across CFG joins, and rejects mixed-family releases (`bpf_task_release` vs `bpf_cgroup_release`).
   - Verifier/VCC now enforce kernel-pointer address-space requirements for task/cgroup kfunc pointer arguments (e.g., reject stack/map/user pointers for acquire/release/ancestry helpers).
+  - Verifier/VCC now enforce task-vs-cgroup provenance on tracked kfunc reference arguments for task/cgroup kfuncs (not just release sites).
   - Verifier parity now enforces the generic helper argument cap (`<= 5` args) for unknown helper IDs in both verifier_types and VCC.
   - Verifier parity now enforces the MIR function parameter cap (`<= 5`) that backend BPF subfunction lowering requires, with verifier_types/VCC regression tests.
   - Verifier parity now enforces `CallSubfn` argument limits (`<= 5`) before MIR->LIR lowering, with verifier_types/VCC regression tests.
