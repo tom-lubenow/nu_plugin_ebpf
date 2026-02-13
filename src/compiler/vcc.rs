@@ -14,8 +14,9 @@ use std::collections::{HashMap, VecDeque};
 
 use crate::compiler::cfg::CFG;
 use crate::compiler::instruction::{
-    BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncRetKind,
-    KfuncSignature,
+    BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncRefKind,
+    KfuncRetKind, KfuncSignature, kfunc_acquire_ref_kind, kfunc_pointer_arg_ref_kind,
+    kfunc_release_ref_kind,
 };
 use crate::compiler::mir::{
     AddressSpace, BinOpKind, COUNTER_MAP_NAME, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, MapKind,
@@ -123,21 +124,6 @@ pub enum VccNullability {
     NonNull,
     MaybeNull,
     Null,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KfuncRefKind {
-    Task,
-    Cgroup,
-}
-
-impl KfuncRefKind {
-    fn label(self) -> &'static str {
-        match self {
-            KfuncRefKind::Task => "task",
-            KfuncRefKind::Cgroup => "cgroup",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3472,23 +3458,11 @@ impl<'a> VccLowerer<'a> {
     }
 
     fn kfunc_acquire_kind(kfunc: &str) -> Option<KfuncRefKind> {
-        match kfunc {
-            "bpf_task_acquire" | "bpf_task_from_pid" | "bpf_task_from_vpid" => {
-                Some(KfuncRefKind::Task)
-            }
-            "bpf_task_get_cgroup1" | "bpf_cgroup_acquire" | "bpf_cgroup_from_id" => {
-                Some(KfuncRefKind::Cgroup)
-            }
-            _ => None,
-        }
+        kfunc_acquire_ref_kind(kfunc)
     }
 
     fn kfunc_release_kind(kfunc: &str) -> Option<KfuncRefKind> {
-        match kfunc {
-            "bpf_task_release" => Some(KfuncRefKind::Task),
-            "bpf_cgroup_release" => Some(KfuncRefKind::Cgroup),
-            _ => None,
-        }
+        kfunc_release_ref_kind(kfunc)
     }
 
     fn maybe_assume_list_len(&mut self, dst: VReg, ptr: VReg, offset: i32, out: &mut Vec<VccInst>) {
@@ -3728,25 +3702,7 @@ impl<'a> VccLowerer<'a> {
     }
 
     fn kfunc_pointer_arg_expected_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRefKind> {
-        if matches!(
-            (kfunc, arg_idx),
-            ("bpf_task_acquire", 0)
-                | ("bpf_task_release", 0)
-                | ("bpf_task_get_cgroup1", 0)
-                | ("bpf_task_under_cgroup", 0)
-        ) {
-            return Some(KfuncRefKind::Task);
-        }
-        if matches!(
-            (kfunc, arg_idx),
-            ("bpf_task_under_cgroup", 1)
-                | ("bpf_cgroup_acquire", 0)
-                | ("bpf_cgroup_ancestor", 0)
-                | ("bpf_cgroup_release", 0)
-        ) {
-            return Some(KfuncRefKind::Cgroup);
-        }
-        None
+        kfunc_pointer_arg_ref_kind(kfunc, arg_idx)
     }
 
     fn verify_helper_arg_value(

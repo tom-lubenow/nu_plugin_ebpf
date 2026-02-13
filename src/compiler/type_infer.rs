@@ -25,6 +25,7 @@ use super::hindley_milner::{
 };
 use super::instruction::{
     HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncRetKind, KfuncSignature,
+    kfunc_pointer_arg_ref_kind,
 };
 use super::mir::{
     AddressSpace, BasicBlock, BinOpKind, CtxField, MapKind, MirFunction, MirInst, MirType,
@@ -592,17 +593,7 @@ impl<'a> TypeInference<'a> {
     }
 
     fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
-        matches!(
-            (kfunc, arg_idx),
-            ("bpf_task_acquire", 0)
-                | ("bpf_task_release", 0)
-                | ("bpf_task_get_cgroup1", 0)
-                | ("bpf_task_under_cgroup", 0)
-                | ("bpf_task_under_cgroup", 1)
-                | ("bpf_cgroup_acquire", 0)
-                | ("bpf_cgroup_ancestor", 0)
-                | ("bpf_cgroup_release", 0)
-        )
+        kfunc_pointer_arg_ref_kind(kfunc, arg_idx).is_some()
     }
 
     fn is_const_zero(value: &MirValue) -> bool {

@@ -114,6 +114,21 @@ pub enum KfuncRetKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KfuncRefKind {
+    Task,
+    Cgroup,
+}
+
+impl KfuncRefKind {
+    pub const fn label(self) -> &'static str {
+        match self {
+            KfuncRefKind::Task => "task",
+            KfuncRefKind::Cgroup => "cgroup",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HelperAllowedPtrSpaces {
     pub allow_stack: bool,
     pub allow_map: bool,
@@ -263,6 +278,46 @@ impl KfuncSignature {
     pub fn arg_kind(&self, idx: usize) -> KfuncArgKind {
         self.arg_kinds[idx]
     }
+}
+
+pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
+    match kfunc {
+        "bpf_task_acquire" | "bpf_task_from_pid" | "bpf_task_from_vpid" => Some(KfuncRefKind::Task),
+        "bpf_task_get_cgroup1" | "bpf_cgroup_acquire" | "bpf_cgroup_from_id" => {
+            Some(KfuncRefKind::Cgroup)
+        }
+        _ => None,
+    }
+}
+
+pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
+    match kfunc {
+        "bpf_task_release" => Some(KfuncRefKind::Task),
+        "bpf_cgroup_release" => Some(KfuncRefKind::Cgroup),
+        _ => None,
+    }
+}
+
+pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRefKind> {
+    if matches!(
+        (kfunc, arg_idx),
+        ("bpf_task_acquire", 0)
+            | ("bpf_task_release", 0)
+            | ("bpf_task_get_cgroup1", 0)
+            | ("bpf_task_under_cgroup", 0)
+    ) {
+        return Some(KfuncRefKind::Task);
+    }
+    if matches!(
+        (kfunc, arg_idx),
+        ("bpf_task_under_cgroup", 1)
+            | ("bpf_cgroup_acquire", 0)
+            | ("bpf_cgroup_ancestor", 0)
+            | ("bpf_cgroup_release", 0)
+    ) {
+        return Some(KfuncRefKind::Cgroup);
+    }
+    None
 }
 
 impl BpfHelper {
@@ -1192,6 +1247,39 @@ mod tests {
         assert_eq!(sig.max_args, 1);
         assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
         assert_eq!(sig.ret_kind, KfuncRetKind::Void);
+    }
+
+    #[test]
+    fn test_kfunc_ref_kind_mappings() {
+        assert_eq!(
+            kfunc_acquire_ref_kind("bpf_task_from_pid"),
+            Some(KfuncRefKind::Task)
+        );
+        assert_eq!(
+            kfunc_acquire_ref_kind("bpf_cgroup_from_id"),
+            Some(KfuncRefKind::Cgroup)
+        );
+        assert_eq!(
+            kfunc_release_ref_kind("bpf_task_release"),
+            Some(KfuncRefKind::Task)
+        );
+        assert_eq!(
+            kfunc_release_ref_kind("bpf_cgroup_release"),
+            Some(KfuncRefKind::Cgroup)
+        );
+    }
+
+    #[test]
+    fn test_kfunc_pointer_arg_ref_kind_mappings() {
+        assert_eq!(
+            kfunc_pointer_arg_ref_kind("bpf_task_under_cgroup", 0),
+            Some(KfuncRefKind::Task)
+        );
+        assert_eq!(
+            kfunc_pointer_arg_ref_kind("bpf_task_under_cgroup", 1),
+            Some(KfuncRefKind::Cgroup)
+        );
+        assert_eq!(kfunc_pointer_arg_ref_kind("bpf_task_from_pid", 0), None);
     }
 
     #[test]
