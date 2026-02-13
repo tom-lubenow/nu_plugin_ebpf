@@ -6553,6 +6553,48 @@ mod tests {
     }
 
     #[test]
+    fn test_kfunc_cpumask_and_requires_pointer_args() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+        func.param_count = 1;
+
+        let cpumask = func.alloc_vreg();
+        let scalar = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: scalar,
+            src: MirValue::Const(7),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_cpumask_and".to_string(),
+            btf_id: None,
+            args: vec![cpumask, scalar, cpumask],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            cpumask,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(scalar, MirType::I64);
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected cpumask pointer-arg error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("arg1 expects pointer")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
     fn test_kfunc_task_acquire_rejects_cgroup_reference_argument() {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();
