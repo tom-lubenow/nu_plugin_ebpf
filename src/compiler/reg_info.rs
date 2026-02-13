@@ -27,6 +27,7 @@ pub fn call_clobbers(inst: &MirInst) -> &'static [EbpfReg] {
     if matches!(
         inst,
         MirInst::CallHelper { .. }
+            | MirInst::CallKfunc { .. }
             | MirInst::CallSubfn { .. }
             | MirInst::TailCall { .. }
             | MirInst::MapLookup { .. }

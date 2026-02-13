@@ -30,7 +30,9 @@ use crate::compiler::graph_coloring::{
     ColoringResult, GraphColoringAllocator, compute_loop_depths,
 };
 use crate::compiler::hindley_milner::HMType;
-use crate::compiler::instruction::{BpfHelper, EbpfInsn, EbpfReg, HelperSignature, opcode};
+use crate::compiler::instruction::{
+    BpfHelper, EbpfInsn, EbpfReg, HelperSignature, KfuncSignature, opcode,
+};
 use crate::compiler::lir::{LirBlock, LirFunction, LirInst, LirProgram};
 use crate::compiler::mir::{
     BinOpKind, BlockId, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, MapKind,
@@ -1308,6 +1310,55 @@ impl<'a> MirToEbpfCompiler<'a> {
 
                 // Track this call for relocation
                 self.subfn_calls.push((call_idx, *subfn));
+            }
+
+            LirInst::CallKfunc {
+                kfunc,
+                btf_id,
+                args,
+                ..
+            } => {
+                let sig = KfuncSignature::for_name(kfunc).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "unknown kfunc '{}' (typed signature required)",
+                        kfunc
+                    ))
+                })?;
+                if args.len() < sig.min_args || args.len() > sig.max_args {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "kfunc '{}' expects {}..={} arguments, got {}",
+                        kfunc,
+                        sig.min_args,
+                        sig.max_args,
+                        args.len()
+                    )));
+                }
+                if args.len() > 5 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "BPF kfunc calls support at most 5 arguments".into(),
+                    ));
+                }
+
+                let resolved_btf_id = if let Some(btf_id) = btf_id {
+                    *btf_id
+                } else {
+                    KernelBtf::get().resolve_kfunc_btf_id(kfunc).map_err(|err| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "failed to resolve kfunc '{}' BTF ID: {}",
+                            kfunc, err
+                        ))
+                    })?
+                };
+
+                if resolved_btf_id > i32::MAX as u32 {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "kfunc '{}' BTF ID {} is out of supported range",
+                        kfunc, resolved_btf_id
+                    )));
+                }
+
+                self.instructions
+                    .push(EbpfInsn::call_kfunc(resolved_btf_id as i32));
             }
 
             LirInst::CallHelper { helper, args, .. } => {
@@ -5189,6 +5240,85 @@ mod tests {
                     msg.contains("at most 5 arguments"),
                     "unexpected error: {msg}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn test_kfunc_call_with_explicit_btf_id_compiles() {
+        use crate::compiler::mir::*;
+
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let ptr = func.alloc_vreg();
+        let level = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: level,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_cgroup_ancestor".to_string(),
+            btf_id: Some(321),
+            args: vec![ptr, level],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let program = MirProgram {
+            main: func,
+            subfunctions: vec![],
+        };
+
+        let result = compile_mir_to_ebpf(&program, None).expect("kfunc call should compile");
+        let has_kfunc_call = result.bytecode.chunks(8).any(|chunk| {
+            chunk[0] == opcode::CALL
+                && ((chunk[1] >> 4) & 0x0f) == 2
+                && i32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]) == 321
+        });
+        assert!(has_kfunc_call, "expected BPF_PSEUDO_KFUNC_CALL bytecode");
+    }
+
+    #[test]
+    fn test_kfunc_call_rejects_unknown_signature() {
+        use crate::compiler::mir::*;
+
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let arg = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: arg,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "definitely_not_a_known_kfunc".to_string(),
+            btf_id: Some(1),
+            args: vec![arg],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let program = MirProgram {
+            main: func,
+            subfunctions: vec![],
+        };
+
+        match compile_mir_to_ebpf(&program, None) {
+            Ok(_) => panic!("expected unknown-kfunc error, got Ok"),
+            Err(err) => {
+                let msg = err.to_string();
+                assert!(msg.contains("unknown kfunc"), "unexpected error: {msg}");
             }
         }
     }

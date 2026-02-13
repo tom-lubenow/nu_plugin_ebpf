@@ -382,6 +382,17 @@ impl<'a> SsaBuilder<'a> {
                 helper: *helper,
                 args: args.iter().map(|v| self.rename_value(v)).collect(),
             },
+            MirInst::CallKfunc {
+                dst,
+                kfunc,
+                btf_id,
+                args,
+            } => MirInst::CallKfunc {
+                dst: *dst,
+                kfunc: kfunc.clone(),
+                btf_id: *btf_id,
+                args: args.iter().map(|v| self.rename_vreg(*v)).collect(),
+            },
             MirInst::CallSubfn { dst, subfn, args } => MirInst::CallSubfn {
                 dst: *dst,
                 subfn: *subfn,
@@ -584,6 +595,7 @@ fn update_def(inst: &mut MirInst, new_dst: VReg) {
         | MirInst::LoadSlot { dst, .. }
         | MirInst::LoadCtxField { dst, .. }
         | MirInst::CallHelper { dst, .. }
+        | MirInst::CallKfunc { dst, .. }
         | MirInst::CallSubfn { dst, .. }
         | MirInst::MapLookup { dst, .. }
         | MirInst::StrCmp { dst, .. }

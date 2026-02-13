@@ -118,6 +118,7 @@ fn has_side_effects(inst: &MirInst) -> bool {
         | MirInst::ListNew { .. }
         | MirInst::ListPush { .. }
         | MirInst::CallHelper { .. }
+        | MirInst::CallKfunc { .. }
         | MirInst::CallSubfn { .. }
         | MirInst::MapLookup { .. }
         | MirInst::MapUpdate { .. }

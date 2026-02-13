@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::compiler::CompileError;
 
-use super::instruction::EbpfReg;
+use super::instruction::{EbpfReg, KfuncSignature};
 use super::lir::{LirBlock, LirFunction, LirInst, LirProgram};
 use super::mir::{MirFunction, MirInst, MirProgram, MirValue, VReg};
 
@@ -205,6 +205,65 @@ fn lower_inst(
             let ret_reg = phys.get(EbpfReg::R0);
             out.push(LirInst::CallHelper {
                 helper: *helper,
+                args: arg_regs,
+                ret: ret_reg,
+            });
+            out.push(LirInst::Copy {
+                dst: *dst,
+                src: MirValue::VReg(ret_reg),
+            });
+        }
+        MirInst::CallKfunc {
+            dst,
+            kfunc,
+            btf_id,
+            args,
+        } => {
+            let sig = KfuncSignature::for_name(kfunc).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "unknown kfunc '{}' (typed signature required)",
+                    kfunc
+                ))
+            })?;
+            if args.len() < sig.min_args || args.len() > sig.max_args {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "kfunc '{}' expects {}..={} arguments, got {}",
+                    kfunc,
+                    sig.min_args,
+                    sig.max_args,
+                    args.len()
+                )));
+            }
+            if args.len() > 5 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "kfunc '{}' exceeds BPF call argument limit: {}",
+                    kfunc,
+                    args.len()
+                )));
+            }
+
+            let mut moves = Vec::new();
+            let mut arg_regs = Vec::new();
+            for (idx, arg) in args.iter().enumerate() {
+                let reg = match idx {
+                    0 => EbpfReg::R1,
+                    1 => EbpfReg::R2,
+                    2 => EbpfReg::R3,
+                    3 => EbpfReg::R4,
+                    4 => EbpfReg::R5,
+                    _ => unreachable!("kfunc args already bounded to at most 5"),
+                };
+                let dst_reg = phys.get(reg);
+                moves.push((dst_reg, *arg));
+                arg_regs.push(dst_reg);
+            }
+            if !moves.is_empty() {
+                out.push(LirInst::ParallelMove { moves });
+            }
+            let ret_reg = phys.get(EbpfReg::R0);
+            out.push(LirInst::CallKfunc {
+                kfunc: kfunc.clone(),
+                btf_id: *btf_id,
                 args: arg_regs,
                 ret: ret_reg,
             });
@@ -525,5 +584,88 @@ mod tests {
             }
             other => panic!("expected unsupported-instruction error, got {other}"),
         }
+    }
+
+    #[test]
+    fn test_lower_rejects_unknown_kfunc() {
+        let mut main = MirFunction::new();
+        let entry = main.alloc_block();
+        main.entry = entry;
+
+        let dst = main.alloc_vreg();
+        let arg = main.alloc_vreg();
+        main.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: arg,
+            src: MirValue::Const(1),
+        });
+        main.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "unknown_kfunc_name".to_string(),
+            btf_id: None,
+            args: vec![arg],
+        });
+        main.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let program = MirProgram {
+            main,
+            subfunctions: vec![],
+        };
+
+        let err =
+            lower_mir_to_lir_checked(&program).expect_err("expected unknown kfunc lowering error");
+        match err {
+            CompileError::UnsupportedInstruction(msg) => {
+                assert!(msg.contains("unknown kfunc"));
+            }
+            other => panic!("expected unsupported-instruction error, got {other}"),
+        }
+    }
+
+    #[test]
+    fn test_lower_kfunc_call() {
+        let mut main = MirFunction::new();
+        let entry = main.alloc_block();
+        main.entry = entry;
+
+        let dst = main.alloc_vreg();
+        let ptr = main.alloc_vreg();
+        let level = main.alloc_vreg();
+        let slot = main.alloc_stack_slot(8, 8, crate::compiler::mir::StackSlotKind::StringBuffer);
+        main.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        main.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: level,
+            src: MirValue::Const(0),
+        });
+        main.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_cgroup_ancestor".to_string(),
+            btf_id: Some(99),
+            args: vec![ptr, level],
+        });
+        main.block_mut(entry).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(dst)),
+        };
+
+        let program = MirProgram {
+            main,
+            subfunctions: vec![],
+        };
+
+        let lir = lower_mir_to_lir_checked(&program).expect("kfunc lowering should succeed");
+        let block = lir.main.block(lir.main.entry);
+        let has_kfunc = block.instructions.iter().any(|inst| {
+            matches!(
+                inst,
+                LirInst::CallKfunc {
+                    kfunc,
+                    btf_id: Some(99),
+                    ..
+                } if kfunc == "bpf_cgroup_ancestor"
+            )
+        });
+        assert!(has_kfunc, "expected lowered LIR kfunc call");
     }
 }

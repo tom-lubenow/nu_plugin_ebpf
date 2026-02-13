@@ -25,6 +25,8 @@ static KERNEL_BTF: OnceLock<KernelBtf> = OnceLock::new();
 pub enum BtfError {
     /// BTF is not available on this system
     NotAvailable,
+    /// Failed to parse kernel BTF
+    KernelBtfError(String),
     /// Failed to read tracefs
     TracefsError(String),
     /// Type not found
@@ -39,6 +41,7 @@ impl std::fmt::Display for BtfError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             BtfError::NotAvailable => write!(f, "Kernel type information not available"),
+            BtfError::KernelBtfError(msg) => write!(f, "Kernel BTF error: {}", msg),
             BtfError::TracefsError(msg) => write!(f, "Tracefs error: {}", msg),
             BtfError::TypeNotFound(name) => write!(f, "Type '{}' not found", name),
             BtfError::TracepointNotFound { category, name } => {
@@ -193,6 +196,25 @@ impl KernelBtf {
     fn load_kernel_btf(&self) -> Result<Btf, PtRegsError> {
         let path = "/sys/kernel/btf/vmlinux";
         Btf::from_file(path).map_err(|e| PtRegsError::new(format!("failed to parse {path}: {e}")))
+    }
+
+    fn load_kernel_btf_for_query(&self) -> Result<Btf, BtfError> {
+        let path = "/sys/kernel/btf/vmlinux";
+        if !Path::new(path).is_file() {
+            return Err(BtfError::NotAvailable);
+        }
+        Btf::from_file(path).map_err(|e| BtfError::KernelBtfError(e.to_string()))
+    }
+
+    /// Resolve a kfunc name to its kernel BTF function ID.
+    pub fn resolve_kfunc_btf_id(&self, kfunc_name: &str) -> Result<u32, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        for ty in btf.get_types() {
+            if ty.is_function && ty.name.as_deref() == Some(kfunc_name) {
+                return Ok(ty.type_id);
+            }
+        }
+        Err(BtfError::TypeNotFound(kfunc_name.to_string()))
     }
 
     /// Load the list of available kernel functions (lazy, cached)

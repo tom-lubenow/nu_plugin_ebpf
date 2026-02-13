@@ -13,7 +13,10 @@
 use std::collections::{HashMap, VecDeque};
 
 use crate::compiler::cfg::CFG;
-use crate::compiler::instruction::{BpfHelper, HelperArgKind, HelperRetKind, HelperSignature};
+use crate::compiler::instruction::{
+    BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncRetKind,
+    KfuncSignature,
+};
 use crate::compiler::mir::{
     AddressSpace, BinOpKind, MapKind, MirFunction, MirInst, MirType, MirValue, COUNTER_MAP_NAME,
     HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, STRING_COUNTER_MAP_NAME, TIMESTAMP_MAP_NAME,
@@ -2718,6 +2721,22 @@ impl<'a> VccLowerer<'a> {
                     }
                 }
             }
+            MirInst::CallKfunc {
+                dst,
+                kfunc,
+                args,
+                ..
+            } => {
+                self.verify_kfunc_call(kfunc, args, out)?;
+                let ty = self.kfunc_return_type(kfunc, *dst);
+                out.push(VccInst::Assume {
+                    dst: VccReg(dst.0),
+                    ty,
+                });
+                if let VccValueType::Ptr(info) = ty {
+                    self.ptr_regs.insert(VccReg(dst.0), info);
+                }
+            }
             MirInst::CallSubfn { dst, args, .. } => {
                 if args.len() > 5 {
                     return Err(VccError::new(
@@ -3138,6 +3157,31 @@ impl<'a> VccLowerer<'a> {
         }
     }
 
+    fn kfunc_return_type(&self, kfunc: &str, dst: VReg) -> VccValueType {
+        let inferred = self.types.get(&dst).map(vcc_type_from_mir);
+        let Some(sig) = KfuncSignature::for_name(kfunc) else {
+            return inferred.unwrap_or(VccValueType::Unknown);
+        };
+
+        match sig.ret_kind {
+            KfuncRetKind::Scalar | KfuncRetKind::Void => {
+                inferred.unwrap_or(VccValueType::Scalar { range: None })
+            }
+            KfuncRetKind::PointerMaybeNull => match inferred {
+                Some(VccValueType::Ptr(mut info)) => {
+                    info.nullability = VccNullability::MaybeNull;
+                    VccValueType::Ptr(info)
+                }
+                _ => VccValueType::Ptr(VccPointerInfo {
+                    space: VccAddrSpace::Kernel,
+                    nullability: VccNullability::MaybeNull,
+                    bounds: None,
+                    ringbuf_ref: None,
+                }),
+            },
+        }
+    }
+
     fn maybe_assume_list_len(&mut self, dst: VReg, ptr: VReg, offset: i32, out: &mut Vec<VccInst>) {
         if offset != 0 {
             return;
@@ -3257,6 +3301,47 @@ impl<'a> VccLowerer<'a> {
                 VccErrorKind::UnsupportedInstruction,
                 "BPF helpers support at most 5 arguments",
             ));
+        }
+
+        Ok(())
+    }
+
+    fn verify_kfunc_call(
+        &mut self,
+        kfunc: &str,
+        args: &[VReg],
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        let sig = KfuncSignature::for_name(kfunc).ok_or_else(|| {
+            VccError::new(
+                VccErrorKind::UnsupportedInstruction,
+                format!("unknown kfunc '{}' (typed signature required)", kfunc),
+            )
+        })?;
+        if args.len() < sig.min_args || args.len() > sig.max_args {
+            return Err(VccError::new(
+                VccErrorKind::UnsupportedInstruction,
+                format!(
+                    "kfunc '{}' expects {}..={} args, got {}",
+                    kfunc,
+                    sig.min_args,
+                    sig.max_args,
+                    args.len()
+                ),
+            ));
+        }
+        if args.len() > 5 {
+            return Err(VccError::new(
+                VccErrorKind::UnsupportedInstruction,
+                "BPF kfunc calls support at most 5 arguments",
+            ));
+        }
+
+        for (idx, arg) in args.iter().enumerate() {
+            match sig.arg_kind(idx) {
+                KfuncArgKind::Scalar => self.assert_scalar_reg(*arg, out),
+                KfuncArgKind::Pointer => self.check_ptr_range(*arg, 1, out)?,
+            }
         }
 
         Ok(())
@@ -8610,5 +8695,57 @@ mod tests {
             "unexpected error messages: {:?}",
             err
         );
+    }
+
+    #[test]
+    fn test_verify_mir_kfunc_unknown_signature_rejected() {
+        let (mut func, entry) = new_mir_function();
+        let arg = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: arg,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "unknown_kfunc".to_string(),
+            btf_id: None,
+            args: vec![arg],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(arg, MirType::I64);
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected unknown-kfunc error");
+        assert!(err.iter().any(|e| e.message.contains("unknown kfunc")));
+    }
+
+    #[test]
+    fn test_verify_mir_kfunc_pointer_argument_required() {
+        let (mut func, entry) = new_mir_function();
+        let scalar = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: scalar,
+            src: MirValue::Const(42),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_task_release".to_string(),
+            btf_id: None,
+            args: vec![scalar],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(scalar, MirType::I64);
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected kfunc pointer-arg error");
+        assert!(err.iter().any(|e| {
+            e.message.contains("expects pointer") || e.message.contains("expected pointer value")
+        }));
     }
 }

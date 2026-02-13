@@ -198,6 +198,12 @@ pub enum LirInst {
         args: Vec<VReg>, // precolored R1-R5 vregs
         ret: VReg,       // precolored R0 vreg
     },
+    CallKfunc {
+        kfunc: String,
+        btf_id: Option<u32>,
+        args: Vec<VReg>, // precolored R1-R5 vregs
+        ret: VReg,       // precolored R0 vreg
+    },
     CallSubfn {
         subfn: SubfunctionId,
         args: Vec<VReg>, // precolored R1-R5 vregs
@@ -311,6 +317,7 @@ impl LirInst {
             | LirInst::BinOp { dst, .. }
             | LirInst::UnaryOp { dst, .. }
             | LirInst::CallHelper { ret: dst, .. }
+            | LirInst::CallKfunc { ret: dst, .. }
             | LirInst::CallSubfn { ret: dst, .. }
             | LirInst::MapLookup { dst, .. }
             | LirInst::LoadCtxField { dst, .. }
@@ -354,6 +361,9 @@ impl LirInst {
                 }
             }
             LirInst::CallHelper { args, .. } => {
+                uses.extend(args.iter().copied());
+            }
+            LirInst::CallKfunc { args, .. } => {
                 uses.extend(args.iter().copied());
             }
             LirInst::CallSubfn { args, .. } => {
@@ -431,6 +441,7 @@ impl LirInst {
         if matches!(
             self,
             LirInst::CallHelper { .. }
+                | LirInst::CallKfunc { .. }
                 | LirInst::CallSubfn { .. }
                 | LirInst::TailCall { .. }
                 | LirInst::MapLookup { .. }

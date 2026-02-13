@@ -392,6 +392,15 @@ pub enum MirInst {
         args: Vec<MirValue>,
     },
 
+    /// Call BPF kfunc (BTF-described kernel function)
+    CallKfunc {
+        dst: VReg,
+        kfunc: String,
+        /// Optional explicit BTF ID. If absent, backend resolves from `kfunc`.
+        btf_id: Option<u32>,
+        args: Vec<VReg>,
+    },
+
     /// Map lookup
     MapLookup { dst: VReg, map: MapRef, key: VReg },
 
@@ -582,6 +591,7 @@ impl MirInst {
             | MirInst::BinOp { dst, .. }
             | MirInst::UnaryOp { dst, .. }
             | MirInst::CallHelper { dst, .. }
+            | MirInst::CallKfunc { dst, .. }
             | MirInst::CallSubfn { dst, .. }
             | MirInst::MapLookup { dst, .. }
             | MirInst::LoadCtxField { dst, .. }
@@ -622,6 +632,11 @@ impl MirInst {
             MirInst::CallHelper { args, .. } => {
                 for arg in args {
                     add_value(&mut uses, arg);
+                }
+            }
+            MirInst::CallKfunc { args, .. } => {
+                for arg in args {
+                    uses.push(*arg);
                 }
             }
             MirInst::CallSubfn { args, .. } => {

@@ -23,7 +23,9 @@ use super::elf::{EbpfProgramType, ProbeContext};
 use super::hindley_milner::{
     Constraint, HMType, Substitution, TypeScheme, TypeVar, TypeVarGenerator, UnifyError, unify,
 };
-use super::instruction::{HelperArgKind, HelperRetKind, HelperSignature};
+use super::instruction::{
+    HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncRetKind, KfuncSignature,
+};
 use super::mir::{
     AddressSpace, BasicBlock, BinOpKind, CtxField, MapKind, MirFunction, MirInst, MirType,
     MirValue, STRING_COUNTER_MAP_NAME, StackSlotId, StackSlotKind, StringAppendType, SubfunctionId,
@@ -321,6 +323,29 @@ impl<'a> TypeInference<'a> {
                 } else {
                     // Unknown helpers default to scalar return.
                     self.constrain(dst_ty, HMType::I64, "helper_call");
+                }
+            }
+
+            MirInst::CallKfunc { dst, kfunc, .. } => {
+                let dst_ty = self.vreg_type(*dst);
+                let sig = KfuncSignature::for_name(kfunc).ok_or_else(|| {
+                    TypeError::new(format!(
+                        "unknown kfunc '{}' (typed signature required)",
+                        kfunc
+                    ))
+                })?;
+                match sig.ret_kind {
+                    KfuncRetKind::Scalar | KfuncRetKind::Void => {
+                        self.constrain(dst_ty, HMType::I64, "kfunc_call");
+                    }
+                    KfuncRetKind::PointerMaybeNull => {
+                        let pointee = HMType::Var(self.tvar_gen.fresh());
+                        let ptr_ty = HMType::Ptr {
+                            pointee: Box::new(pointee),
+                            address_space: AddressSpace::Kernel,
+                        };
+                        self.constrain(dst_ty, ptr_ty, "kfunc_call_ptr_ret");
+                    }
                 }
             }
 
@@ -1102,6 +1127,51 @@ impl<'a> TypeInference<'a> {
                     errors.push(TypeError::new(
                         "BPF helpers support at most 5 arguments".to_string(),
                     ));
+                }
+            }
+
+            MirInst::CallKfunc { kfunc, args, .. } => {
+                let Some(sig) = KfuncSignature::for_name(kfunc) else {
+                    errors.push(TypeError::new(format!(
+                        "unknown kfunc '{}' (typed signature required)",
+                        kfunc
+                    )));
+                    return;
+                };
+                if args.len() < sig.min_args || args.len() > sig.max_args {
+                    errors.push(TypeError::new(format!(
+                        "kfunc '{}' expects {}..={} arguments, got {}",
+                        kfunc,
+                        sig.min_args,
+                        sig.max_args,
+                        args.len()
+                    )));
+                }
+                if args.len() > 5 {
+                    errors.push(TypeError::new(
+                        "BPF kfunc calls support at most 5 arguments".to_string(),
+                    ));
+                }
+                for (idx, arg) in args.iter().take(sig.max_args.min(5)).enumerate() {
+                    let arg_ty = self.mir_type_for_vreg(*arg, types);
+                    match sig.arg_kind(idx) {
+                        KfuncArgKind::Scalar => {
+                            if !Self::mir_is_numeric(&arg_ty) {
+                                errors.push(TypeError::new(format!(
+                                    "kfunc '{}' arg{} expects scalar, got {:?}",
+                                    kfunc, idx, arg_ty
+                                )));
+                            }
+                        }
+                        KfuncArgKind::Pointer => {
+                            if !matches!(arg_ty, MirType::Ptr { .. }) {
+                                errors.push(TypeError::new(format!(
+                                    "kfunc '{}' arg{} expects pointer, got {:?}",
+                                    kfunc, idx, arg_ty
+                                )));
+                            }
+                        }
+                    }
                 }
             }
 
@@ -2564,6 +2634,54 @@ mod tests {
             }
             other => panic!("Expected helper map lookup pointer return, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_type_error_unknown_kfunc_signature() {
+        let mut func = make_test_function();
+        let dst = func.alloc_vreg();
+        let arg = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: arg,
+            src: MirValue::Const(0),
+        });
+        block.instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "unknown_kfunc".to_string(),
+            btf_id: None,
+            args: vec![arg],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti.infer(&func).expect_err("expected unknown-kfunc type error");
+        assert!(errs.iter().any(|e| e.message.contains("unknown kfunc")));
+    }
+
+    #[test]
+    fn test_type_error_kfunc_pointer_argument_required() {
+        let mut func = make_test_function();
+        let dst = func.alloc_vreg();
+        let scalar = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: scalar,
+            src: MirValue::Const(42),
+        });
+        block.instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_task_release".to_string(),
+            btf_id: None,
+            args: vec![scalar],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected pointer-argument kfunc type error");
+        assert!(errs.iter().any(|e| e.message.contains("expects pointer")));
     }
 
     #[test]

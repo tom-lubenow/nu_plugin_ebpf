@@ -101,6 +101,19 @@ pub enum HelperRetKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KfuncArgKind {
+    Scalar,
+    Pointer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KfuncRetKind {
+    Scalar,
+    PointerMaybeNull,
+    Void,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HelperAllowedPtrSpaces {
     pub allow_stack: bool,
     pub allow_map: bool,
@@ -165,6 +178,47 @@ impl HelperSignature {
     }
 
     pub const fn arg_kind(&self, idx: usize) -> HelperArgKind {
+        self.arg_kinds[idx]
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct KfuncSignature {
+    pub min_args: usize,
+    pub max_args: usize,
+    pub arg_kinds: [KfuncArgKind; 5],
+    pub ret_kind: KfuncRetKind,
+}
+
+impl KfuncSignature {
+    pub fn for_name(name: &str) -> Option<Self> {
+        const S: KfuncArgKind = KfuncArgKind::Scalar;
+        const P: KfuncArgKind = KfuncArgKind::Pointer;
+
+        match name {
+            "bpf_task_acquire" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "bpf_task_release" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "bpf_cgroup_ancestor" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            _ => None,
+        }
+    }
+
+    pub fn arg_kind(&self, idx: usize) -> KfuncArgKind {
         self.arg_kinds[idx]
     }
 }
@@ -825,6 +879,12 @@ impl EbpfInsn {
         Self::new(opcode::CALL, 0, 1, 0, offset)
     }
 
+    /// CALL kfunc - BPF kfunc call (src=2 indicates BPF_PSEUDO_KFUNC_CALL)
+    /// The imm field contains the kernel BTF ID for a BTF_KIND_FUNC.
+    pub const fn call_kfunc(btf_id: i32) -> Self {
+        Self::new(opcode::CALL, 0, 2, 0, btf_id)
+    }
+
     /// EXIT - Exit the eBPF program (return value in r0)
     pub const fn exit() -> Self {
         Self::new(opcode::EXIT, 0, 0, 0, 0)
@@ -1060,6 +1120,14 @@ mod tests {
         let bytes = insn.encode();
         // opcode=0x85, imm=6 (TracePrintk helper number)
         assert_eq!(bytes, [0x85, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn test_call_kfunc() {
+        let insn = EbpfInsn::call_kfunc(1234);
+        let bytes = insn.encode();
+        // opcode=0x85, src_reg=2 (BPF_PSEUDO_KFUNC_CALL), imm=1234
+        assert_eq!(bytes, [0x85, 0x20, 0x00, 0x00, 0xd2, 0x04, 0x00, 0x00]);
     }
 
     #[test]

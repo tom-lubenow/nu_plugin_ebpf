@@ -6,7 +6,10 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use super::instruction::{BpfHelper, HelperArgKind, HelperRetKind, HelperSignature};
+use super::instruction::{
+    BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncRetKind,
+    KfuncSignature,
+};
 use super::mir::{
     AddressSpace, BinOpKind, BlockId, COUNTER_MAP_NAME, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME,
     MapKind, MapRef, MirFunction, MirInst, MirType, MirValue, RINGBUF_MAP_NAME,
@@ -789,6 +792,51 @@ fn apply_inst(
                     .unwrap_or(VerifierType::Scalar);
                 state.set_with_range(*dst, ty, ValueRange::Unknown);
             }
+        }
+        MirInst::CallKfunc {
+            dst,
+            kfunc,
+            args,
+            ..
+        } => {
+            let Some(sig) = KfuncSignature::for_name(kfunc) else {
+                errors.push(VerifierTypeError::new(format!(
+                    "unknown kfunc '{}' (typed signature required)",
+                    kfunc
+                )));
+                return;
+            };
+            if args.len() < sig.min_args || args.len() > sig.max_args {
+                errors.push(VerifierTypeError::new(format!(
+                    "kfunc '{}' expects {}..={} args, got {}",
+                    kfunc,
+                    sig.min_args,
+                    sig.max_args,
+                    args.len()
+                )));
+            }
+            if args.len() > 5 {
+                errors.push(VerifierTypeError::new(
+                    "BPF kfunc calls support at most 5 arguments",
+                ));
+            }
+            for (idx, arg) in args.iter().take(sig.max_args.min(5)).enumerate() {
+                check_kfunc_arg(kfunc, idx, *arg, sig.arg_kind(idx), state, errors);
+            }
+
+            let ty = match sig.ret_kind {
+                KfuncRetKind::Scalar | KfuncRetKind::Void => types
+                    .get(dst)
+                    .map(verifier_type_from_mir)
+                    .unwrap_or(VerifierType::Scalar),
+                KfuncRetKind::PointerMaybeNull => VerifierType::Ptr {
+                    space: AddressSpace::Kernel,
+                    nullability: Nullability::MaybeNull,
+                    bounds: None,
+                    ringbuf_ref: None,
+                },
+            };
+            state.set_with_range(*dst, ty, ValueRange::Unknown);
         }
         MirInst::CallSubfn { dst, args, .. } => {
             if args.len() > 5 {
@@ -1610,6 +1658,35 @@ fn check_helper_arg(
                 errors.push(VerifierTypeError::new(format!(
                     "helper {} arg{} expects pointer, got {:?}",
                     helper_id, arg_idx, ty
+                )));
+            }
+        }
+    }
+}
+
+fn check_kfunc_arg(
+    kfunc: &str,
+    arg_idx: usize,
+    arg: VReg,
+    expected: KfuncArgKind,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let ty = state.get(arg);
+    match expected {
+        KfuncArgKind::Scalar => {
+            if !matches!(ty, VerifierType::Scalar | VerifierType::Bool) {
+                errors.push(VerifierTypeError::new(format!(
+                    "kfunc '{}' arg{} expects scalar, got {:?}",
+                    kfunc, arg_idx, ty
+                )));
+            }
+        }
+        KfuncArgKind::Pointer => {
+            if !matches!(ty, VerifierType::Ptr { .. }) {
+                errors.push(VerifierTypeError::new(format!(
+                    "kfunc '{}' arg{} expects pointer, got {:?}",
+                    kfunc, arg_idx, ty
                 )));
             }
         }
@@ -6120,5 +6197,61 @@ mod tests {
         let types = HashMap::new();
         let err = verify_mir(&func, &types).expect_err("expected uninitialized branch cond error");
         assert!(err.iter().any(|e| e.message.contains("uninitialized v")));
+    }
+
+    #[test]
+    fn test_kfunc_unknown_signature_rejected() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let arg = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: arg,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "unknown_kfunc".to_string(),
+            btf_id: None,
+            args: vec![arg],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(arg, MirType::I64);
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected unknown-kfunc verifier error");
+        assert!(err.iter().any(|e| e.message.contains("unknown kfunc")));
+    }
+
+    #[test]
+    fn test_kfunc_pointer_argument_required() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let scalar = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: scalar,
+            src: MirValue::Const(42),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_task_release".to_string(),
+            btf_id: None,
+            args: vec![scalar],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(scalar, MirType::I64);
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected kfunc pointer-arg error");
+        assert!(err.iter().any(|e| e.message.contains("expects pointer")));
     }
 }
