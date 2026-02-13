@@ -1824,7 +1824,10 @@ fn check_kfunc_arg(
         }
         KfuncArgKind::Pointer => match ty {
             VerifierType::Ptr {
-                space, kfunc_ref, ..
+                space,
+                nullability,
+                kfunc_ref,
+                ..
             } => {
                 if kfunc_pointer_arg_requires_kernel(kfunc, arg_idx)
                     && space != AddressSpace::Kernel
@@ -1836,6 +1839,19 @@ fn check_kfunc_arg(
                 }
                 if let Some(expected_kind) = kfunc_pointer_arg_expected_ref_kind(kfunc, arg_idx) {
                     if let Some(ref_id) = kfunc_ref {
+                        if !state.is_live_kfunc_ref(ref_id) {
+                            errors.push(VerifierTypeError::new(format!(
+                                "kfunc '{}' arg{} reference already released",
+                                kfunc, arg_idx
+                            )));
+                            return;
+                        }
+                        if !matches!(nullability, Nullability::NonNull) {
+                            errors.push(VerifierTypeError::new(format!(
+                                "kfunc '{}' arg{} may dereference null pointer v{} (add a null check)",
+                                kfunc, arg_idx, arg.0
+                            )));
+                        }
                         let actual_kind = state.kfunc_ref_kind(ref_id);
                         if actual_kind != Some(expected_kind) {
                             let expected = expected_kind.label();
@@ -7150,6 +7166,59 @@ mod tests {
         );
         assert!(
             err.iter().any(|e| e.message.contains("cgroup reference")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_kfunc_get_task_exe_file_requires_null_check_for_tracked_task_reference() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let pid = func.alloc_vreg();
+        let task = func.alloc_vreg();
+        let file = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: pid,
+            src: MirValue::Const(123),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: task,
+            kfunc: "bpf_task_from_pid".to_string(),
+            btf_id: None,
+            args: vec![pid],
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: file,
+            kfunc: "bpf_get_task_exe_file".to_string(),
+            btf_id: None,
+            args: vec![task],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(pid, MirType::I64);
+        types.insert(
+            task,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(
+            file,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected tracked-ref null-check error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("arg0 may dereference null pointer")),
             "unexpected errors: {:?}",
             err
         );

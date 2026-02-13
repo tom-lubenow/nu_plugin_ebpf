@@ -5595,6 +5595,7 @@ mod tests {
 
         let mut func = MirFunction::new();
         let entry = func.alloc_block();
+        let call = func.alloc_block();
         let release = func.alloc_block();
         let done = func.alloc_block();
         func.entry = entry;
@@ -5619,12 +5620,6 @@ mod tests {
             dst: level,
             src: MirValue::Const(0),
         });
-        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
-            dst,
-            kfunc: "bpf_cgroup_ancestor".to_string(),
-            btf_id: Some(321),
-            args: vec![ptr, level],
-        });
         func.block_mut(entry).instructions.push(MirInst::BinOp {
             dst: cond,
             op: BinOpKind::Ne,
@@ -5633,9 +5628,16 @@ mod tests {
         });
         func.block_mut(entry).terminator = MirInst::Branch {
             cond,
-            if_true: release,
+            if_true: call,
             if_false: done,
         };
+        func.block_mut(call).instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_cgroup_ancestor".to_string(),
+            btf_id: Some(321),
+            args: vec![ptr, level],
+        });
+        func.block_mut(call).terminator = MirInst::Jump { target: release };
         func.block_mut(release)
             .instructions
             .push(MirInst::CallKfunc {
