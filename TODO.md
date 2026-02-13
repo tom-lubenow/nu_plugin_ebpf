@@ -64,6 +64,7 @@ Last updated: 2026-02-13.
   - Type inference, verifier_types, and VCC now share kfunc pointer-space metadata so non-ref kfuncs (e.g., `bpf_list_*` / `bpf_rbtree_*` / `bpf_path_d_path`) can enforce kernel-pointer argument requirements consistently.
   - Verifier/VCC now enforce task-vs-cgroup provenance on tracked kfunc reference arguments for task/cgroup kfuncs (not just release sites).
   - Verifier/VCC now require non-null checks for tracked ref-kind kfunc arguments (e.g., passing `bpf_task_from_pid` results into `bpf_get_task_exe_file`), and reject use-after-release at those argument sites.
+  - Verifier/VCC now preserve pointer/refinement facts through copied and negated branch conditions (including cross-block joins), so guarded kfunc release patterns like `if $task != 0 { ...release... }` verify correctly.
   - Type inference now mirrors kernel-pointer address-space checks for task/cgroup kfunc pointer arguments so these failures are reported earlier.
   - Shared kfunc ref-family metadata is now centralized in `instruction.rs` and consumed by type inference, verifier_types, and VCC to keep task/cgroup semantics in sync.
   - Verifier parity now enforces the generic helper argument cap (`<= 5` args) for unknown helper IDs in both verifier_types and VCC.

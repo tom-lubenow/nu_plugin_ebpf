@@ -60,7 +60,7 @@ enum VerifierType {
     },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Guard {
     Ptr {
         ptr: VReg,
@@ -108,20 +108,6 @@ impl VerifierState {
             live_kfunc_refs: vec![false; total_vregs],
             kfunc_ref_kinds: vec![None; total_vregs],
             reachable: true,
-            guards: HashMap::new(),
-        }
-    }
-
-    fn with_cleared_guards(&self) -> Self {
-        Self {
-            regs: self.regs.clone(),
-            ranges: self.ranges.clone(),
-            non_zero: self.non_zero.clone(),
-            not_equal: self.not_equal.clone(),
-            live_ringbuf_refs: self.live_ringbuf_refs.clone(),
-            live_kfunc_refs: self.live_kfunc_refs.clone(),
-            kfunc_ref_kinds: self.kfunc_ref_kinds.clone(),
-            reachable: self.reachable,
             guards: HashMap::new(),
         }
     }
@@ -287,10 +273,10 @@ impl VerifierState {
 
     fn join(&self, other: &VerifierState) -> VerifierState {
         if !self.reachable {
-            return other.with_cleared_guards();
+            return other.clone();
         }
         if !other.reachable {
-            return self.with_cleared_guards();
+            return self.clone();
         }
 
         let mut regs = Vec::with_capacity(self.regs.len());
@@ -355,6 +341,14 @@ impl VerifierState {
             };
             kfunc_ref_kinds.push(merged_kind);
         }
+        let mut guards = HashMap::new();
+        for (reg, left) in &self.guards {
+            if let Some(right) = other.guards.get(reg)
+                && left == right
+            {
+                guards.insert(*reg, *left);
+            }
+        }
         VerifierState {
             regs,
             ranges,
@@ -364,7 +358,7 @@ impl VerifierState {
             live_kfunc_refs,
             kfunc_ref_kinds,
             reachable: true,
-            guards: HashMap::new(),
+            guards,
         }
     }
 }
@@ -436,7 +430,7 @@ pub fn verify_mir(
         if !state_in.is_reachable() {
             continue;
         }
-        let mut state = state_in.with_cleared_guards();
+        let mut state = state_in.clone();
         let block = func.block(block_id);
 
         for inst in &block.instructions {
@@ -533,6 +527,7 @@ fn propagate_state(
                 || merged.live_ringbuf_refs != existing.live_ringbuf_refs
                 || merged.live_kfunc_refs != existing.live_kfunc_refs
                 || merged.kfunc_ref_kinds != existing.kfunc_ref_kinds
+                || merged.guards != existing.guards
                 || merged.reachable != existing.reachable
             {
                 in_states.insert(block, merged);
@@ -549,7 +544,7 @@ fn propagate_state(
 }
 
 fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool) -> VerifierState {
-    let mut next = state.with_cleared_guards();
+    let mut next = state.clone();
     if let Some(guard) = guard {
         match guard {
             Guard::Ptr {
@@ -708,6 +703,10 @@ fn apply_inst(
         MirInst::Copy { dst, src } => {
             let ty = value_type(src, state, slot_sizes);
             let range = value_range(src, state);
+            let src_guard = match src {
+                MirValue::VReg(vreg) => state.guards.get(vreg).copied(),
+                _ => None,
+            };
             let src_non_zero = match src {
                 MirValue::VReg(vreg) => state.is_non_zero(*vreg),
                 MirValue::Const(value) => *value != 0,
@@ -726,6 +725,9 @@ fn apply_inst(
             }
             for excluded in src_not_equal {
                 state.set_not_equal_const(*dst, excluded);
+            }
+            if let Some(guard) = src_guard {
+                state.guards.insert(*dst, guard);
             }
         }
         MirInst::Load {
@@ -815,12 +817,28 @@ fn apply_inst(
                 _ => VerifierType::Scalar,
             };
             if let Some(dst) = inst.def() {
+                let guard = if matches!(op, super::mir::UnaryOpKind::Not) {
+                    if let MirInst::UnaryOp { src, .. } = inst {
+                        if let MirValue::VReg(src_reg) = src {
+                            state.guards.get(src_reg).copied().and_then(invert_guard)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
                 let range = if matches!(op, super::mir::UnaryOpKind::Not) {
                     ValueRange::Known { min: 0, max: 1 }
                 } else {
                     ValueRange::Unknown
                 };
                 state.set_with_range(dst, ty, range);
+                if let Some(guard) = guard {
+                    state.guards.insert(dst, guard);
+                }
             }
         }
         MirInst::CallHelper { dst, helper, args } => {
@@ -979,6 +997,23 @@ fn apply_inst(
         | MirInst::StopTimer { dst, .. }
         | MirInst::LoopHeader { counter: dst, .. }
         | MirInst::Phi { dst, .. } => {
+            let phi_guard = if let MirInst::Phi { args, .. } = inst {
+                let mut merged: Option<Option<Guard>> = None;
+                for (_, reg) in args {
+                    let next = state.guards.get(reg).copied();
+                    merged = Some(match merged {
+                        None => next,
+                        Some(existing) if existing == next => existing,
+                        _ => None,
+                    });
+                    if matches!(merged, Some(None)) {
+                        break;
+                    }
+                }
+                merged.flatten()
+            } else {
+                None
+            };
             let ty = types
                 .get(dst)
                 .map(verifier_type_from_mir)
@@ -994,6 +1029,9 @@ fn apply_inst(
                 ty
             };
             state.set_with_range(*dst, ty, range);
+            if let Some(guard) = phi_guard {
+                state.guards.insert(*dst, guard);
+            }
         }
         MirInst::MapLookup { dst, map, key } => {
             if !supports_generic_map_kind(map.kind) {
@@ -1429,6 +1467,35 @@ fn negate_compare(op: BinOpKind) -> Option<BinOpKind> {
         BinOpKind::Ge => BinOpKind::Lt,
         _ => return None,
     })
+}
+
+fn invert_guard(guard: Guard) -> Option<Guard> {
+    match guard {
+        Guard::Ptr {
+            ptr,
+            true_is_non_null,
+        } => Some(Guard::Ptr {
+            ptr,
+            true_is_non_null: !true_is_non_null,
+        }),
+        Guard::NonZero {
+            reg,
+            true_is_non_zero,
+        } => Some(Guard::NonZero {
+            reg,
+            true_is_non_zero: !true_is_non_zero,
+        }),
+        Guard::Range { reg, op, value } => Some(Guard::Range {
+            reg,
+            op: negate_compare(op)?,
+            value,
+        }),
+        Guard::RangeCmp { lhs, rhs, op } => Some(Guard::RangeCmp {
+            lhs,
+            rhs,
+            op: negate_compare(op)?,
+        }),
+    }
 }
 
 fn effective_branch_compare(op: BinOpKind, take_true: bool) -> Option<BinOpKind> {
@@ -3798,6 +3865,76 @@ mod tests {
     }
 
     #[test]
+    fn test_helper_map_lookup_null_check_via_copied_cond_ok() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let load_block = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let map = func.alloc_vreg();
+        let key = func.alloc_vreg();
+        let ptr = func.alloc_vreg();
+        let cond0 = func.alloc_vreg();
+        let cond1 = func.alloc_vreg();
+        let load_dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: map,
+            src: MirValue::StackSlot(map_slot),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::StackSlot(key_slot),
+        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: ptr,
+                helper: 1, // bpf_map_lookup_elem(map, key)
+                args: vec![MirValue::VReg(map), MirValue::VReg(key)],
+            });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond0,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(ptr),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: cond1,
+            src: MirValue::VReg(cond0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: cond1,
+            if_true: load_block,
+            if_false: done,
+        };
+
+        func.block_mut(load_block).instructions.push(MirInst::Load {
+            dst: load_dst,
+            ptr,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        func.block_mut(load_block).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Map,
+            },
+        );
+        types.insert(load_dst, MirType::I64);
+
+        verify_mir(&func, &types).expect("expected copied null-check guard to pass");
+    }
+
+    #[test]
     fn test_helper_map_lookup_rejects_out_of_bounds_key_pointer() {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();
@@ -5147,10 +5284,13 @@ mod tests {
         let right = func.alloc_block();
         let join = func.alloc_block();
         func.entry = entry;
+        func.param_count = 1;
 
+        let selector = func.alloc_vreg();
         let key = func.alloc_vreg();
         let ptr = func.alloc_vreg();
         let cond = func.alloc_vreg();
+        let split_cond = func.alloc_vreg();
         let dst = func.alloc_vreg();
         let off = func.alloc_vreg();
         let tmp_ptr = func.alloc_vreg();
@@ -5179,8 +5319,14 @@ mod tests {
             if_false: bad,
         };
 
+        func.block_mut(ok).instructions.push(MirInst::BinOp {
+            dst: split_cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(selector),
+            rhs: MirValue::Const(0),
+        });
         func.block_mut(ok).terminator = MirInst::Branch {
-            cond,
+            cond: split_cond,
             if_true: left,
             if_false: right,
         };
@@ -5214,6 +5360,7 @@ mod tests {
         func.block_mut(bad).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
+        types.insert(selector, MirType::I64);
         types.insert(
             ptr,
             MirType::Ptr {
@@ -7523,6 +7670,165 @@ mod tests {
         types.insert(release_ret, MirType::I64);
 
         verify_mir(&func, &types).expect("expected task_from_pid reference to be released");
+    }
+
+    #[test]
+    fn test_kfunc_task_from_pid_release_semantics_via_copied_cond_with_join() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let release = func.alloc_block();
+        let done = func.alloc_block();
+        let join = func.alloc_block();
+        func.entry = entry;
+
+        let pid = func.alloc_vreg();
+        let task = func.alloc_vreg();
+        let cond0 = func.alloc_vreg();
+        let cond1 = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
+        let then_val = func.alloc_vreg();
+        let else_val = func.alloc_vreg();
+        let result = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: pid,
+            src: MirValue::Const(123),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: task,
+            kfunc: "bpf_task_from_pid".to_string(),
+            btf_id: None,
+            args: vec![pid],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond0,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(task),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: cond1,
+            src: MirValue::VReg(cond0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: cond1,
+            if_true: release,
+            if_false: done,
+        };
+
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_task_release".to_string(),
+                btf_id: None,
+                args: vec![task],
+            });
+        func.block_mut(release).instructions.push(MirInst::Copy {
+            dst: then_val,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(release).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(done).instructions.push(MirInst::Copy {
+            dst: else_val,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(done).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(join).instructions.push(MirInst::Phi {
+            dst: result,
+            args: vec![(release, then_val), (done, else_val)],
+        });
+        func.block_mut(join).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(result)),
+        };
+
+        let mut types = HashMap::new();
+        types.insert(pid, MirType::I64);
+        types.insert(
+            task,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(cond0, MirType::Bool);
+        types.insert(cond1, MirType::Bool);
+        types.insert(release_ret, MirType::I64);
+        types.insert(then_val, MirType::I64);
+        types.insert(else_val, MirType::I64);
+        types.insert(result, MirType::I64);
+
+        verify_mir(&func, &types).expect("expected copied guard to preserve release semantics");
+    }
+
+    #[test]
+    fn test_kfunc_task_from_pid_release_semantics_via_negated_cond() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let release = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let pid = func.alloc_vreg();
+        let task = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let negated = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: pid,
+            src: MirValue::Const(123),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: task,
+            kfunc: "bpf_task_from_pid".to_string(),
+            btf_id: None,
+            args: vec![pid],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(task),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::UnaryOp {
+            dst: negated,
+            op: crate::compiler::mir::UnaryOpKind::Not,
+            src: MirValue::VReg(cond),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: negated,
+            if_true: done,
+            if_false: release,
+        };
+
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_task_release".to_string(),
+                btf_id: None,
+                args: vec![task],
+            });
+        func.block_mut(release).terminator = MirInst::Jump { target: done };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(pid, MirType::I64);
+        types.insert(
+            task,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(cond, MirType::Bool);
+        types.insert(negated, MirType::Bool);
+        types.insert(release_ret, MirType::I64);
+
+        verify_mir(&func, &types).expect("expected negated guard to preserve release semantics");
     }
 
     #[test]

@@ -1153,6 +1153,8 @@ impl VccVerifier {
                 match op {
                     VccBinOp::Eq | VccBinOp::Ne => {
                         let ptr_cmp = self.ptr_null_comparison(*lhs, lhs_ty, *rhs, rhs_ty);
+                        let ptr_cond_cmp =
+                            self.ptr_cond_comparison(*op, *lhs, lhs_ty, *rhs, rhs_ty, state);
                         let scalar_cmp =
                             self.scalar_const_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         let scalar_reg_cmp =
@@ -1225,6 +1227,18 @@ impl VccVerifier {
                                     ringbuf_ref,
                                     kfunc_ref,
                                     true_means_non_null: matches!(op, VccBinOp::Ne),
+                                },
+                            );
+                        } else if let Some((ptr_reg, ringbuf_ref, kfunc_ref, true_means_non_null)) =
+                            ptr_cond_cmp
+                        {
+                            state.set_cond_refinement(
+                                *dst,
+                                VccCondRefinement::PtrNull {
+                                    ptr_reg,
+                                    ringbuf_ref,
+                                    kfunc_ref,
+                                    true_means_non_null,
                                 },
                             );
                         } else if let Some((reg, cmp_op, value)) = scalar_cmp {
@@ -1812,6 +1826,47 @@ impl VccVerifier {
             }
             _ => None,
         }
+    }
+
+    fn ptr_cond_comparison(
+        &self,
+        op: VccBinOp,
+        lhs: VccValue,
+        lhs_ty: VccValueType,
+        rhs: VccValue,
+        rhs_ty: VccValueType,
+        state: &VccState,
+    ) -> Option<(VccReg, Option<VccReg>, Option<VccReg>, bool)> {
+        let map_cond =
+            |cond: VccValue, cond_ty: VccValueType, other: VccValue, other_ty: VccValueType| {
+                let VccValue::Reg(cond_reg) = cond else {
+                    return None;
+                };
+                if !self.is_null_scalar(other, other_ty) {
+                    return None;
+                }
+                if cond_ty.class() != VccTypeClass::Scalar && cond_ty.class() != VccTypeClass::Bool
+                {
+                    return None;
+                }
+                let VccCondRefinement::PtrNull {
+                    ptr_reg,
+                    ringbuf_ref,
+                    kfunc_ref,
+                    true_means_non_null,
+                } = state.cond_refinement(cond_reg)?
+                else {
+                    return None;
+                };
+                let true_means_non_null = match op {
+                    VccBinOp::Ne => true_means_non_null,
+                    VccBinOp::Eq => !true_means_non_null,
+                    _ => return None,
+                };
+                Some((ptr_reg, ringbuf_ref, kfunc_ref, true_means_non_null))
+            };
+
+        map_cond(lhs, lhs_ty, rhs, rhs_ty).or_else(|| map_cond(rhs, rhs_ty, lhs, lhs_ty))
     }
 
     fn scalar_const_comparison(
@@ -2765,9 +2820,11 @@ impl<'a> VccLowerer<'a> {
                     .unwrap_or(VccValueType::Unknown);
                 match op {
                     UnaryOpKind::Not => {
-                        out.push(VccInst::Assume {
+                        out.push(VccInst::BinOp {
                             dst: VccReg(dst.0),
-                            ty: VccValueType::Bool,
+                            op: VccBinOp::Eq,
+                            lhs: vcc_src,
+                            rhs: VccValue::Imm(0),
                         });
                     }
                     _ => {
@@ -10199,6 +10256,161 @@ mod tests {
         types.insert(release_ret, MirType::I64);
 
         verify_mir(&func, &types).expect("expected task_from_pid reference to be released");
+    }
+
+    #[test]
+    fn test_verify_mir_kfunc_task_from_pid_release_semantics_via_copied_cond_with_join() {
+        let (mut func, entry) = new_mir_function();
+        let release = func.alloc_block();
+        let done = func.alloc_block();
+        let join = func.alloc_block();
+
+        let pid = func.alloc_vreg();
+        let task = func.alloc_vreg();
+        let cond0 = func.alloc_vreg();
+        let cond1 = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
+        let then_val = func.alloc_vreg();
+        let else_val = func.alloc_vreg();
+        let result = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: pid,
+            src: MirValue::Const(123),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: task,
+            kfunc: "bpf_task_from_pid".to_string(),
+            btf_id: None,
+            args: vec![pid],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond0,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(task),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: cond1,
+            src: MirValue::VReg(cond0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: cond1,
+            if_true: release,
+            if_false: done,
+        };
+
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_task_release".to_string(),
+                btf_id: None,
+                args: vec![task],
+            });
+        func.block_mut(release).instructions.push(MirInst::Copy {
+            dst: then_val,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(release).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(done).instructions.push(MirInst::Copy {
+            dst: else_val,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(done).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(join).instructions.push(MirInst::Phi {
+            dst: result,
+            args: vec![(release, then_val), (done, else_val)],
+        });
+        func.block_mut(join).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(result)),
+        };
+
+        let mut types = HashMap::new();
+        types.insert(pid, MirType::I64);
+        types.insert(
+            task,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(cond0, MirType::Bool);
+        types.insert(cond1, MirType::Bool);
+        types.insert(release_ret, MirType::I64);
+        types.insert(then_val, MirType::I64);
+        types.insert(else_val, MirType::I64);
+        types.insert(result, MirType::I64);
+
+        verify_mir(&func, &types).expect("expected copied guard to preserve release semantics");
+    }
+
+    #[test]
+    fn test_verify_mir_kfunc_task_from_pid_release_semantics_via_negated_cond() {
+        let (mut func, entry) = new_mir_function();
+        let release = func.alloc_block();
+        let done = func.alloc_block();
+
+        let pid = func.alloc_vreg();
+        let task = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let negated = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: pid,
+            src: MirValue::Const(123),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: task,
+            kfunc: "bpf_task_from_pid".to_string(),
+            btf_id: None,
+            args: vec![pid],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(task),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::UnaryOp {
+            dst: negated,
+            op: super::UnaryOpKind::Not,
+            src: MirValue::VReg(cond),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: negated,
+            if_true: done,
+            if_false: release,
+        };
+
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_task_release".to_string(),
+                btf_id: None,
+                args: vec![task],
+            });
+        func.block_mut(release).terminator = MirInst::Jump { target: done };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(pid, MirType::I64);
+        types.insert(
+            task,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(cond, MirType::Bool);
+        types.insert(negated, MirType::Bool);
+        types.insert(release_ret, MirType::I64);
+
+        verify_mir(&func, &types).expect("expected negated guard to preserve release semantics");
     }
 
     #[test]

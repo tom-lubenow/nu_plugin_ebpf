@@ -5664,6 +5664,154 @@ mod tests {
     }
 
     #[test]
+    fn test_kfunc_task_release_compiles_with_copied_cond_and_join() {
+        use crate::compiler::mir::*;
+
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let release = func.alloc_block();
+        let done = func.alloc_block();
+        let join = func.alloc_block();
+        func.entry = entry;
+
+        let pid = func.alloc_vreg();
+        let task = func.alloc_vreg();
+        let cond0 = func.alloc_vreg();
+        let cond1 = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
+        let then_val = func.alloc_vreg();
+        let else_val = func.alloc_vreg();
+        let result = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: pid,
+            src: MirValue::Const(123),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: task,
+            kfunc: "bpf_task_from_pid".to_string(),
+            btf_id: None,
+            args: vec![pid],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond0,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(task),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: cond1,
+            src: MirValue::VReg(cond0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: cond1,
+            if_true: release,
+            if_false: done,
+        };
+
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_task_release".to_string(),
+                btf_id: None,
+                args: vec![task],
+            });
+        func.block_mut(release).instructions.push(MirInst::Copy {
+            dst: then_val,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(release).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(done).instructions.push(MirInst::Copy {
+            dst: else_val,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(done).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(join).instructions.push(MirInst::Phi {
+            dst: result,
+            args: vec![(release, then_val), (done, else_val)],
+        });
+        func.block_mut(join).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(result)),
+        };
+
+        let program = MirProgram {
+            main: func,
+            subfunctions: vec![],
+        };
+
+        compile_mir_to_ebpf(&program, None)
+            .expect("expected copied null-check guard to preserve kfunc release semantics");
+    }
+
+    #[test]
+    fn test_kfunc_task_release_compiles_with_negated_cond() {
+        use crate::compiler::mir::*;
+
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let release = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let pid = func.alloc_vreg();
+        let task = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let negated = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: pid,
+            src: MirValue::Const(123),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: task,
+            kfunc: "bpf_task_from_pid".to_string(),
+            btf_id: None,
+            args: vec![pid],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(task),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::UnaryOp {
+            dst: negated,
+            op: UnaryOpKind::Not,
+            src: MirValue::VReg(cond),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: negated,
+            if_true: done,
+            if_false: release,
+        };
+
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_task_release".to_string(),
+                btf_id: None,
+                args: vec![task],
+            });
+        func.block_mut(release).terminator = MirInst::Jump { target: done };
+        func.block_mut(done).terminator = MirInst::Return {
+            val: Some(MirValue::Const(0)),
+        };
+
+        let program = MirProgram {
+            main: func,
+            subfunctions: vec![],
+        };
+
+        compile_mir_to_ebpf(&program, None)
+            .expect("expected negated null-check guard to preserve kfunc release semantics");
+    }
+
+    #[test]
     fn test_kfunc_call_rejects_unknown_signature() {
         use crate::compiler::mir::*;
 
