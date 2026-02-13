@@ -795,13 +795,14 @@ fn apply_inst(
             };
             state.set_with_range(*dst, ty, range);
         }
-        MirInst::MapLookup { dst, map, .. } => {
+        MirInst::MapLookup { dst, map, key } => {
             if !supports_generic_map_kind(map.kind) {
                 errors.push(VerifierTypeError::new(format!(
                     "map operations do not support map kind {:?} for '{}'",
                     map.kind, map.name
                 )));
             }
+            check_map_operand_scalar_size(*key, "map key", types, errors);
             let bounds = map_value_limit(map)
                 .or_else(|| map_value_limit_from_dst_type(types.get(dst)))
                 .map(|limit| PtrBounds {
@@ -919,7 +920,10 @@ fn apply_inst(
             }
         }
         MirInst::MapUpdate {
-            map, key, flags, ..
+            map,
+            key,
+            val,
+            flags,
         } => {
             if !supports_generic_map_kind(map.kind) {
                 errors.push(VerifierTypeError::new(format!(
@@ -933,6 +937,8 @@ fn apply_inst(
                     flags
                 )));
             }
+            check_map_operand_scalar_size(*key, "map key", types, errors);
+            check_map_operand_scalar_size(*val, "map value", types, errors);
             if let VerifierType::Ptr { .. } = state.get(*key) {
                 require_ptr_with_space(
                     *key,
@@ -955,6 +961,7 @@ fn apply_inst(
                     map.kind, map.name
                 )));
             }
+            check_map_operand_scalar_size(*key, "map key", types, errors);
             if let VerifierType::Ptr { .. } = state.get(*key) {
                 require_ptr_with_space(
                     *key,
@@ -1959,6 +1966,30 @@ fn supports_generic_map_kind(kind: MapKind) -> bool {
     )
 }
 
+fn check_map_operand_scalar_size(
+    vreg: VReg,
+    what: &str,
+    types: &HashMap<VReg, MirType>,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some(ty) = types.get(&vreg) else {
+        return;
+    };
+    if matches!(ty, MirType::Ptr { .. }) {
+        return;
+    }
+    let size = match ty.size() {
+        0 => 8,
+        n => n,
+    };
+    if size > 8 {
+        errors.push(VerifierTypeError::new(format!(
+            "{what} v{} has size {} bytes and must be passed as a pointer",
+            vreg.0, size
+        )));
+    }
+}
+
 fn map_value_limit_from_dst_type(dst_ty: Option<&MirType>) -> Option<i64> {
     let pointee = match dst_ty {
         Some(MirType::Ptr { pointee, .. }) => pointee.as_ref(),
@@ -2569,6 +2600,104 @@ mod tests {
                 |e| e
                     .message
                     .contains("exceed supported 32-bit immediate range")
+            ),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_map_lookup_rejects_large_scalar_key_operand() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapLookup {
+            dst,
+            map: MapRef {
+                name: "m".to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            key,
+            MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 16,
+            },
+        );
+        types.insert(
+            dst,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Map,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected map key size error");
+        assert!(
+            err.iter().any(
+                |e| e
+                    .message
+                    .contains("map key v0 has size 16 bytes and must be passed as a pointer")
+            ),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_map_update_rejects_large_scalar_value_operand() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let key = func.alloc_vreg();
+        let val = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: val,
+            src: MirValue::Const(2),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+            map: MapRef {
+                name: "m".to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+            val,
+            flags: 0,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            val,
+            MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 24,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected map value size error");
+        assert!(
+            err.iter().any(
+                |e| e
+                    .message
+                    .contains("map value v1 has size 24 bytes and must be passed as a pointer")
             ),
             "unexpected errors: {:?}",
             err

@@ -3595,15 +3595,37 @@ impl<'a> VccLowerer<'a> {
         if map_name == STRING_COUNTER_MAP_NAME {
             self.check_ptr_range(key, 16, out)
         } else {
-            self.verify_map_operand(key, out)
+            self.verify_map_operand(key, "map key", out)
         }
     }
 
     fn verify_map_value(&mut self, value: VReg, out: &mut Vec<VccInst>) -> Result<(), VccError> {
-        self.verify_map_operand(value, out)
+        self.verify_map_operand(value, "map value", out)
     }
 
-    fn verify_map_operand(&mut self, reg: VReg, out: &mut Vec<VccInst>) -> Result<(), VccError> {
+    fn verify_map_operand(
+        &mut self,
+        reg: VReg,
+        what: &str,
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        if let Some(ty) = self.types.get(&reg) {
+            if !matches!(ty, MirType::Ptr { .. }) {
+                let size = match ty.size() {
+                    0 => 8,
+                    n => n,
+                };
+                if size > 8 {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!(
+                            "{what} v{} has size {} bytes and must be passed as a pointer",
+                            reg.0, size
+                        ),
+                    ));
+                }
+            }
+        }
         let is_ptr = self
             .types
             .get(&reg)
@@ -6452,6 +6474,102 @@ mod tests {
             err.iter().any(
                 |e| e.kind == VccErrorKind::UnsupportedInstruction
                     && e.message.contains("exceed supported 32-bit immediate range")
+            ),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_map_lookup_rejects_large_scalar_key_operand() {
+        let (mut func, entry) = new_mir_function();
+        let key = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapLookup {
+            dst,
+            map: MapRef {
+                name: "m".to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            key,
+            MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 16,
+            },
+        );
+        types.insert(
+            dst,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Map,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected map key size error");
+        assert!(
+            err.iter().any(
+                |e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e
+                        .message
+                        .contains("map key v0 has size 16 bytes and must be passed as a pointer")
+            ),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_map_update_rejects_large_scalar_value_operand() {
+        let (mut func, entry) = new_mir_function();
+        let key = func.alloc_vreg();
+        let val = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: val,
+            src: MirValue::Const(2),
+        });
+        func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+            map: MapRef {
+                name: "m".to_string(),
+                kind: MapKind::Hash,
+            },
+            key,
+            val,
+            flags: 0,
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            val,
+            MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 24,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected map value size error");
+        assert!(
+            err.iter().any(
+                |e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e
+                        .message
+                        .contains("map value v1 has size 24 bytes and must be passed as a pointer")
             ),
             "unexpected error messages: {:?}",
             err
