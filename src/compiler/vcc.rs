@@ -2882,10 +2882,10 @@ impl<'a> VccLowerer<'a> {
                 if let VccValueType::Ptr(info) = ty {
                     self.ptr_regs.insert(VccReg(dst.0), info);
                 }
-                if kfunc == "bpf_task_acquire" {
+                if Self::kfunc_acquires_reference(kfunc) {
                     out.push(VccInst::KfuncAcquire { id: VccReg(dst.0) });
                 }
-                if kfunc == "bpf_task_release" {
+                if Self::kfunc_releases_reference(kfunc) {
                     if let Some(arg0) = args.first() {
                         out.push(VccInst::KfuncRelease {
                             ptr: VccValue::Reg(VccReg(arg0.0)),
@@ -3333,7 +3333,7 @@ impl<'a> VccLowerer<'a> {
             KfuncRetKind::PointerMaybeNull => match inferred {
                 Some(VccValueType::Ptr(mut info)) => {
                     info.nullability = VccNullability::MaybeNull;
-                    if kfunc == "bpf_task_acquire" {
+                    if Self::kfunc_acquires_reference(kfunc) {
                         info.kfunc_ref = Some(VccReg(dst.0));
                     }
                     VccValueType::Ptr(info)
@@ -3343,7 +3343,7 @@ impl<'a> VccLowerer<'a> {
                     nullability: VccNullability::MaybeNull,
                     bounds: None,
                     ringbuf_ref: None,
-                    kfunc_ref: if kfunc == "bpf_task_acquire" {
+                    kfunc_ref: if Self::kfunc_acquires_reference(kfunc) {
                         Some(VccReg(dst.0))
                     } else {
                         None
@@ -3351,6 +3351,22 @@ impl<'a> VccLowerer<'a> {
                 }),
             },
         }
+    }
+
+    fn kfunc_acquires_reference(kfunc: &str) -> bool {
+        matches!(
+            kfunc,
+            "bpf_task_acquire"
+                | "bpf_task_from_pid"
+                | "bpf_task_from_vpid"
+                | "bpf_task_get_cgroup1"
+                | "bpf_cgroup_acquire"
+                | "bpf_cgroup_from_id"
+        )
+    }
+
+    fn kfunc_releases_reference(kfunc: &str) -> bool {
+        matches!(kfunc, "bpf_task_release" | "bpf_cgroup_release")
     }
 
     fn maybe_assume_list_len(&mut self, dst: VReg, ptr: VReg, offset: i32, out: &mut Vec<VccInst>) {
@@ -3517,7 +3533,7 @@ impl<'a> VccLowerer<'a> {
             match sig.arg_kind(idx) {
                 KfuncArgKind::Scalar => self.assert_scalar_reg(*arg, out),
                 KfuncArgKind::Pointer => {
-                    if kfunc == "bpf_task_release" && idx == 0 {
+                    if Self::kfunc_releases_reference(kfunc) && idx == 0 {
                         self.check_ptr_range(*arg, 1, out)?;
                     } else {
                         self.require_pointer_reg(*arg)?;
@@ -9129,6 +9145,64 @@ mod tests {
             "unexpected error messages: {:?}",
             err
         );
+    }
+
+    #[test]
+    fn test_verify_mir_kfunc_task_from_pid_release_semantics() {
+        let (mut func, entry) = new_mir_function();
+        let release = func.alloc_block();
+        let done = func.alloc_block();
+
+        let pid = func.alloc_vreg();
+        let task = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: pid,
+            src: MirValue::Const(123),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: task,
+            kfunc: "bpf_task_from_pid".to_string(),
+            btf_id: None,
+            args: vec![pid],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(task),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: release,
+            if_false: done,
+        };
+
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_task_release".to_string(),
+                btf_id: None,
+                args: vec![task],
+            });
+        func.block_mut(release).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(pid, MirType::I64);
+        types.insert(
+            task,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(release_ret, MirType::I64);
+
+        verify_mir(&func, &types).expect("expected task_from_pid reference to be released");
     }
 
     #[test]
