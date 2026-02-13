@@ -1852,7 +1852,7 @@ struct VccState {
     reg_types: HashMap<VccReg, VccValueType>,
     not_equal_consts: HashMap<VccReg, Vec<i64>>,
     live_ringbuf_refs: HashMap<VccReg, bool>,
-    live_kfunc_refs: HashMap<VccReg, KfuncRefKind>,
+    live_kfunc_refs: HashMap<VccReg, Option<KfuncRefKind>>,
     cond_refinements: HashMap<VccReg, VccCondRefinement>,
     reachable: bool,
 }
@@ -1946,11 +1946,7 @@ impl VccState {
 
     fn set_live_kfunc_ref(&mut self, id: VccReg, live: bool, kind: Option<KfuncRefKind>) {
         if live {
-            if let Some(kind) = kind {
-                self.live_kfunc_refs.insert(id, kind);
-            } else {
-                self.live_kfunc_refs.remove(&id);
-            }
+            self.live_kfunc_refs.insert(id, kind);
         } else {
             self.live_kfunc_refs.remove(&id);
         }
@@ -1984,7 +1980,7 @@ impl VccState {
     }
 
     fn kfunc_ref_kind(&self, id: VccReg) -> Option<KfuncRefKind> {
-        self.live_kfunc_refs.get(&id).copied()
+        self.live_kfunc_refs.get(&id).copied().flatten()
     }
 
     fn invalidate_ringbuf_ref(&mut self, id: VccReg) {
@@ -2055,8 +2051,16 @@ impl VccState {
             live_ringbuf_refs.insert(*id, current || *live);
         }
         let mut live_kfunc_refs = self.live_kfunc_refs.clone();
-        for (id, kind) in &other.live_kfunc_refs {
-            live_kfunc_refs.entry(*id).or_insert(*kind);
+        for id in other.live_kfunc_refs.keys() {
+            let left_kind = live_kfunc_refs.get(id).copied().flatten();
+            let right_kind = other.live_kfunc_refs.get(id).copied().flatten();
+            let merged_kind = match (left_kind, right_kind) {
+                (Some(a), Some(b)) if a == b => Some(a),
+                (Some(_), Some(_)) => None,
+                (Some(a), None) | (None, Some(a)) => Some(a),
+                (None, None) => None,
+            };
+            live_kfunc_refs.insert(*id, merged_kind);
         }
         let mut cond_refinements = HashMap::new();
         for (reg, left) in &self.cond_refinements {
@@ -9374,6 +9378,114 @@ mod tests {
         );
         assert!(
             err.iter().any(|e| e.message.contains("cgroup reference")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_kfunc_task_release_rejects_mixed_reference_kinds_after_join() {
+        let (mut func, entry) = new_mir_function();
+        let task_path = func.alloc_block();
+        let cgroup_path = func.alloc_block();
+        let join = func.alloc_block();
+        let release = func.alloc_block();
+        let done = func.alloc_block();
+        func.param_count = 1;
+
+        let selector = func.alloc_vreg();
+        let select_cond = func.alloc_vreg();
+        let pid = func.alloc_vreg();
+        let cgid = func.alloc_vreg();
+        let acquired = func.alloc_vreg();
+        let release_cond = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: select_cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(selector),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: select_cond,
+            if_true: task_path,
+            if_false: cgroup_path,
+        };
+
+        func.block_mut(task_path).instructions.push(MirInst::Copy {
+            dst: pid,
+            src: MirValue::Const(123),
+        });
+        func.block_mut(task_path)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: acquired,
+                kfunc: "bpf_task_from_pid".to_string(),
+                btf_id: None,
+                args: vec![pid],
+            });
+        func.block_mut(task_path).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(cgroup_path)
+            .instructions
+            .push(MirInst::Copy {
+                dst: cgid,
+                src: MirValue::Const(42),
+            });
+        func.block_mut(cgroup_path)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: acquired,
+                kfunc: "bpf_cgroup_from_id".to_string(),
+                btf_id: None,
+                args: vec![cgid],
+            });
+        func.block_mut(cgroup_path).terminator = MirInst::Jump { target: join };
+
+        func.block_mut(join).instructions.push(MirInst::BinOp {
+            dst: release_cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(acquired),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(join).terminator = MirInst::Branch {
+            cond: release_cond,
+            if_true: release,
+            if_false: done,
+        };
+
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_task_release".to_string(),
+                btf_id: None,
+                args: vec![acquired],
+            });
+        func.block_mut(release).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(selector, MirType::I64);
+        types.insert(select_cond, MirType::Bool);
+        types.insert(pid, MirType::I64);
+        types.insert(cgid, MirType::I64);
+        types.insert(
+            acquired,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(release_cond, MirType::Bool);
+        types.insert(release_ret, MirType::I64);
+
+        let err =
+            verify_mir(&func, &types).expect_err("expected mixed-kind join release validation");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("expects task reference")),
             "unexpected error messages: {:?}",
             err
         );
