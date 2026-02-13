@@ -61,8 +61,12 @@ pub struct HirBlock {
 
 #[derive(Debug, Clone)]
 pub enum HirTerminator {
-    Goto { target: HirBlockId },
-    Jump { target: HirBlockId },
+    Goto {
+        target: HirBlockId,
+    },
+    Jump {
+        target: HirBlockId,
+    },
     BranchIf {
         cond: RegId,
         if_true: HirBlockId,
@@ -85,8 +89,12 @@ pub enum HirTerminator {
         body: HirBlockId,
         end: HirBlockId,
     },
-    Return { src: RegId },
-    ReturnEarly { src: RegId },
+    Return {
+        src: RegId,
+    },
+    ReturnEarly {
+        src: RegId,
+    },
     Unreachable,
 }
 
@@ -101,63 +109,144 @@ pub struct HirCallArgs {
 
 #[derive(Debug, Clone)]
 pub enum HirStmt {
-    LoadLiteral { dst: RegId, lit: HirLiteral },
-    LoadValue { dst: RegId, val: Box<Value> },
-    Move { dst: RegId, src: RegId },
-    Clone { dst: RegId, src: RegId },
-    Collect { src_dst: RegId },
-    Span { src_dst: RegId },
-    Drop { src: RegId },
-    Drain { src: RegId },
-    DrainIfEnd { src: RegId },
-    LoadVariable { dst: RegId, var_id: VarId },
-    StoreVariable { var_id: VarId, src: RegId },
-    DropVariable { var_id: VarId },
-    LoadEnv { dst: RegId, key: Vec<u8> },
-    LoadEnvOpt { dst: RegId, key: Vec<u8> },
-    StoreEnv { key: Vec<u8>, src: RegId },
-    RedirectOut { mode: RedirectMode },
-    RedirectErr { mode: RedirectMode },
-    CheckErrRedirected { src: RegId },
+    LoadLiteral {
+        dst: RegId,
+        lit: HirLiteral,
+    },
+    LoadValue {
+        dst: RegId,
+        val: Box<Value>,
+    },
+    Move {
+        dst: RegId,
+        src: RegId,
+    },
+    Clone {
+        dst: RegId,
+        src: RegId,
+    },
+    Collect {
+        src_dst: RegId,
+    },
+    Span {
+        src_dst: RegId,
+    },
+    Drop {
+        src: RegId,
+    },
+    Drain {
+        src: RegId,
+    },
+    DrainIfEnd {
+        src: RegId,
+    },
+    LoadVariable {
+        dst: RegId,
+        var_id: VarId,
+    },
+    StoreVariable {
+        var_id: VarId,
+        src: RegId,
+    },
+    DropVariable {
+        var_id: VarId,
+    },
+    LoadEnv {
+        dst: RegId,
+        key: Vec<u8>,
+    },
+    LoadEnvOpt {
+        dst: RegId,
+        key: Vec<u8>,
+    },
+    StoreEnv {
+        key: Vec<u8>,
+        src: RegId,
+    },
+    RedirectOut {
+        mode: RedirectMode,
+    },
+    RedirectErr {
+        mode: RedirectMode,
+    },
+    CheckErrRedirected {
+        src: RegId,
+    },
     OpenFile {
         file_num: u32,
         path: RegId,
         append: bool,
     },
-    WriteFile { file_num: u32, src: RegId },
-    CloseFile { file_num: u32 },
+    WriteFile {
+        file_num: u32,
+        src: RegId,
+    },
+    CloseFile {
+        file_num: u32,
+    },
     Call {
         decl_id: DeclId,
         src_dst: RegId,
         args: HirCallArgs,
     },
-    StringAppend { src_dst: RegId, val: RegId },
-    GlobFrom { src_dst: RegId, no_expand: bool },
-    ListPush { src_dst: RegId, item: RegId },
-    ListSpread { src_dst: RegId, items: RegId },
+    StringAppend {
+        src_dst: RegId,
+        val: RegId,
+    },
+    GlobFrom {
+        src_dst: RegId,
+        no_expand: bool,
+    },
+    ListPush {
+        src_dst: RegId,
+        item: RegId,
+    },
+    ListSpread {
+        src_dst: RegId,
+        items: RegId,
+    },
     RecordInsert {
         src_dst: RegId,
         key: RegId,
         val: RegId,
     },
-    RecordSpread { src_dst: RegId, items: RegId },
-    Not { src_dst: RegId },
+    RecordSpread {
+        src_dst: RegId,
+        items: RegId,
+    },
+    Not {
+        src_dst: RegId,
+    },
     BinaryOp {
         lhs_dst: RegId,
         op: Operator,
         rhs: RegId,
     },
-    FollowCellPath { src_dst: RegId, path: RegId },
-    CloneCellPath { dst: RegId, src: RegId, path: RegId },
+    FollowCellPath {
+        src_dst: RegId,
+        path: RegId,
+    },
+    CloneCellPath {
+        dst: RegId,
+        src: RegId,
+        path: RegId,
+    },
     UpsertCellPath {
         src_dst: RegId,
         path: RegId,
         new_value: RegId,
     },
-    OnError { target: HirBlockId },
-    OnErrorInto { target: HirBlockId, dst: RegId },
+    OnError {
+        target: HirBlockId,
+    },
+    OnErrorInto {
+        target: HirBlockId,
+        dst: RegId,
+    },
     PopErrorHandler,
-    CheckMatchGuard { src: RegId },
+    CheckMatchGuard {
+        src: RegId,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -177,11 +266,24 @@ pub enum HirLiteral {
         end: RegId,
         inclusion: RangeInclusion,
     },
-    List { capacity: usize },
-    Record { capacity: usize },
-    Filepath { val: Vec<u8>, no_expand: bool },
-    Directory { val: Vec<u8>, no_expand: bool },
-    GlobPattern { val: Vec<u8>, no_expand: bool },
+    List {
+        capacity: usize,
+    },
+    Record {
+        capacity: usize,
+    },
+    Filepath {
+        val: Vec<u8>,
+        no_expand: bool,
+    },
+    Directory {
+        val: Vec<u8>,
+        no_expand: bool,
+    },
+    GlobPattern {
+        val: Vec<u8>,
+        no_expand: bool,
+    },
     String(Vec<u8>),
     RawString(Vec<u8>),
     CellPath(Box<CellPath>),
@@ -282,9 +384,9 @@ impl HirFunction {
         let block_starts = compute_block_starts(&instructions);
         let block_ids = assign_block_ids(&block_starts);
 
-        let entry = *block_ids
-            .get(&0)
-            .ok_or_else(|| CompileError::UnsupportedInstruction("HIR entry block missing".into()))?;
+        let entry = *block_ids.get(&0).ok_or_else(|| {
+            CompileError::UnsupportedInstruction("HIR entry block missing".into())
+        })?;
 
         let mut blocks: Vec<HirBlock> = Vec::new();
         let mut current_block_id = entry;
@@ -307,9 +409,7 @@ impl HirFunction {
                 blocks.push(HirBlock {
                     id: current_block_id,
                     stmts: std::mem::take(&mut stmts),
-                    terminator: terminator
-                        .take()
-                        .unwrap_or(HirTerminator::Unreachable),
+                    terminator: terminator.take().unwrap_or(HirTerminator::Unreachable),
                 });
                 current_block_id = block_ids[&idx];
                 current_start = idx;
@@ -392,7 +492,10 @@ impl HirFunction {
                 }
                 Instruction::PushNamed { name, src }
                 | Instruction::PushShortNamed { short: name, src } => {
-                    args_builder.args.named.push((bytes_from_slice(&data, name), src));
+                    args_builder
+                        .args
+                        .named
+                        .push((bytes_from_slice(&data, name), src));
                 }
                 Instruction::PushParserInfo { name, info } => {
                     args_builder
@@ -491,14 +594,11 @@ impl HirFunction {
                         ));
                     }
                     let if_true = block_ids[&index];
-                    let if_false = block_ids
-                        .get(&(idx + 1))
-                        .copied()
-                        .ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(
-                                "Missing fallthrough block for BranchIf".into(),
-                            )
-                        })?;
+                    let if_false = block_ids.get(&(idx + 1)).copied().ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "Missing fallthrough block for BranchIf".into(),
+                        )
+                    })?;
                     terminator = Some(HirTerminator::BranchIf {
                         cond,
                         if_true,
@@ -512,35 +612,33 @@ impl HirFunction {
                         ));
                     }
                     let if_true = block_ids[&index];
-                    let if_false = block_ids
-                        .get(&(idx + 1))
-                        .copied()
-                        .ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(
-                                "Missing fallthrough block for BranchIfEmpty".into(),
-                            )
-                        })?;
+                    let if_false = block_ids.get(&(idx + 1)).copied().ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "Missing fallthrough block for BranchIfEmpty".into(),
+                        )
+                    })?;
                     terminator = Some(HirTerminator::BranchIfEmpty {
                         src,
                         if_true,
                         if_false,
                     });
                 }
-                Instruction::Match { pattern, src, index } => {
+                Instruction::Match {
+                    pattern,
+                    src,
+                    index,
+                } => {
                     if !args_builder.is_empty() {
                         return Err(CompileError::UnsupportedInstruction(
                             "Call arguments split by control flow".into(),
                         ));
                     }
                     let if_true = block_ids[&index];
-                    let if_false = block_ids
-                        .get(&(idx + 1))
-                        .copied()
-                        .ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(
-                                "Missing fallthrough block for Match".into(),
-                            )
-                        })?;
+                    let if_false = block_ids.get(&(idx + 1)).copied().ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "Missing fallthrough block for Match".into(),
+                        )
+                    })?;
                     terminator = Some(HirTerminator::Match {
                         pattern,
                         src,
@@ -561,14 +659,11 @@ impl HirFunction {
                             "Call arguments split by control flow".into(),
                         ));
                     }
-                    let body = block_ids
-                        .get(&(idx + 1))
-                        .copied()
-                        .ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(
-                                "Missing loop body block for Iterate".into(),
-                            )
-                        })?;
+                    let body = block_ids.get(&(idx + 1)).copied().ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "Missing loop body block for Iterate".into(),
+                        )
+                    })?;
                     let end = block_ids[&end_index];
                     terminator = Some(HirTerminator::Iterate {
                         dst,
@@ -764,8 +859,8 @@ pub fn extract_call_decl_ids(ir_block: &IrBlock) -> Vec<DeclId> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nu_protocol::RegId;
     use nu_protocol::DeclId;
+    use nu_protocol::RegId;
     use nu_protocol::ir::{DataSlice, Instruction};
     use std::sync::Arc;
 

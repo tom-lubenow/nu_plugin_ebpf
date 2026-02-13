@@ -135,9 +135,7 @@ impl AllocCfg {
     }
 }
 
-pub(crate) fn compute_loop_depths<F: RegAllocFunction>(
-    func: &F,
-) -> HashMap<BlockId, usize> {
+pub(crate) fn compute_loop_depths<F: RegAllocFunction>(func: &F) -> HashMap<BlockId, usize> {
     let cfg = AllocCfg::build(func);
     compute_loop_depths_with_cfg(func, &cfg)
 }
@@ -212,10 +210,7 @@ fn compute_loop_depths_with_cfg<F: RegAllocFunction>(
     loop_depth
 }
 
-fn compute_idom<F: RegAllocFunction>(
-    func: &F,
-    cfg: &AllocCfg,
-) -> HashMap<BlockId, BlockId> {
+fn compute_idom<F: RegAllocFunction>(func: &F, cfg: &AllocCfg) -> HashMap<BlockId, BlockId> {
     let entry = func.entry();
     let rpo_index: HashMap<BlockId, usize> =
         cfg.rpo.iter().enumerate().map(|(i, &b)| (b, i)).collect();
@@ -234,11 +229,7 @@ fn compute_idom<F: RegAllocFunction>(
                 continue;
             }
 
-            let preds = cfg
-                .predecessors
-                .get(&block_id)
-                .cloned()
-                .unwrap_or_default();
+            let preds = cfg.predecessors.get(&block_id).cloned().unwrap_or_default();
             let mut new_idom = None;
             for &pred in &preds {
                 if doms.get(&pred).and_then(|d| *d).is_some() {
@@ -519,7 +510,6 @@ struct Move {
     src: VReg,
     dst: VReg,
 }
-
 
 /// Interference graph for register allocation
 struct InterferenceGraph {
@@ -819,12 +809,7 @@ impl GraphColoringAllocator {
     }
 
     /// Build the interference graph from liveness information
-    fn build<F: RegAllocFunction>(
-        &mut self,
-        func: &F,
-        cfg: &AllocCfg,
-        liveness: &AllocLiveness,
-    ) {
+    fn build<F: RegAllocFunction>(&mut self, func: &F, cfg: &AllocCfg, liveness: &AllocLiveness) {
         // Add all vregs as nodes
         let total_vregs = func.vreg_count().max(func.param_count() as u32);
         for i in 0..total_vregs {
@@ -1755,12 +1740,14 @@ mod tests {
             dst: val,
             src: MirValue::Const(42),
         });
-        func.block_mut(bb0).instructions.push(MirInst::StringAppend {
-            dst_buffer: slot,
-            dst_len: len,
-            val: MirValue::VReg(val),
-            val_type: StringAppendType::Integer,
-        });
+        func.block_mut(bb0)
+            .instructions
+            .push(MirInst::StringAppend {
+                dst_buffer: slot,
+                dst_len: len,
+                val: MirValue::VReg(val),
+                val_type: StringAppendType::Integer,
+            });
         func.block_mut(bb0).terminator = MirInst::Return {
             val: Some(MirValue::VReg(val)),
         };
@@ -1932,11 +1919,7 @@ mod tests {
         assert!(
             !matches!(
                 val_reg,
-                EbpfReg::R1
-                    | EbpfReg::R2
-                    | EbpfReg::R3
-                    | EbpfReg::R4
-                    | EbpfReg::R5
+                EbpfReg::R1 | EbpfReg::R2 | EbpfReg::R3 | EbpfReg::R4 | EbpfReg::R5
             ),
             "StringAppend integer source should avoid R1-R5 scratch regs, got {:?}",
             val_reg
@@ -1965,11 +1948,7 @@ mod tests {
         assert!(
             !matches!(
                 keep_reg,
-                EbpfReg::R1
-                    | EbpfReg::R2
-                    | EbpfReg::R3
-                    | EbpfReg::R4
-                    | EbpfReg::R5
+                EbpfReg::R1 | EbpfReg::R2 | EbpfReg::R3 | EbpfReg::R4 | EbpfReg::R5
             ),
             "value live across helper call should avoid R1-R5, got {:?}",
             keep_reg
@@ -1998,11 +1977,7 @@ mod tests {
         assert!(
             !matches!(
                 keep_reg,
-                EbpfReg::R1
-                    | EbpfReg::R2
-                    | EbpfReg::R3
-                    | EbpfReg::R4
-                    | EbpfReg::R5
+                EbpfReg::R1 | EbpfReg::R2 | EbpfReg::R3 | EbpfReg::R4 | EbpfReg::R5
             ),
             "value live across subfn call should avoid R1-R5, got {:?}",
             keep_reg

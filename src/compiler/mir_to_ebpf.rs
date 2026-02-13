@@ -1342,12 +1342,14 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let resolved_btf_id = if let Some(btf_id) = btf_id {
                     *btf_id
                 } else {
-                    KernelBtf::get().resolve_kfunc_btf_id(kfunc).map_err(|err| {
-                        CompileError::UnsupportedInstruction(format!(
-                            "failed to resolve kfunc '{}' BTF ID: {}",
-                            kfunc, err
-                        ))
-                    })?
+                    KernelBtf::get()
+                        .resolve_kfunc_btf_id(kfunc)
+                        .map_err(|err| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "failed to resolve kfunc '{}' BTF ID: {}",
+                                kfunc, err
+                            ))
+                        })?
                 };
 
                 if resolved_btf_id > i32::MAX as u32 {

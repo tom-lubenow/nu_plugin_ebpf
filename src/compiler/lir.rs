@@ -148,7 +148,10 @@ impl LirFunction {
 #[derive(Debug, Clone)]
 pub enum LirInst {
     // Data movement
-    Copy { dst: VReg, src: MirValue },
+    Copy {
+        dst: VReg,
+        src: MirValue,
+    },
     Load {
         dst: VReg,
         ptr: VReg,
@@ -209,22 +212,41 @@ pub enum LirInst {
         args: Vec<VReg>, // precolored R1-R5 vregs
         ret: VReg,       // precolored R0 vreg
     },
-    TailCall { prog_map: MapRef, index: MirValue },
+    TailCall {
+        prog_map: MapRef,
+        index: MirValue,
+    },
 
-    MapLookup { dst: VReg, map: MapRef, key: VReg },
+    MapLookup {
+        dst: VReg,
+        map: MapRef,
+        key: VReg,
+    },
     MapUpdate {
         map: MapRef,
         key: VReg,
         val: VReg,
         flags: u64,
     },
-    MapDelete { map: MapRef, key: VReg },
+    MapDelete {
+        map: MapRef,
+        key: VReg,
+    },
 
-    Histogram { value: VReg },
+    Histogram {
+        value: VReg,
+    },
     StartTimer,
-    StopTimer { dst: VReg },
-    EmitEvent { data: VReg, size: usize },
-    EmitRecord { fields: Vec<RecordFieldDef> },
+    StopTimer {
+        dst: VReg,
+    },
+    EmitEvent {
+        data: VReg,
+        size: usize,
+    },
+    EmitRecord {
+        fields: Vec<RecordFieldDef>,
+    },
 
     LoadCtxField {
         dst: VReg,
@@ -267,18 +289,32 @@ pub enum LirInst {
         buffer: StackSlotId,
         max_len: usize,
     },
-    ListPush { list: VReg, item: VReg },
-    ListLen { dst: VReg, list: VReg },
-    ListGet { dst: VReg, list: VReg, idx: MirValue },
+    ListPush {
+        list: VReg,
+        item: VReg,
+    },
+    ListLen {
+        dst: VReg,
+        list: VReg,
+    },
+    ListGet {
+        dst: VReg,
+        list: VReg,
+        idx: MirValue,
+    },
 
     // Control flow
-    Jump { target: BlockId },
+    Jump {
+        target: BlockId,
+    },
     Branch {
         cond: VReg,
         if_true: BlockId,
         if_false: BlockId,
     },
-    Return { val: Option<MirValue> },
+    Return {
+        val: Option<MirValue>,
+    },
 
     // Loop headers/backedges (lowered during codegen)
     LoopHeader {
@@ -294,7 +330,10 @@ pub enum LirInst {
     },
 
     // SSA remnants / placeholders
-    Phi { dst: VReg, args: Vec<(BlockId, VReg)> },
+    Phi {
+        dst: VReg,
+        args: Vec<(BlockId, VReg)>,
+    },
     Placeholder,
 }
 

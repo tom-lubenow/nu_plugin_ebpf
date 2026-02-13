@@ -119,7 +119,12 @@ fn lower_inst(
             dst: *dst,
             src: src.clone(),
         }),
-        MirInst::Load { dst, ptr, offset, ty } => {
+        MirInst::Load {
+            dst,
+            ptr,
+            offset,
+            ty,
+        } => {
             out.push(LirInst::Load {
                 dst: *dst,
                 ptr: *ptr,
@@ -127,7 +132,12 @@ fn lower_inst(
                 ty: ty.clone(),
             });
         }
-        MirInst::Store { ptr, offset, val, ty } => {
+        MirInst::Store {
+            ptr,
+            offset,
+            val,
+            ty,
+        } => {
             out.push(LirInst::Store {
                 ptr: *ptr,
                 offset: *offset,
@@ -135,7 +145,12 @@ fn lower_inst(
                 ty: ty.clone(),
             });
         }
-        MirInst::LoadSlot { dst, slot, offset, ty } => {
+        MirInst::LoadSlot {
+            dst,
+            slot,
+            offset,
+            ty,
+        } => {
             out.push(LirInst::LoadSlot {
                 dst: *dst,
                 slot: *slot,
@@ -143,7 +158,12 @@ fn lower_inst(
                 ty: ty.clone(),
             });
         }
-        MirInst::StoreSlot { slot, offset, val, ty } => {
+        MirInst::StoreSlot {
+            slot,
+            offset,
+            val,
+            ty,
+        } => {
             out.push(LirInst::StoreSlot {
                 slot: *slot,
                 offset: *offset,
@@ -350,7 +370,9 @@ fn lower_inst(
             });
         }
         MirInst::EmitRecord { fields } => {
-            out.push(LirInst::EmitRecord { fields: fields.clone() });
+            out.push(LirInst::EmitRecord {
+                fields: fields.clone(),
+            });
         }
         MirInst::LoadCtxField { dst, field, slot } => {
             out.push(LirInst::LoadCtxField {
@@ -417,7 +439,11 @@ fn lower_inst(
                 ty: ty.clone(),
             });
         }
-        MirInst::ListNew { dst, buffer, max_len } => {
+        MirInst::ListNew {
+            dst,
+            buffer,
+            max_len,
+        } => {
             out.push(LirInst::ListNew {
                 dst: *dst,
                 buffer: *buffer,
@@ -425,9 +451,15 @@ fn lower_inst(
             });
         }
         MirInst::ListPush { list, item } => {
-            out.push(LirInst::ListPush { list: *list, item: *item });
+            out.push(LirInst::ListPush {
+                list: *list,
+                item: *item,
+            });
         }
-        MirInst::ListLen { dst, list } => out.push(LirInst::ListLen { dst: *dst, list: *list }),
+        MirInst::ListLen { dst, list } => out.push(LirInst::ListLen {
+            dst: *dst,
+            list: *list,
+        }),
         MirInst::ListGet { dst, list, idx } => {
             out.push(LirInst::ListGet {
                 dst: *dst,
@@ -436,7 +468,11 @@ fn lower_inst(
             });
         }
         MirInst::Jump { target } => out.push(LirInst::Jump { target: *target }),
-        MirInst::Branch { cond, if_true, if_false } => {
+        MirInst::Branch {
+            cond,
+            if_true,
+            if_false,
+        } => {
             out.push(LirInst::Branch {
                 cond: *cond,
                 if_true: *if_true,
@@ -444,7 +480,12 @@ fn lower_inst(
             });
         }
         MirInst::Return { val } => out.push(LirInst::Return { val: val.clone() }),
-        MirInst::LoopHeader { counter, limit, body, exit } => {
+        MirInst::LoopHeader {
+            counter,
+            limit,
+            body,
+            exit,
+        } => {
             out.push(LirInst::LoopHeader {
                 counter: *counter,
                 limit: *limit,
@@ -452,14 +493,21 @@ fn lower_inst(
                 exit: *exit,
             });
         }
-        MirInst::LoopBack { counter, step, header } => {
+        MirInst::LoopBack {
+            counter,
+            step,
+            header,
+        } => {
             out.push(LirInst::LoopBack {
                 counter: *counter,
                 step: *step,
                 header: *header,
             });
         }
-        MirInst::Phi { dst, args } => out.push(LirInst::Phi { dst: *dst, args: args.clone() }),
+        MirInst::Phi { dst, args } => out.push(LirInst::Phi {
+            dst: *dst,
+            args: args.clone(),
+        }),
         MirInst::Placeholder => out.push(LirInst::Placeholder),
     }
     Ok(())
@@ -486,11 +534,13 @@ mod tests {
             args.push(MirValue::VReg(v));
         }
         let dst = main.alloc_vreg();
-        main.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 14,
-            args,
-        });
+        main.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 14,
+                args,
+            });
         main.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let program = MirProgram {
@@ -498,8 +548,8 @@ mod tests {
             subfunctions: vec![],
         };
 
-        let err =
-            lower_mir_to_lir_checked(&program).expect_err("expected helper arg-limit lowering error");
+        let err = lower_mir_to_lir_checked(&program)
+            .expect_err("expected helper arg-limit lowering error");
         match err {
             CompileError::UnsupportedInstruction(msg) => {
                 assert!(msg.contains("at most 5 arguments"));
@@ -546,8 +596,8 @@ mod tests {
             subfunctions: vec![subfn],
         };
 
-        let err =
-            lower_mir_to_lir_checked(&program).expect_err("expected subfn arg-limit lowering error");
+        let err = lower_mir_to_lir_checked(&program)
+            .expect_err("expected subfn arg-limit lowering error");
         match err {
             CompileError::UnsupportedInstruction(msg) => {
                 assert!(msg.contains("at most 5 arguments"));

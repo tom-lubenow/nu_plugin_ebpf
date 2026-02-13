@@ -3,7 +3,7 @@
 //! The implementation lives in `ir_to_mir` to avoid duplication. This module
 //! re-exports the entry point for pipeline clarity.
 
-pub use super::ir_to_mir::{lower_hir_to_mir, lower_hir_to_mir_with_hints, MirLoweringResult};
+pub use super::ir_to_mir::{MirLoweringResult, lower_hir_to_mir, lower_hir_to_mir_with_hints};
 
 #[cfg(test)]
 mod tests {
@@ -11,8 +11,8 @@ mod tests {
     use crate::compiler::hir::lower_ir_to_hir;
     use nu_protocol::RegId;
     use nu_protocol::ir::{Instruction, IrBlock, Literal};
-    use std::sync::Arc;
     use std::collections::HashMap;
+    use std::sync::Arc;
 
     fn make_ir_block(instructions: Vec<Instruction>) -> IrBlock {
         IrBlock {

@@ -685,15 +685,21 @@ mod tests {
 
         let insts = collect_insts(&func);
         assert!(
-            !insts.iter().any(|inst| matches!(inst, MirInst::ListPush { .. })),
+            !insts
+                .iter()
+                .any(|inst| matches!(inst, MirInst::ListPush { .. })),
             "ListPush should be lowered"
         );
         assert!(
-            insts.iter().any(|inst| matches!(inst, MirInst::Branch { .. })),
+            insts
+                .iter()
+                .any(|inst| matches!(inst, MirInst::Branch { .. })),
             "ListPush lowering should insert a bounds branch"
         );
         assert!(
-            insts.iter().any(|inst| matches!(inst, MirInst::Store { .. })),
+            insts
+                .iter()
+                .any(|inst| matches!(inst, MirInst::Store { .. })),
             "ListPush lowering should emit stores"
         );
     }
@@ -727,11 +733,14 @@ mod tests {
 
         let insts = collect_insts(&func);
         assert!(
-            !insts.iter().any(|inst| matches!(inst, MirInst::ListGet { .. })),
+            !insts
+                .iter()
+                .any(|inst| matches!(inst, MirInst::ListGet { .. })),
             "ListGet should be lowered"
         );
         assert!(
-            insts.iter()
+            insts
+                .iter()
                 .any(|inst| matches!(inst, MirInst::LoadSlot { offset: 16, .. })),
             "ListGet constant index should load from constant offset"
         );

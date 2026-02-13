@@ -280,7 +280,9 @@ impl<'a> HirTypeInference<'a> {
                     _ => {}
                 }
             }
-            HirStmt::Call { decl_id, src_dst, .. } => {
+            HirStmt::Call {
+                decl_id, src_dst, ..
+            } => {
                 let dst_ty = self.reg_type(*src_dst);
                 let name = self
                     .decl_names
@@ -316,11 +318,19 @@ impl<'a> HirTypeInference<'a> {
 
     fn reg_type(&mut self, reg: RegId) -> HMType {
         let id = reg.get();
-        let entry = self.reg_vars.entry(id).or_insert_with(|| self.tvar_gen.fresh());
+        let entry = self
+            .reg_vars
+            .entry(id)
+            .or_insert_with(|| self.tvar_gen.fresh());
         HMType::Var(*entry)
     }
 
-    fn constrain(&mut self, expected: HMType, actual: HMType, context: &str) -> Result<(), TypeError> {
+    fn constrain(
+        &mut self,
+        expected: HMType,
+        actual: HMType,
+        context: &str,
+    ) -> Result<(), TypeError> {
         let expected = self.substitution.apply(&expected);
         let actual = self.substitution.apply(&actual);
         match unify(&expected, &actual) {
@@ -413,7 +423,9 @@ fn stack_record_ptr_type() -> HMType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::hir::{HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator};
+    use crate::compiler::hir::{
+        HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
+    };
     use nu_protocol::RegId;
 
     #[test]
@@ -445,7 +457,9 @@ mod tests {
             dst: RegId::new(1),
             var_id: VarId::new(0),
         });
-        block.stmts.push(HirStmt::Not { src_dst: RegId::new(1) });
+        block.stmts.push(HirStmt::Not {
+            src_dst: RegId::new(1),
+        });
 
         // Second instantiation: constrain to a pointer via move from a string literal.
         block.stmts.push(HirStmt::LoadVariable {
@@ -491,7 +505,9 @@ mod tests {
             dst: RegId::new(0),
             lit: HirLiteral::String("oops".into()),
         });
-        block.stmts.push(HirStmt::Not { src_dst: RegId::new(0) });
+        block.stmts.push(HirStmt::Not {
+            src_dst: RegId::new(0),
+        });
 
         func.blocks.push(block);
 

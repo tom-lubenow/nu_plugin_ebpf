@@ -20,37 +20,37 @@ mod btf;
 pub mod cfg;
 mod elf;
 pub mod graph_coloring;
+pub mod hindley_milner;
 pub mod hir;
 pub mod hir_to_mir;
 pub mod hir_type_infer;
-pub mod hindley_milner;
 pub mod instruction;
 pub mod ir_to_mir;
 pub mod lir;
-pub mod mir_to_lir;
 pub mod mir;
 pub mod mir_to_ebpf;
+pub mod mir_to_lir;
 pub mod passes;
 pub mod reg_info;
 pub mod type_infer;
-pub mod verifier_types;
 pub mod vcc;
+pub mod verifier_types;
 
 pub use elf::{
     BpfFieldType, BpfMapDef, EbpfMap, EbpfProgram, EbpfProgramType, EventSchema, MapRelocation,
     ProbeContext, SchemaField,
 };
-pub use instruction::{BpfHelper, EbpfInsn, EbpfReg};
 pub use hir::{
-    extract_call_decl_ids, extract_closure_block_ids, infer_ctx_param, lower_ir_to_hir, HirProgram,
+    HirProgram, extract_call_decl_ids, extract_closure_block_ids, infer_ctx_param, lower_ir_to_hir,
 };
-pub use hir_to_mir::{lower_hir_to_mir, lower_hir_to_mir_with_hints, MirLoweringResult};
+pub use hir_to_mir::{MirLoweringResult, lower_hir_to_mir, lower_hir_to_mir_with_hints};
+pub use instruction::{BpfHelper, EbpfInsn, EbpfReg};
 pub use ir_to_mir::{UserFunctionSig, UserParam, UserParamKind};
-pub use mir_to_lir::{lower_mir_to_lir, lower_mir_to_lir_checked};
+pub use mir::MirTypeHints;
 pub use mir_to_ebpf::{MirCompileResult, compile_mir_to_ebpf, compile_mir_to_ebpf_with_hints};
+pub use mir_to_lir::{lower_mir_to_lir, lower_mir_to_lir_checked};
 pub use type_infer::{TypeError, TypeInference};
 pub use verifier_types::VerifierTypeError;
-pub use mir::MirTypeHints;
 
 use thiserror::Error;
 

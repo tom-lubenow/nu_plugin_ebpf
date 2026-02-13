@@ -2655,7 +2655,9 @@ mod tests {
         block.terminator = MirInst::Return { val: None };
 
         let mut ti = TypeInference::new(None);
-        let errs = ti.infer(&func).expect_err("expected unknown-kfunc type error");
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected unknown-kfunc type error");
         assert!(errs.iter().any(|e| e.message.contains("unknown kfunc")));
     }
 
