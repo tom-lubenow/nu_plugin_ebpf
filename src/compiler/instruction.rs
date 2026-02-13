@@ -957,6 +957,8 @@ impl BpfHelper {
     pub const fn semantics(self) -> HelperSemantics {
         const STACK_MAP: HelperAllowedPtrSpaces =
             HelperAllowedPtrSpaces::new(true, true, false, false);
+        const MAP_ONLY: HelperAllowedPtrSpaces =
+            HelperAllowedPtrSpaces::new(false, true, false, false);
         const STACK_ONLY: HelperAllowedPtrSpaces =
             HelperAllowedPtrSpaces::new(true, false, false, false);
         const STACK_MAP_KERNEL: HelperAllowedPtrSpaces =
@@ -1160,7 +1162,7 @@ impl BpfHelper {
             HelperPtrArgRule {
                 arg_idx: 0,
                 op: "helper kptr_xchg dst",
-                allowed: STACK_MAP,
+                allowed: MAP_ONLY,
                 fixed_size: None,
                 size_from_arg: None,
             },

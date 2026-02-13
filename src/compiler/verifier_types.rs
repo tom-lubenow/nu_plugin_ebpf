@@ -6503,6 +6503,114 @@ mod tests {
     fn test_helper_kptr_xchg_allows_null_const_arg1() {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+        func.param_count = 1;
+
+        let dst_ptr = func.alloc_vreg();
+        let dst_non_null = func.alloc_vreg();
+        let swapped = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: dst_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(dst_ptr),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: dst_non_null,
+            if_true: call,
+            if_false: done,
+        };
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst: swapped,
+            helper: BpfHelper::KptrXchg as u32,
+            args: vec![MirValue::VReg(dst_ptr), MirValue::Const(0)],
+        });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            dst_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Map,
+            },
+        );
+        types.insert(dst_non_null, MirType::Bool);
+        types.insert(
+            swapped,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        verify_mir(&func, &types).expect("expected kptr_xchg null-pointer arg acceptance");
+    }
+
+    #[test]
+    fn test_helper_kptr_xchg_rejects_non_null_scalar_arg1() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+        func.param_count = 1;
+
+        let dst_ptr = func.alloc_vreg();
+        let dst_non_null = func.alloc_vreg();
+        let swapped = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: dst_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(dst_ptr),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: dst_non_null,
+            if_true: call,
+            if_false: done,
+        };
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst: swapped,
+            helper: BpfHelper::KptrXchg as u32,
+            args: vec![MirValue::VReg(dst_ptr), MirValue::Const(1)],
+        });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            dst_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Map,
+            },
+        );
+        types.insert(dst_non_null, MirType::Bool);
+        types.insert(
+            swapped,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected helper pointer-arg error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("helper 194 arg1 expects pointer")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_helper_kptr_xchg_rejects_non_map_dst_arg0() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
         func.entry = entry;
         func.param_count = 1;
 
@@ -6533,47 +6641,12 @@ mod tests {
             },
         );
 
-        verify_mir(&func, &types).expect("expected kptr_xchg null-pointer arg acceptance");
-    }
-
-    #[test]
-    fn test_helper_kptr_xchg_rejects_non_null_scalar_arg1() {
-        let mut func = MirFunction::new();
-        let entry = func.alloc_block();
-        func.entry = entry;
-        func.param_count = 1;
-
-        let dst_ptr = func.alloc_vreg();
-        let swapped = func.alloc_vreg();
-        func.block_mut(entry)
-            .instructions
-            .push(MirInst::CallHelper {
-                dst: swapped,
-                helper: BpfHelper::KptrXchg as u32,
-                args: vec![MirValue::VReg(dst_ptr), MirValue::Const(1)],
-            });
-        func.block_mut(entry).terminator = MirInst::Return { val: None };
-
-        let mut types = HashMap::new();
-        types.insert(
-            dst_ptr,
-            MirType::Ptr {
-                pointee: Box::new(MirType::Unknown),
-                address_space: AddressSpace::Stack,
-            },
-        );
-        types.insert(
-            swapped,
-            MirType::Ptr {
-                pointee: Box::new(MirType::Unknown),
-                address_space: AddressSpace::Kernel,
-            },
-        );
-
-        let err = verify_mir(&func, &types).expect_err("expected helper pointer-arg error");
+        let err = verify_mir(&func, &types)
+            .expect_err("expected kptr_xchg map-pointer destination error");
         assert!(
-            err.iter()
-                .any(|e| e.message.contains("helper 194 arg1 expects pointer")),
+            err.iter().any(|e| e
+                .message
+                .contains("helper kptr_xchg dst expects pointer in [Map]")),
             "unexpected errors: {:?}",
             err
         );
@@ -6583,6 +6656,7 @@ mod tests {
     fn test_helper_kptr_xchg_transfers_reference_and_releases_old_value() {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();
+        let acquire = func.alloc_block();
         let swap = func.alloc_block();
         let release_old = func.alloc_block();
         let done = func.alloc_block();
@@ -6593,27 +6667,42 @@ mod tests {
         let pid = func.alloc_vreg();
         let task = func.alloc_vreg();
         let task_non_null = func.alloc_vreg();
+        let dst_non_null = func.alloc_vreg();
         let swapped = func.alloc_vreg();
         let swapped_non_null = func.alloc_vreg();
         let release_ret = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::Copy {
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: dst_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(dst_ptr),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: dst_non_null,
+            if_true: acquire,
+            if_false: done,
+        };
+
+        func.block_mut(acquire).instructions.push(MirInst::Copy {
             dst: pid,
             src: MirValue::Const(123),
         });
-        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
-            dst: task,
-            kfunc: "bpf_task_from_pid".to_string(),
-            btf_id: None,
-            args: vec![pid],
-        });
-        func.block_mut(entry).instructions.push(MirInst::BinOp {
+        func.block_mut(acquire)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: task,
+                kfunc: "bpf_task_from_pid".to_string(),
+                btf_id: None,
+                args: vec![pid],
+            });
+        func.block_mut(acquire).instructions.push(MirInst::BinOp {
             dst: task_non_null,
             op: BinOpKind::Ne,
             lhs: MirValue::VReg(task),
             rhs: MirValue::Const(0),
         });
-        func.block_mut(entry).terminator = MirInst::Branch {
+        func.block_mut(acquire).terminator = MirInst::Branch {
             cond: task_non_null,
             if_true: swap,
             if_false: done,
@@ -6652,7 +6741,7 @@ mod tests {
             dst_ptr,
             MirType::Ptr {
                 pointee: Box::new(MirType::Unknown),
-                address_space: AddressSpace::Stack,
+                address_space: AddressSpace::Map,
             },
         );
         types.insert(pid, MirType::I64);
@@ -6664,6 +6753,7 @@ mod tests {
             },
         );
         types.insert(task_non_null, MirType::Bool);
+        types.insert(dst_non_null, MirType::Bool);
         types.insert(
             swapped,
             MirType::Ptr {

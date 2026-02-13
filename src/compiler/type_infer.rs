@@ -2666,14 +2666,26 @@ mod tests {
     #[test]
     fn test_infer_helper_kptr_xchg_returns_kernel_pointer() {
         let mut func = make_test_function();
-        let dst_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let map = func.alloc_vreg();
+        let key = func.alloc_vreg();
         let dst_ptr = func.alloc_vreg();
         let dst = func.alloc_vreg();
 
         let block = func.block_mut(BlockId(0));
         block.instructions.push(MirInst::Copy {
+            dst: map,
+            src: MirValue::StackSlot(map_slot),
+        });
+        block.instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::StackSlot(key_slot),
+        });
+        block.instructions.push(MirInst::CallHelper {
             dst: dst_ptr,
-            src: MirValue::StackSlot(dst_slot),
+            helper: BpfHelper::MapLookupElem as u32,
+            args: vec![MirValue::VReg(map), MirValue::VReg(key)],
         });
         block.instructions.push(MirInst::CallHelper {
             dst,
