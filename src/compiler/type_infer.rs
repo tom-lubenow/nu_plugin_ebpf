@@ -2763,15 +2763,14 @@ mod tests {
         let type_id = func.alloc_vreg();
         let meta = func.alloc_vreg();
         let dst = func.alloc_vreg();
-        let meta_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
         let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: meta,
+            src: MirValue::Const(0),
+        });
         block.instructions.push(MirInst::Copy {
             dst: type_id,
             src: MirValue::Const(1),
-        });
-        block.instructions.push(MirInst::Copy {
-            dst: meta,
-            src: MirValue::StackSlot(meta_slot),
         });
         block.instructions.push(MirInst::CallKfunc {
             dst,
@@ -2797,6 +2796,7 @@ mod tests {
     fn test_type_error_kfunc_obj_drop_requires_kernel_space() {
         let mut func = make_test_function();
         let ptr = func.alloc_vreg();
+        let meta = func.alloc_vreg();
         let dst = func.alloc_vreg();
         let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
         let block = func.block_mut(BlockId(0));
@@ -2804,11 +2804,15 @@ mod tests {
             dst: ptr,
             src: MirValue::StackSlot(slot),
         });
+        block.instructions.push(MirInst::Copy {
+            dst: meta,
+            src: MirValue::Const(0),
+        });
         block.instructions.push(MirInst::CallKfunc {
             dst,
             kfunc: "bpf_obj_drop_impl".to_string(),
             btf_id: None,
-            args: vec![ptr, ptr],
+            args: vec![ptr, meta],
         });
         block.terminator = MirInst::Return { val: None };
 

@@ -7149,7 +7149,6 @@ mod tests {
         let release = func.alloc_block();
         let done = func.alloc_block();
         func.entry = entry;
-        func.param_count = 1;
 
         let meta = func.alloc_vreg();
         let type_id = func.alloc_vreg();
@@ -7157,6 +7156,10 @@ mod tests {
         let cond = func.alloc_vreg();
         let release_ret = func.alloc_vreg();
 
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: meta,
+            src: MirValue::Const(0),
+        });
         func.block_mut(entry).instructions.push(MirInst::Copy {
             dst: type_id,
             src: MirValue::Const(1),
@@ -7191,13 +7194,7 @@ mod tests {
         func.block_mut(done).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
-        types.insert(
-            meta,
-            MirType::Ptr {
-                pointee: Box::new(MirType::Unknown),
-                address_space: AddressSpace::Kernel,
-            },
-        );
+        types.insert(meta, MirType::I64);
         types.insert(type_id, MirType::I64);
         types.insert(
             obj,
@@ -7219,7 +7216,6 @@ mod tests {
         let release = func.alloc_block();
         let done = func.alloc_block();
         func.entry = entry;
-        func.param_count = 1;
 
         let meta = func.alloc_vreg();
         let pid = func.alloc_vreg();
@@ -7227,6 +7223,10 @@ mod tests {
         let cond = func.alloc_vreg();
         let release_ret = func.alloc_vreg();
 
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: meta,
+            src: MirValue::Const(0),
+        });
         func.block_mut(entry).instructions.push(MirInst::Copy {
             dst: pid,
             src: MirValue::Const(123),
@@ -7261,13 +7261,7 @@ mod tests {
         func.block_mut(done).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
-        types.insert(
-            meta,
-            MirType::Ptr {
-                pointee: Box::new(MirType::Unknown),
-                address_space: AddressSpace::Kernel,
-            },
-        );
+        types.insert(meta, MirType::I64);
         types.insert(pid, MirType::I64);
         types.insert(
             task,
