@@ -423,6 +423,150 @@ impl KfuncSignature {
                 arg_kinds: [P, P, P, S, S],
                 ret_kind: KfuncRetKind::Void,
             }),
+            "scx_bpf_cpu_node" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_cpuperf_cap" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_cpuperf_cur" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_cpuperf_set" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "scx_bpf_create_dsq" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_destroy_dsq" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "scx_bpf_dispatch_cancel" => Some(Self {
+                min_args: 0,
+                max_args: 0,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "scx_bpf_dispatch_nr_slots" => Some(Self {
+                min_args: 0,
+                max_args: 0,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_dsq_insert" => Some(Self {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "scx_bpf_dsq_insert_vtime" => Some(Self {
+                min_args: 5,
+                max_args: 5,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "scx_bpf_dsq_move_to_local" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_dsq_nr_queued" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_kick_cpu" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "scx_bpf_now" => Some(Self {
+                min_args: 0,
+                max_args: 0,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_nr_cpu_ids" => Some(Self {
+                min_args: 0,
+                max_args: 0,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_nr_node_ids" => Some(Self {
+                min_args: 0,
+                max_args: 0,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_pick_any_cpu" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_pick_any_cpu_node" => Some(Self {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_pick_idle_cpu" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_pick_idle_cpu_node" => Some(Self {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_reenqueue_local" => Some(Self {
+                min_args: 0,
+                max_args: 0,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_task_cpu" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_task_running" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_test_and_clear_cpu_idle" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
             _ => None,
         }
     }
@@ -459,6 +603,10 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
             | ("bpf_task_release", 0)
             | ("bpf_task_get_cgroup1", 0)
             | ("bpf_task_under_cgroup", 0)
+            | ("scx_bpf_dsq_insert", 0)
+            | ("scx_bpf_dsq_insert_vtime", 0)
+            | ("scx_bpf_task_cpu", 0)
+            | ("scx_bpf_task_running", 0)
     ) {
         return Some(KfuncRefKind::Task);
     }
@@ -509,6 +657,10 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
             | ("bpf_cpumask_xor", 0)
             | ("bpf_cpumask_xor", 1)
             | ("bpf_cpumask_xor", 2)
+            | ("scx_bpf_pick_any_cpu", 0)
+            | ("scx_bpf_pick_any_cpu_node", 0)
+            | ("scx_bpf_pick_idle_cpu", 0)
+            | ("scx_bpf_pick_idle_cpu_node", 0)
     ) {
         return Some(KfuncRefKind::Cpumask);
     }
@@ -1466,6 +1618,16 @@ mod tests {
     }
 
     #[test]
+    fn test_kfunc_signature_scx_dsq_insert() {
+        let sig = KfuncSignature::for_name("scx_bpf_dsq_insert")
+            .expect("expected scx_bpf_dsq_insert kfunc signature");
+        assert_eq!(sig.min_args, 4);
+        assert_eq!(sig.max_args, 4);
+        assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+        assert_eq!(sig.ret_kind, KfuncRetKind::Void);
+    }
+
+    #[test]
     fn test_kfunc_ref_kind_mappings() {
         assert_eq!(
             kfunc_acquire_ref_kind("bpf_task_from_pid"),
@@ -1505,6 +1667,14 @@ mod tests {
         );
         assert_eq!(
             kfunc_pointer_arg_ref_kind("bpf_cpumask_test_cpu", 1),
+            Some(KfuncRefKind::Cpumask)
+        );
+        assert_eq!(
+            kfunc_pointer_arg_ref_kind("scx_bpf_task_cpu", 0),
+            Some(KfuncRefKind::Task)
+        );
+        assert_eq!(
+            kfunc_pointer_arg_ref_kind("scx_bpf_pick_idle_cpu", 0),
             Some(KfuncRefKind::Cpumask)
         );
         assert_eq!(kfunc_pointer_arg_ref_kind("bpf_task_from_pid", 0), None);
