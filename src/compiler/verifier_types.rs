@@ -6744,6 +6744,64 @@ mod tests {
     }
 
     #[test]
+    fn test_kfunc_get_task_exe_file_rejects_cgroup_reference_argument() {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let cgid = func.alloc_vreg();
+        let cgroup = func.alloc_vreg();
+        let file = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: cgid,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: cgroup,
+            kfunc: "bpf_cgroup_from_id".to_string(),
+            btf_id: None,
+            args: vec![cgid],
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: file,
+            kfunc: "bpf_get_task_exe_file".to_string(),
+            btf_id: None,
+            args: vec![cgroup],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(cgid, MirType::I64);
+        types.insert(
+            cgroup,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(
+            file,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected kfunc provenance mismatch error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("arg0 expects task reference")),
+            "unexpected errors: {:?}",
+            err
+        );
+        assert!(
+            err.iter().any(|e| e.message.contains("cgroup reference")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+
+    #[test]
     fn test_kfunc_task_under_cgroup_rejects_task_reference_for_cgroup_arg() {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();
