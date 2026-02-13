@@ -8343,4 +8343,38 @@ mod tests {
             err
         );
     }
+
+    #[test]
+    fn test_verify_mir_unknown_helper_rejects_more_than_five_args() {
+        let (mut func, entry) = new_mir_function();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: 9999,
+            args: vec![
+                MirValue::Const(0),
+                MirValue::Const(1),
+                MirValue::Const(2),
+                MirValue::Const(3),
+                MirValue::Const(4),
+                MirValue::Const(5),
+            ],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err =
+            verify_mir(&func, &types).expect_err("expected helper-argument count rejection");
+        assert!(
+            err.iter().any(
+                |e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains("at most 5 arguments")
+            ),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
 }
