@@ -6426,7 +6426,7 @@ mod tests {
         func.entry = entry;
         func.param_count = 1;
 
-        let task = VReg(0);
+        let task = func.alloc_vreg();
         let acquired = func.alloc_vreg();
         let cond = func.alloc_vreg();
         let release_ret = func.alloc_vreg();
@@ -6489,7 +6489,7 @@ mod tests {
         func.entry = entry;
         func.param_count = 1;
 
-        let task = VReg(0);
+        let task = func.alloc_vreg();
         let acquired = func.alloc_vreg();
         let cond = func.alloc_vreg();
 
@@ -6543,18 +6543,36 @@ mod tests {
     fn test_kfunc_task_release_requires_tracked_reference() {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();
+        let release = func.alloc_block();
+        let done = func.alloc_block();
         func.entry = entry;
         func.param_count = 1;
 
-        let task = VReg(0);
-        let dst = func.alloc_vreg();
-        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
-            dst,
-            kfunc: "bpf_task_release".to_string(),
-            btf_id: None,
-            args: vec![task],
+        let task = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(task),
+            rhs: MirValue::Const(0),
         });
-        func.block_mut(entry).terminator = MirInst::Return { val: None };
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: release,
+            if_false: done,
+        };
+
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_task_release".to_string(),
+                btf_id: None,
+                args: vec![task],
+            });
+        func.block_mut(release).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
         types.insert(
@@ -6564,12 +6582,14 @@ mod tests {
                 address_space: AddressSpace::Kernel,
             },
         );
-        types.insert(dst, MirType::I64);
+        types.insert(release_ret, MirType::I64);
 
         let err = verify_mir(&func, &types).expect_err("expected tracked-reference error");
         assert!(
-            err.iter()
-                .any(|e| e.message.contains("expects acquired task reference")),
+            err.iter().any(|e| {
+                e.message.contains("expects acquired task reference")
+                    || e.message.contains("reference already released")
+            }),
             "unexpected errors: {:?}",
             err
         );

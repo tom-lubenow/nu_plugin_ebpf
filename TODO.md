@@ -49,6 +49,7 @@ Last updated: 2026-02-13.
   - Verifier parity now enforces built-in counter-map kind restrictions and conflicts (`counters`/`str_counters` require `Hash` or `PerCpuHash`, with no mixed-kind usage).
   - Verifier parity now enforces string-counter key shape requirements (stack/map pointer with in-bounds 16-byte access) instead of allowing scalar keys.
   - Verifier parity now models `bpf_task_acquire`/`bpf_task_release` reference lifetimes (tracked refs, null-branch drop, double-release/leak checks, and pointer invalidation after release).
+  - VCC parity now mirrors `bpf_task_acquire`/`bpf_task_release` reference lifetimes (tracked refs, null-branch drop, leak checks, and pointer invalidation after release).
   - Verifier parity now enforces the generic helper argument cap (`<= 5` args) for unknown helper IDs in both verifier_types and VCC.
   - Verifier parity now enforces the MIR function parameter cap (`<= 5`) that backend BPF subfunction lowering requires, with verifier_types/VCC regression tests.
   - Verifier parity now enforces `CallSubfn` argument limits (`<= 5`) before MIR->LIR lowering, with verifier_types/VCC regression tests.
@@ -56,7 +57,7 @@ Last updated: 2026-02-13.
   - VCC now aligns typed pointer nullability with verifier_types (`Map`/`Kernel`/`User` pointers are `MaybeNull` until guarded), including parity tests for load/read_str/helper flows that require explicit null checks.
   - VCC now propagates map-value bounds from built-in map semantics and pointee types, including pointer-arithmetic/load/store bounds checks for map-value pointers.
   - VCC now aligns direct memory access rules with verifier expectations by rejecting raw `load`/`store` on non stack/map pointer spaces.
-  - Remaining: mirror new kfunc ref-lifetime semantics in VCC and extend pointer-state transitions to broader helper/kfunc families (provenance/nullability/mutability/ref-lifetime) with kernel-verifier-level fidelity.
+  - Remaining: extend pointer-state transitions to broader helper/kfunc families (provenance/nullability/mutability/ref-lifetime) with kernel-verifier-level fidelity.
 
 ## Research-backed compiler core work
 

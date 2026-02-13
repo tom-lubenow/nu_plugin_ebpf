@@ -18,9 +18,9 @@ use crate::compiler::instruction::{
     KfuncSignature,
 };
 use crate::compiler::mir::{
-    AddressSpace, BinOpKind, MapKind, MirFunction, MirInst, MirType, MirValue, COUNTER_MAP_NAME,
-    HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, STRING_COUNTER_MAP_NAME, TIMESTAMP_MAP_NAME,
-    USTACK_MAP_NAME, RINGBUF_MAP_NAME, StackSlotId, StackSlotKind, StringAppendType, UnaryOpKind,
+    AddressSpace, BinOpKind, COUNTER_MAP_NAME, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, MapKind,
+    MirFunction, MirInst, MirType, MirValue, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME,
+    StackSlotId, StackSlotKind, StringAppendType, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, UnaryOpKind,
     VReg,
 };
 use crate::compiler::passes::{ListLowering, MirPass};
@@ -131,6 +131,7 @@ pub struct VccPointerInfo {
     pub nullability: VccNullability,
     pub bounds: Option<VccBounds>,
     pub ringbuf_ref: Option<VccReg>,
+    pub kfunc_ref: Option<VccReg>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -238,6 +239,12 @@ pub enum VccInst {
         id: VccReg,
     },
     RingbufRelease {
+        ptr: VccValue,
+    },
+    KfuncAcquire {
+        id: VccReg,
+    },
+    KfuncRelease {
         ptr: VccValue,
     },
 }
@@ -443,7 +450,11 @@ impl VccVerifier {
                         true_means_non_null,
                         ..
                     } => {
-                        self.refine_ptr_nullability(&mut true_state, refinement, true_means_non_null);
+                        self.refine_ptr_nullability(
+                            &mut true_state,
+                            refinement,
+                            true_means_non_null,
+                        );
                         self.refine_ptr_nullability(
                             &mut false_state,
                             refinement,
@@ -476,6 +487,7 @@ impl VccVerifier {
         let VccCondRefinement::PtrNull {
             ptr_reg,
             ringbuf_ref,
+            kfunc_ref,
             ..
         } = refinement
         else {
@@ -498,6 +510,9 @@ impl VccVerifier {
         if !non_null {
             if let Some(ref_id) = ringbuf_ref {
                 state.set_live_ringbuf_ref(ref_id, false);
+            }
+            if let Some(ref_id) = kfunc_ref {
+                state.set_live_kfunc_ref(ref_id, false);
             }
         }
         state.set_reg(ptr_reg, VccValueType::Ptr(ptr));
@@ -749,7 +764,11 @@ impl VccVerifier {
         }
     }
 
-    fn ranges_can_satisfy_compare(lhs: Option<VccRange>, rhs: Option<VccRange>, op: VccBinOp) -> bool {
+    fn ranges_can_satisfy_compare(
+        lhs: Option<VccRange>,
+        rhs: Option<VccRange>,
+        op: VccBinOp,
+    ) -> bool {
         let Some((lhs_min, lhs_max)) = Self::range_bounds(lhs) else {
             return true;
         };
@@ -877,8 +896,12 @@ impl VccVerifier {
         }
         match current {
             Some(current) => {
-                let min = min.map(|value| current.min.max(value)).unwrap_or(current.min);
-                let max = max.map(|value| current.max.min(value)).unwrap_or(current.max);
+                let min = min
+                    .map(|value| current.min.max(value))
+                    .unwrap_or(current.min);
+                let max = max
+                    .map(|value| current.max.min(value))
+                    .unwrap_or(current.max);
                 if min <= max {
                     Some(VccRange { min, max })
                 } else {
@@ -1045,7 +1068,8 @@ impl VccVerifier {
                         return;
                     }
                 };
-                if size_ty.class() != VccTypeClass::Scalar && size_ty.class() != VccTypeClass::Bool {
+                if size_ty.class() != VccTypeClass::Scalar && size_ty.class() != VccTypeClass::Bool
+                {
                     self.errors.push(VccError::new(
                         VccErrorKind::TypeMismatch {
                             expected: VccTypeClass::Scalar,
@@ -1063,7 +1087,9 @@ impl VccVerifier {
                         ));
                         return;
                     }
-                    if let (VccAddrSpace::Stack(_), Some(bounds)) = (ptr_info.space, ptr_info.bounds) {
+                    if let (VccAddrSpace::Stack(_), Some(bounds)) =
+                        (ptr_info.space, ptr_info.bounds)
+                    {
                         if bounds.shifted_with_size(0, size_range.max).is_none() {
                             self.errors.push(VccError::new(
                                 VccErrorKind::PointerBounds,
@@ -1090,6 +1116,7 @@ impl VccVerifier {
                         nullability: VccNullability::NonNull,
                         bounds,
                         ringbuf_ref: None,
+                        kfunc_ref: None,
                     }),
                 );
             }
@@ -1112,7 +1139,8 @@ impl VccVerifier {
                 match op {
                     VccBinOp::Eq | VccBinOp::Ne => {
                         let ptr_cmp = self.ptr_null_comparison(*lhs, lhs_ty, *rhs, rhs_ty);
-                        let scalar_cmp = self.scalar_const_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
+                        let scalar_cmp =
+                            self.scalar_const_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         let scalar_reg_cmp =
                             self.scalar_reg_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         let lhs_is_ptr = matches!(lhs_ty, VccValueType::Ptr(_));
@@ -1175,12 +1203,13 @@ impl VccVerifier {
                             return;
                         }
                         state.set_reg(*dst, VccValueType::Bool);
-                        if let Some((ptr_reg, ringbuf_ref)) = ptr_cmp {
+                        if let Some((ptr_reg, ringbuf_ref, kfunc_ref)) = ptr_cmp {
                             state.set_cond_refinement(
                                 *dst,
                                 VccCondRefinement::PtrNull {
                                     ptr_reg,
                                     ringbuf_ref,
+                                    kfunc_ref,
                                     true_means_non_null: matches!(op, VccBinOp::Ne),
                                 },
                             );
@@ -1205,7 +1234,8 @@ impl VccVerifier {
                         }
                     }
                     VccBinOp::Lt | VccBinOp::Le | VccBinOp::Gt | VccBinOp::Ge => {
-                        let scalar_cmp = self.scalar_const_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
+                        let scalar_cmp =
+                            self.scalar_const_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         let scalar_reg_cmp =
                             self.scalar_reg_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         if lhs_ty.class() != VccTypeClass::Scalar
@@ -1316,13 +1346,15 @@ impl VccVerifier {
 
                 let offset_range = state.value_range(*offset, offset_ty);
                 let bounds = match (base_ptr.bounds, offset_range) {
-                    (Some(bounds), Some(range)) => bounds.shifted(range).map(Some).unwrap_or_else(|| {
-                        self.errors.push(VccError::new(
-                            VccErrorKind::PointerBounds,
-                            "pointer arithmetic out of bounds",
-                        ));
-                        None
-                    }),
+                    (Some(bounds), Some(range)) => {
+                        bounds.shifted(range).map(Some).unwrap_or_else(|| {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::PointerBounds,
+                                "pointer arithmetic out of bounds",
+                            ));
+                            None
+                        })
+                    }
                     (Some(_), None) => {
                         self.errors.push(VccError::new(
                             VccErrorKind::UnknownOffset,
@@ -1340,6 +1372,7 @@ impl VccVerifier {
                         nullability: base_ptr.nullability,
                         bounds,
                         ringbuf_ref: base_ptr.ringbuf_ref,
+                        kfunc_ref: base_ptr.kfunc_ref,
                     }),
                 );
             }
@@ -1539,6 +1572,56 @@ impl VccVerifier {
                     }
                 }
             }
+            VccInst::KfuncAcquire { id } => {
+                state.set_live_kfunc_ref(*id, true);
+            }
+            VccInst::KfuncRelease { ptr } => {
+                let ty = match state.value_type(*ptr) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                match ty {
+                    VccValueType::Ptr(info) if info.space == VccAddrSpace::Kernel => {
+                        if let Err(err) = self.require_non_null_ptr(info, "kfunc release") {
+                            self.errors.push(err);
+                            return;
+                        }
+                        if let Some(ref_id) = info.kfunc_ref {
+                            if state.is_live_kfunc_ref(ref_id) {
+                                state.invalidate_kfunc_ref(ref_id);
+                            } else {
+                                self.errors.push(VccError::new(
+                                    VccErrorKind::PointerBounds,
+                                    "kfunc reference already released",
+                                ));
+                            }
+                        } else {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::PointerBounds,
+                                "kfunc release pointer is not tracked",
+                            ));
+                        }
+                    }
+                    VccValueType::Ptr(_) => {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::PointerBounds,
+                            "kfunc release requires kernel task reference pointer",
+                        ));
+                    }
+                    other => {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::TypeMismatch {
+                                expected: VccTypeClass::Ptr,
+                                actual: other.class(),
+                            },
+                            "kfunc release requires pointer operand",
+                        ));
+                    }
+                }
+            }
         }
     }
 
@@ -1574,6 +1657,12 @@ impl VccVerifier {
                         "unreleased ringbuf record reference at function exit",
                     ));
                 }
+                if state.has_live_kfunc_refs() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "unreleased kfunc reference at function exit",
+                    ));
+                }
             }
         }
     }
@@ -1584,17 +1673,17 @@ impl VccVerifier {
         lhs_ty: VccValueType,
         rhs: VccValue,
         rhs_ty: VccValueType,
-    ) -> Option<(VccReg, Option<VccReg>)> {
+    ) -> Option<(VccReg, Option<VccReg>, Option<VccReg>)> {
         match (lhs, lhs_ty, rhs, rhs_ty) {
             (VccValue::Reg(ptr_reg), VccValueType::Ptr(ptr), _, other)
                 if self.is_null_scalar(rhs, other) =>
             {
-                Some((ptr_reg, ptr.ringbuf_ref))
+                Some((ptr_reg, ptr.ringbuf_ref, ptr.kfunc_ref))
             }
             (_, other, VccValue::Reg(ptr_reg), VccValueType::Ptr(ptr))
                 if self.is_null_scalar(lhs, other) =>
             {
-                Some((ptr_reg, ptr.ringbuf_ref))
+                Some((ptr_reg, ptr.ringbuf_ref, ptr.kfunc_ref))
             }
             _ => None,
         }
@@ -1729,6 +1818,7 @@ struct VccState {
     reg_types: HashMap<VccReg, VccValueType>,
     not_equal_consts: HashMap<VccReg, Vec<i64>>,
     live_ringbuf_refs: HashMap<VccReg, bool>,
+    live_kfunc_refs: HashMap<VccReg, bool>,
     cond_refinements: HashMap<VccReg, VccCondRefinement>,
     reachable: bool,
 }
@@ -1738,6 +1828,7 @@ enum VccCondRefinement {
     PtrNull {
         ptr_reg: VccReg,
         ringbuf_ref: Option<VccReg>,
+        kfunc_ref: Option<VccReg>,
         true_means_non_null: bool,
     },
     ScalarCmpConst {
@@ -1760,6 +1851,7 @@ impl VccState {
             reg_types: seed,
             not_equal_consts: HashMap::new(),
             live_ringbuf_refs: HashMap::new(),
+            live_kfunc_refs: HashMap::new(),
             cond_refinements: HashMap::new(),
             reachable: true,
         }
@@ -1818,6 +1910,10 @@ impl VccState {
         self.live_ringbuf_refs.insert(id, live);
     }
 
+    fn set_live_kfunc_ref(&mut self, id: VccReg, live: bool) {
+        self.live_kfunc_refs.insert(id, live);
+    }
+
     fn set_cond_refinement(&mut self, reg: VccReg, refinement: VccCondRefinement) {
         self.cond_refinements.insert(reg, refinement);
     }
@@ -1831,7 +1927,21 @@ impl VccState {
     }
 
     fn has_live_ringbuf_refs(&self) -> bool {
-        self.live_ringbuf_refs.values().copied().any(std::convert::identity)
+        self.live_ringbuf_refs
+            .values()
+            .copied()
+            .any(std::convert::identity)
+    }
+
+    fn is_live_kfunc_ref(&self, id: VccReg) -> bool {
+        self.live_kfunc_refs.get(&id).copied().unwrap_or(false)
+    }
+
+    fn has_live_kfunc_refs(&self) -> bool {
+        self.live_kfunc_refs
+            .values()
+            .copied()
+            .any(std::convert::identity)
     }
 
     fn invalidate_ringbuf_ref(&mut self, id: VccReg) {
@@ -1851,6 +1961,28 @@ impl VccState {
         }
         self.cond_refinements.retain(|_, info| match info {
             VccCondRefinement::PtrNull { ringbuf_ref, .. } => *ringbuf_ref != Some(id),
+            VccCondRefinement::ScalarCmpConst { .. } => true,
+            VccCondRefinement::ScalarCmpRegs { .. } => true,
+        });
+    }
+
+    fn invalidate_kfunc_ref(&mut self, id: VccReg) {
+        self.set_live_kfunc_ref(id, false);
+        for (reg, ty) in self.reg_types.iter_mut() {
+            let matches_ref = matches!(
+                ty,
+                VccValueType::Ptr(VccPointerInfo {
+                    kfunc_ref: Some(ref_id),
+                    ..
+                }) if *ref_id == id
+            );
+            if matches_ref {
+                *ty = VccValueType::Unknown;
+                self.not_equal_consts.remove(reg);
+            }
+        }
+        self.cond_refinements.retain(|_, info| match info {
+            VccCondRefinement::PtrNull { kfunc_ref, .. } => *kfunc_ref != Some(id),
             VccCondRefinement::ScalarCmpConst { .. } => true,
             VccCondRefinement::ScalarCmpRegs { .. } => true,
         });
@@ -1878,6 +2010,11 @@ impl VccState {
         for (id, live) in &other.live_ringbuf_refs {
             let current = live_ringbuf_refs.get(id).copied().unwrap_or(false);
             live_ringbuf_refs.insert(*id, current || *live);
+        }
+        let mut live_kfunc_refs = self.live_kfunc_refs.clone();
+        for (id, live) in &other.live_kfunc_refs {
+            let current = live_kfunc_refs.get(id).copied().unwrap_or(false);
+            live_kfunc_refs.insert(*id, current || *live);
         }
         let mut cond_refinements = HashMap::new();
         for (reg, left) in &self.cond_refinements {
@@ -1909,6 +2046,7 @@ impl VccState {
             reg_types: merged,
             not_equal_consts,
             live_ringbuf_refs,
+            live_kfunc_refs,
             cond_refinements,
             reachable: true,
         }
@@ -1924,6 +2062,7 @@ impl VccState {
                     nullability: VccNullability::MaybeNull,
                     bounds: None,
                     ringbuf_ref: None,
+                    kfunc_ref: None,
                 }),
                 VccValueType::Bool => VccValueType::Bool,
                 VccValueType::Unknown => VccValueType::Unknown,
@@ -1935,6 +2074,7 @@ impl VccState {
             reg_types: widened,
             not_equal_consts: HashMap::new(),
             live_ringbuf_refs: self.live_ringbuf_refs.clone(),
+            live_kfunc_refs: self.live_kfunc_refs.clone(),
             cond_refinements: HashMap::new(),
             reachable: self.reachable,
         }
@@ -2185,12 +2325,17 @@ impl VccState {
                     (Some(a), Some(b)) if a == b => Some(a),
                     _ => None,
                 };
+                let kfunc_ref = match (lp.kfunc_ref, rp.kfunc_ref) {
+                    (Some(a), Some(b)) if a == b => Some(a),
+                    _ => None,
+                };
                 let nullability = Self::join_nullability(lp.nullability, rp.nullability);
                 VccValueType::Ptr(VccPointerInfo {
                     space: lp.space,
                     nullability,
                     bounds,
                     ringbuf_ref,
+                    kfunc_ref,
                 })
             }
             (left, right) if left == right => left,
@@ -2337,6 +2482,7 @@ impl<'a> VccLowerer<'a> {
                                 nullability: VccNullability::NonNull,
                                 bounds: stack_bounds(size),
                                 ringbuf_ref: None,
+                                kfunc_ref: None,
                             },
                         );
                     }
@@ -2528,6 +2674,7 @@ impl<'a> VccLowerer<'a> {
                             nullability: VccNullability::NonNull,
                             bounds: stack_bounds(size),
                             ringbuf_ref: None,
+                            kfunc_ref: None,
                         },
                     );
                 } else {
@@ -2600,6 +2747,7 @@ impl<'a> VccLowerer<'a> {
                         nullability: VccNullability::MaybeNull,
                         bounds: None,
                         ringbuf_ref: None,
+                        kfunc_ref: None,
                     },
                 };
                 info.space = VccAddrSpace::MapValue;
@@ -2706,7 +2854,10 @@ impl<'a> VccLowerer<'a> {
                 if let VccValueType::Ptr(info) = ty {
                     self.ptr_regs.insert(VccReg(dst.0), info);
                 }
-                if matches!(BpfHelper::from_u32(*helper), Some(BpfHelper::RingbufReserve)) {
+                if matches!(
+                    BpfHelper::from_u32(*helper),
+                    Some(BpfHelper::RingbufReserve)
+                ) {
                     out.push(VccInst::RingbufAcquire { id: VccReg(dst.0) });
                 }
                 if matches!(
@@ -2715,17 +2866,12 @@ impl<'a> VccLowerer<'a> {
                 ) {
                     if let Some(arg0) = args.first() {
                         let release_ptr = self.lower_value(arg0, out);
-                        out.push(VccInst::RingbufRelease {
-                            ptr: release_ptr,
-                        });
+                        out.push(VccInst::RingbufRelease { ptr: release_ptr });
                     }
                 }
             }
             MirInst::CallKfunc {
-                dst,
-                kfunc,
-                args,
-                ..
+                dst, kfunc, args, ..
             } => {
                 self.verify_kfunc_call(kfunc, args, out)?;
                 let ty = self.kfunc_return_type(kfunc, *dst);
@@ -2736,12 +2882,25 @@ impl<'a> VccLowerer<'a> {
                 if let VccValueType::Ptr(info) = ty {
                     self.ptr_regs.insert(VccReg(dst.0), info);
                 }
+                if kfunc == "bpf_task_acquire" {
+                    out.push(VccInst::KfuncAcquire { id: VccReg(dst.0) });
+                }
+                if kfunc == "bpf_task_release" {
+                    if let Some(arg0) = args.first() {
+                        out.push(VccInst::KfuncRelease {
+                            ptr: VccValue::Reg(VccReg(arg0.0)),
+                        });
+                    }
+                }
             }
             MirInst::CallSubfn { dst, args, .. } => {
                 if args.len() > 5 {
                     return Err(VccError::new(
                         VccErrorKind::UnsupportedInstruction,
-                        format!("BPF subfunctions support at most 5 arguments, got {}", args.len()),
+                        format!(
+                            "BPF subfunctions support at most 5 arguments, got {}",
+                            args.len()
+                        ),
                     ));
                 }
                 let ty = self
@@ -3079,6 +3238,7 @@ impl<'a> VccLowerer<'a> {
                 nullability: VccNullability::NonNull,
                 bounds: stack_bounds(size),
                 ringbuf_ref: None,
+                kfunc_ref: None,
             },
         );
         reg
@@ -3099,6 +3259,7 @@ impl<'a> VccLowerer<'a> {
                     nullability: VccNullability::NonNull,
                     bounds: stack_bounds(size),
                     ringbuf_ref: None,
+                    kfunc_ref: None,
                 })
             }
             MirValue::VReg(v) => self
@@ -3139,6 +3300,7 @@ impl<'a> VccLowerer<'a> {
                         nullability: VccNullability::MaybeNull,
                         bounds: None,
                         ringbuf_ref: Some(VccReg(dst.0)),
+                        kfunc_ref: None,
                     });
                 }
                 match inferred {
@@ -3151,6 +3313,7 @@ impl<'a> VccLowerer<'a> {
                         nullability: VccNullability::MaybeNull,
                         bounds: None,
                         ringbuf_ref: None,
+                        kfunc_ref: None,
                     }),
                 }
             }
@@ -3170,6 +3333,9 @@ impl<'a> VccLowerer<'a> {
             KfuncRetKind::PointerMaybeNull => match inferred {
                 Some(VccValueType::Ptr(mut info)) => {
                     info.nullability = VccNullability::MaybeNull;
+                    if kfunc == "bpf_task_acquire" {
+                        info.kfunc_ref = Some(VccReg(dst.0));
+                    }
                     VccValueType::Ptr(info)
                 }
                 _ => VccValueType::Ptr(VccPointerInfo {
@@ -3177,6 +3343,11 @@ impl<'a> VccLowerer<'a> {
                     nullability: VccNullability::MaybeNull,
                     bounds: None,
                     ringbuf_ref: None,
+                    kfunc_ref: if kfunc == "bpf_task_acquire" {
+                        Some(VccReg(dst.0))
+                    } else {
+                        None
+                    },
                 }),
             },
         }
@@ -3241,6 +3412,24 @@ impl<'a> VccLowerer<'a> {
         });
     }
 
+    fn require_pointer_reg(&self, reg: VReg) -> Result<(), VccError> {
+        let ty = self
+            .types
+            .get(&reg)
+            .map(vcc_type_from_mir)
+            .unwrap_or(VccValueType::Unknown);
+        if ty.class() == VccTypeClass::Ptr || self.ptr_regs.contains_key(&VccReg(reg.0)) {
+            return Ok(());
+        }
+        Err(VccError::new(
+            VccErrorKind::TypeMismatch {
+                expected: VccTypeClass::Ptr,
+                actual: ty.class(),
+            },
+            "expected pointer value",
+        ))
+    }
+
     fn check_ptr_range(
         &mut self,
         reg: VReg,
@@ -3250,20 +3439,7 @@ impl<'a> VccLowerer<'a> {
         if size == 0 {
             return Ok(());
         }
-        let ty = self
-            .types
-            .get(&reg)
-            .map(vcc_type_from_mir)
-            .unwrap_or(VccValueType::Unknown);
-        if ty.class() != VccTypeClass::Ptr && !self.ptr_regs.contains_key(&VccReg(reg.0)) {
-            return Err(VccError::new(
-                VccErrorKind::TypeMismatch {
-                    expected: VccTypeClass::Ptr,
-                    actual: ty.class(),
-                },
-                "expected pointer value",
-            ));
-        }
+        self.require_pointer_reg(reg)?;
         out.push(VccInst::AssertPtrAccess {
             ptr: VccReg(reg.0),
             size: VccValue::Imm(size as i64),
@@ -3340,7 +3516,13 @@ impl<'a> VccLowerer<'a> {
         for (idx, arg) in args.iter().enumerate() {
             match sig.arg_kind(idx) {
                 KfuncArgKind::Scalar => self.assert_scalar_reg(*arg, out),
-                KfuncArgKind::Pointer => self.check_ptr_range(*arg, 1, out)?,
+                KfuncArgKind::Pointer => {
+                    if kfunc == "bpf_task_release" && idx == 0 {
+                        self.check_ptr_range(*arg, 1, out)?;
+                    } else {
+                        self.require_pointer_reg(*arg)?;
+                    }
+                }
             }
         }
 
@@ -3562,7 +3744,10 @@ impl<'a> VccLowerer<'a> {
                     expected: VccTypeClass::Ptr,
                     actual: VccTypeClass::Scalar,
                 },
-                format!("helper {} arg{} expects ringbuf record pointer", helper_id, arg_idx),
+                format!(
+                    "helper {} arg{} expects ringbuf record pointer",
+                    helper_id, arg_idx
+                ),
             )
         })?;
 
@@ -3587,7 +3772,10 @@ impl<'a> VccLowerer<'a> {
                     expected: VccTypeClass::Ptr,
                     actual: VccTypeClass::Scalar,
                 },
-                format!("helper {} arg{} expects ringbuf record pointer", helper_id, arg_idx),
+                format!(
+                    "helper {} arg{} expects ringbuf record pointer",
+                    helper_id, arg_idx
+                ),
             )),
         }
     }
@@ -4132,6 +4320,7 @@ fn vcc_type_from_mir(ty: &MirType) -> VccValueType {
                 },
                 bounds,
                 ringbuf_ref: None,
+                kfunc_ref: None,
             })
         }
         MirType::Unknown => VccValueType::Unknown,
@@ -4207,7 +4396,7 @@ mod tests {
     use super::*;
     use crate::compiler::mir::{
         AddressSpace, BlockId, MapKind, MapRef, MirFunction, MirInst, MirType, MirValue,
-        StackSlotKind, StringAppendType, STRING_COUNTER_MAP_NAME,
+        STRING_COUNTER_MAP_NAME, StackSlotKind, StringAppendType,
     };
     use std::collections::HashMap;
 
@@ -4364,12 +4553,14 @@ mod tests {
                 slot: StackSlotId(1),
                 size: 16,
             });
-        func.block_mut(unreachable).instructions.push(VccInst::BinOp {
-            dst: out,
-            op: VccBinOp::Add,
-            lhs: VccValue::Reg(p0),
-            rhs: VccValue::Reg(p1),
-        });
+        func.block_mut(unreachable)
+            .instructions
+            .push(VccInst::BinOp {
+                dst: out,
+                op: VccBinOp::Add,
+                lhs: VccValue::Reg(p0),
+                rhs: VccValue::Reg(p1),
+            });
 
         verify_ok(&func);
     }
@@ -5334,11 +5525,9 @@ mod tests {
             err
         );
         assert!(
-            err.iter().any(
-                |e| e
-                    .message
-                    .contains("read_str expects pointer in [Stack, Map, Kernel]")
-            ),
+            err.iter().any(|e| e
+                .message
+                .contains("read_str expects pointer in [Stack, Map, Kernel]")),
             "unexpected error messages: {:?}",
             err
         );
@@ -5349,11 +5538,13 @@ mod tests {
         let (mut func, entry) = new_mir_function();
         let dst = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 16, // bpf_get_current_comm(buf, size)
-            args: vec![MirValue::Const(0), MirValue::Const(16)],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 16, // bpf_get_current_comm(buf, size)
+                args: vec![MirValue::Const(0), MirValue::Const(16)],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
@@ -5403,12 +5594,14 @@ mod tests {
             if_false: done,
         };
 
-        func.block_mut(impossible).instructions.push(MirInst::BinOp {
-            dst: tmp_ptr,
-            op: BinOpKind::Add,
-            lhs: MirValue::VReg(ptr),
-            rhs: MirValue::VReg(idx),
-        });
+        func.block_mut(impossible)
+            .instructions
+            .push(MirInst::BinOp {
+                dst: tmp_ptr,
+                op: BinOpKind::Add,
+                lhs: MirValue::VReg(ptr),
+                rhs: MirValue::VReg(idx),
+            });
         func.block_mut(impossible).instructions.push(MirInst::Load {
             dst,
             ptr: tmp_ptr,
@@ -5486,7 +5679,8 @@ mod tests {
         func.block_mut(left).terminator = MirInst::Return { val: None };
         func.block_mut(right).terminator = MirInst::Return { val: None };
 
-        let err = verify_mir(&func, &HashMap::new()).expect_err("expected uninitialized branch cond");
+        let err =
+            verify_mir(&func, &HashMap::new()).expect_err("expected uninitialized branch cond");
         assert!(
             err.iter()
                 .any(|e| matches!(e.kind, VccErrorKind::UseOfUninitializedReg(_))),
@@ -5758,24 +5952,28 @@ mod tests {
             if_false: skip_first,
         };
 
-        func.block_mut(after_first).instructions.push(MirInst::BinOp {
-            dst: neq3,
-            op: BinOpKind::Ne,
-            lhs: MirValue::VReg(idx),
-            rhs: MirValue::Const(3),
-        });
+        func.block_mut(after_first)
+            .instructions
+            .push(MirInst::BinOp {
+                dst: neq3,
+                op: BinOpKind::Ne,
+                lhs: MirValue::VReg(idx),
+                rhs: MirValue::Const(3),
+            });
         func.block_mut(after_first).terminator = MirInst::Branch {
             cond: neq3,
             if_true: after_second,
             if_false: skip_second,
         };
 
-        func.block_mut(after_second).instructions.push(MirInst::BinOp {
-            dst: eq1,
-            op: BinOpKind::Eq,
-            lhs: MirValue::VReg(idx),
-            rhs: MirValue::Const(1),
-        });
+        func.block_mut(after_second)
+            .instructions
+            .push(MirInst::BinOp {
+                dst: eq1,
+                op: BinOpKind::Eq,
+                lhs: MirValue::VReg(idx),
+                rhs: MirValue::Const(1),
+            });
         func.block_mut(after_second).terminator = MirInst::Branch {
             cond: eq1,
             if_true: bad,
@@ -6614,11 +6812,13 @@ mod tests {
         let ptr = func.alloc_vreg();
         let dst = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst: ptr,
-            helper: 1, // bpf_map_lookup_elem(map, key)
-            args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: ptr,
+                helper: 1, // bpf_map_lookup_elem(map, key)
+                args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
+            });
         func.block_mut(entry).instructions.push(MirInst::Load {
             dst,
             ptr,
@@ -6650,11 +6850,13 @@ mod tests {
         let cond = func.alloc_vreg();
         let dst = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst: ptr,
-            helper: 1, // bpf_map_lookup_elem(map, key)
-            args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: ptr,
+                helper: 1, // bpf_map_lookup_elem(map, key)
+                args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
+            });
         func.block_mut(entry).instructions.push(MirInst::BinOp {
             dst: cond,
             op: BinOpKind::Ne,
@@ -6751,10 +6953,9 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected unsupported map-kind error");
         assert!(
-            err.iter().any(
-                |e| e.kind == VccErrorKind::UnsupportedInstruction
-                    && e.message.contains("map operations do not support map kind")
-            ),
+            err.iter()
+                .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains("map operations do not support map kind")),
             "unexpected error messages: {:?}",
             err
         );
@@ -6780,10 +6981,10 @@ mod tests {
 
         let err = verify_mir(&func, &HashMap::new()).expect_err("expected array delete error");
         assert!(
-            err.iter().any(
-                |e| e.kind == VccErrorKind::UnsupportedInstruction
-                    && e.message.contains("map delete is not supported for array map kind")
-            ),
+            err.iter()
+                .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message
+                        .contains("map delete is not supported for array map kind")),
             "unexpected error messages: {:?}",
             err
         );
@@ -6816,10 +7017,10 @@ mod tests {
 
         let err = verify_mir(&func, &HashMap::new()).expect_err("expected map-update flags error");
         assert!(
-            err.iter().any(
-                |e| e.kind == VccErrorKind::UnsupportedInstruction
-                    && e.message.contains("exceed supported 32-bit immediate range")
-            ),
+            err.iter()
+                .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message
+                        .contains("exceed supported 32-bit immediate range")),
             "unexpected error messages: {:?}",
             err
         );
@@ -6863,12 +7064,10 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected map key size error");
         assert!(
-            err.iter().any(
-                |e| e.kind == VccErrorKind::UnsupportedInstruction
-                    && e
-                        .message
-                        .contains("map key v0 has size 16 bytes and must be passed as a pointer")
-            ),
+            err.iter()
+                .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message
+                        .contains("map key v0 has size 16 bytes and must be passed as a pointer")),
             "unexpected error messages: {:?}",
             err
         );
@@ -6910,12 +7109,11 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected map value size error");
         assert!(
-            err.iter().any(
-                |e| e.kind == VccErrorKind::UnsupportedInstruction
-                    && e
-                        .message
-                        .contains("map value v1 has size 24 bytes and must be passed as a pointer")
-            ),
+            err.iter()
+                .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains(
+                        "map value v1 has size 24 bytes and must be passed as a pointer"
+                    )),
             "unexpected error messages: {:?}",
             err
         );
@@ -6948,10 +7146,9 @@ mod tests {
 
         let err = verify_mir(&func, &HashMap::new()).expect_err("expected pointer-key error");
         assert!(
-            err.iter().any(
-                |e| matches!(e.kind, VccErrorKind::TypeMismatch { .. })
-                    && e.message.contains("expected pointer value")
-            ),
+            err.iter()
+                .any(|e| matches!(e.kind, VccErrorKind::TypeMismatch { .. })
+                    && e.message.contains("expected pointer value")),
             "unexpected error messages: {:?}",
             err
         );
@@ -7009,10 +7206,9 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected map kind conflict");
         assert!(
-            err.iter().any(
-                |e| e.kind == VccErrorKind::UnsupportedInstruction
-                    && e.message.contains("used with conflicting kinds")
-            ),
+            err.iter()
+                .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains("used with conflicting kinds")),
             "unexpected error messages: {:?}",
             err
         );
@@ -7045,10 +7241,9 @@ mod tests {
 
         let err = verify_mir(&func, &HashMap::new()).expect_err("expected counter map kind error");
         assert!(
-            err.iter().any(
-                |e| e.kind == VccErrorKind::UnsupportedInstruction
-                    && e.message.contains("only supports Hash/PerCpuHash kinds")
-            ),
+            err.iter()
+                .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains("only supports Hash/PerCpuHash kinds")),
             "unexpected error messages: {:?}",
             err
         );
@@ -7101,10 +7296,9 @@ mod tests {
         let err =
             verify_mir(&func, &HashMap::new()).expect_err("expected counter map kind conflict");
         assert!(
-            err.iter().any(
-                |e| e.kind == VccErrorKind::UnsupportedInstruction
-                    && e.message.contains("used with conflicting kinds")
-            ),
+            err.iter()
+                .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains("used with conflicting kinds")),
             "unexpected error messages: {:?}",
             err
         );
@@ -7160,10 +7354,9 @@ mod tests {
 
         let err = verify_mir(&func, &types).expect_err("expected map value-size conflict");
         assert!(
-            err.iter().any(
-                |e| e.kind == VccErrorKind::UnsupportedInstruction
-                    && e.message.contains("used with conflicting value sizes")
-            ),
+            err.iter()
+                .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains("used with conflicting value sizes")),
             "unexpected error messages: {:?}",
             err
         );
@@ -7181,11 +7374,13 @@ mod tests {
         let cond1 = func.alloc_vreg();
         let dst = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst: ptr,
-            helper: 1, // bpf_map_lookup_elem(map, key)
-            args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: ptr,
+                helper: 1, // bpf_map_lookup_elem(map, key)
+                args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
+            });
         func.block_mut(entry).instructions.push(MirInst::BinOp {
             dst: cond0,
             op: BinOpKind::Ne,
@@ -7224,11 +7419,13 @@ mod tests {
         let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
         let dst = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 1, // bpf_map_lookup_elem(map, key)
-            args: vec![MirValue::VReg(map), MirValue::StackSlot(key_slot)],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 1, // bpf_map_lookup_elem(map, key)
+                args: vec![MirValue::VReg(map), MirValue::StackSlot(key_slot)],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
@@ -7248,10 +7445,9 @@ mod tests {
             err
         );
         assert!(
-            err.iter().any(
-                |e| e.message
-                    .contains("helper map_lookup map expects pointer in [Stack]")
-            ),
+            err.iter().any(|e| e
+                .message
+                .contains("helper map_lookup map expects pointer in [Stack]")),
             "unexpected error messages: {:?}",
             err
         );
@@ -7269,11 +7465,13 @@ mod tests {
         let cond = func.alloc_vreg();
         let update_ret = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst: lookup,
-            helper: 1, // bpf_map_lookup_elem(map, key)
-            args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: lookup,
+                helper: 1, // bpf_map_lookup_elem(map, key)
+                args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
+            });
         func.block_mut(entry).instructions.push(MirInst::BinOp {
             dst: cond,
             op: BinOpKind::Ne,
@@ -7317,11 +7515,9 @@ mod tests {
             err
         );
         assert!(
-            err.iter().any(
-                |e| e
-                    .message
-                    .contains("helper map_update map expects pointer in [Stack]")
-            ),
+            err.iter().any(|e| e
+                .message
+                .contains("helper map_update map expects pointer in [Stack]")),
             "unexpected error messages: {:?}",
             err
         );
@@ -7351,11 +7547,13 @@ mod tests {
             lhs: MirValue::VReg(key_base),
             rhs: MirValue::Const(8),
         });
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 1, // bpf_map_lookup_elem(map, key)
-            args: vec![MirValue::VReg(map), MirValue::VReg(key)],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 1, // bpf_map_lookup_elem(map, key)
+                args: vec![MirValue::VReg(map), MirValue::VReg(key)],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
@@ -7376,16 +7574,18 @@ mod tests {
         let data_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
         let dst = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 130, // bpf_ringbuf_output(map, data, size, flags)
-            args: vec![
-                MirValue::StackSlot(map_slot),
-                MirValue::StackSlot(data_slot),
-                MirValue::Const(16),
-                MirValue::Const(0),
-            ],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 130, // bpf_ringbuf_output(map, data, size, flags)
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::StackSlot(data_slot),
+                    MirValue::Const(16),
+                    MirValue::Const(0),
+                ],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
@@ -7409,15 +7609,17 @@ mod tests {
             dst: size,
             src: MirValue::Const(0),
         });
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 131, // bpf_ringbuf_reserve(map, size, flags)
-            args: vec![
-                MirValue::StackSlot(map_slot),
-                MirValue::VReg(size),
-                MirValue::Const(0),
-            ],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 131, // bpf_ringbuf_reserve(map, size, flags)
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::VReg(size),
+                    MirValue::Const(0),
+                ],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
@@ -7449,15 +7651,17 @@ mod tests {
         let cond = func.alloc_vreg();
         let submit_ret = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst: record,
-            helper: 131, // bpf_ringbuf_reserve(map, size, flags)
-            args: vec![
-                MirValue::StackSlot(map_slot),
-                MirValue::Const(8),
-                MirValue::Const(0),
-            ],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: record,
+                helper: 131, // bpf_ringbuf_reserve(map, size, flags)
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                ],
+            });
         func.block_mut(entry).instructions.push(MirInst::BinOp {
             dst: cond,
             op: BinOpKind::Ne,
@@ -7470,11 +7674,13 @@ mod tests {
             if_false: done,
         };
 
-        func.block_mut(submit).instructions.push(MirInst::CallHelper {
-            dst: submit_ret,
-            helper: 132, // bpf_ringbuf_submit(data, flags)
-            args: vec![MirValue::VReg(record), MirValue::Const(0)],
-        });
+        func.block_mut(submit)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: submit_ret,
+                helper: 132, // bpf_ringbuf_submit(data, flags)
+                args: vec![MirValue::VReg(record), MirValue::Const(0)],
+            });
         func.block_mut(submit).terminator = MirInst::Return { val: None };
         func.block_mut(done).terminator = MirInst::Return { val: None };
 
@@ -7493,15 +7699,17 @@ mod tests {
         let cond = func.alloc_vreg();
         let submit_ret = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst: record,
-            helper: 131, // bpf_ringbuf_reserve(map, size, flags)
-            args: vec![
-                MirValue::StackSlot(map_slot),
-                MirValue::Const(8),
-                MirValue::Const(0),
-            ],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: record,
+                helper: 131, // bpf_ringbuf_reserve(map, size, flags)
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                ],
+            });
         func.block_mut(entry).instructions.push(MirInst::BinOp {
             dst: cond,
             op: BinOpKind::Eq,
@@ -7514,11 +7722,13 @@ mod tests {
             if_false: submit,
         };
 
-        func.block_mut(submit).instructions.push(MirInst::CallHelper {
-            dst: submit_ret,
-            helper: 132, // bpf_ringbuf_submit(data, flags)
-            args: vec![MirValue::VReg(record), MirValue::Const(0)],
-        });
+        func.block_mut(submit)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: submit_ret,
+                helper: 132, // bpf_ringbuf_submit(data, flags)
+                args: vec![MirValue::VReg(record), MirValue::Const(0)],
+            });
         func.block_mut(submit).terminator = MirInst::Return { val: None };
         func.block_mut(done).terminator = MirInst::Return { val: None };
 
@@ -7533,15 +7743,17 @@ mod tests {
         let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
         let record = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst: record,
-            helper: 131, // bpf_ringbuf_reserve(map, size, flags)
-            args: vec![
-                MirValue::StackSlot(map_slot),
-                MirValue::Const(8),
-                MirValue::Const(0),
-            ],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: record,
+                helper: 131, // bpf_ringbuf_reserve(map, size, flags)
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                ],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let err = verify_mir(&func, &HashMap::new())
@@ -7566,20 +7778,24 @@ mod tests {
         let record = func.alloc_vreg();
         let submit_ret = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst: record,
-            helper: 131, // bpf_ringbuf_reserve(map, size, flags)
-            args: vec![
-                MirValue::StackSlot(map_slot),
-                MirValue::Const(8),
-                MirValue::Const(0),
-            ],
-        });
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst: submit_ret,
-            helper: 132, // bpf_ringbuf_submit(data, flags)
-            args: vec![MirValue::VReg(record), MirValue::Const(0)],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: record,
+                helper: 131, // bpf_ringbuf_reserve(map, size, flags)
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                ],
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: submit_ret,
+                helper: 132, // bpf_ringbuf_submit(data, flags)
+                args: vec![MirValue::VReg(record), MirValue::Const(0)],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
@@ -7604,15 +7820,17 @@ mod tests {
         let submit_ret0 = func.alloc_vreg();
         let submit_ret1 = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst: record,
-            helper: 131, // bpf_ringbuf_reserve(map, size, flags)
-            args: vec![
-                MirValue::StackSlot(map_slot),
-                MirValue::Const(8),
-                MirValue::Const(0),
-            ],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: record,
+                helper: 131, // bpf_ringbuf_reserve(map, size, flags)
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                ],
+            });
         func.block_mut(entry).instructions.push(MirInst::BinOp {
             dst: cond,
             op: BinOpKind::Ne,
@@ -7625,16 +7843,20 @@ mod tests {
             if_false: done,
         };
 
-        func.block_mut(submit).instructions.push(MirInst::CallHelper {
-            dst: submit_ret0,
-            helper: 132, // bpf_ringbuf_submit(data, flags)
-            args: vec![MirValue::VReg(record), MirValue::Const(0)],
-        });
-        func.block_mut(submit).instructions.push(MirInst::CallHelper {
-            dst: submit_ret1,
-            helper: 132, // bpf_ringbuf_submit(data, flags)
-            args: vec![MirValue::VReg(record), MirValue::Const(0)],
-        });
+        func.block_mut(submit)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: submit_ret0,
+                helper: 132, // bpf_ringbuf_submit(data, flags)
+                args: vec![MirValue::VReg(record), MirValue::Const(0)],
+            });
+        func.block_mut(submit)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: submit_ret1,
+                helper: 132, // bpf_ringbuf_submit(data, flags)
+                args: vec![MirValue::VReg(record), MirValue::Const(0)],
+            });
         func.block_mut(submit).terminator = MirInst::Return { val: None };
         func.block_mut(done).terminator = MirInst::Return { val: None };
 
@@ -7645,7 +7867,8 @@ mod tests {
         assert!(
             err.iter().any(|e| {
                 e.message.contains("ringbuf record already released")
-                    || e.message.contains("ringbuf release requires pointer operand")
+                    || e.message
+                        .contains("ringbuf release requires pointer operand")
             }),
             "unexpected error messages: {:?}",
             err
@@ -7663,15 +7886,17 @@ mod tests {
         let submit_ret = func.alloc_vreg();
         let load_dst = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst: record,
-            helper: 131, // bpf_ringbuf_reserve(map, size, flags)
-            args: vec![
-                MirValue::StackSlot(map_slot),
-                MirValue::Const(8),
-                MirValue::Const(0),
-            ],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: record,
+                helper: 131, // bpf_ringbuf_reserve(map, size, flags)
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                ],
+            });
         func.block_mut(entry).instructions.push(MirInst::BinOp {
             dst: cond,
             op: BinOpKind::Ne,
@@ -7684,11 +7909,13 @@ mod tests {
             if_false: done,
         };
 
-        func.block_mut(submit).instructions.push(MirInst::CallHelper {
-            dst: submit_ret,
-            helper: 132, // bpf_ringbuf_submit(data, flags)
-            args: vec![MirValue::VReg(record), MirValue::Const(0)],
-        });
+        func.block_mut(submit)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: submit_ret,
+                helper: 132, // bpf_ringbuf_submit(data, flags)
+                args: vec![MirValue::VReg(record), MirValue::Const(0)],
+            });
         func.block_mut(submit).instructions.push(MirInst::Load {
             dst: load_dst,
             ptr: record,
@@ -7721,11 +7948,13 @@ mod tests {
         let cond = func.alloc_vreg();
         let submit_ret = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst: ptr,
-            helper: 1, // bpf_map_lookup_elem(map, key)
-            args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: ptr,
+                helper: 1, // bpf_map_lookup_elem(map, key)
+                args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
+            });
         func.block_mut(entry).instructions.push(MirInst::BinOp {
             dst: cond,
             op: BinOpKind::Ne,
@@ -7738,11 +7967,13 @@ mod tests {
             if_false: done,
         };
 
-        func.block_mut(submit).instructions.push(MirInst::CallHelper {
-            dst: submit_ret,
-            helper: 132, // bpf_ringbuf_submit(data, flags)
-            args: vec![MirValue::VReg(ptr), MirValue::Const(0)],
-        });
+        func.block_mut(submit)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: submit_ret,
+                helper: 132, // bpf_ringbuf_submit(data, flags)
+                args: vec![MirValue::VReg(ptr), MirValue::Const(0)],
+            });
         func.block_mut(submit).terminator = MirInst::Return { val: None };
         func.block_mut(done).terminator = MirInst::Return { val: None };
 
@@ -7769,11 +8000,13 @@ mod tests {
         let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
         let dst = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 132, // bpf_ringbuf_submit(data, flags)
-            args: vec![MirValue::StackSlot(slot), MirValue::Const(0)],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 132, // bpf_ringbuf_submit(data, flags)
+                args: vec![MirValue::StackSlot(slot), MirValue::Const(0)],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
@@ -7802,17 +8035,19 @@ mod tests {
         let data_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
         let dst = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 25, // bpf_perf_event_output(ctx, map, flags, data, size)
-            args: vec![
-                MirValue::VReg(ctx),
-                MirValue::StackSlot(map_slot),
-                MirValue::Const(0),
-                MirValue::StackSlot(data_slot),
-                MirValue::Const(8),
-            ],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 25, // bpf_perf_event_output(ctx, map, flags, data, size)
+                args: vec![
+                    MirValue::VReg(ctx),
+                    MirValue::StackSlot(map_slot),
+                    MirValue::Const(0),
+                    MirValue::StackSlot(data_slot),
+                    MirValue::Const(8),
+                ],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
@@ -7868,12 +8103,14 @@ mod tests {
             if_false: done,
         };
 
-        func.block_mut(check_upper).instructions.push(MirInst::BinOp {
-            dst: le_sixteen,
-            op: BinOpKind::Le,
-            lhs: MirValue::VReg(size),
-            rhs: MirValue::Const(16),
-        });
+        func.block_mut(check_upper)
+            .instructions
+            .push(MirInst::BinOp {
+                dst: le_sixteen,
+                op: BinOpKind::Le,
+                lhs: MirValue::VReg(size),
+                rhs: MirValue::Const(16),
+            });
         func.block_mut(check_upper).terminator = MirInst::Branch {
             cond: le_sixteen,
             if_true: call,
@@ -7912,8 +8149,9 @@ mod tests {
             err
         );
         assert!(
-            err.iter()
-                .any(|e| e.message.contains("helper perf_event_output data out of bounds")),
+            err.iter().any(|e| e
+                .message
+                .contains("helper perf_event_output data out of bounds")),
             "unexpected error messages: {:?}",
             err
         );
@@ -7961,12 +8199,14 @@ mod tests {
             if_false: done,
         };
 
-        func.block_mut(check_upper).instructions.push(MirInst::BinOp {
-            dst: le_eight,
-            op: BinOpKind::Le,
-            lhs: MirValue::VReg(size),
-            rhs: MirValue::Const(8),
-        });
+        func.block_mut(check_upper)
+            .instructions
+            .push(MirInst::BinOp {
+                dst: le_eight,
+                op: BinOpKind::Le,
+                lhs: MirValue::VReg(size),
+                rhs: MirValue::Const(8),
+            });
         func.block_mut(check_upper).terminator = MirInst::Branch {
             cond: le_eight,
             if_true: call,
@@ -8009,15 +8249,17 @@ mod tests {
         let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
         let dst = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 27, // bpf_get_stackid(ctx, map, flags)
-            args: vec![
-                MirValue::VReg(ctx),
-                MirValue::StackSlot(map_slot),
-                MirValue::Const(0),
-            ],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 27, // bpf_get_stackid(ctx, map, flags)
+                args: vec![
+                    MirValue::VReg(ctx),
+                    MirValue::StackSlot(map_slot),
+                    MirValue::Const(0),
+                ],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
@@ -8053,15 +8295,17 @@ mod tests {
         let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
         let dst = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 12, // bpf_tail_call(ctx, prog_array_map, index)
-            args: vec![
-                MirValue::VReg(ctx),
-                MirValue::StackSlot(map_slot),
-                MirValue::Const(0),
-            ],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 12, // bpf_tail_call(ctx, prog_array_map, index)
+                args: vec![
+                    MirValue::VReg(ctx),
+                    MirValue::StackSlot(map_slot),
+                    MirValue::Const(0),
+                ],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
@@ -8081,8 +8325,9 @@ mod tests {
             err
         );
         assert!(
-            err.iter()
-                .any(|e| e.message.contains("helper tail_call ctx expects pointer in [Kernel]")),
+            err.iter().any(|e| e
+                .message
+                .contains("helper tail_call ctx expects pointer in [Kernel]")),
             "unexpected error messages: {:?}",
             err
         );
@@ -8130,10 +8375,9 @@ mod tests {
         let err =
             verify_mir(&func, &HashMap::new()).expect_err("expected non-ProgArray tail_call error");
         assert!(
-            err.iter().any(
-                |e| e.kind == VccErrorKind::UnsupportedInstruction
-                    && e.message.contains("tail_call requires ProgArray map")
-            ),
+            err.iter()
+                .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains("tail_call requires ProgArray map")),
             "unexpected error messages: {:?}",
             err
         );
@@ -8145,11 +8389,13 @@ mod tests {
         let dst = func.alloc_vreg();
         let buf = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 16, // bpf_get_current_comm(buf, size)
-            args: vec![MirValue::StackSlot(buf), MirValue::Const(0)],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 16, // bpf_get_current_comm(buf, size)
+                args: vec![MirValue::StackSlot(buf), MirValue::Const(0)],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
@@ -8176,11 +8422,13 @@ mod tests {
         let dst = func.alloc_vreg();
         let buf = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 16, // bpf_get_current_comm(buf, size)
-            args: vec![MirValue::StackSlot(buf), MirValue::Const(16)],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 16, // bpf_get_current_comm(buf, size)
+                args: vec![MirValue::StackSlot(buf), MirValue::Const(16)],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
@@ -8200,11 +8448,13 @@ mod tests {
         let dst = func.alloc_vreg();
         let fmt = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 6, // bpf_trace_printk(fmt, fmt_size, ...)
-            args: vec![MirValue::StackSlot(fmt), MirValue::Const(0)],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 6, // bpf_trace_printk(fmt, fmt_size, ...)
+                args: vec![MirValue::StackSlot(fmt), MirValue::Const(0)],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
@@ -8218,7 +8468,8 @@ mod tests {
             err
         );
         assert!(
-            err.iter().any(|e| e.message.contains("helper 6 arg1 must be > 0")),
+            err.iter()
+                .any(|e| e.message.contains("helper 6 arg1 must be > 0")),
             "unexpected error messages: {:?}",
             err
         );
@@ -8230,11 +8481,13 @@ mod tests {
         let dst = func.alloc_vreg();
         let fmt = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 6, // bpf_trace_printk(fmt, fmt_size, ...)
-            args: vec![MirValue::StackSlot(fmt), MirValue::Const(16)],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 6, // bpf_trace_printk(fmt, fmt_size, ...)
+                args: vec![MirValue::StackSlot(fmt), MirValue::Const(16)],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
@@ -8255,11 +8508,13 @@ mod tests {
         func.param_count = 1;
         let dst = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 6, // bpf_trace_printk(fmt, fmt_size, ...)
-            args: vec![MirValue::VReg(fmt), MirValue::Const(8)],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 6, // bpf_trace_printk(fmt, fmt_size, ...)
+                args: vec![MirValue::VReg(fmt), MirValue::Const(8)],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
@@ -8279,11 +8534,9 @@ mod tests {
             err
         );
         assert!(
-            err.iter().any(
-                |e| e
-                    .message
-                    .contains("helper trace_printk fmt expects pointer in [Stack, Map]")
-            ),
+            err.iter().any(|e| e
+                .message
+                .contains("helper trace_printk fmt expects pointer in [Stack, Map]")),
             "unexpected error messages: {:?}",
             err
         );
@@ -8315,12 +8568,14 @@ mod tests {
             if_false: done,
         };
 
-        func.block_mut(check_upper).instructions.push(MirInst::BinOp {
-            dst: le_sixteen,
-            op: BinOpKind::Le,
-            lhs: MirValue::VReg(size),
-            rhs: MirValue::Const(16),
-        });
+        func.block_mut(check_upper)
+            .instructions
+            .push(MirInst::BinOp {
+                dst: le_sixteen,
+                op: BinOpKind::Le,
+                lhs: MirValue::VReg(size),
+                rhs: MirValue::Const(16),
+            });
         func.block_mut(check_upper).terminator = MirInst::Branch {
             cond: le_sixteen,
             if_true: call,
@@ -8346,8 +8601,9 @@ mod tests {
             err
         );
         assert!(
-            err.iter()
-                .any(|e| e.message.contains("helper get_current_comm dst out of bounds")),
+            err.iter().any(|e| e
+                .message
+                .contains("helper get_current_comm dst out of bounds")),
             "unexpected error messages: {:?}",
             err
         );
@@ -8379,12 +8635,14 @@ mod tests {
             if_false: done,
         };
 
-        func.block_mut(check_upper).instructions.push(MirInst::BinOp {
-            dst: le_eight,
-            op: BinOpKind::Le,
-            lhs: MirValue::VReg(size),
-            rhs: MirValue::Const(8),
-        });
+        func.block_mut(check_upper)
+            .instructions
+            .push(MirInst::BinOp {
+                dst: le_eight,
+                op: BinOpKind::Le,
+                lhs: MirValue::VReg(size),
+                rhs: MirValue::Const(8),
+            });
         func.block_mut(check_upper).terminator = MirInst::Branch {
             cond: le_eight,
             if_true: call,
@@ -8432,12 +8690,14 @@ mod tests {
             if_false: done,
         };
 
-        func.block_mut(check_upper).instructions.push(MirInst::BinOp {
-            dst: le_sixteen,
-            op: BinOpKind::Le,
-            lhs: MirValue::VReg(size),
-            rhs: MirValue::Const(16),
-        });
+        func.block_mut(check_upper)
+            .instructions
+            .push(MirInst::BinOp {
+                dst: le_sixteen,
+                op: BinOpKind::Le,
+                lhs: MirValue::VReg(size),
+                rhs: MirValue::Const(16),
+            });
         func.block_mut(check_upper).terminator = MirInst::Branch {
             cond: le_sixteen,
             if_true: call,
@@ -8501,12 +8761,14 @@ mod tests {
             if_false: done,
         };
 
-        func.block_mut(check_upper).instructions.push(MirInst::BinOp {
-            dst: le_eight,
-            op: BinOpKind::Le,
-            lhs: MirValue::VReg(size),
-            rhs: MirValue::Const(8),
-        });
+        func.block_mut(check_upper)
+            .instructions
+            .push(MirInst::BinOp {
+                dst: le_eight,
+                op: BinOpKind::Le,
+                lhs: MirValue::VReg(size),
+                rhs: MirValue::Const(8),
+            });
         func.block_mut(check_upper).terminator = MirInst::Branch {
             cond: le_eight,
             if_true: call,
@@ -8538,15 +8800,17 @@ mod tests {
         let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
         let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 114, // bpf_probe_read_user_str(dst, size, unsafe_ptr)
-            args: vec![
-                MirValue::StackSlot(dst_slot),
-                MirValue::Const(8),
-                MirValue::StackSlot(src_slot),
-            ],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 114, // bpf_probe_read_user_str(dst, size, unsafe_ptr)
+                args: vec![
+                    MirValue::StackSlot(dst_slot),
+                    MirValue::Const(8),
+                    MirValue::StackSlot(src_slot),
+                ],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
@@ -8559,8 +8823,9 @@ mod tests {
             err
         );
         assert!(
-            err.iter()
-                .any(|e| e.message.contains("helper probe_read src expects pointer in [User]")),
+            err.iter().any(|e| e
+                .message
+                .contains("helper probe_read src expects pointer in [User]")),
             "unexpected error messages: {:?}",
             err
         );
@@ -8575,16 +8840,18 @@ mod tests {
         let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
         let val_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 2, // bpf_map_update_elem(map, key, value, flags)
-            args: vec![
-                MirValue::StackSlot(map_slot),
-                MirValue::VReg(key),
-                MirValue::StackSlot(val_slot),
-                MirValue::Const(0),
-            ],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 2, // bpf_map_update_elem(map, key, value, flags)
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::VReg(key),
+                    MirValue::StackSlot(val_slot),
+                    MirValue::Const(0),
+                ],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
@@ -8604,10 +8871,9 @@ mod tests {
             err
         );
         assert!(
-            err.iter().any(
-                |e| e.message
-                    .contains("helper map_update key expects pointer in [Stack, Map]")
-            ),
+            err.iter().any(|e| e
+                .message
+                .contains("helper map_update key expects pointer in [Stack, Map]")),
             "unexpected error messages: {:?}",
             err
         );
@@ -8618,30 +8884,30 @@ mod tests {
         let (mut func, entry) = new_mir_function();
         let dst = func.alloc_vreg();
 
-        func.block_mut(entry).instructions.push(MirInst::CallHelper {
-            dst,
-            helper: 9999,
-            args: vec![
-                MirValue::Const(0),
-                MirValue::Const(1),
-                MirValue::Const(2),
-                MirValue::Const(3),
-                MirValue::Const(4),
-                MirValue::Const(5),
-            ],
-        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: 9999,
+                args: vec![
+                    MirValue::Const(0),
+                    MirValue::Const(1),
+                    MirValue::Const(2),
+                    MirValue::Const(3),
+                    MirValue::Const(4),
+                    MirValue::Const(5),
+                ],
+            });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
         types.insert(dst, MirType::I64);
 
-        let err =
-            verify_mir(&func, &types).expect_err("expected helper-argument count rejection");
+        let err = verify_mir(&func, &types).expect_err("expected helper-argument count rejection");
         assert!(
-            err.iter().any(
-                |e| e.kind == VccErrorKind::UnsupportedInstruction
-                    && e.message.contains("at most 5 arguments")
-            ),
+            err.iter()
+                .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains("at most 5 arguments")),
             "unexpected error messages: {:?}",
             err
         );
@@ -8655,10 +8921,9 @@ mod tests {
 
         let err = verify_mir(&func, &HashMap::new()).expect_err("expected param-count error");
         assert!(
-            err.iter().any(
-                |e| e.kind == VccErrorKind::UnsupportedInstruction
-                    && e.message.contains("at most 5 arguments")
-            ),
+            err.iter()
+                .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains("at most 5 arguments")),
             "unexpected error messages: {:?}",
             err
         );
@@ -8688,10 +8953,9 @@ mod tests {
         types.insert(dst, MirType::I64);
         let err = verify_mir(&func, &types).expect_err("expected subfunction-arg count error");
         assert!(
-            err.iter().any(
-                |e| e.kind == VccErrorKind::UnsupportedInstruction
-                    && e.message.contains("at most 5 arguments")
-            ),
+            err.iter()
+                .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
+                    && e.message.contains("at most 5 arguments")),
             "unexpected error messages: {:?}",
             err
         );
@@ -8747,5 +9011,178 @@ mod tests {
         assert!(err.iter().any(|e| {
             e.message.contains("expects pointer") || e.message.contains("expected pointer value")
         }));
+    }
+
+    #[test]
+    fn test_verify_mir_kfunc_task_acquire_release_semantics() {
+        let (mut func, entry) = new_mir_function();
+        let release = func.alloc_block();
+        let done = func.alloc_block();
+        func.param_count = 1;
+
+        let task = func.alloc_vreg();
+        let acquired = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: acquired,
+            kfunc: "bpf_task_acquire".to_string(),
+            btf_id: None,
+            args: vec![task],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(acquired),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: release,
+            if_false: done,
+        };
+
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_task_release".to_string(),
+                btf_id: None,
+                args: vec![acquired],
+            });
+        func.block_mut(release).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            task,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(
+            acquired,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(release_ret, MirType::I64);
+
+        verify_mir(&func, &types).expect("expected kfunc reference to be released");
+    }
+
+    #[test]
+    fn test_verify_mir_kfunc_task_acquire_leak_rejected() {
+        let (mut func, entry) = new_mir_function();
+        let leak = func.alloc_block();
+        let done = func.alloc_block();
+        func.param_count = 1;
+
+        let task = func.alloc_vreg();
+        let acquired = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: acquired,
+            kfunc: "bpf_task_acquire".to_string(),
+            btf_id: None,
+            args: vec![task],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(acquired),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: leak,
+            if_false: done,
+        };
+
+        func.block_mut(leak).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            task,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(
+            acquired,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected kfunc leak error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("unreleased kfunc reference")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_kfunc_task_release_requires_tracked_reference() {
+        let (mut func, entry) = new_mir_function();
+        let release = func.alloc_block();
+        let done = func.alloc_block();
+        func.param_count = 1;
+
+        let task = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(task),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: release,
+            if_false: done,
+        };
+
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_task_release".to_string(),
+                btf_id: None,
+                args: vec![task],
+            });
+        func.block_mut(release).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            task,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(release_ret, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected tracked-reference error");
+        assert!(
+            err.iter().any(|e| {
+                e.message.contains("kfunc release pointer is not tracked")
+                    || e.message.contains("expects acquired task reference")
+            }),
+            "unexpected error messages: {:?}",
+            err
+        );
     }
 }
