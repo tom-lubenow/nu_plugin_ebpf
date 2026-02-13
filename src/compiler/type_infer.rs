@@ -2840,6 +2840,41 @@ mod tests {
     }
 
     #[test]
+    fn test_infer_kfunc_percpu_obj_new_pointer_return() {
+        let mut func = make_test_function();
+        let type_id = func.alloc_vreg();
+        let meta = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: meta,
+            src: MirValue::Const(0),
+        });
+        block.instructions.push(MirInst::Copy {
+            dst: type_id,
+            src: MirValue::Const(1),
+        });
+        block.instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_percpu_obj_new_impl".to_string(),
+            btf_id: None,
+            args: vec![type_id, meta],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let types = ti
+            .infer(&func)
+            .expect("expected percpu-object-new kfunc type inference");
+        match types.get(&dst) {
+            Some(MirType::Ptr { address_space, .. }) => {
+                assert_eq!(*address_space, AddressSpace::Kernel);
+            }
+            other => panic!("expected kernel pointer return, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn test_type_error_kfunc_obj_drop_requires_kernel_space() {
         let mut func = make_test_function();
         let ptr = func.alloc_vreg();
