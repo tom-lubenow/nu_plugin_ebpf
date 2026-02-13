@@ -83,8 +83,9 @@ Last updated: 2026-02-13.
   - PassManager now rebuilds CFG before each pass invocation (not just per-iteration), so CFG-sensitive passes do not consume stale analyses after earlier CFG-mutating passes.
   - Added a regression test (`test_pass_manager_rebuilds_cfg_between_passes`) that fails under stale-CFG behavior when iterations are capped.
 
-- [ ] Add rematerialization for cheap spilled values.
-  - Recompute simple constants/expressions at use sites instead of always using stack spill slots.
+- [x] Add rematerialization for cheap spilled values.
+  - Spilled vregs with pure constant/stack-address definitions are now rematerialized at use sites instead of always reloading from spill slots.
+  - Codegen now writes non-rematerialized spilled defs back to stack consistently, with tests covering both remat and non-remat spill paths.
 
 - [ ] Move block lookup from linear search to O(1) access.
   - If IDs remain index-stable, index blocks directly; otherwise maintain an explicit ID-to-index map.

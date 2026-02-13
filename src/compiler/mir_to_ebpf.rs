@@ -83,6 +83,12 @@ enum MapOperandLayout {
     Pointer { size: usize },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RematExpr {
+    Const(i64),
+    StackAddr { slot: StackSlotId, addend: i32 },
+}
+
 /// MIR to eBPF compiler
 pub struct MirToEbpfCompiler<'a> {
     /// LIR program to compile
@@ -95,6 +101,8 @@ pub struct MirToEbpfCompiler<'a> {
     vreg_to_phys: HashMap<VReg, EbpfReg>,
     /// Virtual registers spilled to stack (from graph coloring)
     vreg_spills: HashMap<VReg, i16>,
+    /// Spilled vregs that can be rematerialized at use sites
+    vreg_remat: HashMap<VReg, RematExpr>,
     /// Stack slot offsets
     slot_offsets: HashMap<StackSlotId, i16>,
     /// Temporary stack slot for parallel move cycle breaking
@@ -160,6 +168,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             instructions: Vec::new(),
             vreg_to_phys: HashMap::new(),
             vreg_spills: HashMap::new(),
+            vreg_remat: HashMap::new(),
             slot_offsets: HashMap::new(),
             parallel_move_cycle_offset: None,
             parallel_move_scratch_offset: None,
@@ -536,9 +545,11 @@ impl<'a> MirToEbpfCompiler<'a> {
             parallel_move_cycle_offset,
             parallel_move_scratch_offset,
         ) = self.layout_stack_for_function(func, &alloc)?;
+        let remat_spills = self.compute_rematerializable_spills(func, &alloc.spills);
 
         self.vreg_to_phys = alloc.coloring.clone();
         self.vreg_spills = vreg_spills;
+        self.vreg_remat = remat_spills;
         self.slot_offsets = slot_offsets;
         self.stack_offset = stack_offset;
         self.parallel_move_cycle_offset = parallel_move_cycle_offset;
@@ -546,6 +557,173 @@ impl<'a> MirToEbpfCompiler<'a> {
         self.callee_saved_offsets.clear();
 
         Ok(alloc)
+    }
+
+    fn compute_rematerializable_spills(
+        &self,
+        func: &LirFunction,
+        spills: &HashMap<VReg, StackSlotId>,
+    ) -> HashMap<VReg, RematExpr> {
+        if spills.is_empty() {
+            return HashMap::new();
+        }
+
+        let mut def_count: HashMap<VReg, usize> = HashMap::new();
+        let mut single_defs: HashMap<VReg, LirInst> = HashMap::new();
+
+        for block in &func.blocks {
+            for inst in block
+                .instructions
+                .iter()
+                .chain(std::iter::once(&block.terminator))
+            {
+                for dst in inst.defs() {
+                    let count = def_count.entry(dst).or_insert(0);
+                    *count += 1;
+                    if *count == 1 {
+                        single_defs.insert(dst, inst.clone());
+                    } else {
+                        single_defs.remove(&dst);
+                    }
+                }
+            }
+        }
+
+        let mut known: HashMap<VReg, RematExpr> = HashMap::new();
+        loop {
+            let mut changed = false;
+            for (&vreg, inst) in &single_defs {
+                if known.contains_key(&vreg) {
+                    continue;
+                }
+                if let Some(expr) = Self::derive_remat_expr(inst, &known) {
+                    known.insert(vreg, expr);
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
+        spills
+            .keys()
+            .filter_map(|vreg| known.get(vreg).copied().map(|expr| (*vreg, expr)))
+            .collect()
+    }
+
+    fn derive_remat_expr(inst: &LirInst, known: &HashMap<VReg, RematExpr>) -> Option<RematExpr> {
+        match inst {
+            LirInst::Copy { src, .. } => Self::remat_expr_for_value(src, known),
+            LirInst::UnaryOp { op, src, .. } => {
+                let RematExpr::Const(value) = Self::remat_expr_for_value(src, known)? else {
+                    return None;
+                };
+                Self::remat_const(Self::eval_const_unary(*op, value))
+            }
+            LirInst::BinOp { op, lhs, rhs, .. } => {
+                let lhs_expr = Self::remat_expr_for_value(lhs, known)?;
+                let rhs_expr = Self::remat_expr_for_value(rhs, known)?;
+                match (lhs_expr, rhs_expr) {
+                    (RematExpr::Const(lhs), RematExpr::Const(rhs)) => {
+                        let value = Self::eval_const_binop(*op, lhs, rhs)?;
+                        Self::remat_const(value)
+                    }
+                    (RematExpr::StackAddr { slot, addend }, RematExpr::Const(rhs)) => {
+                        let rhs = i32::try_from(rhs).ok()?;
+                        match op {
+                            BinOpKind::Add => Some(RematExpr::StackAddr {
+                                slot,
+                                addend: addend.checked_add(rhs)?,
+                            }),
+                            BinOpKind::Sub => Some(RematExpr::StackAddr {
+                                slot,
+                                addend: addend.checked_sub(rhs)?,
+                            }),
+                            _ => None,
+                        }
+                    }
+                    (RematExpr::Const(lhs), RematExpr::StackAddr { slot, addend }) => {
+                        let lhs = i32::try_from(lhs).ok()?;
+                        match op {
+                            BinOpKind::Add => Some(RematExpr::StackAddr {
+                                slot,
+                                addend: lhs.checked_add(addend)?,
+                            }),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn remat_expr_for_value(
+        value: &MirValue,
+        known: &HashMap<VReg, RematExpr>,
+    ) -> Option<RematExpr> {
+        match value {
+            MirValue::Const(v) => Self::remat_const(*v),
+            MirValue::StackSlot(slot) => Some(RematExpr::StackAddr {
+                slot: *slot,
+                addend: 0,
+            }),
+            MirValue::VReg(vreg) => known.get(vreg).copied(),
+        }
+    }
+
+    fn remat_const(value: i64) -> Option<RematExpr> {
+        i32::try_from(value).ok()?;
+        Some(RematExpr::Const(value))
+    }
+
+    fn eval_const_binop(op: BinOpKind, lhs: i64, rhs: i64) -> Option<i64> {
+        match op {
+            BinOpKind::Add => Some(lhs.wrapping_add(rhs)),
+            BinOpKind::Sub => Some(lhs.wrapping_sub(rhs)),
+            BinOpKind::Mul => Some(lhs.wrapping_mul(rhs)),
+            BinOpKind::Div => {
+                if rhs == 0 {
+                    None
+                } else {
+                    Some(lhs.wrapping_div(rhs))
+                }
+            }
+            BinOpKind::Mod => {
+                if rhs == 0 {
+                    None
+                } else {
+                    Some(lhs.wrapping_rem(rhs))
+                }
+            }
+            BinOpKind::And => Some(lhs & rhs),
+            BinOpKind::Or => Some(lhs | rhs),
+            BinOpKind::Xor => Some(lhs ^ rhs),
+            BinOpKind::Shl => Some(lhs << (rhs & 63)),
+            BinOpKind::Shr => Some(lhs >> (rhs & 63)),
+            BinOpKind::Eq => Some(if lhs == rhs { 1 } else { 0 }),
+            BinOpKind::Ne => Some(if lhs != rhs { 1 } else { 0 }),
+            BinOpKind::Lt => Some(if lhs < rhs { 1 } else { 0 }),
+            BinOpKind::Le => Some(if lhs <= rhs { 1 } else { 0 }),
+            BinOpKind::Gt => Some(if lhs > rhs { 1 } else { 0 }),
+            BinOpKind::Ge => Some(if lhs >= rhs { 1 } else { 0 }),
+        }
+    }
+
+    fn eval_const_unary(op: UnaryOpKind, src: i64) -> i64 {
+        match op {
+            UnaryOpKind::Not => {
+                if src == 0 {
+                    1
+                } else {
+                    0
+                }
+            }
+            UnaryOpKind::BitNot => !src,
+            UnaryOpKind::Neg => src.wrapping_neg(),
+        }
     }
 
     fn emit_callee_save_prologue(&mut self) -> Result<(), CompileError> {
@@ -698,13 +876,36 @@ impl<'a> MirToEbpfCompiler<'a> {
 
         // Compile instructions
         for inst in &block.instructions {
-            self.compile_instruction(inst)?;
+            self.compile_instruction_with_spills(inst)?;
         }
 
         // Compile terminator
-        self.compile_instruction(&block.terminator)?;
+        self.compile_instruction_with_spills(&block.terminator)?;
 
         Ok(())
+    }
+
+    fn compile_instruction_with_spills(&mut self, inst: &LirInst) -> Result<(), CompileError> {
+        self.compile_instruction(inst)?;
+        self.store_spilled_defs(inst);
+        Ok(())
+    }
+
+    fn store_spilled_defs(&mut self, inst: &LirInst) {
+        if matches!(inst, LirInst::ParallelMove { .. }) {
+            return;
+        }
+        for dst in inst.defs() {
+            let Some(&offset) = self.vreg_spills.get(&dst) else {
+                continue;
+            };
+            if self.vreg_remat.contains_key(&dst) {
+                continue;
+            }
+            let src_reg = self.vreg_to_phys.get(&dst).copied().unwrap_or(EbpfReg::R0);
+            self.instructions
+                .push(EbpfInsn::stxdw(EbpfReg::R10, offset, src_reg));
+        }
     }
 
     /// Compile a single LIR instruction
@@ -2963,6 +3164,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             // Store temporary register/stack state
             let saved_vreg_to_phys = std::mem::take(&mut self.vreg_to_phys);
             let saved_vreg_spills = std::mem::take(&mut self.vreg_spills);
+            let saved_vreg_remat = std::mem::take(&mut self.vreg_remat);
             let saved_slot_offsets = std::mem::take(&mut self.slot_offsets);
             let saved_stack_offset = self.stack_offset;
             let saved_block_offsets = std::mem::take(&mut self.block_offsets);
@@ -3001,6 +3203,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             // Restore main function's register/stack state
             self.vreg_to_phys = saved_vreg_to_phys;
             self.vreg_spills = saved_vreg_spills;
+            self.vreg_remat = saved_vreg_remat;
             self.slot_offsets = saved_slot_offsets;
             self.stack_offset = saved_stack_offset;
             self.block_offsets = saved_block_offsets;
@@ -3059,12 +3262,50 @@ impl<'a> MirToEbpfCompiler<'a> {
         self.alloc_reg(vreg)
     }
 
+    fn emit_remat_expr(&mut self, dst: EbpfReg, expr: RematExpr) -> Result<(), CompileError> {
+        match expr {
+            RematExpr::Const(value) => {
+                let imm = i32::try_from(value).map_err(|_| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "rematerialized constant {} out of i32 range",
+                        value
+                    ))
+                })?;
+                self.instructions.push(EbpfInsn::mov64_imm(dst, imm));
+            }
+            RematExpr::StackAddr { slot, addend } => {
+                let base = self.slot_offsets.get(&slot).copied().ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "stack slot {:?} not found for rematerialization",
+                        slot
+                    ))
+                })?;
+                let total = i32::from(base).checked_add(addend).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "rematerialized stack address offset overflow for {:?}",
+                        slot
+                    ))
+                })?;
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R10));
+                self.instructions.push(EbpfInsn::add64_imm(dst, total));
+            }
+        }
+        Ok(())
+    }
+
     /// Ensure a virtual register is in a physical register
     /// If the vreg is spilled, emit a reload instruction
     fn ensure_reg(&mut self, vreg: VReg) -> Result<EbpfReg, CompileError> {
         // Check if this vreg has a physical register
         if let Some(&phys) = self.vreg_to_phys.get(&vreg) {
             return Ok(phys);
+        }
+
+        if let Some(expr) = self.vreg_remat.get(&vreg).copied() {
+            let scratch = EbpfReg::R0;
+            self.emit_remat_expr(scratch, expr)?;
+            return Ok(scratch);
         }
 
         // The vreg is spilled - reload it to a scratch register
@@ -3591,6 +3832,108 @@ mod tests {
         assert!(
             !compiler.instructions.is_empty(),
             "ParallelMove should emit instructions"
+        );
+    }
+
+    #[test]
+    fn test_ensure_reg_rematerializes_spilled_const() {
+        let program = LirProgram::new(LirFunction::new());
+        let mut compiler = MirToEbpfCompiler::new(&program, None);
+
+        compiler.vreg_spills.insert(VReg(0), -8);
+        compiler.vreg_remat.insert(VReg(0), RematExpr::Const(42));
+
+        let reg = compiler
+            .ensure_reg(VReg(0))
+            .expect("rematerialized ensure_reg should succeed");
+        assert_eq!(reg, EbpfReg::R0);
+        assert_eq!(compiler.instructions.len(), 1);
+
+        let insn = compiler.instructions[0];
+        assert_eq!(insn.opcode, opcode::MOV64_IMM);
+        assert_eq!(insn.dst_reg, EbpfReg::R0.as_u8());
+        assert_eq!(insn.imm, 42);
+    }
+
+    #[test]
+    fn test_compile_instruction_stores_non_remat_spilled_def() {
+        let program = LirProgram::new(LirFunction::new());
+        let mut compiler = MirToEbpfCompiler::new(&program, None);
+
+        compiler.vreg_spills.insert(VReg(0), -8);
+
+        compiler
+            .compile_instruction_with_spills(&LirInst::Copy {
+                dst: VReg(0),
+                src: MirValue::Const(7),
+            })
+            .expect("spilled copy should compile");
+
+        assert_eq!(compiler.instructions.len(), 2);
+        assert_eq!(compiler.instructions[0].opcode, opcode::MOV64_IMM);
+
+        let spill_store = compiler.instructions[1];
+        assert_eq!(
+            spill_store.opcode,
+            opcode::BPF_STX | opcode::BPF_DW | opcode::BPF_MEM
+        );
+        assert_eq!(spill_store.dst_reg, EbpfReg::R10.as_u8());
+        assert_eq!(spill_store.src_reg, EbpfReg::R0.as_u8());
+        assert_eq!(spill_store.offset, -8);
+    }
+
+    #[test]
+    fn test_compile_instruction_skips_store_for_rematerialized_spilled_def() {
+        let program = LirProgram::new(LirFunction::new());
+        let mut compiler = MirToEbpfCompiler::new(&program, None);
+
+        compiler.vreg_spills.insert(VReg(0), -8);
+        compiler.vreg_remat.insert(VReg(0), RematExpr::Const(7));
+
+        compiler
+            .compile_instruction_with_spills(&LirInst::Copy {
+                dst: VReg(0),
+                src: MirValue::Const(7),
+            })
+            .expect("spilled rematerialized copy should compile");
+
+        assert_eq!(compiler.instructions.len(), 1);
+        assert_eq!(compiler.instructions[0].opcode, opcode::MOV64_IMM);
+    }
+
+    #[test]
+    fn test_compute_rematerializable_spill_stack_expression() {
+        let mut func = LirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let slot = func.alloc_stack_slot(16, 8, StackSlotKind::Spill);
+        let base = func.alloc_vreg();
+        let ptr = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(LirInst::Copy {
+            dst: base,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(entry).instructions.push(LirInst::BinOp {
+            dst: ptr,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(base),
+            rhs: MirValue::Const(8),
+        });
+        func.block_mut(entry).terminator = LirInst::Return {
+            val: Some(MirValue::VReg(ptr)),
+        };
+
+        let program = LirProgram::new(func.clone());
+        let compiler = MirToEbpfCompiler::new(&program, None);
+        let mut spills = HashMap::new();
+        spills.insert(ptr, StackSlotId(0));
+
+        let remat = compiler.compute_rematerializable_spills(&func, &spills);
+        assert_eq!(
+            remat.get(&ptr),
+            Some(&RematExpr::StackAddr { slot, addend: 8 })
         );
     }
 
