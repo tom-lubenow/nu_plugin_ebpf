@@ -106,7 +106,10 @@ impl<'a> VccLowerer<'a> {
                         kfunc_ref: None,
                     });
                 }
-                if matches!(helper, Some(BpfHelper::GetListenerSock)) {
+                if matches!(
+                    helper,
+                    Some(BpfHelper::SkFullsock | BpfHelper::TcpSock | BpfHelper::GetListenerSock)
+                ) {
                     return VccValueType::Ptr(VccPointerInfo {
                         space: VccAddrSpace::Kernel,
                         nullability: VccNullability::MaybeNull,

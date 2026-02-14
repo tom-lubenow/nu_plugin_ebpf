@@ -468,6 +468,80 @@ fn test_helper_get_listener_sock_rejects_non_kernel_pointer() {
 }
 
 #[test]
+fn test_helper_sk_fullsock_rejects_non_kernel_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let sock_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let fullsock = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: fullsock,
+            helper: BpfHelper::SkFullsock as u32,
+            args: vec![MirValue::StackSlot(sock_slot)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        fullsock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected sk_fullsock pointer-kind error");
+    assert!(
+        err.iter().any(|e| {
+            e.message
+                .contains("helper sk_fullsock sk expects pointer in [Kernel], got stack slot")
+        }),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_helper_tcp_sock_rejects_non_kernel_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let sock_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let tcp_sock = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: tcp_sock,
+            helper: BpfHelper::TcpSock as u32,
+            args: vec![MirValue::StackSlot(sock_slot)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        tcp_sock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected tcp_sock pointer-kind error");
+    assert!(
+        err.iter().any(|e| {
+            e.message
+                .contains("helper tcp_sock sk expects pointer in [Kernel], got stack slot")
+        }),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_helper_sk_lookup_leak_is_rejected() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

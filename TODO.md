@@ -77,6 +77,7 @@ Last updated: 2026-02-14.
   - Helper ref-lifetime parity now covers socket helpers (`bpf_sk_lookup_tcp` / `bpf_sk_lookup_udp` / `bpf_sk_release`), including kernel-pointer arg checks, tracked socket ownership, null-guarded release, cross-family mismatch diagnostics, and leak checks in verifier_types/VCC.
   - Typed helper socket coverage now also includes `bpf_skc_lookup_tcp` with socket-ref acquire/release lifetime parity across type inference, verifier_types, and VCC.
   - Typed helper socket coverage now also includes `bpf_get_listener_sock` pointer-space/return modeling across type inference, verifier_types, and VCC.
+  - Typed helper socket coverage now also includes `bpf_sk_fullsock` / `bpf_tcp_sock` pointer-space and nullable kernel-pointer return modeling across type inference, verifier_types, and VCC.
   - VCC now aligns typed pointer nullability with verifier_types (`Map`/`Kernel`/`User` pointers are `MaybeNull` until guarded), including parity tests for load/read_str/helper flows that require explicit null checks.
   - VCC helper pointer-space checks now resolve `Unknown` vreg pointer spaces via effective MIR address-space fallback, preventing helper-space-rule bypasses for typed stack pointers.
   - VCC now propagates map-value bounds from built-in map semantics and pointee types, including pointer-arithmetic/load/store bounds checks for map-value pointers.

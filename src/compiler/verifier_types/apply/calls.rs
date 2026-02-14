@@ -59,13 +59,15 @@ pub(super) fn apply_call_helper_inst(
                         dst
                     }),
                 },
-                Some(BpfHelper::GetListenerSock) => VerifierType::Ptr {
-                    space: AddressSpace::Kernel,
-                    nullability: Nullability::MaybeNull,
-                    bounds: None,
-                    ringbuf_ref: None,
-                    kfunc_ref: None,
-                },
+                Some(BpfHelper::SkFullsock | BpfHelper::TcpSock | BpfHelper::GetListenerSock) => {
+                    VerifierType::Ptr {
+                        space: AddressSpace::Kernel,
+                        nullability: Nullability::MaybeNull,
+                        bounds: None,
+                        ringbuf_ref: None,
+                        kfunc_ref: None,
+                    }
+                }
                 Some(_) if helper_kfunc_acquire_kind.is_some() => VerifierType::Ptr {
                     space: AddressSpace::Kernel,
                     nullability: Nullability::MaybeNull,

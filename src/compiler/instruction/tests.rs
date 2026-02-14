@@ -78,6 +78,20 @@ fn test_helper_signature_socket_helpers() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 
+    let sig = HelperSignature::for_id(BpfHelper::SkFullsock as u32)
+        .expect("expected bpf_sk_fullsock helper signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.ret_kind, HelperRetKind::PointerMaybeNull);
+
+    let sig = HelperSignature::for_id(BpfHelper::TcpSock as u32)
+        .expect("expected bpf_tcp_sock helper signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.ret_kind, HelperRetKind::PointerMaybeNull);
+
     let sig = HelperSignature::for_id(BpfHelper::GetListenerSock as u32)
         .expect("expected bpf_get_listener_sock helper signature");
     assert_eq!(sig.min_args, 1);
