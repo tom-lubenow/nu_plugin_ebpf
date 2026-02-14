@@ -500,6 +500,12 @@ impl<'a> VccLowerer<'a> {
                         });
                     }
                 }
+                if kfunc == "bpf_rcu_read_lock" {
+                    out.push(VccInst::RcuReadLockAcquire);
+                }
+                if kfunc == "bpf_rcu_read_unlock" {
+                    out.push(VccInst::RcuReadLockRelease);
+                }
             }
             MirInst::CallSubfn { dst, args, .. } => {
                 if args.len() > 5 {

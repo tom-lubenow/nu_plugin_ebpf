@@ -83,6 +83,11 @@ pub fn verify_mir(
                         "unreleased kfunc reference at function exit",
                     ));
                 }
+                if state.has_live_rcu_read_lock() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased RCU read lock at function exit",
+                    ));
+                }
             }
             MirInst::TailCall { prog_map, index } => {
                 if prog_map.kind != MapKind::ProgArray {
@@ -106,6 +111,11 @@ pub fn verify_mir(
                 if state.has_live_kfunc_refs() {
                     errors.push(VerifierTypeError::new(
                         "unreleased kfunc reference at function exit",
+                    ));
+                }
+                if state.has_live_rcu_read_lock() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased RCU read lock at function exit",
                     ));
                 }
             }

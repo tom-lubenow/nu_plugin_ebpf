@@ -538,6 +538,21 @@ fn test_kfunc_signature_cpumask_and() {
 }
 
 #[test]
+fn test_kfunc_signature_rcu_read_lock_helpers() {
+    let lock = KfuncSignature::for_name("bpf_rcu_read_lock")
+        .expect("expected bpf_rcu_read_lock kfunc signature");
+    assert_eq!(lock.min_args, 0);
+    assert_eq!(lock.max_args, 0);
+    assert_eq!(lock.ret_kind, KfuncRetKind::Void);
+
+    let unlock = KfuncSignature::for_name("bpf_rcu_read_unlock")
+        .expect("expected bpf_rcu_read_unlock kfunc signature");
+    assert_eq!(unlock.min_args, 0);
+    assert_eq!(unlock.max_args, 0);
+    assert_eq!(unlock.ret_kind, KfuncRetKind::Void);
+}
+
+#[test]
 fn test_unknown_kfunc_signature_message_for_missing_symbol() {
     let msg = unknown_kfunc_signature_message("__nu_plugin_ebpf_missing_kfunc_for_test__");
     assert!(msg.contains("unknown kfunc '__nu_plugin_ebpf_missing_kfunc_for_test__'"));

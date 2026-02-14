@@ -4,6 +4,8 @@ struct VccState {
     not_equal_consts: HashMap<VccReg, Vec<i64>>,
     live_ringbuf_refs: HashMap<VccReg, bool>,
     live_kfunc_refs: HashMap<VccReg, Option<KfuncRefKind>>,
+    rcu_read_lock_min_depth: u32,
+    rcu_read_lock_max_depth: u32,
     cond_refinements: HashMap<VccReg, VccCondRefinement>,
     reachable: bool,
 }
@@ -37,6 +39,8 @@ impl VccState {
             not_equal_consts: HashMap::new(),
             live_ringbuf_refs: HashMap::new(),
             live_kfunc_refs: HashMap::new(),
+            rcu_read_lock_min_depth: 0,
+            rcu_read_lock_max_depth: 0,
             cond_refinements: HashMap::new(),
             reachable: true,
         }
@@ -128,6 +132,24 @@ impl VccState {
 
     fn has_live_kfunc_refs(&self) -> bool {
         !self.live_kfunc_refs.is_empty()
+    }
+
+    fn acquire_rcu_read_lock(&mut self) {
+        self.rcu_read_lock_min_depth = self.rcu_read_lock_min_depth.saturating_add(1);
+        self.rcu_read_lock_max_depth = self.rcu_read_lock_max_depth.saturating_add(1);
+    }
+
+    fn release_rcu_read_lock(&mut self) -> bool {
+        if self.rcu_read_lock_min_depth == 0 {
+            return false;
+        }
+        self.rcu_read_lock_min_depth -= 1;
+        self.rcu_read_lock_max_depth -= 1;
+        true
+    }
+
+    fn has_live_rcu_read_lock(&self) -> bool {
+        self.rcu_read_lock_max_depth > 0
     }
 
     fn kfunc_ref_kind(&self, id: VccReg) -> Option<KfuncRefKind> {
@@ -244,6 +266,12 @@ impl VccState {
             not_equal_consts,
             live_ringbuf_refs,
             live_kfunc_refs,
+            rcu_read_lock_min_depth: self
+                .rcu_read_lock_min_depth
+                .min(other.rcu_read_lock_min_depth),
+            rcu_read_lock_max_depth: self
+                .rcu_read_lock_max_depth
+                .max(other.rcu_read_lock_max_depth),
             cond_refinements,
             reachable: true,
         }
@@ -272,6 +300,8 @@ impl VccState {
             not_equal_consts: HashMap::new(),
             live_ringbuf_refs: self.live_ringbuf_refs.clone(),
             live_kfunc_refs: self.live_kfunc_refs.clone(),
+            rcu_read_lock_min_depth: self.rcu_read_lock_min_depth,
+            rcu_read_lock_max_depth: self.rcu_read_lock_max_depth,
             cond_refinements: HashMap::new(),
             reachable: self.reachable,
         }

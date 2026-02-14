@@ -104,6 +104,8 @@ pub(super) struct VerifierState {
     live_ringbuf_refs: Vec<bool>,
     live_kfunc_refs: Vec<bool>,
     kfunc_ref_kinds: Vec<Option<KfuncRefKind>>,
+    rcu_read_lock_min_depth: u32,
+    rcu_read_lock_max_depth: u32,
     reachable: bool,
     guards: HashMap<VReg, Guard>,
 }
@@ -121,6 +123,8 @@ impl VerifierState {
             live_ringbuf_refs: vec![false; total_vregs],
             live_kfunc_refs: vec![false; total_vregs],
             kfunc_ref_kinds: vec![None; total_vregs],
+            rcu_read_lock_min_depth: 0,
+            rcu_read_lock_max_depth: 0,
             reachable: true,
             guards: HashMap::new(),
         }

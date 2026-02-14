@@ -10,6 +10,8 @@ impl VerifierState {
             && self.live_ringbuf_refs == other.live_ringbuf_refs
             && self.live_kfunc_refs == other.live_kfunc_refs
             && self.kfunc_ref_kinds == other.kfunc_ref_kinds
+            && self.rcu_read_lock_min_depth == other.rcu_read_lock_min_depth
+            && self.rcu_read_lock_max_depth == other.rcu_read_lock_max_depth
             && self.guards == other.guards
             && self.reachable == other.reachable
     }
@@ -109,6 +111,12 @@ impl VerifierState {
             live_ringbuf_refs,
             live_kfunc_refs,
             kfunc_ref_kinds,
+            rcu_read_lock_min_depth: self
+                .rcu_read_lock_min_depth
+                .min(other.rcu_read_lock_min_depth),
+            rcu_read_lock_max_depth: self
+                .rcu_read_lock_max_depth
+                .max(other.rcu_read_lock_max_depth),
             reachable: true,
             guards,
         }

@@ -94,4 +94,22 @@ impl VerifierState {
     ) -> Option<KfuncRefKind> {
         self.kfunc_ref_kinds.get(id.0 as usize).copied().flatten()
     }
+
+    pub(in crate::compiler::verifier_types) fn acquire_rcu_read_lock(&mut self) {
+        self.rcu_read_lock_min_depth = self.rcu_read_lock_min_depth.saturating_add(1);
+        self.rcu_read_lock_max_depth = self.rcu_read_lock_max_depth.saturating_add(1);
+    }
+
+    pub(in crate::compiler::verifier_types) fn release_rcu_read_lock(&mut self) -> bool {
+        if self.rcu_read_lock_min_depth == 0 {
+            return false;
+        }
+        self.rcu_read_lock_min_depth -= 1;
+        self.rcu_read_lock_max_depth -= 1;
+        true
+    }
+
+    pub(in crate::compiler::verifier_types) fn has_live_rcu_read_lock(&self) -> bool {
+        self.rcu_read_lock_max_depth > 0
+    }
 }

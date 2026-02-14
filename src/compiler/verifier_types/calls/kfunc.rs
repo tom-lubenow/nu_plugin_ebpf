@@ -90,6 +90,19 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
+    if kfunc == "bpf_rcu_read_lock" {
+        state.acquire_rcu_read_lock();
+        return;
+    }
+    if kfunc == "bpf_rcu_read_unlock" {
+        if !state.release_rcu_read_lock() {
+            errors.push(VerifierTypeError::new(
+                "kfunc 'bpf_rcu_read_unlock' requires a matching bpf_rcu_read_lock",
+            ));
+        }
+        return;
+    }
+
     let Some(expected_kind) = kfunc_release_kind(kfunc) else {
         return;
     };

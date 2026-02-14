@@ -91,6 +91,18 @@ impl KfuncSignature {
                 arg_kinds: [S, S, S, S, S],
                 ret_kind: KfuncRetKind::Void,
             }),
+            "bpf_rcu_read_lock" => Some(Self {
+                min_args: 0,
+                max_args: 0,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "bpf_rcu_read_unlock" => Some(Self {
+                min_args: 0,
+                max_args: 0,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
             "bpf_iter_task_vma_new" => Some(Self {
                 min_args: 3,
                 max_args: 3,

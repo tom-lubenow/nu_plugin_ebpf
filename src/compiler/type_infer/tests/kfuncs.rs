@@ -465,3 +465,31 @@ fn test_type_error_kfunc_obj_drop_requires_kernel_space() {
         errs
     );
 }
+
+#[test]
+fn test_infer_kfunc_rcu_read_lock_unlock_signatures() {
+    let mut func = make_test_function();
+    let lock_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallKfunc {
+        dst: lock_ret,
+        kfunc: "bpf_rcu_read_lock".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: unlock_ret,
+        kfunc: "bpf_rcu_read_unlock".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected rcu read lock/unlock kfunc type inference");
+    assert!(matches!(types.get(&lock_ret), Some(MirType::I64)));
+    assert!(matches!(types.get(&unlock_ret), Some(MirType::I64)));
+}

@@ -700,6 +700,17 @@ impl VccVerifier {
                     }
                 }
             }
+            VccInst::RcuReadLockAcquire => {
+                state.acquire_rcu_read_lock();
+            }
+            VccInst::RcuReadLockRelease => {
+                if !state.release_rcu_read_lock() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_rcu_read_unlock' requires a matching bpf_rcu_read_lock",
+                    ));
+                }
+            }
             VccInst::KfuncExpectRefKind {
                 ptr,
                 arg_idx,
@@ -874,6 +885,12 @@ impl VccVerifier {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased kfunc reference at function exit",
+                    ));
+                }
+                if state.has_live_rcu_read_lock() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "unreleased RCU read lock at function exit",
                     ));
                 }
             }
