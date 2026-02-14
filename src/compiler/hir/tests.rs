@@ -1,4 +1,3 @@
-
 use super::*;
 use nu_protocol::DeclId;
 use nu_protocol::RegId;
