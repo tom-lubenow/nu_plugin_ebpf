@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::compiler::hir::lower_ir_to_hir;
 use nu_protocol::RegId;
