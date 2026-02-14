@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::instruction::KfuncSignature;
 
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn set_call_args(&mut self, args: &HirCallArgs) -> Result<(), CompileError> {
@@ -372,9 +373,12 @@ impl<'a> HirToMirLowering<'a> {
                 }
 
                 let mut args = Vec::new();
+                let is_known_zero_arg = KfuncSignature::for_name(&kfunc)
+                    .map(|sig| sig.max_args == 0)
+                    .unwrap_or(false);
                 if let Some(input) = self.pipeline_input {
                     args.push(input);
-                } else if src_dst_had_value {
+                } else if src_dst_had_value && !is_known_zero_arg {
                     args.push(dst_vreg);
                 }
 

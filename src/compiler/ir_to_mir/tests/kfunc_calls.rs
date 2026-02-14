@@ -232,3 +232,92 @@ fn test_kfunc_call_requires_literal_string_name() {
         Ok(_) => panic!("expected literal string error"),
     }
 }
+
+#[test]
+fn test_kfunc_call_zero_arg_chain_does_not_reuse_src_dst() {
+    use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
+    use nu_protocol::{DeclId, RegId};
+    use std::sync::Arc;
+
+    let kfunc_lock = b"bpf_rcu_read_lock";
+    let kfunc_unlock = b"bpf_rcu_read_unlock";
+    let mut data = Vec::new();
+    let lock_start = data.len();
+    data.extend_from_slice(kfunc_lock);
+    let unlock_start = data.len();
+    data.extend_from_slice(kfunc_unlock);
+    let data: Arc<[u8]> = data.into();
+
+    let main_ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::String(DataSlice {
+                    start: lock_start as u32,
+                    len: kfunc_lock.len() as u32,
+                }),
+            },
+            Instruction::PushPositional { src: RegId::new(1) },
+            Instruction::Call {
+                decl_id: DeclId::new(42),
+                src_dst: RegId::new(0),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(2),
+                lit: Literal::String(DataSlice {
+                    start: unlock_start as u32,
+                    len: kfunc_unlock.len() as u32,
+                }),
+            },
+            Instruction::PushPositional { src: RegId::new(2) },
+            Instruction::Call {
+                decl_id: DeclId::new(42),
+                src_dst: RegId::new(0),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data,
+        ast: vec![],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(
+        HirFunction::from_ir_block(main_ir).unwrap(),
+        HashMap::new(),
+        vec![],
+        None,
+    );
+
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "kfunc-call".to_string());
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("kfunc-call lowering should succeed");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    let calls: Vec<(String, Vec<VReg>)> = block
+        .instructions
+        .iter()
+        .filter_map(|inst| match inst {
+            MirInst::CallKfunc { kfunc, args, .. } => Some((kfunc.clone(), args.clone())),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(calls.len(), 2, "expected two lowered kfunc calls");
+    assert_eq!(calls[0].0, "bpf_rcu_read_lock");
+    assert_eq!(calls[1].0, "bpf_rcu_read_unlock");
+    assert_eq!(calls[0].1.len(), 0, "lock call should remain zero-arg");
+    assert_eq!(calls[1].1.len(), 0, "unlock call should remain zero-arg");
+}
