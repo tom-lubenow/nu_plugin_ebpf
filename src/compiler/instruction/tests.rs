@@ -553,6 +553,16 @@ fn test_kfunc_signature_rcu_read_lock_helpers() {
 }
 
 #[test]
+fn test_kfunc_signature_map_sum_elem_count() {
+    let sig = KfuncSignature::for_name("bpf_map_sum_elem_count")
+        .expect("expected bpf_map_sum_elem_count kfunc signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+}
+
+#[test]
 fn test_unknown_kfunc_signature_message_for_missing_symbol() {
     let msg = unknown_kfunc_signature_message("__nu_plugin_ebpf_missing_kfunc_for_test__");
     assert!(msg.contains("unknown kfunc '__nu_plugin_ebpf_missing_kfunc_for_test__'"));
@@ -864,6 +874,10 @@ fn test_kfunc_pointer_arg_requires_kernel_mappings() {
     ));
     assert!(kfunc_pointer_arg_requires_kernel("bpf_rbtree_first", 0));
     assert!(kfunc_pointer_arg_requires_kernel("bpf_path_d_path", 0));
+    assert!(kfunc_pointer_arg_requires_kernel(
+        "bpf_map_sum_elem_count",
+        0
+    ));
     assert!(kfunc_pointer_arg_requires_kernel(
         "bpf_iter_task_vma_new",
         1

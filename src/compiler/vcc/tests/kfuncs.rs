@@ -2370,3 +2370,65 @@ fn test_verify_mir_kfunc_rcu_read_unlock_rejected_after_mixed_join() {
         err
     );
 }
+
+#[test]
+fn test_verify_mir_kfunc_map_sum_elem_count_requires_kernel_pointer_arg() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let map_ptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_map_sum_elem_count".to_string(),
+        btf_id: None,
+        args: vec![map_ptr],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        map_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected kernel-pointer kfunc arg error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg0 expects pointer in [Kernel]")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_map_sum_elem_count_accepts_kernel_pointer_arg() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let map_ptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_map_sum_elem_count".to_string(),
+        btf_id: None,
+        args: vec![map_ptr],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        map_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected map_sum_elem_count kernel-pointer call to verify");
+}

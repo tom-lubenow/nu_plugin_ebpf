@@ -189,6 +189,7 @@ pub fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
             | ("bpf_list_pop_front", 0)
             | ("bpf_list_pop_back", 0)
             | ("bpf_path_d_path", 0)
+            | ("bpf_map_sum_elem_count", 0)
             | ("bpf_rbtree_remove", 0)
             | ("bpf_rbtree_remove", 1)
             | ("bpf_rbtree_add_impl", 0)

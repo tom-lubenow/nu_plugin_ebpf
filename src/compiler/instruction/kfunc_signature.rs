@@ -85,6 +85,12 @@ impl KfuncSignature {
                 arg_kinds: [P, P, S, S, S],
                 ret_kind: KfuncRetKind::Scalar,
             }),
+            "bpf_map_sum_elem_count" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
             "bpf_throw" => Some(Self {
                 min_args: 1,
                 max_args: 1,

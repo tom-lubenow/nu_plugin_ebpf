@@ -493,3 +493,34 @@ fn test_infer_kfunc_rcu_read_lock_unlock_signatures() {
     assert!(matches!(types.get(&lock_ret), Some(MirType::I64)));
     assert!(matches!(types.get(&unlock_ret), Some(MirType::I64)));
 }
+
+#[test]
+fn test_type_error_kfunc_map_sum_elem_count_requires_kernel_space() {
+    let mut func = make_test_function();
+    let map_ptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: map_ptr,
+        src: MirValue::StackSlot(slot),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_map_sum_elem_count".to_string(),
+        btf_id: None,
+        args: vec![map_ptr],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected map_sum_elem_count kernel-pointer kfunc type error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("arg0 expects kernel pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
