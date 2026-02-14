@@ -3600,6 +3600,83 @@ fn test_verify_mir_helper_sock_from_file_rejects_non_file_reference() {
 }
 
 #[test]
+fn test_verify_mir_helper_task_pt_regs_rejects_non_task_reference() {
+    let (mut func, entry) = new_mir_function();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+
+    let id = func.alloc_vreg();
+    let cgroup = func.alloc_vreg();
+    let cgroup_non_null = func.alloc_vreg();
+    let regs = func.alloc_vreg();
+    let cleanup_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: id,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: cgroup,
+        kfunc: "bpf_cgroup_from_id".to_string(),
+        btf_id: None,
+        args: vec![id],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cgroup_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(cgroup),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: cgroup_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: regs,
+        helper: BpfHelper::TaskPtRegs as u32,
+        args: vec![MirValue::VReg(cgroup)],
+    });
+    func.block_mut(call).instructions.push(MirInst::CallKfunc {
+        dst: cleanup_ret,
+        kfunc: "bpf_cgroup_release".to_string(),
+        btf_id: None,
+        args: vec![cgroup],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(id, MirType::I64);
+    types.insert(
+        cgroup,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cgroup_non_null, MirType::Bool);
+    types.insert(
+        regs,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cleanup_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected task_pt_regs ref-kind mismatch");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 175 arg0 expects task reference, got cgroup reference")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_helper_task_storage_get_rejects_non_task_reference() {
     let (mut func, entry) = new_mir_function();
     let call = func.alloc_block();
@@ -4226,6 +4303,40 @@ fn test_verify_mir_helper_sock_from_file_rejects_non_kernel_pointer() {
         err.iter().any(|e| e
             .message
             .contains("helper sock_from_file file expects pointer in [Kernel], got Stack")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_task_pt_regs_rejects_non_kernel_pointer() {
+    let (mut func, entry) = new_mir_function();
+
+    let task_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let regs = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: regs,
+            helper: BpfHelper::TaskPtRegs as u32,
+            args: vec![MirValue::StackSlot(task_slot)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        regs,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected task_pt_regs pointer-kind error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper task_pt_regs task expects pointer in [Kernel], got Stack")),
         "unexpected error messages: {:?}",
         err
     );

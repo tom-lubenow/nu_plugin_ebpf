@@ -130,6 +130,8 @@ pub enum BpfHelper {
     InodeStorageDelete = 146,
     /// struct socket *bpf_sock_from_file(file)
     SockFromFile = 162,
+    /// struct pt_regs *bpf_task_pt_regs(task)
+    TaskPtRegs = 175,
     /// long bpf_ringbuf_output(map, data, size, flags)
     RingbufOutput = 130,
     /// void *bpf_ringbuf_reserve(map, size, flags)

@@ -1417,6 +1417,43 @@ fn test_infer_helper_sock_from_file_returns_kernel_pointer() {
 }
 
 #[test]
+fn test_infer_helper_task_pt_regs_returns_kernel_pointer() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TaskPtRegs as u32,
+        args: vec![MirValue::VReg(task)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti.infer(&func).unwrap();
+    match types.get(&dst) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(*address_space, AddressSpace::Kernel);
+        }
+        other => panic!(
+            "Expected helper task_pt_regs kernel pointer return, got {:?}",
+            other
+        ),
+    }
+}
+
+#[test]
 fn test_type_error_helper_sk_fullsock_rejects_non_kernel_pointer() {
     let mut func = make_test_function();
     let sock_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
@@ -1603,6 +1640,34 @@ fn test_type_error_helper_sock_from_file_rejects_non_kernel_pointer() {
     assert!(errs.iter().any(|e| {
         e.message
             .contains("helper sock_from_file file expects pointer in [Kernel], got Stack")
+    }));
+}
+
+#[test]
+fn test_type_error_helper_task_pt_regs_rejects_non_kernel_pointer() {
+    let mut func = make_test_function();
+    let task_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let task = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: task,
+        src: MirValue::StackSlot(task_slot),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TaskPtRegs as u32,
+        args: vec![MirValue::VReg(task)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected non-kernel task_pt_regs pointer error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper task_pt_regs task expects pointer in [Kernel], got Stack")
     }));
 }
 

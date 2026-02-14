@@ -43,6 +43,7 @@ impl BpfHelper {
             156 => Some(Self::TaskStorageGet),
             157 => Some(Self::TaskStorageDelete),
             162 => Some(Self::SockFromFile),
+            175 => Some(Self::TaskPtRegs),
             178 => Some(Self::SkcToUnixSock),
             114 => Some(Self::ProbeReadUserStr),
             115 => Some(Self::ProbeReadKernelStr),
@@ -194,6 +195,12 @@ impl BpfHelper {
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::SockFromFile => HelperSignature {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::PointerMaybeNull,
+            },
+            BpfHelper::TaskPtRegs => HelperSignature {
                 min_args: 1,
                 max_args: 1,
                 arg_kinds: [P, S, S, S, S],
@@ -747,6 +754,14 @@ impl BpfHelper {
             size_from_arg: None,
         }];
 
+        const TASK_PT_REGS_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper task_pt_regs task",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
         const GET_LISTENER_SOCK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 0,
             op: "helper get_listener_sock sk",
@@ -978,6 +993,11 @@ impl BpfHelper {
             },
             BpfHelper::SockFromFile => HelperSemantics {
                 ptr_arg_rules: SOCK_FROM_FILE_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::TaskPtRegs => HelperSemantics {
+                ptr_arg_rules: TASK_PT_REGS_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

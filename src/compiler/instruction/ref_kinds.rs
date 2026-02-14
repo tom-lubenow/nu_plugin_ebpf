@@ -65,7 +65,8 @@ pub const fn helper_pointer_arg_ref_kind(
         | (BpfHelper::SkStorageGet | BpfHelper::SkStorageDelete | BpfHelper::SkAssign, 1) => {
             Some(KfuncRefKind::Socket)
         }
-        (BpfHelper::TaskStorageGet | BpfHelper::TaskStorageDelete, 1) => Some(KfuncRefKind::Task),
+        (BpfHelper::TaskStorageGet | BpfHelper::TaskStorageDelete, 1)
+        | (BpfHelper::TaskPtRegs, 0) => Some(KfuncRefKind::Task),
         (BpfHelper::SockFromFile, 0) => Some(KfuncRefKind::File),
         _ => None,
     }
