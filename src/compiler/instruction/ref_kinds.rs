@@ -10,6 +10,13 @@ pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
         "bpf_obj_new_impl" | "bpf_refcount_acquire_impl" | "bpf_percpu_obj_new_impl" => {
             Some(KfuncRefKind::Object)
         }
+        "scx_bpf_task_cgroup" => Some(KfuncRefKind::Cgroup),
+        "scx_bpf_get_online_cpumask"
+        | "scx_bpf_get_possible_cpumask"
+        | "scx_bpf_get_idle_cpumask"
+        | "scx_bpf_get_idle_cpumask_node"
+        | "scx_bpf_get_idle_smtmask"
+        | "scx_bpf_get_idle_smtmask_node" => Some(KfuncRefKind::Cpumask),
         "bpf_cpumask_create" | "bpf_cpumask_acquire" => Some(KfuncRefKind::Cpumask),
         _ => None,
     }
@@ -21,7 +28,9 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
         "bpf_cgroup_release" => Some(KfuncRefKind::Cgroup),
         "bpf_put_file" => Some(KfuncRefKind::File),
         "bpf_obj_drop_impl" | "bpf_percpu_obj_drop_impl" => Some(KfuncRefKind::Object),
-        "bpf_cpumask_release" => Some(KfuncRefKind::Cpumask),
+        "bpf_cpumask_release" | "scx_bpf_put_cpumask" | "scx_bpf_put_idle_cpumask" => {
+            Some(KfuncRefKind::Cpumask)
+        }
         _ => None,
     }
 }

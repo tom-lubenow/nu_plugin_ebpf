@@ -706,6 +706,18 @@ fn test_kfunc_ref_kind_mappings() {
         Some(KfuncRefKind::Object)
     );
     assert_eq!(
+        kfunc_acquire_ref_kind("scx_bpf_task_cgroup"),
+        Some(KfuncRefKind::Cgroup)
+    );
+    assert_eq!(
+        kfunc_acquire_ref_kind("scx_bpf_get_online_cpumask"),
+        Some(KfuncRefKind::Cpumask)
+    );
+    assert_eq!(
+        kfunc_acquire_ref_kind("scx_bpf_get_idle_cpumask"),
+        Some(KfuncRefKind::Cpumask)
+    );
+    assert_eq!(
         kfunc_release_ref_kind("bpf_task_release"),
         Some(KfuncRefKind::Task)
     );
@@ -727,6 +739,14 @@ fn test_kfunc_ref_kind_mappings() {
     );
     assert_eq!(
         kfunc_release_ref_kind("bpf_cpumask_release"),
+        Some(KfuncRefKind::Cpumask)
+    );
+    assert_eq!(
+        kfunc_release_ref_kind("scx_bpf_put_cpumask"),
+        Some(KfuncRefKind::Cpumask)
+    );
+    assert_eq!(
+        kfunc_release_ref_kind("scx_bpf_put_idle_cpumask"),
         Some(KfuncRefKind::Cpumask)
     );
 }
