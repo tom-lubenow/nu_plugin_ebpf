@@ -92,6 +92,13 @@ fn test_helper_signature_socket_helpers() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.ret_kind, HelperRetKind::PointerMaybeNull);
 
+    let sig = HelperSignature::for_id(BpfHelper::SkcToTcpSock as u32)
+        .expect("expected bpf_skc_to_tcp_sock helper signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.ret_kind, HelperRetKind::PointerMaybeNull);
+
     let sig = HelperSignature::for_id(BpfHelper::GetListenerSock as u32)
         .expect("expected bpf_get_listener_sock helper signature");
     assert_eq!(sig.min_args, 1);
@@ -120,6 +127,10 @@ fn test_helper_ref_kind_mappings() {
     );
     assert_eq!(
         helper_pointer_arg_ref_kind(BpfHelper::SkRelease, 0),
+        Some(KfuncRefKind::Socket)
+    );
+    assert_eq!(
+        helper_pointer_arg_ref_kind(BpfHelper::SkcToTcpSock, 0),
         Some(KfuncRefKind::Socket)
     );
     assert_eq!(helper_pointer_arg_ref_kind(BpfHelper::SkRelease, 1), None);

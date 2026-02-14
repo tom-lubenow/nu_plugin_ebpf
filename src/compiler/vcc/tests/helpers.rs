@@ -2012,6 +2012,83 @@ fn test_verify_mir_helper_tcp_sock_rejects_non_socket_reference() {
 }
 
 #[test]
+fn test_verify_mir_helper_skc_to_tcp_sock_rejects_non_socket_reference() {
+    let (mut func, entry) = new_mir_function();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let task_non_null = func.alloc_vreg();
+    let tcp_sock = func.alloc_vreg();
+    let cleanup_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: task_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: task_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: tcp_sock,
+        helper: BpfHelper::SkcToTcpSock as u32,
+        args: vec![MirValue::VReg(task)],
+    });
+    func.block_mut(call).instructions.push(MirInst::CallKfunc {
+        dst: cleanup_ret,
+        kfunc: "bpf_task_release".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(task_non_null, MirType::Bool);
+    types.insert(
+        tcp_sock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cleanup_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected skc_to_tcp_sock ref-kind mismatch");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 137 arg0 expects socket reference, got task reference")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_helper_get_listener_sock_rejects_non_socket_reference() {
     let (mut func, entry) = new_mir_function();
     let call = func.alloc_block();
@@ -2185,6 +2262,40 @@ fn test_verify_mir_helper_tcp_sock_rejects_non_kernel_pointer() {
         err.iter().any(|e| e
             .message
             .contains("helper tcp_sock sk expects pointer in [Kernel], got Stack")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_skc_to_tcp_sock_rejects_non_kernel_pointer() {
+    let (mut func, entry) = new_mir_function();
+
+    let sock_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let tcp_sock = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: tcp_sock,
+            helper: BpfHelper::SkcToTcpSock as u32,
+            args: vec![MirValue::StackSlot(sock_slot)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        tcp_sock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected skc_to_tcp_sock pointer-kind error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper skc_to_tcp_sock sk expects pointer in [Kernel], got Stack")),
         "unexpected error messages: {:?}",
         err
     );

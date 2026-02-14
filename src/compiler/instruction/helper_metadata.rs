@@ -23,6 +23,7 @@ impl BpfHelper {
             96 => Some(Self::TcpSock),
             98 => Some(Self::GetListenerSock),
             99 => Some(Self::SkcLookupTcp),
+            137 => Some(Self::SkcToTcpSock),
             114 => Some(Self::ProbeReadUserStr),
             115 => Some(Self::ProbeReadKernelStr),
             130 => Some(Self::RingbufOutput),
@@ -115,12 +116,14 @@ impl BpfHelper {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
-            BpfHelper::SkFullsock | BpfHelper::TcpSock => HelperSignature {
-                min_args: 1,
-                max_args: 1,
-                arg_kinds: [P, S, S, S, S],
-                ret_kind: HelperRetKind::PointerMaybeNull,
-            },
+            BpfHelper::SkFullsock | BpfHelper::TcpSock | BpfHelper::SkcToTcpSock => {
+                HelperSignature {
+                    min_args: 1,
+                    max_args: 1,
+                    arg_kinds: [P, S, S, S, S],
+                    ret_kind: HelperRetKind::PointerMaybeNull,
+                }
+            }
             BpfHelper::GetListenerSock => HelperSignature {
                 min_args: 1,
                 max_args: 1,
@@ -413,6 +416,14 @@ impl BpfHelper {
             size_from_arg: None,
         }];
 
+        const SKC_TO_TCP_SOCK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper skc_to_tcp_sock sk",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
         const KPTR_XCHG_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -515,6 +526,11 @@ impl BpfHelper {
             },
             BpfHelper::TcpSock => HelperSemantics {
                 ptr_arg_rules: TCP_SOCK_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkcToTcpSock => HelperSemantics {
+                ptr_arg_rules: SKC_TO_TCP_SOCK_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

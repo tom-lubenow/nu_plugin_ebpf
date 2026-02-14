@@ -51,7 +51,8 @@ pub const fn helper_pointer_arg_ref_kind(
             BpfHelper::SkRelease
             | BpfHelper::SkFullsock
             | BpfHelper::TcpSock
-            | BpfHelper::GetListenerSock,
+            | BpfHelper::GetListenerSock
+            | BpfHelper::SkcToTcpSock,
             0,
         ) => Some(KfuncRefKind::Socket),
         _ => None,
