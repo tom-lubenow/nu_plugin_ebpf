@@ -596,6 +596,14 @@ impl<'a> TypeInference<'a> {
                         },
                     }
                 }
+                self.validate_kfunc_semantics(
+                    kfunc,
+                    args,
+                    types,
+                    value_ranges,
+                    stack_bounds,
+                    errors,
+                );
             }
 
             MirInst::CallSubfn { args, .. } => {

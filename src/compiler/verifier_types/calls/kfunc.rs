@@ -102,6 +102,113 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
     }
 }
 
+pub(in crate::compiler::verifier_types) fn kfunc_positive_size_upper_bound(
+    kfunc: &str,
+    arg_idx: usize,
+    value: VReg,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) -> Option<usize> {
+    match value_range(&MirValue::VReg(value), state) {
+        ValueRange::Known { min, max } => {
+            if max <= 0 || min <= 0 {
+                errors.push(VerifierTypeError::new(format!(
+                    "kfunc '{}' arg{} must be > 0",
+                    kfunc, arg_idx
+                )));
+                return None;
+            }
+            usize::try_from(max).ok()
+        }
+        _ => None,
+    }
+}
+
+pub(in crate::compiler::verifier_types) fn kfunc_allowed_spaces(
+    allow_stack: bool,
+    allow_map: bool,
+    allow_kernel: bool,
+    allow_user: bool,
+) -> &'static [AddressSpace] {
+    match (allow_stack, allow_map, allow_kernel, allow_user) {
+        (true, true, false, false) => &[AddressSpace::Stack, AddressSpace::Map],
+        (true, true, true, false) => {
+            &[AddressSpace::Stack, AddressSpace::Map, AddressSpace::Kernel]
+        }
+        (false, false, true, false) => &[AddressSpace::Kernel],
+        (false, false, false, true) => &[AddressSpace::User],
+        (true, false, false, false) => &[AddressSpace::Stack],
+        (false, true, false, false) => &[AddressSpace::Map],
+        (false, false, false, false) => &[],
+        _ => &[
+            AddressSpace::Stack,
+            AddressSpace::Map,
+            AddressSpace::Kernel,
+            AddressSpace::User,
+        ],
+    }
+}
+
+pub(in crate::compiler::verifier_types) fn check_kfunc_ptr_arg_value(
+    arg: VReg,
+    op: &str,
+    allow_stack: bool,
+    allow_map: bool,
+    allow_kernel: bool,
+    allow_user: bool,
+    access_size: Option<usize>,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let allowed = kfunc_allowed_spaces(allow_stack, allow_map, allow_kernel, allow_user);
+    let Some(VerifierType::Ptr { space, bounds, .. }) =
+        require_ptr_with_space(arg, op, allowed, state, errors)
+    else {
+        return;
+    };
+    if let Some(size) = access_size {
+        check_ptr_bounds(op, space, bounds, 0, size, errors);
+    }
+}
+
+pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
+    kfunc: &str,
+    args: &[VReg],
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let semantics = kfunc_semantics(kfunc);
+    let mut positive_size_bounds: [Option<usize>; 5] = [None; 5];
+    for size_arg in semantics.positive_size_args {
+        if let Some(value) = args.get(*size_arg) {
+            positive_size_bounds[*size_arg] =
+                kfunc_positive_size_upper_bound(kfunc, *size_arg, *value, state, errors);
+        }
+    }
+
+    for rule in semantics.ptr_arg_rules {
+        let Some(arg) = args.get(rule.arg_idx) else {
+            continue;
+        };
+        let access_size = match (rule.fixed_size, rule.size_from_arg) {
+            (Some(size), _) => Some(size),
+            (None, Some(size_arg)) => positive_size_bounds[size_arg],
+            (None, None) => None,
+        };
+        check_kfunc_ptr_arg_value(
+            *arg,
+            rule.op,
+            rule.allowed.allow_stack,
+            rule.allowed.allow_map,
+            rule.allowed.allow_kernel,
+            rule.allowed.allow_user,
+            access_size,
+            state,
+            errors,
+        );
+    }
+}
+
 pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_requires_kernel(
     kfunc: &str,
     arg_idx: usize,

@@ -148,6 +148,7 @@ pub(super) fn apply_call_kfunc_inst(
     for (idx, arg) in args.iter().take(sig.max_args.min(5)).enumerate() {
         check_kfunc_arg(kfunc, idx, *arg, sig.arg_kind(idx), state, errors);
     }
+    check_kfunc_semantics(kfunc, args, state, errors);
     apply_kfunc_semantics(kfunc, args, state, errors);
 
     let ty = match sig.ret_kind {

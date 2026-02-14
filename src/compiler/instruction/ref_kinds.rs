@@ -1,5 +1,67 @@
 use super::*;
 
+#[derive(Debug, Clone, Copy)]
+pub struct KfuncAllowedPtrSpaces {
+    pub allow_stack: bool,
+    pub allow_map: bool,
+    pub allow_kernel: bool,
+    pub allow_user: bool,
+}
+
+impl KfuncAllowedPtrSpaces {
+    pub const fn new(
+        allow_stack: bool,
+        allow_map: bool,
+        allow_kernel: bool,
+        allow_user: bool,
+    ) -> Self {
+        Self {
+            allow_stack,
+            allow_map,
+            allow_kernel,
+            allow_user,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct KfuncPtrArgRule {
+    pub arg_idx: usize,
+    pub op: &'static str,
+    pub allowed: KfuncAllowedPtrSpaces,
+    pub fixed_size: Option<usize>,
+    pub size_from_arg: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct KfuncSemantics {
+    pub ptr_arg_rules: &'static [KfuncPtrArgRule],
+    pub positive_size_args: &'static [usize],
+}
+
+pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
+    const STACK_MAP: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(true, true, false, false);
+    const NONE: KfuncSemantics = KfuncSemantics {
+        ptr_arg_rules: &[],
+        positive_size_args: &[],
+    };
+    const PATH_D_PATH_RULES: &[KfuncPtrArgRule] = &[KfuncPtrArgRule {
+        arg_idx: 1,
+        op: "kfunc path_d_path buffer",
+        allowed: STACK_MAP,
+        fixed_size: None,
+        size_from_arg: Some(2),
+    }];
+
+    match kfunc {
+        "bpf_path_d_path" => KfuncSemantics {
+            ptr_arg_rules: PATH_D_PATH_RULES,
+            positive_size_args: &[2],
+        },
+        _ => NONE,
+    }
+}
+
 pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
     match kfunc {
         "bpf_task_acquire" | "bpf_task_from_pid" | "bpf_task_from_vpid" => Some(KfuncRefKind::Task),

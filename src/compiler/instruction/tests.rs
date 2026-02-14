@@ -1098,6 +1098,29 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
 }
 
 #[test]
+fn test_kfunc_semantics_path_d_path_buffer_rule() {
+    let semantics = kfunc_semantics("bpf_path_d_path");
+    assert_eq!(semantics.positive_size_args, &[2]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 1);
+
+    let rule = semantics.ptr_arg_rules[0];
+    assert_eq!(rule.arg_idx, 1);
+    assert_eq!(rule.op, "kfunc path_d_path buffer");
+    assert!(rule.allowed.allow_stack);
+    assert!(rule.allowed.allow_map);
+    assert!(!rule.allowed.allow_kernel);
+    assert!(!rule.allowed.allow_user);
+    assert_eq!(rule.size_from_arg, Some(2));
+}
+
+#[test]
+fn test_kfunc_semantics_default_empty() {
+    let semantics = kfunc_semantics("bpf_task_release");
+    assert!(semantics.ptr_arg_rules.is_empty());
+    assert!(semantics.positive_size_args.is_empty());
+}
+
+#[test]
 fn test_builder() {
     let mut builder = EbpfBuilder::new();
     builder

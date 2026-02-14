@@ -171,6 +171,144 @@ fn test_type_error_kfunc_path_d_path_requires_kernel_path_arg() {
 }
 
 #[test]
+fn test_type_error_kfunc_path_d_path_buffer_requires_stack_or_map_space() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let path = func.alloc_vreg();
+    let buf = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(42),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: path,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: buf,
+        src: MirValue::VReg(path),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(32),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_path_d_path".to_string(),
+        btf_id: None,
+        args: vec![path, buf, size],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected path_d_path buffer-space type error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc path_d_path buffer expects pointer in [Stack, Map], got Kernel")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_kfunc_path_d_path_requires_positive_size() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let path = func.alloc_vreg();
+    let buf = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(42),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: path,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: buf,
+        src: MirValue::StackSlot(buf_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_path_d_path".to_string(),
+        btf_id: None,
+        args: vec![path, buf, size],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected path_d_path size positivity type error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_path_d_path' arg2 must be > 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_infer_kfunc_path_d_path_accepts_stack_buffer_rule() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let path = func.alloc_vreg();
+    let buf = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(64, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(42),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: path,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: buf,
+        src: MirValue::StackSlot(buf_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(32),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_path_d_path".to_string(),
+        btf_id: None,
+        args: vec![path, buf, size],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    ti.infer(&func)
+        .expect("expected path_d_path stack-buffer rule to type-check");
+}
+
+#[test]
 fn test_type_error_kfunc_rbtree_first_requires_kernel_space() {
     let mut func = make_test_function();
     let root = func.alloc_vreg();

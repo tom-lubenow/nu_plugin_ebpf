@@ -400,6 +400,169 @@ fn test_kfunc_path_d_path_requires_kernel_path_arg() {
 }
 
 #[test]
+fn test_kfunc_path_d_path_buffer_requires_stack_or_map_space() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call_block = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 2;
+
+    let path_ptr = func.alloc_vreg();
+    let buf_ptr = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(32),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(buf_ptr),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: call_block,
+        if_false: done,
+    };
+    func.block_mut(call_block)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_path_d_path".to_string(),
+            btf_id: None,
+            args: vec![path_ptr, buf_ptr, size],
+        });
+    func.block_mut(call_block).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        path_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        buf_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(size, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected path_d_path buffer-space error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc path_d_path buffer expects pointer in [Stack, Map], got Kernel")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_path_d_path_requires_positive_size() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 2;
+
+    let path_ptr = func.alloc_vreg();
+    let buf_ptr = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_path_d_path".to_string(),
+        btf_id: None,
+        args: vec![path_ptr, buf_ptr, size],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        path_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        buf_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(size, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected path_d_path positive-size error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_path_d_path' arg2 must be > 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_path_d_path_accepts_stack_buffer_rule() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 2;
+
+    let path_ptr = func.alloc_vreg();
+    let buf_ptr = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(32),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_path_d_path".to_string(),
+        btf_id: None,
+        args: vec![path_ptr, buf_ptr, size],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        path_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        buf_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(size, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected path_d_path stack-buffer rule to verify");
+}
+
+#[test]
 fn test_kfunc_rbtree_first_requires_kernel_space() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

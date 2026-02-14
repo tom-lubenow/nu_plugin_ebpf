@@ -117,6 +117,29 @@ impl<'a> TypeInference<'a> {
         }
     }
 
+    pub(super) fn kfunc_positive_size_upper_bound(
+        &self,
+        kfunc: &str,
+        arg_idx: usize,
+        value: VReg,
+        value_ranges: &HashMap<VReg, ValueRange>,
+        errors: &mut Vec<TypeError>,
+    ) -> Option<usize> {
+        match self.value_range_for(&MirValue::VReg(value), value_ranges) {
+            ValueRange::Known { min, max } => {
+                if max <= 0 || min <= 0 {
+                    errors.push(TypeError::new(format!(
+                        "kfunc '{}' arg{} must be > 0",
+                        kfunc, arg_idx
+                    )));
+                    return None;
+                }
+                usize::try_from(max).ok()
+            }
+            _ => None,
+        }
+    }
+
     pub(super) fn validate_helper_semantics(
         &self,
         helper_id: u32,
@@ -242,6 +265,96 @@ impl<'a> TypeInference<'a> {
                 MirValue::Const(_) => errors.push(TypeError::new(format!(
                     "helper {} arg{} expects pointer value",
                     helper_id, rule.arg_idx
+                ))),
+            }
+        }
+    }
+
+    pub(super) fn validate_kfunc_semantics(
+        &self,
+        kfunc: &str,
+        args: &[VReg],
+        types: &HashMap<VReg, MirType>,
+        value_ranges: &HashMap<VReg, ValueRange>,
+        stack_bounds: &HashMap<VReg, StackBounds>,
+        errors: &mut Vec<TypeError>,
+    ) {
+        let semantics = kfunc_semantics(kfunc);
+        let mut positive_size_bounds: [Option<usize>; 5] = [None; 5];
+        for size_arg in semantics.positive_size_args {
+            if let Some(vreg) = args.get(*size_arg) {
+                positive_size_bounds[*size_arg] = self.kfunc_positive_size_upper_bound(
+                    kfunc,
+                    *size_arg,
+                    *vreg,
+                    value_ranges,
+                    errors,
+                );
+            }
+        }
+
+        for rule in semantics.ptr_arg_rules {
+            let Some(vreg) = args.get(rule.arg_idx) else {
+                continue;
+            };
+            let access_size = match (rule.fixed_size, rule.size_from_arg) {
+                (Some(size), _) => Some(size),
+                (None, Some(size_arg)) => positive_size_bounds[size_arg],
+                (None, None) => None,
+            };
+            match self.mir_type_for_vreg(*vreg, types) {
+                MirType::Ptr {
+                    address_space,
+                    pointee,
+                } => {
+                    let allowed = Self::helper_allowed_spaces_label(
+                        rule.allowed.allow_stack,
+                        rule.allowed.allow_map,
+                        rule.allowed.allow_kernel,
+                        rule.allowed.allow_user,
+                    );
+                    if !Self::helper_ptr_space_allowed(
+                        address_space,
+                        rule.allowed.allow_stack,
+                        rule.allowed.allow_map,
+                        rule.allowed.allow_kernel,
+                        rule.allowed.allow_user,
+                    ) {
+                        errors.push(TypeError::new(format!(
+                            "{} expects pointer in {}, got {:?}",
+                            rule.op, allowed, address_space
+                        )));
+                        continue;
+                    }
+                    if let Some(size) = access_size {
+                        match address_space {
+                            AddressSpace::Stack => {
+                                if let Some(bounds) = stack_bounds.get(vreg) {
+                                    let end = bounds.max + size as i64 - 1;
+                                    if bounds.min < 0 || end > bounds.limit {
+                                        errors.push(TypeError::new(format!(
+                                            "{} requires {} bytes, stack pointer range [{}..{}] exceeds [0..{}]",
+                                            rule.op, size, bounds.min, bounds.max, bounds.limit
+                                        )));
+                                    }
+                                }
+                            }
+                            AddressSpace::Map => {
+                                let pointee_size = pointee.size();
+                                if pointee_size > 0 && size > pointee_size {
+                                    errors.push(TypeError::new(format!(
+                                        "{} requires {} bytes, map value pointee is {} bytes",
+                                        rule.op, size, pointee_size
+                                    )));
+                                }
+                            }
+                            AddressSpace::Kernel | AddressSpace::User => {}
+                        }
+                    }
+                }
+                other => errors.push(TypeError::new(format!(
+                    "kfunc '{}' arg{} expects pointer value, got {:?}",
+                    kfunc, rule.arg_idx, other
                 ))),
             }
         }

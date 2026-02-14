@@ -101,6 +101,7 @@ impl<'a> VccLowerer<'a> {
                 }
             }
         }
+        self.verify_kfunc_semantics(kfunc, args, out)?;
 
         Ok(())
     }
@@ -655,6 +656,127 @@ impl<'a> VccLowerer<'a> {
             self.assert_scalar_reg(reg, out);
             Ok(())
         }
+    }
+
+    pub(super) fn kfunc_positive_size_upper_bound(
+        &self,
+        kfunc: &str,
+        arg_idx: usize,
+        value: VReg,
+        out: &mut Vec<VccInst>,
+    ) -> Result<Option<usize>, VccError> {
+        out.push(VccInst::AssertPositive {
+            value: VccValue::Reg(VccReg(value.0)),
+            message: format!("kfunc '{}' arg{} must be > 0", kfunc, arg_idx),
+        });
+        Ok(None)
+    }
+
+    pub(super) fn check_kfunc_ptr_arg_value(
+        &mut self,
+        kfunc: &str,
+        arg_idx: usize,
+        arg: VReg,
+        op: &'static str,
+        allow_stack: bool,
+        allow_map: bool,
+        allow_kernel: bool,
+        allow_user: bool,
+        access_size: Option<usize>,
+        dynamic_size: Option<VReg>,
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        let arg_value = MirValue::VReg(arg);
+        let ptr = self.value_ptr_info(&arg_value).ok_or_else(|| {
+            VccError::new(
+                VccErrorKind::TypeMismatch {
+                    expected: VccTypeClass::Ptr,
+                    actual: VccTypeClass::Scalar,
+                },
+                format!("kfunc '{}' arg{} expects pointer value", kfunc, arg_idx),
+            )
+        })?;
+        let effective_space = if ptr.space == VccAddrSpace::Unknown {
+            self.effective_ptr_space(arg).unwrap_or(VccAddrSpace::Unknown)
+        } else {
+            ptr.space
+        };
+
+        if !self.helper_space_allowed(
+            effective_space,
+            allow_stack,
+            allow_map,
+            allow_kernel,
+            allow_user,
+        ) {
+            let allowed =
+                self.helper_allowed_spaces_label(allow_stack, allow_map, allow_kernel, allow_user);
+            return Err(VccError::new(
+                VccErrorKind::PointerBounds,
+                format!(
+                    "{op} expects pointer in {allowed}, got {}",
+                    self.helper_space_name(effective_space)
+                ),
+            ));
+        }
+
+        if let Some(size) = access_size {
+            self.check_ptr_range(arg, size, out)?;
+        } else if let Some(size_reg) = dynamic_size {
+            out.push(VccInst::AssertPtrAccess {
+                ptr: VccReg(arg.0),
+                size: VccValue::Reg(VccReg(size_reg.0)),
+                op,
+            });
+        }
+
+        Ok(())
+    }
+
+    pub(super) fn verify_kfunc_semantics(
+        &mut self,
+        kfunc: &str,
+        args: &[VReg],
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        let semantics = kfunc_semantics(kfunc);
+        let mut positive_size_bounds: [Option<usize>; 5] = [None; 5];
+        for size_arg in semantics.positive_size_args {
+            if let Some(arg) = args.get(*size_arg) {
+                positive_size_bounds[*size_arg] =
+                    self.kfunc_positive_size_upper_bound(kfunc, *size_arg, *arg, out)?;
+            }
+        }
+
+        for rule in semantics.ptr_arg_rules {
+            let Some(arg) = args.get(rule.arg_idx).copied() else {
+                continue;
+            };
+            let access_size = match (rule.fixed_size, rule.size_from_arg) {
+                (Some(size), _) => Some(size),
+                (None, Some(size_arg)) => positive_size_bounds[size_arg],
+                (None, None) => None,
+            };
+            let dynamic_size = rule
+                .size_from_arg
+                .and_then(|size_arg| args.get(size_arg))
+                .copied();
+            self.check_kfunc_ptr_arg_value(
+                kfunc,
+                rule.arg_idx,
+                arg,
+                rule.op,
+                rule.allowed.allow_stack,
+                rule.allowed.allow_map,
+                rule.allowed.allow_kernel,
+                rule.allowed.allow_user,
+                access_size,
+                dynamic_size,
+                out,
+            )?;
+        }
+
+        Ok(())
     }
 
     pub(super) fn verify_read_str_ptr(
