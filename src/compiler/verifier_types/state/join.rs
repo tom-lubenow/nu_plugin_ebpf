@@ -16,6 +16,10 @@ impl VerifierState {
             && self.preempt_disable_max_depth == other.preempt_disable_max_depth
             && self.local_irq_disable_min_depth == other.local_irq_disable_min_depth
             && self.local_irq_disable_max_depth == other.local_irq_disable_max_depth
+            && self.res_spin_lock_min_depth == other.res_spin_lock_min_depth
+            && self.res_spin_lock_max_depth == other.res_spin_lock_max_depth
+            && self.res_spin_lock_irqsave_min_depth == other.res_spin_lock_irqsave_min_depth
+            && self.res_spin_lock_irqsave_max_depth == other.res_spin_lock_irqsave_max_depth
             && self.guards == other.guards
             && self.reachable == other.reachable
     }
@@ -133,6 +137,18 @@ impl VerifierState {
             local_irq_disable_max_depth: self
                 .local_irq_disable_max_depth
                 .max(other.local_irq_disable_max_depth),
+            res_spin_lock_min_depth: self
+                .res_spin_lock_min_depth
+                .min(other.res_spin_lock_min_depth),
+            res_spin_lock_max_depth: self
+                .res_spin_lock_max_depth
+                .max(other.res_spin_lock_max_depth),
+            res_spin_lock_irqsave_min_depth: self
+                .res_spin_lock_irqsave_min_depth
+                .min(other.res_spin_lock_irqsave_min_depth),
+            res_spin_lock_irqsave_max_depth: self
+                .res_spin_lock_irqsave_max_depth
+                .max(other.res_spin_lock_irqsave_max_depth),
             reachable: true,
             guards,
         }

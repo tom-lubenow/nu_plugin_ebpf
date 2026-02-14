@@ -733,6 +733,28 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::ResSpinLockAcquire => {
+                state.acquire_res_spin_lock();
+            }
+            VccInst::ResSpinLockRelease => {
+                if !state.release_res_spin_lock() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_res_spin_unlock' requires a matching bpf_res_spin_lock",
+                    ));
+                }
+            }
+            VccInst::ResSpinLockIrqsaveAcquire => {
+                state.acquire_res_spin_lock_irqsave();
+            }
+            VccInst::ResSpinLockIrqsaveRelease => {
+                if !state.release_res_spin_lock_irqsave() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_res_spin_unlock_irqrestore' requires a matching bpf_res_spin_lock_irqsave",
+                    ));
+                }
+            }
             VccInst::KfuncExpectRefKind {
                 ptr,
                 arg_idx,
@@ -925,6 +947,18 @@ impl VccVerifier {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased local irq disable at function exit",
+                    ));
+                }
+                if state.has_live_res_spin_lock() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "unreleased res spin lock at function exit",
+                    ));
+                }
+                if state.has_live_res_spin_lock_irqsave() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "unreleased res spin lock irqsave at function exit",
                     ));
                 }
             }

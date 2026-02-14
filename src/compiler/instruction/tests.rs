@@ -627,6 +627,36 @@ fn test_kfunc_signature_rcu_read_lock_helpers() {
     assert_eq!(irq_restore.max_args, 1);
     assert_eq!(irq_restore.arg_kind(0), KfuncArgKind::Pointer);
     assert_eq!(irq_restore.ret_kind, KfuncRetKind::Void);
+
+    let spin_lock = KfuncSignature::for_name("bpf_res_spin_lock")
+        .expect("expected bpf_res_spin_lock kfunc signature");
+    assert_eq!(spin_lock.min_args, 1);
+    assert_eq!(spin_lock.max_args, 1);
+    assert_eq!(spin_lock.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(spin_lock.ret_kind, KfuncRetKind::Scalar);
+
+    let spin_unlock = KfuncSignature::for_name("bpf_res_spin_unlock")
+        .expect("expected bpf_res_spin_unlock kfunc signature");
+    assert_eq!(spin_unlock.min_args, 1);
+    assert_eq!(spin_unlock.max_args, 1);
+    assert_eq!(spin_unlock.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(spin_unlock.ret_kind, KfuncRetKind::Void);
+
+    let spin_lock_irqsave = KfuncSignature::for_name("bpf_res_spin_lock_irqsave")
+        .expect("expected bpf_res_spin_lock_irqsave kfunc signature");
+    assert_eq!(spin_lock_irqsave.min_args, 2);
+    assert_eq!(spin_lock_irqsave.max_args, 2);
+    assert_eq!(spin_lock_irqsave.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(spin_lock_irqsave.arg_kind(1), KfuncArgKind::Pointer);
+    assert_eq!(spin_lock_irqsave.ret_kind, KfuncRetKind::Scalar);
+
+    let spin_unlock_irqrestore = KfuncSignature::for_name("bpf_res_spin_unlock_irqrestore")
+        .expect("expected bpf_res_spin_unlock_irqrestore kfunc signature");
+    assert_eq!(spin_unlock_irqrestore.min_args, 2);
+    assert_eq!(spin_unlock_irqrestore.max_args, 2);
+    assert_eq!(spin_unlock_irqrestore.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(spin_unlock_irqrestore.arg_kind(1), KfuncArgKind::Pointer);
+    assert_eq!(spin_unlock_irqrestore.ret_kind, KfuncRetKind::Void);
 }
 
 #[test]
@@ -990,6 +1020,16 @@ fn test_kfunc_pointer_arg_requires_kernel_mappings() {
         "bpf_local_irq_restore",
         0
     ));
+    assert!(kfunc_pointer_arg_requires_kernel("bpf_res_spin_lock", 0));
+    assert!(kfunc_pointer_arg_requires_kernel("bpf_res_spin_unlock", 0));
+    assert!(kfunc_pointer_arg_requires_kernel(
+        "bpf_res_spin_lock_irqsave",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_kernel(
+        "bpf_res_spin_unlock_irqrestore",
+        0
+    ));
 }
 
 #[test]
@@ -997,6 +1037,15 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
     assert!(kfunc_pointer_arg_requires_stack("bpf_local_irq_save", 0));
     assert!(kfunc_pointer_arg_requires_stack("bpf_local_irq_restore", 0));
     assert!(!kfunc_pointer_arg_requires_stack("bpf_local_irq_save", 1));
+    assert!(kfunc_pointer_arg_requires_stack(
+        "bpf_res_spin_lock_irqsave",
+        1
+    ));
+    assert!(kfunc_pointer_arg_requires_stack(
+        "bpf_res_spin_unlock_irqrestore",
+        1
+    ));
+    assert!(!kfunc_pointer_arg_requires_stack("bpf_res_spin_lock", 0));
     assert!(!kfunc_pointer_arg_requires_stack("bpf_task_release", 0));
 }
 

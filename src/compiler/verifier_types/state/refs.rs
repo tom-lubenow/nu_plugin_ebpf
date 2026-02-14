@@ -148,4 +148,42 @@ impl VerifierState {
     pub(in crate::compiler::verifier_types) fn has_live_local_irq_disable(&self) -> bool {
         self.local_irq_disable_max_depth > 0
     }
+
+    pub(in crate::compiler::verifier_types) fn acquire_res_spin_lock(&mut self) {
+        self.res_spin_lock_min_depth = self.res_spin_lock_min_depth.saturating_add(1);
+        self.res_spin_lock_max_depth = self.res_spin_lock_max_depth.saturating_add(1);
+    }
+
+    pub(in crate::compiler::verifier_types) fn release_res_spin_lock(&mut self) -> bool {
+        if self.res_spin_lock_min_depth == 0 {
+            return false;
+        }
+        self.res_spin_lock_min_depth -= 1;
+        self.res_spin_lock_max_depth -= 1;
+        true
+    }
+
+    pub(in crate::compiler::verifier_types) fn has_live_res_spin_lock(&self) -> bool {
+        self.res_spin_lock_max_depth > 0
+    }
+
+    pub(in crate::compiler::verifier_types) fn acquire_res_spin_lock_irqsave(&mut self) {
+        self.res_spin_lock_irqsave_min_depth =
+            self.res_spin_lock_irqsave_min_depth.saturating_add(1);
+        self.res_spin_lock_irqsave_max_depth =
+            self.res_spin_lock_irqsave_max_depth.saturating_add(1);
+    }
+
+    pub(in crate::compiler::verifier_types) fn release_res_spin_lock_irqsave(&mut self) -> bool {
+        if self.res_spin_lock_irqsave_min_depth == 0 {
+            return false;
+        }
+        self.res_spin_lock_irqsave_min_depth -= 1;
+        self.res_spin_lock_irqsave_max_depth -= 1;
+        true
+    }
+
+    pub(in crate::compiler::verifier_types) fn has_live_res_spin_lock_irqsave(&self) -> bool {
+        self.res_spin_lock_irqsave_max_depth > 0
+    }
 }

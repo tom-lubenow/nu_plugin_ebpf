@@ -10,6 +10,10 @@ struct VccState {
     preempt_disable_max_depth: u32,
     local_irq_disable_min_depth: u32,
     local_irq_disable_max_depth: u32,
+    res_spin_lock_min_depth: u32,
+    res_spin_lock_max_depth: u32,
+    res_spin_lock_irqsave_min_depth: u32,
+    res_spin_lock_irqsave_max_depth: u32,
     cond_refinements: HashMap<VccReg, VccCondRefinement>,
     reachable: bool,
 }
@@ -49,6 +53,10 @@ impl VccState {
             preempt_disable_max_depth: 0,
             local_irq_disable_min_depth: 0,
             local_irq_disable_max_depth: 0,
+            res_spin_lock_min_depth: 0,
+            res_spin_lock_max_depth: 0,
+            res_spin_lock_irqsave_min_depth: 0,
+            res_spin_lock_irqsave_max_depth: 0,
             cond_refinements: HashMap::new(),
             reachable: true,
         }
@@ -196,6 +204,44 @@ impl VccState {
         self.local_irq_disable_max_depth > 0
     }
 
+    fn acquire_res_spin_lock(&mut self) {
+        self.res_spin_lock_min_depth = self.res_spin_lock_min_depth.saturating_add(1);
+        self.res_spin_lock_max_depth = self.res_spin_lock_max_depth.saturating_add(1);
+    }
+
+    fn release_res_spin_lock(&mut self) -> bool {
+        if self.res_spin_lock_min_depth == 0 {
+            return false;
+        }
+        self.res_spin_lock_min_depth -= 1;
+        self.res_spin_lock_max_depth -= 1;
+        true
+    }
+
+    fn has_live_res_spin_lock(&self) -> bool {
+        self.res_spin_lock_max_depth > 0
+    }
+
+    fn acquire_res_spin_lock_irqsave(&mut self) {
+        self.res_spin_lock_irqsave_min_depth =
+            self.res_spin_lock_irqsave_min_depth.saturating_add(1);
+        self.res_spin_lock_irqsave_max_depth =
+            self.res_spin_lock_irqsave_max_depth.saturating_add(1);
+    }
+
+    fn release_res_spin_lock_irqsave(&mut self) -> bool {
+        if self.res_spin_lock_irqsave_min_depth == 0 {
+            return false;
+        }
+        self.res_spin_lock_irqsave_min_depth -= 1;
+        self.res_spin_lock_irqsave_max_depth -= 1;
+        true
+    }
+
+    fn has_live_res_spin_lock_irqsave(&self) -> bool {
+        self.res_spin_lock_irqsave_max_depth > 0
+    }
+
     fn kfunc_ref_kind(&self, id: VccReg) -> Option<KfuncRefKind> {
         self.live_kfunc_refs.get(&id).copied().flatten()
     }
@@ -328,6 +374,18 @@ impl VccState {
             local_irq_disable_max_depth: self
                 .local_irq_disable_max_depth
                 .max(other.local_irq_disable_max_depth),
+            res_spin_lock_min_depth: self
+                .res_spin_lock_min_depth
+                .min(other.res_spin_lock_min_depth),
+            res_spin_lock_max_depth: self
+                .res_spin_lock_max_depth
+                .max(other.res_spin_lock_max_depth),
+            res_spin_lock_irqsave_min_depth: self
+                .res_spin_lock_irqsave_min_depth
+                .min(other.res_spin_lock_irqsave_min_depth),
+            res_spin_lock_irqsave_max_depth: self
+                .res_spin_lock_irqsave_max_depth
+                .max(other.res_spin_lock_irqsave_max_depth),
             cond_refinements,
             reachable: true,
         }
@@ -362,6 +420,10 @@ impl VccState {
             preempt_disable_max_depth: self.preempt_disable_max_depth,
             local_irq_disable_min_depth: self.local_irq_disable_min_depth,
             local_irq_disable_max_depth: self.local_irq_disable_max_depth,
+            res_spin_lock_min_depth: self.res_spin_lock_min_depth,
+            res_spin_lock_max_depth: self.res_spin_lock_max_depth,
+            res_spin_lock_irqsave_min_depth: self.res_spin_lock_irqsave_min_depth,
+            res_spin_lock_irqsave_max_depth: self.res_spin_lock_irqsave_max_depth,
             cond_refinements: HashMap::new(),
             reachable: self.reachable,
         }

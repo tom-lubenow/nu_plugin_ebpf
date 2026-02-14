@@ -178,6 +178,84 @@ fn test_kfunc_local_irq_save_rejects_context_derived_stack_pointer() {
 }
 
 #[test]
+fn test_kfunc_res_spin_lock_requires_kernel_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let stack_ptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_res_spin_lock".to_string(),
+        btf_id: None,
+        args: vec![stack_ptr],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        stack_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected res_spin_lock kernel-pointer error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg0 expects kernel pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_res_spin_lock_irqsave_requires_stack_flags_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let lock = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: lock,
+        kfunc: "bpf_cpumask_create".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_res_spin_lock_irqsave".to_string(),
+        btf_id: None,
+        args: vec![lock, lock],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected res_spin_lock_irqsave stack-flags error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg1 expects stack pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_kfunc_list_push_front_requires_kernel_space() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
@@ -3139,6 +3217,425 @@ fn test_kfunc_local_irq_restore_rejected_after_mixed_join() {
     assert!(
         err.iter()
             .any(|e| e.message.contains("requires a matching bpf_local_irq_save")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_res_spin_lock_unlock_balanced() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let lock = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: lock_ret,
+        kfunc: "bpf_res_spin_lock".to_string(),
+        btf_id: None,
+        args: vec![lock],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: unlock_ret,
+        kfunc: "bpf_res_spin_unlock".to_string(),
+        btf_id: None,
+        args: vec![lock],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(lock_ret, MirType::I64);
+    types.insert(unlock_ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected balanced res spin lock/unlock to verify");
+}
+
+#[test]
+fn test_kfunc_res_spin_unlock_requires_matching_lock() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let lock = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: unlock_ret,
+        kfunc: "bpf_res_spin_unlock".to_string(),
+        btf_id: None,
+        args: vec![lock],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(unlock_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected unmatched res_spin_unlock error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("requires a matching bpf_res_spin_lock")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_res_spin_lock_must_be_released_at_exit() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let lock = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: lock_ret,
+        kfunc: "bpf_res_spin_lock".to_string(),
+        btf_id: None,
+        args: vec![lock],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(lock_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected unreleased res spin lock error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("unreleased res spin lock")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_res_spin_unlock_rejected_after_mixed_join() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let lock_path = func.alloc_block();
+    let no_lock_path = func.alloc_block();
+    let join = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 2;
+
+    let lock = func.alloc_vreg();
+    let selector = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: lock_path,
+        if_false: no_lock_path,
+    };
+
+    func.block_mut(lock_path)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: lock_ret,
+            kfunc: "bpf_res_spin_lock".to_string(),
+            btf_id: None,
+            args: vec![lock],
+        });
+    func.block_mut(lock_path).terminator = MirInst::Jump { target: join };
+    func.block_mut(no_lock_path).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(join).instructions.push(MirInst::CallKfunc {
+        dst: unlock_ret,
+        kfunc: "bpf_res_spin_unlock".to_string(),
+        btf_id: None,
+        args: vec![lock],
+    });
+    func.block_mut(join).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(selector, MirType::I64);
+    types.insert(cond, MirType::Bool);
+    types.insert(lock_ret, MirType::I64);
+    types.insert(unlock_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected mixed-path res_spin_unlock error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("requires a matching bpf_res_spin_lock")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_res_spin_lock_irqsave_unlock_irqrestore_balanced() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let lock = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: lock_ret,
+        kfunc: "bpf_res_spin_lock_irqsave".to_string(),
+        btf_id: None,
+        args: vec![lock, flags],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: unlock_ret,
+        kfunc: "bpf_res_spin_unlock_irqrestore".to_string(),
+        btf_id: None,
+        args: vec![lock, flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        flags,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(lock_ret, MirType::I64);
+    types.insert(unlock_ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected balanced res spin irqsave/irqrestore to verify");
+}
+
+#[test]
+fn test_kfunc_res_spin_unlock_irqrestore_requires_matching_lock_irqsave() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let lock = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: unlock_ret,
+        kfunc: "bpf_res_spin_unlock_irqrestore".to_string(),
+        btf_id: None,
+        args: vec![lock, flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        flags,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(unlock_ret, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected unmatched res_spin_unlock_irqrestore error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires a matching bpf_res_spin_lock_irqsave")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_res_spin_lock_irqsave_must_be_released_at_exit() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let lock = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: lock_ret,
+        kfunc: "bpf_res_spin_lock_irqsave".to_string(),
+        btf_id: None,
+        args: vec![lock, flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        flags,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(lock_ret, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected unreleased res spin irqsave lock error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("unreleased res spin lock irqsave")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_res_spin_unlock_irqrestore_rejected_after_mixed_join() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let lock_path = func.alloc_block();
+    let no_lock_path = func.alloc_block();
+    let join = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 2;
+
+    let lock = func.alloc_vreg();
+    let selector = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: lock_path,
+        if_false: no_lock_path,
+    };
+
+    func.block_mut(lock_path)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: lock_ret,
+            kfunc: "bpf_res_spin_lock_irqsave".to_string(),
+            btf_id: None,
+            args: vec![lock, flags],
+        });
+    func.block_mut(lock_path).terminator = MirInst::Jump { target: join };
+    func.block_mut(no_lock_path).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(join).instructions.push(MirInst::CallKfunc {
+        dst: unlock_ret,
+        kfunc: "bpf_res_spin_unlock_irqrestore".to_string(),
+        btf_id: None,
+        args: vec![lock, flags],
+    });
+    func.block_mut(join).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(selector, MirType::I64);
+    types.insert(cond, MirType::Bool);
+    types.insert(
+        flags,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(lock_ret, MirType::I64);
+    types.insert(unlock_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected mixed-path res_spin_unlock_irqrestore error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires a matching bpf_res_spin_lock_irqsave")),
         "unexpected errors: {:?}",
         err
     );

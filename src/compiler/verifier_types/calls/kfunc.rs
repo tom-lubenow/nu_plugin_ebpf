@@ -156,6 +156,30 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
         }
         return;
     }
+    if kfunc == "bpf_res_spin_lock" {
+        state.acquire_res_spin_lock();
+        return;
+    }
+    if kfunc == "bpf_res_spin_unlock" {
+        if !state.release_res_spin_lock() {
+            errors.push(VerifierTypeError::new(
+                "kfunc 'bpf_res_spin_unlock' requires a matching bpf_res_spin_lock",
+            ));
+        }
+        return;
+    }
+    if kfunc == "bpf_res_spin_lock_irqsave" {
+        state.acquire_res_spin_lock_irqsave();
+        return;
+    }
+    if kfunc == "bpf_res_spin_unlock_irqrestore" {
+        if !state.release_res_spin_lock_irqsave() {
+            errors.push(VerifierTypeError::new(
+                "kfunc 'bpf_res_spin_unlock_irqrestore' requires a matching bpf_res_spin_lock_irqsave",
+            ));
+        }
+        return;
+    }
 
     let Some(expected_kind) = kfunc_release_kind(kfunc) else {
         return;

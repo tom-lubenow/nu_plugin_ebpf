@@ -195,6 +195,10 @@ pub fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
             | ("bpf_list_back", 0)
             | ("bpf_path_d_path", 0)
             | ("bpf_map_sum_elem_count", 0)
+            | ("bpf_res_spin_lock", 0)
+            | ("bpf_res_spin_unlock", 0)
+            | ("bpf_res_spin_lock_irqsave", 0)
+            | ("bpf_res_spin_unlock_irqrestore", 0)
             | ("bpf_rbtree_remove", 0)
             | ("bpf_rbtree_remove", 1)
             | ("bpf_rbtree_add_impl", 0)
@@ -209,6 +213,9 @@ pub fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
 pub fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
     matches!(
         (kfunc, arg_idx),
-        ("bpf_local_irq_save", 0) | ("bpf_local_irq_restore", 0)
+        ("bpf_local_irq_save", 0)
+            | ("bpf_local_irq_restore", 0)
+            | ("bpf_res_spin_lock_irqsave", 1)
+            | ("bpf_res_spin_unlock_irqrestore", 1)
     )
 }

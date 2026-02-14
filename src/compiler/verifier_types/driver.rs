@@ -98,6 +98,16 @@ pub fn verify_mir(
                         "unreleased local irq disable at function exit",
                     ));
                 }
+                if state.has_live_res_spin_lock() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased res spin lock at function exit",
+                    ));
+                }
+                if state.has_live_res_spin_lock_irqsave() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased res spin lock irqsave at function exit",
+                    ));
+                }
             }
             MirInst::TailCall { prog_map, index } => {
                 if prog_map.kind != MapKind::ProgArray {
@@ -136,6 +146,16 @@ pub fn verify_mir(
                 if state.has_live_local_irq_disable() {
                     errors.push(VerifierTypeError::new(
                         "unreleased local irq disable at function exit",
+                    ));
+                }
+                if state.has_live_res_spin_lock() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased res spin lock at function exit",
+                    ));
+                }
+                if state.has_live_res_spin_lock_irqsave() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased res spin lock irqsave at function exit",
                     ));
                 }
             }

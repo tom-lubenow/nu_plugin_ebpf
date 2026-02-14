@@ -110,6 +110,10 @@ pub(super) struct VerifierState {
     preempt_disable_max_depth: u32,
     local_irq_disable_min_depth: u32,
     local_irq_disable_max_depth: u32,
+    res_spin_lock_min_depth: u32,
+    res_spin_lock_max_depth: u32,
+    res_spin_lock_irqsave_min_depth: u32,
+    res_spin_lock_irqsave_max_depth: u32,
     reachable: bool,
     guards: HashMap<VReg, Guard>,
 }
@@ -133,6 +137,10 @@ impl VerifierState {
             preempt_disable_max_depth: 0,
             local_irq_disable_min_depth: 0,
             local_irq_disable_max_depth: 0,
+            res_spin_lock_min_depth: 0,
+            res_spin_lock_max_depth: 0,
+            res_spin_lock_irqsave_min_depth: 0,
+            res_spin_lock_irqsave_max_depth: 0,
             reachable: true,
             guards: HashMap::new(),
         }

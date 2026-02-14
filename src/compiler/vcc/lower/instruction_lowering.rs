@@ -518,6 +518,18 @@ impl<'a> VccLowerer<'a> {
                 if kfunc == "bpf_local_irq_restore" {
                     out.push(VccInst::LocalIrqDisableRelease);
                 }
+                if kfunc == "bpf_res_spin_lock" {
+                    out.push(VccInst::ResSpinLockAcquire);
+                }
+                if kfunc == "bpf_res_spin_unlock" {
+                    out.push(VccInst::ResSpinLockRelease);
+                }
+                if kfunc == "bpf_res_spin_lock_irqsave" {
+                    out.push(VccInst::ResSpinLockIrqsaveAcquire);
+                }
+                if kfunc == "bpf_res_spin_unlock_irqrestore" {
+                    out.push(VccInst::ResSpinLockIrqsaveRelease);
+                }
             }
             MirInst::CallSubfn { dst, args, .. } => {
                 if args.len() > 5 {

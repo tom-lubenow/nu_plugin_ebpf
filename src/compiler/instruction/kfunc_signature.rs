@@ -115,6 +115,30 @@ impl KfuncSignature {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: KfuncRetKind::Void,
             }),
+            "bpf_res_spin_lock" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_res_spin_unlock" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "bpf_res_spin_lock_irqsave" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_res_spin_unlock_irqrestore" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
             "bpf_throw" => Some(Self {
                 min_args: 1,
                 max_args: 1,

@@ -632,6 +632,98 @@ fn test_type_error_kfunc_local_irq_save_requires_stack_pointer() {
 }
 
 #[test]
+fn test_infer_kfunc_res_spin_lock_signatures() {
+    let mut func = make_test_function();
+    let lock = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
+    let lock_irqsave_ret = func.alloc_vreg();
+    let unlock_irqrestore_ret = func.alloc_vreg();
+    let stack_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallKfunc {
+        dst: lock,
+        kfunc: "bpf_cpumask_create".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::StackSlot(stack_slot),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: lock_ret,
+        kfunc: "bpf_res_spin_lock".to_string(),
+        btf_id: None,
+        args: vec![lock],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: unlock_ret,
+        kfunc: "bpf_res_spin_unlock".to_string(),
+        btf_id: None,
+        args: vec![lock],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: lock_irqsave_ret,
+        kfunc: "bpf_res_spin_lock_irqsave".to_string(),
+        btf_id: None,
+        args: vec![lock, flags],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: unlock_irqrestore_ret,
+        kfunc: "bpf_res_spin_unlock_irqrestore".to_string(),
+        btf_id: None,
+        args: vec![lock, flags],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected res_spin lock/unlock kfunc type inference");
+    assert!(matches!(types.get(&lock_ret), Some(MirType::I64)));
+    assert!(matches!(types.get(&unlock_ret), Some(MirType::I64)));
+    assert!(matches!(types.get(&lock_irqsave_ret), Some(MirType::I64)));
+    assert!(matches!(
+        types.get(&unlock_irqrestore_ret),
+        Some(MirType::I64)
+    ));
+}
+
+#[test]
+fn test_type_error_kfunc_res_spin_lock_irqsave_requires_stack_flags() {
+    let mut func = make_test_function();
+    let lock = func.alloc_vreg();
+    let lock_irqsave_ret = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallKfunc {
+        dst: lock,
+        kfunc: "bpf_cpumask_create".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: lock_irqsave_ret,
+        kfunc: "bpf_res_spin_lock_irqsave".to_string(),
+        btf_id: None,
+        args: vec![lock, lock],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected res_spin_lock_irqsave stack-pointer flags type error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("arg1 expects stack pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_kfunc_map_sum_elem_count_requires_kernel_space() {
     let mut func = make_test_function();
     let map_ptr = func.alloc_vreg();
