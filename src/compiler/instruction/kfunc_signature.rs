@@ -103,6 +103,18 @@ impl KfuncSignature {
                 arg_kinds: [S, S, S, S, S],
                 ret_kind: KfuncRetKind::Void,
             }),
+            "bpf_local_irq_save" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "bpf_local_irq_restore" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
             "bpf_throw" => Some(Self {
                 min_args: 1,
                 max_args: 1,

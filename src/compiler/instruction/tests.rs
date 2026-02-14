@@ -597,6 +597,20 @@ fn test_kfunc_signature_rcu_read_lock_helpers() {
     assert_eq!(enable.min_args, 0);
     assert_eq!(enable.max_args, 0);
     assert_eq!(enable.ret_kind, KfuncRetKind::Void);
+
+    let irq_save = KfuncSignature::for_name("bpf_local_irq_save")
+        .expect("expected bpf_local_irq_save kfunc signature");
+    assert_eq!(irq_save.min_args, 1);
+    assert_eq!(irq_save.max_args, 1);
+    assert_eq!(irq_save.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(irq_save.ret_kind, KfuncRetKind::Void);
+
+    let irq_restore = KfuncSignature::for_name("bpf_local_irq_restore")
+        .expect("expected bpf_local_irq_restore kfunc signature");
+    assert_eq!(irq_restore.min_args, 1);
+    assert_eq!(irq_restore.max_args, 1);
+    assert_eq!(irq_restore.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(irq_restore.ret_kind, KfuncRetKind::Void);
 }
 
 #[test]

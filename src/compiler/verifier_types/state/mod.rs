@@ -108,6 +108,8 @@ pub(super) struct VerifierState {
     rcu_read_lock_max_depth: u32,
     preempt_disable_min_depth: u32,
     preempt_disable_max_depth: u32,
+    local_irq_disable_min_depth: u32,
+    local_irq_disable_max_depth: u32,
     reachable: bool,
     guards: HashMap<VReg, Guard>,
 }
@@ -129,6 +131,8 @@ impl VerifierState {
             rcu_read_lock_max_depth: 0,
             preempt_disable_min_depth: 0,
             preempt_disable_max_depth: 0,
+            local_irq_disable_min_depth: 0,
+            local_irq_disable_max_depth: 0,
             reachable: true,
             guards: HashMap::new(),
         }

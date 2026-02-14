@@ -130,4 +130,22 @@ impl VerifierState {
     pub(in crate::compiler::verifier_types) fn has_live_preempt_disable(&self) -> bool {
         self.preempt_disable_max_depth > 0
     }
+
+    pub(in crate::compiler::verifier_types) fn acquire_local_irq_disable(&mut self) {
+        self.local_irq_disable_min_depth = self.local_irq_disable_min_depth.saturating_add(1);
+        self.local_irq_disable_max_depth = self.local_irq_disable_max_depth.saturating_add(1);
+    }
+
+    pub(in crate::compiler::verifier_types) fn release_local_irq_disable(&mut self) -> bool {
+        if self.local_irq_disable_min_depth == 0 {
+            return false;
+        }
+        self.local_irq_disable_min_depth -= 1;
+        self.local_irq_disable_max_depth -= 1;
+        true
+    }
+
+    pub(in crate::compiler::verifier_types) fn has_live_local_irq_disable(&self) -> bool {
+        self.local_irq_disable_max_depth > 0
+    }
 }

@@ -2644,3 +2644,194 @@ fn test_verify_mir_kfunc_preempt_enable_rejected_after_mixed_join() {
         err
     );
 }
+
+#[test]
+fn test_verify_mir_kfunc_local_irq_save_restore_balanced() {
+    let (mut func, entry) = new_mir_function();
+    let flags = func.alloc_vreg();
+    let save_ret = func.alloc_vreg();
+    let restore_ret = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::StackSlot(slot),
+    });
+
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: save_ret,
+        kfunc: "bpf_local_irq_save".to_string(),
+        btf_id: None,
+        args: vec![flags],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: restore_ret,
+        kfunc: "bpf_local_irq_restore".to_string(),
+        btf_id: None,
+        args: vec![flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        flags,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(save_ret, MirType::I64);
+    types.insert(restore_ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected balanced local irq save/restore to verify");
+}
+
+#[test]
+fn test_verify_mir_kfunc_local_irq_restore_requires_matching_save() {
+    let (mut func, entry) = new_mir_function();
+    let flags = func.alloc_vreg();
+    let restore_ret = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: restore_ret,
+        kfunc: "bpf_local_irq_restore".to_string(),
+        btf_id: None,
+        args: vec![flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        flags,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(restore_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected unmatched local_irq_restore error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("requires a matching bpf_local_irq_save")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_local_irq_save_must_be_released_at_exit() {
+    let (mut func, entry) = new_mir_function();
+    let flags = func.alloc_vreg();
+    let save_ret = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::StackSlot(slot),
+    });
+
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: save_ret,
+        kfunc: "bpf_local_irq_save".to_string(),
+        btf_id: None,
+        args: vec![flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        flags,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(save_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected unreleased local irq disable error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("unreleased local irq disable")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_local_irq_restore_rejected_after_mixed_join() {
+    let (mut func, entry) = new_mir_function();
+    let save_path = func.alloc_block();
+    let no_save_path = func.alloc_block();
+    let join = func.alloc_block();
+    func.param_count = 1;
+
+    let selector = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let save_ret = func.alloc_vreg();
+    let restore_ret = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::StackSlot(slot),
+    });
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: save_path,
+        if_false: no_save_path,
+    };
+
+    func.block_mut(save_path)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: save_ret,
+            kfunc: "bpf_local_irq_save".to_string(),
+            btf_id: None,
+            args: vec![flags],
+        });
+    func.block_mut(save_path).terminator = MirInst::Jump { target: join };
+    func.block_mut(no_save_path).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(join).instructions.push(MirInst::CallKfunc {
+        dst: restore_ret,
+        kfunc: "bpf_local_irq_restore".to_string(),
+        btf_id: None,
+        args: vec![flags],
+    });
+    func.block_mut(join).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(selector, MirType::I64);
+    types.insert(cond, MirType::Bool);
+    types.insert(
+        flags,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(save_ret, MirType::I64);
+    types.insert(restore_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected mixed-path local_irq_restore error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("requires a matching bpf_local_irq_save")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}

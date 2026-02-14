@@ -722,6 +722,17 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::LocalIrqDisableAcquire => {
+                state.acquire_local_irq_disable();
+            }
+            VccInst::LocalIrqDisableRelease => {
+                if !state.release_local_irq_disable() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_local_irq_restore' requires a matching bpf_local_irq_save",
+                    ));
+                }
+            }
             VccInst::KfuncExpectRefKind {
                 ptr,
                 arg_idx,
@@ -908,6 +919,12 @@ impl VccVerifier {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased preempt disable at function exit",
+                    ));
+                }
+                if state.has_live_local_irq_disable() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "unreleased local irq disable at function exit",
                     ));
                 }
             }

@@ -114,6 +114,18 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
         }
         return;
     }
+    if kfunc == "bpf_local_irq_save" {
+        state.acquire_local_irq_disable();
+        return;
+    }
+    if kfunc == "bpf_local_irq_restore" {
+        if !state.release_local_irq_disable() {
+            errors.push(VerifierTypeError::new(
+                "kfunc 'bpf_local_irq_restore' requires a matching bpf_local_irq_save",
+            ));
+        }
+        return;
+    }
 
     let Some(expected_kind) = kfunc_release_kind(kfunc) else {
         return;

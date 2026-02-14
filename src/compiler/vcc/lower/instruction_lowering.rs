@@ -512,6 +512,12 @@ impl<'a> VccLowerer<'a> {
                 if kfunc == "bpf_preempt_enable" {
                     out.push(VccInst::PreemptDisableRelease);
                 }
+                if kfunc == "bpf_local_irq_save" {
+                    out.push(VccInst::LocalIrqDisableAcquire);
+                }
+                if kfunc == "bpf_local_irq_restore" {
+                    out.push(VccInst::LocalIrqDisableRelease);
+                }
             }
             MirInst::CallSubfn { dst, args, .. } => {
                 if args.len() > 5 {

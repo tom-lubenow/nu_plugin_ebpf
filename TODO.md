@@ -65,6 +65,7 @@ Last updated: 2026-02-14.
   - Verifier/VCC kfunc ref-lifetime parity now includes `scx_bpf_*` acquire/release flows for task cgroups and cpumask getter/put pairs (`scx_bpf_task_cgroup`, `scx_bpf_get_*cpumask`, `scx_bpf_put_*cpumask`).
   - Typed kfunc coverage now includes `bpf_rcu_read_lock` / `bpf_rcu_read_unlock`, with verifier_types and VCC parity checks for balanced lock/unlock usage across CFG joins and at function exit.
   - Typed kfunc coverage now includes `bpf_preempt_disable` / `bpf_preempt_enable`, with verifier_types and VCC parity checks for balanced usage across CFG joins and at function exit.
+  - Typed kfunc coverage now includes `bpf_local_irq_save` / `bpf_local_irq_restore`, with verifier_types and VCC compile-time parity checks for balanced usage across CFG joins and at function exit.
   - Typed kfunc coverage now includes `bpf_map_sum_elem_count` with kernel-pointer map-argument checks across type inference, verifier_types, and VCC.
   - Typed kfunc coverage now includes container traversal primitives (`bpf_list_front` / `bpf_list_back` / `bpf_rbtree_root` / `bpf_rbtree_left` / `bpf_rbtree_right`) with shared kernel-pointer argument checks.
   - Verifier/VCC kfunc ref-lifetime parity now tracks acquired reference kind (`task` vs `cgroup`), preserves unknown-kind merges across CFG joins, and rejects mixed-family releases (`bpf_task_release` vs `bpf_cgroup_release`).
@@ -152,6 +153,7 @@ Last updated: 2026-02-14.
   - Expanded built-in kfunc signature coverage for common task/cgroup kfunc families (`*_from_pid`, `*_from_id`, acquire/release, ancestry checks).
   - Added user-facing `kfunc-call` closure helper with literal-name lowering and optional `--btf-id`.
   - Remaining: expand signature coverage and pointer/ref-lifetime semantics from richer BTF metadata.
+  - Remaining: model typed stack-local/by-reference out-parameter semantics needed by kfuncs like `bpf_local_irq_save` / `bpf_local_irq_restore` (kernel expects an `irq_flag` stack slot pattern).
 
 - [ ] Improve control-flow expressiveness safely.
   - Keep bounded-loop guarantees while supporting more realistic higher-level control patterns.

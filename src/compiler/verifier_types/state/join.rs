@@ -14,6 +14,8 @@ impl VerifierState {
             && self.rcu_read_lock_max_depth == other.rcu_read_lock_max_depth
             && self.preempt_disable_min_depth == other.preempt_disable_min_depth
             && self.preempt_disable_max_depth == other.preempt_disable_max_depth
+            && self.local_irq_disable_min_depth == other.local_irq_disable_min_depth
+            && self.local_irq_disable_max_depth == other.local_irq_disable_max_depth
             && self.guards == other.guards
             && self.reachable == other.reachable
     }
@@ -125,6 +127,12 @@ impl VerifierState {
             preempt_disable_max_depth: self
                 .preempt_disable_max_depth
                 .max(other.preempt_disable_max_depth),
+            local_irq_disable_min_depth: self
+                .local_irq_disable_min_depth
+                .min(other.local_irq_disable_min_depth),
+            local_irq_disable_max_depth: self
+                .local_irq_disable_max_depth
+                .max(other.local_irq_disable_max_depth),
             reachable: true,
             guards,
         }

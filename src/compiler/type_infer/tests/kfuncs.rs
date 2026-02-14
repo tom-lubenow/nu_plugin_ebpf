@@ -523,6 +523,40 @@ fn test_infer_kfunc_preempt_disable_enable_signatures() {
 }
 
 #[test]
+fn test_infer_kfunc_local_irq_save_restore_signatures() {
+    let mut func = make_test_function();
+    let flags = func.alloc_vreg();
+    let save_ret = func.alloc_vreg();
+    let restore_ret = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::StackSlot(slot),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: save_ret,
+        kfunc: "bpf_local_irq_save".to_string(),
+        btf_id: None,
+        args: vec![flags],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: restore_ret,
+        kfunc: "bpf_local_irq_restore".to_string(),
+        btf_id: None,
+        args: vec![flags],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected local irq save/restore kfunc type inference");
+    assert!(matches!(types.get(&save_ret), Some(MirType::I64)));
+    assert!(matches!(types.get(&restore_ret), Some(MirType::I64)));
+}
+
+#[test]
 fn test_type_error_kfunc_map_sum_elem_count_requires_kernel_space() {
     let mut func = make_test_function();
     let map_ptr = func.alloc_vreg();
