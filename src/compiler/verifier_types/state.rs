@@ -1,32 +1,34 @@
+use super::*;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Nullability {
+pub(super) enum Nullability {
     NonNull,
     MaybeNull,
     Null,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ValueRange {
+pub(super) enum ValueRange {
     Unknown,
     Known { min: i64, max: i64 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PtrOrigin {
+pub(super) enum PtrOrigin {
     Stack(StackSlotId),
     Map,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct PtrBounds {
-    origin: PtrOrigin,
-    min: i64,
-    max: i64,
-    limit: i64,
+pub(super) struct PtrBounds {
+    pub(super) origin: PtrOrigin,
+    pub(super) min: i64,
+    pub(super) max: i64,
+    pub(super) limit: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum VerifierType {
+pub(super) enum VerifierType {
     Uninit,
     Unknown,
     Scalar,
@@ -41,7 +43,7 @@ enum VerifierType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Guard {
+pub(super) enum Guard {
     Ptr {
         ptr: VReg,
         true_is_non_null: bool,
@@ -63,23 +65,23 @@ enum Guard {
 }
 
 #[derive(Debug, Clone)]
-struct VerifierState {
-    regs: Vec<VerifierType>,
-    ranges: Vec<ValueRange>,
-    non_zero: Vec<bool>,
-    not_equal: Vec<Vec<i64>>,
-    ctx_field_sources: Vec<Option<CtxField>>,
-    live_ringbuf_refs: Vec<bool>,
-    live_kfunc_refs: Vec<bool>,
-    kfunc_ref_kinds: Vec<Option<KfuncRefKind>>,
-    reachable: bool,
-    guards: HashMap<VReg, Guard>,
+pub(super) struct VerifierState {
+    pub(super) regs: Vec<VerifierType>,
+    pub(super) ranges: Vec<ValueRange>,
+    pub(super) non_zero: Vec<bool>,
+    pub(super) not_equal: Vec<Vec<i64>>,
+    pub(super) ctx_field_sources: Vec<Option<CtxField>>,
+    pub(super) live_ringbuf_refs: Vec<bool>,
+    pub(super) live_kfunc_refs: Vec<bool>,
+    pub(super) kfunc_ref_kinds: Vec<Option<KfuncRefKind>>,
+    pub(super) reachable: bool,
+    pub(super) guards: HashMap<VReg, Guard>,
 }
 
 impl VerifierState {
     const MAX_NOT_EQUAL_FACTS: usize = 8;
 
-    fn new(total_vregs: usize) -> Self {
+    pub(super) fn new(total_vregs: usize) -> Self {
         Self {
             regs: vec![VerifierType::Uninit; total_vregs],
             ranges: vec![ValueRange::Unknown; total_vregs],
@@ -94,36 +96,36 @@ impl VerifierState {
         }
     }
 
-    fn get(&self, vreg: VReg) -> VerifierType {
+    pub(super) fn get(&self, vreg: VReg) -> VerifierType {
         self.regs
             .get(vreg.0 as usize)
             .copied()
             .unwrap_or(VerifierType::Unknown)
     }
 
-    fn get_range(&self, vreg: VReg) -> ValueRange {
+    pub(super) fn get_range(&self, vreg: VReg) -> ValueRange {
         self.ranges
             .get(vreg.0 as usize)
             .copied()
             .unwrap_or(ValueRange::Unknown)
     }
 
-    fn is_non_zero(&self, vreg: VReg) -> bool {
+    pub(super) fn is_non_zero(&self, vreg: VReg) -> bool {
         self.non_zero.get(vreg.0 as usize).copied().unwrap_or(false)
     }
 
-    fn not_equal_consts(&self, vreg: VReg) -> &[i64] {
+    pub(super) fn not_equal_consts(&self, vreg: VReg) -> &[i64] {
         self.not_equal
             .get(vreg.0 as usize)
             .map(Vec::as_slice)
             .unwrap_or(&[])
     }
 
-    fn set(&mut self, vreg: VReg, ty: VerifierType) {
+    pub(super) fn set(&mut self, vreg: VReg, ty: VerifierType) {
         self.set_with_range(vreg, ty, ValueRange::Unknown);
     }
 
-    fn set_with_range(&mut self, vreg: VReg, ty: VerifierType, range: ValueRange) {
+    pub(super) fn set_with_range(&mut self, vreg: VReg, ty: VerifierType, range: ValueRange) {
         if let Some(slot) = self.regs.get_mut(vreg.0 as usize) {
             *slot = ty;
         }
@@ -142,19 +144,19 @@ impl VerifierState {
         self.guards.remove(&vreg);
     }
 
-    fn set_ctx_field_source(&mut self, vreg: VReg, source: Option<CtxField>) {
+    pub(super) fn set_ctx_field_source(&mut self, vreg: VReg, source: Option<CtxField>) {
         if let Some(slot) = self.ctx_field_sources.get_mut(vreg.0 as usize) {
             *slot = source;
         }
     }
 
-    fn ctx_field_source(&self, vreg: VReg) -> Option<&CtxField> {
+    pub(super) fn ctx_field_source(&self, vreg: VReg) -> Option<&CtxField> {
         self.ctx_field_sources
             .get(vreg.0 as usize)
             .and_then(|source| source.as_ref())
     }
 
-    fn find_ctx_field_type(&self, field: &CtxField) -> Option<VerifierType> {
+    pub(super) fn find_ctx_field_type(&self, field: &CtxField) -> Option<VerifierType> {
         for (idx, source) in self.ctx_field_sources.iter().enumerate() {
             if source.as_ref() == Some(field) {
                 let ty = self.regs[idx];
@@ -166,7 +168,11 @@ impl VerifierState {
         None
     }
 
-    fn refine_ctx_field_nullability(&mut self, field: &CtxField, nullability: Nullability) {
+    pub(super) fn refine_ctx_field_nullability(
+        &mut self,
+        field: &CtxField,
+        nullability: Nullability,
+    ) {
         for idx in 0..self.ctx_field_sources.len() {
             if self.ctx_field_sources[idx].as_ref() != Some(field) {
                 continue;
@@ -190,7 +196,7 @@ impl VerifierState {
         }
     }
 
-    fn set_not_equal_const(&mut self, vreg: VReg, value: i64) {
+    pub(super) fn set_not_equal_const(&mut self, vreg: VReg, value: i64) {
         if let Some(slot) = self.not_equal.get_mut(vreg.0 as usize) {
             if !slot.contains(&value) {
                 slot.push(value);
@@ -202,29 +208,29 @@ impl VerifierState {
         }
     }
 
-    fn clear_not_equal_const(&mut self, vreg: VReg) {
+    pub(super) fn clear_not_equal_const(&mut self, vreg: VReg) {
         if let Some(slot) = self.not_equal.get_mut(vreg.0 as usize) {
             slot.clear();
         }
     }
 
-    fn retain_not_equal_in_range(&mut self, vreg: VReg, range: ValueRange) {
+    pub(super) fn retain_not_equal_in_range(&mut self, vreg: VReg, range: ValueRange) {
         if let Some(slot) = self.not_equal.get_mut(vreg.0 as usize) {
             slot.retain(|value| range_may_equal(range, *value));
         }
     }
 
-    fn mark_unreachable(&mut self) {
+    pub(super) fn mark_unreachable(&mut self) {
         self.reachable = false;
     }
 
-    fn set_live_ringbuf_ref(&mut self, id: VReg, live: bool) {
+    pub(super) fn set_live_ringbuf_ref(&mut self, id: VReg, live: bool) {
         if let Some(slot) = self.live_ringbuf_refs.get_mut(id.0 as usize) {
             *slot = live;
         }
     }
 
-    fn set_live_kfunc_ref(&mut self, id: VReg, live: bool, kind: Option<KfuncRefKind>) {
+    pub(super) fn set_live_kfunc_ref(&mut self, id: VReg, live: bool, kind: Option<KfuncRefKind>) {
         if let Some(slot) = self.live_kfunc_refs.get_mut(id.0 as usize) {
             *slot = live;
         }
@@ -233,7 +239,7 @@ impl VerifierState {
         }
     }
 
-    fn invalidate_ringbuf_ref(&mut self, id: VReg) {
+    pub(super) fn invalidate_ringbuf_ref(&mut self, id: VReg) {
         self.set_live_ringbuf_ref(id, false);
         for idx in 0..self.regs.len() {
             let reg = VReg(idx as u32);
@@ -254,7 +260,7 @@ impl VerifierState {
         }
     }
 
-    fn invalidate_kfunc_ref(&mut self, id: VReg) {
+    pub(super) fn invalidate_kfunc_ref(&mut self, id: VReg) {
         self.set_live_kfunc_ref(id, false, None);
         for idx in 0..self.regs.len() {
             let reg = VReg(idx as u32);
@@ -275,36 +281,36 @@ impl VerifierState {
         }
     }
 
-    fn has_live_ringbuf_refs(&self) -> bool {
+    pub(super) fn has_live_ringbuf_refs(&self) -> bool {
         self.live_ringbuf_refs
             .iter()
             .copied()
             .any(std::convert::identity)
     }
 
-    fn has_live_kfunc_refs(&self) -> bool {
+    pub(super) fn has_live_kfunc_refs(&self) -> bool {
         self.live_kfunc_refs
             .iter()
             .copied()
             .any(std::convert::identity)
     }
 
-    fn is_live_kfunc_ref(&self, id: VReg) -> bool {
+    pub(super) fn is_live_kfunc_ref(&self, id: VReg) -> bool {
         self.live_kfunc_refs
             .get(id.0 as usize)
             .copied()
             .unwrap_or(false)
     }
 
-    fn kfunc_ref_kind(&self, id: VReg) -> Option<KfuncRefKind> {
+    pub(super) fn kfunc_ref_kind(&self, id: VReg) -> Option<KfuncRefKind> {
         self.kfunc_ref_kinds.get(id.0 as usize).copied().flatten()
     }
 
-    fn is_reachable(&self) -> bool {
+    pub(super) fn is_reachable(&self) -> bool {
         self.reachable
     }
 
-    fn join(&self, other: &VerifierState) -> VerifierState {
+    pub(super) fn join(&self, other: &VerifierState) -> VerifierState {
         if !self.reachable {
             return other.clone();
         }

@@ -19,7 +19,8 @@ use super::mir::{
     STRING_COUNTER_MAP_NAME, StackSlotId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, VReg,
 };
 
-include!("verifier_types/state.rs");
+mod state;
+use state::*;
 
 mod apply;
 mod calls;
