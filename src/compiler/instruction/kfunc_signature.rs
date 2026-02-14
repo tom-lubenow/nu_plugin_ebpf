@@ -271,6 +271,18 @@ impl KfuncSignature {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: KfuncRetKind::Void,
             }),
+            "bpf_cpumask_release_dtor" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "bpf_cpumask_populate" => Some(Self {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
             "bpf_cpumask_and" => Some(Self {
                 min_args: 3,
                 max_args: 3,

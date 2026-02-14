@@ -562,6 +562,22 @@ fn test_kfunc_signature_task_vma_iter_kfuncs() {
 
 #[test]
 fn test_kfunc_signature_cpumask_and() {
+    let populate = KfuncSignature::for_name("bpf_cpumask_populate")
+        .expect("expected bpf_cpumask_populate kfunc signature");
+    assert_eq!(populate.min_args, 3);
+    assert_eq!(populate.max_args, 3);
+    assert_eq!(populate.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(populate.arg_kind(1), KfuncArgKind::Pointer);
+    assert_eq!(populate.arg_kind(2), KfuncArgKind::Scalar);
+    assert_eq!(populate.ret_kind, KfuncRetKind::Scalar);
+
+    let release_dtor = KfuncSignature::for_name("bpf_cpumask_release_dtor")
+        .expect("expected bpf_cpumask_release_dtor kfunc signature");
+    assert_eq!(release_dtor.min_args, 1);
+    assert_eq!(release_dtor.max_args, 1);
+    assert_eq!(release_dtor.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(release_dtor.ret_kind, KfuncRetKind::Void);
+
     let sig = KfuncSignature::for_name("bpf_cpumask_and")
         .expect("expected bpf_cpumask_and kfunc signature");
     assert_eq!(sig.min_args, 3);
@@ -835,6 +851,10 @@ fn test_kfunc_ref_kind_mappings() {
         Some(KfuncRefKind::Cpumask)
     );
     assert_eq!(
+        kfunc_release_ref_kind("bpf_cpumask_release_dtor"),
+        Some(KfuncRefKind::Cpumask)
+    );
+    assert_eq!(
         kfunc_release_ref_kind("scx_bpf_put_cpumask"),
         Some(KfuncRefKind::Cpumask)
     );
@@ -876,6 +896,14 @@ fn test_kfunc_pointer_arg_ref_kind_mappings() {
     );
     assert_eq!(
         kfunc_pointer_arg_ref_kind("bpf_cpumask_release", 0),
+        Some(KfuncRefKind::Cpumask)
+    );
+    assert_eq!(
+        kfunc_pointer_arg_ref_kind("bpf_cpumask_release_dtor", 0),
+        Some(KfuncRefKind::Cpumask)
+    );
+    assert_eq!(
+        kfunc_pointer_arg_ref_kind("bpf_cpumask_populate", 0),
         Some(KfuncRefKind::Cpumask)
     );
     assert_eq!(

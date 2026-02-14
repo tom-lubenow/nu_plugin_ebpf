@@ -227,6 +227,44 @@ fn test_infer_kfunc_cpumask_create_pointer_return() {
 }
 
 #[test]
+fn test_infer_kfunc_cpumask_populate_signature() {
+    let mut func = make_test_function();
+    let cpumask = func.alloc_vreg();
+    let src = func.alloc_vreg();
+    let src_sz = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallKfunc {
+        dst: cpumask,
+        kfunc: "bpf_cpumask_create".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: src,
+        src: MirValue::StackSlot(slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: src_sz,
+        src: MirValue::Const(8),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_cpumask_populate".to_string(),
+        btf_id: None,
+        args: vec![cpumask, src, src_sz],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected cpumask_populate kfunc type inference");
+    assert!(matches!(types.get(&dst), Some(MirType::I64)));
+}
+
+#[test]
 fn test_infer_kfunc_obj_new_pointer_return() {
     let mut func = make_test_function();
     let type_id = func.alloc_vreg();

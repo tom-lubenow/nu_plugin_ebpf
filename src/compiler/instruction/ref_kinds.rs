@@ -28,9 +28,10 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
         "bpf_cgroup_release" => Some(KfuncRefKind::Cgroup),
         "bpf_put_file" => Some(KfuncRefKind::File),
         "bpf_obj_drop_impl" | "bpf_percpu_obj_drop_impl" => Some(KfuncRefKind::Object),
-        "bpf_cpumask_release" | "scx_bpf_put_cpumask" | "scx_bpf_put_idle_cpumask" => {
-            Some(KfuncRefKind::Cpumask)
-        }
+        "bpf_cpumask_release"
+        | "bpf_cpumask_release_dtor"
+        | "scx_bpf_put_cpumask"
+        | "scx_bpf_put_idle_cpumask" => Some(KfuncRefKind::Cpumask),
         _ => None,
     }
 }
@@ -129,6 +130,8 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
         (kfunc, arg_idx),
         ("bpf_cpumask_acquire", 0)
             | ("bpf_cpumask_release", 0)
+            | ("bpf_cpumask_release_dtor", 0)
+            | ("bpf_cpumask_populate", 0)
             | ("bpf_cpumask_and", 0)
             | ("bpf_cpumask_and", 1)
             | ("bpf_cpumask_and", 2)
