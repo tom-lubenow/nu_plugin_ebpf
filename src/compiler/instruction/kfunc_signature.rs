@@ -336,6 +336,12 @@ impl KfuncSignature {
                 arg_kinds: [S, S, S, S, S],
                 ret_kind: KfuncRetKind::Scalar,
             }),
+            "scx_bpf_cpu_rq" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
             "scx_bpf_cpuperf_cap" => Some(Self {
                 min_args: 1,
                 max_args: 1,
@@ -425,6 +431,30 @@ impl KfuncSignature {
                 max_args: 1,
                 arg_kinds: [S, S, S, S, S],
                 ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_dump_bstr" => Some(Self {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "scx_bpf_error_bstr" => Some(Self {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "scx_bpf_events" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "scx_bpf_exit_bstr" => Some(Self {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [S, P, P, S, S],
+                ret_kind: KfuncRetKind::Void,
             }),
             "scx_bpf_kick_cpu" => Some(Self {
                 min_args: 2,

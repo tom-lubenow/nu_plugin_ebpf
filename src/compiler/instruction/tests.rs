@@ -613,6 +613,49 @@ fn test_kfunc_signature_scx_task_cgroup_and_select_cpu() {
     assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
     assert_eq!(sig.ret_kind, KfuncRetKind::Void);
 
+    let sig = KfuncSignature::for_name("scx_bpf_cpu_rq")
+        .expect("expected scx_bpf_cpu_rq kfunc signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
+
+    let sig = KfuncSignature::for_name("scx_bpf_dump_bstr")
+        .expect("expected scx_bpf_dump_bstr kfunc signature");
+    assert_eq!(sig.min_args, 3);
+    assert_eq!(sig.max_args, 3);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Void);
+
+    let sig = KfuncSignature::for_name("scx_bpf_error_bstr")
+        .expect("expected scx_bpf_error_bstr kfunc signature");
+    assert_eq!(sig.min_args, 3);
+    assert_eq!(sig.max_args, 3);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Void);
+
+    let sig = KfuncSignature::for_name("scx_bpf_events")
+        .expect("expected scx_bpf_events kfunc signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Void);
+
+    let sig = KfuncSignature::for_name("scx_bpf_exit_bstr")
+        .expect("expected scx_bpf_exit_bstr kfunc signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(3), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Void);
+
     let sig = KfuncSignature::for_name("scx_bpf_get_online_cpumask")
         .expect("expected scx_bpf_get_online_cpumask kfunc signature");
     assert_eq!(sig.min_args, 0);

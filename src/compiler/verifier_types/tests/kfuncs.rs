@@ -273,6 +273,46 @@ fn test_kfunc_cpumask_and_requires_pointer_args() {
 }
 
 #[test]
+fn test_kfunc_scx_events_requires_pointer_arg0() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let events = func.alloc_vreg();
+    let events_sz = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: events,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: events_sz,
+        src: MirValue::Const(8),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_events".to_string(),
+        btf_id: None,
+        args: vec![events, events_sz],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(events, MirType::I64);
+    types.insert(events_sz, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected scx_bpf_events pointer-arg error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'scx_bpf_events' arg0 expects pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_kfunc_task_acquire_rejects_cgroup_reference_argument() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
