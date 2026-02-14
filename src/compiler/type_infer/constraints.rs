@@ -78,6 +78,7 @@ impl<'a> TypeInference<'a> {
                                     | BpfHelper::SkcToTcpRequestSock
                                     | BpfHelper::SkcToUdp6Sock
                                     | BpfHelper::SkcToUnixSock
+                                    | BpfHelper::SockFromFile
                                     | BpfHelper::SkcToTcpSock,
                                 ) => AddressSpace::Kernel,
                                 Some(BpfHelper::GetListenerSock) => AddressSpace::Kernel,

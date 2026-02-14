@@ -1373,6 +1373,50 @@ fn test_infer_helper_additional_skc_casts_return_kernel_pointer() {
 }
 
 #[test]
+fn test_infer_helper_sock_from_file_returns_kernel_pointer() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let file = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: file,
+        kfunc: "bpf_get_task_exe_file".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SockFromFile as u32,
+        args: vec![MirValue::VReg(file)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti.infer(&func).unwrap();
+    match types.get(&dst) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(*address_space, AddressSpace::Kernel);
+        }
+        other => panic!(
+            "Expected helper sock_from_file kernel pointer return, got {:?}",
+            other
+        ),
+    }
+}
+
+#[test]
 fn test_type_error_helper_sk_fullsock_rejects_non_kernel_pointer() {
     let mut func = make_test_function();
     let sock_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
@@ -1532,6 +1576,34 @@ fn test_type_error_helper_additional_skc_casts_reject_non_kernel_pointer() {
             errs
         );
     }
+}
+
+#[test]
+fn test_type_error_helper_sock_from_file_rejects_non_kernel_pointer() {
+    let mut func = make_test_function();
+    let file_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let file = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: file,
+        src: MirValue::StackSlot(file_slot),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SockFromFile as u32,
+        args: vec![MirValue::VReg(file)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected non-kernel sock_from_file pointer error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper sock_from_file file expects pointer in [Kernel], got Stack")
+    }));
 }
 
 #[test]

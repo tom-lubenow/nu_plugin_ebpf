@@ -42,6 +42,7 @@ impl BpfHelper {
             146 => Some(Self::InodeStorageDelete),
             156 => Some(Self::TaskStorageGet),
             157 => Some(Self::TaskStorageDelete),
+            162 => Some(Self::SockFromFile),
             178 => Some(Self::SkcToUnixSock),
             114 => Some(Self::ProbeReadUserStr),
             115 => Some(Self::ProbeReadKernelStr),
@@ -191,6 +192,12 @@ impl BpfHelper {
                 max_args: 2,
                 arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SockFromFile => HelperSignature {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::PointerMaybeNull,
             },
             BpfHelper::SkRelease => HelperSignature {
                 min_args: 1,
@@ -732,6 +739,14 @@ impl BpfHelper {
             },
         ];
 
+        const SOCK_FROM_FILE_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper sock_from_file file",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
         const GET_LISTENER_SOCK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 0,
             op: "helper get_listener_sock sk",
@@ -958,6 +973,11 @@ impl BpfHelper {
             },
             BpfHelper::InodeStorageDelete => HelperSemantics {
                 ptr_arg_rules: INODE_STORAGE_DELETE_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SockFromFile => HelperSemantics {
+                ptr_arg_rules: SOCK_FROM_FILE_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
