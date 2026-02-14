@@ -859,6 +859,11 @@ fn test_verify_mir_kfunc_iter_task_vma_new_rejects_cgroup_reference_for_task_arg
     let cgroup = func.alloc_vreg();
     let addr = func.alloc_vreg();
     let dst = func.alloc_vreg();
+    let iter_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: it,
+        src: MirValue::StackSlot(iter_slot),
+    });
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: cgid,
         src: MirValue::Const(1),
@@ -909,6 +914,339 @@ fn test_verify_mir_kfunc_iter_task_vma_new_rejects_cgroup_reference_for_task_arg
     );
     assert!(
         err.iter().any(|e| e.message.contains("cgroup reference")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_iter_task_vma_new_requires_stack_iterator_pointer() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 2;
+
+    let iter = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let addr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: addr,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_iter_task_vma_new".to_string(),
+        btf_id: None,
+        args: vec![iter, task, addr],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(addr, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected iter_task_vma_new stack-pointer error");
+    assert!(
+        err.iter().any(|e| {
+            e.message.contains("arg0 expects pointer in [Stack]")
+                || e.message.contains("arg0 expects stack slot pointer")
+        }),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_iter_task_vma_lifecycle_balanced() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let task = func.alloc_vreg();
+    let iter = func.alloc_vreg();
+    let addr = func.alloc_vreg();
+    let new_ret = func.alloc_vreg();
+    let next_ret = func.alloc_vreg();
+    let destroy_ret = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: addr,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: new_ret,
+        kfunc: "bpf_iter_task_vma_new".to_string(),
+        btf_id: None,
+        args: vec![iter, task, addr],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: next_ret,
+        kfunc: "bpf_iter_task_vma_next".to_string(),
+        btf_id: None,
+        args: vec![iter],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: destroy_ret,
+        kfunc: "bpf_iter_task_vma_destroy".to_string(),
+        btf_id: None,
+        args: vec![iter],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(addr, MirType::I64);
+    types.insert(new_ret, MirType::I64);
+    types.insert(
+        next_ret,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(destroy_ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected balanced iter_task_vma new/next/destroy to verify");
+}
+
+#[test]
+fn test_verify_mir_kfunc_iter_task_vma_next_requires_matching_new_slot() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let task = func.alloc_vreg();
+    let iter_new = func.alloc_vreg();
+    let iter_next = func.alloc_vreg();
+    let addr = func.alloc_vreg();
+    let new_ret = func.alloc_vreg();
+    let next_ret = func.alloc_vreg();
+    let new_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let next_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter_new,
+        src: MirValue::StackSlot(new_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter_next,
+        src: MirValue::StackSlot(next_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: addr,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: new_ret,
+        kfunc: "bpf_iter_task_vma_new".to_string(),
+        btf_id: None,
+        args: vec![iter_new, task, addr],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: next_ret,
+        kfunc: "bpf_iter_task_vma_next".to_string(),
+        btf_id: None,
+        args: vec![iter_next],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        iter_new,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        iter_next,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(addr, MirType::I64);
+    types.insert(new_ret, MirType::I64);
+    types.insert(
+        next_ret,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected iter_task_vma_next slot mismatch");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires a matching bpf_iter_task_vma_new")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_iter_task_vma_destroy_requires_matching_new_slot() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let task = func.alloc_vreg();
+    let iter_new = func.alloc_vreg();
+    let iter_destroy = func.alloc_vreg();
+    let addr = func.alloc_vreg();
+    let new_ret = func.alloc_vreg();
+    let destroy_ret = func.alloc_vreg();
+    let new_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let destroy_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter_new,
+        src: MirValue::StackSlot(new_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter_destroy,
+        src: MirValue::StackSlot(destroy_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: addr,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: new_ret,
+        kfunc: "bpf_iter_task_vma_new".to_string(),
+        btf_id: None,
+        args: vec![iter_new, task, addr],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: destroy_ret,
+        kfunc: "bpf_iter_task_vma_destroy".to_string(),
+        btf_id: None,
+        args: vec![iter_destroy],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        iter_new,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        iter_destroy,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(addr, MirType::I64);
+    types.insert(new_ret, MirType::I64);
+    types.insert(destroy_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected iter_task_vma_destroy slot mismatch");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires a matching bpf_iter_task_vma_new")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_iter_task_vma_new_must_be_destroyed_at_exit() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let task = func.alloc_vreg();
+    let iter = func.alloc_vreg();
+    let addr = func.alloc_vreg();
+    let new_ret = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: addr,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: new_ret,
+        kfunc: "bpf_iter_task_vma_new".to_string(),
+        btf_id: None,
+        args: vec![iter, task, addr],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(addr, MirType::I64);
+    types.insert(new_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected unreleased iter_task_vma iterator");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("unreleased iter_task_vma iterator")),
         "unexpected error messages: {:?}",
         err
     );

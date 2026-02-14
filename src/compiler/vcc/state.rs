@@ -11,6 +11,9 @@ struct VccState {
     local_irq_disable_min_depth: u32,
     local_irq_disable_max_depth: u32,
     local_irq_disable_slots: HashMap<StackSlotId, (u32, u32)>,
+    iter_task_vma_min_depth: u32,
+    iter_task_vma_max_depth: u32,
+    iter_task_vma_slots: HashMap<StackSlotId, (u32, u32)>,
     res_spin_lock_min_depth: u32,
     res_spin_lock_max_depth: u32,
     res_spin_lock_irqsave_min_depth: u32,
@@ -56,6 +59,9 @@ impl VccState {
             local_irq_disable_min_depth: 0,
             local_irq_disable_max_depth: 0,
             local_irq_disable_slots: HashMap::new(),
+            iter_task_vma_min_depth: 0,
+            iter_task_vma_max_depth: 0,
+            iter_task_vma_slots: HashMap::new(),
             res_spin_lock_min_depth: 0,
             res_spin_lock_max_depth: 0,
             res_spin_lock_irqsave_min_depth: 0,
@@ -221,6 +227,34 @@ impl VccState {
 
     fn has_live_local_irq_disable(&self) -> bool {
         self.local_irq_disable_max_depth > 0
+    }
+
+    fn acquire_iter_task_vma_slot(&mut self, slot: StackSlotId) {
+        self.iter_task_vma_min_depth = self.iter_task_vma_min_depth.saturating_add(1);
+        self.iter_task_vma_max_depth = self.iter_task_vma_max_depth.saturating_add(1);
+        increment_slot_depth(&mut self.iter_task_vma_slots, slot);
+    }
+
+    fn use_iter_task_vma_slot(&self, slot: StackSlotId) -> bool {
+        self.iter_task_vma_slots
+            .get(&slot)
+            .is_some_and(|(_, max_depth)| *max_depth > 0)
+    }
+
+    fn release_iter_task_vma_slot(&mut self, slot: StackSlotId) -> bool {
+        if self.iter_task_vma_min_depth == 0 {
+            return false;
+        }
+        if !decrement_slot_depth(&mut self.iter_task_vma_slots, slot) {
+            return false;
+        }
+        self.iter_task_vma_min_depth -= 1;
+        self.iter_task_vma_max_depth -= 1;
+        true
+    }
+
+    fn has_live_iter_task_vma(&self) -> bool {
+        self.iter_task_vma_max_depth > 0
     }
 
     fn acquire_res_spin_lock(&mut self) {
@@ -412,6 +446,9 @@ impl VccState {
                 &self.local_irq_disable_slots,
                 &other.local_irq_disable_slots,
             ),
+            iter_task_vma_min_depth: self.iter_task_vma_min_depth.min(other.iter_task_vma_min_depth),
+            iter_task_vma_max_depth: self.iter_task_vma_max_depth.max(other.iter_task_vma_max_depth),
+            iter_task_vma_slots: merge_slot_depths(&self.iter_task_vma_slots, &other.iter_task_vma_slots),
             res_spin_lock_min_depth: self
                 .res_spin_lock_min_depth
                 .min(other.res_spin_lock_min_depth),
@@ -463,6 +500,9 @@ impl VccState {
             local_irq_disable_min_depth: self.local_irq_disable_min_depth,
             local_irq_disable_max_depth: self.local_irq_disable_max_depth,
             local_irq_disable_slots: self.local_irq_disable_slots.clone(),
+            iter_task_vma_min_depth: self.iter_task_vma_min_depth,
+            iter_task_vma_max_depth: self.iter_task_vma_max_depth,
+            iter_task_vma_slots: self.iter_task_vma_slots.clone(),
             res_spin_lock_min_depth: self.res_spin_lock_min_depth,
             res_spin_lock_max_depth: self.res_spin_lock_max_depth,
             res_spin_lock_irqsave_min_depth: self.res_spin_lock_irqsave_min_depth,

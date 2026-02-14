@@ -775,6 +775,42 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::IterTaskVmaNew { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_task_vma_new' arg0")
+                else {
+                    return;
+                };
+                state.acquire_iter_task_vma_slot(slot);
+            }
+            VccInst::IterTaskVmaNext { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_task_vma_next' arg0")
+                else {
+                    return;
+                };
+                if !state.use_iter_task_vma_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_iter_task_vma_next' requires a matching bpf_iter_task_vma_new",
+                    ));
+                }
+            }
+            VccInst::IterTaskVmaDestroy { iter } => {
+                let Some(slot) = self.stack_slot_from_reg(
+                    state,
+                    *iter,
+                    "kfunc 'bpf_iter_task_vma_destroy' arg0",
+                ) else {
+                    return;
+                };
+                if !state.release_iter_task_vma_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_iter_task_vma_destroy' requires a matching bpf_iter_task_vma_new",
+                    ));
+                }
+            }
             VccInst::KfuncExpectRefKind {
                 ptr,
                 arg_idx,
@@ -1023,6 +1059,12 @@ impl VccVerifier {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased res spin lock irqsave at function exit",
+                    ));
+                }
+                if state.has_live_iter_task_vma() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "unreleased iter_task_vma iterator at function exit",
                     ));
                 }
             }

@@ -17,6 +17,9 @@ impl VerifierState {
             && self.local_irq_disable_min_depth == other.local_irq_disable_min_depth
             && self.local_irq_disable_max_depth == other.local_irq_disable_max_depth
             && self.local_irq_disable_slots == other.local_irq_disable_slots
+            && self.iter_task_vma_min_depth == other.iter_task_vma_min_depth
+            && self.iter_task_vma_max_depth == other.iter_task_vma_max_depth
+            && self.iter_task_vma_slots == other.iter_task_vma_slots
             && self.res_spin_lock_min_depth == other.res_spin_lock_min_depth
             && self.res_spin_lock_max_depth == other.res_spin_lock_max_depth
             && self.res_spin_lock_irqsave_min_depth == other.res_spin_lock_irqsave_min_depth
@@ -142,6 +145,16 @@ impl VerifierState {
             local_irq_disable_slots: join_slot_depths(
                 &self.local_irq_disable_slots,
                 &other.local_irq_disable_slots,
+            ),
+            iter_task_vma_min_depth: self
+                .iter_task_vma_min_depth
+                .min(other.iter_task_vma_min_depth),
+            iter_task_vma_max_depth: self
+                .iter_task_vma_max_depth
+                .max(other.iter_task_vma_max_depth),
+            iter_task_vma_slots: join_slot_depths(
+                &self.iter_task_vma_slots,
+                &other.iter_task_vma_slots,
             ),
             res_spin_lock_min_depth: self
                 .res_spin_lock_min_depth

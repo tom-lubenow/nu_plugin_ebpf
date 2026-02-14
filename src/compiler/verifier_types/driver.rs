@@ -108,6 +108,11 @@ pub fn verify_mir(
                         "unreleased res spin lock irqsave at function exit",
                     ));
                 }
+                if state.has_live_iter_task_vma() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased iter_task_vma iterator at function exit",
+                    ));
+                }
             }
             MirInst::TailCall { prog_map, index } => {
                 if prog_map.kind != MapKind::ProgArray {
@@ -156,6 +161,11 @@ pub fn verify_mir(
                 if state.has_live_res_spin_lock_irqsave() {
                     errors.push(VerifierTypeError::new(
                         "unreleased res spin lock irqsave at function exit",
+                    ));
+                }
+                if state.has_live_iter_task_vma() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased iter_task_vma iterator at function exit",
                     ));
                 }
             }

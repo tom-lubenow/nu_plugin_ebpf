@@ -271,6 +271,15 @@ pub enum VccInst {
     ResSpinLockIrqsaveRelease {
         flags: VccReg,
     },
+    IterTaskVmaNew {
+        iter: VccReg,
+    },
+    IterTaskVmaNext {
+        iter: VccReg,
+    },
+    IterTaskVmaDestroy {
+        iter: VccReg,
+    },
     KfuncExpectRefKind {
         ptr: VccValue,
         arg_idx: usize,

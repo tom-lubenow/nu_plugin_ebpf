@@ -1045,8 +1045,21 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
         "bpf_res_spin_unlock_irqrestore",
         1
     ));
+    assert!(kfunc_pointer_arg_requires_stack("bpf_iter_task_vma_new", 0));
+    assert!(kfunc_pointer_arg_requires_stack(
+        "bpf_iter_task_vma_next",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack(
+        "bpf_iter_task_vma_destroy",
+        0
+    ));
     assert!(!kfunc_pointer_arg_requires_stack("bpf_res_spin_lock", 0));
     assert!(!kfunc_pointer_arg_requires_stack("bpf_task_release", 0));
+    assert!(!kfunc_pointer_arg_requires_stack(
+        "bpf_iter_task_vma_new",
+        1
+    ));
 }
 
 #[test]

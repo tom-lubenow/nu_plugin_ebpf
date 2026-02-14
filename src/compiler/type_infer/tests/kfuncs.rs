@@ -632,6 +632,48 @@ fn test_type_error_kfunc_local_irq_save_requires_stack_pointer() {
 }
 
 #[test]
+fn test_type_error_kfunc_iter_task_vma_new_requires_stack_iterator_pointer() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let addr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: addr,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_iter_task_vma_new".to_string(),
+        btf_id: None,
+        args: vec![task, task, addr],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected iter_task_vma_new stack-iterator type error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("arg0 expects stack pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_infer_kfunc_res_spin_lock_signatures() {
     let mut func = make_test_function();
     let lock = func.alloc_vreg();

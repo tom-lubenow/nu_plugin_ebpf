@@ -217,5 +217,8 @@ pub fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
             | ("bpf_local_irq_restore", 0)
             | ("bpf_res_spin_lock_irqsave", 1)
             | ("bpf_res_spin_unlock_irqrestore", 1)
+            | ("bpf_iter_task_vma_new", 0)
+            | ("bpf_iter_task_vma_next", 0)
+            | ("bpf_iter_task_vma_destroy", 0)
     )
 }
