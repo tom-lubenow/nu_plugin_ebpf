@@ -373,6 +373,63 @@ fn test_verify_mir_kfunc_get_task_exe_file_rejects_cgroup_reference_argument() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_scx_task_cgroup_rejects_cgroup_reference_argument() {
+    let (mut func, entry) = new_mir_function();
+
+    let cgid = func.alloc_vreg();
+    let cgroup = func.alloc_vreg();
+    let out = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: cgid,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: cgroup,
+        kfunc: "bpf_cgroup_from_id".to_string(),
+        btf_id: None,
+        args: vec![cgid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: out,
+        kfunc: "scx_bpf_task_cgroup".to_string(),
+        btf_id: None,
+        args: vec![cgroup],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(cgid, MirType::I64);
+    types.insert(
+        cgroup,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        out,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected scx task_cgroup provenance mismatch");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'scx_bpf_task_cgroup' arg0 expects task reference")),
+        "unexpected error messages: {:?}",
+        err
+    );
+    assert!(
+        err.iter().any(|e| e.message.contains("cgroup reference")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_kfunc_get_task_exe_file_requires_null_check_for_tracked_task_reference() {
     let (mut func, entry) = new_mir_function();
 

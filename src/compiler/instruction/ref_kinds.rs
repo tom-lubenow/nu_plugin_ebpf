@@ -86,6 +86,9 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
             | ("bpf_iter_task_vma_new", 1)
             | ("scx_bpf_dsq_insert", 0)
             | ("scx_bpf_dsq_insert_vtime", 0)
+            | ("scx_bpf_select_cpu_and", 0)
+            | ("scx_bpf_select_cpu_dfl", 0)
+            | ("scx_bpf_task_cgroup", 0)
             | ("scx_bpf_task_cpu", 0)
             | ("scx_bpf_task_running", 0)
     ) {
@@ -153,6 +156,7 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
             | ("scx_bpf_pick_any_cpu_node", 0)
             | ("scx_bpf_pick_idle_cpu", 0)
             | ("scx_bpf_pick_idle_cpu_node", 0)
+            | ("scx_bpf_select_cpu_and", 3)
     ) {
         return Some(KfuncRefKind::Cpumask);
     }

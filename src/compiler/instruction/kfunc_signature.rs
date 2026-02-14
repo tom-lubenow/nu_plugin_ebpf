@@ -456,6 +456,24 @@ impl KfuncSignature {
                 arg_kinds: [S, S, S, S, S],
                 ret_kind: KfuncRetKind::Scalar,
             }),
+            "scx_bpf_select_cpu_and" => Some(Self {
+                min_args: 5,
+                max_args: 5,
+                arg_kinds: [P, S, S, P, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_select_cpu_dfl" => Some(Self {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, S, S, P, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_task_cgroup" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
             "scx_bpf_task_cpu" => Some(Self {
                 min_args: 1,
                 max_args: 1,
