@@ -311,6 +311,102 @@ fn test_type_error_helper_ringbuf_query_rejects_non_stack_map_arg() {
 }
 
 #[test]
+fn test_type_error_helper_tcp_check_syncookie_rejects_non_kernel_sk_pointer() {
+    let mut func = make_test_function();
+    let sk_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let sk = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let kptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: sk,
+        src: MirValue::StackSlot(sk_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: kptr,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TcpCheckSyncookie as u32,
+        args: vec![
+            MirValue::VReg(sk),
+            MirValue::VReg(kptr),
+            MirValue::Const(20),
+            MirValue::VReg(kptr),
+            MirValue::Const(20),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected tcp_check_syncookie sk pointer-space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper tcp_check_syncookie sk expects pointer in [Kernel], got Stack")
+    }));
+}
+
+#[test]
+fn test_type_error_helper_tcp_check_syncookie_rejects_non_positive_lengths() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let sk = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: sk,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TcpCheckSyncookie as u32,
+        args: vec![
+            MirValue::VReg(sk),
+            MirValue::VReg(sk),
+            MirValue::Const(0),
+            MirValue::VReg(sk),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected tcp_check_syncookie size range errors");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 100 arg2 must be > 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 100 arg4 must be > 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_infer_helper_sk_lookup_returns_kernel_pointer() {
     let mut func = make_test_function();
     let pid = func.alloc_vreg();

@@ -94,6 +94,8 @@ pub enum BpfHelper {
     GetListenerSock = 98,
     /// struct bpf_sock *bpf_skc_lookup_tcp(ctx, tuple, tuple_size, netns, flags)
     SkcLookupTcp = 99,
+    /// long bpf_tcp_check_syncookie(sk, iph, iph_len, th, th_len)
+    TcpCheckSyncookie = 100,
     /// struct tcp6_sock *bpf_skc_to_tcp6_sock(sk)
     SkcToTcp6Sock = 136,
     /// struct tcp_sock *bpf_skc_to_tcp_sock(sk)

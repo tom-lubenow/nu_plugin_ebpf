@@ -26,6 +26,7 @@ impl BpfHelper {
             96 => Some(Self::TcpSock),
             98 => Some(Self::GetListenerSock),
             99 => Some(Self::SkcLookupTcp),
+            100 => Some(Self::TcpCheckSyncookie),
             136 => Some(Self::SkcToTcp6Sock),
             137 => Some(Self::SkcToTcpSock),
             138 => Some(Self::SkcToTcpTimewaitSock),
@@ -130,6 +131,12 @@ impl BpfHelper {
                     ret_kind: HelperRetKind::PointerMaybeNull,
                 }
             }
+            BpfHelper::TcpCheckSyncookie => HelperSignature {
+                min_args: 5,
+                max_args: 5,
+                arg_kinds: [P, P, S, P, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
             BpfHelper::SkRelease => HelperSignature {
                 min_args: 1,
                 max_args: 1,
@@ -481,6 +488,30 @@ impl BpfHelper {
             size_from_arg: None,
         }];
 
+        const TCP_CHECK_SYNCOOKIE_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper tcp_check_syncookie sk",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper tcp_check_syncookie iph",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+            HelperPtrArgRule {
+                arg_idx: 3,
+                op: "helper tcp_check_syncookie th",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: Some(4),
+            },
+        ];
+
         const GET_LISTENER_SOCK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 0,
             op: "helper get_listener_sock sk",
@@ -655,6 +686,11 @@ impl BpfHelper {
                     ringbuf_record_arg0: false,
                 }
             }
+            BpfHelper::TcpCheckSyncookie => HelperSemantics {
+                ptr_arg_rules: TCP_CHECK_SYNCOOKIE_RULES,
+                positive_size_args: &[2, 4],
+                ringbuf_record_arg0: false,
+            },
             BpfHelper::SkRelease => HelperSemantics {
                 ptr_arg_rules: SK_RELEASE_RULES,
                 positive_size_args: &[],

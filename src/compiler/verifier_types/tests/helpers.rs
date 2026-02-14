@@ -604,6 +604,66 @@ fn test_helper_ringbuf_query_rejects_map_lookup_value_as_map_arg() {
 }
 
 #[test]
+fn test_helper_tcp_check_syncookie_rejects_non_positive_lengths() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let pid = func.alloc_vreg();
+    let kptr = func.alloc_vreg();
+    let syncookie_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: kptr,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: syncookie_ret,
+            helper: BpfHelper::TcpCheckSyncookie as u32,
+            args: vec![
+                MirValue::VReg(kptr),
+                MirValue::VReg(kptr),
+                MirValue::Const(0),
+                MirValue::VReg(kptr),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        kptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(syncookie_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected tcp_check_syncookie size errors");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 100 arg2 must be > 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 100 arg4 must be > 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_helper_ringbuf_reserve_submit_releases_reference() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

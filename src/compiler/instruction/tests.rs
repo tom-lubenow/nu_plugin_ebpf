@@ -110,6 +110,17 @@ fn test_helper_signature_socket_helpers() {
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::PointerMaybeNull);
 
+    let sig = HelperSignature::for_id(BpfHelper::TcpCheckSyncookie as u32)
+        .expect("expected bpf_tcp_check_syncookie helper signature");
+    assert_eq!(sig.min_args, 5);
+    assert_eq!(sig.max_args, 5);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
     let sig = HelperSignature::for_id(BpfHelper::SkRelease as u32)
         .expect("expected bpf_sk_release helper signature");
     assert_eq!(sig.min_args, 1);
@@ -194,6 +205,10 @@ fn test_helper_ref_kind_mappings() {
     );
     assert_eq!(
         helper_pointer_arg_ref_kind(BpfHelper::SkRelease, 0),
+        Some(KfuncRefKind::Socket)
+    );
+    assert_eq!(
+        helper_pointer_arg_ref_kind(BpfHelper::TcpCheckSyncookie, 0),
         Some(KfuncRefKind::Socket)
     );
     assert_eq!(

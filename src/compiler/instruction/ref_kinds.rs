@@ -52,6 +52,7 @@ pub const fn helper_pointer_arg_ref_kind(
             | BpfHelper::SkFullsock
             | BpfHelper::TcpSock
             | BpfHelper::GetListenerSock
+            | BpfHelper::TcpCheckSyncookie
             | BpfHelper::SkcToTcp6Sock
             | BpfHelper::SkcToTcpSock
             | BpfHelper::SkcToTcpTimewaitSock
