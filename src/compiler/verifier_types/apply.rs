@@ -1,12 +1,13 @@
 use super::*;
-use crate::compiler::mir::UnaryOpKind;
 
 mod access;
 mod calls;
+mod core;
 mod maps;
 
 use access::*;
 use calls::*;
+use core::*;
 use maps::*;
 
 pub(super) fn apply_inst(
@@ -18,37 +19,7 @@ pub(super) fn apply_inst(
 ) {
     match inst {
         MirInst::Copy { dst, src } => {
-            let ty = value_type(src, state, slot_sizes);
-            let range = value_range(src, state);
-            let src_ctx_field = match src {
-                MirValue::VReg(vreg) => state.ctx_field_source(*vreg).cloned(),
-                _ => None,
-            };
-            let src_guard = match src {
-                MirValue::VReg(vreg) => state.guard(*vreg),
-                _ => None,
-            };
-            let src_non_zero = match src {
-                MirValue::VReg(vreg) => state.is_non_zero(*vreg),
-                MirValue::Const(value) => *value != 0,
-                _ => false,
-            };
-            let src_not_equal = match src {
-                MirValue::VReg(vreg) => state.not_equal_consts(*vreg).to_vec(),
-                MirValue::Const(value) if *value != 0 => vec![0],
-                _ => Vec::new(),
-            };
-            state.set_with_range(*dst, ty, range);
-            state.set_ctx_field_source(*dst, src_ctx_field);
-            if src_non_zero {
-                state.set_non_zero(*dst, true);
-            }
-            for excluded in src_not_equal {
-                state.set_not_equal_const(*dst, excluded);
-            }
-            if let Some(guard) = src_guard {
-                state.set_guard(*dst, guard);
-            }
+            apply_copy_inst(*dst, src, slot_sizes, state);
         }
         MirInst::Load {
             dst, ptr, offset, ..
@@ -74,61 +45,10 @@ pub(super) fn apply_inst(
             apply_store_slot_inst(*slot, *offset, ty, slot_sizes, errors);
         }
         MirInst::BinOp { dst, op, lhs, rhs } => {
-            if matches!(
-                op,
-                BinOpKind::Eq
-                    | BinOpKind::Ne
-                    | BinOpKind::Lt
-                    | BinOpKind::Le
-                    | BinOpKind::Gt
-                    | BinOpKind::Ge
-            ) {
-                state.set_with_range(
-                    *dst,
-                    VerifierType::Bool,
-                    ValueRange::Known { min: 0, max: 1 },
-                );
-                if let Some(guard) = guard_from_compare(*op, lhs, rhs, state) {
-                    state.set_guard(*dst, guard);
-                }
-            } else {
-                if let Some(ty) = pointer_arith_result(*op, lhs, rhs, state, slot_sizes) {
-                    state.set(*dst, ty);
-                } else {
-                    let range = range_for_binop(*op, lhs, rhs, state);
-                    state.set_with_range(*dst, VerifierType::Scalar, range);
-                }
-            }
+            apply_binop_inst(*dst, *op, lhs, rhs, slot_sizes, state);
         }
-        MirInst::UnaryOp { op, .. } => {
-            let ty = match op {
-                UnaryOpKind::Not => VerifierType::Bool,
-                _ => VerifierType::Scalar,
-            };
-            if let Some(dst) = inst.def() {
-                let guard = if matches!(op, UnaryOpKind::Not) {
-                    if let MirInst::UnaryOp { src, .. } = inst {
-                        if let MirValue::VReg(src_reg) = src {
-                            state.guard(*src_reg).and_then(invert_guard)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
-                let range = if matches!(op, UnaryOpKind::Not) {
-                    ValueRange::Known { min: 0, max: 1 }
-                } else {
-                    ValueRange::Unknown
-                };
-                state.set_with_range(dst, ty, range);
-                if let Some(guard) = guard {
-                    state.set_guard(dst, guard);
-                }
-            }
+        MirInst::UnaryOp { dst, op, src } => {
+            apply_unary_inst(*dst, *op, src, state);
         }
         MirInst::CallHelper { dst, helper, args } => {
             apply_call_helper_inst(*dst, *helper, args, types, slot_sizes, state, errors);
@@ -143,43 +63,11 @@ pub(super) fn apply_inst(
         }
         MirInst::StrCmp { dst, .. }
         | MirInst::StopTimer { dst, .. }
-        | MirInst::LoopHeader { counter: dst, .. }
-        | MirInst::Phi { dst, .. } => {
-            let phi_guard = if let MirInst::Phi { args, .. } = inst {
-                let mut merged: Option<Option<Guard>> = None;
-                for (_, reg) in args {
-                    let next = state.guard(*reg);
-                    merged = Some(match merged {
-                        None => next,
-                        Some(existing) if existing == next => existing,
-                        _ => None,
-                    });
-                    if matches!(merged, Some(None)) {
-                        break;
-                    }
-                }
-                merged.flatten()
-            } else {
-                None
-            };
-            let ty = types
-                .get(dst)
-                .map(verifier_type_from_mir)
-                .unwrap_or(VerifierType::Scalar);
-            let range = if let MirInst::Phi { args, .. } = inst {
-                range_for_phi(args, state)
-            } else {
-                ValueRange::Unknown
-            };
-            let ty = if let MirInst::Phi { args, .. } = inst {
-                ptr_type_for_phi(args, state).unwrap_or(ty)
-            } else {
-                ty
-            };
-            state.set_with_range(*dst, ty, range);
-            if let Some(guard) = phi_guard {
-                state.set_guard(*dst, guard);
-            }
+        | MirInst::LoopHeader { counter: dst, .. } => {
+            apply_typed_dst_inst(*dst, types, state);
+        }
+        MirInst::Phi { dst, args } => {
+            apply_phi_inst(*dst, args, types, state);
         }
         MirInst::MapLookup { dst, map, key } => {
             apply_map_lookup_inst(*dst, map, *key, types, state, errors);
