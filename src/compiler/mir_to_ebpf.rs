@@ -53,6 +53,7 @@ mod helper_calls;
 mod instruction_lowering;
 mod maps;
 mod ops;
+mod parallel_moves;
 mod string_lowering;
 
 /// Result of MIR to eBPF compilation
