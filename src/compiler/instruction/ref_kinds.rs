@@ -7,9 +7,12 @@ pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
             Some(KfuncRefKind::Cgroup)
         }
         "bpf_get_task_exe_file" => Some(KfuncRefKind::File),
-        "bpf_obj_new_impl" | "bpf_refcount_acquire_impl" | "bpf_percpu_obj_new_impl" => {
-            Some(KfuncRefKind::Object)
-        }
+        "bpf_obj_new_impl"
+        | "bpf_refcount_acquire_impl"
+        | "bpf_percpu_obj_new_impl"
+        | "bpf_list_pop_front"
+        | "bpf_list_pop_back"
+        | "bpf_rbtree_remove" => Some(KfuncRefKind::Object),
         "scx_bpf_task_cgroup" => Some(KfuncRefKind::Cgroup),
         "scx_bpf_get_online_cpumask"
         | "scx_bpf_get_possible_cpumask"
@@ -27,11 +30,23 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
         "bpf_task_release" => Some(KfuncRefKind::Task),
         "bpf_cgroup_release" => Some(KfuncRefKind::Cgroup),
         "bpf_put_file" => Some(KfuncRefKind::File),
-        "bpf_obj_drop_impl" | "bpf_percpu_obj_drop_impl" => Some(KfuncRefKind::Object),
+        "bpf_obj_drop_impl"
+        | "bpf_percpu_obj_drop_impl"
+        | "bpf_list_push_front_impl"
+        | "bpf_list_push_back_impl"
+        | "bpf_rbtree_add_impl" => Some(KfuncRefKind::Object),
         "bpf_cpumask_release"
         | "bpf_cpumask_release_dtor"
         | "scx_bpf_put_cpumask"
         | "scx_bpf_put_idle_cpumask" => Some(KfuncRefKind::Cpumask),
+        _ => None,
+    }
+}
+
+pub fn kfunc_release_ref_arg_index(kfunc: &str) -> Option<usize> {
+    match kfunc {
+        "bpf_list_push_front_impl" | "bpf_list_push_back_impl" | "bpf_rbtree_add_impl" => Some(1),
+        _ if kfunc_release_ref_kind(kfunc).is_some() => Some(0),
         _ => None,
     }
 }
@@ -120,6 +135,9 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
         ("bpf_obj_drop_impl", 0)
             | ("bpf_refcount_acquire_impl", 0)
             | ("bpf_percpu_obj_drop_impl", 0)
+            | ("bpf_list_push_front_impl", 1)
+            | ("bpf_list_push_back_impl", 1)
+            | ("bpf_rbtree_add_impl", 1)
     ) {
         return Some(KfuncRefKind::Object);
     }

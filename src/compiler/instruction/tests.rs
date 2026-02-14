@@ -845,6 +845,14 @@ fn test_kfunc_ref_kind_mappings() {
         Some(KfuncRefKind::Object)
     );
     assert_eq!(
+        kfunc_acquire_ref_kind("bpf_list_pop_front"),
+        Some(KfuncRefKind::Object)
+    );
+    assert_eq!(
+        kfunc_acquire_ref_kind("bpf_rbtree_remove"),
+        Some(KfuncRefKind::Object)
+    );
+    assert_eq!(
         kfunc_acquire_ref_kind("scx_bpf_task_cgroup"),
         Some(KfuncRefKind::Cgroup)
     );
@@ -877,6 +885,14 @@ fn test_kfunc_ref_kind_mappings() {
         Some(KfuncRefKind::Object)
     );
     assert_eq!(
+        kfunc_release_ref_kind("bpf_list_push_front_impl"),
+        Some(KfuncRefKind::Object)
+    );
+    assert_eq!(
+        kfunc_release_ref_kind("bpf_rbtree_add_impl"),
+        Some(KfuncRefKind::Object)
+    );
+    assert_eq!(
         kfunc_release_ref_kind("bpf_cpumask_release"),
         Some(KfuncRefKind::Cpumask)
     );
@@ -892,6 +908,13 @@ fn test_kfunc_ref_kind_mappings() {
         kfunc_release_ref_kind("scx_bpf_put_idle_cpumask"),
         Some(KfuncRefKind::Cpumask)
     );
+    assert_eq!(kfunc_release_ref_arg_index("bpf_task_release"), Some(0));
+    assert_eq!(kfunc_release_ref_arg_index("bpf_obj_drop_impl"), Some(0));
+    assert_eq!(
+        kfunc_release_ref_arg_index("bpf_list_push_front_impl"),
+        Some(1)
+    );
+    assert_eq!(kfunc_release_ref_arg_index("bpf_rbtree_add_impl"), Some(1));
 }
 
 #[test]
@@ -922,6 +945,18 @@ fn test_kfunc_pointer_arg_ref_kind_mappings() {
     );
     assert_eq!(
         kfunc_pointer_arg_ref_kind("bpf_percpu_obj_drop_impl", 0),
+        Some(KfuncRefKind::Object)
+    );
+    assert_eq!(
+        kfunc_pointer_arg_ref_kind("bpf_list_push_front_impl", 1),
+        Some(KfuncRefKind::Object)
+    );
+    assert_eq!(
+        kfunc_pointer_arg_ref_kind("bpf_list_push_back_impl", 1),
+        Some(KfuncRefKind::Object)
+    );
+    assert_eq!(
+        kfunc_pointer_arg_ref_kind("bpf_rbtree_add_impl", 1),
         Some(KfuncRefKind::Object)
     );
     assert_eq!(

@@ -636,7 +636,7 @@ impl VccVerifier {
             VccInst::KfuncAcquire { id, kind } => {
                 state.set_live_kfunc_ref(*id, true, Some(*kind));
             }
-            VccInst::KfuncRelease { ptr, kind } => {
+            VccInst::KfuncRelease { ptr, kind, arg_idx } => {
                 let ty = match state.value_type(*ptr) {
                     Ok(ty) => ty,
                     Err(err) => {
@@ -654,7 +654,7 @@ impl VccVerifier {
                             if !state.is_live_kfunc_ref(ref_id) {
                                 self.errors.push(VccError::new(
                                     VccErrorKind::PointerBounds,
-                                    "kfunc reference already released",
+                                    format!("kfunc arg{} reference already released", arg_idx),
                                 ));
                                 return;
                             }
@@ -667,15 +667,15 @@ impl VccVerifier {
                                 self.errors.push(VccError::new(
                                     VccErrorKind::PointerBounds,
                                     format!(
-                                        "kfunc release expects {} reference, got {} reference",
-                                        expected, actual
+                                        "kfunc arg{} expects {} reference, got {} reference",
+                                        arg_idx, expected, actual
                                     ),
                                 ));
                             }
                         } else {
                             self.errors.push(VccError::new(
                                 VccErrorKind::PointerBounds,
-                                "kfunc release pointer is not tracked",
+                                format!("kfunc arg{} pointer is not tracked", arg_idx),
                             ));
                         }
                     }
@@ -684,8 +684,8 @@ impl VccVerifier {
                         self.errors.push(VccError::new(
                             VccErrorKind::PointerBounds,
                             format!(
-                                "kfunc release requires kernel {} reference pointer",
-                                expected
+                                "kfunc arg{} requires kernel {} reference pointer",
+                                arg_idx, expected
                             ),
                         ));
                     }
@@ -695,7 +695,7 @@ impl VccVerifier {
                                 expected: VccTypeClass::Ptr,
                                 actual: other.class(),
                             },
-                            "kfunc release requires pointer operand",
+                            format!("kfunc arg{} requires pointer operand", arg_idx),
                         ));
                     }
                 }

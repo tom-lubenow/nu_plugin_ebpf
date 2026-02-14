@@ -471,6 +471,7 @@ impl<'a> VccLowerer<'a> {
                     out.push(VccInst::KfuncRelease {
                         ptr: release_ptr,
                         kind,
+                        arg_idx: 0,
                     });
                 }
             }
@@ -493,10 +494,13 @@ impl<'a> VccLowerer<'a> {
                     });
                 }
                 if let Some(kind) = Self::kfunc_release_kind(kfunc) {
-                    if let Some(arg0) = args.first() {
+                    if let Some(release_arg_idx) = Self::kfunc_release_arg_index(kfunc)
+                        && let Some(arg) = args.get(release_arg_idx)
+                    {
                         out.push(VccInst::KfuncRelease {
-                            ptr: VccValue::Reg(VccReg(arg0.0)),
+                            ptr: VccValue::Reg(VccReg(arg.0)),
                             kind,
+                            arg_idx: release_arg_idx,
                         });
                     }
                 }

@@ -248,10 +248,10 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
         return;
     }
 
-    let Some(expected_kind) = kfunc_release_kind(kfunc) else {
+    let Some((release_arg_idx, expected_kind)) = kfunc_release_spec(kfunc) else {
         return;
     };
-    let Some(ptr) = args.first() else {
+    let Some(ptr) = args.get(release_arg_idx) else {
         return;
     };
 
@@ -264,8 +264,8 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
         } => {
             if !state.is_live_kfunc_ref(ref_id) {
                 errors.push(VerifierTypeError::new(format!(
-                    "kfunc '{}' arg0 reference already released",
-                    kfunc
+                    "kfunc '{}' arg{} reference already released",
+                    kfunc, release_arg_idx
                 )));
                 return;
             }
@@ -276,8 +276,8 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
                 let expected = expected_kind.label();
                 let actual = actual_kind.map(|k| k.label()).unwrap_or("unknown");
                 errors.push(VerifierTypeError::new(format!(
-                    "kfunc '{}' arg0 expects acquired {} reference, got {} reference",
-                    kfunc, expected, actual
+                    "kfunc '{}' arg{} expects acquired {} reference, got {} reference",
+                    kfunc, release_arg_idx, expected, actual
                 )));
             }
         }
@@ -287,8 +287,8 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
             ..
         } => {
             errors.push(VerifierTypeError::new(format!(
-                "kfunc '{}' arg0 may dereference null pointer v{} (add a null check)",
-                kfunc, ptr.0
+                "kfunc '{}' arg{} may dereference null pointer v{} (add a null check)",
+                kfunc, release_arg_idx, ptr.0
             )));
         }
         VerifierType::Ptr {
@@ -297,21 +297,21 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
         } => {
             let expected = expected_kind.label();
             errors.push(VerifierTypeError::new(format!(
-                "kfunc '{}' arg0 expects acquired {} reference",
-                kfunc, expected
+                "kfunc '{}' arg{} expects acquired {} reference",
+                kfunc, release_arg_idx, expected
             )));
         }
         VerifierType::Ptr { space, .. } => {
             errors.push(VerifierTypeError::new(format!(
-                "kfunc '{}' arg0 expects kernel pointer, got {:?}",
-                kfunc, space
+                "kfunc '{}' arg{} expects kernel pointer, got {:?}",
+                kfunc, release_arg_idx, space
             )));
         }
         _ => {
             let expected = expected_kind.label();
             errors.push(VerifierTypeError::new(format!(
-                "kfunc '{}' arg0 expects acquired {} reference pointer",
-                kfunc, expected
+                "kfunc '{}' arg{} expects acquired {} reference pointer",
+                kfunc, release_arg_idx, expected
             )));
         }
     }
@@ -323,6 +323,16 @@ pub(in crate::compiler::verifier_types) fn kfunc_acquire_kind(kfunc: &str) -> Op
 
 pub(in crate::compiler::verifier_types) fn kfunc_release_kind(kfunc: &str) -> Option<KfuncRefKind> {
     kfunc_release_ref_kind(kfunc)
+}
+
+pub(in crate::compiler::verifier_types) fn kfunc_release_arg_index(kfunc: &str) -> Option<usize> {
+    kfunc_release_ref_arg_index(kfunc)
+}
+
+pub(in crate::compiler::verifier_types) fn kfunc_release_spec(
+    kfunc: &str,
+) -> Option<(usize, KfuncRefKind)> {
+    Some((kfunc_release_arg_index(kfunc)?, kfunc_release_kind(kfunc)?))
 }
 
 fn stack_slot_from_arg(state: &VerifierState, arg: VReg) -> Option<StackSlotId> {

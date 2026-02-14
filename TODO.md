@@ -59,6 +59,7 @@ Last updated: 2026-02-14.
   - Ref-lifetime parity now also includes percpu object kfunc ownership (`bpf_percpu_obj_new_impl` / `bpf_percpu_obj_drop_impl`) with verifier_types/VCC regression tests.
   - Ref-lifetime parity now also includes file-reference kfunc ownership (`bpf_get_task_exe_file` / `bpf_put_file`) with verifier_types/VCC regression tests.
   - Built-in typed kfunc signatures now include core kptr container primitives (`bpf_percpu_obj_*_impl`, `bpf_list_{push,pop}_*`, `bpf_rbtree_{add,remove,first}`), with verifier-rewritten `meta/off` arguments modeled as scalar placeholders for ergonomic call sites.
+  - Verifier/VCC kfunc ref-lifetime parity now includes kptr-container ownership transfer semantics (`bpf_list_push_{front,back}_impl`, `bpf_list_pop_{front,back}`, `bpf_rbtree_add_impl`, `bpf_rbtree_remove`), including non-arg0 release-site handling and tracked object-ref acquire/release behavior.
   - Built-in typed kfunc signatures now include task-VMA iterator lifecycle helpers (`bpf_iter_task_vma_new` / `bpf_iter_task_vma_next` / `bpf_iter_task_vma_destroy`) with task-provenance validation on iterator initialization.
   - Built-in typed kfunc signature coverage now includes a broader `bpf_cpumask_*` operation set (logical/inspection/mutation helpers), with shared pointer-family metadata reused by type_infer/verifier/VCC.
   - Built-in typed kfunc coverage now also includes `bpf_cpumask_populate` and `bpf_cpumask_release_dtor`, with cpumask ref-kind and release-lifetime parity across type inference, verifier_types, and VCC.

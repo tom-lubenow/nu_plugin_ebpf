@@ -204,6 +204,10 @@ impl<'a> VccLowerer<'a> {
         kfunc_release_ref_kind(kfunc)
     }
 
+    pub(super) fn kfunc_release_arg_index(kfunc: &str) -> Option<usize> {
+        kfunc_release_ref_arg_index(kfunc)
+    }
+
     pub(super) fn maybe_assume_list_len(&mut self, dst: VReg, ptr: VReg, offset: i32, out: &mut Vec<VccInst>) {
         if offset != 0 {
             return;

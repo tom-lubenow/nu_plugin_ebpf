@@ -95,7 +95,7 @@ impl<'a> VccLowerer<'a> {
                             kfunc: kfunc.to_string(),
                         });
                     }
-                    if Self::kfunc_release_kind(kfunc).is_some() && idx == 0 {
+                    if Self::kfunc_release_arg_index(kfunc) == Some(idx) {
                         self.check_ptr_range(*arg, 1, out)?;
                     }
                 }
