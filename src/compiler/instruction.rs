@@ -74,6 +74,12 @@ pub enum BpfHelper {
     PerfEventOutput = 25,
     /// long bpf_get_stackid(ctx, map, flags)
     GetStackId = 27,
+    /// struct bpf_sock *bpf_sk_lookup_tcp(ctx, tuple, tuple_size, netns, flags)
+    SkLookupTcp = 84,
+    /// struct bpf_sock *bpf_sk_lookup_udp(ctx, tuple, tuple_size, netns, flags)
+    SkLookupUdp = 85,
+    /// void bpf_sk_release(sock)
+    SkRelease = 86,
     /// long bpf_ringbuf_output(map, data, size, flags)
     RingbufOutput = 130,
     /// void *bpf_ringbuf_reserve(map, size, flags)
@@ -122,6 +128,7 @@ pub enum KfuncRefKind {
     Cpumask,
     Object,
     File,
+    Socket,
 }
 
 impl KfuncRefKind {
@@ -132,6 +139,7 @@ impl KfuncRefKind {
             KfuncRefKind::Cpumask => "cpumask",
             KfuncRefKind::Object => "object",
             KfuncRefKind::File => "file",
+            KfuncRefKind::Socket => "socket",
         }
     }
 }
@@ -722,6 +730,30 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
     }
 }
 
+pub const fn helper_acquire_ref_kind(helper: BpfHelper) -> Option<KfuncRefKind> {
+    match helper {
+        BpfHelper::SkLookupTcp | BpfHelper::SkLookupUdp => Some(KfuncRefKind::Socket),
+        _ => None,
+    }
+}
+
+pub const fn helper_release_ref_kind(helper: BpfHelper) -> Option<KfuncRefKind> {
+    match helper {
+        BpfHelper::SkRelease => Some(KfuncRefKind::Socket),
+        _ => None,
+    }
+}
+
+pub const fn helper_pointer_arg_ref_kind(
+    helper: BpfHelper,
+    arg_idx: usize,
+) -> Option<KfuncRefKind> {
+    match (helper, arg_idx) {
+        (BpfHelper::SkRelease, 0) => Some(KfuncRefKind::Socket),
+        _ => None,
+    }
+}
+
 pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRefKind> {
     if matches!(
         (kfunc, arg_idx),
@@ -843,6 +875,9 @@ impl BpfHelper {
             16 => Some(Self::GetCurrentComm),
             25 => Some(Self::PerfEventOutput),
             27 => Some(Self::GetStackId),
+            84 => Some(Self::SkLookupTcp),
+            85 => Some(Self::SkLookupUdp),
+            86 => Some(Self::SkRelease),
             114 => Some(Self::ProbeReadUserStr),
             115 => Some(Self::ProbeReadKernelStr),
             130 => Some(Self::RingbufOutput),
@@ -919,6 +954,18 @@ impl BpfHelper {
                 min_args: 3,
                 max_args: 3,
                 arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SkLookupTcp | BpfHelper::SkLookupUdp => HelperSignature {
+                min_args: 5,
+                max_args: 5,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::PointerMaybeNull,
+            },
+            BpfHelper::SkRelease => HelperSignature {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::RingbufOutput => HelperSignature {
@@ -1158,6 +1205,31 @@ impl BpfHelper {
             },
         ];
 
+        const SK_LOOKUP_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper sk_lookup ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper sk_lookup tuple",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
+
+        const SK_RELEASE_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper sk_release sock",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
         const KPTR_XCHG_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -1238,6 +1310,16 @@ impl BpfHelper {
             },
             BpfHelper::GetStackId => HelperSemantics {
                 ptr_arg_rules: GET_STACKID_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkLookupTcp | BpfHelper::SkLookupUdp => HelperSemantics {
+                ptr_arg_rules: SK_LOOKUP_RULES,
+                positive_size_args: &[2],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkRelease => HelperSemantics {
+                ptr_arg_rules: SK_RELEASE_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
@@ -1776,6 +1858,46 @@ mod tests {
         assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
         assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
         assert_eq!(sig.ret_kind, HelperRetKind::PointerMaybeNull);
+    }
+
+    #[test]
+    fn test_helper_signature_socket_helpers() {
+        let sig = HelperSignature::for_id(BpfHelper::SkLookupTcp as u32)
+            .expect("expected bpf_sk_lookup_tcp helper signature");
+        assert_eq!(sig.min_args, 5);
+        assert_eq!(sig.max_args, 5);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+        assert_eq!(sig.ret_kind, HelperRetKind::PointerMaybeNull);
+
+        let sig = HelperSignature::for_id(BpfHelper::SkRelease as u32)
+            .expect("expected bpf_sk_release helper signature");
+        assert_eq!(sig.min_args, 1);
+        assert_eq!(sig.max_args, 1);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    }
+
+    #[test]
+    fn test_helper_ref_kind_mappings() {
+        assert_eq!(
+            helper_acquire_ref_kind(BpfHelper::SkLookupTcp),
+            Some(KfuncRefKind::Socket)
+        );
+        assert_eq!(
+            helper_acquire_ref_kind(BpfHelper::SkLookupUdp),
+            Some(KfuncRefKind::Socket)
+        );
+        assert_eq!(
+            helper_release_ref_kind(BpfHelper::SkRelease),
+            Some(KfuncRefKind::Socket)
+        );
+        assert_eq!(
+            helper_pointer_arg_ref_kind(BpfHelper::SkRelease, 0),
+            Some(KfuncRefKind::Socket)
+        );
+        assert_eq!(helper_pointer_arg_ref_kind(BpfHelper::SkRelease, 1), None);
     }
 
     #[test]

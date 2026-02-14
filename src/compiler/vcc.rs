@@ -15,7 +15,8 @@ use std::collections::{HashMap, VecDeque};
 use crate::compiler::cfg::CFG;
 use crate::compiler::instruction::{
     BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncRefKind,
-    KfuncRetKind, KfuncSignature, kfunc_acquire_ref_kind, kfunc_pointer_arg_ref_kind,
+    KfuncRetKind, KfuncSignature, helper_acquire_ref_kind, helper_release_ref_kind,
+    kfunc_acquire_ref_kind, kfunc_pointer_arg_ref_kind,
     kfunc_pointer_arg_requires_kernel as kfunc_pointer_arg_requires_kernel_shared,
     kfunc_release_ref_kind,
 };
@@ -3057,6 +3058,12 @@ impl<'a> VccLowerer<'a> {
                         src,
                     });
                 }
+                if let Some(kind) = Self::helper_acquire_kind(*helper) {
+                    out.push(VccInst::KfuncAcquire {
+                        id: VccReg(dst.0),
+                        kind,
+                    });
+                }
                 if matches!(
                     BpfHelper::from_u32(*helper),
                     Some(BpfHelper::RingbufReserve)
@@ -3071,6 +3078,15 @@ impl<'a> VccLowerer<'a> {
                         let release_ptr = self.lower_value(arg0, out);
                         out.push(VccInst::RingbufRelease { ptr: release_ptr });
                     }
+                }
+                if let Some(kind) = Self::helper_release_kind(*helper)
+                    && let Some(arg0) = args.first()
+                {
+                    let release_ptr = self.lower_value(arg0, out);
+                    out.push(VccInst::KfuncRelease {
+                        ptr: release_ptr,
+                        kind,
+                    });
                 }
             }
             MirInst::CallKfunc {
@@ -3519,6 +3535,15 @@ impl<'a> VccLowerer<'a> {
                         kfunc_ref: None,
                     });
                 }
+                if Self::helper_acquire_kind(helper_id).is_some() {
+                    return VccValueType::Ptr(VccPointerInfo {
+                        space: VccAddrSpace::Kernel,
+                        nullability: VccNullability::MaybeNull,
+                        bounds: None,
+                        ringbuf_ref: None,
+                        kfunc_ref: Some(VccReg(dst.0)),
+                    });
+                }
                 match inferred {
                     Some(VccValueType::Ptr(mut info)) => {
                         info.nullability = VccNullability::MaybeNull;
@@ -3534,6 +3559,14 @@ impl<'a> VccLowerer<'a> {
                 }
             }
         }
+    }
+
+    fn helper_acquire_kind(helper_id: u32) -> Option<KfuncRefKind> {
+        BpfHelper::from_u32(helper_id).and_then(helper_acquire_ref_kind)
+    }
+
+    fn helper_release_kind(helper_id: u32) -> Option<KfuncRefKind> {
+        BpfHelper::from_u32(helper_id).and_then(helper_release_ref_kind)
     }
 
     fn kfunc_return_type(&self, kfunc: &str, dst: VReg) -> VccValueType {
@@ -9542,6 +9575,232 @@ mod tests {
         types.insert(release_ret, MirType::I64);
 
         verify_mir(&func, &types).expect("expected kptr_xchg transfer/release semantics");
+    }
+
+    #[test]
+    fn test_verify_mir_helper_sk_lookup_release_socket_reference() {
+        let (mut func, entry) = new_mir_function();
+        let lookup = func.alloc_block();
+        let release = func.alloc_block();
+        let done = func.alloc_block();
+        func.param_count = 1;
+
+        let ctx = func.alloc_vreg();
+        let ctx_non_null = func.alloc_vreg();
+        let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let sock = func.alloc_vreg();
+        let sock_non_null = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: ctx_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(ctx),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: ctx_non_null,
+            if_true: lookup,
+            if_false: done,
+        };
+
+        func.block_mut(lookup)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: sock,
+                helper: BpfHelper::SkLookupTcp as u32,
+                args: vec![
+                    MirValue::VReg(ctx),
+                    MirValue::StackSlot(tuple_slot),
+                    MirValue::Const(16),
+                    MirValue::Const(0),
+                    MirValue::Const(0),
+                ],
+            });
+        func.block_mut(lookup).instructions.push(MirInst::BinOp {
+            dst: sock_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(sock),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(lookup).terminator = MirInst::Branch {
+            cond: sock_non_null,
+            if_true: release,
+            if_false: done,
+        };
+
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: release_ret,
+                helper: BpfHelper::SkRelease as u32,
+                args: vec![MirValue::VReg(sock)],
+            });
+        func.block_mut(release).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(ctx_non_null, MirType::Bool);
+        types.insert(
+            sock,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(sock_non_null, MirType::Bool);
+        types.insert(release_ret, MirType::I64);
+
+        verify_mir(&func, &types).expect("expected sk_lookup/sk_release socket lifetime to verify");
+    }
+
+    #[test]
+    fn test_verify_mir_helper_sk_release_rejects_non_socket_reference() {
+        let (mut func, entry) = new_mir_function();
+        let release = func.alloc_block();
+        let done = func.alloc_block();
+
+        let pid = func.alloc_vreg();
+        let task = func.alloc_vreg();
+        let task_non_null = func.alloc_vreg();
+        let bad_release_ret = func.alloc_vreg();
+        let cleanup_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: pid,
+            src: MirValue::Const(7),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: task,
+            kfunc: "bpf_task_from_pid".to_string(),
+            btf_id: None,
+            args: vec![pid],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: task_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(task),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: task_non_null,
+            if_true: release,
+            if_false: done,
+        };
+
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: bad_release_ret,
+                helper: BpfHelper::SkRelease as u32,
+                args: vec![MirValue::VReg(task)],
+            });
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: cleanup_ret,
+                kfunc: "bpf_task_release".to_string(),
+                btf_id: None,
+                args: vec![task],
+            });
+        func.block_mut(release).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(pid, MirType::I64);
+        types.insert(
+            task,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(task_non_null, MirType::Bool);
+        types.insert(bad_release_ret, MirType::I64);
+        types.insert(cleanup_ret, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected sk_release ref-kind mismatch");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("kfunc release expects socket reference, got task reference")),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_mir_helper_sk_lookup_leak_is_rejected() {
+        let (mut func, entry) = new_mir_function();
+        let leak = func.alloc_block();
+        let done = func.alloc_block();
+        func.param_count = 1;
+
+        let ctx = func.alloc_vreg();
+        let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let sock = func.alloc_vreg();
+        let sock_non_null = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: sock,
+                helper: BpfHelper::SkLookupUdp as u32,
+                args: vec![
+                    MirValue::VReg(ctx),
+                    MirValue::StackSlot(tuple_slot),
+                    MirValue::Const(16),
+                    MirValue::Const(0),
+                    MirValue::Const(0),
+                ],
+            });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: sock_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(sock),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: sock_non_null,
+            if_true: leak,
+            if_false: done,
+        };
+
+        func.block_mut(leak).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(
+            sock,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(sock_non_null, MirType::Bool);
+
+        let err = verify_mir(&func, &types).expect_err("expected leaked socket reference error");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("unreleased kfunc reference at function exit")),
+            "unexpected error messages: {:?}",
+            err
+        );
     }
 
     #[test]
