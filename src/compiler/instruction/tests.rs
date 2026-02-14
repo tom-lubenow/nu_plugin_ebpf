@@ -71,15 +71,6 @@ fn test_helper_signature_socket_helpers() {
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::PointerMaybeNull);
 
-    let sig = HelperSignature::for_id(BpfHelper::SkcLookupUdp as u32)
-        .expect("expected bpf_skc_lookup_udp helper signature");
-    assert_eq!(sig.min_args, 5);
-    assert_eq!(sig.max_args, 5);
-    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
-    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
-    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
-    assert_eq!(sig.ret_kind, HelperRetKind::PointerMaybeNull);
-
     let sig = HelperSignature::for_id(BpfHelper::SkRelease as u32)
         .expect("expected bpf_sk_release helper signature");
     assert_eq!(sig.min_args, 1);
@@ -121,10 +112,6 @@ fn test_helper_ref_kind_mappings() {
     );
     assert_eq!(
         helper_acquire_ref_kind(BpfHelper::SkcLookupTcp),
-        Some(KfuncRefKind::Socket)
-    );
-    assert_eq!(
-        helper_acquire_ref_kind(BpfHelper::SkcLookupUdp),
         Some(KfuncRefKind::Socket)
     );
     assert_eq!(

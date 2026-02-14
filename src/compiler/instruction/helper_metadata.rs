@@ -23,7 +23,6 @@ impl BpfHelper {
             96 => Some(Self::TcpSock),
             98 => Some(Self::GetListenerSock),
             99 => Some(Self::SkcLookupTcp),
-            100 => Some(Self::SkcLookupUdp),
             114 => Some(Self::ProbeReadUserStr),
             115 => Some(Self::ProbeReadKernelStr),
             130 => Some(Self::RingbufOutput),
@@ -102,15 +101,14 @@ impl BpfHelper {
                 arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
-            BpfHelper::SkLookupTcp
-            | BpfHelper::SkLookupUdp
-            | BpfHelper::SkcLookupTcp
-            | BpfHelper::SkcLookupUdp => HelperSignature {
-                min_args: 5,
-                max_args: 5,
-                arg_kinds: [P, P, S, S, S],
-                ret_kind: HelperRetKind::PointerMaybeNull,
-            },
+            BpfHelper::SkLookupTcp | BpfHelper::SkLookupUdp | BpfHelper::SkcLookupTcp => {
+                HelperSignature {
+                    min_args: 5,
+                    max_args: 5,
+                    arg_kinds: [P, P, S, S, S],
+                    ret_kind: HelperRetKind::PointerMaybeNull,
+                }
+            }
             BpfHelper::SkRelease => HelperSignature {
                 min_args: 1,
                 max_args: 1,
@@ -498,14 +496,13 @@ impl BpfHelper {
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
-            BpfHelper::SkLookupTcp
-            | BpfHelper::SkLookupUdp
-            | BpfHelper::SkcLookupTcp
-            | BpfHelper::SkcLookupUdp => HelperSemantics {
-                ptr_arg_rules: SK_LOOKUP_RULES,
-                positive_size_args: &[2],
-                ringbuf_record_arg0: false,
-            },
+            BpfHelper::SkLookupTcp | BpfHelper::SkLookupUdp | BpfHelper::SkcLookupTcp => {
+                HelperSemantics {
+                    ptr_arg_rules: SK_LOOKUP_RULES,
+                    positive_size_args: &[2],
+                    ringbuf_record_arg0: false,
+                }
+            }
             BpfHelper::SkRelease => HelperSemantics {
                 ptr_arg_rules: SK_RELEASE_RULES,
                 positive_size_args: &[],

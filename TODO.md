@@ -75,7 +75,7 @@ Last updated: 2026-02-14.
   - `bpf_kptr_xchg` semantics now transfer tracked kfunc-ref ownership from arg1 to the helper return value, invalidating the source ref and enabling verifier-safe release of the swapped-out reference.
   - `bpf_kptr_xchg` arg0 parity now enforces map-pointer destination slots (`[Map]`), rejecting stack-pointer destinations in verifier_types/VCC/type inference.
   - Helper ref-lifetime parity now covers socket helpers (`bpf_sk_lookup_tcp` / `bpf_sk_lookup_udp` / `bpf_sk_release`), including kernel-pointer arg checks, tracked socket ownership, null-guarded release, cross-family mismatch diagnostics, and leak checks in verifier_types/VCC.
-  - Typed helper socket coverage now also includes `bpf_skc_lookup_tcp` / `bpf_skc_lookup_udp` with socket-ref acquire/release lifetime parity across type inference, verifier_types, and VCC.
+  - Typed helper socket coverage now also includes `bpf_skc_lookup_tcp` with socket-ref acquire/release lifetime parity across type inference, verifier_types, and VCC.
   - Typed helper socket coverage now also includes `bpf_get_listener_sock` pointer-space/return modeling across type inference, verifier_types, and VCC.
   - Typed helper socket coverage now also includes `bpf_sk_fullsock` / `bpf_tcp_sock` pointer-space and nullable kernel-pointer return modeling across type inference, verifier_types, and VCC.
   - Verifier/VCC helper-arg parity now enforces socket ref-family provenance for tracked kernel refs passed to socket-pointer helpers (`bpf_get_listener_sock` / `bpf_sk_fullsock` / `bpf_tcp_sock`), rejecting mixed-family refs (e.g., task ref args).

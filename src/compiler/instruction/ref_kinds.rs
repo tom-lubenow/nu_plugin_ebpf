@@ -28,10 +28,9 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
 
 pub const fn helper_acquire_ref_kind(helper: BpfHelper) -> Option<KfuncRefKind> {
     match helper {
-        BpfHelper::SkLookupTcp
-        | BpfHelper::SkLookupUdp
-        | BpfHelper::SkcLookupTcp
-        | BpfHelper::SkcLookupUdp => Some(KfuncRefKind::Socket),
+        BpfHelper::SkLookupTcp | BpfHelper::SkLookupUdp | BpfHelper::SkcLookupTcp => {
+            Some(KfuncRefKind::Socket)
+        }
         _ => None,
     }
 }
