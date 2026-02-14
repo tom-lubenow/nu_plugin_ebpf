@@ -49,6 +49,7 @@ use crate::kernel_btf::KernelBtf;
 
 mod aggregations;
 mod calls;
+mod control_flow;
 mod helper_calls;
 mod instruction_lowering;
 mod maps;
