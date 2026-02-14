@@ -766,6 +766,47 @@ impl VccVerifier {
                     }
                 }
             }
+            VccInst::HelperExpectRefKind {
+                ptr,
+                arg_idx,
+                kind,
+                helper_id,
+            } => {
+                let ty = match state.value_type(*ptr) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                if let VccValueType::Ptr(info) = ty
+                    && info.space == VccAddrSpace::Kernel
+                    && let Some(ref_id) = info.kfunc_ref
+                {
+                    if !state.is_live_kfunc_ref(ref_id) {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::PointerBounds,
+                            format!(
+                                "helper {} arg{} reference already released",
+                                helper_id, arg_idx
+                            ),
+                        ));
+                        return;
+                    }
+                    let actual_kind = state.kfunc_ref_kind(ref_id);
+                    if actual_kind != Some(*kind) {
+                        let expected = kind.label();
+                        let actual = actual_kind.map(|k| k.label()).unwrap_or("unknown");
+                        self.errors.push(VccError::new(
+                            VccErrorKind::PointerBounds,
+                            format!(
+                                "helper {} arg{} expects {} reference, got {} reference",
+                                helper_id, arg_idx, expected, actual
+                            ),
+                        ));
+                    }
+                }
+            }
             VccInst::KptrXchgTransfer { dst, src } => {
                 let ty = match state.value_type(*src) {
                     Ok(ty) => ty,

@@ -432,6 +432,243 @@ fn test_helper_sk_release_rejects_non_socket_reference() {
 }
 
 #[test]
+fn test_helper_sk_fullsock_rejects_non_socket_reference() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let task_non_null = func.alloc_vreg();
+    let fullsock = func.alloc_vreg();
+    let cleanup_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: task_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: task_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: fullsock,
+        helper: BpfHelper::SkFullsock as u32,
+        args: vec![MirValue::VReg(task)],
+    });
+    func.block_mut(call).instructions.push(MirInst::CallKfunc {
+        dst: cleanup_ret,
+        kfunc: "bpf_task_release".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(task_non_null, MirType::Bool);
+    types.insert(
+        fullsock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cleanup_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected sk_fullsock ref-kind mismatch");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 95 arg0 expects socket reference, got task reference")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_helper_tcp_sock_rejects_non_socket_reference() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let task_non_null = func.alloc_vreg();
+    let tcp_sock = func.alloc_vreg();
+    let cleanup_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: task_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: task_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: tcp_sock,
+        helper: BpfHelper::TcpSock as u32,
+        args: vec![MirValue::VReg(task)],
+    });
+    func.block_mut(call).instructions.push(MirInst::CallKfunc {
+        dst: cleanup_ret,
+        kfunc: "bpf_task_release".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(task_non_null, MirType::Bool);
+    types.insert(
+        tcp_sock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cleanup_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected tcp_sock ref-kind mismatch");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 96 arg0 expects socket reference, got task reference")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_helper_get_listener_sock_rejects_non_socket_reference() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let task_non_null = func.alloc_vreg();
+    let listener = func.alloc_vreg();
+    let cleanup_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: task_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: task_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: listener,
+        helper: BpfHelper::GetListenerSock as u32,
+        args: vec![MirValue::VReg(task)],
+    });
+    func.block_mut(call).instructions.push(MirInst::CallKfunc {
+        dst: cleanup_ret,
+        kfunc: "bpf_task_release".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(task_non_null, MirType::Bool);
+    types.insert(
+        listener,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cleanup_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected get_listener_sock ref-kind mismatch");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 98 arg0 expects socket reference, got task reference")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_helper_get_listener_sock_rejects_non_kernel_pointer() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

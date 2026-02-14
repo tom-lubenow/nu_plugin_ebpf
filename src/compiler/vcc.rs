@@ -15,8 +15,8 @@ use std::collections::{HashMap, VecDeque};
 use crate::compiler::cfg::CFG;
 use crate::compiler::instruction::{
     BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncRefKind,
-    KfuncRetKind, KfuncSignature, helper_acquire_ref_kind, helper_release_ref_kind,
-    kfunc_acquire_ref_kind, kfunc_pointer_arg_ref_kind,
+    KfuncRetKind, KfuncSignature, helper_acquire_ref_kind, helper_pointer_arg_ref_kind,
+    helper_release_ref_kind, kfunc_acquire_ref_kind, kfunc_pointer_arg_ref_kind,
     kfunc_pointer_arg_requires_kernel as kfunc_pointer_arg_requires_kernel_shared,
     kfunc_release_ref_kind,
 };
@@ -257,6 +257,12 @@ pub enum VccInst {
         arg_idx: usize,
         kind: KfuncRefKind,
         kfunc: String,
+    },
+    HelperExpectRefKind {
+        ptr: VccValue,
+        arg_idx: usize,
+        kind: KfuncRefKind,
+        helper_id: u32,
     },
     KptrXchgTransfer {
         dst: VccReg,

@@ -22,7 +22,21 @@ impl<'a> VccLowerer<'a> {
             }
 
             for (idx, arg) in args.iter().enumerate() {
-                self.verify_helper_arg_value(helper_id, idx, arg, sig.arg_kind(idx), out)?;
+                let arg_kind = sig.arg_kind(idx);
+                self.verify_helper_arg_value(helper_id, idx, arg, arg_kind, out)?;
+                if matches!(arg_kind, HelperArgKind::Pointer)
+                    && let Some(expected_kind) =
+                        Self::helper_pointer_arg_expected_ref_kind(helper_id, idx)
+                    && !(Self::helper_release_kind(helper_id) == Some(expected_kind) && idx == 0)
+                {
+                    let ptr = self.lower_value(arg, out);
+                    out.push(VccInst::HelperExpectRefKind {
+                        ptr,
+                        arg_idx: idx,
+                        kind: expected_kind,
+                        helper_id,
+                    });
+                }
             }
             self.verify_helper_semantics(helper_id, args, out)?;
         } else if args.len() > 5 {
@@ -144,6 +158,13 @@ impl<'a> VccLowerer<'a> {
 
     pub(super) fn kfunc_pointer_arg_expected_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRefKind> {
         kfunc_pointer_arg_ref_kind(kfunc, arg_idx)
+    }
+
+    pub(super) fn helper_pointer_arg_expected_ref_kind(
+        helper_id: u32,
+        arg_idx: usize,
+    ) -> Option<KfuncRefKind> {
+        BpfHelper::from_u32(helper_id).and_then(|helper| helper_pointer_arg_ref_kind(helper, arg_idx))
     }
 
     pub(super) fn helper_pointer_arg_allows_const_zero(

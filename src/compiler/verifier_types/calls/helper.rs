@@ -140,6 +140,13 @@ pub(in crate::compiler::verifier_types) fn helper_allowed_spaces(
     }
 }
 
+pub(in crate::compiler::verifier_types) fn helper_pointer_arg_expected_ref_kind(
+    helper: BpfHelper,
+    arg_idx: usize,
+) -> Option<KfuncRefKind> {
+    helper_pointer_arg_ref_kind(helper, arg_idx)
+}
+
 pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
     helper_id: u32,
     args: &[MirValue],
@@ -184,6 +191,42 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
             slot_sizes,
             errors,
         );
+    }
+
+    for (arg_idx, arg) in args.iter().enumerate().take(5) {
+        let Some(expected_kind) = helper_pointer_arg_expected_ref_kind(helper, arg_idx) else {
+            continue;
+        };
+        if helper_release_ref_kind(helper) == Some(expected_kind) && arg_idx == 0 {
+            continue;
+        }
+        let MirValue::VReg(vreg) = arg else {
+            continue;
+        };
+        let VerifierType::Ptr {
+            space: AddressSpace::Kernel,
+            kfunc_ref: Some(ref_id),
+            ..
+        } = state.get(*vreg)
+        else {
+            continue;
+        };
+        if !state.is_live_kfunc_ref(ref_id) {
+            errors.push(VerifierTypeError::new(format!(
+                "helper {} arg{} reference already released",
+                helper_id, arg_idx
+            )));
+            continue;
+        }
+        let actual_kind = state.kfunc_ref_kind(ref_id);
+        if actual_kind != Some(expected_kind) {
+            let expected = expected_kind.label();
+            let actual = actual_kind.map(|k| k.label()).unwrap_or("unknown");
+            errors.push(VerifierTypeError::new(format!(
+                "helper {} arg{} expects {} reference, got {} reference",
+                helper_id, arg_idx, expected, actual
+            )));
+        }
     }
 
     if semantics.ringbuf_record_arg0 {

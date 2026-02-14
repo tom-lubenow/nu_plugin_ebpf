@@ -47,7 +47,13 @@ pub const fn helper_pointer_arg_ref_kind(
     arg_idx: usize,
 ) -> Option<KfuncRefKind> {
     match (helper, arg_idx) {
-        (BpfHelper::SkRelease, 0) => Some(KfuncRefKind::Socket),
+        (
+            BpfHelper::SkRelease
+            | BpfHelper::SkFullsock
+            | BpfHelper::TcpSock
+            | BpfHelper::GetListenerSock,
+            0,
+        ) => Some(KfuncRefKind::Socket),
         _ => None,
     }
 }

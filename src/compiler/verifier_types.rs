@@ -8,8 +8,8 @@ use std::collections::HashMap;
 
 use super::instruction::{
     BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncRefKind,
-    KfuncRetKind, KfuncSignature, helper_acquire_ref_kind, helper_release_ref_kind,
-    kfunc_acquire_ref_kind, kfunc_pointer_arg_ref_kind,
+    KfuncRetKind, KfuncSignature, helper_acquire_ref_kind, helper_pointer_arg_ref_kind,
+    helper_release_ref_kind, kfunc_acquire_ref_kind, kfunc_pointer_arg_ref_kind,
     kfunc_pointer_arg_requires_kernel as kfunc_pointer_arg_requires_kernel_shared,
     kfunc_release_ref_kind,
 };
