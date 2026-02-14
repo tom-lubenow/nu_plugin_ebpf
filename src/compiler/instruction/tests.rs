@@ -577,6 +577,42 @@ fn test_kfunc_signature_scx_task_cgroup_and_select_cpu() {
     assert_eq!(sig.arg_kind(3), KfuncArgKind::Pointer);
     assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
 
+    let sig = KfuncSignature::for_name("scx_bpf_dsq_move")
+        .expect("expected scx_bpf_dsq_move kfunc signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
+    let sig = KfuncSignature::for_name("scx_bpf_dsq_move_vtime")
+        .expect("expected scx_bpf_dsq_move_vtime kfunc signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
+    let sig = KfuncSignature::for_name("scx_bpf_dsq_move_set_slice")
+        .expect("expected scx_bpf_dsq_move_set_slice kfunc signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Void);
+
+    let sig = KfuncSignature::for_name("scx_bpf_dsq_move_set_vtime")
+        .expect("expected scx_bpf_dsq_move_set_vtime kfunc signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Void);
+
     let sig = KfuncSignature::for_name("scx_bpf_get_online_cpumask")
         .expect("expected scx_bpf_get_online_cpumask kfunc signature");
     assert_eq!(sig.min_args, 0);
@@ -700,6 +736,14 @@ fn test_kfunc_pointer_arg_ref_kind_mappings() {
     );
     assert_eq!(
         kfunc_pointer_arg_ref_kind("scx_bpf_select_cpu_and", 0),
+        Some(KfuncRefKind::Task)
+    );
+    assert_eq!(
+        kfunc_pointer_arg_ref_kind("scx_bpf_dsq_move", 1),
+        Some(KfuncRefKind::Task)
+    );
+    assert_eq!(
+        kfunc_pointer_arg_ref_kind("scx_bpf_dsq_move_vtime", 1),
         Some(KfuncRefKind::Task)
     );
     assert_eq!(

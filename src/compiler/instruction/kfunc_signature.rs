@@ -390,10 +390,34 @@ impl KfuncSignature {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: KfuncRetKind::Void,
             }),
+            "scx_bpf_dsq_move" => Some(Self {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_dsq_move_set_slice" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "scx_bpf_dsq_move_set_vtime" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
             "scx_bpf_dsq_move_to_local" => Some(Self {
                 min_args: 1,
                 max_args: 1,
                 arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_dsq_move_vtime" => Some(Self {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, P, S, S, S],
                 ret_kind: KfuncRetKind::Scalar,
             }),
             "scx_bpf_dsq_nr_queued" => Some(Self {
