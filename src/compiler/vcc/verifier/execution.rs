@@ -964,11 +964,18 @@ impl VccVerifier {
         };
         match ty {
             VccValueType::Ptr(info) => match info.space {
-                VccAddrSpace::Stack(slot) if slot.0 != u32::MAX => Some(slot),
+                VccAddrSpace::Stack(slot)
+                    if slot.0 != u32::MAX
+                        && info
+                            .bounds
+                            .map_or(true, |bounds| bounds.min == 0 && bounds.max == 0) =>
+                {
+                    Some(slot)
+                }
                 VccAddrSpace::Stack(_) => {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
-                        format!("{op} expects stack slot pointer"),
+                        format!("{op} expects stack slot base pointer"),
                     ));
                     None
                 }

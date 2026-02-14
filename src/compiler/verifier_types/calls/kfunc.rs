@@ -35,6 +35,15 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
                             kfunc, arg_idx
                         )));
                     }
+                    if bounds.is_some_and(|ptr_bounds| {
+                        matches!(ptr_bounds.origin(), PtrOrigin::Stack(_))
+                            && (ptr_bounds.min() != 0 || ptr_bounds.max() != 0)
+                    }) {
+                        errors.push(VerifierTypeError::new(format!(
+                            "kfunc '{}' arg{} expects stack slot base pointer",
+                            kfunc, arg_idx
+                        )));
+                    }
                     if let Some(source) = state.ctx_field_source(arg) {
                         errors.push(VerifierTypeError::new(format!(
                             "kfunc '{}' arg{} expects stack pointer from stack slot, got context field {:?}",

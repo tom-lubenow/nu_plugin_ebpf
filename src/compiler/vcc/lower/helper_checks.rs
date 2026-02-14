@@ -133,6 +133,16 @@ impl<'a> VccLowerer<'a> {
                     format!("kfunc '{}' arg{} expects stack slot pointer", kfunc, arg_idx),
                 ));
             }
+            if self
+                .value_ptr_info(&MirValue::VReg(arg))
+                .and_then(|ptr| ptr.bounds)
+                .is_some_and(|bounds| bounds.min != 0 || bounds.max != 0)
+            {
+                return Err(VccError::new(
+                    VccErrorKind::PointerBounds,
+                    format!("kfunc '{}' arg{} expects stack slot base pointer", kfunc, arg_idx),
+                ));
+            }
             return Ok(());
         }
         let space = self.effective_ptr_space(arg).ok_or_else(|| {

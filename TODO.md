@@ -158,6 +158,7 @@ Last updated: 2026-02-14.
   - Added pointer-space enforcement for `bpf_res_spin_*` arguments (`arg0` kernel lock pointer, `irqsave/irqrestore arg1` stack flags pointer) across type inference, verifier_types, and VCC.
   - Added stack-slot identity tracking for `bpf_local_irq_save`/`restore` and `bpf_res_spin_*_irq*` so restore/irqrestore must match the saved flags slot (including branch-join state merges).
   - Added stack-slot identity and lifetime modeling for `bpf_iter_task_vma_new`/`next`/`destroy`: iterator pointers must be concrete stack-slot pointers, `next`/`destroy` require a matching `new`, and unreleased iterators are rejected at exit.
+  - Tightened stack-argument semantics so stack-required kfunc args (`local_irq*`, `res_spin_*_irq*`, `iter_task_vma*`) must be slot base pointers (offset 0), not interior stack addresses.
   - Remaining: expand signature coverage and pointer/ref-lifetime semantics from richer BTF metadata.
   - Remaining: model richer by-reference out-parameter semantics (aliasing/copy semantics and typed stack object identity) for additional kfunc families beyond current lock/irq patterns.
 
