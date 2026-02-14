@@ -497,6 +497,41 @@ fn test_kfunc_signature_kptr_container_impls() {
     assert_eq!(sig.max_args, 1);
     assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
     assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
+
+    let sig = KfuncSignature::for_name("bpf_list_front")
+        .expect("expected bpf_list_front kfunc signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
+
+    let sig =
+        KfuncSignature::for_name("bpf_list_back").expect("expected bpf_list_back kfunc signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
+
+    let sig = KfuncSignature::for_name("bpf_rbtree_root")
+        .expect("expected bpf_rbtree_root kfunc signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
+
+    let sig = KfuncSignature::for_name("bpf_rbtree_left")
+        .expect("expected bpf_rbtree_left kfunc signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
+
+    let sig = KfuncSignature::for_name("bpf_rbtree_right")
+        .expect("expected bpf_rbtree_right kfunc signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
 }
 
 #[test]
@@ -872,7 +907,12 @@ fn test_kfunc_pointer_arg_requires_kernel_mappings() {
         "bpf_list_push_front_impl",
         1
     ));
+    assert!(kfunc_pointer_arg_requires_kernel("bpf_list_front", 0));
+    assert!(kfunc_pointer_arg_requires_kernel("bpf_list_back", 0));
     assert!(kfunc_pointer_arg_requires_kernel("bpf_rbtree_first", 0));
+    assert!(kfunc_pointer_arg_requires_kernel("bpf_rbtree_root", 0));
+    assert!(kfunc_pointer_arg_requires_kernel("bpf_rbtree_left", 0));
+    assert!(kfunc_pointer_arg_requires_kernel("bpf_rbtree_right", 0));
     assert!(kfunc_pointer_arg_requires_kernel("bpf_path_d_path", 0));
     assert!(kfunc_pointer_arg_requires_kernel(
         "bpf_map_sum_elem_count",

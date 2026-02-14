@@ -2518,3 +2518,81 @@ fn test_kfunc_map_sum_elem_count_accepts_kernel_pointer_arg() {
 
     verify_mir(&func, &types).expect("expected map_sum_elem_count kernel-pointer call to verify");
 }
+
+#[test]
+fn test_kfunc_rbtree_root_requires_kernel_pointer_arg() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let root = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_rbtree_root".to_string(),
+        btf_id: None,
+        args: vec![root],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        root,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        dst,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected kernel-pointer kfunc arg error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg0 expects kernel pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_rbtree_root_accepts_kernel_pointer_arg() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let root = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_rbtree_root".to_string(),
+        btf_id: None,
+        args: vec![root],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        root,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        dst,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    verify_mir(&func, &types).expect("expected rbtree_root kernel-pointer call to verify");
+}

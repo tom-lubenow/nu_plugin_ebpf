@@ -524,3 +524,76 @@ fn test_type_error_kfunc_map_sum_elem_count_requires_kernel_space() {
         errs
     );
 }
+
+#[test]
+fn test_infer_kfunc_list_front_pointer_return() {
+    let mut func = make_test_function();
+    let type_id = func.alloc_vreg();
+    let meta = func.alloc_vreg();
+    let list_head = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: type_id,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: meta,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: list_head,
+        kfunc: "bpf_obj_new_impl".to_string(),
+        btf_id: None,
+        args: vec![type_id, meta],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_list_front".to_string(),
+        btf_id: None,
+        args: vec![list_head],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected list_front kfunc type inference");
+    match types.get(&dst) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(*address_space, AddressSpace::Kernel);
+        }
+        other => panic!("expected kernel pointer return, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_type_error_kfunc_rbtree_left_requires_kernel_space() {
+    let mut func = make_test_function();
+    let node = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: node,
+        src: MirValue::StackSlot(slot),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_rbtree_left".to_string(),
+        btf_id: None,
+        args: vec![node],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected rbtree_left kernel-pointer kfunc type error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("arg0 expects kernel pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}

@@ -181,6 +181,18 @@ impl KfuncSignature {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: KfuncRetKind::PointerMaybeNull,
             }),
+            "bpf_list_front" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "bpf_list_back" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
             "bpf_rbtree_remove" => Some(Self {
                 min_args: 2,
                 max_args: 2,
@@ -194,6 +206,24 @@ impl KfuncSignature {
                 ret_kind: KfuncRetKind::Scalar,
             }),
             "bpf_rbtree_first" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "bpf_rbtree_root" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "bpf_rbtree_left" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "bpf_rbtree_right" => Some(Self {
                 min_args: 1,
                 max_args: 1,
                 arg_kinds: [P, S, S, S, S],

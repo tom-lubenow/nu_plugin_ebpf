@@ -188,6 +188,8 @@ pub fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
             | ("bpf_list_push_back_impl", 1)
             | ("bpf_list_pop_front", 0)
             | ("bpf_list_pop_back", 0)
+            | ("bpf_list_front", 0)
+            | ("bpf_list_back", 0)
             | ("bpf_path_d_path", 0)
             | ("bpf_map_sum_elem_count", 0)
             | ("bpf_rbtree_remove", 0)
@@ -195,5 +197,8 @@ pub fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
             | ("bpf_rbtree_add_impl", 0)
             | ("bpf_rbtree_add_impl", 1)
             | ("bpf_rbtree_first", 0)
+            | ("bpf_rbtree_root", 0)
+            | ("bpf_rbtree_left", 0)
+            | ("bpf_rbtree_right", 0)
     )
 }
