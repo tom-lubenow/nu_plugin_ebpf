@@ -480,6 +480,84 @@ fn test_mir_timer() {
     assert!(result.maps.iter().any(|m| m.name == TIMESTAMP_MAP_NAME));
 }
 
+#[test]
+fn test_stop_timer_preserves_value_across_delete_for_histogram_use() {
+    // Regression for a verifier failure where stop-timer wrote its result to a
+    // caller-clobbered register, then called map_delete_elem before histogram used it.
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let delta = func.alloc_vreg();
+    func.precolored.insert(delta, EbpfReg::R3);
+
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::StopTimer { dst: delta });
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::Histogram { value: delta });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let program = LirProgram::new(func);
+    let result = MirToEbpfCompiler::new(&program, None)
+        .compile()
+        .expect("stop-timer + histogram should compile");
+
+    let decode = |chunk: &[u8]| EbpfInsn {
+        opcode: chunk[0],
+        dst_reg: chunk[1] & 0x0f,
+        src_reg: (chunk[1] >> 4) & 0x0f,
+        offset: i16::from_le_bytes([chunk[2], chunk[3]]),
+        imm: i32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]),
+    };
+    let insns: Vec<EbpfInsn> = result.bytecode.chunks(8).map(decode).collect();
+
+    let delete_idx = insns
+        .iter()
+        .position(|insn| insn.opcode == opcode::CALL && insn.imm == BpfHelper::MapDeleteElem as i32)
+        .expect("expected stop-timer map_delete helper call");
+
+    // stop-timer now spills delta to stack before delete and reloads it after.
+    let spill_idx = (0..delete_idx)
+        .rev()
+        .find(|&i| {
+            let insn = insns[i];
+            insn.opcode == (opcode::BPF_STX | opcode::BPF_DW | opcode::BPF_MEM)
+                && insn.dst_reg == EbpfReg::R10.as_u8()
+                && insn.src_reg == EbpfReg::R0.as_u8()
+        })
+        .expect("expected stop-timer delta spill before map_delete");
+    let spill_offset = insns[spill_idx].offset;
+
+    let reload_idx = ((delete_idx + 1)..insns.len())
+        .find(|&i| {
+            let insn = insns[i];
+            insn.opcode == (opcode::BPF_LDX | opcode::BPF_DW | opcode::BPF_MEM)
+                && insn.dst_reg == EbpfReg::R3.as_u8()
+                && insn.src_reg == EbpfReg::R10.as_u8()
+                && insn.offset == spill_offset
+        })
+        .expect("expected reloaded stop-timer delta after map_delete");
+
+    let histogram_lookup_idx = insns
+        .iter()
+        .enumerate()
+        .skip(delete_idx + 1)
+        .find_map(|(i, insn)| {
+            (insn.opcode == opcode::CALL && insn.imm == BpfHelper::MapLookupElem as i32)
+                .then_some(i)
+        })
+        .expect("expected histogram map_lookup helper call");
+
+    assert!(
+        reload_idx < histogram_lookup_idx,
+        "expected stop-timer reload before histogram helper use"
+    );
+}
+
 /// Test loop header and back compile
 #[test]
 fn test_mir_loop() {

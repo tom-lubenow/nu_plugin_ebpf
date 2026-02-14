@@ -3576,11 +3576,10 @@ impl<'a> MirToEbpfCompiler<'a> {
         self.instructions
             .push(EbpfInsn::sub64_reg(EbpfReg::R0, EbpfReg::R1));
 
-        // Save delta to dst_reg
-        if dst_reg != EbpfReg::R0 {
-            self.instructions
-                .push(EbpfInsn::mov64_reg(dst_reg, EbpfReg::R0));
-        }
+        // Preserve delta across map_delete helper call (R1-R5 are caller-clobbered).
+        // Reuse the temporary stack slot that previously held the start timestamp.
+        self.instructions
+            .push(EbpfInsn::stxdw(EbpfReg::R10, start_offset, EbpfReg::R0));
 
         // Delete map entry
         let delete_reloc = self.instructions.len() * 8;
@@ -3598,6 +3597,10 @@ impl<'a> MirToEbpfCompiler<'a> {
             .push(EbpfInsn::add64_imm(EbpfReg::R2, key_offset as i32));
         self.instructions
             .push(EbpfInsn::call(BpfHelper::MapDeleteElem));
+
+        // Restore saved delta after helper clobbers caller-saved registers.
+        self.instructions
+            .push(EbpfInsn::ldxdw(dst_reg, EbpfReg::R10, start_offset));
 
         // Jump to done
         let done_jmp_idx = self.instructions.len();
