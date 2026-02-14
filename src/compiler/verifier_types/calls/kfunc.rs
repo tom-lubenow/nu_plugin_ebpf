@@ -21,10 +21,33 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
         KfuncArgKind::Pointer => match ty {
             VerifierType::Ptr {
                 space,
+                bounds,
                 nullability,
                 kfunc_ref,
                 ..
             } => {
+                if kfunc_pointer_arg_requires_stack(kfunc, arg_idx) {
+                    if !bounds.is_some_and(|ptr_bounds| {
+                        matches!(ptr_bounds.origin(), PtrOrigin::Stack(_))
+                    }) {
+                        errors.push(VerifierTypeError::new(format!(
+                            "kfunc '{}' arg{} expects stack slot pointer",
+                            kfunc, arg_idx
+                        )));
+                    }
+                    if let Some(source) = state.ctx_field_source(arg) {
+                        errors.push(VerifierTypeError::new(format!(
+                            "kfunc '{}' arg{} expects stack pointer from stack slot, got context field {:?}",
+                            kfunc, arg_idx, source
+                        )));
+                    }
+                    if space != AddressSpace::Stack {
+                        errors.push(VerifierTypeError::new(format!(
+                            "kfunc '{}' arg{} expects stack pointer, got {:?}",
+                            kfunc, arg_idx, space
+                        )));
+                    }
+                }
                 if kfunc_pointer_arg_requires_kernel(kfunc, arg_idx)
                     && space != AddressSpace::Kernel
                 {
@@ -75,6 +98,13 @@ pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_requires_kernel(
     arg_idx: usize,
 ) -> bool {
     kfunc_pointer_arg_requires_kernel_shared(kfunc, arg_idx)
+}
+
+pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_requires_stack(
+    kfunc: &str,
+    arg_idx: usize,
+) -> bool {
+    kfunc_pointer_arg_requires_stack_shared(kfunc, arg_idx)
 }
 
 pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_expected_ref_kind(

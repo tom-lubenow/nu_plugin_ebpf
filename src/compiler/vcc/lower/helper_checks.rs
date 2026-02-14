@@ -111,7 +111,22 @@ impl<'a> VccLowerer<'a> {
         arg_idx: usize,
         arg: VReg,
     ) -> Result<(), VccError> {
-        if !Self::kfunc_pointer_arg_requires_kernel(kfunc, arg_idx) {
+        if Self::kfunc_pointer_arg_requires_stack(kfunc, arg_idx) {
+            let space = self
+                .value_ptr_info(&MirValue::VReg(arg))
+                .map(|ptr| ptr.space)
+                .unwrap_or(VccAddrSpace::Unknown);
+            if !matches!(space, VccAddrSpace::Stack(_)) {
+                return Err(VccError::new(
+                    VccErrorKind::PointerBounds,
+                    format!(
+                        "kfunc '{}' arg{} expects pointer in [Stack], got {}",
+                        kfunc,
+                        arg_idx,
+                        self.helper_space_name(space)
+                    ),
+                ));
+            }
             return Ok(());
         }
         let space = self.effective_ptr_space(arg).ok_or_else(|| {
@@ -123,6 +138,9 @@ impl<'a> VccLowerer<'a> {
                 "expected pointer value",
             )
         })?;
+        if !Self::kfunc_pointer_arg_requires_kernel(kfunc, arg_idx) {
+            return Ok(());
+        }
         if space != VccAddrSpace::Kernel {
             return Err(VccError::new(
                 VccErrorKind::PointerBounds,
@@ -155,6 +173,10 @@ impl<'a> VccLowerer<'a> {
 
     pub(super) fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
         kfunc_pointer_arg_requires_kernel_shared(kfunc, arg_idx)
+    }
+
+    pub(super) fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_pointer_arg_requires_stack_shared(kfunc, arg_idx)
     }
 
     pub(super) fn kfunc_pointer_arg_expected_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRefKind> {

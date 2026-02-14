@@ -46,6 +46,10 @@ impl<'a> TypeInference<'a> {
         kfunc_pointer_arg_requires_kernel_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_pointer_arg_requires_stack_shared(kfunc, arg_idx)
+    }
+
     pub(super) fn helper_pointer_arg_allows_const_zero(helper_id: u32, arg_idx: usize) -> bool {
         matches!(
             (BpfHelper::from_u32(helper_id), arg_idx),

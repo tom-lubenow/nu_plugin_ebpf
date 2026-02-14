@@ -66,6 +66,7 @@ Last updated: 2026-02-14.
   - Typed kfunc coverage now includes `bpf_rcu_read_lock` / `bpf_rcu_read_unlock`, with verifier_types and VCC parity checks for balanced lock/unlock usage across CFG joins and at function exit.
   - Typed kfunc coverage now includes `bpf_preempt_disable` / `bpf_preempt_enable`, with verifier_types and VCC parity checks for balanced usage across CFG joins and at function exit.
   - Typed kfunc coverage now includes `bpf_local_irq_save` / `bpf_local_irq_restore`, with verifier_types and VCC compile-time parity checks for balanced usage across CFG joins and at function exit.
+  - Verifier/VCC now require stack-slot-backed pointers for `bpf_local_irq_save` / `bpf_local_irq_restore` arguments, rejecting context-derived pseudo-stack pointers before kernel load.
   - Typed kfunc coverage now includes `bpf_map_sum_elem_count` with kernel-pointer map-argument checks across type inference, verifier_types, and VCC.
   - Typed kfunc coverage now includes container traversal primitives (`bpf_list_front` / `bpf_list_back` / `bpf_rbtree_root` / `bpf_rbtree_left` / `bpf_rbtree_right`) with shared kernel-pointer argument checks.
   - Verifier/VCC kfunc ref-lifetime parity now tracks acquired reference kind (`task` vs `cgroup`), preserves unknown-kind merges across CFG joins, and rejects mixed-family releases (`bpf_task_release` vs `bpf_cgroup_release`).

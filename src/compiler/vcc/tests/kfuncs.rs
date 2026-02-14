@@ -93,6 +93,81 @@ fn test_verify_mir_kfunc_pointer_argument_requires_kernel_space() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_local_irq_save_requires_stack_pointer() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let kernel_ptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_local_irq_save".to_string(),
+        btf_id: None,
+        args: vec![kernel_ptr],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        kernel_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected local_irq_save stack-pointer error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg0 expects pointer in [Stack]")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_local_irq_save_rejects_context_derived_stack_pointer() {
+    let (mut func, entry) = new_mir_function();
+
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: flags,
+            field: CtxField::Arg(0),
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_local_irq_save".to_string(),
+        btf_id: None,
+        args: vec![flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        flags,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected local_irq_save context-derived stack-pointer rejection");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg0 expects pointer in [Stack]")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_kfunc_list_push_front_requires_kernel_space() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;

@@ -202,3 +202,10 @@ pub fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
             | ("bpf_rbtree_right", 0)
     )
 }
+
+pub fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
+    matches!(
+        (kfunc, arg_idx),
+        ("bpf_local_irq_save", 0) | ("bpf_local_irq_restore", 0)
+    )
+}

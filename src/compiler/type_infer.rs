@@ -27,6 +27,7 @@ use super::instruction::{
     BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncRetKind,
     KfuncSignature, helper_acquire_ref_kind,
     kfunc_pointer_arg_requires_kernel as kfunc_pointer_arg_requires_kernel_shared,
+    kfunc_pointer_arg_requires_stack as kfunc_pointer_arg_requires_stack_shared,
 };
 use super::mir::{
     AddressSpace, BasicBlock, BinOpKind, CtxField, MapKind, MirFunction, MirInst, MirType,

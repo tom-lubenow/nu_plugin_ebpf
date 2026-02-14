@@ -957,6 +957,19 @@ fn test_kfunc_pointer_arg_requires_kernel_mappings() {
         2
     ));
     assert!(!kfunc_pointer_arg_requires_kernel("bpf_obj_new_impl", 1));
+    assert!(!kfunc_pointer_arg_requires_kernel("bpf_local_irq_save", 0));
+    assert!(!kfunc_pointer_arg_requires_kernel(
+        "bpf_local_irq_restore",
+        0
+    ));
+}
+
+#[test]
+fn test_kfunc_pointer_arg_requires_stack_mappings() {
+    assert!(kfunc_pointer_arg_requires_stack("bpf_local_irq_save", 0));
+    assert!(kfunc_pointer_arg_requires_stack("bpf_local_irq_restore", 0));
+    assert!(!kfunc_pointer_arg_requires_stack("bpf_local_irq_save", 1));
+    assert!(!kfunc_pointer_arg_requires_stack("bpf_task_release", 0));
 }
 
 #[test]

@@ -557,6 +557,43 @@ fn test_infer_kfunc_local_irq_save_restore_signatures() {
 }
 
 #[test]
+fn test_type_error_kfunc_local_irq_save_requires_stack_pointer() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let save_ret = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: save_ret,
+        kfunc: "bpf_local_irq_save".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected local_irq_save stack-pointer type error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("arg0 expects stack pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_kfunc_map_sum_elem_count_requires_kernel_space() {
     let mut func = make_test_function();
     let map_ptr = func.alloc_vreg();

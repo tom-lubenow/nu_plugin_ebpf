@@ -570,6 +570,14 @@ impl<'a> TypeInference<'a> {
                         }
                         KfuncArgKind::Pointer => match arg_ty {
                             MirType::Ptr { address_space, .. } => {
+                                if Self::kfunc_pointer_arg_requires_stack(kfunc, idx)
+                                    && address_space != AddressSpace::Stack
+                                {
+                                    errors.push(TypeError::new(format!(
+                                        "kfunc '{}' arg{} expects stack pointer, got {:?}",
+                                        kfunc, idx, address_space
+                                    )));
+                                }
                                 if Self::kfunc_pointer_arg_requires_kernel(kfunc, idx)
                                     && address_space != AddressSpace::Kernel
                                 {
