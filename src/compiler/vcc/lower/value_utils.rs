@@ -111,6 +111,7 @@ impl<'a> VccLowerer<'a> {
                     Some(
                         BpfHelper::SkFullsock
                             | BpfHelper::TcpSock
+                            | BpfHelper::SkcToTcp6Sock
                             | BpfHelper::SkcToTcpSock
                             | BpfHelper::GetListenerSock
                     )

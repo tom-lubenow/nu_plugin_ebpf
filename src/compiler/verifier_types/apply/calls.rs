@@ -62,6 +62,7 @@ pub(super) fn apply_call_helper_inst(
                 Some(
                     BpfHelper::SkFullsock
                     | BpfHelper::TcpSock
+                    | BpfHelper::SkcToTcp6Sock
                     | BpfHelper::SkcToTcpSock
                     | BpfHelper::GetListenerSock,
                 ) => VerifierType::Ptr {
