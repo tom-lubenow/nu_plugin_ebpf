@@ -1,0 +1,506 @@
+use std::collections::{HashMap, HashSet};
+
+use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
+use nu_protocol::{BlockId as NuBlockId, VarId};
+
+use super::{
+    CompileError, HirBlock, HirBlockId, HirCallArgs, HirFunction, HirLiteral, HirProgram, HirStmt,
+    HirTerminator,
+};
+
+struct CallArgsBuilder {
+    args: HirCallArgs,
+}
+
+impl CallArgsBuilder {
+    fn new() -> Self {
+        Self {
+            args: HirCallArgs::default(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.args.positional.is_empty()
+            && self.args.rest.is_empty()
+            && self.args.named.is_empty()
+            && self.args.flags.is_empty()
+            && self.args.parser_info.is_empty()
+    }
+
+    fn take(&mut self) -> HirCallArgs {
+        let mut out = HirCallArgs::default();
+        std::mem::swap(&mut out, &mut self.args);
+        out
+    }
+}
+
+fn bytes_from_slice(data: &[u8], slice: DataSlice) -> Vec<u8> {
+    let start = slice.start as usize;
+    let end = start.saturating_add(slice.len as usize);
+    data.get(start..end).unwrap_or_default().to_vec()
+}
+
+impl HirLiteral {
+    pub(super) fn from_ir(lit: Literal, data: &[u8]) -> Self {
+        match lit {
+            Literal::Bool(val) => HirLiteral::Bool(val),
+            Literal::Int(val) => HirLiteral::Int(val),
+            Literal::Float(val) => HirLiteral::Float(val),
+            Literal::Filesize(val) => HirLiteral::Filesize(val),
+            Literal::Duration(val) => HirLiteral::Duration(val),
+            Literal::Binary(slice) => HirLiteral::Binary(bytes_from_slice(data, slice)),
+            Literal::Block(id) => HirLiteral::Block(id),
+            Literal::Closure(id) => HirLiteral::Closure(id),
+            Literal::RowCondition(id) => HirLiteral::RowCondition(id),
+            Literal::Range {
+                start,
+                step,
+                end,
+                inclusion,
+            } => HirLiteral::Range {
+                start,
+                step,
+                end,
+                inclusion,
+            },
+            Literal::List { capacity } => HirLiteral::List { capacity },
+            Literal::Record { capacity } => HirLiteral::Record { capacity },
+            Literal::Filepath { val, no_expand } => HirLiteral::Filepath {
+                val: bytes_from_slice(data, val),
+                no_expand,
+            },
+            Literal::Directory { val, no_expand } => HirLiteral::Directory {
+                val: bytes_from_slice(data, val),
+                no_expand,
+            },
+            Literal::GlobPattern { val, no_expand } => HirLiteral::GlobPattern {
+                val: bytes_from_slice(data, val),
+                no_expand,
+            },
+            Literal::String(slice) => HirLiteral::String(bytes_from_slice(data, slice)),
+            Literal::RawString(slice) => HirLiteral::RawString(bytes_from_slice(data, slice)),
+            Literal::CellPath(path) => HirLiteral::CellPath(path),
+            Literal::Date(val) => HirLiteral::Date(val),
+            Literal::Nothing => HirLiteral::Nothing,
+        }
+    }
+}
+
+impl HirFunction {
+    pub fn from_ir_block(ir: IrBlock) -> Result<Self, CompileError> {
+        let IrBlock {
+            instructions,
+            spans,
+            data,
+            ast,
+            comments,
+            register_count,
+            file_count,
+        } = ir;
+
+        let block_starts = compute_block_starts(&instructions);
+        let block_ids = assign_block_ids(&block_starts);
+
+        let entry = *block_ids.get(&0).ok_or_else(|| {
+            CompileError::UnsupportedInstruction("HIR entry block missing".into())
+        })?;
+
+        let mut blocks: Vec<HirBlock> = Vec::new();
+        let mut current_block_id = entry;
+        let mut current_start = 0usize;
+        let mut stmts: Vec<HirStmt> = Vec::new();
+        let mut terminator: Option<HirTerminator> = None;
+        let mut args_builder = CallArgsBuilder::new();
+
+        for (idx, inst) in instructions.into_iter().enumerate() {
+            if idx != current_start && block_starts.contains(&idx) {
+                if !args_builder.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "Call arguments split by control flow".into(),
+                    ));
+                }
+                if terminator.is_none() {
+                    let target = block_ids[&idx];
+                    terminator = Some(HirTerminator::Goto { target });
+                }
+                blocks.push(HirBlock {
+                    id: current_block_id,
+                    stmts: std::mem::take(&mut stmts),
+                    terminator: terminator.take().unwrap_or(HirTerminator::Unreachable),
+                });
+                current_block_id = block_ids[&idx];
+                current_start = idx;
+            }
+
+            match inst {
+                Instruction::Unreachable => {
+                    if !args_builder.is_empty() {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "Call arguments split by control flow".into(),
+                        ));
+                    }
+                    terminator = Some(HirTerminator::Unreachable);
+                }
+                Instruction::LoadLiteral { dst, lit } => {
+                    stmts.push(HirStmt::LoadLiteral {
+                        dst,
+                        lit: HirLiteral::from_ir(lit, &data),
+                    });
+                }
+                Instruction::LoadValue { dst, val } => {
+                    stmts.push(HirStmt::LoadValue { dst, val });
+                }
+                Instruction::Move { dst, src } => {
+                    stmts.push(HirStmt::Move { dst, src });
+                }
+                Instruction::Clone { dst, src } => {
+                    stmts.push(HirStmt::Clone { dst, src });
+                }
+                Instruction::Collect { src_dst } => {
+                    stmts.push(HirStmt::Collect { src_dst });
+                }
+                Instruction::Span { src_dst } => {
+                    stmts.push(HirStmt::Span { src_dst });
+                }
+                Instruction::Drop { src } => {
+                    stmts.push(HirStmt::Drop { src });
+                }
+                Instruction::Drain { src } => {
+                    stmts.push(HirStmt::Drain { src });
+                }
+                Instruction::DrainIfEnd { src } => {
+                    stmts.push(HirStmt::DrainIfEnd { src });
+                }
+                Instruction::LoadVariable { dst, var_id } => {
+                    stmts.push(HirStmt::LoadVariable { dst, var_id });
+                }
+                Instruction::StoreVariable { var_id, src } => {
+                    stmts.push(HirStmt::StoreVariable { var_id, src });
+                }
+                Instruction::DropVariable { var_id } => {
+                    stmts.push(HirStmt::DropVariable { var_id });
+                }
+                Instruction::LoadEnv { dst, key } => {
+                    stmts.push(HirStmt::LoadEnv {
+                        dst,
+                        key: bytes_from_slice(&data, key),
+                    });
+                }
+                Instruction::LoadEnvOpt { dst, key } => {
+                    stmts.push(HirStmt::LoadEnvOpt {
+                        dst,
+                        key: bytes_from_slice(&data, key),
+                    });
+                }
+                Instruction::StoreEnv { key, src } => {
+                    stmts.push(HirStmt::StoreEnv {
+                        key: bytes_from_slice(&data, key),
+                        src,
+                    });
+                }
+                Instruction::PushPositional { src } => {
+                    args_builder.args.positional.push(src);
+                }
+                Instruction::AppendRest { src } => {
+                    args_builder.args.rest.push(src);
+                }
+                Instruction::PushFlag { name } | Instruction::PushShortFlag { short: name } => {
+                    args_builder.args.flags.push(bytes_from_slice(&data, name));
+                }
+                Instruction::PushNamed { name, src }
+                | Instruction::PushShortNamed { short: name, src } => {
+                    args_builder
+                        .args
+                        .named
+                        .push((bytes_from_slice(&data, name), src));
+                }
+                Instruction::PushParserInfo { name, info } => {
+                    args_builder
+                        .args
+                        .parser_info
+                        .push((bytes_from_slice(&data, name), info));
+                }
+                Instruction::RedirectOut { mode } => {
+                    stmts.push(HirStmt::RedirectOut { mode });
+                }
+                Instruction::RedirectErr { mode } => {
+                    stmts.push(HirStmt::RedirectErr { mode });
+                }
+                Instruction::CheckErrRedirected { src } => {
+                    stmts.push(HirStmt::CheckErrRedirected { src });
+                }
+                Instruction::OpenFile {
+                    file_num,
+                    path,
+                    append,
+                } => {
+                    stmts.push(HirStmt::OpenFile {
+                        file_num,
+                        path,
+                        append,
+                    });
+                }
+                Instruction::WriteFile { file_num, src } => {
+                    stmts.push(HirStmt::WriteFile { file_num, src });
+                }
+                Instruction::CloseFile { file_num } => {
+                    stmts.push(HirStmt::CloseFile { file_num });
+                }
+                Instruction::Call { decl_id, src_dst } => {
+                    let args = args_builder.take();
+                    stmts.push(HirStmt::Call {
+                        decl_id,
+                        src_dst,
+                        args,
+                    });
+                }
+                Instruction::StringAppend { src_dst, val } => {
+                    stmts.push(HirStmt::StringAppend { src_dst, val });
+                }
+                Instruction::GlobFrom { src_dst, no_expand } => {
+                    stmts.push(HirStmt::GlobFrom { src_dst, no_expand });
+                }
+                Instruction::ListPush { src_dst, item } => {
+                    stmts.push(HirStmt::ListPush { src_dst, item });
+                }
+                Instruction::ListSpread { src_dst, items } => {
+                    stmts.push(HirStmt::ListSpread { src_dst, items });
+                }
+                Instruction::RecordInsert { src_dst, key, val } => {
+                    stmts.push(HirStmt::RecordInsert { src_dst, key, val });
+                }
+                Instruction::RecordSpread { src_dst, items } => {
+                    stmts.push(HirStmt::RecordSpread { src_dst, items });
+                }
+                Instruction::Not { src_dst } => {
+                    stmts.push(HirStmt::Not { src_dst });
+                }
+                Instruction::BinaryOp { lhs_dst, op, rhs } => {
+                    stmts.push(HirStmt::BinaryOp { lhs_dst, op, rhs });
+                }
+                Instruction::FollowCellPath { src_dst, path } => {
+                    stmts.push(HirStmt::FollowCellPath { src_dst, path });
+                }
+                Instruction::CloneCellPath { dst, src, path } => {
+                    stmts.push(HirStmt::CloneCellPath { dst, src, path });
+                }
+                Instruction::UpsertCellPath {
+                    src_dst,
+                    path,
+                    new_value,
+                } => {
+                    stmts.push(HirStmt::UpsertCellPath {
+                        src_dst,
+                        path,
+                        new_value,
+                    });
+                }
+                Instruction::Jump { index } => {
+                    if !args_builder.is_empty() {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "Call arguments split by control flow".into(),
+                        ));
+                    }
+                    let target = block_ids[&index];
+                    terminator = Some(HirTerminator::Jump { target });
+                }
+                Instruction::BranchIf { cond, index } => {
+                    if !args_builder.is_empty() {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "Call arguments split by control flow".into(),
+                        ));
+                    }
+                    let if_true = block_ids[&index];
+                    let if_false = block_ids.get(&(idx + 1)).copied().ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "Missing fallthrough block for BranchIf".into(),
+                        )
+                    })?;
+                    terminator = Some(HirTerminator::BranchIf {
+                        cond,
+                        if_true,
+                        if_false,
+                    });
+                }
+                Instruction::BranchIfEmpty { src, index } => {
+                    if !args_builder.is_empty() {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "Call arguments split by control flow".into(),
+                        ));
+                    }
+                    let if_true = block_ids[&index];
+                    let if_false = block_ids.get(&(idx + 1)).copied().ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "Missing fallthrough block for BranchIfEmpty".into(),
+                        )
+                    })?;
+                    terminator = Some(HirTerminator::BranchIfEmpty {
+                        src,
+                        if_true,
+                        if_false,
+                    });
+                }
+                Instruction::Match {
+                    pattern,
+                    src,
+                    index,
+                } => {
+                    if !args_builder.is_empty() {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "Call arguments split by control flow".into(),
+                        ));
+                    }
+                    let if_true = block_ids[&index];
+                    let if_false = block_ids.get(&(idx + 1)).copied().ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "Missing fallthrough block for Match".into(),
+                        )
+                    })?;
+                    terminator = Some(HirTerminator::Match {
+                        pattern,
+                        src,
+                        if_true,
+                        if_false,
+                    });
+                }
+                Instruction::CheckMatchGuard { src } => {
+                    stmts.push(HirStmt::CheckMatchGuard { src });
+                }
+                Instruction::Iterate {
+                    dst,
+                    stream,
+                    end_index,
+                } => {
+                    if !args_builder.is_empty() {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "Call arguments split by control flow".into(),
+                        ));
+                    }
+                    let body = block_ids.get(&(idx + 1)).copied().ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "Missing loop body block for Iterate".into(),
+                        )
+                    })?;
+                    let end = block_ids[&end_index];
+                    terminator = Some(HirTerminator::Iterate {
+                        dst,
+                        stream,
+                        body,
+                        end,
+                    });
+                }
+                Instruction::OnError { index } => {
+                    let target = block_ids[&index];
+                    stmts.push(HirStmt::OnError { target });
+                }
+                Instruction::OnErrorInto { index, dst } => {
+                    let target = block_ids[&index];
+                    stmts.push(HirStmt::OnErrorInto { target, dst });
+                }
+                Instruction::PopErrorHandler => {
+                    stmts.push(HirStmt::PopErrorHandler);
+                }
+                Instruction::ReturnEarly { src } => {
+                    if !args_builder.is_empty() {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "Call arguments split by control flow".into(),
+                        ));
+                    }
+                    terminator = Some(HirTerminator::ReturnEarly { src });
+                }
+                Instruction::Return { src } => {
+                    if !args_builder.is_empty() {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "Call arguments split by control flow".into(),
+                        ));
+                    }
+                    terminator = Some(HirTerminator::Return { src });
+                }
+            }
+        }
+
+        if !args_builder.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "Call arguments left without a call".into(),
+            ));
+        }
+
+        if terminator.is_none() {
+            return Err(CompileError::UnsupportedInstruction(
+                "HIR block missing terminator".into(),
+            ));
+        }
+
+        blocks.push(HirBlock {
+            id: current_block_id,
+            stmts,
+            terminator: terminator.unwrap(),
+        });
+
+        Ok(HirFunction {
+            blocks,
+            entry,
+            spans,
+            ast,
+            comments,
+            register_count,
+            file_count,
+        })
+    }
+}
+
+fn compute_block_starts(instructions: &[Instruction]) -> HashSet<usize> {
+    let mut starts = HashSet::new();
+    starts.insert(0);
+
+    for (idx, inst) in instructions.iter().enumerate() {
+        if let Some(target) = inst.branch_target() {
+            starts.insert(target);
+        }
+
+        if matches!(
+            inst,
+            Instruction::Jump { .. }
+                | Instruction::BranchIf { .. }
+                | Instruction::BranchIfEmpty { .. }
+                | Instruction::Match { .. }
+                | Instruction::Iterate { .. }
+                | Instruction::Return { .. }
+                | Instruction::ReturnEarly { .. }
+                | Instruction::Unreachable
+        ) {
+            if idx + 1 < instructions.len() {
+                starts.insert(idx + 1);
+            }
+        }
+    }
+
+    starts
+}
+
+fn assign_block_ids(starts: &HashSet<usize>) -> HashMap<usize, HirBlockId> {
+    let mut indices: Vec<usize> = starts.iter().copied().collect();
+    indices.sort_unstable();
+
+    let mut map = HashMap::new();
+    for (id, idx) in indices.into_iter().enumerate() {
+        map.insert(idx, HirBlockId(id));
+    }
+    map
+}
+
+/// Lower Nushell IR into the HIR container.
+pub fn lower_ir_to_hir(
+    main: IrBlock,
+    closures: HashMap<NuBlockId, IrBlock>,
+    captures: Vec<(String, i64)>,
+    ctx_param: Option<VarId>,
+) -> Result<HirProgram, CompileError> {
+    let main = HirFunction::from_ir_block(main)?;
+    let mut closure_hir = HashMap::new();
+    for (id, ir) in closures {
+        let func = HirFunction::from_ir_block(ir)?;
+        closure_hir.insert(id, func);
+    }
+    Ok(HirProgram::new(main, closure_hir, captures, ctx_param))
+}
