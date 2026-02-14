@@ -19,6 +19,9 @@ impl BpfHelper {
             84 => Some(Self::SkLookupTcp),
             85 => Some(Self::SkLookupUdp),
             86 => Some(Self::SkRelease),
+            87 => Some(Self::MapPushElem),
+            88 => Some(Self::MapPopElem),
+            89 => Some(Self::MapPeekElem),
             95 => Some(Self::SkFullsock),
             96 => Some(Self::TcpSock),
             98 => Some(Self::GetListenerSock),
@@ -56,6 +59,18 @@ impl BpfHelper {
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::MapDeleteElem => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::MapPushElem => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::MapPopElem | BpfHelper::MapPeekElem => HelperSignature {
                 min_args: 2,
                 max_args: 2,
                 arg_kinds: [P, P, S, S, S],
@@ -236,6 +251,57 @@ impl BpfHelper {
             HelperPtrArgRule {
                 arg_idx: 1,
                 op: "helper map_delete key",
+                allowed: STACK_MAP,
+                fixed_size: Some(1),
+                size_from_arg: None,
+            },
+        ];
+
+        const MAP_PUSH_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper map_push map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper map_push value",
+                allowed: STACK_MAP,
+                fixed_size: Some(1),
+                size_from_arg: None,
+            },
+        ];
+
+        const MAP_POP_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper map_pop map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper map_pop value",
+                allowed: STACK_MAP,
+                fixed_size: Some(1),
+                size_from_arg: None,
+            },
+        ];
+
+        const MAP_PEEK_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper map_peek map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper map_peek value",
                 allowed: STACK_MAP,
                 fixed_size: Some(1),
                 size_from_arg: None,
@@ -494,6 +560,21 @@ impl BpfHelper {
             },
             BpfHelper::MapDeleteElem => HelperSemantics {
                 ptr_arg_rules: MAP_DELETE_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::MapPushElem => HelperSemantics {
+                ptr_arg_rules: MAP_PUSH_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::MapPopElem => HelperSemantics {
+                ptr_arg_rules: MAP_POP_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::MapPeekElem => HelperSemantics {
+                ptr_arg_rules: MAP_PEEK_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

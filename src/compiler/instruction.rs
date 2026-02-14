@@ -80,6 +80,12 @@ pub enum BpfHelper {
     SkLookupUdp = 85,
     /// void bpf_sk_release(sock)
     SkRelease = 86,
+    /// long bpf_map_push_elem(map, value, flags)
+    MapPushElem = 87,
+    /// long bpf_map_pop_elem(map, value)
+    MapPopElem = 88,
+    /// long bpf_map_peek_elem(map, value)
+    MapPeekElem = 89,
     /// struct bpf_sock *bpf_sk_fullsock(sk)
     SkFullsock = 95,
     /// struct bpf_tcp_sock *bpf_tcp_sock(sk)

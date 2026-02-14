@@ -1357,6 +1357,139 @@ fn test_verify_mir_helper_map_update_rejects_user_key() {
 }
 
 #[test]
+fn test_verify_mir_helper_map_queue_rejects_map_lookup_value_as_map_arg() {
+    let helpers = [
+        (
+            BpfHelper::MapPushElem,
+            "helper map_push map expects pointer in [Stack]",
+        ),
+        (
+            BpfHelper::MapPopElem,
+            "helper map_pop map expects pointer in [Stack]",
+        ),
+        (
+            BpfHelper::MapPeekElem,
+            "helper map_peek map expects pointer in [Stack]",
+        ),
+    ];
+
+    for (helper, needle) in helpers {
+        let (mut func, entry) = new_mir_function();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let value_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let lookup = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let helper_ret = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: lookup,
+                helper: BpfHelper::MapLookupElem as u32,
+                args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
+            });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(lookup),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: call,
+            if_false: done,
+        };
+
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: helper as u32,
+            args: match helper {
+                BpfHelper::MapPushElem => vec![
+                    MirValue::VReg(lookup),
+                    MirValue::StackSlot(value_slot),
+                    MirValue::Const(0),
+                ],
+                BpfHelper::MapPopElem | BpfHelper::MapPeekElem => {
+                    vec![MirValue::VReg(lookup), MirValue::StackSlot(value_slot)]
+                }
+                _ => unreachable!(),
+            },
+        });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            lookup,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Map,
+            },
+        );
+        types.insert(cond, MirType::Bool);
+        types.insert(helper_ret, MirType::I64);
+
+        let err =
+            verify_mir(&func, &types).expect_err("expected map queue helper map-arg rejection");
+        assert!(
+            err.iter().any(|e| e.message.contains(needle)),
+            "unexpected error messages for helper {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
+fn test_verify_mir_helper_map_queue_rejects_non_pointer_value_arg() {
+    let helpers = [
+        (BpfHelper::MapPushElem, 87u32),
+        (BpfHelper::MapPopElem, 88u32),
+        (BpfHelper::MapPeekElem, 89u32),
+    ];
+
+    for (helper, helper_id) in helpers {
+        let (mut func, entry) = new_mir_function();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let helper_ret = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: helper_ret,
+                helper: helper as u32,
+                args: match helper {
+                    BpfHelper::MapPushElem => vec![
+                        MirValue::StackSlot(map_slot),
+                        MirValue::Const(0),
+                        MirValue::Const(0),
+                    ],
+                    BpfHelper::MapPopElem | BpfHelper::MapPeekElem => {
+                        vec![MirValue::StackSlot(map_slot), MirValue::Const(0)]
+                    }
+                    _ => unreachable!(),
+                },
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(helper_ret, MirType::I64);
+
+        let err = verify_mir(&func, &types)
+            .expect_err("expected map queue helper value-pointer argument rejection");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains(&format!("helper {} arg1 expects pointer value", helper_id))),
+            "unexpected error messages for helper {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_unknown_helper_rejects_more_than_five_args() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();

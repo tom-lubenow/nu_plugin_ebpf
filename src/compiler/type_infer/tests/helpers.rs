@@ -170,6 +170,107 @@ fn test_infer_helper_map_lookup_returns_pointer() {
 }
 
 #[test]
+fn test_type_error_helper_map_queue_helpers_reject_non_stack_map_arg() {
+    let helpers = [
+        (BpfHelper::MapPushElem, "helper map_push map expects pointer in [Stack]"),
+        (BpfHelper::MapPopElem, "helper map_pop map expects pointer in [Stack]"),
+        (BpfHelper::MapPeekElem, "helper map_peek map expects pointer in [Stack]"),
+    ];
+
+    for (helper, needle) in helpers {
+        let mut func = make_test_function();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let map_value_ptr = func.alloc_vreg();
+        let value_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallHelper {
+            dst: map_value_ptr,
+            helper: BpfHelper::MapLookupElem as u32,
+            args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: match helper {
+                BpfHelper::MapPushElem => vec![
+                    MirValue::VReg(map_value_ptr),
+                    MirValue::StackSlot(value_slot),
+                    MirValue::Const(0),
+                ],
+                BpfHelper::MapPopElem | BpfHelper::MapPeekElem => {
+                    vec![
+                        MirValue::VReg(map_value_ptr),
+                        MirValue::StackSlot(value_slot),
+                    ]
+                }
+                _ => unreachable!(),
+            },
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected map queue helper map-pointer space error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(needle)),
+            "unexpected errors for helper {helper:?}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
+fn test_type_error_helper_map_queue_helpers_reject_non_pointer_value_arg() {
+    let helpers = [
+        BpfHelper::MapPushElem,
+        BpfHelper::MapPopElem,
+        BpfHelper::MapPeekElem,
+    ];
+
+    for helper in helpers {
+        let mut func = make_test_function();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: match helper {
+                BpfHelper::MapPushElem => {
+                    vec![
+                        MirValue::StackSlot(map_slot),
+                        MirValue::Const(0),
+                        MirValue::Const(0),
+                    ]
+                }
+                BpfHelper::MapPopElem | BpfHelper::MapPeekElem => {
+                    vec![MirValue::StackSlot(map_slot), MirValue::Const(0)]
+                }
+                _ => unreachable!(),
+            },
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected map queue helper value pointer error");
+        assert!(
+            errs.iter().any(|e| e
+                .message
+                .contains(&format!("helper {} arg1 expects pointer", helper as u32))),
+            "unexpected errors for helper {helper:?}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_infer_helper_sk_lookup_returns_kernel_pointer() {
     let mut func = make_test_function();
     let pid = func.alloc_vreg();

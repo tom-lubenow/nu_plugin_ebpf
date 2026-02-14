@@ -52,6 +52,34 @@ fn test_helper_signature_kptr_xchg() {
 }
 
 #[test]
+fn test_helper_signature_map_queue_helpers() {
+    let sig = HelperSignature::for_id(BpfHelper::MapPushElem as u32)
+        .expect("expected bpf_map_push_elem helper signature");
+    assert_eq!(sig.min_args, 3);
+    assert_eq!(sig.max_args, 3);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::MapPopElem as u32)
+        .expect("expected bpf_map_pop_elem helper signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::MapPeekElem as u32)
+        .expect("expected bpf_map_peek_elem helper signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
 fn test_helper_signature_socket_helpers() {
     let sig = HelperSignature::for_id(BpfHelper::SkLookupTcp as u32)
         .expect("expected bpf_sk_lookup_tcp helper signature");
