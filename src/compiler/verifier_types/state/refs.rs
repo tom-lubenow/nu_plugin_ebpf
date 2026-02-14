@@ -185,7 +185,7 @@ impl VerifierState {
     ) -> bool {
         self.iter_task_vma_slots
             .get(&slot)
-            .is_some_and(|(_, max_depth)| *max_depth > 0)
+            .is_some_and(|(min_depth, _)| *min_depth > 0)
     }
 
     pub(in crate::compiler::verifier_types) fn release_iter_task_vma_slot(

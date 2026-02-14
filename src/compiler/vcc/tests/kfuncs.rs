@@ -1243,6 +1243,99 @@ fn test_verify_mir_kfunc_iter_task_vma_next_requires_matching_new_slot() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_iter_task_vma_next_rejected_after_mixed_join() {
+    let (mut func, entry) = new_mir_function();
+    let new_path = func.alloc_block();
+    let no_new_path = func.alloc_block();
+    let join = func.alloc_block();
+    func.param_count = 2;
+
+    let task = func.alloc_vreg();
+    let selector = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let iter = func.alloc_vreg();
+    let addr = func.alloc_vreg();
+    let new_ret = func.alloc_vreg();
+    let next_ret = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: addr,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: new_path,
+        if_false: no_new_path,
+    };
+
+    func.block_mut(new_path)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: new_ret,
+            kfunc: "bpf_iter_task_vma_new".to_string(),
+            btf_id: None,
+            args: vec![iter, task, addr],
+        });
+    func.block_mut(new_path).terminator = MirInst::Jump { target: join };
+    func.block_mut(no_new_path).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(join).instructions.push(MirInst::CallKfunc {
+        dst: next_ret,
+        kfunc: "bpf_iter_task_vma_next".to_string(),
+        btf_id: None,
+        args: vec![iter],
+    });
+    func.block_mut(join).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(selector, MirType::I64);
+    types.insert(cond, MirType::Bool);
+    types.insert(
+        iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(addr, MirType::I64);
+    types.insert(new_ret, MirType::I64);
+    types.insert(
+        next_ret,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected mixed-path iter_task_vma_next error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires a matching bpf_iter_task_vma_new")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_kfunc_iter_task_vma_destroy_requires_matching_new_slot() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;

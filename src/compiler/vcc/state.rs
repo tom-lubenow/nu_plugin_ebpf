@@ -238,7 +238,7 @@ impl VccState {
     fn use_iter_task_vma_slot(&self, slot: StackSlotId) -> bool {
         self.iter_task_vma_slots
             .get(&slot)
-            .is_some_and(|(_, max_depth)| *max_depth > 0)
+            .is_some_and(|(min_depth, _)| *min_depth > 0)
     }
 
     fn release_iter_task_vma_slot(&mut self, slot: StackSlotId) -> bool {
