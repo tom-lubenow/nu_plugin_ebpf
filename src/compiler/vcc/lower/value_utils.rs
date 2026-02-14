@@ -106,6 +106,15 @@ impl<'a> VccLowerer<'a> {
                         kfunc_ref: None,
                     });
                 }
+                if matches!(helper, Some(BpfHelper::GetListenerSock)) {
+                    return VccValueType::Ptr(VccPointerInfo {
+                        space: VccAddrSpace::Kernel,
+                        nullability: VccNullability::MaybeNull,
+                        bounds: None,
+                        ringbuf_ref: None,
+                        kfunc_ref: None,
+                    });
+                }
                 if Self::helper_acquire_kind(helper_id).is_some() {
                     return VccValueType::Ptr(VccPointerInfo {
                         space: VccAddrSpace::Kernel,

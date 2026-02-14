@@ -19,6 +19,7 @@ impl BpfHelper {
             84 => Some(Self::SkLookupTcp),
             85 => Some(Self::SkLookupUdp),
             86 => Some(Self::SkRelease),
+            98 => Some(Self::GetListenerSock),
             99 => Some(Self::SkcLookupTcp),
             114 => Some(Self::ProbeReadUserStr),
             115 => Some(Self::ProbeReadKernelStr),
@@ -111,6 +112,12 @@ impl BpfHelper {
                 max_args: 1,
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::GetListenerSock => HelperSignature {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::PointerMaybeNull,
             },
             BpfHelper::RingbufOutput => HelperSignature {
                 min_args: 4,
@@ -374,6 +381,14 @@ impl BpfHelper {
             size_from_arg: None,
         }];
 
+        const GET_LISTENER_SOCK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper get_listener_sock sk",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
         const KPTR_XCHG_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -466,6 +481,11 @@ impl BpfHelper {
             }
             BpfHelper::SkRelease => HelperSemantics {
                 ptr_arg_rules: SK_RELEASE_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::GetListenerSock => HelperSemantics {
+                ptr_arg_rules: GET_LISTENER_SOCK_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

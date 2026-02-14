@@ -70,6 +70,7 @@ impl<'a> TypeInference<'a> {
                             let pointee = HMType::Var(self.tvar_gen.fresh());
                             let address_space = match BpfHelper::from_u32(*helper) {
                                 Some(BpfHelper::KptrXchg) => AddressSpace::Kernel,
+                                Some(BpfHelper::GetListenerSock) => AddressSpace::Kernel,
                                 Some(helper) if helper_acquire_ref_kind(helper).is_some() => {
                                     AddressSpace::Kernel
                                 }

@@ -1858,6 +1858,40 @@ fn test_verify_mir_helper_sk_release_rejects_non_socket_reference() {
 }
 
 #[test]
+fn test_verify_mir_helper_get_listener_sock_rejects_non_kernel_pointer() {
+    let (mut func, entry) = new_mir_function();
+
+    let sock_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let listener = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: listener,
+            helper: BpfHelper::GetListenerSock as u32,
+            args: vec![MirValue::StackSlot(sock_slot)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        listener,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected get_listener_sock pointer-kind error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper get_listener_sock sk expects pointer in [Kernel], got Stack")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_helper_sk_lookup_leak_is_rejected() {
     let (mut func, entry) = new_mir_function();
     let leak = func.alloc_block();
