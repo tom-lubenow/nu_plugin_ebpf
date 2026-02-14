@@ -172,9 +172,18 @@ fn test_infer_helper_map_lookup_returns_pointer() {
 #[test]
 fn test_type_error_helper_map_queue_helpers_reject_non_stack_map_arg() {
     let helpers = [
-        (BpfHelper::MapPushElem, "helper map_push map expects pointer in [Stack]"),
-        (BpfHelper::MapPopElem, "helper map_pop map expects pointer in [Stack]"),
-        (BpfHelper::MapPeekElem, "helper map_peek map expects pointer in [Stack]"),
+        (
+            BpfHelper::MapPushElem,
+            "helper map_push map expects pointer in [Stack]",
+        ),
+        (
+            BpfHelper::MapPopElem,
+            "helper map_pop map expects pointer in [Stack]",
+        ),
+        (
+            BpfHelper::MapPeekElem,
+            "helper map_peek map expects pointer in [Stack]",
+        ),
     ];
 
     for (helper, needle) in helpers {
@@ -268,6 +277,37 @@ fn test_type_error_helper_map_queue_helpers_reject_non_pointer_value_arg() {
             errs
         );
     }
+}
+
+#[test]
+fn test_type_error_helper_ringbuf_query_rejects_non_stack_map_arg() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let lookup = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst: lookup,
+        helper: BpfHelper::MapLookupElem as u32,
+        args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RingbufQuery as u32,
+        args: vec![MirValue::VReg(lookup), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected ringbuf_query map-pointer space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper ringbuf_query map expects pointer in [Stack]")
+    }));
 }
 
 #[test]

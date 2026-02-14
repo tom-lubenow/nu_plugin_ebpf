@@ -112,6 +112,8 @@ pub enum BpfHelper {
     RingbufSubmit = 132,
     /// void bpf_ringbuf_discard(data, flags)
     RingbufDiscard = 133,
+    /// u64 bpf_ringbuf_query(map, flags)
+    RingbufQuery = 134,
     /// void *bpf_kptr_xchg(dst, ptr)
     KptrXchg = 194,
     /// long bpf_probe_read_user_str(dst, size, unsafe_ptr)

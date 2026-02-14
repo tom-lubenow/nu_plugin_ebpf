@@ -80,6 +80,17 @@ fn test_helper_signature_map_queue_helpers() {
 }
 
 #[test]
+fn test_helper_signature_ringbuf_query() {
+    let sig = HelperSignature::for_id(BpfHelper::RingbufQuery as u32)
+        .expect("expected bpf_ringbuf_query helper signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
 fn test_helper_signature_socket_helpers() {
     let sig = HelperSignature::for_id(BpfHelper::SkLookupTcp as u32)
         .expect("expected bpf_sk_lookup_tcp helper signature");

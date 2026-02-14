@@ -543,6 +543,67 @@ fn test_helper_map_queue_rejects_non_pointer_value_arg() {
 }
 
 #[test]
+fn test_helper_ringbuf_query_rejects_map_lookup_value_as_map_arg() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let lookup = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let query_ret = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: lookup,
+            helper: BpfHelper::MapLookupElem as u32,
+            args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(lookup),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: query_ret,
+        helper: BpfHelper::RingbufQuery as u32,
+        args: vec![MirValue::VReg(lookup), MirValue::Const(0)],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        lookup,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(query_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected ringbuf_query map-arg rejection");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper ringbuf_query map expects pointer in [Stack]")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_helper_ringbuf_reserve_submit_releases_reference() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

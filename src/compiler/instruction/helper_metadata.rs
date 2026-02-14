@@ -37,6 +37,7 @@ impl BpfHelper {
             131 => Some(Self::RingbufReserve),
             132 => Some(Self::RingbufSubmit),
             133 => Some(Self::RingbufDiscard),
+            134 => Some(Self::RingbufQuery),
             194 => Some(Self::KptrXchg),
             _ => None,
         }
@@ -164,6 +165,12 @@ impl BpfHelper {
                 max_args: 3,
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::PointerMaybeNull,
+            },
+            BpfHelper::RingbufQuery => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::RingbufSubmit | BpfHelper::RingbufDiscard => HelperSignature {
                 min_args: 2,
@@ -382,6 +389,14 @@ impl BpfHelper {
                 size_from_arg: Some(2),
             },
         ];
+
+        const RINGBUF_QUERY_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper ringbuf_query map",
+            allowed: STACK_ONLY,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
 
         const TAIL_CALL_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
@@ -606,6 +621,11 @@ impl BpfHelper {
             BpfHelper::RingbufOutput => HelperSemantics {
                 ptr_arg_rules: RINGBUF_OUTPUT_RULES,
                 positive_size_args: &[2],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::RingbufQuery => HelperSemantics {
+                ptr_arg_rules: RINGBUF_QUERY_RULES,
+                positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::TailCall => HelperSemantics {
