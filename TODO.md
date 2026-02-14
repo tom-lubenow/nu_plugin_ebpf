@@ -79,6 +79,7 @@ Last updated: 2026-02-14.
   - Verifier/VCC now preserve pointer/refinement facts through copied and negated branch conditions (including cross-block joins), so guarded kfunc release patterns like `if $task != 0 { ...release... }` verify correctly.
   - Type inference now mirrors kernel-pointer address-space checks for task/cgroup kfunc pointer arguments so these failures are reported earlier.
   - Shared kfunc ref-family metadata is now centralized in `instruction.rs` and consumed by type inference, verifier_types, and VCC to keep task/cgroup semantics in sync.
+  - Verifier/VCC helper ref-kind checks now require null guards for tracked nullable refs on non-release helper arguments (for example, `task_pt_regs`/`sk_fullsock` style helper calls), matching kfunc-side nullability behavior.
   - Verifier parity now enforces the generic helper argument cap (`<= 5` args) for unknown helper IDs in both verifier_types and VCC.
   - Verifier parity now enforces the MIR function parameter cap (`<= 5`) that backend BPF subfunction lowering requires, with verifier_types/VCC regression tests.
   - Verifier parity now enforces `CallSubfn` argument limits (`<= 5`) before MIR->LIR lowering, with verifier_types/VCC regression tests.

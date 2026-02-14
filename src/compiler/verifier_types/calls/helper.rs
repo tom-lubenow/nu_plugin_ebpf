@@ -210,12 +210,20 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         };
         let VerifierType::Ptr {
             space: AddressSpace::Kernel,
+            nullability,
             kfunc_ref: Some(ref_id),
             ..
         } = state.get(*vreg)
         else {
             continue;
         };
+        if !matches!(nullability, Nullability::NonNull) {
+            errors.push(VerifierTypeError::new(format!(
+                "helper {} arg{} may dereference null pointer v{} (add a null check)",
+                helper_id, arg_idx, vreg.0
+            )));
+            continue;
+        }
         if !state.is_live_kfunc_ref(ref_id) {
             errors.push(VerifierTypeError::new(format!(
                 "helper {} arg{} reference already released",

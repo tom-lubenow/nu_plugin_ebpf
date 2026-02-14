@@ -894,6 +894,10 @@ impl VccVerifier {
                     && info.space == VccAddrSpace::Kernel
                     && let Some(ref_id) = info.kfunc_ref
                 {
+                    let op = format!("helper {} arg{}", helper_id, arg_idx);
+                    if let Err(err) = self.require_non_null_ptr(info, &op) {
+                        self.errors.push(err);
+                    }
                     if !state.is_live_kfunc_ref(ref_id) {
                         self.errors.push(VccError::new(
                             VccErrorKind::PointerBounds,

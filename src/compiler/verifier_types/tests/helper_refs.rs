@@ -1301,6 +1301,62 @@ fn test_helper_task_pt_regs_rejects_non_task_reference() {
 }
 
 #[test]
+fn test_helper_task_pt_regs_requires_null_check_for_tracked_task_reference() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let regs = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: regs,
+            helper: BpfHelper::TaskPtRegs as u32,
+            args: vec![MirValue::VReg(task)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        regs,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected task_pt_regs null-check error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 175 arg0 may dereference null pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_helper_task_storage_get_rejects_non_task_reference() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
