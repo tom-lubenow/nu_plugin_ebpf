@@ -122,6 +122,8 @@ pub enum BpfHelper {
     SkcToTcpRequestSock = 139,
     /// struct udp6_sock *bpf_skc_to_udp6_sock(sk)
     SkcToUdp6Sock = 140,
+    /// struct unix_sock *bpf_skc_to_unix_sock(sk)
+    SkcToUnixSock = 178,
     /// void *bpf_inode_storage_get(map, inode, value, flags)
     InodeStorageGet = 145,
     /// long bpf_inode_storage_delete(map, inode)

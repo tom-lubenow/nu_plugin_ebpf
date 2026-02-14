@@ -58,7 +58,8 @@ pub const fn helper_pointer_arg_ref_kind(
             | BpfHelper::SkcToTcpSock
             | BpfHelper::SkcToTcpTimewaitSock
             | BpfHelper::SkcToTcpRequestSock
-            | BpfHelper::SkcToUdp6Sock,
+            | BpfHelper::SkcToUdp6Sock
+            | BpfHelper::SkcToUnixSock,
             0,
         )
         | (BpfHelper::SkStorageGet | BpfHelper::SkStorageDelete | BpfHelper::SkAssign, 1) => {

@@ -1317,6 +1317,7 @@ fn test_infer_helper_additional_skc_casts_return_kernel_pointer() {
         BpfHelper::SkcToTcpTimewaitSock,
         BpfHelper::SkcToTcpRequestSock,
         BpfHelper::SkcToUdp6Sock,
+        BpfHelper::SkcToUnixSock,
     ];
 
     for helper in helpers {
@@ -1497,6 +1498,10 @@ fn test_type_error_helper_additional_skc_casts_reject_non_kernel_pointer() {
         (
             BpfHelper::SkcToUdp6Sock,
             "helper skc_to_udp6_sock sk expects pointer in [Kernel], got Stack",
+        ),
+        (
+            BpfHelper::SkcToUnixSock,
+            "helper skc_to_unix_sock sk expects pointer in [Kernel], got Stack",
         ),
     ];
 

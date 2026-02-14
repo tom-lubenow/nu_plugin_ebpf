@@ -3684,6 +3684,7 @@ fn test_verify_mir_helper_additional_skc_casts_reject_non_socket_reference() {
         (BpfHelper::SkcToTcpTimewaitSock, 138u32),
         (BpfHelper::SkcToTcpRequestSock, 139u32),
         (BpfHelper::SkcToUdp6Sock, 140u32),
+        (BpfHelper::SkcToUnixSock, 178u32),
     ];
 
     for (helper, helper_id) in helpers {
@@ -4133,6 +4134,10 @@ fn test_verify_mir_helper_additional_skc_casts_reject_non_kernel_pointer() {
         (
             BpfHelper::SkcToUdp6Sock,
             "helper skc_to_udp6_sock sk expects pointer in [Kernel], got Stack",
+        ),
+        (
+            BpfHelper::SkcToUnixSock,
+            "helper skc_to_unix_sock sk expects pointer in [Kernel], got Stack",
         ),
     ];
 

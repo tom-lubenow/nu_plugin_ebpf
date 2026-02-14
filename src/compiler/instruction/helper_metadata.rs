@@ -42,6 +42,7 @@ impl BpfHelper {
             146 => Some(Self::InodeStorageDelete),
             156 => Some(Self::TaskStorageGet),
             157 => Some(Self::TaskStorageDelete),
+            178 => Some(Self::SkcToUnixSock),
             114 => Some(Self::ProbeReadUserStr),
             115 => Some(Self::ProbeReadKernelStr),
             130 => Some(Self::RingbufOutput),
@@ -203,7 +204,8 @@ impl BpfHelper {
             | BpfHelper::SkcToTcpSock
             | BpfHelper::SkcToTcpTimewaitSock
             | BpfHelper::SkcToTcpRequestSock
-            | BpfHelper::SkcToUdp6Sock => HelperSignature {
+            | BpfHelper::SkcToUdp6Sock
+            | BpfHelper::SkcToUnixSock => HelperSignature {
                 min_args: 1,
                 max_args: 1,
                 arg_kinds: [P, S, S, S, S],
@@ -794,6 +796,14 @@ impl BpfHelper {
             size_from_arg: None,
         }];
 
+        const SKC_TO_UNIX_SOCK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper skc_to_unix_sock sk",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
         const KPTR_XCHG_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -988,6 +998,11 @@ impl BpfHelper {
             },
             BpfHelper::SkcToUdp6Sock => HelperSemantics {
                 ptr_arg_rules: SKC_TO_UDP6_SOCK_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkcToUnixSock => HelperSemantics {
+                ptr_arg_rules: SKC_TO_UNIX_SOCK_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
