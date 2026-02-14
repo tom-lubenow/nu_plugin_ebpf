@@ -1,4 +1,6 @@
-fn value_range(value: &MirValue, state: &VerifierState) -> ValueRange {
+use super::*;
+
+pub(super) fn value_range(value: &MirValue, state: &VerifierState) -> ValueRange {
     match value {
         MirValue::Const(c) => ValueRange::Known { min: *c, max: *c },
         MirValue::VReg(v) => {
@@ -26,7 +28,7 @@ fn value_range(value: &MirValue, state: &VerifierState) -> ValueRange {
         MirValue::StackSlot(_) => ValueRange::Unknown,
     }
 }
-fn join_range(a: ValueRange, b: ValueRange) -> ValueRange {
+pub(super) fn join_range(a: ValueRange, b: ValueRange) -> ValueRange {
     match (a, b) {
         (
             ValueRange::Known {
@@ -45,7 +47,7 @@ fn join_range(a: ValueRange, b: ValueRange) -> ValueRange {
     }
 }
 
-fn range_add(a: ValueRange, b: ValueRange) -> ValueRange {
+pub(super) fn range_add(a: ValueRange, b: ValueRange) -> ValueRange {
     match (a, b) {
         (
             ValueRange::Known {
@@ -64,7 +66,7 @@ fn range_add(a: ValueRange, b: ValueRange) -> ValueRange {
     }
 }
 
-fn range_sub(a: ValueRange, b: ValueRange) -> ValueRange {
+pub(super) fn range_sub(a: ValueRange, b: ValueRange) -> ValueRange {
     match (a, b) {
         (
             ValueRange::Known {
@@ -83,7 +85,7 @@ fn range_sub(a: ValueRange, b: ValueRange) -> ValueRange {
     }
 }
 
-fn range_for_binop(
+pub(super) fn range_for_binop(
     op: BinOpKind,
     lhs: &MirValue,
     rhs: &MirValue,
@@ -106,7 +108,7 @@ fn range_for_binop(
     }
 }
 
-fn range_for_phi(args: &[(BlockId, VReg)], state: &VerifierState) -> ValueRange {
+pub(super) fn range_for_phi(args: &[(BlockId, VReg)], state: &VerifierState) -> ValueRange {
     let mut merged = None;
     for (_, vreg) in args {
         let range = state.get_range(*vreg);
@@ -118,7 +120,7 @@ fn range_for_phi(args: &[(BlockId, VReg)], state: &VerifierState) -> ValueRange 
     merged.unwrap_or(ValueRange::Unknown)
 }
 
-fn clamp_i128_to_i64(value: i128) -> i64 {
+pub(super) fn clamp_i128_to_i64(value: i128) -> i64 {
     if value > i64::MAX as i128 {
         i64::MAX
     } else if value < i64::MIN as i128 {
@@ -128,7 +130,7 @@ fn clamp_i128_to_i64(value: i128) -> i64 {
     }
 }
 
-fn range_mul(a: ValueRange, b: ValueRange) -> ValueRange {
+pub(super) fn range_mul(a: ValueRange, b: ValueRange) -> ValueRange {
     match (a, b) {
         (
             ValueRange::Known {
@@ -161,7 +163,7 @@ fn range_mul(a: ValueRange, b: ValueRange) -> ValueRange {
     }
 }
 
-fn range_shift(lhs: ValueRange, rhs: ValueRange, is_left: bool) -> ValueRange {
+pub(super) fn range_shift(lhs: ValueRange, rhs: ValueRange, is_left: bool) -> ValueRange {
     let (lhs_min, lhs_max, rhs_min, rhs_max) = match (lhs, rhs) {
         (
             ValueRange::Known {
@@ -202,7 +204,7 @@ fn range_shift(lhs: ValueRange, rhs: ValueRange, is_left: bool) -> ValueRange {
     }
 }
 
-fn range_div(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
+pub(super) fn range_div(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
     match (lhs, rhs) {
         (
             ValueRange::Known {
@@ -238,7 +240,7 @@ fn range_div(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
     }
 }
 
-fn range_mod(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
+pub(super) fn range_mod(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
     match (lhs, rhs) {
         (
             ValueRange::Known {
@@ -266,7 +268,7 @@ fn range_mod(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
     }
 }
 
-fn range_and(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
+pub(super) fn range_and(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
     let (lhs_min, lhs_max, rhs_min, rhs_max) = match (lhs, rhs) {
         (
             ValueRange::Known {
@@ -292,7 +294,7 @@ fn range_and(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
     ValueRange::Known { min: 0, max }
 }
 
-fn range_or(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
+pub(super) fn range_or(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
     let (lhs_min, lhs_max, rhs_min, rhs_max) = match (lhs, rhs) {
         (
             ValueRange::Known {
@@ -318,7 +320,7 @@ fn range_or(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
     ValueRange::Known { min: 0, max }
 }
 
-fn range_xor(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
+pub(super) fn range_xor(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
     let (lhs_min, lhs_max, rhs_min, rhs_max) = match (lhs, rhs) {
         (
             ValueRange::Known {
@@ -344,7 +346,7 @@ fn range_xor(lhs: ValueRange, rhs: ValueRange) -> ValueRange {
     ValueRange::Known { min: 0, max }
 }
 
-fn mask_for_max(max: i64) -> u64 {
+pub(super) fn mask_for_max(max: i64) -> u64 {
     if max <= 0 {
         return 0;
     }
@@ -360,7 +362,10 @@ fn mask_for_max(max: i64) -> u64 {
     }
 }
 
-fn ptr_type_for_phi(args: &[(BlockId, VReg)], state: &VerifierState) -> Option<VerifierType> {
+pub(super) fn ptr_type_for_phi(
+    args: &[(BlockId, VReg)],
+    state: &VerifierState,
+) -> Option<VerifierType> {
     let mut merged: Option<VerifierType> = None;
     for (_, vreg) in args {
         let ty = state.get(*vreg);

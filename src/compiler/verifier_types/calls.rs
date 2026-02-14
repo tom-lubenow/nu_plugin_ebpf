@@ -1,4 +1,6 @@
-fn check_helper_arg(
+use super::*;
+
+pub(super) fn check_helper_arg(
     helper_id: u32,
     arg_idx: usize,
     arg: &MirValue,
@@ -31,13 +33,17 @@ fn check_helper_arg(
     }
 }
 
-fn helper_pointer_arg_allows_const_zero(helper_id: u32, arg_idx: usize, arg: &MirValue) -> bool {
+pub(super) fn helper_pointer_arg_allows_const_zero(
+    helper_id: u32,
+    arg_idx: usize,
+    arg: &MirValue,
+) -> bool {
     matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::KptrXchg))
         && arg_idx == 1
         && matches!(arg, MirValue::Const(0))
 }
 
-fn check_kfunc_arg(
+pub(super) fn check_kfunc_arg(
     kfunc: &str,
     arg_idx: usize,
     arg: VReg,
@@ -107,15 +113,18 @@ fn check_kfunc_arg(
     }
 }
 
-fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
+pub(super) fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
     kfunc_pointer_arg_requires_kernel_shared(kfunc, arg_idx)
 }
 
-fn kfunc_pointer_arg_expected_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRefKind> {
+pub(super) fn kfunc_pointer_arg_expected_ref_kind(
+    kfunc: &str,
+    arg_idx: usize,
+) -> Option<KfuncRefKind> {
     kfunc_pointer_arg_ref_kind(kfunc, arg_idx)
 }
 
-fn helper_positive_size_upper_bound(
+pub(super) fn helper_positive_size_upper_bound(
     helper_id: u32,
     arg_idx: usize,
     value: &MirValue,
@@ -137,7 +146,7 @@ fn helper_positive_size_upper_bound(
     }
 }
 
-fn check_helper_ptr_arg_value(
+pub(super) fn check_helper_ptr_arg_value(
     helper_id: u32,
     arg_idx: usize,
     arg: &MirValue,
@@ -187,7 +196,7 @@ fn check_helper_ptr_arg_value(
     }
 }
 
-fn helper_allowed_spaces(
+pub(super) fn helper_allowed_spaces(
     allow_stack: bool,
     allow_map: bool,
     allow_kernel: bool,
@@ -212,7 +221,7 @@ fn helper_allowed_spaces(
     }
 }
 
-fn apply_helper_semantics(
+pub(super) fn apply_helper_semantics(
     helper_id: u32,
     args: &[MirValue],
     state: &mut VerifierState,
@@ -394,7 +403,7 @@ fn apply_helper_semantics(
     acquire_kind
 }
 
-fn apply_kfunc_semantics(
+pub(super) fn apply_kfunc_semantics(
     kfunc: &str,
     args: &[VReg],
     state: &mut VerifierState,
@@ -469,10 +478,10 @@ fn apply_kfunc_semantics(
     }
 }
 
-fn kfunc_acquire_kind(kfunc: &str) -> Option<KfuncRefKind> {
+pub(super) fn kfunc_acquire_kind(kfunc: &str) -> Option<KfuncRefKind> {
     kfunc_acquire_ref_kind(kfunc)
 }
 
-fn kfunc_release_kind(kfunc: &str) -> Option<KfuncRefKind> {
+pub(super) fn kfunc_release_kind(kfunc: &str) -> Option<KfuncRefKind> {
     kfunc_release_ref_kind(kfunc)
 }

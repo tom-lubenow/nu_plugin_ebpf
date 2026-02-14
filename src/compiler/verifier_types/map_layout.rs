@@ -1,4 +1,6 @@
-fn map_value_limit(map: &MapRef) -> Option<i64> {
+use super::*;
+
+pub(super) fn map_value_limit(map: &MapRef) -> Option<i64> {
     match map.name.as_str() {
         COUNTER_MAP_NAME | STRING_COUNTER_MAP_NAME | HISTOGRAM_MAP_NAME | TIMESTAMP_MAP_NAME => {
             Some(8 - 1)
@@ -8,7 +10,7 @@ fn map_value_limit(map: &MapRef) -> Option<i64> {
     }
 }
 
-fn supports_generic_map_kind(kind: MapKind) -> bool {
+pub(super) fn supports_generic_map_kind(kind: MapKind) -> bool {
     matches!(
         kind,
         MapKind::Hash | MapKind::Array | MapKind::PerCpuHash | MapKind::PerCpuArray
@@ -16,14 +18,14 @@ fn supports_generic_map_kind(kind: MapKind) -> bool {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct VerifierMapLayoutSpec {
+pub(super) struct VerifierMapLayoutSpec {
     kind: MapKind,
     key_size: u32,
     value_size: u32,
     value_size_defaulted: bool,
 }
 
-fn is_builtin_map_name(name: &str) -> bool {
+pub(super) fn is_builtin_map_name(name: &str) -> bool {
     matches!(
         name,
         RINGBUF_MAP_NAME
@@ -36,11 +38,11 @@ fn is_builtin_map_name(name: &str) -> bool {
     )
 }
 
-fn is_counter_map_name(name: &str) -> bool {
+pub(super) fn is_counter_map_name(name: &str) -> bool {
     matches!(name, COUNTER_MAP_NAME | STRING_COUNTER_MAP_NAME)
 }
 
-fn check_counter_map_kind(
+pub(super) fn check_counter_map_kind(
     map: &MapRef,
     seen: &mut HashMap<String, MapKind>,
     errors: &mut Vec<VerifierTypeError>,
@@ -67,7 +69,7 @@ fn check_counter_map_kind(
     }
 }
 
-fn infer_map_operand_size(
+pub(super) fn infer_map_operand_size(
     vreg: VReg,
     what: &str,
     types: &HashMap<VReg, MirType>,
@@ -94,14 +96,14 @@ fn infer_map_operand_size(
     }
 }
 
-fn infer_map_lookup_value_size(dst: VReg, types: &HashMap<VReg, MirType>) -> usize {
+pub(super) fn infer_map_lookup_value_size(dst: VReg, types: &HashMap<VReg, MirType>) -> usize {
     match types.get(&dst) {
         Some(MirType::Ptr { pointee, .. }) => pointee.size().max(1),
         _ => 8,
     }
 }
 
-fn register_generic_map_layout_spec(
+pub(super) fn register_generic_map_layout_spec(
     map: &MapRef,
     key_size: usize,
     value_size: Option<usize>,
@@ -170,7 +172,7 @@ fn register_generic_map_layout_spec(
     }
 }
 
-fn check_generic_map_layout_constraints(
+pub(super) fn check_generic_map_layout_constraints(
     func: &MirFunction,
     types: &HashMap<VReg, MirType>,
 ) -> Vec<VerifierTypeError> {
@@ -234,7 +236,7 @@ fn check_generic_map_layout_constraints(
     errors
 }
 
-fn check_map_operand_scalar_size(
+pub(super) fn check_map_operand_scalar_size(
     vreg: VReg,
     what: &str,
     types: &HashMap<VReg, MirType>,
@@ -258,7 +260,7 @@ fn check_map_operand_scalar_size(
     }
 }
 
-fn map_value_limit_from_dst_type(dst_ty: Option<&MirType>) -> Option<i64> {
+pub(super) fn map_value_limit_from_dst_type(dst_ty: Option<&MirType>) -> Option<i64> {
     let pointee = match dst_ty {
         Some(MirType::Ptr { pointee, .. }) => pointee.as_ref(),
         _ => return None,
@@ -272,4 +274,3 @@ fn map_value_limit_from_dst_type(dst_ty: Option<&MirType>) -> Option<i64> {
     }
     Some(size.saturating_sub(1) as i64)
 }
-

@@ -1,4 +1,7 @@
-fn apply_inst(
+use super::*;
+use crate::compiler::mir::UnaryOpKind;
+
+pub(super) fn apply_inst(
     inst: &MirInst,
     types: &HashMap<VReg, MirType>,
     slot_sizes: &HashMap<StackSlotId, i64>,
@@ -124,11 +127,11 @@ fn apply_inst(
         }
         MirInst::UnaryOp { op, .. } => {
             let ty = match op {
-                super::mir::UnaryOpKind::Not => VerifierType::Bool,
+                UnaryOpKind::Not => VerifierType::Bool,
                 _ => VerifierType::Scalar,
             };
             if let Some(dst) = inst.def() {
-                let guard = if matches!(op, super::mir::UnaryOpKind::Not) {
+                let guard = if matches!(op, UnaryOpKind::Not) {
                     if let MirInst::UnaryOp { src, .. } = inst {
                         if let MirValue::VReg(src_reg) = src {
                             state.guards.get(src_reg).copied().and_then(invert_guard)
@@ -141,7 +144,7 @@ fn apply_inst(
                 } else {
                     None
                 };
-                let range = if matches!(op, super::mir::UnaryOpKind::Not) {
+                let range = if matches!(op, UnaryOpKind::Not) {
                     ValueRange::Known { min: 0, max: 1 }
                 } else {
                     ValueRange::Unknown
@@ -614,7 +617,7 @@ fn apply_inst(
     }
 }
 
-fn check_uses_initialized(
+pub(super) fn check_uses_initialized(
     inst: &MirInst,
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
@@ -629,7 +632,7 @@ fn check_uses_initialized(
     }
 }
 
-fn pointer_arith_result(
+pub(super) fn pointer_arith_result(
     op: BinOpKind,
     lhs: &MirValue,
     rhs: &MirValue,

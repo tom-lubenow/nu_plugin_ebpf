@@ -1,4 +1,10 @@
-fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool) -> VerifierState {
+use super::*;
+
+pub(super) fn refine_on_branch(
+    state: &VerifierState,
+    guard: Option<Guard>,
+    take_true: bool,
+) -> VerifierState {
     let mut next = state.clone();
     if let Some(guard) = guard {
         match guard {
@@ -151,7 +157,7 @@ fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool
     }
     next
 }
-fn guard_from_compare(
+pub(super) fn guard_from_compare(
     op: BinOpKind,
     lhs: &MirValue,
     rhs: &MirValue,
@@ -189,7 +195,7 @@ fn guard_from_compare(
     }
 }
 
-fn guard_from_compare_reg_const(
+pub(super) fn guard_from_compare_reg_const(
     op: BinOpKind,
     reg: VReg,
     value: i64,
@@ -226,7 +232,7 @@ fn guard_from_compare_reg_const(
     Some(Guard::Range { reg, op, value })
 }
 
-fn swap_compare(op: BinOpKind) -> Option<BinOpKind> {
+pub(super) fn swap_compare(op: BinOpKind) -> Option<BinOpKind> {
     Some(match op {
         BinOpKind::Eq => BinOpKind::Eq,
         BinOpKind::Ne => BinOpKind::Ne,
@@ -238,7 +244,7 @@ fn swap_compare(op: BinOpKind) -> Option<BinOpKind> {
     })
 }
 
-fn negate_compare(op: BinOpKind) -> Option<BinOpKind> {
+pub(super) fn negate_compare(op: BinOpKind) -> Option<BinOpKind> {
     Some(match op {
         BinOpKind::Eq => BinOpKind::Ne,
         BinOpKind::Ne => BinOpKind::Eq,
@@ -250,7 +256,7 @@ fn negate_compare(op: BinOpKind) -> Option<BinOpKind> {
     })
 }
 
-fn invert_guard(guard: Guard) -> Option<Guard> {
+pub(super) fn invert_guard(guard: Guard) -> Option<Guard> {
     match guard {
         Guard::Ptr {
             ptr,
@@ -279,7 +285,7 @@ fn invert_guard(guard: Guard) -> Option<Guard> {
     }
 }
 
-fn effective_branch_compare(op: BinOpKind, take_true: bool) -> Option<BinOpKind> {
+pub(super) fn effective_branch_compare(op: BinOpKind, take_true: bool) -> Option<BinOpKind> {
     if take_true {
         Some(op)
     } else {
@@ -287,14 +293,14 @@ fn effective_branch_compare(op: BinOpKind, take_true: bool) -> Option<BinOpKind>
     }
 }
 
-fn range_may_equal(range: ValueRange, value: i64) -> bool {
+pub(super) fn range_may_equal(range: ValueRange, value: i64) -> bool {
     match range {
         ValueRange::Known { min, max } => value >= min && value <= max,
         ValueRange::Unknown => true,
     }
 }
 
-fn range_can_satisfy_const_compare(
+pub(super) fn range_can_satisfy_const_compare(
     range: ValueRange,
     excluded: &[i64],
     op: BinOpKind,
@@ -331,7 +337,7 @@ fn range_can_satisfy_const_compare(
     }
 }
 
-fn ranges_can_satisfy_compare(lhs: ValueRange, rhs: ValueRange, op: BinOpKind) -> bool {
+pub(super) fn ranges_can_satisfy_compare(lhs: ValueRange, rhs: ValueRange, op: BinOpKind) -> bool {
     let Some((lhs_min, lhs_max)) = range_bounds(lhs) else {
         return true;
     };
@@ -350,7 +356,12 @@ fn ranges_can_satisfy_compare(lhs: ValueRange, rhs: ValueRange, op: BinOpKind) -
     }
 }
 
-fn refine_range(current: ValueRange, op: BinOpKind, value: i64, take_true: bool) -> ValueRange {
+pub(super) fn refine_range(
+    current: ValueRange,
+    op: BinOpKind,
+    value: i64,
+    take_true: bool,
+) -> ValueRange {
     let op = if take_true {
         op
     } else {
@@ -397,7 +408,7 @@ fn refine_range(current: ValueRange, op: BinOpKind, value: i64, take_true: bool)
     intersect_range(current, min, max)
 }
 
-fn refine_compare_ranges(
+pub(super) fn refine_compare_ranges(
     lhs: ValueRange,
     rhs: ValueRange,
     op: BinOpKind,
@@ -508,14 +519,18 @@ fn refine_compare_ranges(
     }
 }
 
-fn range_bounds(range: ValueRange) -> Option<(i64, i64)> {
+pub(super) fn range_bounds(range: ValueRange) -> Option<(i64, i64)> {
     match range {
         ValueRange::Known { min, max } => Some((min, max)),
         ValueRange::Unknown => None,
     }
 }
 
-fn intersect_range(current: ValueRange, min: Option<i64>, max: Option<i64>) -> ValueRange {
+pub(super) fn intersect_range(
+    current: ValueRange,
+    min: Option<i64>,
+    max: Option<i64>,
+) -> ValueRange {
     if min.is_none() && max.is_none() {
         return current;
     }

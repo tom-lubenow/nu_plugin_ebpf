@@ -21,6 +21,18 @@ use super::mir::{
 
 include!("verifier_types/state.rs");
 
+mod apply;
+mod calls;
+mod map_layout;
+mod ranges;
+mod refinement;
+
+use apply::{apply_inst, check_uses_initialized};
+use calls::*;
+use map_layout::*;
+use ranges::*;
+use refinement::*;
+
 #[derive(Debug, Clone)]
 pub struct VerifierTypeError {
     pub message: String,
@@ -202,9 +214,6 @@ fn propagate_state(
     }
 }
 
-include!("verifier_types/refinement.rs");
-
-include!("verifier_types/apply.rs");
 fn require_ptr_with_space(
     ptr: VReg,
     op: &str,
@@ -270,8 +279,6 @@ fn require_ptr_with_space(
         }
     }
 }
-
-include!("verifier_types/calls.rs");
 
 fn check_ptr_bounds(
     op: &str,
@@ -375,8 +382,6 @@ fn value_type(
         }
     }
 }
-
-include!("verifier_types/ranges.rs");
 
 fn verifier_type_from_mir(ty: &MirType) -> VerifierType {
     match ty {
@@ -484,8 +489,6 @@ fn join_kfunc_ref(a: Option<VReg>, b: Option<VReg>) -> Option<VReg> {
         _ => None,
     }
 }
-
-include!("verifier_types/map_layout.rs");
 
 #[cfg(test)]
 mod tests;
