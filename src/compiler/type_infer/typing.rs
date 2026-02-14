@@ -191,7 +191,9 @@ impl<'a> TypeInference<'a> {
             args,
             ret: Box::new(ret),
         };
-        let env_vars = env.map(env_free_vars).unwrap_or_default();
+        let env_vars = env
+            .map(super::subfunctions::env_free_vars)
+            .unwrap_or_default();
         let ty_vars = ty.free_vars();
         let quantified = ty_vars.difference(&env_vars).copied().collect();
         TypeScheme { quantified, ty }
