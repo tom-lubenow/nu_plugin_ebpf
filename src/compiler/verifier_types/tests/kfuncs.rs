@@ -2811,6 +2811,275 @@ fn test_kfunc_list_pop_front_acquires_object_reference() {
 }
 
 #[test]
+fn test_kfunc_rbtree_add_consumes_object_reference() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let add = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let tree = func.alloc_vreg();
+    let meta = func.alloc_vreg();
+    let off = func.alloc_vreg();
+    let less = func.alloc_vreg();
+    let type_id = func.alloc_vreg();
+    let obj = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let add_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: meta,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: off,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: less,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: type_id,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: obj,
+        kfunc: "bpf_obj_new_impl".to_string(),
+        btf_id: None,
+        args: vec![type_id, meta],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(obj),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: add,
+        if_false: done,
+    };
+
+    func.block_mut(add).instructions.push(MirInst::CallKfunc {
+        dst: add_ret,
+        kfunc: "bpf_rbtree_add_impl".to_string(),
+        btf_id: None,
+        args: vec![tree, obj, less, meta, off],
+    });
+    func.block_mut(add).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        tree,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(meta, MirType::I64);
+    types.insert(off, MirType::I64);
+    types.insert(less, MirType::I64);
+    types.insert(type_id, MirType::I64);
+    types.insert(
+        obj,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cond, MirType::Bool);
+    types.insert(add_ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected rbtree_add to consume object reference");
+}
+
+#[test]
+fn test_kfunc_rbtree_add_rejects_task_reference_on_arg1() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let add = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let tree = func.alloc_vreg();
+    let meta = func.alloc_vreg();
+    let off = func.alloc_vreg();
+    let less = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let add_ret = func.alloc_vreg();
+    let task_release_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: meta,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: off,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: less,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(123),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: add,
+        if_false: done,
+    };
+
+    func.block_mut(add).instructions.push(MirInst::CallKfunc {
+        dst: add_ret,
+        kfunc: "bpf_rbtree_add_impl".to_string(),
+        btf_id: None,
+        args: vec![tree, task, less, meta, off],
+    });
+    func.block_mut(add).instructions.push(MirInst::CallKfunc {
+        dst: task_release_ret,
+        kfunc: "bpf_task_release".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(add).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        tree,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(meta, MirType::I64);
+    types.insert(off, MirType::I64);
+    types.insert(less, MirType::I64);
+    types.insert(pid, MirType::I64);
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cond, MirType::Bool);
+    types.insert(add_ret, MirType::I64);
+    types.insert(task_release_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected object-ref arg1 mismatch");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg1 expects acquired object reference")),
+        "unexpected errors: {:?}",
+        err
+    );
+    assert!(
+        err.iter().any(|e| e.message.contains("task reference")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_rbtree_remove_acquires_object_reference() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let release = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 2;
+
+    let tree = func.alloc_vreg();
+    let node = func.alloc_vreg();
+    let meta = func.alloc_vreg();
+    let removed = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: meta,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: removed,
+        kfunc: "bpf_rbtree_remove".to_string(),
+        btf_id: None,
+        args: vec![tree, node],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(removed),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: release,
+        if_false: done,
+    };
+
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_obj_drop_impl".to_string(),
+            btf_id: None,
+            args: vec![removed, meta],
+        });
+    func.block_mut(release).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        tree,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        node,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(meta, MirType::I64);
+    types.insert(
+        removed,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cond, MirType::Bool);
+    types.insert(release_ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected rbtree_remove object release to verify");
+}
+
+#[test]
 fn test_kfunc_obj_new_release_semantics() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
