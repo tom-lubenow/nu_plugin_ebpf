@@ -1,4 +1,3 @@
-
 use super::*;
 
 fn make_constant_add_function() -> MirFunction {
