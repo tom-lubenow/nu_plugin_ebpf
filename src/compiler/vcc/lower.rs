@@ -5,6 +5,7 @@ struct VccLowerer<'a> {
     slot_kinds: HashMap<StackSlotId, StackSlotKind>,
     list_max: HashMap<StackSlotId, usize>,
     ptr_regs: HashMap<VccReg, VccPointerInfo>,
+    entry_ctx_field_regs: HashMap<String, VccReg>,
     next_temp: u32,
 }
 
@@ -36,6 +37,7 @@ impl<'a> VccLowerer<'a> {
             slot_kinds,
             list_max,
             ptr_regs,
+            entry_ctx_field_regs: HashMap::new(),
             next_temp: func.vreg_count.max(func.param_count as u32),
         }
     }
@@ -61,8 +63,9 @@ impl<'a> VccLowerer<'a> {
 
         for block in &self.func.blocks {
             let mut insts = Vec::new();
+            let in_entry = block.id == self.func.entry;
             for inst in &block.instructions {
-                self.lower_inst(inst, &mut insts)?;
+                self.lower_inst(inst, &mut insts, in_entry)?;
             }
             let term = self.lower_terminator(&block.terminator, &mut insts)?;
             let idx = block.id.0 as usize;
@@ -80,7 +83,29 @@ impl<'a> VccLowerer<'a> {
         })
     }
 
-    fn lower_inst(&mut self, inst: &MirInst, out: &mut Vec<VccInst>) -> Result<(), VccError> {
+    fn ctx_field_key(field: &CtxField) -> String {
+        match field {
+            CtxField::Pid => "pid".to_string(),
+            CtxField::Tid => "tid".to_string(),
+            CtxField::Uid => "uid".to_string(),
+            CtxField::Gid => "gid".to_string(),
+            CtxField::Comm => "comm".to_string(),
+            CtxField::Cpu => "cpu".to_string(),
+            CtxField::Timestamp => "timestamp".to_string(),
+            CtxField::Arg(idx) => format!("arg:{idx}"),
+            CtxField::RetVal => "retval".to_string(),
+            CtxField::KStack => "kstack".to_string(),
+            CtxField::UStack => "ustack".to_string(),
+            CtxField::TracepointField(name) => format!("tp:{name}"),
+        }
+    }
+
+    fn lower_inst(
+        &mut self,
+        inst: &MirInst,
+        out: &mut Vec<VccInst>,
+        in_entry: bool,
+    ) -> Result<(), VccError> {
         match inst {
             MirInst::Copy { dst, src } => {
                 let dst_reg = VccReg(dst.0);
@@ -270,7 +295,20 @@ impl<'a> VccLowerer<'a> {
                     args: vcc_args,
                 });
             }
-            MirInst::LoadCtxField { dst, slot, .. } => {
+            MirInst::LoadCtxField { dst, field, slot } => {
+                if slot.is_none() {
+                    let key = Self::ctx_field_key(field);
+                    if let Some(src) = self.entry_ctx_field_regs.get(&key).copied() {
+                        out.push(VccInst::Copy {
+                            dst: VccReg(dst.0),
+                            src: VccValue::Reg(src),
+                        });
+                        if let Some(ptr) = self.ptr_regs.get(&src).copied() {
+                            self.ptr_regs.insert(VccReg(dst.0), ptr);
+                        }
+                        return Ok(());
+                    }
+                }
                 if let Some(slot) = slot {
                     let size = self.slot_sizes.get(slot).copied().unwrap_or(0) as i64;
                     out.push(VccInst::StackAddr {
@@ -309,6 +347,11 @@ impl<'a> VccLowerer<'a> {
                     if let VccValueType::Ptr(info) = ty {
                         self.ptr_regs.insert(VccReg(dst.0), info);
                     }
+                }
+                if in_entry && slot.is_none() {
+                    self.entry_ctx_field_regs
+                        .entry(Self::ctx_field_key(field))
+                        .or_insert(VccReg(dst.0));
                 }
             }
             MirInst::StrCmp { dst, lhs, rhs, len } => {
@@ -1774,4 +1817,3 @@ impl<'a> VccLowerer<'a> {
         self.check_ptr_range(ptr, 1, out)
     }
 }
-

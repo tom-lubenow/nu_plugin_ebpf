@@ -11,6 +11,7 @@ fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool
                 } else {
                     !true_is_non_null
                 };
+                let ctx_field_source = next.ctx_field_source(ptr).cloned();
                 let current = next.get(ptr);
                 if let VerifierType::Ptr {
                     space,
@@ -49,6 +50,10 @@ fn refine_on_branch(state: &VerifierState, guard: Option<Guard>, take_true: bool
                             kfunc_ref,
                         },
                     );
+                    next.set_ctx_field_source(ptr, ctx_field_source.clone());
+                    if let Some(field) = ctx_field_source {
+                        next.refine_ctx_field_nullability(&field, nullability);
+                    }
                 }
             }
             Guard::NonZero {

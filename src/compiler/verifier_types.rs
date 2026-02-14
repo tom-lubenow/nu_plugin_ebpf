@@ -14,8 +14,8 @@ use super::instruction::{
     kfunc_release_ref_kind,
 };
 use super::mir::{
-    AddressSpace, BinOpKind, BlockId, COUNTER_MAP_NAME, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME,
-    MapKind, MapRef, MirFunction, MirInst, MirType, MirValue, RINGBUF_MAP_NAME,
+    AddressSpace, BinOpKind, BlockId, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME,
+    KSTACK_MAP_NAME, MapKind, MapRef, MirFunction, MirInst, MirType, MirValue, RINGBUF_MAP_NAME,
     STRING_COUNTER_MAP_NAME, StackSlotId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, VReg,
 };
 
@@ -182,6 +182,7 @@ fn propagate_state(
                 || merged.ranges != existing.ranges
                 || merged.non_zero != existing.non_zero
                 || merged.not_equal != existing.not_equal
+                || merged.ctx_field_sources != existing.ctx_field_sources
                 || merged.live_ringbuf_refs != existing.live_ringbuf_refs
                 || merged.live_kfunc_refs != existing.live_kfunc_refs
                 || merged.kfunc_ref_kinds != existing.kfunc_ref_kinds

@@ -2134,6 +2134,69 @@ fn test_read_str_user_ptr_with_null_check_for_user_space() {
 }
 
 #[test]
+fn test_read_str_user_ptr_with_null_check_after_reloading_same_ctx_field() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let ptr_for_cond = func.alloc_vreg();
+    let ptr_for_read = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ptr_for_cond,
+            field: CtxField::TracepointField("filename".to_string()),
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(ptr_for_cond),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ptr_for_read,
+            field: CtxField::TracepointField("filename".to_string()),
+            slot: None,
+        });
+    func.block_mut(call).instructions.push(MirInst::ReadStr {
+        dst: slot,
+        ptr: ptr_for_read,
+        user_space: true,
+        max_len: 16,
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    for ptr in [ptr_for_cond, ptr_for_read] {
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::User,
+            },
+        );
+    }
+    types.insert(cond, MirType::Bool);
+
+    verify_mir(&func, &types).expect("expected context-field null check to flow to reloaded field");
+}
+
+#[test]
 fn test_load_rejects_user_ptr() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

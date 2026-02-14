@@ -9,6 +9,10 @@ fn apply_inst(
         MirInst::Copy { dst, src } => {
             let ty = value_type(src, state, slot_sizes);
             let range = value_range(src, state);
+            let src_ctx_field = match src {
+                MirValue::VReg(vreg) => state.ctx_field_source(*vreg).cloned(),
+                _ => None,
+            };
             let src_guard = match src {
                 MirValue::VReg(vreg) => state.guards.get(vreg).copied(),
                 _ => None,
@@ -24,6 +28,7 @@ fn apply_inst(
                 _ => Vec::new(),
             };
             state.set_with_range(*dst, ty, range);
+            state.set_ctx_field_source(*dst, src_ctx_field);
             if src_non_zero {
                 if let Some(slot) = state.non_zero.get_mut(dst.0 as usize) {
                     *slot = true;
@@ -431,11 +436,13 @@ fn apply_inst(
                 .unwrap_or(VerifierType::Scalar);
             state.set(*dst, ty);
         }
-        MirInst::LoadCtxField { dst, slot, .. } => {
-            let mut ty = types
-                .get(dst)
-                .map(verifier_type_from_mir)
-                .unwrap_or(VerifierType::Scalar);
+        MirInst::LoadCtxField { dst, field, slot } => {
+            let mut ty = state.find_ctx_field_type(field).unwrap_or_else(|| {
+                types
+                    .get(dst)
+                    .map(verifier_type_from_mir)
+                    .unwrap_or(VerifierType::Scalar)
+            });
             if let (
                 VerifierType::Ptr {
                     space: AddressSpace::Stack,
@@ -460,6 +467,7 @@ fn apply_inst(
                 };
             }
             state.set(*dst, ty);
+            state.set_ctx_field_source(*dst, Some(field.clone()));
         }
         MirInst::ReadStr {
             ptr, user_space, ..
@@ -687,4 +695,3 @@ fn pointer_arith_result(
 
     None
 }
-

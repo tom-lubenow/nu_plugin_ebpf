@@ -68,6 +68,7 @@ struct VerifierState {
     ranges: Vec<ValueRange>,
     non_zero: Vec<bool>,
     not_equal: Vec<Vec<i64>>,
+    ctx_field_sources: Vec<Option<CtxField>>,
     live_ringbuf_refs: Vec<bool>,
     live_kfunc_refs: Vec<bool>,
     kfunc_ref_kinds: Vec<Option<KfuncRefKind>>,
@@ -84,6 +85,7 @@ impl VerifierState {
             ranges: vec![ValueRange::Unknown; total_vregs],
             non_zero: vec![false; total_vregs],
             not_equal: vec![Vec::new(); total_vregs],
+            ctx_field_sources: vec![None; total_vregs],
             live_ringbuf_refs: vec![false; total_vregs],
             live_kfunc_refs: vec![false; total_vregs],
             kfunc_ref_kinds: vec![None; total_vregs],
@@ -134,7 +136,58 @@ impl VerifierState {
         if let Some(slot) = self.not_equal.get_mut(vreg.0 as usize) {
             slot.clear();
         }
+        if let Some(slot) = self.ctx_field_sources.get_mut(vreg.0 as usize) {
+            *slot = None;
+        }
         self.guards.remove(&vreg);
+    }
+
+    fn set_ctx_field_source(&mut self, vreg: VReg, source: Option<CtxField>) {
+        if let Some(slot) = self.ctx_field_sources.get_mut(vreg.0 as usize) {
+            *slot = source;
+        }
+    }
+
+    fn ctx_field_source(&self, vreg: VReg) -> Option<&CtxField> {
+        self.ctx_field_sources
+            .get(vreg.0 as usize)
+            .and_then(|source| source.as_ref())
+    }
+
+    fn find_ctx_field_type(&self, field: &CtxField) -> Option<VerifierType> {
+        for (idx, source) in self.ctx_field_sources.iter().enumerate() {
+            if source.as_ref() == Some(field) {
+                let ty = self.regs[idx];
+                if !matches!(ty, VerifierType::Uninit) {
+                    return Some(ty);
+                }
+            }
+        }
+        None
+    }
+
+    fn refine_ctx_field_nullability(&mut self, field: &CtxField, nullability: Nullability) {
+        for idx in 0..self.ctx_field_sources.len() {
+            if self.ctx_field_sources[idx].as_ref() != Some(field) {
+                continue;
+            }
+            if let VerifierType::Ptr {
+                space,
+                bounds,
+                ringbuf_ref,
+                kfunc_ref,
+                ..
+            } = self.regs[idx]
+            {
+                self.regs[idx] = VerifierType::Ptr {
+                    space,
+                    nullability,
+                    bounds,
+                    ringbuf_ref,
+                    kfunc_ref,
+                };
+            }
+        }
     }
 
     fn set_not_equal_const(&mut self, vreg: VReg, value: i64) {
@@ -291,6 +344,14 @@ impl VerifierState {
             }
             not_equal.push(shared);
         }
+        let mut ctx_field_sources = Vec::with_capacity(self.ctx_field_sources.len());
+        for i in 0..self.ctx_field_sources.len() {
+            let merged = match (&self.ctx_field_sources[i], &other.ctx_field_sources[i]) {
+                (Some(left), Some(right)) if left == right => Some(left.clone()),
+                _ => None,
+            };
+            ctx_field_sources.push(merged);
+        }
         let mut live_ringbuf_refs = Vec::with_capacity(self.live_ringbuf_refs.len());
         for i in 0..self.live_ringbuf_refs.len() {
             live_ringbuf_refs.push(self.live_ringbuf_refs[i] || other.live_ringbuf_refs[i]);
@@ -334,6 +395,7 @@ impl VerifierState {
             ranges,
             non_zero,
             not_equal,
+            ctx_field_sources,
             live_ringbuf_refs,
             live_kfunc_refs,
             kfunc_ref_kinds,

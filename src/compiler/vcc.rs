@@ -21,8 +21,8 @@ use crate::compiler::instruction::{
     kfunc_release_ref_kind,
 };
 use crate::compiler::mir::{
-    AddressSpace, BinOpKind, COUNTER_MAP_NAME, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, MapKind,
-    MirFunction, MirInst, MirType, MirValue, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME,
+    AddressSpace, BinOpKind, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME,
+    MapKind, MirFunction, MirInst, MirType, MirValue, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME,
     StackSlotId, StackSlotKind, StringAppendType, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, UnaryOpKind,
     VReg,
 };

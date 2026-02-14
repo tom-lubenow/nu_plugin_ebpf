@@ -1,6 +1,6 @@
 use super::*;
 use crate::compiler::mir::{
-    AddressSpace, BlockId, MapKind, MapRef, MirFunction, MirInst, MirType, MirValue,
+    AddressSpace, BlockId, CtxField, MapKind, MapRef, MirFunction, MirInst, MirType, MirValue,
     STRING_COUNTER_MAP_NAME, StackSlotKind, StringAppendType,
 };
 use std::collections::HashMap;
@@ -1097,6 +1097,67 @@ fn test_verify_mir_read_str_user_ptr_with_null_check_for_user_space() {
     );
 
     verify_mir(&func, &types).expect("expected null-checked user-space read_str to pass");
+}
+
+#[test]
+fn test_verify_mir_read_str_null_check_flows_to_reloaded_ctx_field() {
+    let (mut func, entry) = new_mir_function();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+
+    let ptr_for_cond = func.alloc_vreg();
+    let ptr_for_read = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let dst = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ptr_for_cond,
+            field: CtxField::TracepointField("filename".to_string()),
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(ptr_for_cond),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ptr_for_read,
+            field: CtxField::TracepointField("filename".to_string()),
+            slot: None,
+        });
+    func.block_mut(call).instructions.push(MirInst::ReadStr {
+        dst,
+        ptr: ptr_for_read,
+        user_space: true,
+        max_len: 16,
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    for ptr in [ptr_for_cond, ptr_for_read] {
+        types.insert(
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::User,
+            },
+        );
+    }
+    types.insert(cond, MirType::Bool);
+
+    verify_mir(&func, &types).expect("expected null check to flow across reloaded context field");
 }
 
 #[test]
