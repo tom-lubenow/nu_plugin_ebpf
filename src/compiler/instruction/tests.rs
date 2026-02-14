@@ -356,6 +356,14 @@ fn test_helper_ref_kind_mappings() {
         Some(KfuncRefKind::Task)
     );
     assert_eq!(
+        helper_pointer_arg_ref_kind(BpfHelper::InodeStorageGet, 1),
+        Some(KfuncRefKind::Inode)
+    );
+    assert_eq!(
+        helper_pointer_arg_ref_kind(BpfHelper::InodeStorageDelete, 1),
+        Some(KfuncRefKind::Inode)
+    );
+    assert_eq!(
         helper_pointer_arg_ref_kind(BpfHelper::SkcToTcpSock, 0),
         Some(KfuncRefKind::Socket)
     );

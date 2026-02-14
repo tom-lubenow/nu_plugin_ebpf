@@ -179,6 +179,7 @@ pub enum KfuncRetKind {
 pub enum KfuncRefKind {
     Task,
     Cgroup,
+    Inode,
     Cpumask,
     Object,
     File,
@@ -190,6 +191,7 @@ impl KfuncRefKind {
         match self {
             KfuncRefKind::Task => "task",
             KfuncRefKind::Cgroup => "cgroup",
+            KfuncRefKind::Inode => "inode",
             KfuncRefKind::Cpumask => "cpumask",
             KfuncRefKind::Object => "object",
             KfuncRefKind::File => "file",

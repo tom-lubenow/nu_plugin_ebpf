@@ -3833,6 +3833,162 @@ fn test_verify_mir_helper_task_storage_delete_rejects_non_task_reference() {
 }
 
 #[test]
+fn test_verify_mir_helper_inode_storage_get_rejects_non_inode_reference() {
+    let (mut func, entry) = new_mir_function();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let task_non_null = func.alloc_vreg();
+    let storage = func.alloc_vreg();
+    let cleanup_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: task_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: task_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: storage,
+        helper: BpfHelper::InodeStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(task),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    func.block_mut(call).instructions.push(MirInst::CallKfunc {
+        dst: cleanup_ret,
+        kfunc: "bpf_task_release".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(task_non_null, MirType::Bool);
+    types.insert(
+        storage,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(cleanup_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected inode_storage_get ref-kind mismatch");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 145 arg1 expects inode reference, got task reference")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_inode_storage_delete_rejects_non_inode_reference() {
+    let (mut func, entry) = new_mir_function();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let task_non_null = func.alloc_vreg();
+    let delete_ret = func.alloc_vreg();
+    let cleanup_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: task_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: task_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: delete_ret,
+        helper: BpfHelper::InodeStorageDelete as u32,
+        args: vec![MirValue::StackSlot(map_slot), MirValue::VReg(task)],
+    });
+    func.block_mut(call).instructions.push(MirInst::CallKfunc {
+        dst: cleanup_ret,
+        kfunc: "bpf_task_release".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(task_non_null, MirType::Bool);
+    types.insert(delete_ret, MirType::I64);
+    types.insert(cleanup_ret, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected inode_storage_delete ref-kind mismatch");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 146 arg1 expects inode reference, got task reference")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_helper_additional_skc_casts_reject_non_socket_reference() {
     let helpers = [
         (BpfHelper::SkcToTcpTimewaitSock, 138u32),

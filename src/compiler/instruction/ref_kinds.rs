@@ -67,6 +67,9 @@ pub const fn helper_pointer_arg_ref_kind(
         }
         (BpfHelper::TaskStorageGet | BpfHelper::TaskStorageDelete, 1)
         | (BpfHelper::TaskPtRegs, 0) => Some(KfuncRefKind::Task),
+        (BpfHelper::InodeStorageGet | BpfHelper::InodeStorageDelete, 1) => {
+            Some(KfuncRefKind::Inode)
+        }
         (BpfHelper::SockFromFile, 0) => Some(KfuncRefKind::File),
         _ => None,
     }
