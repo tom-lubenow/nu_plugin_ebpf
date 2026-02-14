@@ -53,7 +53,10 @@ pub const fn helper_pointer_arg_ref_kind(
             | BpfHelper::TcpSock
             | BpfHelper::GetListenerSock
             | BpfHelper::SkcToTcp6Sock
-            | BpfHelper::SkcToTcpSock,
+            | BpfHelper::SkcToTcpSock
+            | BpfHelper::SkcToTcpTimewaitSock
+            | BpfHelper::SkcToTcpRequestSock
+            | BpfHelper::SkcToUdp6Sock,
             0,
         ) => Some(KfuncRefKind::Socket),
         _ => None,

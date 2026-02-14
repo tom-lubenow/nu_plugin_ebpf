@@ -25,6 +25,9 @@ impl BpfHelper {
             99 => Some(Self::SkcLookupTcp),
             136 => Some(Self::SkcToTcp6Sock),
             137 => Some(Self::SkcToTcpSock),
+            138 => Some(Self::SkcToTcpTimewaitSock),
+            139 => Some(Self::SkcToTcpRequestSock),
+            140 => Some(Self::SkcToUdp6Sock),
             114 => Some(Self::ProbeReadUserStr),
             115 => Some(Self::ProbeReadKernelStr),
             130 => Some(Self::RingbufOutput),
@@ -120,7 +123,10 @@ impl BpfHelper {
             BpfHelper::SkFullsock
             | BpfHelper::TcpSock
             | BpfHelper::SkcToTcp6Sock
-            | BpfHelper::SkcToTcpSock => HelperSignature {
+            | BpfHelper::SkcToTcpSock
+            | BpfHelper::SkcToTcpTimewaitSock
+            | BpfHelper::SkcToTcpRequestSock
+            | BpfHelper::SkcToUdp6Sock => HelperSignature {
                 min_args: 1,
                 max_args: 1,
                 arg_kinds: [P, S, S, S, S],
@@ -434,6 +440,30 @@ impl BpfHelper {
             size_from_arg: None,
         }];
 
+        const SKC_TO_TCP_TIMEWAIT_SOCK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper skc_to_tcp_timewait_sock sk",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
+        const SKC_TO_TCP_REQUEST_SOCK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper skc_to_tcp_request_sock sk",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
+        const SKC_TO_UDP6_SOCK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper skc_to_udp6_sock sk",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
         const KPTR_XCHG_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -546,6 +576,21 @@ impl BpfHelper {
             },
             BpfHelper::SkcToTcpSock => HelperSemantics {
                 ptr_arg_rules: SKC_TO_TCP_SOCK_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkcToTcpTimewaitSock => HelperSemantics {
+                ptr_arg_rules: SKC_TO_TCP_TIMEWAIT_SOCK_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkcToTcpRequestSock => HelperSemantics {
+                ptr_arg_rules: SKC_TO_TCP_REQUEST_SOCK_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkcToUdp6Sock => HelperSemantics {
+                ptr_arg_rules: SKC_TO_UDP6_SOCK_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

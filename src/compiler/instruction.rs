@@ -92,6 +92,12 @@ pub enum BpfHelper {
     SkcToTcp6Sock = 136,
     /// struct tcp_sock *bpf_skc_to_tcp_sock(sk)
     SkcToTcpSock = 137,
+    /// struct tcp_timewait_sock *bpf_skc_to_tcp_timewait_sock(sk)
+    SkcToTcpTimewaitSock = 138,
+    /// struct tcp_request_sock *bpf_skc_to_tcp_request_sock(sk)
+    SkcToTcpRequestSock = 139,
+    /// struct udp6_sock *bpf_skc_to_udp6_sock(sk)
+    SkcToUdp6Sock = 140,
     /// long bpf_ringbuf_output(map, data, size, flags)
     RingbufOutput = 130,
     /// void *bpf_ringbuf_reserve(map, size, flags)

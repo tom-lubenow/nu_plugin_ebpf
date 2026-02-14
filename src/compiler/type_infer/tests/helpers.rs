@@ -508,6 +508,66 @@ fn test_infer_helper_skc_to_tcp6_sock_returns_kernel_pointer() {
 }
 
 #[test]
+fn test_infer_helper_additional_skc_casts_return_kernel_pointer() {
+    let helpers = [
+        BpfHelper::SkcToTcpTimewaitSock,
+        BpfHelper::SkcToTcpRequestSock,
+        BpfHelper::SkcToUdp6Sock,
+    ];
+
+    for helper in helpers {
+        let mut func = make_test_function();
+        let pid = func.alloc_vreg();
+        let ctx = func.alloc_vreg();
+        let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let sock = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: pid,
+            src: MirValue::Const(7),
+        });
+        block.instructions.push(MirInst::CallKfunc {
+            dst: ctx,
+            kfunc: "bpf_task_from_pid".to_string(),
+            btf_id: None,
+            args: vec![pid],
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst: sock,
+            helper: BpfHelper::SkLookupTcp as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(tuple_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![MirValue::VReg(sock)],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let types = ti
+            .infer(&func)
+            .unwrap_or_else(|errs| panic!("expected helper {helper:?} to infer: {errs:?}"));
+        match types.get(&dst) {
+            Some(MirType::Ptr { address_space, .. }) => {
+                assert_eq!(*address_space, AddressSpace::Kernel);
+            }
+            other => panic!(
+                "Expected helper {helper:?} kernel pointer return, got {:?}",
+                other
+            ),
+        }
+    }
+}
+
+#[test]
 fn test_type_error_helper_sk_fullsock_rejects_non_kernel_pointer() {
     let mut func = make_test_function();
     let sock_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
@@ -617,6 +677,52 @@ fn test_type_error_helper_skc_to_tcp6_sock_rejects_non_kernel_pointer() {
         e.message
             .contains("helper skc_to_tcp6_sock sk expects pointer in [Kernel], got Stack")
     }));
+}
+
+#[test]
+fn test_type_error_helper_additional_skc_casts_reject_non_kernel_pointer() {
+    let helpers = [
+        (
+            BpfHelper::SkcToTcpTimewaitSock,
+            "helper skc_to_tcp_timewait_sock sk expects pointer in [Kernel], got Stack",
+        ),
+        (
+            BpfHelper::SkcToTcpRequestSock,
+            "helper skc_to_tcp_request_sock sk expects pointer in [Kernel], got Stack",
+        ),
+        (
+            BpfHelper::SkcToUdp6Sock,
+            "helper skc_to_udp6_sock sk expects pointer in [Kernel], got Stack",
+        ),
+    ];
+
+    for (helper, needle) in helpers {
+        let mut func = make_test_function();
+        let sock_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let sock = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: sock,
+            src: MirValue::StackSlot(sock_slot),
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![MirValue::VReg(sock)],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected non-kernel skc cast helper pointer error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(needle)),
+            "expected helper {helper:?} pointer-space error containing '{needle}', got {:?}",
+            errs
+        );
+    }
 }
 
 #[test]

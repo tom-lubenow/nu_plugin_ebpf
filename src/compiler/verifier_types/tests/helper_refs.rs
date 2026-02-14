@@ -748,6 +748,95 @@ fn test_helper_skc_to_tcp6_sock_rejects_non_socket_reference() {
 }
 
 #[test]
+fn test_helper_additional_skc_casts_reject_non_socket_reference() {
+    let helpers = [
+        (BpfHelper::SkcToTcpTimewaitSock, 138u32),
+        (BpfHelper::SkcToTcpRequestSock, 139u32),
+        (BpfHelper::SkcToUdp6Sock, 140u32),
+    ];
+
+    for (helper, helper_id) in helpers {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let pid = func.alloc_vreg();
+        let task = func.alloc_vreg();
+        let task_non_null = func.alloc_vreg();
+        let casted = func.alloc_vreg();
+        let cleanup_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: pid,
+            src: MirValue::Const(7),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: task,
+            kfunc: "bpf_task_from_pid".to_string(),
+            btf_id: None,
+            args: vec![pid],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: task_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(task),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: task_non_null,
+            if_true: call,
+            if_false: done,
+        };
+
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst: casted,
+            helper: helper as u32,
+            args: vec![MirValue::VReg(task)],
+        });
+        func.block_mut(call).instructions.push(MirInst::CallKfunc {
+            dst: cleanup_ret,
+            kfunc: "bpf_task_release".to_string(),
+            btf_id: None,
+            args: vec![task],
+        });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(pid, MirType::I64);
+        types.insert(
+            task,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(task_non_null, MirType::Bool);
+        types.insert(
+            casted,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(cleanup_ret, MirType::I64);
+
+        let err = verify_mir(&func, &types)
+            .expect_err("expected additional skc cast helper ref-kind mismatch");
+        assert!(
+            err.iter().any(|e| e.message.contains(&format!(
+                "helper {} arg0 expects socket reference, got task reference",
+                helper_id
+            ))),
+            "unexpected errors for helper {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_helper_get_listener_sock_rejects_non_socket_reference() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
@@ -1007,6 +1096,58 @@ fn test_helper_skc_to_tcp6_sock_rejects_non_kernel_pointer() {
         "unexpected errors: {:?}",
         err
     );
+}
+
+#[test]
+fn test_helper_additional_skc_casts_reject_non_kernel_pointer() {
+    let helpers = [
+        (
+            BpfHelper::SkcToTcpTimewaitSock,
+            "helper skc_to_tcp_timewait_sock sk expects pointer in [Kernel], got stack slot",
+        ),
+        (
+            BpfHelper::SkcToTcpRequestSock,
+            "helper skc_to_tcp_request_sock sk expects pointer in [Kernel], got stack slot",
+        ),
+        (
+            BpfHelper::SkcToUdp6Sock,
+            "helper skc_to_udp6_sock sk expects pointer in [Kernel], got stack slot",
+        ),
+    ];
+
+    for (helper, needle) in helpers {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let sock_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let casted = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: casted,
+                helper: helper as u32,
+                args: vec![MirValue::StackSlot(sock_slot)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            casted,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        let err = verify_mir(&func, &types)
+            .expect_err("expected additional skc cast helper pointer-kind error");
+        assert!(
+            err.iter().any(|e| e.message.contains(needle)),
+            "unexpected errors for helper {helper:?}: {:?}",
+            err
+        );
+    }
 }
 
 #[test]
