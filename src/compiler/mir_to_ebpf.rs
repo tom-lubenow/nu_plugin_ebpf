@@ -52,6 +52,7 @@ mod helper_calls;
 mod instruction_lowering;
 mod maps;
 mod ops;
+mod string_lowering;
 
 /// Result of MIR to eBPF compilation
 pub struct MirCompileResult {
