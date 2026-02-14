@@ -348,6 +348,9 @@ pub struct GraphColoringAllocator {
 #[path = "graph_coloring/build.rs"]
 mod build;
 
+#[path = "graph_coloring/util.rs"]
+mod util;
+
 impl GraphColoringAllocator {
     /// Create a new allocator with the given available registers
     pub fn new(available_regs: Vec<EbpfReg>) -> Self {
@@ -516,37 +519,6 @@ impl GraphColoringAllocator {
         for mv in all_moves {
             self.move_worklist.push_back(mv);
             self.move_state.insert(mv, MoveState::Worklist);
-        }
-    }
-
-    fn is_precolored(&self, vreg: VReg) -> bool {
-        matches!(self.node_state.get(&vreg), Some(NodeState::Precolored))
-    }
-
-    fn is_forbidden(&self, vreg: VReg, reg: EbpfReg) -> bool {
-        self.forbidden_regs
-            .get(&vreg)
-            .map(|set| set.contains(&reg))
-            .unwrap_or(false)
-    }
-
-    fn effective_k(&self, vreg: VReg) -> usize {
-        if self.is_precolored(vreg) {
-            return 1;
-        }
-        self.available_regs
-            .iter()
-            .filter(|reg| !self.is_forbidden(vreg, **reg))
-            .count()
-    }
-
-    fn forbid_regs_for_live(&mut self, live: &HashSet<VReg>, regs: &[EbpfReg]) {
-        if regs.is_empty() {
-            return;
-        }
-        for vreg in live {
-            let entry = self.forbidden_regs.entry(*vreg).or_default();
-            entry.extend(regs.iter().copied());
         }
     }
 
