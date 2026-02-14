@@ -6,6 +6,8 @@ struct VccState {
     live_kfunc_refs: HashMap<VccReg, Option<KfuncRefKind>>,
     rcu_read_lock_min_depth: u32,
     rcu_read_lock_max_depth: u32,
+    preempt_disable_min_depth: u32,
+    preempt_disable_max_depth: u32,
     cond_refinements: HashMap<VccReg, VccCondRefinement>,
     reachable: bool,
 }
@@ -41,6 +43,8 @@ impl VccState {
             live_kfunc_refs: HashMap::new(),
             rcu_read_lock_min_depth: 0,
             rcu_read_lock_max_depth: 0,
+            preempt_disable_min_depth: 0,
+            preempt_disable_max_depth: 0,
             cond_refinements: HashMap::new(),
             reachable: true,
         }
@@ -150,6 +154,24 @@ impl VccState {
 
     fn has_live_rcu_read_lock(&self) -> bool {
         self.rcu_read_lock_max_depth > 0
+    }
+
+    fn acquire_preempt_disable(&mut self) {
+        self.preempt_disable_min_depth = self.preempt_disable_min_depth.saturating_add(1);
+        self.preempt_disable_max_depth = self.preempt_disable_max_depth.saturating_add(1);
+    }
+
+    fn release_preempt_disable(&mut self) -> bool {
+        if self.preempt_disable_min_depth == 0 {
+            return false;
+        }
+        self.preempt_disable_min_depth -= 1;
+        self.preempt_disable_max_depth -= 1;
+        true
+    }
+
+    fn has_live_preempt_disable(&self) -> bool {
+        self.preempt_disable_max_depth > 0
     }
 
     fn kfunc_ref_kind(&self, id: VccReg) -> Option<KfuncRefKind> {
@@ -272,6 +294,12 @@ impl VccState {
             rcu_read_lock_max_depth: self
                 .rcu_read_lock_max_depth
                 .max(other.rcu_read_lock_max_depth),
+            preempt_disable_min_depth: self
+                .preempt_disable_min_depth
+                .min(other.preempt_disable_min_depth),
+            preempt_disable_max_depth: self
+                .preempt_disable_max_depth
+                .max(other.preempt_disable_max_depth),
             cond_refinements,
             reachable: true,
         }
@@ -302,6 +330,8 @@ impl VccState {
             live_kfunc_refs: self.live_kfunc_refs.clone(),
             rcu_read_lock_min_depth: self.rcu_read_lock_min_depth,
             rcu_read_lock_max_depth: self.rcu_read_lock_max_depth,
+            preempt_disable_min_depth: self.preempt_disable_min_depth,
+            preempt_disable_max_depth: self.preempt_disable_max_depth,
             cond_refinements: HashMap::new(),
             reachable: self.reachable,
         }

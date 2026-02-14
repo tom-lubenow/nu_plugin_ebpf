@@ -711,6 +711,17 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::PreemptDisableAcquire => {
+                state.acquire_preempt_disable();
+            }
+            VccInst::PreemptDisableRelease => {
+                if !state.release_preempt_disable() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_preempt_enable' requires a matching bpf_preempt_disable",
+                    ));
+                }
+            }
             VccInst::KfuncExpectRefKind {
                 ptr,
                 arg_idx,
@@ -891,6 +902,12 @@ impl VccVerifier {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased RCU read lock at function exit",
+                    ));
+                }
+                if state.has_live_preempt_disable() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "unreleased preempt disable at function exit",
                     ));
                 }
             }

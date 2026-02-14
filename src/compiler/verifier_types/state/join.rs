@@ -12,6 +12,8 @@ impl VerifierState {
             && self.kfunc_ref_kinds == other.kfunc_ref_kinds
             && self.rcu_read_lock_min_depth == other.rcu_read_lock_min_depth
             && self.rcu_read_lock_max_depth == other.rcu_read_lock_max_depth
+            && self.preempt_disable_min_depth == other.preempt_disable_min_depth
+            && self.preempt_disable_max_depth == other.preempt_disable_max_depth
             && self.guards == other.guards
             && self.reachable == other.reachable
     }
@@ -117,6 +119,12 @@ impl VerifierState {
             rcu_read_lock_max_depth: self
                 .rcu_read_lock_max_depth
                 .max(other.rcu_read_lock_max_depth),
+            preempt_disable_min_depth: self
+                .preempt_disable_min_depth
+                .min(other.preempt_disable_min_depth),
+            preempt_disable_max_depth: self
+                .preempt_disable_max_depth
+                .max(other.preempt_disable_max_depth),
             reachable: true,
             guards,
         }

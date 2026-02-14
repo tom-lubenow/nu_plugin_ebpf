@@ -495,6 +495,34 @@ fn test_infer_kfunc_rcu_read_lock_unlock_signatures() {
 }
 
 #[test]
+fn test_infer_kfunc_preempt_disable_enable_signatures() {
+    let mut func = make_test_function();
+    let disable_ret = func.alloc_vreg();
+    let enable_ret = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallKfunc {
+        dst: disable_ret,
+        kfunc: "bpf_preempt_disable".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: enable_ret,
+        kfunc: "bpf_preempt_enable".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected preempt disable/enable kfunc type inference");
+    assert!(matches!(types.get(&disable_ret), Some(MirType::I64)));
+    assert!(matches!(types.get(&enable_ret), Some(MirType::I64)));
+}
+
+#[test]
 fn test_type_error_kfunc_map_sum_elem_count_requires_kernel_space() {
     let mut func = make_test_function();
     let map_ptr = func.alloc_vreg();

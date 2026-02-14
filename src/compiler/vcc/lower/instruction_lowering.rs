@@ -506,6 +506,12 @@ impl<'a> VccLowerer<'a> {
                 if kfunc == "bpf_rcu_read_unlock" {
                     out.push(VccInst::RcuReadLockRelease);
                 }
+                if kfunc == "bpf_preempt_disable" {
+                    out.push(VccInst::PreemptDisableAcquire);
+                }
+                if kfunc == "bpf_preempt_enable" {
+                    out.push(VccInst::PreemptDisableRelease);
+                }
             }
             MirInst::CallSubfn { dst, args, .. } => {
                 if args.len() > 5 {

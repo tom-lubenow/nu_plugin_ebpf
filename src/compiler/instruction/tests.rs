@@ -585,6 +585,18 @@ fn test_kfunc_signature_rcu_read_lock_helpers() {
     assert_eq!(unlock.min_args, 0);
     assert_eq!(unlock.max_args, 0);
     assert_eq!(unlock.ret_kind, KfuncRetKind::Void);
+
+    let disable = KfuncSignature::for_name("bpf_preempt_disable")
+        .expect("expected bpf_preempt_disable kfunc signature");
+    assert_eq!(disable.min_args, 0);
+    assert_eq!(disable.max_args, 0);
+    assert_eq!(disable.ret_kind, KfuncRetKind::Void);
+
+    let enable = KfuncSignature::for_name("bpf_preempt_enable")
+        .expect("expected bpf_preempt_enable kfunc signature");
+    assert_eq!(enable.min_args, 0);
+    assert_eq!(enable.max_args, 0);
+    assert_eq!(enable.ret_kind, KfuncRetKind::Void);
 }
 
 #[test]

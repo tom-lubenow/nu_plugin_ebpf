@@ -91,6 +91,18 @@ impl KfuncSignature {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: KfuncRetKind::Scalar,
             }),
+            "bpf_preempt_disable" => Some(Self {
+                min_args: 0,
+                max_args: 0,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "bpf_preempt_enable" => Some(Self {
+                min_args: 0,
+                max_args: 0,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
             "bpf_throw" => Some(Self {
                 min_args: 1,
                 max_args: 1,

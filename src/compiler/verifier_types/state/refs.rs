@@ -112,4 +112,22 @@ impl VerifierState {
     pub(in crate::compiler::verifier_types) fn has_live_rcu_read_lock(&self) -> bool {
         self.rcu_read_lock_max_depth > 0
     }
+
+    pub(in crate::compiler::verifier_types) fn acquire_preempt_disable(&mut self) {
+        self.preempt_disable_min_depth = self.preempt_disable_min_depth.saturating_add(1);
+        self.preempt_disable_max_depth = self.preempt_disable_max_depth.saturating_add(1);
+    }
+
+    pub(in crate::compiler::verifier_types) fn release_preempt_disable(&mut self) -> bool {
+        if self.preempt_disable_min_depth == 0 {
+            return false;
+        }
+        self.preempt_disable_min_depth -= 1;
+        self.preempt_disable_max_depth -= 1;
+        true
+    }
+
+    pub(in crate::compiler::verifier_types) fn has_live_preempt_disable(&self) -> bool {
+        self.preempt_disable_max_depth > 0
+    }
 }

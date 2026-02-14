@@ -106,6 +106,8 @@ pub(super) struct VerifierState {
     kfunc_ref_kinds: Vec<Option<KfuncRefKind>>,
     rcu_read_lock_min_depth: u32,
     rcu_read_lock_max_depth: u32,
+    preempt_disable_min_depth: u32,
+    preempt_disable_max_depth: u32,
     reachable: bool,
     guards: HashMap<VReg, Guard>,
 }
@@ -125,6 +127,8 @@ impl VerifierState {
             kfunc_ref_kinds: vec![None; total_vregs],
             rcu_read_lock_min_depth: 0,
             rcu_read_lock_max_depth: 0,
+            preempt_disable_min_depth: 0,
+            preempt_disable_max_depth: 0,
             reachable: true,
             guards: HashMap::new(),
         }

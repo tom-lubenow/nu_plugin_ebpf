@@ -102,6 +102,18 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
         }
         return;
     }
+    if kfunc == "bpf_preempt_disable" {
+        state.acquire_preempt_disable();
+        return;
+    }
+    if kfunc == "bpf_preempt_enable" {
+        if !state.release_preempt_disable() {
+            errors.push(VerifierTypeError::new(
+                "kfunc 'bpf_preempt_enable' requires a matching bpf_preempt_disable",
+            ));
+        }
+        return;
+    }
 
     let Some(expected_kind) = kfunc_release_kind(kfunc) else {
         return;

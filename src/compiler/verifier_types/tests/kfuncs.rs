@@ -2596,3 +2596,149 @@ fn test_kfunc_rbtree_root_accepts_kernel_pointer_arg() {
 
     verify_mir(&func, &types).expect("expected rbtree_root kernel-pointer call to verify");
 }
+
+#[test]
+fn test_kfunc_preempt_disable_enable_balanced() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let disable_ret = func.alloc_vreg();
+    let enable_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: disable_ret,
+        kfunc: "bpf_preempt_disable".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: enable_ret,
+        kfunc: "bpf_preempt_enable".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(disable_ret, MirType::I64);
+    types.insert(enable_ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected balanced preempt disable/enable to verify");
+}
+
+#[test]
+fn test_kfunc_preempt_enable_requires_matching_disable() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let enable_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: enable_ret,
+        kfunc: "bpf_preempt_enable".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(enable_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected unmatched preempt_enable error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires a matching bpf_preempt_disable")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_preempt_disable_must_be_released_at_exit() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let disable_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: disable_ret,
+        kfunc: "bpf_preempt_disable".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(disable_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected unreleased preempt disable error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("unreleased preempt disable")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_preempt_enable_rejected_after_mixed_join() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let disable_path = func.alloc_block();
+    let no_disable_path = func.alloc_block();
+    let join = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let selector = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let disable_ret = func.alloc_vreg();
+    let enable_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: disable_path,
+        if_false: no_disable_path,
+    };
+
+    func.block_mut(disable_path)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: disable_ret,
+            kfunc: "bpf_preempt_disable".to_string(),
+            btf_id: None,
+            args: vec![],
+        });
+    func.block_mut(disable_path).terminator = MirInst::Jump { target: join };
+    func.block_mut(no_disable_path).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(join).instructions.push(MirInst::CallKfunc {
+        dst: enable_ret,
+        kfunc: "bpf_preempt_enable".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    func.block_mut(join).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(selector, MirType::I64);
+    types.insert(cond, MirType::Bool);
+    types.insert(disable_ret, MirType::I64);
+    types.insert(enable_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected mixed-path preempt_enable error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires a matching bpf_preempt_disable")),
+        "unexpected errors: {:?}",
+        err
+    );
+}

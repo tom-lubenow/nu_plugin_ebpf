@@ -254,6 +254,8 @@ pub enum VccInst {
     },
     RcuReadLockAcquire,
     RcuReadLockRelease,
+    PreemptDisableAcquire,
+    PreemptDisableRelease,
     KfuncExpectRefKind {
         ptr: VccValue,
         arg_idx: usize,
