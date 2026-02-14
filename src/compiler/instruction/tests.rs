@@ -576,6 +576,32 @@ fn test_kfunc_signature_scx_task_cgroup_and_select_cpu() {
     assert_eq!(sig.arg_kind(2), KfuncArgKind::Scalar);
     assert_eq!(sig.arg_kind(3), KfuncArgKind::Pointer);
     assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
+    let sig = KfuncSignature::for_name("scx_bpf_get_online_cpumask")
+        .expect("expected scx_bpf_get_online_cpumask kfunc signature");
+    assert_eq!(sig.min_args, 0);
+    assert_eq!(sig.max_args, 0);
+    assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
+
+    let sig = KfuncSignature::for_name("scx_bpf_get_possible_cpumask")
+        .expect("expected scx_bpf_get_possible_cpumask kfunc signature");
+    assert_eq!(sig.min_args, 0);
+    assert_eq!(sig.max_args, 0);
+    assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
+
+    let sig = KfuncSignature::for_name("scx_bpf_put_cpumask")
+        .expect("expected scx_bpf_put_cpumask kfunc signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Void);
+
+    let sig = KfuncSignature::for_name("scx_bpf_put_idle_cpumask")
+        .expect("expected scx_bpf_put_idle_cpumask kfunc signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Void);
 }
 
 #[test]
@@ -682,6 +708,14 @@ fn test_kfunc_pointer_arg_ref_kind_mappings() {
     );
     assert_eq!(
         kfunc_pointer_arg_ref_kind("scx_bpf_select_cpu_and", 3),
+        Some(KfuncRefKind::Cpumask)
+    );
+    assert_eq!(
+        kfunc_pointer_arg_ref_kind("scx_bpf_put_cpumask", 0),
+        Some(KfuncRefKind::Cpumask)
+    );
+    assert_eq!(
+        kfunc_pointer_arg_ref_kind("scx_bpf_put_idle_cpumask", 0),
         Some(KfuncRefKind::Cpumask)
     );
     assert_eq!(kfunc_pointer_arg_ref_kind("bpf_task_from_pid", 0), None);

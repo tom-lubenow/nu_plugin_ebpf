@@ -408,6 +408,42 @@ impl KfuncSignature {
                 arg_kinds: [S, S, S, S, S],
                 ret_kind: KfuncRetKind::Void,
             }),
+            "scx_bpf_get_idle_cpumask" => Some(Self {
+                min_args: 0,
+                max_args: 0,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "scx_bpf_get_idle_cpumask_node" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "scx_bpf_get_idle_smtmask" => Some(Self {
+                min_args: 0,
+                max_args: 0,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "scx_bpf_get_idle_smtmask_node" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "scx_bpf_get_online_cpumask" => Some(Self {
+                min_args: 0,
+                max_args: 0,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "scx_bpf_get_possible_cpumask" => Some(Self {
+                min_args: 0,
+                max_args: 0,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
             "scx_bpf_now" => Some(Self {
                 min_args: 0,
                 max_args: 0,
@@ -449,6 +485,18 @@ impl KfuncSignature {
                 max_args: 3,
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: KfuncRetKind::Scalar,
+            }),
+            "scx_bpf_put_cpumask" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
+            "scx_bpf_put_idle_cpumask" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
             }),
             "scx_bpf_reenqueue_local" => Some(Self {
                 min_args: 0,

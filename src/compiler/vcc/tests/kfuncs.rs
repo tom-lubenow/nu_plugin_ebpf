@@ -430,6 +430,57 @@ fn test_verify_mir_kfunc_scx_task_cgroup_rejects_cgroup_reference_argument() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_scx_put_cpumask_rejects_task_reference_argument() {
+    let (mut func, entry) = new_mir_function();
+
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let put_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: put_ret,
+        kfunc: "scx_bpf_put_cpumask".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(put_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected scx put_cpumask provenance mismatch");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'scx_bpf_put_cpumask' arg0 expects cpumask reference")),
+        "unexpected error messages: {:?}",
+        err
+    );
+    assert!(
+        err.iter().any(|e| e.message.contains("task reference")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_kfunc_get_task_exe_file_requires_null_check_for_tracked_task_reference() {
     let (mut func, entry) = new_mir_function();
 
