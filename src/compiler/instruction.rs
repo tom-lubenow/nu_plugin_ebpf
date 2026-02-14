@@ -56,6 +56,10 @@ pub enum BpfHelper {
     MapDeleteElem = 3,
     /// int bpf_probe_read(dst, size, src)
     ProbeRead = 4,
+    /// long bpf_probe_read_user(dst, size, unsafe_ptr)
+    ProbeReadUser = 112,
+    /// long bpf_probe_read_kernel(dst, size, unsafe_ptr)
+    ProbeReadKernel = 113,
     /// u64 bpf_ktime_get_ns(void)
     KtimeGetNs = 5,
     /// int bpf_trace_printk(fmt, fmt_size, ...)

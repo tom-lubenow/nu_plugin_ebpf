@@ -1564,3 +1564,32 @@ fn test_type_error_helper_kptr_xchg_rejects_non_map_dst_arg0() {
             .contains("helper kptr_xchg dst expects pointer in [Map]")
     }));
 }
+
+#[test]
+fn test_type_error_helper_probe_read_user_rejects_stack_src() {
+    let mut func = make_test_function();
+    let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::ProbeReadUser as u32,
+        args: vec![
+            MirValue::StackSlot(dst_slot),
+            MirValue::Const(8),
+            MirValue::StackSlot(src_slot),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected probe_read_user source pointer-space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper probe_read src expects pointer in [User]")
+    }));
+}

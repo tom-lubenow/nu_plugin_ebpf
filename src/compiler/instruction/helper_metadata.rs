@@ -7,6 +7,8 @@ impl BpfHelper {
             2 => Some(Self::MapUpdateElem),
             3 => Some(Self::MapDeleteElem),
             4 => Some(Self::ProbeRead),
+            112 => Some(Self::ProbeReadUser),
+            113 => Some(Self::ProbeReadKernel),
             5 => Some(Self::KtimeGetNs),
             6 => Some(Self::TracePrintk),
             8 => Some(Self::GetSmpProcessorId),
@@ -84,12 +86,14 @@ impl BpfHelper {
                 arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
-            BpfHelper::ProbeRead => HelperSignature {
-                min_args: 3,
-                max_args: 3,
-                arg_kinds: [P, S, P, S, S],
-                ret_kind: HelperRetKind::Scalar,
-            },
+            BpfHelper::ProbeRead | BpfHelper::ProbeReadUser | BpfHelper::ProbeReadKernel => {
+                HelperSignature {
+                    min_args: 3,
+                    max_args: 3,
+                    arg_kinds: [P, S, P, S, S],
+                    ret_kind: HelperRetKind::Scalar,
+                }
+            }
             BpfHelper::KtimeGetNs
             | BpfHelper::GetSmpProcessorId
             | BpfHelper::GetCurrentPidTgid
@@ -799,12 +803,14 @@ impl BpfHelper {
                 positive_size_args: &[1],
                 ringbuf_record_arg0: false,
             },
-            BpfHelper::ProbeRead | BpfHelper::ProbeReadKernelStr => HelperSemantics {
-                ptr_arg_rules: PROBE_READ_KERNEL_RULES,
-                positive_size_args: &[1],
-                ringbuf_record_arg0: false,
-            },
-            BpfHelper::ProbeReadUserStr => HelperSemantics {
+            BpfHelper::ProbeRead | BpfHelper::ProbeReadKernel | BpfHelper::ProbeReadKernelStr => {
+                HelperSemantics {
+                    ptr_arg_rules: PROBE_READ_KERNEL_RULES,
+                    positive_size_args: &[1],
+                    ringbuf_record_arg0: false,
+                }
+            }
+            BpfHelper::ProbeReadUser | BpfHelper::ProbeReadUserStr => HelperSemantics {
                 ptr_arg_rules: PROBE_READ_USER_RULES,
                 positive_size_args: &[1],
                 ringbuf_record_arg0: false,

@@ -2147,6 +2147,41 @@ fn test_helper_probe_read_user_str_rejects_stack_src() {
 }
 
 #[test]
+fn test_helper_probe_read_user_rejects_stack_src() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::ProbeReadUser as u32,
+            args: vec![
+                MirValue::StackSlot(dst_slot),
+                MirValue::Const(8),
+                MirValue::StackSlot(src_slot),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected user source pointer error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper probe_read src expects pointer in [User]")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_helper_ringbuf_output_checks_data_bounds() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

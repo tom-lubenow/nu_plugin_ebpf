@@ -52,6 +52,28 @@ fn test_helper_signature_kptr_xchg() {
 }
 
 #[test]
+fn test_helper_signature_probe_read_helpers() {
+    let helpers = [
+        (BpfHelper::ProbeRead, "bpf_probe_read"),
+        (BpfHelper::ProbeReadUser, "bpf_probe_read_user"),
+        (BpfHelper::ProbeReadKernel, "bpf_probe_read_kernel"),
+        (BpfHelper::ProbeReadUserStr, "bpf_probe_read_user_str"),
+        (BpfHelper::ProbeReadKernelStr, "bpf_probe_read_kernel_str"),
+    ];
+
+    for (helper, name) in helpers {
+        let sig = HelperSignature::for_id(helper as u32)
+            .unwrap_or_else(|| panic!("expected {name} helper signature"));
+        assert_eq!(sig.min_args, 3);
+        assert_eq!(sig.max_args, 3);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+        assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    }
+}
+
+#[test]
 fn test_helper_signature_map_queue_helpers() {
     let sig = HelperSignature::for_id(BpfHelper::MapPushElem as u32)
         .expect("expected bpf_map_push_elem helper signature");
