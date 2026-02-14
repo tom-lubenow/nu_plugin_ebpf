@@ -96,6 +96,10 @@ pub enum BpfHelper {
     SkcLookupTcp = 99,
     /// long bpf_tcp_check_syncookie(sk, iph, iph_len, th, th_len)
     TcpCheckSyncookie = 100,
+    /// void *bpf_sk_storage_get(map, sk, value, flags)
+    SkStorageGet = 107,
+    /// long bpf_sk_storage_delete(map, sk)
+    SkStorageDelete = 108,
     /// struct tcp6_sock *bpf_skc_to_tcp6_sock(sk)
     SkcToTcp6Sock = 136,
     /// struct tcp_sock *bpf_skc_to_tcp_sock(sk)

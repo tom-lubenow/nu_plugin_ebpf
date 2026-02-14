@@ -47,7 +47,10 @@ impl<'a> TypeInference<'a> {
     }
 
     pub(super) fn helper_pointer_arg_allows_const_zero(helper_id: u32, arg_idx: usize) -> bool {
-        matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::KptrXchg)) && arg_idx == 1
+        matches!(
+            (BpfHelper::from_u32(helper_id), arg_idx),
+            (Some(BpfHelper::KptrXchg), 1) | (Some(BpfHelper::SkStorageGet), 2)
+        )
     }
 
     pub(super) fn helper_ptr_space_allowed(

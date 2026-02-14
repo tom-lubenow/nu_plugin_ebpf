@@ -38,9 +38,10 @@ pub(in crate::compiler::verifier_types) fn helper_pointer_arg_allows_const_zero(
     arg_idx: usize,
     arg: &MirValue,
 ) -> bool {
-    matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::KptrXchg))
-        && arg_idx == 1
-        && matches!(arg, MirValue::Const(0))
+    matches!(
+        (BpfHelper::from_u32(helper_id), arg_idx),
+        (Some(BpfHelper::KptrXchg), 1) | (Some(BpfHelper::SkStorageGet), 2)
+    ) && matches!(arg, MirValue::Const(0))
 }
 
 pub(in crate::compiler::verifier_types) fn helper_positive_size_upper_bound(

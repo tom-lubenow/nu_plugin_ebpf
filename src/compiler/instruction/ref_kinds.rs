@@ -59,7 +59,8 @@ pub const fn helper_pointer_arg_ref_kind(
             | BpfHelper::SkcToTcpRequestSock
             | BpfHelper::SkcToUdp6Sock,
             0,
-        ) => Some(KfuncRefKind::Socket),
+        )
+        | (BpfHelper::SkStorageGet | BpfHelper::SkStorageDelete, 1) => Some(KfuncRefKind::Socket),
         _ => None,
     }
 }

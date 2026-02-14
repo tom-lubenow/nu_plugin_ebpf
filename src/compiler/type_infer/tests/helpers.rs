@@ -407,6 +407,163 @@ fn test_type_error_helper_tcp_check_syncookie_rejects_non_positive_lengths() {
 }
 
 #[test]
+fn test_infer_helper_sk_storage_get_returns_map_pointer() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let pid = func.alloc_vreg();
+    let sk = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: sk,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(sk),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti.infer(&func).unwrap();
+    match types.get(&dst) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(*address_space, AddressSpace::Map);
+        }
+        other => panic!(
+            "Expected helper sk_storage_get map pointer return, got {:?}",
+            other
+        ),
+    }
+}
+
+#[test]
+fn test_type_error_helper_sk_storage_get_rejects_non_stack_map_arg() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let map_value_ptr = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let sk = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst: map_value_ptr,
+        helper: BpfHelper::MapLookupElem as u32,
+        args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: sk,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkStorageGet as u32,
+        args: vec![
+            MirValue::VReg(map_value_ptr),
+            MirValue::VReg(sk),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected sk_storage_get map-pointer space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper sk_storage_get map expects pointer in [Stack]")
+    }));
+}
+
+#[test]
+fn test_type_error_helper_sk_storage_get_rejects_non_kernel_sk_pointer() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let sk_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let sk = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: sk,
+        src: MirValue::StackSlot(sk_slot),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(sk),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected sk_storage_get sk pointer-space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper sk_storage_get sk expects pointer in [Kernel], got Stack")
+    }));
+}
+
+#[test]
+fn test_type_error_helper_sk_storage_delete_rejects_non_kernel_sk_pointer() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let sk_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let sk = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: sk,
+        src: MirValue::StackSlot(sk_slot),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkStorageDelete as u32,
+        args: vec![MirValue::StackSlot(map_slot), MirValue::VReg(sk)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected sk_storage_delete sk pointer-space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper sk_storage_delete sk expects pointer in [Kernel], got Stack")
+    }));
+}
+
+#[test]
 fn test_infer_helper_sk_lookup_returns_kernel_pointer() {
     let mut func = make_test_function();
     let pid = func.alloc_vreg();

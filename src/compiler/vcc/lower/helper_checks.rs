@@ -172,8 +172,10 @@ impl<'a> VccLowerer<'a> {
         arg_idx: usize,
         arg: &MirValue,
     ) -> bool {
-        matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::KptrXchg))
-            && arg_idx == 1
+        matches!(
+            (BpfHelper::from_u32(helper_id), arg_idx),
+            (Some(BpfHelper::KptrXchg), 1) | (Some(BpfHelper::SkStorageGet), 2)
+        )
             && matches!(arg, MirValue::Const(0))
     }
 

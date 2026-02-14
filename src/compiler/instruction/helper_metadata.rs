@@ -27,6 +27,8 @@ impl BpfHelper {
             98 => Some(Self::GetListenerSock),
             99 => Some(Self::SkcLookupTcp),
             100 => Some(Self::TcpCheckSyncookie),
+            107 => Some(Self::SkStorageGet),
+            108 => Some(Self::SkStorageDelete),
             136 => Some(Self::SkcToTcp6Sock),
             137 => Some(Self::SkcToTcpSock),
             138 => Some(Self::SkcToTcpTimewaitSock),
@@ -135,6 +137,18 @@ impl BpfHelper {
                 min_args: 5,
                 max_args: 5,
                 arg_kinds: [P, P, S, P, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SkStorageGet => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, P, P, S, S],
+                ret_kind: HelperRetKind::PointerMaybeNull,
+            },
+            BpfHelper::SkStorageDelete => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::SkRelease => HelperSignature {
@@ -512,6 +526,47 @@ impl BpfHelper {
             },
         ];
 
+        const SK_STORAGE_GET_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper sk_storage_get map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper sk_storage_get sk",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper sk_storage_get value",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+        ];
+
+        const SK_STORAGE_DELETE_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper sk_storage_delete map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper sk_storage_delete sk",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+        ];
+
         const GET_LISTENER_SOCK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 0,
             op: "helper get_listener_sock sk",
@@ -689,6 +744,16 @@ impl BpfHelper {
             BpfHelper::TcpCheckSyncookie => HelperSemantics {
                 ptr_arg_rules: TCP_CHECK_SYNCOOKIE_RULES,
                 positive_size_args: &[2, 4],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkStorageGet => HelperSemantics {
+                ptr_arg_rules: SK_STORAGE_GET_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkStorageDelete => HelperSemantics {
+                ptr_arg_rules: SK_STORAGE_DELETE_RULES,
+                positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::SkRelease => HelperSemantics {
