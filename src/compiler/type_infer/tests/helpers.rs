@@ -407,6 +407,102 @@ fn test_type_error_helper_tcp_check_syncookie_rejects_non_positive_lengths() {
 }
 
 #[test]
+fn test_type_error_helper_tcp_gen_syncookie_rejects_non_kernel_sk_pointer() {
+    let mut func = make_test_function();
+    let sk_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let sk = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let kptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: sk,
+        src: MirValue::StackSlot(sk_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: kptr,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TcpGenSyncookie as u32,
+        args: vec![
+            MirValue::VReg(sk),
+            MirValue::VReg(kptr),
+            MirValue::Const(20),
+            MirValue::VReg(kptr),
+            MirValue::Const(20),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected tcp_gen_syncookie sk pointer-space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper tcp_gen_syncookie sk expects pointer in [Kernel], got Stack")
+    }));
+}
+
+#[test]
+fn test_type_error_helper_tcp_gen_syncookie_rejects_non_positive_lengths() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let sk = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: sk,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TcpGenSyncookie as u32,
+        args: vec![
+            MirValue::VReg(sk),
+            MirValue::VReg(sk),
+            MirValue::Const(0),
+            MirValue::VReg(sk),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected tcp_gen_syncookie size range errors");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 110 arg2 must be > 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 110 arg4 must be > 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_infer_helper_sk_storage_get_returns_map_pointer() {
     let mut func = make_test_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
@@ -1490,6 +1586,116 @@ fn test_type_error_helper_sk_release_rejects_non_kernel_pointer() {
         "unexpected type errors: {:?}",
         errs
     );
+}
+
+#[test]
+fn test_infer_helper_sk_assign_allows_null_sk_arg() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: ctx,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkAssign as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(0), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected sk_assign with null sk to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_helper_sk_assign_rejects_non_kernel_ctx_pointer() {
+    let mut func = make_test_function();
+    let ctx_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let pid = func.alloc_vreg();
+    let sk = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: sk,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkAssign as u32,
+        args: vec![
+            MirValue::StackSlot(ctx_slot),
+            MirValue::VReg(sk),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected sk_assign ctx pointer-space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper sk_assign ctx expects pointer in [Kernel]")
+    }));
+}
+
+#[test]
+fn test_type_error_helper_sk_assign_rejects_non_kernel_sk_pointer() {
+    let mut func = make_test_function();
+    let sk_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let pid = func.alloc_vreg();
+    let ctx = func.alloc_vreg();
+    let sk = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: sk,
+        src: MirValue::StackSlot(sk_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: ctx,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkAssign as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::VReg(sk), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected sk_assign sk pointer-space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper sk_assign sk expects pointer in [Kernel], got Stack")
+    }));
 }
 
 #[test]

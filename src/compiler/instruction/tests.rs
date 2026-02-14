@@ -200,6 +200,26 @@ fn test_helper_signature_socket_helpers() {
     assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 
+    let sig = HelperSignature::for_id(BpfHelper::TcpGenSyncookie as u32)
+        .expect("expected bpf_tcp_gen_syncookie helper signature");
+    assert_eq!(sig.min_args, 5);
+    assert_eq!(sig.max_args, 5);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::SkAssign as u32)
+        .expect("expected bpf_sk_assign helper signature");
+    assert_eq!(sig.min_args, 3);
+    assert_eq!(sig.max_args, 3);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
     let sig = HelperSignature::for_id(BpfHelper::SkRelease as u32)
         .expect("expected bpf_sk_release helper signature");
     assert_eq!(sig.min_args, 1);
@@ -291,11 +311,19 @@ fn test_helper_ref_kind_mappings() {
         Some(KfuncRefKind::Socket)
     );
     assert_eq!(
+        helper_pointer_arg_ref_kind(BpfHelper::TcpGenSyncookie, 0),
+        Some(KfuncRefKind::Socket)
+    );
+    assert_eq!(
         helper_pointer_arg_ref_kind(BpfHelper::SkStorageGet, 1),
         Some(KfuncRefKind::Socket)
     );
     assert_eq!(
         helper_pointer_arg_ref_kind(BpfHelper::SkStorageDelete, 1),
+        Some(KfuncRefKind::Socket)
+    );
+    assert_eq!(
+        helper_pointer_arg_ref_kind(BpfHelper::SkAssign, 1),
         Some(KfuncRefKind::Socket)
     );
     assert_eq!(

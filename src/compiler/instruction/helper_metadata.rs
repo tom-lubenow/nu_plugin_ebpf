@@ -31,6 +31,8 @@ impl BpfHelper {
             100 => Some(Self::TcpCheckSyncookie),
             107 => Some(Self::SkStorageGet),
             108 => Some(Self::SkStorageDelete),
+            110 => Some(Self::TcpGenSyncookie),
+            124 => Some(Self::SkAssign),
             136 => Some(Self::SkcToTcp6Sock),
             137 => Some(Self::SkcToTcpSock),
             138 => Some(Self::SkcToTcpTimewaitSock),
@@ -141,10 +143,16 @@ impl BpfHelper {
                     ret_kind: HelperRetKind::PointerMaybeNull,
                 }
             }
-            BpfHelper::TcpCheckSyncookie => HelperSignature {
+            BpfHelper::TcpCheckSyncookie | BpfHelper::TcpGenSyncookie => HelperSignature {
                 min_args: 5,
                 max_args: 5,
                 arg_kinds: [P, P, S, P, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SkAssign => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::SkStorageGet => HelperSignature {
@@ -558,6 +566,47 @@ impl BpfHelper {
             },
         ];
 
+        const TCP_GEN_SYNCOOKIE_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper tcp_gen_syncookie sk",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper tcp_gen_syncookie iph",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+            HelperPtrArgRule {
+                arg_idx: 3,
+                op: "helper tcp_gen_syncookie th",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: Some(4),
+            },
+        ];
+
+        const SK_ASSIGN_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper sk_assign ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper sk_assign sk",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+        ];
+
         const SK_STORAGE_GET_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -860,6 +909,16 @@ impl BpfHelper {
             BpfHelper::TcpCheckSyncookie => HelperSemantics {
                 ptr_arg_rules: TCP_CHECK_SYNCOOKIE_RULES,
                 positive_size_args: &[2, 4],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::TcpGenSyncookie => HelperSemantics {
+                ptr_arg_rules: TCP_GEN_SYNCOOKIE_RULES,
+                positive_size_args: &[2, 4],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkAssign => HelperSemantics {
+                ptr_arg_rules: SK_ASSIGN_RULES,
+                positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::SkStorageGet => HelperSemantics {

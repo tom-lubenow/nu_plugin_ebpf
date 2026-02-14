@@ -53,6 +53,7 @@ pub const fn helper_pointer_arg_ref_kind(
             | BpfHelper::TcpSock
             | BpfHelper::GetListenerSock
             | BpfHelper::TcpCheckSyncookie
+            | BpfHelper::TcpGenSyncookie
             | BpfHelper::SkcToTcp6Sock
             | BpfHelper::SkcToTcpSock
             | BpfHelper::SkcToTcpTimewaitSock
@@ -60,7 +61,9 @@ pub const fn helper_pointer_arg_ref_kind(
             | BpfHelper::SkcToUdp6Sock,
             0,
         )
-        | (BpfHelper::SkStorageGet | BpfHelper::SkStorageDelete, 1) => Some(KfuncRefKind::Socket),
+        | (BpfHelper::SkStorageGet | BpfHelper::SkStorageDelete | BpfHelper::SkAssign, 1) => {
+            Some(KfuncRefKind::Socket)
+        }
         (BpfHelper::TaskStorageGet | BpfHelper::TaskStorageDelete, 1) => Some(KfuncRefKind::Task),
         _ => None,
     }

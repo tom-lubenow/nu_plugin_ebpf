@@ -104,6 +104,10 @@ pub enum BpfHelper {
     SkStorageGet = 107,
     /// long bpf_sk_storage_delete(map, sk)
     SkStorageDelete = 108,
+    /// s64 bpf_tcp_gen_syncookie(sk, iph, iph_len, th, th_len)
+    TcpGenSyncookie = 110,
+    /// long bpf_sk_assign(ctx, sk, flags)
+    SkAssign = 124,
     /// void *bpf_task_storage_get(map, task, value, flags)
     TaskStorageGet = 156,
     /// long bpf_task_storage_delete(map, task)

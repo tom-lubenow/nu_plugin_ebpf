@@ -664,6 +664,122 @@ fn test_helper_tcp_check_syncookie_rejects_non_positive_lengths() {
 }
 
 #[test]
+fn test_helper_tcp_gen_syncookie_rejects_non_positive_lengths() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let pid = func.alloc_vreg();
+    let kptr = func.alloc_vreg();
+    let syncookie_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: kptr,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: syncookie_ret,
+            helper: BpfHelper::TcpGenSyncookie as u32,
+            args: vec![
+                MirValue::VReg(kptr),
+                MirValue::VReg(kptr),
+                MirValue::Const(0),
+                MirValue::VReg(kptr),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        kptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(syncookie_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected tcp_gen_syncookie size errors");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 110 arg2 must be > 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 110 arg4 must be > 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_helper_tcp_gen_syncookie_rejects_non_kernel_sk_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let sk_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let pid = func.alloc_vreg();
+    let kptr = func.alloc_vreg();
+    let syncookie_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: kptr,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: syncookie_ret,
+            helper: BpfHelper::TcpGenSyncookie as u32,
+            args: vec![
+                MirValue::StackSlot(sk_slot),
+                MirValue::VReg(kptr),
+                MirValue::Const(20),
+                MirValue::VReg(kptr),
+                MirValue::Const(20),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        kptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(syncookie_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected tcp_gen_syncookie pointer-kind error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper tcp_gen_syncookie sk expects pointer in [Kernel], got stack slot")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_helper_sk_storage_get_allows_null_init_value() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
@@ -879,6 +995,162 @@ fn test_helper_sk_storage_delete_rejects_non_kernel_sk_pointer() {
         err.iter().any(|e| e
             .message
             .contains("helper sk_storage_delete sk expects pointer in [Kernel], got stack slot")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_helper_sk_assign_allows_null_sk_arg() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let ctx_non_null = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: ctx_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(ctx),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: ctx_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: ret,
+        helper: BpfHelper::SkAssign as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(0), MirValue::Const(0)],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(ctx_non_null, MirType::Bool);
+    types.insert(ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected sk_assign null sk to verify");
+}
+
+#[test]
+fn test_helper_sk_assign_rejects_non_kernel_ctx_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let sk = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: sk,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: ret,
+            helper: BpfHelper::SkAssign as u32,
+            args: vec![
+                MirValue::StackSlot(ctx_slot),
+                MirValue::VReg(sk),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        sk,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(pid, MirType::I64);
+    types.insert(ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected sk_assign ctx pointer-kind error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper sk_assign ctx expects pointer in [Kernel], got stack slot")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_helper_sk_assign_rejects_non_kernel_sk_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let sk_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let ret = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: ctx,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: ret,
+            helper: BpfHelper::SkAssign as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(sk_slot),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(pid, MirType::I64);
+    types.insert(ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected sk_assign sk pointer-kind error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper sk_assign sk expects pointer in [Kernel], got stack slot")),
         "unexpected errors: {:?}",
         err
     );
