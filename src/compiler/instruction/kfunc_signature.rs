@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel_btf::KernelBtf;
 
 impl KfuncSignature {
     pub fn for_name(name: &str) -> Option<Self> {
@@ -600,5 +601,15 @@ impl KfuncSignature {
 
     pub fn arg_kind(&self, idx: usize) -> KfuncArgKind {
         self.arg_kinds[idx]
+    }
+}
+
+pub fn unknown_kfunc_signature_message(kfunc: &str) -> String {
+    let base = format!("unknown kfunc '{}' (typed signature required)", kfunc);
+    match KernelBtf::get().resolve_kfunc_btf_id(kfunc) {
+        Ok(btf_id) => format!(
+            "{base}; kernel BTF has this symbol (id {btf_id}) but no compiler signature is defined yet"
+        ),
+        Err(_) => base,
     }
 }

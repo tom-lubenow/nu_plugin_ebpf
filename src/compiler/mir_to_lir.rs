@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::compiler::CompileError;
 
-use super::instruction::{EbpfReg, KfuncSignature};
+use super::instruction::{EbpfReg, KfuncSignature, unknown_kfunc_signature_message};
 use super::lir::{LirBlock, LirFunction, LirInst, LirProgram};
 use super::mir::{MirFunction, MirInst, MirProgram, MirValue, VReg};
 
@@ -240,10 +240,7 @@ fn lower_inst(
             args,
         } => {
             let sig = KfuncSignature::for_name(kfunc).ok_or_else(|| {
-                CompileError::UnsupportedInstruction(format!(
-                    "unknown kfunc '{}' (typed signature required)",
-                    kfunc
-                ))
+                CompileError::UnsupportedInstruction(unknown_kfunc_signature_message(kfunc))
             })?;
             if args.len() < sig.min_args || args.len() > sig.max_args {
                 return Err(CompileError::UnsupportedInstruction(format!(

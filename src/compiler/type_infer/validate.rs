@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::instruction::unknown_kfunc_signature_message;
 
 impl<'a> TypeInference<'a> {
     pub(super) fn validate_types(
@@ -539,10 +540,7 @@ impl<'a> TypeInference<'a> {
 
             MirInst::CallKfunc { kfunc, args, .. } => {
                 let Some(sig) = KfuncSignature::for_name(kfunc) else {
-                    errors.push(TypeError::new(format!(
-                        "unknown kfunc '{}' (typed signature required)",
-                        kfunc
-                    )));
+                    errors.push(TypeError::new(unknown_kfunc_signature_message(kfunc)));
                     return;
                 };
                 if args.len() < sig.min_args || args.len() > sig.max_args {

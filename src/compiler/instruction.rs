@@ -283,6 +283,7 @@ mod kfunc_signature;
 #[path = "instruction/ref_kinds.rs"]
 mod ref_kinds;
 
+pub use kfunc_signature::unknown_kfunc_signature_message;
 pub use ref_kinds::{
     helper_acquire_ref_kind, helper_pointer_arg_ref_kind, helper_release_ref_kind,
     kfunc_acquire_ref_kind, kfunc_pointer_arg_ref_kind, kfunc_pointer_arg_requires_kernel,

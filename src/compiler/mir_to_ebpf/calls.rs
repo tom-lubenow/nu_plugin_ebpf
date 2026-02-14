@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::instruction::unknown_kfunc_signature_message;
 
 impl<'a> MirToEbpfCompiler<'a> {
     pub(super) fn compile_call_subfn(
@@ -29,10 +30,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         args: &[VReg],
     ) -> Result<(), CompileError> {
         let sig = KfuncSignature::for_name(kfunc).ok_or_else(|| {
-            CompileError::UnsupportedInstruction(format!(
-                "unknown kfunc '{}' (typed signature required)",
-                kfunc
-            ))
+            CompileError::UnsupportedInstruction(unknown_kfunc_signature_message(kfunc))
         })?;
         if args.len() < sig.min_args || args.len() > sig.max_args {
             return Err(CompileError::UnsupportedInstruction(format!(

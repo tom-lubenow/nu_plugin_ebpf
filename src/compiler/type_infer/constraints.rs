@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::instruction::unknown_kfunc_signature_message;
 
 impl<'a> TypeInference<'a> {
     /// Generate constraints for a basic block
@@ -103,12 +104,8 @@ impl<'a> TypeInference<'a> {
 
             MirInst::CallKfunc { dst, kfunc, .. } => {
                 let dst_ty = self.vreg_type(*dst);
-                let sig = KfuncSignature::for_name(kfunc).ok_or_else(|| {
-                    TypeError::new(format!(
-                        "unknown kfunc '{}' (typed signature required)",
-                        kfunc
-                    ))
-                })?;
+                let sig = KfuncSignature::for_name(kfunc)
+                    .ok_or_else(|| TypeError::new(unknown_kfunc_signature_message(kfunc)))?;
                 match sig.ret_kind {
                     KfuncRetKind::Scalar | KfuncRetKind::Void => {
                         self.constrain(dst_ty, HMType::I64, "kfunc_call");

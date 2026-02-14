@@ -538,6 +538,13 @@ fn test_kfunc_signature_cpumask_and() {
 }
 
 #[test]
+fn test_unknown_kfunc_signature_message_for_missing_symbol() {
+    let msg = unknown_kfunc_signature_message("__nu_plugin_ebpf_missing_kfunc_for_test__");
+    assert!(msg.contains("unknown kfunc '__nu_plugin_ebpf_missing_kfunc_for_test__'"));
+    assert!(msg.contains("typed signature required"));
+}
+
+#[test]
 fn test_kfunc_signature_scx_dsq_insert() {
     let sig = KfuncSignature::for_name("scx_bpf_dsq_insert")
         .expect("expected scx_bpf_dsq_insert kfunc signature");

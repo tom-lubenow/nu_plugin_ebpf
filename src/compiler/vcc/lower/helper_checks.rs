@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::instruction::unknown_kfunc_signature_message;
 
 impl<'a> VccLowerer<'a> {
     pub(super) fn verify_helper_call(
@@ -58,7 +59,7 @@ impl<'a> VccLowerer<'a> {
         let sig = KfuncSignature::for_name(kfunc).ok_or_else(|| {
             VccError::new(
                 VccErrorKind::UnsupportedInstruction,
-                format!("unknown kfunc '{}' (typed signature required)", kfunc),
+                unknown_kfunc_signature_message(kfunc),
             )
         })?;
         if args.len() < sig.min_args || args.len() > sig.max_args {

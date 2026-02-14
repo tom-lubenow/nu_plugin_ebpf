@@ -159,9 +159,10 @@ Last updated: 2026-02-14.
 
 ## Ergonomics and quality
 
-- [ ] Improve unsupported-feature diagnostics.
+- [~] Improve unsupported-feature diagnostics.
   - Replace generic "unsupported" failures with actionable messages that include rewrites/workarounds.
   - Emit diagnostics at the highest possible level (HIR/MIR) before backend failure.
+  - Recent progress: unknown-kfunc diagnostics now indicate when the symbol exists in kernel BTF but lacks a compiler-side typed signature.
 
 - [ ] Build a compatibility test matrix.
   - Add automated tests that exercise compilation and loading across representative kernel versions/configs.

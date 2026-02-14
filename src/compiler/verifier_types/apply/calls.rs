@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::instruction::unknown_kfunc_signature_message;
 
 pub(super) fn apply_call_helper_inst(
     dst: VReg,
@@ -125,9 +126,8 @@ pub(super) fn apply_call_kfunc_inst(
     errors: &mut Vec<VerifierTypeError>,
 ) {
     let Some(sig) = KfuncSignature::for_name(kfunc) else {
-        errors.push(VerifierTypeError::new(format!(
-            "unknown kfunc '{}' (typed signature required)",
-            kfunc
+        errors.push(VerifierTypeError::new(unknown_kfunc_signature_message(
+            kfunc,
         )));
         return;
     };
