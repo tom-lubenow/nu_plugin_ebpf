@@ -21,10 +21,37 @@ pub(super) enum PtrOrigin {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct PtrBounds {
-    pub(super) origin: PtrOrigin,
-    pub(super) min: i64,
-    pub(super) max: i64,
-    pub(super) limit: i64,
+    origin: PtrOrigin,
+    min: i64,
+    max: i64,
+    limit: i64,
+}
+
+impl PtrBounds {
+    pub(super) fn new(origin: PtrOrigin, min: i64, max: i64, limit: i64) -> Self {
+        Self {
+            origin,
+            min,
+            max,
+            limit,
+        }
+    }
+
+    pub(super) fn origin(self) -> PtrOrigin {
+        self.origin
+    }
+
+    pub(super) fn min(self) -> i64 {
+        self.min
+    }
+
+    pub(super) fn max(self) -> i64 {
+        self.max
+    }
+
+    pub(super) fn limit(self) -> i64 {
+        self.limit
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

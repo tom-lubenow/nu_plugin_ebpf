@@ -78,12 +78,10 @@ pub(super) fn apply_list_new_inst(
     slot_sizes: &HashMap<StackSlotId, i64>,
     state: &mut VerifierState,
 ) {
-    let bounds = slot_sizes.get(&buffer).copied().map(|limit| PtrBounds {
-        origin: PtrOrigin::Stack(buffer),
-        min: 0,
-        max: 0,
-        limit,
-    });
+    let bounds = slot_sizes
+        .get(&buffer)
+        .copied()
+        .map(|limit| PtrBounds::new(PtrOrigin::Stack(buffer), 0, 0, limit));
     state.set(
         dst,
         VerifierType::Ptr {
@@ -149,12 +147,10 @@ pub(super) fn apply_load_ctx_field_inst(
         Some(slot),
     ) = (ty, slot)
     {
-        let bounds = slot_sizes.get(&slot).copied().map(|limit| PtrBounds {
-            origin: PtrOrigin::Stack(slot),
-            min: 0,
-            max: 0,
-            limit,
-        });
+        let bounds = slot_sizes
+            .get(&slot)
+            .copied()
+            .map(|limit| PtrBounds::new(PtrOrigin::Stack(slot), 0, 0, limit));
         ty = VerifierType::Ptr {
             space: AddressSpace::Stack,
             nullability,

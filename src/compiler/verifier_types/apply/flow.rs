@@ -61,12 +61,12 @@ pub(super) fn pointer_arith_result(
         let bounds = match (bounds, offset_range) {
             (Some(bounds), ValueRange::Known { min, max }) => {
                 let (min_delta, max_delta) = if is_add { (min, max) } else { (-max, -min) };
-                Some(PtrBounds {
-                    origin: bounds.origin,
-                    min: bounds.min.saturating_add(min_delta),
-                    max: bounds.max.saturating_add(max_delta),
-                    limit: bounds.limit,
-                })
+                Some(PtrBounds::new(
+                    bounds.origin(),
+                    bounds.min().saturating_add(min_delta),
+                    bounds.max().saturating_add(max_delta),
+                    bounds.limit(),
+                ))
             }
             _ => None,
         };

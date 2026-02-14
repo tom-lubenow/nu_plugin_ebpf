@@ -19,12 +19,7 @@ pub(super) fn apply_map_lookup_inst(
 
     let bounds = map_value_limit(map)
         .or_else(|| map_value_limit_from_dst_type(types.get(&dst)))
-        .map(|limit| PtrBounds {
-            origin: PtrOrigin::Map,
-            min: 0,
-            max: 0,
-            limit,
-        });
+        .map(|limit| PtrBounds::new(PtrOrigin::Map, 0, 0, limit));
     state.set(
         dst,
         VerifierType::Ptr {

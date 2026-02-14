@@ -70,13 +70,8 @@ pub(super) fn apply_call_helper_inst(
                     }),
                 },
                 _ => {
-                    let bounds =
-                        map_value_limit_from_dst_type(types.get(&dst)).map(|limit| PtrBounds {
-                            origin: PtrOrigin::Map,
-                            min: 0,
-                            max: 0,
-                            limit,
-                        });
+                    let bounds = map_value_limit_from_dst_type(types.get(&dst))
+                        .map(|limit| PtrBounds::new(PtrOrigin::Map, 0, 0, limit));
                     VerifierType::Ptr {
                         space: AddressSpace::Map,
                         nullability: Nullability::MaybeNull,
