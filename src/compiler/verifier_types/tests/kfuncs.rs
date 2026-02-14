@@ -3108,6 +3108,67 @@ fn test_kfunc_local_irq_restore_requires_matching_save() {
 }
 
 #[test]
+fn test_kfunc_local_irq_restore_requires_matching_save_slot() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let save_flags = func.alloc_vreg();
+    let restore_flags = func.alloc_vreg();
+    let save_ret = func.alloc_vreg();
+    let restore_ret = func.alloc_vreg();
+    let save_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let restore_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: save_flags,
+        src: MirValue::StackSlot(save_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: restore_flags,
+        src: MirValue::StackSlot(restore_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: save_ret,
+        kfunc: "bpf_local_irq_save".to_string(),
+        btf_id: None,
+        args: vec![save_flags],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: restore_ret,
+        kfunc: "bpf_local_irq_restore".to_string(),
+        btf_id: None,
+        args: vec![restore_flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        save_flags,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        restore_flags,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(save_ret, MirType::I64);
+    types.insert(restore_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected local_irq_restore slot mismatch");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("requires a matching bpf_local_irq_save")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_kfunc_local_irq_save_must_be_released_at_exit() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
@@ -3497,6 +3558,79 @@ fn test_kfunc_res_spin_unlock_irqrestore_requires_matching_lock_irqsave() {
 
     let err =
         verify_mir(&func, &types).expect_err("expected unmatched res_spin_unlock_irqrestore error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires a matching bpf_res_spin_lock_irqsave")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_res_spin_unlock_irqrestore_requires_matching_lock_irqsave_slot() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let lock = func.alloc_vreg();
+    let save_flags = func.alloc_vreg();
+    let restore_flags = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
+    let save_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let restore_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: save_flags,
+        src: MirValue::StackSlot(save_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: restore_flags,
+        src: MirValue::StackSlot(restore_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: lock_ret,
+        kfunc: "bpf_res_spin_lock_irqsave".to_string(),
+        btf_id: None,
+        args: vec![lock, save_flags],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: unlock_ret,
+        kfunc: "bpf_res_spin_unlock_irqrestore".to_string(),
+        btf_id: None,
+        args: vec![lock, restore_flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        save_flags,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        restore_flags,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(lock_ret, MirType::I64);
+    types.insert(unlock_ret, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected res_spin irqrestore slot mismatch error");
     assert!(
         err.iter().any(|e| e
             .message

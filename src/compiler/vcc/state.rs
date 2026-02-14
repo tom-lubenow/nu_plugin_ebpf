@@ -10,10 +10,12 @@ struct VccState {
     preempt_disable_max_depth: u32,
     local_irq_disable_min_depth: u32,
     local_irq_disable_max_depth: u32,
+    local_irq_disable_slots: HashMap<StackSlotId, (u32, u32)>,
     res_spin_lock_min_depth: u32,
     res_spin_lock_max_depth: u32,
     res_spin_lock_irqsave_min_depth: u32,
     res_spin_lock_irqsave_max_depth: u32,
+    res_spin_lock_irqsave_slots: HashMap<StackSlotId, (u32, u32)>,
     cond_refinements: HashMap<VccReg, VccCondRefinement>,
     reachable: bool,
 }
@@ -53,10 +55,12 @@ impl VccState {
             preempt_disable_max_depth: 0,
             local_irq_disable_min_depth: 0,
             local_irq_disable_max_depth: 0,
+            local_irq_disable_slots: HashMap::new(),
             res_spin_lock_min_depth: 0,
             res_spin_lock_max_depth: 0,
             res_spin_lock_irqsave_min_depth: 0,
             res_spin_lock_irqsave_max_depth: 0,
+            res_spin_lock_irqsave_slots: HashMap::new(),
             cond_refinements: HashMap::new(),
             reachable: true,
         }
@@ -191,6 +195,11 @@ impl VccState {
         self.local_irq_disable_max_depth = self.local_irq_disable_max_depth.saturating_add(1);
     }
 
+    fn acquire_local_irq_disable_slot(&mut self, slot: StackSlotId) {
+        self.acquire_local_irq_disable();
+        increment_slot_depth(&mut self.local_irq_disable_slots, slot);
+    }
+
     fn release_local_irq_disable(&mut self) -> bool {
         if self.local_irq_disable_min_depth == 0 {
             return false;
@@ -198,6 +207,16 @@ impl VccState {
         self.local_irq_disable_min_depth -= 1;
         self.local_irq_disable_max_depth -= 1;
         true
+    }
+
+    fn release_local_irq_disable_slot(&mut self, slot: StackSlotId) -> bool {
+        if self.local_irq_disable_min_depth == 0 {
+            return false;
+        }
+        if !decrement_slot_depth(&mut self.local_irq_disable_slots, slot) {
+            return false;
+        }
+        self.release_local_irq_disable()
     }
 
     fn has_live_local_irq_disable(&self) -> bool {
@@ -229,6 +248,11 @@ impl VccState {
             self.res_spin_lock_irqsave_max_depth.saturating_add(1);
     }
 
+    fn acquire_res_spin_lock_irqsave_slot(&mut self, slot: StackSlotId) {
+        self.acquire_res_spin_lock_irqsave();
+        increment_slot_depth(&mut self.res_spin_lock_irqsave_slots, slot);
+    }
+
     fn release_res_spin_lock_irqsave(&mut self) -> bool {
         if self.res_spin_lock_irqsave_min_depth == 0 {
             return false;
@@ -236,6 +260,16 @@ impl VccState {
         self.res_spin_lock_irqsave_min_depth -= 1;
         self.res_spin_lock_irqsave_max_depth -= 1;
         true
+    }
+
+    fn release_res_spin_lock_irqsave_slot(&mut self, slot: StackSlotId) -> bool {
+        if self.res_spin_lock_irqsave_min_depth == 0 {
+            return false;
+        }
+        if !decrement_slot_depth(&mut self.res_spin_lock_irqsave_slots, slot) {
+            return false;
+        }
+        self.release_res_spin_lock_irqsave()
     }
 
     fn has_live_res_spin_lock_irqsave(&self) -> bool {
@@ -374,6 +408,10 @@ impl VccState {
             local_irq_disable_max_depth: self
                 .local_irq_disable_max_depth
                 .max(other.local_irq_disable_max_depth),
+            local_irq_disable_slots: merge_slot_depths(
+                &self.local_irq_disable_slots,
+                &other.local_irq_disable_slots,
+            ),
             res_spin_lock_min_depth: self
                 .res_spin_lock_min_depth
                 .min(other.res_spin_lock_min_depth),
@@ -386,6 +424,10 @@ impl VccState {
             res_spin_lock_irqsave_max_depth: self
                 .res_spin_lock_irqsave_max_depth
                 .max(other.res_spin_lock_irqsave_max_depth),
+            res_spin_lock_irqsave_slots: merge_slot_depths(
+                &self.res_spin_lock_irqsave_slots,
+                &other.res_spin_lock_irqsave_slots,
+            ),
             cond_refinements,
             reachable: true,
         }
@@ -420,10 +462,12 @@ impl VccState {
             preempt_disable_max_depth: self.preempt_disable_max_depth,
             local_irq_disable_min_depth: self.local_irq_disable_min_depth,
             local_irq_disable_max_depth: self.local_irq_disable_max_depth,
+            local_irq_disable_slots: self.local_irq_disable_slots.clone(),
             res_spin_lock_min_depth: self.res_spin_lock_min_depth,
             res_spin_lock_max_depth: self.res_spin_lock_max_depth,
             res_spin_lock_irqsave_min_depth: self.res_spin_lock_irqsave_min_depth,
             res_spin_lock_irqsave_max_depth: self.res_spin_lock_irqsave_max_depth,
+            res_spin_lock_irqsave_slots: self.res_spin_lock_irqsave_slots.clone(),
             cond_refinements: HashMap::new(),
             reachable: self.reachable,
         }
@@ -699,4 +743,42 @@ impl VccState {
             _ => VccNullability::MaybeNull,
         }
     }
+}
+
+fn increment_slot_depth(depths: &mut HashMap<StackSlotId, (u32, u32)>, slot: StackSlotId) {
+    let entry = depths.entry(slot).or_insert((0, 0));
+    entry.0 = entry.0.saturating_add(1);
+    entry.1 = entry.1.saturating_add(1);
+}
+
+fn decrement_slot_depth(depths: &mut HashMap<StackSlotId, (u32, u32)>, slot: StackSlotId) -> bool {
+    let Some((min_depth, max_depth)) = depths.get_mut(&slot) else {
+        return false;
+    };
+    if *min_depth == 0 {
+        return false;
+    }
+    *min_depth -= 1;
+    *max_depth -= 1;
+    if *max_depth == 0 {
+        depths.remove(&slot);
+    }
+    true
+}
+
+fn merge_slot_depths(
+    lhs: &HashMap<StackSlotId, (u32, u32)>,
+    rhs: &HashMap<StackSlotId, (u32, u32)>,
+) -> HashMap<StackSlotId, (u32, u32)> {
+    let mut merged = HashMap::new();
+    for slot in lhs.keys().chain(rhs.keys()) {
+        let (lhs_min, lhs_max) = lhs.get(slot).copied().unwrap_or((0, 0));
+        let (rhs_min, rhs_max) = rhs.get(slot).copied().unwrap_or((0, 0));
+        let min_depth = lhs_min.min(rhs_min);
+        let max_depth = lhs_max.max(rhs_max);
+        if max_depth > 0 {
+            merged.insert(*slot, (min_depth, max_depth));
+        }
+    }
+    merged
 }

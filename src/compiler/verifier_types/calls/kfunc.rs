@@ -145,11 +145,22 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
         return;
     }
     if kfunc == "bpf_local_irq_save" {
-        state.acquire_local_irq_disable();
+        if let Some(flags) = args
+            .first()
+            .copied()
+            .and_then(|arg| stack_slot_from_arg(state, arg))
+        {
+            state.acquire_local_irq_disable_slot(flags);
+        }
         return;
     }
     if kfunc == "bpf_local_irq_restore" {
-        if !state.release_local_irq_disable() {
+        let released = args
+            .first()
+            .copied()
+            .and_then(|arg| stack_slot_from_arg(state, arg))
+            .is_some_and(|flags| state.release_local_irq_disable_slot(flags));
+        if !released {
             errors.push(VerifierTypeError::new(
                 "kfunc 'bpf_local_irq_restore' requires a matching bpf_local_irq_save",
             ));
@@ -169,11 +180,22 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
         return;
     }
     if kfunc == "bpf_res_spin_lock_irqsave" {
-        state.acquire_res_spin_lock_irqsave();
+        if let Some(flags) = args
+            .get(1)
+            .copied()
+            .and_then(|arg| stack_slot_from_arg(state, arg))
+        {
+            state.acquire_res_spin_lock_irqsave_slot(flags);
+        }
         return;
     }
     if kfunc == "bpf_res_spin_unlock_irqrestore" {
-        if !state.release_res_spin_lock_irqsave() {
+        let released = args
+            .get(1)
+            .copied()
+            .and_then(|arg| stack_slot_from_arg(state, arg))
+            .is_some_and(|flags| state.release_res_spin_lock_irqsave_slot(flags));
+        if !released {
             errors.push(VerifierTypeError::new(
                 "kfunc 'bpf_res_spin_unlock_irqrestore' requires a matching bpf_res_spin_lock_irqsave",
             ));
@@ -256,4 +278,17 @@ pub(in crate::compiler::verifier_types) fn kfunc_acquire_kind(kfunc: &str) -> Op
 
 pub(in crate::compiler::verifier_types) fn kfunc_release_kind(kfunc: &str) -> Option<KfuncRefKind> {
     kfunc_release_ref_kind(kfunc)
+}
+
+fn stack_slot_from_arg(state: &VerifierState, arg: VReg) -> Option<StackSlotId> {
+    match state.get(arg) {
+        VerifierType::Ptr {
+            bounds: Some(bounds),
+            ..
+        } => match bounds.origin() {
+            PtrOrigin::Stack(slot) => Some(slot),
+            PtrOrigin::Map => None,
+        },
+        _ => None,
+    }
 }

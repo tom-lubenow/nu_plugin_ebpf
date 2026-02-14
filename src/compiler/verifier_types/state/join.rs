@@ -16,10 +16,12 @@ impl VerifierState {
             && self.preempt_disable_max_depth == other.preempt_disable_max_depth
             && self.local_irq_disable_min_depth == other.local_irq_disable_min_depth
             && self.local_irq_disable_max_depth == other.local_irq_disable_max_depth
+            && self.local_irq_disable_slots == other.local_irq_disable_slots
             && self.res_spin_lock_min_depth == other.res_spin_lock_min_depth
             && self.res_spin_lock_max_depth == other.res_spin_lock_max_depth
             && self.res_spin_lock_irqsave_min_depth == other.res_spin_lock_irqsave_min_depth
             && self.res_spin_lock_irqsave_max_depth == other.res_spin_lock_irqsave_max_depth
+            && self.res_spin_lock_irqsave_slots == other.res_spin_lock_irqsave_slots
             && self.guards == other.guards
             && self.reachable == other.reachable
     }
@@ -137,6 +139,10 @@ impl VerifierState {
             local_irq_disable_max_depth: self
                 .local_irq_disable_max_depth
                 .max(other.local_irq_disable_max_depth),
+            local_irq_disable_slots: join_slot_depths(
+                &self.local_irq_disable_slots,
+                &other.local_irq_disable_slots,
+            ),
             res_spin_lock_min_depth: self
                 .res_spin_lock_min_depth
                 .min(other.res_spin_lock_min_depth),
@@ -149,8 +155,29 @@ impl VerifierState {
             res_spin_lock_irqsave_max_depth: self
                 .res_spin_lock_irqsave_max_depth
                 .max(other.res_spin_lock_irqsave_max_depth),
+            res_spin_lock_irqsave_slots: join_slot_depths(
+                &self.res_spin_lock_irqsave_slots,
+                &other.res_spin_lock_irqsave_slots,
+            ),
             reachable: true,
             guards,
         }
     }
+}
+
+fn join_slot_depths(
+    lhs: &HashMap<StackSlotId, (u32, u32)>,
+    rhs: &HashMap<StackSlotId, (u32, u32)>,
+) -> HashMap<StackSlotId, (u32, u32)> {
+    let mut merged = HashMap::new();
+    for slot in lhs.keys().chain(rhs.keys()) {
+        let (lhs_min, lhs_max) = lhs.get(slot).copied().unwrap_or((0, 0));
+        let (rhs_min, rhs_max) = rhs.get(slot).copied().unwrap_or((0, 0));
+        let min_depth = lhs_min.min(rhs_min);
+        let max_depth = lhs_max.max(rhs_max);
+        if max_depth > 0 {
+            merged.insert(*slot, (min_depth, max_depth));
+        }
+    }
+    merged
 }

@@ -156,8 +156,9 @@ Last updated: 2026-02-14.
   - Added user-facing `kfunc-call` closure helper with literal-name lowering and optional `--btf-id`.
   - Added lifetime/lock-depth verifier parity for `bpf_res_spin_lock`/`unlock` and `bpf_res_spin_lock_irqsave`/`unlock_irqrestore`, including branch-join handling and exit checks.
   - Added pointer-space enforcement for `bpf_res_spin_*` arguments (`arg0` kernel lock pointer, `irqsave/irqrestore arg1` stack flags pointer) across type inference, verifier_types, and VCC.
+  - Added stack-slot identity tracking for `bpf_local_irq_save`/`restore` and `bpf_res_spin_*_irq*` so restore/irqrestore must match the saved flags slot (including branch-join state merges).
   - Remaining: expand signature coverage and pointer/ref-lifetime semantics from richer BTF metadata.
-  - Remaining: model precise stack-slot identity and by-reference out-parameter semantics for kfunc families that require specific stack-local storage patterns (beyond current stack address-space checks).
+  - Remaining: model richer by-reference out-parameter semantics (aliasing/copy semantics and typed stack object identity) for additional kfunc families beyond current lock/irq patterns.
 
 - [ ] Improve control-flow expressiveness safely.
   - Keep bounded-loop guarantees while supporting more realistic higher-level control patterns.

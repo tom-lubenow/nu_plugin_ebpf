@@ -722,11 +722,17 @@ impl VccVerifier {
                     ));
                 }
             }
-            VccInst::LocalIrqDisableAcquire => {
-                state.acquire_local_irq_disable();
+            VccInst::LocalIrqDisableAcquire { flags } => {
+                let Some(slot) = self.stack_slot_from_reg(state, *flags, "kfunc 'bpf_local_irq_save' arg0") else {
+                    return;
+                };
+                state.acquire_local_irq_disable_slot(slot);
             }
-            VccInst::LocalIrqDisableRelease => {
-                if !state.release_local_irq_disable() {
+            VccInst::LocalIrqDisableRelease { flags } => {
+                let Some(slot) = self.stack_slot_from_reg(state, *flags, "kfunc 'bpf_local_irq_restore' arg0") else {
+                    return;
+                };
+                if !state.release_local_irq_disable_slot(slot) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "kfunc 'bpf_local_irq_restore' requires a matching bpf_local_irq_save",
@@ -744,11 +750,25 @@ impl VccVerifier {
                     ));
                 }
             }
-            VccInst::ResSpinLockIrqsaveAcquire => {
-                state.acquire_res_spin_lock_irqsave();
+            VccInst::ResSpinLockIrqsaveAcquire { flags } => {
+                let Some(slot) = self.stack_slot_from_reg(
+                    state,
+                    *flags,
+                    "kfunc 'bpf_res_spin_lock_irqsave' arg1",
+                ) else {
+                    return;
+                };
+                state.acquire_res_spin_lock_irqsave_slot(slot);
             }
-            VccInst::ResSpinLockIrqsaveRelease => {
-                if !state.release_res_spin_lock_irqsave() {
+            VccInst::ResSpinLockIrqsaveRelease { flags } => {
+                let Some(slot) = self.stack_slot_from_reg(
+                    state,
+                    *flags,
+                    "kfunc 'bpf_res_spin_unlock_irqrestore' arg1",
+                ) else {
+                    return;
+                };
+                if !state.release_res_spin_lock_irqsave_slot(slot) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "kfunc 'bpf_res_spin_unlock_irqrestore' requires a matching bpf_res_spin_lock_irqsave",
@@ -889,6 +909,50 @@ impl VccVerifier {
                         state.set_reg(*dst, VccValueType::Ptr(dst_info));
                     }
                 }
+            }
+        }
+    }
+
+    fn stack_slot_from_reg(
+        &mut self,
+        state: &VccState,
+        reg: VccReg,
+        op: &str,
+    ) -> Option<StackSlotId> {
+        let ty = match state.reg_type(reg) {
+            Ok(ty) => ty,
+            Err(err) => {
+                self.errors.push(err);
+                return None;
+            }
+        };
+        match ty {
+            VccValueType::Ptr(info) => match info.space {
+                VccAddrSpace::Stack(slot) if slot.0 != u32::MAX => Some(slot),
+                VccAddrSpace::Stack(_) => {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!("{op} expects stack slot pointer"),
+                    ));
+                    None
+                }
+                space => {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!("{op} expects pointer in [Stack], got {}", Self::space_name(space)),
+                    ));
+                    None
+                }
+            },
+            other => {
+                self.errors.push(VccError::new(
+                    VccErrorKind::TypeMismatch {
+                        expected: VccTypeClass::Ptr,
+                        actual: other.class(),
+                    },
+                    format!("{op} expects pointer value"),
+                ));
+                None
             }
         }
     }

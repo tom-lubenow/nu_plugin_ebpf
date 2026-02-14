@@ -513,10 +513,18 @@ impl<'a> VccLowerer<'a> {
                     out.push(VccInst::PreemptDisableRelease);
                 }
                 if kfunc == "bpf_local_irq_save" {
-                    out.push(VccInst::LocalIrqDisableAcquire);
+                    if let Some(flags) = args.first() {
+                        out.push(VccInst::LocalIrqDisableAcquire {
+                            flags: VccReg(flags.0),
+                        });
+                    }
                 }
                 if kfunc == "bpf_local_irq_restore" {
-                    out.push(VccInst::LocalIrqDisableRelease);
+                    if let Some(flags) = args.first() {
+                        out.push(VccInst::LocalIrqDisableRelease {
+                            flags: VccReg(flags.0),
+                        });
+                    }
                 }
                 if kfunc == "bpf_res_spin_lock" {
                     out.push(VccInst::ResSpinLockAcquire);
@@ -525,10 +533,18 @@ impl<'a> VccLowerer<'a> {
                     out.push(VccInst::ResSpinLockRelease);
                 }
                 if kfunc == "bpf_res_spin_lock_irqsave" {
-                    out.push(VccInst::ResSpinLockIrqsaveAcquire);
+                    if let Some(flags) = args.get(1) {
+                        out.push(VccInst::ResSpinLockIrqsaveAcquire {
+                            flags: VccReg(flags.0),
+                        });
+                    }
                 }
                 if kfunc == "bpf_res_spin_unlock_irqrestore" {
-                    out.push(VccInst::ResSpinLockIrqsaveRelease);
+                    if let Some(flags) = args.get(1) {
+                        out.push(VccInst::ResSpinLockIrqsaveRelease {
+                            flags: VccReg(flags.0),
+                        });
+                    }
                 }
             }
             MirInst::CallSubfn { dst, args, .. } => {

@@ -127,6 +127,12 @@ impl<'a> VccLowerer<'a> {
                     ),
                 ));
             }
+            if matches!(space, VccAddrSpace::Stack(StackSlotId(slot)) if slot == u32::MAX) {
+                return Err(VccError::new(
+                    VccErrorKind::PointerBounds,
+                    format!("kfunc '{}' arg{} expects stack slot pointer", kfunc, arg_idx),
+                ));
+            }
             return Ok(());
         }
         let space = self.effective_ptr_space(arg).ok_or_else(|| {

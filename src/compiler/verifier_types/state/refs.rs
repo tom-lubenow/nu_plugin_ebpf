@@ -136,6 +136,14 @@ impl VerifierState {
         self.local_irq_disable_max_depth = self.local_irq_disable_max_depth.saturating_add(1);
     }
 
+    pub(in crate::compiler::verifier_types) fn acquire_local_irq_disable_slot(
+        &mut self,
+        slot: StackSlotId,
+    ) {
+        self.acquire_local_irq_disable();
+        increment_slot_depth(&mut self.local_irq_disable_slots, slot);
+    }
+
     pub(in crate::compiler::verifier_types) fn release_local_irq_disable(&mut self) -> bool {
         if self.local_irq_disable_min_depth == 0 {
             return false;
@@ -143,6 +151,19 @@ impl VerifierState {
         self.local_irq_disable_min_depth -= 1;
         self.local_irq_disable_max_depth -= 1;
         true
+    }
+
+    pub(in crate::compiler::verifier_types) fn release_local_irq_disable_slot(
+        &mut self,
+        slot: StackSlotId,
+    ) -> bool {
+        if self.local_irq_disable_min_depth == 0 {
+            return false;
+        }
+        if !decrement_slot_depth(&mut self.local_irq_disable_slots, slot) {
+            return false;
+        }
+        self.release_local_irq_disable()
     }
 
     pub(in crate::compiler::verifier_types) fn has_live_local_irq_disable(&self) -> bool {
@@ -174,6 +195,14 @@ impl VerifierState {
             self.res_spin_lock_irqsave_max_depth.saturating_add(1);
     }
 
+    pub(in crate::compiler::verifier_types) fn acquire_res_spin_lock_irqsave_slot(
+        &mut self,
+        slot: StackSlotId,
+    ) {
+        self.acquire_res_spin_lock_irqsave();
+        increment_slot_depth(&mut self.res_spin_lock_irqsave_slots, slot);
+    }
+
     pub(in crate::compiler::verifier_types) fn release_res_spin_lock_irqsave(&mut self) -> bool {
         if self.res_spin_lock_irqsave_min_depth == 0 {
             return false;
@@ -183,7 +212,41 @@ impl VerifierState {
         true
     }
 
+    pub(in crate::compiler::verifier_types) fn release_res_spin_lock_irqsave_slot(
+        &mut self,
+        slot: StackSlotId,
+    ) -> bool {
+        if self.res_spin_lock_irqsave_min_depth == 0 {
+            return false;
+        }
+        if !decrement_slot_depth(&mut self.res_spin_lock_irqsave_slots, slot) {
+            return false;
+        }
+        self.release_res_spin_lock_irqsave()
+    }
+
     pub(in crate::compiler::verifier_types) fn has_live_res_spin_lock_irqsave(&self) -> bool {
         self.res_spin_lock_irqsave_max_depth > 0
     }
+}
+
+fn increment_slot_depth(depths: &mut HashMap<StackSlotId, (u32, u32)>, slot: StackSlotId) {
+    let entry = depths.entry(slot).or_insert((0, 0));
+    entry.0 = entry.0.saturating_add(1);
+    entry.1 = entry.1.saturating_add(1);
+}
+
+fn decrement_slot_depth(depths: &mut HashMap<StackSlotId, (u32, u32)>, slot: StackSlotId) -> bool {
+    let Some((min_depth, max_depth)) = depths.get_mut(&slot) else {
+        return false;
+    };
+    if *min_depth == 0 {
+        return false;
+    }
+    *min_depth -= 1;
+    *max_depth -= 1;
+    if *max_depth == 0 {
+        depths.remove(&slot);
+    }
+    true
 }
