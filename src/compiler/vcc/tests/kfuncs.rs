@@ -1153,6 +1153,109 @@ fn test_verify_mir_kfunc_cgroup_from_id_release_semantics() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_scx_task_cgroup_release_semantics() {
+    let (mut func, entry) = new_mir_function();
+    let release = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let task = func.alloc_vreg();
+    let cgroup = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: cgroup,
+        kfunc: "scx_bpf_task_cgroup".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(cgroup),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: release,
+        if_false: done,
+    };
+
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_cgroup_release".to_string(),
+            btf_id: None,
+            args: vec![cgroup],
+        });
+    func.block_mut(release).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        cgroup,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cond, MirType::Bool);
+    types.insert(release_ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected scx task_cgroup reference to be released");
+}
+
+#[test]
+fn test_verify_mir_kfunc_scx_task_cgroup_requires_release() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let task = func.alloc_vreg();
+    let cgroup = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: cgroup,
+        kfunc: "scx_bpf_task_cgroup".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        cgroup,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected scx task_cgroup leak without release");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("unreleased kfunc reference")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_kfunc_cgroup_release_rejects_task_reference() {
     let (mut func, entry) = new_mir_function();
     let release = func.alloc_block();
