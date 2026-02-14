@@ -885,6 +885,233 @@ fn test_helper_sk_storage_delete_rejects_non_kernel_sk_pointer() {
 }
 
 #[test]
+fn test_helper_task_storage_get_allows_null_init_value() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let task = func.alloc_vreg();
+    let task_non_null = func.alloc_vreg();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let storage = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: task_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: task_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: storage,
+        helper: BpfHelper::TaskStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(task),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(task_non_null, MirType::Bool);
+    types.insert(
+        storage,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+
+    verify_mir(&func, &types).expect("expected task_storage_get null init value to verify");
+}
+
+#[test]
+fn test_helper_task_storage_get_rejects_map_lookup_value_as_map_arg() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let check_task = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 2;
+
+    let map_val = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let map_non_null = func.alloc_vreg();
+    let task_non_null = func.alloc_vreg();
+    let storage = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: map_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(map_val),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: map_non_null,
+        if_true: check_task,
+        if_false: done,
+    };
+
+    func.block_mut(check_task)
+        .instructions
+        .push(MirInst::BinOp {
+            dst: task_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(task),
+            rhs: MirValue::Const(0),
+        });
+    func.block_mut(check_task).terminator = MirInst::Branch {
+        cond: task_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: storage,
+        helper: BpfHelper::TaskStorageGet as u32,
+        args: vec![
+            MirValue::VReg(map_val),
+            MirValue::VReg(task),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        map_val,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(map_non_null, MirType::Bool);
+    types.insert(task_non_null, MirType::Bool);
+    types.insert(
+        storage,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected task_storage_get map-arg rejection");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper task_storage_get map expects pointer in [Stack]")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_helper_task_storage_get_rejects_non_kernel_task_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let task_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let storage = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: storage,
+            helper: BpfHelper::TaskStorageGet as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(task_slot),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        storage,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected task_storage_get task pointer-kind error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper task_storage_get task expects pointer in [Kernel], got stack slot")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_helper_task_storage_delete_rejects_non_kernel_task_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let task_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let ret = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: ret,
+            helper: BpfHelper::TaskStorageDelete as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(task_slot),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(ret, MirType::I64);
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected task_storage_delete task pointer-kind error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper task_storage_delete task expects pointer in [Kernel], got stack slot"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_helper_ringbuf_reserve_submit_releases_reference() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

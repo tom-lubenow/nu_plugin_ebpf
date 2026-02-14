@@ -100,6 +100,10 @@ pub enum BpfHelper {
     SkStorageGet = 107,
     /// long bpf_sk_storage_delete(map, sk)
     SkStorageDelete = 108,
+    /// void *bpf_task_storage_get(map, task, value, flags)
+    TaskStorageGet = 156,
+    /// long bpf_task_storage_delete(map, task)
+    TaskStorageDelete = 157,
     /// struct tcp6_sock *bpf_skc_to_tcp6_sock(sk)
     SkcToTcp6Sock = 136,
     /// struct tcp_sock *bpf_skc_to_tcp_sock(sk)
