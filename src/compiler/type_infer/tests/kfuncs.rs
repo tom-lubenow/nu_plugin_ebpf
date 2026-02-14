@@ -365,6 +365,72 @@ fn test_infer_kfunc_iter_task_vma_next_pointer_return() {
 }
 
 #[test]
+fn test_infer_kfunc_scx_cpu_rq_pointer_return() {
+    let mut func = make_test_function();
+    let cpu = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: cpu,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_cpu_rq".to_string(),
+        btf_id: None,
+        args: vec![cpu],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected scx_bpf_cpu_rq kfunc type inference");
+    match types.get(&dst) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(*address_space, AddressSpace::Kernel);
+        }
+        other => panic!("expected kernel pointer return, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_type_error_kfunc_scx_events_requires_pointer_arg0() {
+    let mut func = make_test_function();
+    let events = func.alloc_vreg();
+    let events_sz = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: events,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: events_sz,
+        src: MirValue::Const(8),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_events".to_string(),
+        btf_id: None,
+        args: vec![events, events_sz],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected scx_bpf_events pointer-argument type error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'scx_bpf_events' arg0 expects pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_kfunc_obj_drop_requires_kernel_space() {
     let mut func = make_test_function();
     let ptr = func.alloc_vreg();
