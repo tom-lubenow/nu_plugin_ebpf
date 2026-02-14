@@ -48,6 +48,7 @@ use crate::compiler::verifier_types;
 use crate::kernel_btf::KernelBtf;
 
 mod aggregations;
+mod calls;
 mod helper_calls;
 mod instruction_lowering;
 mod maps;
