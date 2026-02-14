@@ -56,6 +56,7 @@ mod maps;
 mod ops;
 mod parallel_moves;
 mod string_lowering;
+mod value_ops;
 
 /// Result of MIR to eBPF compilation
 pub struct MirCompileResult {
