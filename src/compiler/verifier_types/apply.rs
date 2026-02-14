@@ -47,56 +47,25 @@ pub(super) fn apply_inst(
         MirInst::Load {
             dst, ptr, offset, ..
         } => {
-            let access_size = types.get(dst).map(|ty| ty.size()).unwrap_or(8);
-            check_ptr_access(
-                *ptr,
-                "load",
-                &[AddressSpace::Stack, AddressSpace::Map],
-                *offset,
-                access_size,
-                state,
-                errors,
-            );
-            let ty = types
-                .get(dst)
-                .map(verifier_type_from_mir)
-                .unwrap_or(VerifierType::Scalar);
-            state.set(*dst, ty);
+            apply_load_inst(*dst, *ptr, *offset, types, state, errors);
         }
         MirInst::Store {
             ptr, offset, ty, ..
         } => {
-            let access_size = ty.size();
-            check_ptr_access(
-                *ptr,
-                "store",
-                &[AddressSpace::Stack, AddressSpace::Map],
-                *offset,
-                access_size,
-                state,
-                errors,
-            );
+            apply_store_inst(*ptr, *offset, ty, state, errors);
         }
-        MirInst::LoadSlot { dst, .. } => {
-            if let MirInst::LoadSlot {
-                slot, offset, ty, ..
-            } = inst
-            {
-                check_slot_access(*slot, *offset, ty.size(), slot_sizes, "load slot", errors);
-            }
-            let ty = types
-                .get(dst)
-                .map(verifier_type_from_mir)
-                .unwrap_or(VerifierType::Scalar);
-            state.set(*dst, ty);
+        MirInst::LoadSlot {
+            dst,
+            slot,
+            offset,
+            ty,
+        } => {
+            apply_load_slot_inst(*dst, *slot, *offset, ty, types, slot_sizes, state, errors);
         }
-        MirInst::StoreSlot { .. } => {
-            if let MirInst::StoreSlot {
-                slot, offset, ty, ..
-            } = inst
-            {
-                check_slot_access(*slot, *offset, ty.size(), slot_sizes, "store slot", errors);
-            }
+        MirInst::StoreSlot {
+            slot, offset, ty, ..
+        } => {
+            apply_store_slot_inst(*slot, *offset, ty, slot_sizes, errors);
         }
         MirInst::BinOp { dst, op, lhs, rhs } => {
             if matches!(
@@ -210,107 +179,27 @@ pub(super) fn apply_inst(
             apply_map_lookup_inst(*dst, map, *key, types, state, errors);
         }
         MirInst::ListNew { dst, buffer, .. } => {
-            let bounds = slot_sizes.get(buffer).copied().map(|limit| PtrBounds {
-                origin: PtrOrigin::Stack(*buffer),
-                min: 0,
-                max: 0,
-                limit,
-            });
-            state.set(
-                *dst,
-                VerifierType::Ptr {
-                    space: AddressSpace::Stack,
-                    nullability: Nullability::NonNull,
-                    bounds,
-                    ringbuf_ref: None,
-                    kfunc_ref: None,
-                },
-            );
+            apply_list_new_inst(*dst, *buffer, slot_sizes, state);
         }
         MirInst::ListLen { dst, list } => {
-            require_ptr_with_space(*list, "list", &[AddressSpace::Stack], state, errors);
-            let ty = types
-                .get(dst)
-                .map(verifier_type_from_mir)
-                .unwrap_or(VerifierType::Scalar);
-            state.set(*dst, ty);
+            apply_list_len_inst(*dst, *list, types, state, errors);
         }
         MirInst::ListGet { dst, list, .. } => {
-            require_ptr_with_space(*list, "list", &[AddressSpace::Stack], state, errors);
-            let ty = types
-                .get(dst)
-                .map(verifier_type_from_mir)
-                .unwrap_or(VerifierType::Scalar);
-            state.set(*dst, ty);
+            apply_list_get_inst(*dst, *list, types, state, errors);
         }
         MirInst::LoadCtxField { dst, field, slot } => {
-            let mut ty = state.find_ctx_field_type(field).unwrap_or_else(|| {
-                types
-                    .get(dst)
-                    .map(verifier_type_from_mir)
-                    .unwrap_or(VerifierType::Scalar)
-            });
-            if let (
-                VerifierType::Ptr {
-                    space: AddressSpace::Stack,
-                    nullability,
-                    ..
-                },
-                Some(slot),
-            ) = (ty, slot)
-            {
-                let bounds = slot_sizes.get(slot).copied().map(|limit| PtrBounds {
-                    origin: PtrOrigin::Stack(*slot),
-                    min: 0,
-                    max: 0,
-                    limit,
-                });
-                ty = VerifierType::Ptr {
-                    space: AddressSpace::Stack,
-                    nullability,
-                    bounds,
-                    ringbuf_ref: None,
-                    kfunc_ref: None,
-                };
-            }
-            state.set(*dst, ty);
-            state.set_ctx_field_source(*dst, Some(field.clone()));
+            apply_load_ctx_field_inst(*dst, field, *slot, types, slot_sizes, state);
         }
         MirInst::ReadStr {
             ptr, user_space, ..
         } => {
-            let allowed = if *user_space {
-                &[AddressSpace::User][..]
-            } else {
-                &[AddressSpace::Kernel, AddressSpace::Map, AddressSpace::Stack][..]
-            };
-            require_ptr_with_space(*ptr, "read_str", allowed, state, errors);
+            apply_read_str_inst(*ptr, *user_space, state, errors);
         }
         MirInst::EmitEvent { data, size } => {
-            if *size > 8 {
-                require_ptr_with_space(
-                    *data,
-                    "emit",
-                    &[AddressSpace::Stack, AddressSpace::Map],
-                    state,
-                    errors,
-                );
-            }
+            apply_emit_event_inst(*data, *size, state, errors);
         }
         MirInst::EmitRecord { fields } => {
-            for field in fields {
-                if let Some(MirType::Array { .. }) | Some(MirType::Ptr { .. }) =
-                    types.get(&field.value)
-                {
-                    require_ptr_with_space(
-                        field.value,
-                        "emit record",
-                        &[AddressSpace::Stack, AddressSpace::Map],
-                        state,
-                        errors,
-                    );
-                }
-            }
+            apply_emit_record_inst(fields, types, state, errors);
         }
         MirInst::MapUpdate {
             map,
@@ -332,30 +221,274 @@ pub(super) fn apply_inst(
         | MirInst::LoopBack { .. }
         | MirInst::Placeholder => {}
         MirInst::ListPush { list, .. } => {
-            require_ptr_with_space(*list, "list", &[AddressSpace::Stack], state, errors);
+            apply_list_push_inst(*list, state, errors);
         }
         MirInst::StringAppend { dst_len, .. } | MirInst::IntToString { dst_len, .. } => {
-            let ty = state.get(*dst_len);
-            if matches!(ty, VerifierType::Uninit) {
-                errors.push(VerifierTypeError::new(format!(
-                    "string length uses uninitialized v{}",
-                    dst_len.0
-                )));
-            }
+            apply_string_len_write_inst(*dst_len, state, errors);
         }
         MirInst::RecordStore { val, ty, .. } => {
-            if matches!(ty, MirType::Array { .. } | MirType::Ptr { .. }) {
-                if let MirValue::VReg(vreg) = val {
-                    require_ptr_with_space(
-                        *vreg,
-                        "record store",
-                        &[AddressSpace::Stack, AddressSpace::Map],
-                        state,
-                        errors,
-                    );
-                }
-            }
+            apply_record_store_inst(val, ty, state, errors);
         }
+    }
+}
+
+pub(super) fn apply_load_inst(
+    dst: VReg,
+    ptr: VReg,
+    offset: i32,
+    types: &HashMap<VReg, MirType>,
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let access_size = types.get(&dst).map(|ty| ty.size()).unwrap_or(8);
+    check_ptr_access(
+        ptr,
+        "load",
+        &[AddressSpace::Stack, AddressSpace::Map],
+        offset,
+        access_size,
+        state,
+        errors,
+    );
+    let ty = types
+        .get(&dst)
+        .map(verifier_type_from_mir)
+        .unwrap_or(VerifierType::Scalar);
+    state.set(dst, ty);
+}
+
+pub(super) fn apply_store_inst(
+    ptr: VReg,
+    offset: i32,
+    ty: &MirType,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let access_size = ty.size();
+    check_ptr_access(
+        ptr,
+        "store",
+        &[AddressSpace::Stack, AddressSpace::Map],
+        offset,
+        access_size,
+        state,
+        errors,
+    );
+}
+
+pub(super) fn apply_load_slot_inst(
+    dst: VReg,
+    slot: StackSlotId,
+    offset: i32,
+    ty: &MirType,
+    types: &HashMap<VReg, MirType>,
+    slot_sizes: &HashMap<StackSlotId, i64>,
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    check_slot_access(slot, offset, ty.size(), slot_sizes, "load slot", errors);
+    let dst_ty = types
+        .get(&dst)
+        .map(verifier_type_from_mir)
+        .unwrap_or(VerifierType::Scalar);
+    state.set(dst, dst_ty);
+}
+
+pub(super) fn apply_store_slot_inst(
+    slot: StackSlotId,
+    offset: i32,
+    ty: &MirType,
+    slot_sizes: &HashMap<StackSlotId, i64>,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    check_slot_access(slot, offset, ty.size(), slot_sizes, "store slot", errors);
+}
+
+pub(super) fn apply_list_new_inst(
+    dst: VReg,
+    buffer: StackSlotId,
+    slot_sizes: &HashMap<StackSlotId, i64>,
+    state: &mut VerifierState,
+) {
+    let bounds = slot_sizes.get(&buffer).copied().map(|limit| PtrBounds {
+        origin: PtrOrigin::Stack(buffer),
+        min: 0,
+        max: 0,
+        limit,
+    });
+    state.set(
+        dst,
+        VerifierType::Ptr {
+            space: AddressSpace::Stack,
+            nullability: Nullability::NonNull,
+            bounds,
+            ringbuf_ref: None,
+            kfunc_ref: None,
+        },
+    );
+}
+
+pub(super) fn apply_list_len_inst(
+    dst: VReg,
+    list: VReg,
+    types: &HashMap<VReg, MirType>,
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    require_ptr_with_space(list, "list", &[AddressSpace::Stack], state, errors);
+    let ty = types
+        .get(&dst)
+        .map(verifier_type_from_mir)
+        .unwrap_or(VerifierType::Scalar);
+    state.set(dst, ty);
+}
+
+pub(super) fn apply_list_get_inst(
+    dst: VReg,
+    list: VReg,
+    types: &HashMap<VReg, MirType>,
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    require_ptr_with_space(list, "list", &[AddressSpace::Stack], state, errors);
+    let ty = types
+        .get(&dst)
+        .map(verifier_type_from_mir)
+        .unwrap_or(VerifierType::Scalar);
+    state.set(dst, ty);
+}
+
+pub(super) fn apply_load_ctx_field_inst(
+    dst: VReg,
+    field: &CtxField,
+    slot: Option<StackSlotId>,
+    types: &HashMap<VReg, MirType>,
+    slot_sizes: &HashMap<StackSlotId, i64>,
+    state: &mut VerifierState,
+) {
+    let mut ty = state.find_ctx_field_type(field).unwrap_or_else(|| {
+        types
+            .get(&dst)
+            .map(verifier_type_from_mir)
+            .unwrap_or(VerifierType::Scalar)
+    });
+    if let (
+        VerifierType::Ptr {
+            space: AddressSpace::Stack,
+            nullability,
+            ..
+        },
+        Some(slot),
+    ) = (ty, slot)
+    {
+        let bounds = slot_sizes.get(&slot).copied().map(|limit| PtrBounds {
+            origin: PtrOrigin::Stack(slot),
+            min: 0,
+            max: 0,
+            limit,
+        });
+        ty = VerifierType::Ptr {
+            space: AddressSpace::Stack,
+            nullability,
+            bounds,
+            ringbuf_ref: None,
+            kfunc_ref: None,
+        };
+    }
+    state.set(dst, ty);
+    state.set_ctx_field_source(dst, Some(field.clone()));
+}
+
+pub(super) fn apply_read_str_inst(
+    ptr: VReg,
+    user_space: bool,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let allowed = if user_space {
+        &[AddressSpace::User][..]
+    } else {
+        &[AddressSpace::Kernel, AddressSpace::Map, AddressSpace::Stack][..]
+    };
+    require_ptr_with_space(ptr, "read_str", allowed, state, errors);
+}
+
+pub(super) fn apply_emit_event_inst(
+    data: VReg,
+    size: usize,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    if size <= 8 {
+        return;
+    }
+    require_ptr_with_space(
+        data,
+        "emit",
+        &[AddressSpace::Stack, AddressSpace::Map],
+        state,
+        errors,
+    );
+}
+
+pub(super) fn apply_emit_record_inst(
+    fields: &[crate::compiler::mir::RecordFieldDef],
+    types: &HashMap<VReg, MirType>,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    for field in fields {
+        if let Some(MirType::Array { .. }) | Some(MirType::Ptr { .. }) = types.get(&field.value) {
+            require_ptr_with_space(
+                field.value,
+                "emit record",
+                &[AddressSpace::Stack, AddressSpace::Map],
+                state,
+                errors,
+            );
+        }
+    }
+}
+
+pub(super) fn apply_list_push_inst(
+    list: VReg,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    require_ptr_with_space(list, "list", &[AddressSpace::Stack], state, errors);
+}
+
+pub(super) fn apply_string_len_write_inst(
+    dst_len: VReg,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let ty = state.get(dst_len);
+    if matches!(ty, VerifierType::Uninit) {
+        errors.push(VerifierTypeError::new(format!(
+            "string length uses uninitialized v{}",
+            dst_len.0
+        )));
+    }
+}
+
+pub(super) fn apply_record_store_inst(
+    val: &MirValue,
+    ty: &MirType,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    if !matches!(ty, MirType::Array { .. } | MirType::Ptr { .. }) {
+        return;
+    }
+    if let MirValue::VReg(vreg) = val {
+        require_ptr_with_space(
+            *vreg,
+            "record store",
+            &[AddressSpace::Stack, AddressSpace::Map],
+            state,
+            errors,
+        );
     }
 }
 
