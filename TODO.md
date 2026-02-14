@@ -1,7 +1,7 @@
 # TODO
 
 Status legend: `[x]` done, `[~]` in progress, `[ ]` todo.
-Last updated: 2026-02-13.
+Last updated: 2026-02-14.
 
 ## Current compiler gaps
 
@@ -75,6 +75,7 @@ Last updated: 2026-02-13.
   - `bpf_kptr_xchg` semantics now transfer tracked kfunc-ref ownership from arg1 to the helper return value, invalidating the source ref and enabling verifier-safe release of the swapped-out reference.
   - `bpf_kptr_xchg` arg0 parity now enforces map-pointer destination slots (`[Map]`), rejecting stack-pointer destinations in verifier_types/VCC/type inference.
   - Helper ref-lifetime parity now covers socket helpers (`bpf_sk_lookup_tcp` / `bpf_sk_lookup_udp` / `bpf_sk_release`), including kernel-pointer arg checks, tracked socket ownership, null-guarded release, cross-family mismatch diagnostics, and leak checks in verifier_types/VCC.
+  - Typed helper socket coverage now also includes `bpf_skc_lookup_tcp` with socket-ref acquire/release lifetime parity across type inference, verifier_types, and VCC.
   - VCC now aligns typed pointer nullability with verifier_types (`Map`/`Kernel`/`User` pointers are `MaybeNull` until guarded), including parity tests for load/read_str/helper flows that require explicit null checks.
   - VCC helper pointer-space checks now resolve `Unknown` vreg pointer spaces via effective MIR address-space fallback, preventing helper-space-rule bypasses for typed stack pointers.
   - VCC now propagates map-value bounds from built-in map semantics and pointee types, including pointer-arithmetic/load/store bounds checks for map-value pointers.

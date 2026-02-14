@@ -19,6 +19,7 @@ impl BpfHelper {
             84 => Some(Self::SkLookupTcp),
             85 => Some(Self::SkLookupUdp),
             86 => Some(Self::SkRelease),
+            99 => Some(Self::SkcLookupTcp),
             114 => Some(Self::ProbeReadUserStr),
             115 => Some(Self::ProbeReadKernelStr),
             130 => Some(Self::RingbufOutput),
@@ -97,12 +98,14 @@ impl BpfHelper {
                 arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
-            BpfHelper::SkLookupTcp | BpfHelper::SkLookupUdp => HelperSignature {
-                min_args: 5,
-                max_args: 5,
-                arg_kinds: [P, P, S, S, S],
-                ret_kind: HelperRetKind::PointerMaybeNull,
-            },
+            BpfHelper::SkLookupTcp | BpfHelper::SkLookupUdp | BpfHelper::SkcLookupTcp => {
+                HelperSignature {
+                    min_args: 5,
+                    max_args: 5,
+                    arg_kinds: [P, P, S, S, S],
+                    ret_kind: HelperRetKind::PointerMaybeNull,
+                }
+            }
             BpfHelper::SkRelease => HelperSignature {
                 min_args: 1,
                 max_args: 1,
@@ -454,11 +457,13 @@ impl BpfHelper {
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
-            BpfHelper::SkLookupTcp | BpfHelper::SkLookupUdp => HelperSemantics {
-                ptr_arg_rules: SK_LOOKUP_RULES,
-                positive_size_args: &[2],
-                ringbuf_record_arg0: false,
-            },
+            BpfHelper::SkLookupTcp | BpfHelper::SkLookupUdp | BpfHelper::SkcLookupTcp => {
+                HelperSemantics {
+                    ptr_arg_rules: SK_LOOKUP_RULES,
+                    positive_size_args: &[2],
+                    ringbuf_record_arg0: false,
+                }
+            }
             BpfHelper::SkRelease => HelperSemantics {
                 ptr_arg_rules: SK_RELEASE_RULES,
                 positive_size_args: &[],

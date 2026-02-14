@@ -59,7 +59,7 @@ pub(super) fn apply_call_helper_inst(
                         dst
                     }),
                 },
-                Some(BpfHelper::SkLookupTcp | BpfHelper::SkLookupUdp) => VerifierType::Ptr {
+                Some(_) if helper_kfunc_acquire_kind.is_some() => VerifierType::Ptr {
                     space: AddressSpace::Kernel,
                     nullability: Nullability::MaybeNull,
                     bounds: None,

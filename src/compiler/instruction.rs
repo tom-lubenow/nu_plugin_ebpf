@@ -80,6 +80,8 @@ pub enum BpfHelper {
     SkLookupUdp = 85,
     /// void bpf_sk_release(sock)
     SkRelease = 86,
+    /// struct bpf_sock *bpf_skc_lookup_tcp(ctx, tuple, tuple_size, netns, flags)
+    SkcLookupTcp = 99,
     /// long bpf_ringbuf_output(map, data, size, flags)
     RingbufOutput = 130,
     /// void *bpf_ringbuf_reserve(map, size, flags)
