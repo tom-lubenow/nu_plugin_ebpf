@@ -258,6 +258,50 @@ fn test_infer_helper_skc_lookup_returns_kernel_pointer() {
 }
 
 #[test]
+fn test_infer_helper_skc_lookup_udp_returns_kernel_pointer() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let ctx = func.alloc_vreg();
+    let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: ctx,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkcLookupUdp as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(tuple_slot),
+            MirValue::Const(16),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti.infer(&func).unwrap();
+    match types.get(&dst) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(*address_space, AddressSpace::Kernel);
+        }
+        other => panic!(
+            "Expected helper skc_lookup_udp kernel pointer return, got {:?}",
+            other
+        ),
+    }
+}
+
+#[test]
 fn test_infer_helper_get_listener_sock_returns_kernel_pointer() {
     let mut func = make_test_function();
     let pid = func.alloc_vreg();

@@ -88,6 +88,8 @@ pub enum BpfHelper {
     GetListenerSock = 98,
     /// struct bpf_sock *bpf_skc_lookup_tcp(ctx, tuple, tuple_size, netns, flags)
     SkcLookupTcp = 99,
+    /// struct bpf_sock *bpf_skc_lookup_udp(ctx, tuple, tuple_size, netns, flags)
+    SkcLookupUdp = 100,
     /// long bpf_ringbuf_output(map, data, size, flags)
     RingbufOutput = 130,
     /// void *bpf_ringbuf_reserve(map, size, flags)
