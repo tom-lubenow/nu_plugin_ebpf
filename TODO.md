@@ -162,6 +162,7 @@ Last updated: 2026-02-14.
   - Added stack-slot identity and lifetime modeling for `bpf_iter_task_vma_new`/`next`/`destroy`: iterator pointers must be concrete stack-slot pointers, `next`/`destroy` require a matching `new` on all reachable paths (including mixed-join rejection), and unreleased iterators are rejected at exit.
   - Tightened stack-argument semantics so stack-required kfunc args (`local_irq*`, `res_spin_*_irq*`, `iter_task_vma*`) must be slot base pointers (offset 0), not interior stack addresses.
   - Added shared kfunc pointer/size semantics metadata consumed by type inference, verifier_types, and VCC, with initial by-reference out-arg coverage for `bpf_path_d_path` (`arg1` buffer must be stack/map and `arg2` size must be positive).
+  - Extended shared by-reference kfunc semantics coverage to `scx_bpf_events`, requiring stack/map destination buffers and positive size arguments across type inference, verifier_types, and VCC.
   - Remaining: expand signature coverage and pointer/ref-lifetime semantics from richer BTF metadata.
   - Remaining: model richer by-reference out-parameter semantics (aliasing/copy semantics and typed stack object identity) for additional kfunc families beyond current lock/irq patterns.
 

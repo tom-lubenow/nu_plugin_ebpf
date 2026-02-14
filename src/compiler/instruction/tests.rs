@@ -1114,6 +1114,22 @@ fn test_kfunc_semantics_path_d_path_buffer_rule() {
 }
 
 #[test]
+fn test_kfunc_semantics_scx_events_buffer_rule() {
+    let semantics = kfunc_semantics("scx_bpf_events");
+    assert_eq!(semantics.positive_size_args, &[1]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 1);
+
+    let rule = semantics.ptr_arg_rules[0];
+    assert_eq!(rule.arg_idx, 0);
+    assert_eq!(rule.op, "kfunc scx_bpf_events events");
+    assert!(rule.allowed.allow_stack);
+    assert!(rule.allowed.allow_map);
+    assert!(!rule.allowed.allow_kernel);
+    assert!(!rule.allowed.allow_user);
+    assert_eq!(rule.size_from_arg, Some(1));
+}
+
+#[test]
 fn test_kfunc_semantics_default_empty() {
     let semantics = kfunc_semantics("bpf_task_release");
     assert!(semantics.ptr_arg_rules.is_empty());

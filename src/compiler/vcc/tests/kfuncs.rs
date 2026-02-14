@@ -522,6 +522,122 @@ fn test_verify_mir_kfunc_path_d_path_accepts_stack_buffer_rule() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_scx_events_buffer_requires_stack_or_map_space() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let events_ptr = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(64),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_events".to_string(),
+        btf_id: None,
+        args: vec![events_ptr, size],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        events_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(size, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected scx_bpf_events buffer-space error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc scx_bpf_events events expects pointer in [Stack, Map], got Kernel")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_scx_events_requires_positive_size() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let events_ptr = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_events".to_string(),
+        btf_id: None,
+        args: vec![events_ptr, size],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        events_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(size, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected scx_bpf_events positive-size error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'scx_bpf_events' arg1 must be > 0")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_scx_events_accepts_stack_buffer_rule() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let events_ptr = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(64),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_events".to_string(),
+        btf_id: None,
+        args: vec![events_ptr, size],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        events_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(size, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected scx_bpf_events stack-buffer rule to verify");
+}
+
+#[test]
 fn test_verify_mir_kfunc_rbtree_first_requires_kernel_space() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;

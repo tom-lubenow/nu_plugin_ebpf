@@ -309,6 +309,115 @@ fn test_infer_kfunc_path_d_path_accepts_stack_buffer_rule() {
 }
 
 #[test]
+fn test_type_error_kfunc_scx_events_buffer_requires_stack_or_map_space() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(64),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_events".to_string(),
+        btf_id: None,
+        args: vec![task, size],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected scx_bpf_events buffer-space type error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc scx_bpf_events events expects pointer in [Stack, Map], got Kernel")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_kfunc_scx_events_requires_positive_size() {
+    let mut func = make_test_function();
+    let events = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let events_slot = func.alloc_stack_slot(64, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: events,
+        src: MirValue::StackSlot(events_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_events".to_string(),
+        btf_id: None,
+        args: vec![events, size],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected scx_bpf_events size positivity type error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'scx_bpf_events' arg1 must be > 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_infer_kfunc_scx_events_accepts_stack_buffer_rule() {
+    let mut func = make_test_function();
+    let events = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let events_slot = func.alloc_stack_slot(64, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: events,
+        src: MirValue::StackSlot(events_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(64),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_events".to_string(),
+        btf_id: None,
+        args: vec![events, size],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    ti.infer(&func)
+        .expect("expected scx_bpf_events stack-buffer rule to type-check");
+}
+
+#[test]
 fn test_type_error_kfunc_rbtree_first_requires_kernel_space() {
     let mut func = make_test_function();
     let root = func.alloc_vreg();

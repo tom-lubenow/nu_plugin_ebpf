@@ -52,11 +52,22 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         fixed_size: None,
         size_from_arg: Some(2),
     }];
+    const SCX_EVENTS_RULES: &[KfuncPtrArgRule] = &[KfuncPtrArgRule {
+        arg_idx: 0,
+        op: "kfunc scx_bpf_events events",
+        allowed: STACK_MAP,
+        fixed_size: None,
+        size_from_arg: Some(1),
+    }];
 
     match kfunc {
         "bpf_path_d_path" => KfuncSemantics {
             ptr_arg_rules: PATH_D_PATH_RULES,
             positive_size_args: &[2],
+        },
+        "scx_bpf_events" => KfuncSemantics {
+            ptr_arg_rules: SCX_EVENTS_RULES,
+            positive_size_args: &[1],
         },
         _ => NONE,
     }
