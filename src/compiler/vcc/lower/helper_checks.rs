@@ -176,6 +176,7 @@ impl<'a> VccLowerer<'a> {
             (BpfHelper::from_u32(helper_id), arg_idx),
             (Some(BpfHelper::KptrXchg), 1)
                 | (Some(BpfHelper::SkStorageGet), 2)
+                | (Some(BpfHelper::InodeStorageGet), 2)
                 | (Some(BpfHelper::TaskStorageGet), 2)
         )
             && matches!(arg, MirValue::Const(0))

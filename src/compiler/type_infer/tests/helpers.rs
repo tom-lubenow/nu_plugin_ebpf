@@ -721,6 +721,163 @@ fn test_type_error_helper_task_storage_delete_rejects_non_kernel_task_pointer() 
 }
 
 #[test]
+fn test_infer_helper_inode_storage_get_returns_map_pointer() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let pid = func.alloc_vreg();
+    let inode = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: inode,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::InodeStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(inode),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti.infer(&func).unwrap();
+    match types.get(&dst) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(*address_space, AddressSpace::Map);
+        }
+        other => panic!(
+            "Expected helper inode_storage_get map pointer return, got {:?}",
+            other
+        ),
+    }
+}
+
+#[test]
+fn test_type_error_helper_inode_storage_get_rejects_non_stack_map_arg() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let map_value_ptr = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let inode = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst: map_value_ptr,
+        helper: BpfHelper::MapLookupElem as u32,
+        args: vec![MirValue::StackSlot(map_slot), MirValue::StackSlot(key_slot)],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: inode,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::InodeStorageGet as u32,
+        args: vec![
+            MirValue::VReg(map_value_ptr),
+            MirValue::VReg(inode),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected inode_storage_get map-pointer space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper inode_storage_get map expects pointer in [Stack]")
+    }));
+}
+
+#[test]
+fn test_type_error_helper_inode_storage_get_rejects_non_kernel_inode_pointer() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let inode_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let inode = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: inode,
+        src: MirValue::StackSlot(inode_slot),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::InodeStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(inode),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected inode_storage_get inode pointer-space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper inode_storage_get inode expects pointer in [Kernel], got Stack")
+    }));
+}
+
+#[test]
+fn test_type_error_helper_inode_storage_delete_rejects_non_kernel_inode_pointer() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let inode_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let inode = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: inode,
+        src: MirValue::StackSlot(inode_slot),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::InodeStorageDelete as u32,
+        args: vec![MirValue::StackSlot(map_slot), MirValue::VReg(inode)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected inode_storage_delete inode pointer-space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper inode_storage_delete inode expects pointer in [Kernel], got Stack")
+    }));
+}
+
+#[test]
 fn test_infer_helper_sk_lookup_returns_kernel_pointer() {
     let mut func = make_test_function();
     let pid = func.alloc_vreg();

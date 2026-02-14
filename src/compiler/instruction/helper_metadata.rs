@@ -34,6 +34,8 @@ impl BpfHelper {
             138 => Some(Self::SkcToTcpTimewaitSock),
             139 => Some(Self::SkcToTcpRequestSock),
             140 => Some(Self::SkcToUdp6Sock),
+            145 => Some(Self::InodeStorageGet),
+            146 => Some(Self::InodeStorageDelete),
             156 => Some(Self::TaskStorageGet),
             157 => Some(Self::TaskStorageDelete),
             114 => Some(Self::ProbeReadUserStr),
@@ -160,6 +162,18 @@ impl BpfHelper {
                 ret_kind: HelperRetKind::PointerMaybeNull,
             },
             BpfHelper::TaskStorageDelete => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::InodeStorageGet => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, P, P, S, S],
+                ret_kind: HelperRetKind::PointerMaybeNull,
+            },
+            BpfHelper::InodeStorageDelete => HelperSignature {
                 min_args: 2,
                 max_args: 2,
                 arg_kinds: [P, P, S, S, S],
@@ -622,6 +636,47 @@ impl BpfHelper {
             },
         ];
 
+        const INODE_STORAGE_GET_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper inode_storage_get map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper inode_storage_get inode",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper inode_storage_get value",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+        ];
+
+        const INODE_STORAGE_DELETE_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper inode_storage_delete map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper inode_storage_delete inode",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+        ];
+
         const GET_LISTENER_SOCK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 0,
             op: "helper get_listener_sock sk",
@@ -818,6 +873,16 @@ impl BpfHelper {
             },
             BpfHelper::TaskStorageDelete => HelperSemantics {
                 ptr_arg_rules: TASK_STORAGE_DELETE_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::InodeStorageGet => HelperSemantics {
+                ptr_arg_rules: INODE_STORAGE_GET_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::InodeStorageDelete => HelperSemantics {
+                ptr_arg_rules: INODE_STORAGE_DELETE_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
