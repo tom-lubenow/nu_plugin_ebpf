@@ -51,6 +51,7 @@ mod aggregations;
 mod calls;
 mod control_flow;
 mod helper_calls;
+mod instruction_helpers;
 mod instruction_lowering;
 mod maps;
 mod ops;
