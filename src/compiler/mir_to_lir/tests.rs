@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::compiler::mir::{MirFunction, MirInst, MirProgram, MirValue, SubfunctionId};
 
