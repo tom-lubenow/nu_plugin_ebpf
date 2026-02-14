@@ -66,16 +66,16 @@ pub(super) enum Guard {
 
 #[derive(Debug, Clone)]
 pub(super) struct VerifierState {
-    pub(super) regs: Vec<VerifierType>,
-    pub(super) ranges: Vec<ValueRange>,
-    pub(super) non_zero: Vec<bool>,
-    pub(super) not_equal: Vec<Vec<i64>>,
-    pub(super) ctx_field_sources: Vec<Option<CtxField>>,
-    pub(super) live_ringbuf_refs: Vec<bool>,
-    pub(super) live_kfunc_refs: Vec<bool>,
-    pub(super) kfunc_ref_kinds: Vec<Option<KfuncRefKind>>,
-    pub(super) reachable: bool,
-    pub(super) guards: HashMap<VReg, Guard>,
+    regs: Vec<VerifierType>,
+    ranges: Vec<ValueRange>,
+    non_zero: Vec<bool>,
+    not_equal: Vec<Vec<i64>>,
+    ctx_field_sources: Vec<Option<CtxField>>,
+    live_ringbuf_refs: Vec<bool>,
+    live_kfunc_refs: Vec<bool>,
+    kfunc_ref_kinds: Vec<Option<KfuncRefKind>>,
+    reachable: bool,
+    guards: HashMap<VReg, Guard>,
 }
 
 impl VerifierState {
@@ -112,6 +112,26 @@ impl VerifierState {
 
     pub(super) fn is_non_zero(&self, vreg: VReg) -> bool {
         self.non_zero.get(vreg.0 as usize).copied().unwrap_or(false)
+    }
+
+    pub(super) fn set_non_zero(&mut self, vreg: VReg, non_zero: bool) {
+        if let Some(slot) = self.non_zero.get_mut(vreg.0 as usize) {
+            *slot = non_zero;
+        }
+    }
+
+    pub(super) fn guard(&self, vreg: VReg) -> Option<Guard> {
+        self.guards.get(&vreg).copied()
+    }
+
+    pub(super) fn set_guard(&mut self, vreg: VReg, guard: Guard) {
+        self.guards.insert(vreg, guard);
+    }
+
+    pub(super) fn set_range(&mut self, vreg: VReg, range: ValueRange) {
+        if let Some(slot) = self.ranges.get_mut(vreg.0 as usize) {
+            *slot = range;
+        }
     }
 
     pub(super) fn not_equal_consts(&self, vreg: VReg) -> &[i64] {
@@ -308,6 +328,19 @@ impl VerifierState {
 
     pub(super) fn is_reachable(&self) -> bool {
         self.reachable
+    }
+
+    pub(super) fn equivalent(&self, other: &VerifierState) -> bool {
+        self.regs == other.regs
+            && self.ranges == other.ranges
+            && self.non_zero == other.non_zero
+            && self.not_equal == other.not_equal
+            && self.ctx_field_sources == other.ctx_field_sources
+            && self.live_ringbuf_refs == other.live_ringbuf_refs
+            && self.live_kfunc_refs == other.live_kfunc_refs
+            && self.kfunc_ref_kinds == other.kfunc_ref_kinds
+            && self.guards == other.guards
+            && self.reachable == other.reachable
     }
 
     pub(super) fn join(&self, other: &VerifierState) -> VerifierState {

@@ -122,7 +122,7 @@ pub fn verify_mir(
                 if_true,
                 if_false,
             } => {
-                let guard = state.guards.get(cond).copied();
+                let guard = state.guard(*cond);
                 let true_state = refine_on_branch(&state, guard, true);
                 let false_state = refine_on_branch(&state, guard, false);
                 propagate_state(*if_true, &true_state, &mut in_states, &mut worklist);
@@ -193,17 +193,7 @@ fn propagate_state(
         }
         Some(existing) => {
             let merged = existing.join(state);
-            if merged.regs != existing.regs
-                || merged.ranges != existing.ranges
-                || merged.non_zero != existing.non_zero
-                || merged.not_equal != existing.not_equal
-                || merged.ctx_field_sources != existing.ctx_field_sources
-                || merged.live_ringbuf_refs != existing.live_ringbuf_refs
-                || merged.live_kfunc_refs != existing.live_kfunc_refs
-                || merged.kfunc_ref_kinds != existing.kfunc_ref_kinds
-                || merged.guards != existing.guards
-                || merged.reachable != existing.reachable
-            {
+            if !merged.equivalent(existing) {
                 in_states.insert(block, merged);
                 true
             } else {

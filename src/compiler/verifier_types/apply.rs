@@ -17,7 +17,7 @@ pub(super) fn apply_inst(
                 _ => None,
             };
             let src_guard = match src {
-                MirValue::VReg(vreg) => state.guards.get(vreg).copied(),
+                MirValue::VReg(vreg) => state.guard(*vreg),
                 _ => None,
             };
             let src_non_zero = match src {
@@ -33,15 +33,13 @@ pub(super) fn apply_inst(
             state.set_with_range(*dst, ty, range);
             state.set_ctx_field_source(*dst, src_ctx_field);
             if src_non_zero {
-                if let Some(slot) = state.non_zero.get_mut(dst.0 as usize) {
-                    *slot = true;
-                }
+                state.set_non_zero(*dst, true);
             }
             for excluded in src_not_equal {
                 state.set_not_equal_const(*dst, excluded);
             }
             if let Some(guard) = src_guard {
-                state.guards.insert(*dst, guard);
+                state.set_guard(*dst, guard);
             }
         }
         MirInst::Load {
@@ -83,7 +81,7 @@ pub(super) fn apply_inst(
                     ValueRange::Known { min: 0, max: 1 },
                 );
                 if let Some(guard) = guard_from_compare(*op, lhs, rhs, state) {
-                    state.guards.insert(*dst, guard);
+                    state.set_guard(*dst, guard);
                 }
             } else {
                 if let Some(ty) = pointer_arith_result(*op, lhs, rhs, state, slot_sizes) {
@@ -103,7 +101,7 @@ pub(super) fn apply_inst(
                 let guard = if matches!(op, UnaryOpKind::Not) {
                     if let MirInst::UnaryOp { src, .. } = inst {
                         if let MirValue::VReg(src_reg) = src {
-                            state.guards.get(src_reg).copied().and_then(invert_guard)
+                            state.guard(*src_reg).and_then(invert_guard)
                         } else {
                             None
                         }
@@ -120,7 +118,7 @@ pub(super) fn apply_inst(
                 };
                 state.set_with_range(dst, ty, range);
                 if let Some(guard) = guard {
-                    state.guards.insert(dst, guard);
+                    state.set_guard(dst, guard);
                 }
             }
         }
@@ -142,7 +140,7 @@ pub(super) fn apply_inst(
             let phi_guard = if let MirInst::Phi { args, .. } = inst {
                 let mut merged: Option<Option<Guard>> = None;
                 for (_, reg) in args {
-                    let next = state.guards.get(reg).copied();
+                    let next = state.guard(*reg);
                     merged = Some(match merged {
                         None => next,
                         Some(existing) if existing == next => existing,
@@ -172,7 +170,7 @@ pub(super) fn apply_inst(
             };
             state.set_with_range(*dst, ty, range);
             if let Some(guard) = phi_guard {
-                state.guards.insert(*dst, guard);
+                state.set_guard(*dst, guard);
             }
         }
         MirInst::MapLookup { dst, map, key } => {

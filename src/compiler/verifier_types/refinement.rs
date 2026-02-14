@@ -72,29 +72,21 @@ pub(super) fn refine_on_branch(
                     !true_is_non_zero
                 };
                 if wants_non_zero {
-                    if let Some(slot) = next.ranges.get_mut(reg.0 as usize) {
-                        if let ValueRange::Known { min, max } = *slot {
-                            let new_range = if min == 0 && max > 0 {
-                                ValueRange::Known { min: 1, max }
-                            } else if max == 0 && min < 0 {
-                                ValueRange::Known { min, max: -1 }
-                            } else {
-                                ValueRange::Known { min, max }
-                            };
-                            *slot = new_range;
-                        }
+                    if let ValueRange::Known { min, max } = next.get_range(reg) {
+                        let new_range = if min == 0 && max > 0 {
+                            ValueRange::Known { min: 1, max }
+                        } else if max == 0 && min < 0 {
+                            ValueRange::Known { min, max: -1 }
+                        } else {
+                            ValueRange::Known { min, max }
+                        };
+                        next.set_range(reg, new_range);
                     }
-                    if let Some(slot) = next.non_zero.get_mut(reg.0 as usize) {
-                        *slot = true;
-                    }
+                    next.set_non_zero(reg, true);
                     next.set_not_equal_const(reg, 0);
                 } else {
-                    if let Some(slot) = next.ranges.get_mut(reg.0 as usize) {
-                        *slot = ValueRange::Known { min: 0, max: 0 };
-                    }
-                    if let Some(slot) = next.non_zero.get_mut(reg.0 as usize) {
-                        *slot = false;
-                    }
+                    next.set_range(reg, ValueRange::Known { min: 0, max: 0 });
+                    next.set_non_zero(reg, false);
                     next.clear_not_equal_const(reg);
                 }
             }
@@ -109,9 +101,7 @@ pub(super) fn refine_on_branch(
                     return next;
                 }
                 let new_range = refine_range(current, op, value, take_true);
-                if let Some(slot) = next.ranges.get_mut(reg.0 as usize) {
-                    *slot = new_range;
-                }
+                next.set_range(reg, new_range);
                 match effective_op {
                     BinOpKind::Eq => next.clear_not_equal_const(reg),
                     BinOpKind::Ne => next.set_not_equal_const(reg, value),
@@ -119,9 +109,7 @@ pub(super) fn refine_on_branch(
                 }
                 let range_excludes_zero =
                     matches!(new_range, ValueRange::Known { min, max } if min > 0 || max < 0);
-                if let Some(slot) = next.non_zero.get_mut(reg.0 as usize) {
-                    *slot = *slot || range_excludes_zero;
-                }
+                next.set_non_zero(reg, next.is_non_zero(reg) || range_excludes_zero);
             }
             Guard::RangeCmp { lhs, rhs, op } => {
                 let lhs_range = next.get_range(lhs);
@@ -134,24 +122,16 @@ pub(super) fn refine_on_branch(
                     return next;
                 }
                 let (new_lhs, new_rhs) = refine_compare_ranges(lhs_range, rhs_range, op, take_true);
-                if let Some(slot) = next.ranges.get_mut(lhs.0 as usize) {
-                    *slot = new_lhs;
-                }
-                if let Some(slot) = next.ranges.get_mut(rhs.0 as usize) {
-                    *slot = new_rhs;
-                }
+                next.set_range(lhs, new_lhs);
+                next.set_range(rhs, new_rhs);
                 next.retain_not_equal_in_range(lhs, new_lhs);
                 next.retain_not_equal_in_range(rhs, new_rhs);
                 let lhs_excludes_zero =
                     matches!(new_lhs, ValueRange::Known { min, max } if min > 0 || max < 0);
-                if let Some(slot) = next.non_zero.get_mut(lhs.0 as usize) {
-                    *slot = *slot || lhs_excludes_zero;
-                }
+                next.set_non_zero(lhs, next.is_non_zero(lhs) || lhs_excludes_zero);
                 let rhs_excludes_zero =
                     matches!(new_rhs, ValueRange::Known { min, max } if min > 0 || max < 0);
-                if let Some(slot) = next.non_zero.get_mut(rhs.0 as usize) {
-                    *slot = *slot || rhs_excludes_zero;
-                }
+                next.set_non_zero(rhs, next.is_non_zero(rhs) || rhs_excludes_zero);
             }
         }
     }
