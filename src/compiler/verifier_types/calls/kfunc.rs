@@ -333,6 +333,8 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
             } else {
                 kfunc_pointer_arg_fixed_size(kfunc, ptr_arg_idx)
             };
+        let access_size =
+            access_size.or_else(|| kfunc_pointer_arg_min_access_size(kfunc, ptr_arg_idx));
         let Some(access_size) = access_size else {
             continue;
         };
@@ -433,6 +435,13 @@ pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_size_from_scalar(
     arg_idx: usize,
 ) -> Option<usize> {
     kfunc_pointer_arg_size_from_scalar_shared(kfunc, arg_idx)
+}
+
+pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_min_access_size(
+    kfunc: &str,
+    arg_idx: usize,
+) -> Option<usize> {
+    kfunc_pointer_arg_min_access_size_shared(kfunc, arg_idx)
 }
 
 pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_fixed_size(

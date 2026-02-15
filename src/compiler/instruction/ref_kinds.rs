@@ -853,6 +853,14 @@ pub fn kfunc_pointer_arg_requires_stack_or_map(kfunc: &str, arg_idx: usize) -> b
     true
 }
 
+pub fn kfunc_pointer_arg_min_access_size(kfunc: &str, arg_idx: usize) -> Option<usize> {
+    if kfunc_pointer_arg_requires_stack_or_map(kfunc, arg_idx) {
+        Some(1)
+    } else {
+        None
+    }
+}
+
 pub fn kfunc_pointer_arg_allows_const_zero(kfunc: &str, arg_idx: usize) -> bool {
     matches!(
         (kfunc, arg_idx),

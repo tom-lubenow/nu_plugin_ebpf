@@ -12,6 +12,7 @@ use super::instruction::{
     helper_release_ref_kind, kfunc_acquire_ref_kind,
     kfunc_pointer_arg_allows_const_zero as kfunc_pointer_arg_allows_const_zero_shared,
     kfunc_pointer_arg_fixed_size as kfunc_pointer_arg_fixed_size_shared,
+    kfunc_pointer_arg_min_access_size as kfunc_pointer_arg_min_access_size_shared,
     kfunc_pointer_arg_ref_kind,
     kfunc_pointer_arg_requires_kernel as kfunc_pointer_arg_requires_kernel_shared,
     kfunc_pointer_arg_requires_stack as kfunc_pointer_arg_requires_stack_shared,

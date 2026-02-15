@@ -74,6 +74,10 @@ impl<'a> TypeInference<'a> {
         kfunc_pointer_arg_fixed_size_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_pointer_arg_min_access_size(kfunc: &str, arg_idx: usize) -> Option<usize> {
+        kfunc_pointer_arg_min_access_size_shared(kfunc, arg_idx)
+    }
+
     pub(super) fn kfunc_scalar_arg_requires_known_const(kfunc: &str, arg_idx: usize) -> bool {
         kfunc_scalar_arg_requires_known_const_shared(kfunc, arg_idx)
     }
@@ -453,6 +457,8 @@ impl<'a> TypeInference<'a> {
             } else {
                 Self::kfunc_pointer_arg_fixed_size(kfunc, ptr_arg_idx)
             };
+            let access_size =
+                access_size.or_else(|| Self::kfunc_pointer_arg_min_access_size(kfunc, ptr_arg_idx));
             let Some(access_size) = access_size else {
                 continue;
             };

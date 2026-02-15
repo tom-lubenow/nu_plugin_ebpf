@@ -289,7 +289,8 @@ pub use kfunc_signature::unknown_kfunc_signature_message;
 pub use ref_kinds::{
     KfuncAllowedPtrSpaces, KfuncPtrArgRule, KfuncSemantics, helper_acquire_ref_kind,
     helper_pointer_arg_ref_kind, helper_release_ref_kind, kfunc_acquire_ref_kind,
-    kfunc_pointer_arg_allows_const_zero, kfunc_pointer_arg_fixed_size, kfunc_pointer_arg_ref_kind,
+    kfunc_pointer_arg_allows_const_zero, kfunc_pointer_arg_fixed_size,
+    kfunc_pointer_arg_min_access_size, kfunc_pointer_arg_ref_kind,
     kfunc_pointer_arg_requires_kernel, kfunc_pointer_arg_requires_stack,
     kfunc_pointer_arg_requires_stack_or_map, kfunc_pointer_arg_requires_stack_slot_base,
     kfunc_pointer_arg_requires_user, kfunc_pointer_arg_size_from_scalar,
