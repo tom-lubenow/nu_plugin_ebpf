@@ -285,6 +285,15 @@ pub enum VccInst {
     IterTaskVmaDestroy {
         iter: VccReg,
     },
+    IterTaskNew {
+        iter: VccReg,
+    },
+    IterTaskNext {
+        iter: VccReg,
+    },
+    IterTaskDestroy {
+        iter: VccReg,
+    },
     IterScxDsqNew {
         iter: VccReg,
     },

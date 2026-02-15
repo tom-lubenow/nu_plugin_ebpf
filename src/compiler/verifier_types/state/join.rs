@@ -20,6 +20,9 @@ impl VerifierState {
             && self.iter_task_vma_min_depth == other.iter_task_vma_min_depth
             && self.iter_task_vma_max_depth == other.iter_task_vma_max_depth
             && self.iter_task_vma_slots == other.iter_task_vma_slots
+            && self.iter_task_min_depth == other.iter_task_min_depth
+            && self.iter_task_max_depth == other.iter_task_max_depth
+            && self.iter_task_slots == other.iter_task_slots
             && self.iter_scx_dsq_min_depth == other.iter_scx_dsq_min_depth
             && self.iter_scx_dsq_max_depth == other.iter_scx_dsq_max_depth
             && self.iter_scx_dsq_slots == other.iter_scx_dsq_slots
@@ -165,6 +168,9 @@ impl VerifierState {
                 &self.iter_task_vma_slots,
                 &other.iter_task_vma_slots,
             ),
+            iter_task_min_depth: self.iter_task_min_depth.min(other.iter_task_min_depth),
+            iter_task_max_depth: self.iter_task_max_depth.max(other.iter_task_max_depth),
+            iter_task_slots: join_slot_depths(&self.iter_task_slots, &other.iter_task_slots),
             iter_scx_dsq_min_depth: self
                 .iter_scx_dsq_min_depth
                 .min(other.iter_scx_dsq_min_depth),

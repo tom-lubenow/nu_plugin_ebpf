@@ -814,6 +814,40 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::IterTaskNew { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_task_new' arg0")
+                else {
+                    return;
+                };
+                state.acquire_iter_task_slot(slot);
+            }
+            VccInst::IterTaskNext { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_task_next' arg0")
+                else {
+                    return;
+                };
+                if !state.use_iter_task_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_iter_task_next' requires a matching bpf_iter_task_new",
+                    ));
+                }
+            }
+            VccInst::IterTaskDestroy { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_task_destroy' arg0")
+                else {
+                    return;
+                };
+                if !state.release_iter_task_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_iter_task_destroy' requires a matching bpf_iter_task_new",
+                    ));
+                }
+            }
             VccInst::IterScxDsqNew { iter } => {
                 let Some(slot) =
                     self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_scx_dsq_new' arg0")
@@ -1183,6 +1217,12 @@ impl VccVerifier {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased iter_task_vma iterator at function exit",
+                    ));
+                }
+                if state.has_live_iter_task() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "unreleased iter_task iterator at function exit",
                     ));
                 }
                 if state.has_live_iter_scx_dsq() {
