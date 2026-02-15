@@ -380,6 +380,43 @@ impl VerifierState {
         self.iter_css_max_depth > 0
     }
 
+    pub(in crate::compiler::verifier_types) fn acquire_iter_css_task_slot(
+        &mut self,
+        slot: StackSlotId,
+    ) {
+        self.iter_css_task_min_depth = self.iter_css_task_min_depth.saturating_add(1);
+        self.iter_css_task_max_depth = self.iter_css_task_max_depth.saturating_add(1);
+        increment_slot_depth(&mut self.iter_css_task_slots, slot);
+    }
+
+    pub(in crate::compiler::verifier_types) fn use_iter_css_task_slot(
+        &self,
+        slot: StackSlotId,
+    ) -> bool {
+        self.iter_css_task_slots
+            .get(&slot)
+            .is_some_and(|(min_depth, _)| *min_depth > 0)
+    }
+
+    pub(in crate::compiler::verifier_types) fn release_iter_css_task_slot(
+        &mut self,
+        slot: StackSlotId,
+    ) -> bool {
+        if self.iter_css_task_min_depth == 0 {
+            return false;
+        }
+        if !decrement_slot_depth(&mut self.iter_css_task_slots, slot) {
+            return false;
+        }
+        self.iter_css_task_min_depth -= 1;
+        self.iter_css_task_max_depth -= 1;
+        true
+    }
+
+    pub(in crate::compiler::verifier_types) fn has_live_iter_css_task(&self) -> bool {
+        self.iter_css_task_max_depth > 0
+    }
+
     pub(in crate::compiler::verifier_types) fn acquire_iter_dmabuf_slot(
         &mut self,
         slot: StackSlotId,

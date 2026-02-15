@@ -986,6 +986,42 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::IterCssTaskNew { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_css_task_new' arg0")
+                else {
+                    return;
+                };
+                state.acquire_iter_css_task_slot(slot);
+            }
+            VccInst::IterCssTaskNext { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_css_task_next' arg0")
+                else {
+                    return;
+                };
+                if !state.use_iter_css_task_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_iter_css_task_next' requires a matching bpf_iter_css_task_new",
+                    ));
+                }
+            }
+            VccInst::IterCssTaskDestroy { iter } => {
+                let Some(slot) = self.stack_slot_from_reg(
+                    state,
+                    *iter,
+                    "kfunc 'bpf_iter_css_task_destroy' arg0",
+                ) else {
+                    return;
+                };
+                if !state.release_iter_css_task_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_iter_css_task_destroy' requires a matching bpf_iter_css_task_new",
+                    ));
+                }
+            }
             VccInst::IterDmabufNew { iter } => {
                 let Some(slot) =
                     self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_dmabuf_new' arg0")
@@ -1351,6 +1387,12 @@ impl VccVerifier {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased iter_css iterator at function exit",
+                    ));
+                }
+                if state.has_live_iter_css_task() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "unreleased iter_css_task iterator at function exit",
                     ));
                 }
                 if state.has_live_iter_dmabuf() {

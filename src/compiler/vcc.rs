@@ -330,6 +330,15 @@ pub enum VccInst {
     IterCssDestroy {
         iter: VccReg,
     },
+    IterCssTaskNew {
+        iter: VccReg,
+    },
+    IterCssTaskNext {
+        iter: VccReg,
+    },
+    IterCssTaskDestroy {
+        iter: VccReg,
+    },
     IterDmabufNew {
         iter: VccReg,
     },

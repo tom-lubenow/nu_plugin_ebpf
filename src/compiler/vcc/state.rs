@@ -29,6 +29,9 @@ struct VccState {
     iter_css_min_depth: u32,
     iter_css_max_depth: u32,
     iter_css_slots: HashMap<StackSlotId, (u32, u32)>,
+    iter_css_task_min_depth: u32,
+    iter_css_task_max_depth: u32,
+    iter_css_task_slots: HashMap<StackSlotId, (u32, u32)>,
     iter_dmabuf_min_depth: u32,
     iter_dmabuf_max_depth: u32,
     iter_dmabuf_slots: HashMap<StackSlotId, (u32, u32)>,
@@ -98,6 +101,9 @@ impl VccState {
             iter_css_min_depth: 0,
             iter_css_max_depth: 0,
             iter_css_slots: HashMap::new(),
+            iter_css_task_min_depth: 0,
+            iter_css_task_max_depth: 0,
+            iter_css_task_slots: HashMap::new(),
             iter_dmabuf_min_depth: 0,
             iter_dmabuf_max_depth: 0,
             iter_dmabuf_slots: HashMap::new(),
@@ -439,6 +445,34 @@ impl VccState {
         self.iter_css_max_depth > 0
     }
 
+    fn acquire_iter_css_task_slot(&mut self, slot: StackSlotId) {
+        self.iter_css_task_min_depth = self.iter_css_task_min_depth.saturating_add(1);
+        self.iter_css_task_max_depth = self.iter_css_task_max_depth.saturating_add(1);
+        increment_slot_depth(&mut self.iter_css_task_slots, slot);
+    }
+
+    fn use_iter_css_task_slot(&self, slot: StackSlotId) -> bool {
+        self.iter_css_task_slots
+            .get(&slot)
+            .is_some_and(|(min_depth, _)| *min_depth > 0)
+    }
+
+    fn release_iter_css_task_slot(&mut self, slot: StackSlotId) -> bool {
+        if self.iter_css_task_min_depth == 0 {
+            return false;
+        }
+        if !decrement_slot_depth(&mut self.iter_css_task_slots, slot) {
+            return false;
+        }
+        self.iter_css_task_min_depth -= 1;
+        self.iter_css_task_max_depth -= 1;
+        true
+    }
+
+    fn has_live_iter_css_task(&self) -> bool {
+        self.iter_css_task_max_depth > 0
+    }
+
     fn acquire_iter_dmabuf_slot(&mut self, slot: StackSlotId) {
         self.iter_dmabuf_min_depth = self.iter_dmabuf_min_depth.saturating_add(1);
         self.iter_dmabuf_max_depth = self.iter_dmabuf_max_depth.saturating_add(1);
@@ -702,6 +736,12 @@ impl VccState {
             iter_css_min_depth: self.iter_css_min_depth.min(other.iter_css_min_depth),
             iter_css_max_depth: self.iter_css_max_depth.max(other.iter_css_max_depth),
             iter_css_slots: merge_slot_depths(&self.iter_css_slots, &other.iter_css_slots),
+            iter_css_task_min_depth: self.iter_css_task_min_depth.min(other.iter_css_task_min_depth),
+            iter_css_task_max_depth: self.iter_css_task_max_depth.max(other.iter_css_task_max_depth),
+            iter_css_task_slots: merge_slot_depths(
+                &self.iter_css_task_slots,
+                &other.iter_css_task_slots,
+            ),
             iter_dmabuf_min_depth: self.iter_dmabuf_min_depth.min(other.iter_dmabuf_min_depth),
             iter_dmabuf_max_depth: self.iter_dmabuf_max_depth.max(other.iter_dmabuf_max_depth),
             iter_dmabuf_slots: merge_slot_depths(
@@ -787,6 +827,9 @@ impl VccState {
             iter_css_min_depth: self.iter_css_min_depth,
             iter_css_max_depth: self.iter_css_max_depth,
             iter_css_slots: self.iter_css_slots.clone(),
+            iter_css_task_min_depth: self.iter_css_task_min_depth,
+            iter_css_task_max_depth: self.iter_css_task_max_depth,
+            iter_css_task_slots: self.iter_css_task_slots.clone(),
             iter_dmabuf_min_depth: self.iter_dmabuf_min_depth,
             iter_dmabuf_max_depth: self.iter_dmabuf_max_depth,
             iter_dmabuf_slots: self.iter_dmabuf_slots.clone(),
