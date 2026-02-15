@@ -462,8 +462,11 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
                     || kfunc.contains("_put_")
                     || kfunc.ends_with("_put"))
             {
+                let release_arg_idx = KernelBtf::get()
+                    .kfunc_release_ref_arg_index(kfunc)
+                    .unwrap_or(0);
                 return KernelBtf::get()
-                    .kfunc_pointer_arg_ref_family(kfunc, 0)
+                    .kfunc_pointer_arg_ref_family(kfunc, release_arg_idx)
                     .map(ref_kind_from_btf_family);
             }
             None
