@@ -321,6 +321,15 @@ pub enum VccInst {
     IterBitsDestroy {
         iter: VccReg,
     },
+    IterCssNew {
+        iter: VccReg,
+    },
+    IterCssNext {
+        iter: VccReg,
+    },
+    IterCssDestroy {
+        iter: VccReg,
+    },
     IterDmabufNew {
         iter: VccReg,
     },

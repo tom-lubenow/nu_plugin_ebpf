@@ -32,6 +32,9 @@ impl VerifierState {
             && self.iter_bits_min_depth == other.iter_bits_min_depth
             && self.iter_bits_max_depth == other.iter_bits_max_depth
             && self.iter_bits_slots == other.iter_bits_slots
+            && self.iter_css_min_depth == other.iter_css_min_depth
+            && self.iter_css_max_depth == other.iter_css_max_depth
+            && self.iter_css_slots == other.iter_css_slots
             && self.iter_dmabuf_min_depth == other.iter_dmabuf_min_depth
             && self.iter_dmabuf_max_depth == other.iter_dmabuf_max_depth
             && self.iter_dmabuf_slots == other.iter_dmabuf_slots
@@ -193,6 +196,9 @@ impl VerifierState {
             iter_bits_min_depth: self.iter_bits_min_depth.min(other.iter_bits_min_depth),
             iter_bits_max_depth: self.iter_bits_max_depth.max(other.iter_bits_max_depth),
             iter_bits_slots: join_slot_depths(&self.iter_bits_slots, &other.iter_bits_slots),
+            iter_css_min_depth: self.iter_css_min_depth.min(other.iter_css_min_depth),
+            iter_css_max_depth: self.iter_css_max_depth.max(other.iter_css_max_depth),
+            iter_css_slots: join_slot_depths(&self.iter_css_slots, &other.iter_css_slots),
             iter_dmabuf_min_depth: self.iter_dmabuf_min_depth.min(other.iter_dmabuf_min_depth),
             iter_dmabuf_max_depth: self.iter_dmabuf_max_depth.max(other.iter_dmabuf_max_depth),
             iter_dmabuf_slots: join_slot_depths(&self.iter_dmabuf_slots, &other.iter_dmabuf_slots),

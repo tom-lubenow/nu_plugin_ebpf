@@ -665,6 +665,32 @@ fn test_kfunc_signature_iter_bits_kfuncs() {
 }
 
 #[test]
+fn test_kfunc_signature_iter_css_kfuncs() {
+    let sig = KfuncSignature::for_name("bpf_iter_css_new")
+        .expect("expected bpf_iter_css_new kfunc signature");
+    assert_eq!(sig.min_args, 3);
+    assert_eq!(sig.max_args, 3);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
+    let sig = KfuncSignature::for_name("bpf_iter_css_next")
+        .expect("expected bpf_iter_css_next kfunc signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
+
+    let sig = KfuncSignature::for_name("bpf_iter_css_destroy")
+        .expect("expected bpf_iter_css_destroy kfunc signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Void);
+}
+
+#[test]
 fn test_kfunc_signature_iter_dmabuf_kfuncs() {
     let sig = KfuncSignature::for_name("bpf_iter_dmabuf_new")
         .expect("expected bpf_iter_dmabuf_new kfunc signature");
@@ -1260,6 +1286,9 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
     assert!(kfunc_pointer_arg_requires_stack("bpf_iter_bits_new", 0));
     assert!(kfunc_pointer_arg_requires_stack("bpf_iter_bits_next", 0));
     assert!(kfunc_pointer_arg_requires_stack("bpf_iter_bits_destroy", 0));
+    assert!(kfunc_pointer_arg_requires_stack("bpf_iter_css_new", 0));
+    assert!(kfunc_pointer_arg_requires_stack("bpf_iter_css_next", 0));
+    assert!(kfunc_pointer_arg_requires_stack("bpf_iter_css_destroy", 0));
     assert!(kfunc_pointer_arg_requires_stack("bpf_iter_dmabuf_new", 0));
     assert!(kfunc_pointer_arg_requires_stack("bpf_iter_dmabuf_next", 0));
     assert!(kfunc_pointer_arg_requires_stack(
@@ -1288,6 +1317,7 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
     assert!(!kfunc_pointer_arg_requires_stack("bpf_iter_scx_dsq_new", 1));
     assert!(!kfunc_pointer_arg_requires_stack("bpf_iter_num_new", 1));
     assert!(!kfunc_pointer_arg_requires_stack("bpf_iter_bits_new", 1));
+    assert!(!kfunc_pointer_arg_requires_stack("bpf_iter_css_new", 1));
     assert!(!kfunc_pointer_arg_requires_stack("bpf_iter_dmabuf_new", 1));
     assert!(!kfunc_pointer_arg_requires_stack(
         "bpf_iter_kmem_cache_new",

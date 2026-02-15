@@ -655,6 +655,27 @@ impl<'a> VccLowerer<'a> {
                         });
                     }
                 }
+                if kfunc == "bpf_iter_css_new" {
+                    if let Some(iter) = args.first() {
+                        out.push(VccInst::IterCssNew {
+                            iter: VccReg(iter.0),
+                        });
+                    }
+                }
+                if kfunc == "bpf_iter_css_next" {
+                    if let Some(iter) = args.first() {
+                        out.push(VccInst::IterCssNext {
+                            iter: VccReg(iter.0),
+                        });
+                    }
+                }
+                if kfunc == "bpf_iter_css_destroy" {
+                    if let Some(iter) = args.first() {
+                        out.push(VccInst::IterCssDestroy {
+                            iter: VccReg(iter.0),
+                        });
+                    }
+                }
                 if kfunc == "bpf_iter_dmabuf_new" {
                     if let Some(iter) = args.first() {
                         out.push(VccInst::IterDmabufNew {

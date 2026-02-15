@@ -133,6 +133,11 @@ pub fn verify_mir(
                         "unreleased iter_bits iterator at function exit",
                     ));
                 }
+                if state.has_live_iter_css() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased iter_css iterator at function exit",
+                    ));
+                }
                 if state.has_live_iter_dmabuf() {
                     errors.push(VerifierTypeError::new(
                         "unreleased iter_dmabuf iterator at function exit",
@@ -216,6 +221,11 @@ pub fn verify_mir(
                 if state.has_live_iter_bits() {
                     errors.push(VerifierTypeError::new(
                         "unreleased iter_bits iterator at function exit",
+                    ));
+                }
+                if state.has_live_iter_css() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased iter_css iterator at function exit",
                     ));
                 }
                 if state.has_live_iter_dmabuf() {
