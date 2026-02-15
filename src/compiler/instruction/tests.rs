@@ -472,6 +472,23 @@ fn test_kfunc_signature_file_kfuncs() {
 }
 
 #[test]
+fn test_kfunc_signature_crypto_ctx_kfuncs() {
+    let sig = KfuncSignature::for_name("bpf_crypto_ctx_acquire")
+        .expect("expected bpf_crypto_ctx_acquire kfunc signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
+
+    let sig = KfuncSignature::for_name("bpf_crypto_ctx_release")
+        .expect("expected bpf_crypto_ctx_release kfunc signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Void);
+}
+
+#[test]
 fn test_kfunc_signature_kptr_container_impls() {
     let sig = KfuncSignature::for_name("bpf_percpu_obj_new_impl")
         .expect("expected bpf_percpu_obj_new_impl kfunc signature");
@@ -1065,6 +1082,10 @@ fn test_kfunc_ref_kind_mappings() {
         Some(KfuncRefKind::File)
     );
     assert_eq!(
+        kfunc_acquire_ref_kind("bpf_crypto_ctx_acquire"),
+        Some(KfuncRefKind::CryptoCtx)
+    );
+    assert_eq!(
         kfunc_acquire_ref_kind("bpf_obj_new_impl"),
         Some(KfuncRefKind::Object)
     );
@@ -1103,6 +1124,10 @@ fn test_kfunc_ref_kind_mappings() {
     assert_eq!(
         kfunc_release_ref_kind("bpf_put_file"),
         Some(KfuncRefKind::File)
+    );
+    assert_eq!(
+        kfunc_release_ref_kind("bpf_crypto_ctx_release"),
+        Some(KfuncRefKind::CryptoCtx)
     );
     assert_eq!(
         kfunc_release_ref_kind("bpf_obj_drop_impl"),
@@ -1178,6 +1203,14 @@ fn test_kfunc_pointer_arg_ref_kind_mappings() {
     assert_eq!(
         kfunc_pointer_arg_ref_kind("bpf_put_file", 0),
         Some(KfuncRefKind::File)
+    );
+    assert_eq!(
+        kfunc_pointer_arg_ref_kind("bpf_crypto_ctx_acquire", 0),
+        Some(KfuncRefKind::CryptoCtx)
+    );
+    assert_eq!(
+        kfunc_pointer_arg_ref_kind("bpf_crypto_ctx_release", 0),
+        Some(KfuncRefKind::CryptoCtx)
     );
     assert_eq!(
         kfunc_pointer_arg_ref_kind("bpf_obj_drop_impl", 0),
@@ -1274,6 +1307,10 @@ fn test_kfunc_pointer_arg_ref_kind_mappings() {
 fn test_kfunc_pointer_arg_requires_kernel_mappings() {
     assert!(kfunc_pointer_arg_requires_kernel("bpf_task_release", 0));
     assert!(kfunc_pointer_arg_requires_kernel("bpf_put_file", 0));
+    assert!(kfunc_pointer_arg_requires_kernel(
+        "bpf_crypto_ctx_release",
+        0
+    ));
     assert!(kfunc_pointer_arg_requires_kernel(
         "bpf_list_push_front_impl",
         0

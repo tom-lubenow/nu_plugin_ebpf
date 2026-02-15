@@ -181,6 +181,7 @@ pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
             Some(KfuncRefKind::Cgroup)
         }
         "bpf_get_task_exe_file" => Some(KfuncRefKind::File),
+        "bpf_crypto_ctx_acquire" => Some(KfuncRefKind::CryptoCtx),
         "bpf_obj_new_impl"
         | "bpf_refcount_acquire_impl"
         | "bpf_percpu_obj_new_impl"
@@ -204,6 +205,7 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
         "bpf_task_release" => Some(KfuncRefKind::Task),
         "bpf_cgroup_release" => Some(KfuncRefKind::Cgroup),
         "bpf_put_file" => Some(KfuncRefKind::File),
+        "bpf_crypto_ctx_release" => Some(KfuncRefKind::CryptoCtx),
         "bpf_obj_drop_impl"
         | "bpf_percpu_obj_drop_impl"
         | "bpf_list_push_front_impl"
@@ -296,6 +298,12 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
             | ("scx_bpf_task_running", 0)
     ) {
         return Some(KfuncRefKind::Task);
+    }
+    if matches!(
+        (kfunc, arg_idx),
+        ("bpf_crypto_ctx_acquire", 0) | ("bpf_crypto_ctx_release", 0)
+    ) {
+        return Some(KfuncRefKind::CryptoCtx);
     }
     if matches!(
         (kfunc, arg_idx),
