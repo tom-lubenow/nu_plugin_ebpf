@@ -1370,6 +1370,14 @@ fn test_kfunc_ref_kind_mappings() {
         kfunc_release_ref_kind("scx_bpf_put_idle_cpumask"),
         Some(KfuncRefKind::Cpumask)
     );
+    assert_eq!(
+        kfunc_acquire_ref_kind("__nu_plugin_ebpf_missing_kfunc__"),
+        None
+    );
+    assert_eq!(
+        kfunc_release_ref_kind("__nu_plugin_ebpf_missing_kfunc__"),
+        None
+    );
     assert_eq!(kfunc_release_ref_arg_index("bpf_task_release"), Some(0));
     assert_eq!(kfunc_release_ref_arg_index("bpf_obj_drop_impl"), Some(0));
     assert_eq!(
@@ -1377,6 +1385,10 @@ fn test_kfunc_ref_kind_mappings() {
         Some(1)
     );
     assert_eq!(kfunc_release_ref_arg_index("bpf_rbtree_add_impl"), Some(1));
+    assert_eq!(
+        kfunc_release_ref_arg_index("__nu_plugin_ebpf_missing_kfunc__"),
+        None
+    );
 }
 
 #[test]

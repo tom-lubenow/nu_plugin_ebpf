@@ -1,6 +1,18 @@
 use super::*;
 use crate::kernel_btf::{KernelBtf, KfuncPointerRefFamily};
 
+fn ref_kind_from_btf_family(family: KfuncPointerRefFamily) -> KfuncRefKind {
+    match family {
+        KfuncPointerRefFamily::Task => KfuncRefKind::Task,
+        KfuncPointerRefFamily::Cgroup => KfuncRefKind::Cgroup,
+        KfuncPointerRefFamily::Inode => KfuncRefKind::Inode,
+        KfuncPointerRefFamily::Cpumask => KfuncRefKind::Cpumask,
+        KfuncPointerRefFamily::CryptoCtx => KfuncRefKind::CryptoCtx,
+        KfuncPointerRefFamily::File => KfuncRefKind::File,
+        KfuncPointerRefFamily::Socket => KfuncRefKind::Socket,
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct KfuncAllowedPtrSpaces {
     pub allow_stack: bool,
@@ -405,7 +417,18 @@ pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
         | "scx_bpf_get_idle_smtmask"
         | "scx_bpf_get_idle_smtmask_node" => Some(KfuncRefKind::Cpumask),
         "bpf_cpumask_create" | "bpf_cpumask_acquire" => Some(KfuncRefKind::Cpumask),
-        _ => None,
+        _ => {
+            if KfuncSignature::for_name(kfunc).is_none()
+                && (kfunc.contains("_acquire")
+                    || kfunc.contains("_from_")
+                    || kfunc.contains("_create"))
+            {
+                return KernelBtf::get()
+                    .kfunc_return_ref_family(kfunc)
+                    .map(ref_kind_from_btf_family);
+            }
+            None
+        }
     }
 }
 
@@ -424,7 +447,19 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
         | "bpf_cpumask_release_dtor"
         | "scx_bpf_put_cpumask"
         | "scx_bpf_put_idle_cpumask" => Some(KfuncRefKind::Cpumask),
-        _ => None,
+        _ => {
+            if KfuncSignature::for_name(kfunc).is_none()
+                && (kfunc.contains("_release")
+                    || kfunc.starts_with("bpf_put_")
+                    || kfunc.contains("_put_")
+                    || kfunc.ends_with("_put"))
+            {
+                return KernelBtf::get()
+                    .kfunc_pointer_arg_ref_family(kfunc, 0)
+                    .map(ref_kind_from_btf_family);
+            }
+            None
+        }
     }
 }
 
@@ -598,15 +633,7 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
     if KfuncSignature::for_name(kfunc).is_none() {
         return KernelBtf::get()
             .kfunc_pointer_arg_ref_family(kfunc, arg_idx)
-            .map(|family| match family {
-                KfuncPointerRefFamily::Task => KfuncRefKind::Task,
-                KfuncPointerRefFamily::Cgroup => KfuncRefKind::Cgroup,
-                KfuncPointerRefFamily::Inode => KfuncRefKind::Inode,
-                KfuncPointerRefFamily::Cpumask => KfuncRefKind::Cpumask,
-                KfuncPointerRefFamily::CryptoCtx => KfuncRefKind::CryptoCtx,
-                KfuncPointerRefFamily::File => KfuncRefKind::File,
-                KfuncPointerRefFamily::Socket => KfuncRefKind::Socket,
-            });
+            .map(ref_kind_from_btf_family);
     }
     None
 }

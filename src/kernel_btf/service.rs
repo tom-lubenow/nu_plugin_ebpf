@@ -144,6 +144,8 @@ pub struct KernelBtf {
     /// Cached mapping of kfunc names to pointer argument ref families.
     kfunc_pointer_ref_family_cache:
         RwLock<Option<HashMap<String, Vec<(usize, KfuncPointerRefFamily)>>>>,
+    /// Cached mapping of kfunc names to return-value ref families.
+    kfunc_return_ref_family_cache: RwLock<Option<HashMap<String, KfuncPointerRefFamily>>>,
     /// Cached mapping of kfunc names to scalar argument indices that must be known constants.
     kfunc_known_const_scalar_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to scalar argument indices that must be positive (> 0).
@@ -180,6 +182,7 @@ impl KernelBtf {
                 kfunc_user_pointer_arg_cache: RwLock::new(None),
                 kfunc_kernel_pointer_arg_cache: RwLock::new(None),
                 kfunc_pointer_ref_family_cache: RwLock::new(None),
+                kfunc_return_ref_family_cache: RwLock::new(None),
                 kfunc_known_const_scalar_arg_cache: RwLock::new(None),
                 kfunc_positive_scalar_arg_cache: RwLock::new(None),
                 kfunc_pointer_size_arg_cache: RwLock::new(None),
@@ -473,6 +476,39 @@ impl KernelBtf {
         Ok(map)
     }
 
+    fn load_kfunc_return_ref_family_map(
+        &self,
+    ) -> Result<HashMap<String, KfuncPointerRefFamily>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let function_ret_type_ids = self.load_kfunc_return_type_id_map().unwrap_or_default();
+        let mut map: HashMap<String, KfuncPointerRefFamily> = HashMap::new();
+        for ty in btf.get_types() {
+            if !ty.is_function || !Self::is_bpf_kfunc(ty) {
+                continue;
+            }
+            let Some(name) = ty.name.as_ref() else {
+                continue;
+            };
+            let Some(ret_type_id) = function_ret_type_ids.get(&ty.type_id).copied() else {
+                continue;
+            };
+            let Ok(ret_ty) = btf.get_type_by_id(ret_type_id) else {
+                continue;
+            };
+            if ret_ty.num_refs == 0 || Self::has_user_type_tag(&ret_ty.type_tags) {
+                continue;
+            }
+            let Some(type_name) = ret_ty.name.as_deref() else {
+                continue;
+            };
+            let Some(ref_family) = Self::infer_pointer_ref_family(type_name) else {
+                continue;
+            };
+            map.insert(name.clone(), ref_family);
+        }
+        Ok(map)
+    }
+
     /// Returns whether `kfunc_name` argument `arg_idx` is nullable in local kernel BTF.
     pub fn kfunc_pointer_arg_is_nullable(&self, kfunc_name: &str, arg_idx: usize) -> bool {
         {
@@ -568,6 +604,26 @@ impl KernelBtf {
             .map(|(_, family)| *family);
 
         let mut cache = self.kfunc_pointer_ref_family_cache.write().unwrap();
+        if cache.is_none() {
+            *cache = Some(map);
+        }
+
+        ref_family
+    }
+
+    /// Returns inferred return-value ref-family metadata for `kfunc_name`.
+    pub fn kfunc_return_ref_family(&self, kfunc_name: &str) -> Option<KfuncPointerRefFamily> {
+        {
+            let cache = self.kfunc_return_ref_family_cache.read().unwrap();
+            if let Some(map) = cache.as_ref() {
+                return map.get(kfunc_name).copied();
+            }
+        }
+
+        let map = self.load_kfunc_return_ref_family_map().unwrap_or_default();
+        let ref_family = map.get(kfunc_name).copied();
+
+        let mut cache = self.kfunc_return_ref_family_cache.write().unwrap();
         if cache.is_none() {
             *cache = Some(map);
         }
@@ -1572,6 +1628,7 @@ mod tests {
             kfunc_user_pointer_arg_cache: RwLock::new(None),
             kfunc_kernel_pointer_arg_cache: RwLock::new(None),
             kfunc_pointer_ref_family_cache: RwLock::new(None),
+            kfunc_return_ref_family_cache: RwLock::new(None),
             kfunc_known_const_scalar_arg_cache: RwLock::new(None),
             kfunc_positive_scalar_arg_cache: RwLock::new(None),
             kfunc_pointer_size_arg_cache: RwLock::new(None),
@@ -1727,6 +1784,15 @@ format:
         );
         assert_eq!(
             service.kfunc_pointer_arg_ref_family("definitely_not_a_kfunc", 3),
+            None
+        );
+    }
+
+    #[test]
+    fn test_kfunc_return_ref_family_query_graceful_without_btf() {
+        let service = make_test_service();
+        assert_eq!(
+            service.kfunc_return_ref_family("definitely_not_a_kfunc"),
             None
         );
     }
