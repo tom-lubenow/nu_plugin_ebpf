@@ -638,6 +638,203 @@ fn test_verify_mir_kfunc_scx_events_accepts_stack_buffer_rule() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_scx_dump_bstr_fmt_requires_stack_or_map_space() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let fmt_ptr = func.alloc_vreg();
+    let data_ptr = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(16),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_dump_bstr".to_string(),
+        btf_id: None,
+        args: vec![fmt_ptr, data_ptr, size],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        fmt_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        data_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(size, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected scx_bpf_dump_bstr fmt-space error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc scx_bpf_dump_bstr fmt expects pointer in [Stack, Map], got Kernel")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_scx_dump_bstr_requires_positive_data_size() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let fmt_ptr = func.alloc_vreg();
+    let data_ptr = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_dump_bstr".to_string(),
+        btf_id: None,
+        args: vec![fmt_ptr, data_ptr, size],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        fmt_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        data_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(size, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected scx_bpf_dump_bstr positive-size error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'scx_bpf_dump_bstr' arg2 must be > 0")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_scx_dump_bstr_accepts_stack_fmt_and_data() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let fmt_ptr = func.alloc_vreg();
+    let data_ptr = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(16),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_dump_bstr".to_string(),
+        btf_id: None,
+        args: vec![fmt_ptr, data_ptr, size],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        fmt_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        data_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(size, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected scx_bpf_dump_bstr stack fmt/data rule to verify");
+}
+
+#[test]
+fn test_verify_mir_kfunc_scx_exit_bstr_requires_positive_data_size() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let code = func.alloc_vreg();
+    let fmt_ptr = func.alloc_vreg();
+    let data_ptr = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: code,
+        src: MirValue::Const(-1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_exit_bstr".to_string(),
+        btf_id: None,
+        args: vec![code, fmt_ptr, data_ptr, size],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(code, MirType::I64);
+    types.insert(
+        fmt_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        data_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(size, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected scx_bpf_exit_bstr positive-size error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'scx_bpf_exit_bstr' arg3 must be > 0")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_kfunc_rbtree_first_requires_kernel_space() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;

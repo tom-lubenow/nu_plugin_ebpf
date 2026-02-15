@@ -59,6 +59,54 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         fixed_size: None,
         size_from_arg: Some(1),
     }];
+    const SCX_DUMP_BSTR_RULES: &[KfuncPtrArgRule] = &[
+        KfuncPtrArgRule {
+            arg_idx: 0,
+            op: "kfunc scx_bpf_dump_bstr fmt",
+            allowed: STACK_MAP,
+            fixed_size: Some(1),
+            size_from_arg: None,
+        },
+        KfuncPtrArgRule {
+            arg_idx: 1,
+            op: "kfunc scx_bpf_dump_bstr data",
+            allowed: STACK_MAP,
+            fixed_size: None,
+            size_from_arg: Some(2),
+        },
+    ];
+    const SCX_ERROR_BSTR_RULES: &[KfuncPtrArgRule] = &[
+        KfuncPtrArgRule {
+            arg_idx: 0,
+            op: "kfunc scx_bpf_error_bstr fmt",
+            allowed: STACK_MAP,
+            fixed_size: Some(1),
+            size_from_arg: None,
+        },
+        KfuncPtrArgRule {
+            arg_idx: 1,
+            op: "kfunc scx_bpf_error_bstr data",
+            allowed: STACK_MAP,
+            fixed_size: None,
+            size_from_arg: Some(2),
+        },
+    ];
+    const SCX_EXIT_BSTR_RULES: &[KfuncPtrArgRule] = &[
+        KfuncPtrArgRule {
+            arg_idx: 1,
+            op: "kfunc scx_bpf_exit_bstr fmt",
+            allowed: STACK_MAP,
+            fixed_size: Some(1),
+            size_from_arg: None,
+        },
+        KfuncPtrArgRule {
+            arg_idx: 2,
+            op: "kfunc scx_bpf_exit_bstr data",
+            allowed: STACK_MAP,
+            fixed_size: None,
+            size_from_arg: Some(3),
+        },
+    ];
 
     match kfunc {
         "bpf_path_d_path" => KfuncSemantics {
@@ -68,6 +116,18 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         "scx_bpf_events" => KfuncSemantics {
             ptr_arg_rules: SCX_EVENTS_RULES,
             positive_size_args: &[1],
+        },
+        "scx_bpf_dump_bstr" => KfuncSemantics {
+            ptr_arg_rules: SCX_DUMP_BSTR_RULES,
+            positive_size_args: &[2],
+        },
+        "scx_bpf_error_bstr" => KfuncSemantics {
+            ptr_arg_rules: SCX_ERROR_BSTR_RULES,
+            positive_size_args: &[2],
+        },
+        "scx_bpf_exit_bstr" => KfuncSemantics {
+            ptr_arg_rules: SCX_EXIT_BSTR_RULES,
+            positive_size_args: &[3],
         },
         _ => NONE,
     }

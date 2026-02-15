@@ -1130,6 +1130,87 @@ fn test_kfunc_semantics_scx_events_buffer_rule() {
 }
 
 #[test]
+fn test_kfunc_semantics_scx_dump_bstr_rules() {
+    let semantics = kfunc_semantics("scx_bpf_dump_bstr");
+    assert_eq!(semantics.positive_size_args, &[2]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+    let fmt = semantics.ptr_arg_rules[0];
+    assert_eq!(fmt.arg_idx, 0);
+    assert_eq!(fmt.op, "kfunc scx_bpf_dump_bstr fmt");
+    assert!(fmt.allowed.allow_stack);
+    assert!(fmt.allowed.allow_map);
+    assert!(!fmt.allowed.allow_kernel);
+    assert!(!fmt.allowed.allow_user);
+    assert_eq!(fmt.fixed_size, Some(1));
+    assert_eq!(fmt.size_from_arg, None);
+
+    let data = semantics.ptr_arg_rules[1];
+    assert_eq!(data.arg_idx, 1);
+    assert_eq!(data.op, "kfunc scx_bpf_dump_bstr data");
+    assert!(data.allowed.allow_stack);
+    assert!(data.allowed.allow_map);
+    assert!(!data.allowed.allow_kernel);
+    assert!(!data.allowed.allow_user);
+    assert_eq!(data.fixed_size, None);
+    assert_eq!(data.size_from_arg, Some(2));
+}
+
+#[test]
+fn test_kfunc_semantics_scx_error_bstr_rules() {
+    let semantics = kfunc_semantics("scx_bpf_error_bstr");
+    assert_eq!(semantics.positive_size_args, &[2]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+    let fmt = semantics.ptr_arg_rules[0];
+    assert_eq!(fmt.arg_idx, 0);
+    assert_eq!(fmt.op, "kfunc scx_bpf_error_bstr fmt");
+    assert!(fmt.allowed.allow_stack);
+    assert!(fmt.allowed.allow_map);
+    assert!(!fmt.allowed.allow_kernel);
+    assert!(!fmt.allowed.allow_user);
+    assert_eq!(fmt.fixed_size, Some(1));
+    assert_eq!(fmt.size_from_arg, None);
+
+    let data = semantics.ptr_arg_rules[1];
+    assert_eq!(data.arg_idx, 1);
+    assert_eq!(data.op, "kfunc scx_bpf_error_bstr data");
+    assert!(data.allowed.allow_stack);
+    assert!(data.allowed.allow_map);
+    assert!(!data.allowed.allow_kernel);
+    assert!(!data.allowed.allow_user);
+    assert_eq!(data.fixed_size, None);
+    assert_eq!(data.size_from_arg, Some(2));
+}
+
+#[test]
+fn test_kfunc_semantics_scx_exit_bstr_rules() {
+    let semantics = kfunc_semantics("scx_bpf_exit_bstr");
+    assert_eq!(semantics.positive_size_args, &[3]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+    let fmt = semantics.ptr_arg_rules[0];
+    assert_eq!(fmt.arg_idx, 1);
+    assert_eq!(fmt.op, "kfunc scx_bpf_exit_bstr fmt");
+    assert!(fmt.allowed.allow_stack);
+    assert!(fmt.allowed.allow_map);
+    assert!(!fmt.allowed.allow_kernel);
+    assert!(!fmt.allowed.allow_user);
+    assert_eq!(fmt.fixed_size, Some(1));
+    assert_eq!(fmt.size_from_arg, None);
+
+    let data = semantics.ptr_arg_rules[1];
+    assert_eq!(data.arg_idx, 2);
+    assert_eq!(data.op, "kfunc scx_bpf_exit_bstr data");
+    assert!(data.allowed.allow_stack);
+    assert!(data.allowed.allow_map);
+    assert!(!data.allowed.allow_kernel);
+    assert!(!data.allowed.allow_user);
+    assert_eq!(data.fixed_size, None);
+    assert_eq!(data.size_from_arg, Some(3));
+}
+
+#[test]
 fn test_kfunc_semantics_default_empty() {
     let semantics = kfunc_semantics("bpf_task_release");
     assert!(semantics.ptr_arg_rules.is_empty());
