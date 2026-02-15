@@ -174,6 +174,20 @@ impl<'a> VccLowerer<'a> {
                 "expected pointer value",
             )
         })?;
+        if Self::kfunc_pointer_arg_requires_user(kfunc, arg_idx) {
+            if space != VccAddrSpace::User {
+                return Err(VccError::new(
+                    VccErrorKind::PointerBounds,
+                    format!(
+                        "kfunc '{}' arg{} expects pointer in [User], got {}",
+                        kfunc,
+                        arg_idx,
+                        self.helper_space_name(space)
+                    ),
+                ));
+            }
+            return Ok(());
+        }
         if !Self::kfunc_pointer_arg_requires_kernel(kfunc, arg_idx) {
             return Ok(());
         }
@@ -213,6 +227,10 @@ impl<'a> VccLowerer<'a> {
 
     pub(super) fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
         kfunc_pointer_arg_requires_stack_shared(kfunc, arg_idx)
+    }
+
+    pub(super) fn kfunc_pointer_arg_requires_user(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_pointer_arg_requires_user_shared(kfunc, arg_idx)
     }
 
     pub(super) fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -> bool {

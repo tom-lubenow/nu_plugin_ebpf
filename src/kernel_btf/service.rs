@@ -125,6 +125,8 @@ pub struct KernelBtf {
     pt_regs_cache: RwLock<Option<Result<PtRegsOffsets, PtRegsError>>>,
     /// Cached mapping of kfunc names to nullable pointer argument indices.
     kfunc_nullable_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
+    /// Cached mapping of kfunc names to pointer argument indices that require user-space pointers.
+    kfunc_user_pointer_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to scalar argument indices that must be known constants.
     kfunc_known_const_scalar_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to scalar argument indices that must be positive (> 0).
@@ -156,6 +158,7 @@ impl KernelBtf {
                 function_cache: RwLock::new(None),
                 pt_regs_cache: RwLock::new(None),
                 kfunc_nullable_arg_cache: RwLock::new(None),
+                kfunc_user_pointer_arg_cache: RwLock::new(None),
                 kfunc_known_const_scalar_arg_cache: RwLock::new(None),
                 kfunc_positive_scalar_arg_cache: RwLock::new(None),
                 kfunc_pointer_size_arg_cache: RwLock::new(None),
@@ -305,6 +308,44 @@ impl KernelBtf {
         Ok(map)
     }
 
+    fn has_user_type_tag(type_tags: &[String]) -> bool {
+        type_tags
+            .iter()
+            .any(|tag| tag == "__user" || tag.contains("__user") || tag == "address_space(1)")
+    }
+
+    fn load_kfunc_user_pointer_arg_map(&self) -> Result<HashMap<String, Vec<usize>>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let mut map: HashMap<String, Vec<usize>> = HashMap::new();
+        for ty in btf.get_types() {
+            if !ty.is_function || !Self::is_bpf_kfunc(ty) {
+                continue;
+            }
+            let Some(name) = ty.name.as_ref() else {
+                continue;
+            };
+            let Type::FunctionProto(proto) = &ty.base_type else {
+                continue;
+            };
+            let mut user_pointer_args = Vec::new();
+            for (arg_idx, param) in proto.params.iter().enumerate() {
+                if param.type_id == 0 {
+                    continue;
+                }
+                let Ok(param_ty) = btf.get_type_by_id(param.type_id) else {
+                    continue;
+                };
+                if param_ty.num_refs > 0 && Self::has_user_type_tag(&param_ty.type_tags) {
+                    user_pointer_args.push(arg_idx);
+                }
+            }
+            if !user_pointer_args.is_empty() {
+                map.insert(name.clone(), user_pointer_args);
+            }
+        }
+        Ok(map)
+    }
+
     /// Returns whether `kfunc_name` argument `arg_idx` is nullable in local kernel BTF.
     pub fn kfunc_pointer_arg_is_nullable(&self, kfunc_name: &str, arg_idx: usize) -> bool {
         {
@@ -327,6 +368,30 @@ impl KernelBtf {
         }
 
         is_nullable
+    }
+
+    /// Returns whether `kfunc_name` pointer argument `arg_idx` requires user-space pointers.
+    pub fn kfunc_pointer_arg_requires_user(&self, kfunc_name: &str, arg_idx: usize) -> bool {
+        {
+            let cache = self.kfunc_user_pointer_arg_cache.read().unwrap();
+            if let Some(map) = cache.as_ref() {
+                return map
+                    .get(kfunc_name)
+                    .is_some_and(|user_args| user_args.contains(&arg_idx));
+            }
+        }
+
+        let map = self.load_kfunc_user_pointer_arg_map().unwrap_or_default();
+        let requires_user = map
+            .get(kfunc_name)
+            .is_some_and(|user_args| user_args.contains(&arg_idx));
+
+        let mut cache = self.kfunc_user_pointer_arg_cache.write().unwrap();
+        if cache.is_none() {
+            *cache = Some(map);
+        }
+
+        requires_user
     }
 
     fn load_kfunc_signature_hint_map(
@@ -1175,6 +1240,7 @@ mod tests {
             function_cache: RwLock::new(None),
             pt_regs_cache: RwLock::new(None),
             kfunc_nullable_arg_cache: RwLock::new(None),
+            kfunc_user_pointer_arg_cache: RwLock::new(None),
             kfunc_known_const_scalar_arg_cache: RwLock::new(None),
             kfunc_positive_scalar_arg_cache: RwLock::new(None),
             kfunc_pointer_size_arg_cache: RwLock::new(None),
@@ -1304,6 +1370,13 @@ format:
         let service = make_test_service();
         assert!(!service.kfunc_pointer_arg_is_nullable("definitely_not_a_kfunc", 0));
         assert!(!service.kfunc_pointer_arg_is_nullable("definitely_not_a_kfunc", 1));
+    }
+
+    #[test]
+    fn test_kfunc_user_pointer_query_graceful_without_btf() {
+        let service = make_test_service();
+        assert!(!service.kfunc_pointer_arg_requires_user("definitely_not_a_kfunc", 0));
+        assert!(!service.kfunc_pointer_arg_requires_user("definitely_not_a_kfunc", 3));
     }
 
     #[test]

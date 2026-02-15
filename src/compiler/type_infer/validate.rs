@@ -586,6 +586,14 @@ impl<'a> TypeInference<'a> {
                                         kfunc, idx, address_space
                                     )));
                                 }
+                                if Self::kfunc_pointer_arg_requires_user(kfunc, idx)
+                                    && address_space != AddressSpace::User
+                                {
+                                    errors.push(TypeError::new(format!(
+                                        "kfunc '{}' arg{} expects user pointer, got {:?}",
+                                        kfunc, idx, address_space
+                                    )));
+                                }
                             }
                             _ => {
                                 let allows_zero =

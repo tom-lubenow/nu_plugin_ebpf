@@ -75,6 +75,14 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
                             kfunc, arg_idx, space
                         )));
                     }
+                    if kfunc_pointer_arg_requires_user(kfunc, arg_idx)
+                        && space != AddressSpace::User
+                    {
+                        errors.push(VerifierTypeError::new(format!(
+                            "kfunc '{}' arg{} expects user pointer, got {:?}",
+                            kfunc, arg_idx, space
+                        )));
+                    }
                     if let Some(expected_kind) = kfunc_pointer_arg_expected_ref_kind(kfunc, arg_idx)
                     {
                         if let Some(ref_id) = kfunc_ref {
@@ -359,6 +367,13 @@ pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_requires_stack(
     arg_idx: usize,
 ) -> bool {
     kfunc_pointer_arg_requires_stack_shared(kfunc, arg_idx)
+}
+
+pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_requires_user(
+    kfunc: &str,
+    arg_idx: usize,
+) -> bool {
+    kfunc_pointer_arg_requires_user_shared(kfunc, arg_idx)
 }
 
 pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_allows_const_zero(

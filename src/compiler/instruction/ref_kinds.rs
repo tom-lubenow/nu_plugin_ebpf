@@ -629,6 +629,21 @@ pub fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
     )
 }
 
+pub fn kfunc_pointer_arg_requires_user(kfunc: &str, arg_idx: usize) -> bool {
+    if let Some(rule) = kfunc_semantics(kfunc)
+        .ptr_arg_rules
+        .iter()
+        .find(|rule| rule.arg_idx == arg_idx)
+        && rule.allowed.allow_user
+        && !rule.allowed.allow_stack
+        && !rule.allowed.allow_map
+        && !rule.allowed.allow_kernel
+    {
+        return true;
+    }
+    KernelBtf::get().kfunc_pointer_arg_requires_user(kfunc, arg_idx)
+}
+
 pub fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
     matches!(
         (kfunc, arg_idx),

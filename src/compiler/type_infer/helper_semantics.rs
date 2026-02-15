@@ -46,6 +46,10 @@ impl<'a> TypeInference<'a> {
         kfunc_pointer_arg_requires_kernel_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_pointer_arg_requires_user(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_pointer_arg_requires_user_shared(kfunc, arg_idx)
+    }
+
     pub(super) fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
         kfunc_pointer_arg_requires_stack_shared(kfunc, arg_idx)
     }

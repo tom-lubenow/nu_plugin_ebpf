@@ -700,7 +700,10 @@ fn test_verify_mir_kfunc_copy_from_user_str_src_requires_user_pointer() {
     assert!(
         err.iter().any(|e| e
             .message
-            .contains("kfunc bpf_copy_from_user_str src expects pointer in [User], got Stack")),
+            .contains("kfunc bpf_copy_from_user_str src expects pointer in [User], got Stack")
+            || e.message.contains(
+                "kfunc 'bpf_copy_from_user_str' arg2 expects pointer in [User], got Stack"
+            )),
         "unexpected error messages: {:?}",
         err
     );
@@ -924,7 +927,10 @@ fn test_verify_mir_kfunc_copy_from_user_dynptr_src_requires_user_pointer() {
     assert!(
         err.iter().any(|e| e
             .message
-            .contains("kfunc bpf_copy_from_user_dynptr src expects pointer in [User], got Stack")),
+            .contains("kfunc bpf_copy_from_user_dynptr src expects pointer in [User], got Stack")
+            || e.message.contains(
+                "kfunc 'bpf_copy_from_user_dynptr' arg3 expects pointer in [User], got Stack"
+            )),
         "unexpected error messages: {:?}",
         err
     );

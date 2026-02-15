@@ -22,6 +22,7 @@ use crate::compiler::instruction::{
     kfunc_pointer_arg_requires_kernel as kfunc_pointer_arg_requires_kernel_shared,
     kfunc_pointer_arg_requires_stack as kfunc_pointer_arg_requires_stack_shared,
     kfunc_pointer_arg_requires_stack_slot_base as kfunc_pointer_arg_requires_stack_slot_base_shared,
+    kfunc_pointer_arg_requires_user as kfunc_pointer_arg_requires_user_shared,
     kfunc_pointer_arg_size_from_scalar as kfunc_pointer_arg_size_from_scalar_shared,
     kfunc_release_ref_arg_index, kfunc_release_ref_kind,
     kfunc_scalar_arg_requires_known_const as kfunc_scalar_arg_requires_known_const_shared,

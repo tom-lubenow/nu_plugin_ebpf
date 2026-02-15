@@ -1614,6 +1614,32 @@ fn test_kfunc_pointer_arg_requires_kernel_mappings() {
 }
 
 #[test]
+fn test_kfunc_pointer_arg_requires_user_mappings() {
+    assert!(kfunc_pointer_arg_requires_user("bpf_copy_from_user_str", 2));
+    assert!(kfunc_pointer_arg_requires_user(
+        "bpf_copy_from_user_task_str",
+        2
+    ));
+    assert!(kfunc_pointer_arg_requires_user(
+        "bpf_copy_from_user_dynptr",
+        3
+    ));
+    assert!(kfunc_pointer_arg_requires_user(
+        "bpf_copy_from_user_task_dynptr",
+        3
+    ));
+    assert!(kfunc_pointer_arg_requires_user(
+        "bpf_copy_from_user_task_str_dynptr",
+        3
+    ));
+    assert!(!kfunc_pointer_arg_requires_user(
+        "bpf_copy_from_user_str",
+        0
+    ));
+    assert!(!kfunc_pointer_arg_requires_user("bpf_task_release", 0));
+}
+
+#[test]
 fn test_kfunc_pointer_arg_requires_stack_mappings() {
     assert!(kfunc_pointer_arg_requires_stack("bpf_local_irq_save", 0));
     assert!(kfunc_pointer_arg_requires_stack("bpf_local_irq_restore", 0));
