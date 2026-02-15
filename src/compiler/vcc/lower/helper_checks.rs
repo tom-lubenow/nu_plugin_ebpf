@@ -227,6 +227,10 @@ impl<'a> VccLowerer<'a> {
         kfunc_scalar_arg_requires_known_const_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_scalar_arg_requires_positive(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_scalar_arg_requires_positive_shared(kfunc, arg_idx)
+    }
+
     pub(super) fn kfunc_pointer_arg_expected_ref_kind(
         kfunc: &str,
         arg_idx: usize,
@@ -795,10 +799,10 @@ impl<'a> VccLowerer<'a> {
     ) -> Result<(), VccError> {
         let semantics = kfunc_semantics(kfunc);
         let mut positive_size_bounds: [Option<usize>; 5] = [None; 5];
-        for size_arg in semantics.positive_size_args {
-            if let Some(arg) = args.get(*size_arg) {
-                positive_size_bounds[*size_arg] =
-                    self.kfunc_positive_size_upper_bound(kfunc, *size_arg, *arg, out)?;
+        for (arg_idx, arg) in args.iter().enumerate() {
+            if Self::kfunc_scalar_arg_requires_positive(kfunc, arg_idx) {
+                positive_size_bounds[arg_idx] =
+                    self.kfunc_positive_size_upper_bound(kfunc, arg_idx, *arg, out)?;
             }
         }
 

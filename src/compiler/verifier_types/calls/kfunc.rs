@@ -223,10 +223,10 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
 ) {
     let semantics = kfunc_semantics(kfunc);
     let mut positive_size_bounds: [Option<usize>; 5] = [None; 5];
-    for size_arg in semantics.positive_size_args {
-        if let Some(value) = args.get(*size_arg) {
-            positive_size_bounds[*size_arg] =
-                kfunc_positive_size_upper_bound(kfunc, *size_arg, *value, state, errors);
+    for (arg_idx, value) in args.iter().enumerate() {
+        if kfunc_scalar_arg_requires_positive(kfunc, arg_idx) {
+            positive_size_bounds[arg_idx] =
+                kfunc_positive_size_upper_bound(kfunc, arg_idx, *value, state, errors);
         }
     }
 
@@ -334,6 +334,13 @@ pub(in crate::compiler::verifier_types) fn kfunc_scalar_arg_requires_known_const
     arg_idx: usize,
 ) -> bool {
     kfunc_scalar_arg_requires_known_const_shared(kfunc, arg_idx)
+}
+
+pub(in crate::compiler::verifier_types) fn kfunc_scalar_arg_requires_positive(
+    kfunc: &str,
+    arg_idx: usize,
+) -> bool {
+    kfunc_scalar_arg_requires_positive_shared(kfunc, arg_idx)
 }
 
 pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_expected_ref_kind(

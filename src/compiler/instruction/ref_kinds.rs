@@ -741,3 +741,8 @@ pub fn kfunc_scalar_arg_requires_known_const(kfunc: &str, arg_idx: usize) -> boo
         ("bpf_dynptr_slice", 3) | ("bpf_dynptr_slice_rdwr", 3)
     ) || KernelBtf::get().kfunc_scalar_arg_requires_known_const(kfunc, arg_idx)
 }
+
+pub fn kfunc_scalar_arg_requires_positive(kfunc: &str, arg_idx: usize) -> bool {
+    kfunc_semantics(kfunc).positive_size_args.contains(&arg_idx)
+        || KernelBtf::get().kfunc_scalar_arg_requires_positive(kfunc, arg_idx)
+}

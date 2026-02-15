@@ -62,6 +62,10 @@ impl<'a> TypeInference<'a> {
         kfunc_scalar_arg_requires_known_const_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_scalar_arg_requires_positive(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_scalar_arg_requires_positive_shared(kfunc, arg_idx)
+    }
+
     pub(super) fn helper_pointer_arg_allows_const_zero(helper_id: u32, arg_idx: usize) -> bool {
         matches!(
             (BpfHelper::from_u32(helper_id), arg_idx),
@@ -293,11 +297,11 @@ impl<'a> TypeInference<'a> {
     ) {
         let semantics = kfunc_semantics(kfunc);
         let mut positive_size_bounds: [Option<usize>; 5] = [None; 5];
-        for size_arg in semantics.positive_size_args {
-            if let Some(vreg) = args.get(*size_arg) {
-                positive_size_bounds[*size_arg] = self.kfunc_positive_size_upper_bound(
+        for (arg_idx, vreg) in args.iter().enumerate() {
+            if Self::kfunc_scalar_arg_requires_positive(kfunc, arg_idx) {
+                positive_size_bounds[arg_idx] = self.kfunc_positive_size_upper_bound(
                     kfunc,
-                    *size_arg,
+                    arg_idx,
                     *vreg,
                     value_ranges,
                     errors,

@@ -1093,6 +1093,14 @@ fn test_kfunc_scalar_arg_requires_known_const_static_mapping() {
 }
 
 #[test]
+fn test_kfunc_scalar_arg_requires_positive_static_mapping() {
+    assert!(kfunc_scalar_arg_requires_positive("bpf_path_d_path", 2));
+    assert!(kfunc_scalar_arg_requires_positive("scx_bpf_events", 1));
+    assert!(kfunc_scalar_arg_requires_positive("bpf_dynptr_slice", 3));
+    assert!(!kfunc_scalar_arg_requires_positive("bpf_dynptr_slice", 2));
+}
+
+#[test]
 fn test_kfunc_signature_scx_dsq_insert() {
     let sig = KfuncSignature::for_name("scx_bpf_dsq_insert")
         .expect("expected scx_bpf_dsq_insert kfunc signature");

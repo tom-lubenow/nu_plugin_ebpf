@@ -127,6 +127,8 @@ pub struct KernelBtf {
     kfunc_nullable_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to scalar argument indices that must be known constants.
     kfunc_known_const_scalar_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
+    /// Cached mapping of kfunc names to scalar argument indices that must be positive (> 0).
+    kfunc_positive_scalar_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to inferred coarse signatures.
     kfunc_signature_hint_cache: RwLock<Option<HashMap<String, KfuncSignatureHint>>>,
 }
@@ -153,6 +155,7 @@ impl KernelBtf {
                 pt_regs_cache: RwLock::new(None),
                 kfunc_nullable_arg_cache: RwLock::new(None),
                 kfunc_known_const_scalar_arg_cache: RwLock::new(None),
+                kfunc_positive_scalar_arg_cache: RwLock::new(None),
                 kfunc_signature_hint_cache: RwLock::new(None),
             }
         })
@@ -414,6 +417,34 @@ impl KernelBtf {
         Ok(map)
     }
 
+    fn load_kfunc_positive_scalar_arg_map(&self) -> Result<HashMap<String, Vec<usize>>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let mut map: HashMap<String, Vec<usize>> = HashMap::new();
+        for ty in btf.get_types() {
+            if !ty.is_function || !Self::is_bpf_kfunc(ty) {
+                continue;
+            }
+            let Some(name) = ty.name.as_ref() else {
+                continue;
+            };
+            let Type::FunctionProto(proto) = &ty.base_type else {
+                continue;
+            };
+            let mut positive_args = Vec::new();
+            for (arg_idx, param) in proto.params.iter().enumerate() {
+                if param.name.as_deref().is_some_and(|param_name| {
+                    param_name.ends_with("__sz") || param_name.ends_with("__szk")
+                }) {
+                    positive_args.push(arg_idx);
+                }
+            }
+            if !positive_args.is_empty() {
+                map.insert(name.clone(), positive_args);
+            }
+        }
+        Ok(map)
+    }
+
     /// Returns a best-effort coarse kfunc signature inferred from local kernel BTF.
     pub fn kfunc_signature_hint(&self, kfunc_name: &str) -> Option<KfuncSignatureHint> {
         {
@@ -460,6 +491,34 @@ impl KernelBtf {
         }
 
         is_known_const
+    }
+
+    /// Returns whether `kfunc_name` scalar argument `arg_idx` must be positive.
+    ///
+    /// This is inferred from kernel BTF parameter-name conventions `*__sz` / `*__szk`.
+    pub fn kfunc_scalar_arg_requires_positive(&self, kfunc_name: &str, arg_idx: usize) -> bool {
+        {
+            let cache = self.kfunc_positive_scalar_arg_cache.read().unwrap();
+            if let Some(map) = cache.as_ref() {
+                return map
+                    .get(kfunc_name)
+                    .is_some_and(|positive_args| positive_args.contains(&arg_idx));
+            }
+        }
+
+        let map = self
+            .load_kfunc_positive_scalar_arg_map()
+            .unwrap_or_default();
+        let is_positive = map
+            .get(kfunc_name)
+            .is_some_and(|positive_args| positive_args.contains(&arg_idx));
+
+        let mut cache = self.kfunc_positive_scalar_arg_cache.write().unwrap();
+        if cache.is_none() {
+            *cache = Some(map);
+        }
+
+        is_positive
     }
 
     /// Load the list of available kernel functions (lazy, cached)
@@ -1020,6 +1079,7 @@ mod tests {
             pt_regs_cache: RwLock::new(None),
             kfunc_nullable_arg_cache: RwLock::new(None),
             kfunc_known_const_scalar_arg_cache: RwLock::new(None),
+            kfunc_positive_scalar_arg_cache: RwLock::new(None),
             kfunc_signature_hint_cache: RwLock::new(None),
         }
     }
@@ -1162,6 +1222,13 @@ format:
         let service = make_test_service();
         assert!(!service.kfunc_scalar_arg_requires_known_const("definitely_not_a_kfunc", 0));
         assert!(!service.kfunc_scalar_arg_requires_known_const("definitely_not_a_kfunc", 3));
+    }
+
+    #[test]
+    fn test_kfunc_positive_scalar_arg_query_graceful_without_btf() {
+        let service = make_test_service();
+        assert!(!service.kfunc_scalar_arg_requires_positive("definitely_not_a_kfunc", 0));
+        assert!(!service.kfunc_scalar_arg_requires_positive("definitely_not_a_kfunc", 3));
     }
 
     fn push_u16(buf: &mut Vec<u8>, value: u16, endianness: BtfEndianness) {

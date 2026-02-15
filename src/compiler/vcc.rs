@@ -24,6 +24,7 @@ use crate::compiler::instruction::{
     kfunc_pointer_arg_requires_stack_slot_base as kfunc_pointer_arg_requires_stack_slot_base_shared,
     kfunc_release_ref_arg_index, kfunc_release_ref_kind,
     kfunc_scalar_arg_requires_known_const as kfunc_scalar_arg_requires_known_const_shared,
+    kfunc_scalar_arg_requires_positive as kfunc_scalar_arg_requires_positive_shared,
     kfunc_semantics,
 };
 use crate::compiler::mir::{
