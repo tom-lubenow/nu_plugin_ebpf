@@ -1212,6 +1212,14 @@ fn test_kfunc_pointer_arg_ref_kind_mappings() {
         Some(KfuncRefKind::Task)
     );
     assert_eq!(
+        kfunc_pointer_arg_ref_kind("scx_bpf_dsq_move_set_slice", 0),
+        Some(KfuncRefKind::Task)
+    );
+    assert_eq!(
+        kfunc_pointer_arg_ref_kind("scx_bpf_dsq_move_set_vtime", 0),
+        Some(KfuncRefKind::Task)
+    );
+    assert_eq!(
         kfunc_pointer_arg_ref_kind("scx_bpf_pick_idle_cpu", 0),
         Some(KfuncRefKind::Cpumask)
     );
@@ -1261,6 +1269,14 @@ fn test_kfunc_pointer_arg_requires_kernel_mappings() {
     assert!(kfunc_pointer_arg_requires_kernel(
         "bpf_iter_css_task_new",
         1
+    ));
+    assert!(kfunc_pointer_arg_requires_kernel(
+        "scx_bpf_dsq_move_set_slice",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_kernel(
+        "scx_bpf_dsq_move_set_vtime",
+        0
     ));
     assert!(!kfunc_pointer_arg_requires_kernel(
         "bpf_iter_task_vma_new",

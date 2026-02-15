@@ -246,6 +246,8 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
             | ("scx_bpf_dsq_insert", 0)
             | ("scx_bpf_dsq_insert_vtime", 0)
             | ("scx_bpf_dsq_move", 1)
+            | ("scx_bpf_dsq_move_set_slice", 0)
+            | ("scx_bpf_dsq_move_set_vtime", 0)
             | ("scx_bpf_dsq_move_vtime", 1)
             | ("scx_bpf_select_cpu_and", 0)
             | ("scx_bpf_select_cpu_dfl", 0)
