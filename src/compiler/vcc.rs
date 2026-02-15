@@ -16,7 +16,9 @@ use crate::compiler::cfg::CFG;
 use crate::compiler::instruction::{
     BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncRefKind,
     KfuncRetKind, KfuncSignature, helper_acquire_ref_kind, helper_pointer_arg_ref_kind,
-    helper_release_ref_kind, kfunc_acquire_ref_kind, kfunc_pointer_arg_ref_kind,
+    helper_release_ref_kind, kfunc_acquire_ref_kind,
+    kfunc_pointer_arg_allows_const_zero as kfunc_pointer_arg_allows_const_zero_shared,
+    kfunc_pointer_arg_ref_kind,
     kfunc_pointer_arg_requires_kernel as kfunc_pointer_arg_requires_kernel_shared,
     kfunc_pointer_arg_requires_stack as kfunc_pointer_arg_requires_stack_shared,
     kfunc_pointer_arg_requires_stack_slot_base as kfunc_pointer_arg_requires_stack_slot_base_shared,
@@ -201,6 +203,11 @@ pub enum VccInst {
     },
     AssertPositive {
         value: VccValue,
+        message: String,
+    },
+    AssertConstEq {
+        value: VccValue,
+        expected: i64,
         message: String,
     },
     AssertPtrAccess {

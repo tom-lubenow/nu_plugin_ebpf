@@ -185,6 +185,7 @@ Last updated: 2026-02-15.
   - Added shared kfunc pointer/size semantics metadata consumed by type inference, verifier_types, and VCC, with initial by-reference out-arg coverage for `bpf_path_d_path` (`arg1` buffer must be stack/map and `arg2` size must be positive).
   - Extended shared by-reference kfunc semantics coverage to `scx_bpf_events`, requiring stack/map destination buffers and positive size arguments across type inference, verifier_types, and VCC.
   - Extended shared by-reference kfunc semantics coverage to SCX bstr emitters (`scx_bpf_dump_bstr`, `scx_bpf_error_bstr`, `scx_bpf_exit_bstr`), enforcing stack/map fmt/data pointer spaces plus positive variadic data-size arguments across type inference, verifier_types, and VCC.
+  - Added shared nullable-pointer kfunc argument support for scalar const-zero at selected arg sites (`bpf_crypto_encrypt arg3`, `bpf_crypto_decrypt arg3`), with type inference, verifier_types, and VCC parity checks that still reject non-zero scalars.
   - Remaining: expand signature coverage and pointer/ref-lifetime semantics from richer BTF metadata.
   - Remaining: model richer by-reference out-parameter semantics (aliasing/copy semantics and typed stack object identity) for additional kfunc families beyond current lock/irq patterns.
 

@@ -54,6 +54,10 @@ impl<'a> TypeInference<'a> {
         kfunc_pointer_arg_requires_stack_slot_base_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_pointer_arg_allows_const_zero(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_pointer_arg_allows_const_zero_shared(kfunc, arg_idx)
+    }
+
     pub(super) fn helper_pointer_arg_allows_const_zero(helper_id: u32, arg_idx: usize) -> bool {
         matches!(
             (BpfHelper::from_u32(helper_id), arg_idx),
@@ -301,6 +305,15 @@ impl<'a> TypeInference<'a> {
             let Some(vreg) = args.get(rule.arg_idx) else {
                 continue;
             };
+            if Self::kfunc_pointer_arg_allows_const_zero(kfunc, rule.arg_idx)
+                && !matches!(self.mir_type_for_vreg(*vreg, types), MirType::Ptr { .. })
+                && matches!(
+                    self.value_range_for(&MirValue::VReg(*vreg), value_ranges),
+                    ValueRange::Known { min: 0, max: 0 }
+                )
+            {
+                continue;
+            }
             let size_from_arg = rule.size_from_arg;
             let access_size = match (rule.fixed_size, rule.size_from_arg) {
                 (Some(size), _) => Some(size),

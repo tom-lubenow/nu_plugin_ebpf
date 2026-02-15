@@ -18,87 +18,99 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
                 )));
             }
         }
-        KfuncArgKind::Pointer => match ty {
-            VerifierType::Ptr {
-                space,
-                bounds,
-                nullability,
-                kfunc_ref,
-                ..
-            } => {
-                if kfunc_pointer_arg_requires_stack(kfunc, arg_idx) {
-                    if !bounds.is_some_and(|ptr_bounds| {
-                        matches!(ptr_bounds.origin(), PtrOrigin::Stack(_))
-                    }) {
-                        errors.push(VerifierTypeError::new(format!(
-                            "kfunc '{}' arg{} expects stack slot pointer",
-                            kfunc, arg_idx
-                        )));
+        KfuncArgKind::Pointer => {
+            if kfunc_pointer_arg_allows_const_zero(kfunc, arg_idx)
+                && matches!(ty, VerifierType::Scalar | VerifierType::Bool)
+                && matches!(
+                    value_range(&MirValue::VReg(arg), state),
+                    ValueRange::Known { min: 0, max: 0 }
+                )
+            {
+                return;
+            }
+            match ty {
+                VerifierType::Ptr {
+                    space,
+                    bounds,
+                    nullability,
+                    kfunc_ref,
+                    ..
+                } => {
+                    if kfunc_pointer_arg_requires_stack(kfunc, arg_idx) {
+                        if !bounds.is_some_and(|ptr_bounds| {
+                            matches!(ptr_bounds.origin(), PtrOrigin::Stack(_))
+                        }) {
+                            errors.push(VerifierTypeError::new(format!(
+                                "kfunc '{}' arg{} expects stack slot pointer",
+                                kfunc, arg_idx
+                            )));
+                        }
+                        if bounds.is_some_and(|ptr_bounds| {
+                            matches!(ptr_bounds.origin(), PtrOrigin::Stack(_))
+                                && (ptr_bounds.min() != 0 || ptr_bounds.max() != 0)
+                        }) {
+                            errors.push(VerifierTypeError::new(format!(
+                                "kfunc '{}' arg{} expects stack slot base pointer",
+                                kfunc, arg_idx
+                            )));
+                        }
+                        if let Some(source) = state.ctx_field_source(arg) {
+                            errors.push(VerifierTypeError::new(format!(
+                                "kfunc '{}' arg{} expects stack pointer from stack slot, got context field {:?}",
+                                kfunc, arg_idx, source
+                            )));
+                        }
+                        if space != AddressSpace::Stack {
+                            errors.push(VerifierTypeError::new(format!(
+                                "kfunc '{}' arg{} expects stack pointer, got {:?}",
+                                kfunc, arg_idx, space
+                            )));
+                        }
                     }
-                    if bounds.is_some_and(|ptr_bounds| {
-                        matches!(ptr_bounds.origin(), PtrOrigin::Stack(_))
-                            && (ptr_bounds.min() != 0 || ptr_bounds.max() != 0)
-                    }) {
+                    if kfunc_pointer_arg_requires_kernel(kfunc, arg_idx)
+                        && space != AddressSpace::Kernel
+                    {
                         errors.push(VerifierTypeError::new(format!(
-                            "kfunc '{}' arg{} expects stack slot base pointer",
-                            kfunc, arg_idx
-                        )));
-                    }
-                    if let Some(source) = state.ctx_field_source(arg) {
-                        errors.push(VerifierTypeError::new(format!(
-                            "kfunc '{}' arg{} expects stack pointer from stack slot, got context field {:?}",
-                            kfunc, arg_idx, source
-                        )));
-                    }
-                    if space != AddressSpace::Stack {
-                        errors.push(VerifierTypeError::new(format!(
-                            "kfunc '{}' arg{} expects stack pointer, got {:?}",
+                            "kfunc '{}' arg{} expects kernel pointer, got {:?}",
                             kfunc, arg_idx, space
                         )));
                     }
-                }
-                if kfunc_pointer_arg_requires_kernel(kfunc, arg_idx)
-                    && space != AddressSpace::Kernel
-                {
-                    errors.push(VerifierTypeError::new(format!(
-                        "kfunc '{}' arg{} expects kernel pointer, got {:?}",
-                        kfunc, arg_idx, space
-                    )));
-                }
-                if let Some(expected_kind) = kfunc_pointer_arg_expected_ref_kind(kfunc, arg_idx) {
-                    if let Some(ref_id) = kfunc_ref {
-                        if !state.is_live_kfunc_ref(ref_id) {
-                            errors.push(VerifierTypeError::new(format!(
-                                "kfunc '{}' arg{} reference already released",
-                                kfunc, arg_idx
-                            )));
-                            return;
-                        }
-                        if !matches!(nullability, Nullability::NonNull) {
-                            errors.push(VerifierTypeError::new(format!(
-                                "kfunc '{}' arg{} may dereference null pointer v{} (add a null check)",
-                                kfunc, arg_idx, arg.0
-                            )));
-                        }
-                        let actual_kind = state.kfunc_ref_kind(ref_id);
-                        if actual_kind != Some(expected_kind) {
-                            let expected = expected_kind.label();
-                            let actual = actual_kind.map(|k| k.label()).unwrap_or("unknown");
-                            errors.push(VerifierTypeError::new(format!(
-                                "kfunc '{}' arg{} expects {} reference, got {} reference",
-                                kfunc, arg_idx, expected, actual
-                            )));
+                    if let Some(expected_kind) = kfunc_pointer_arg_expected_ref_kind(kfunc, arg_idx)
+                    {
+                        if let Some(ref_id) = kfunc_ref {
+                            if !state.is_live_kfunc_ref(ref_id) {
+                                errors.push(VerifierTypeError::new(format!(
+                                    "kfunc '{}' arg{} reference already released",
+                                    kfunc, arg_idx
+                                )));
+                                return;
+                            }
+                            if !matches!(nullability, Nullability::NonNull) {
+                                errors.push(VerifierTypeError::new(format!(
+                                    "kfunc '{}' arg{} may dereference null pointer v{} (add a null check)",
+                                    kfunc, arg_idx, arg.0
+                                )));
+                            }
+                            let actual_kind = state.kfunc_ref_kind(ref_id);
+                            if actual_kind != Some(expected_kind) {
+                                let expected = expected_kind.label();
+                                let actual = actual_kind.map(|k| k.label()).unwrap_or("unknown");
+                                errors.push(VerifierTypeError::new(format!(
+                                    "kfunc '{}' arg{} expects {} reference, got {} reference",
+                                    kfunc, arg_idx, expected, actual
+                                )));
+                            }
                         }
                     }
                 }
+                _ => {
+                    errors.push(VerifierTypeError::new(format!(
+                        "kfunc '{}' arg{} expects pointer, got {:?}",
+                        kfunc, arg_idx, ty
+                    )));
+                }
             }
-            _ => {
-                errors.push(VerifierTypeError::new(format!(
-                    "kfunc '{}' arg{} expects pointer, got {:?}",
-                    kfunc, arg_idx, ty
-                )));
-            }
-        },
+        }
     }
 }
 
@@ -163,6 +175,15 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_ptr_arg_value(
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
+    if kfunc_pointer_arg_allows_const_zero(kfunc, arg_idx)
+        && matches!(state.get(arg), VerifierType::Scalar | VerifierType::Bool)
+        && matches!(
+            value_range(&MirValue::VReg(arg), state),
+            ValueRange::Known { min: 0, max: 0 }
+        )
+    {
+        return;
+    }
     let allowed = kfunc_allowed_spaces(allow_stack, allow_map, allow_kernel, allow_user);
     let Some(VerifierType::Ptr { space, bounds, .. }) =
         require_ptr_with_space(arg, op, allowed, state, errors)
@@ -256,6 +277,13 @@ pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_requires_stack(
     arg_idx: usize,
 ) -> bool {
     kfunc_pointer_arg_requires_stack_shared(kfunc, arg_idx)
+}
+
+pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_allows_const_zero(
+    kfunc: &str,
+    arg_idx: usize,
+) -> bool {
+    kfunc_pointer_arg_allows_const_zero_shared(kfunc, arg_idx)
 }
 
 pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_requires_stack_slot_base(

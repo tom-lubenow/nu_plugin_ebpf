@@ -85,6 +85,19 @@ impl<'a> VccLowerer<'a> {
             match sig.arg_kind(idx) {
                 KfuncArgKind::Scalar => self.assert_scalar_reg(*arg, out),
                 KfuncArgKind::Pointer => {
+                    if !self.is_pointer_reg(*arg)
+                        && Self::kfunc_pointer_arg_allows_const_zero(kfunc, idx)
+                    {
+                        out.push(VccInst::AssertConstEq {
+                            value: VccValue::Reg(VccReg(arg.0)),
+                            expected: 0,
+                            message: format!(
+                                "kfunc '{}' arg{} expects null (0) or pointer value",
+                                kfunc, idx
+                            ),
+                        });
+                        continue;
+                    }
                     self.require_pointer_reg(*arg)?;
                     self.verify_kfunc_ptr_arg_space(kfunc, idx, *arg)?;
                     if Self::kfunc_pointer_arg_requires_stack(kfunc, idx) {
@@ -206,8 +219,24 @@ impl<'a> VccLowerer<'a> {
         kfunc_pointer_arg_requires_stack_slot_base_shared(kfunc, arg_idx)
     }
 
-    pub(super) fn kfunc_pointer_arg_expected_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRefKind> {
+    pub(super) fn kfunc_pointer_arg_allows_const_zero(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_pointer_arg_allows_const_zero_shared(kfunc, arg_idx)
+    }
+
+    pub(super) fn kfunc_pointer_arg_expected_ref_kind(
+        kfunc: &str,
+        arg_idx: usize,
+    ) -> Option<KfuncRefKind> {
         kfunc_pointer_arg_ref_kind(kfunc, arg_idx)
+    }
+
+    pub(super) fn is_pointer_reg(&self, reg: VReg) -> bool {
+        let ty = self
+            .types
+            .get(&reg)
+            .map(vcc_type_from_mir)
+            .unwrap_or(VccValueType::Unknown);
+        ty.class() == VccTypeClass::Ptr || self.ptr_regs.contains_key(&VccReg(reg.0))
     }
 
     pub(super) fn helper_pointer_arg_expected_ref_kind(
@@ -696,6 +725,9 @@ impl<'a> VccLowerer<'a> {
         dynamic_size: Option<VReg>,
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
+        if !self.is_pointer_reg(arg) && Self::kfunc_pointer_arg_allows_const_zero(kfunc, arg_idx) {
+            return Ok(());
+        }
         let arg_value = MirValue::VReg(arg);
         let ptr = self.value_ptr_info(&arg_value).ok_or_else(|| {
             VccError::new(

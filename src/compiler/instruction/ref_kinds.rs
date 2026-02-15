@@ -556,3 +556,10 @@ pub fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -
             | ("scx_bpf_exit_bstr", 2)
     )
 }
+
+pub fn kfunc_pointer_arg_allows_const_zero(kfunc: &str, arg_idx: usize) -> bool {
+    matches!(
+        (kfunc, arg_idx),
+        ("bpf_crypto_encrypt", 3) | ("bpf_crypto_decrypt", 3)
+    )
+}

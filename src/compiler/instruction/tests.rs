@@ -1639,6 +1639,21 @@ fn test_kfunc_pointer_arg_requires_stack_slot_base_mappings() {
 }
 
 #[test]
+fn test_kfunc_pointer_arg_allows_const_zero_mappings() {
+    assert!(kfunc_pointer_arg_allows_const_zero("bpf_crypto_encrypt", 3));
+    assert!(kfunc_pointer_arg_allows_const_zero("bpf_crypto_decrypt", 3));
+    assert!(!kfunc_pointer_arg_allows_const_zero(
+        "bpf_crypto_encrypt",
+        2
+    ));
+    assert!(!kfunc_pointer_arg_allows_const_zero(
+        "bpf_crypto_decrypt",
+        2
+    ));
+    assert!(!kfunc_pointer_arg_allows_const_zero("bpf_path_d_path", 1));
+}
+
+#[test]
 fn test_kfunc_semantics_path_d_path_buffer_rule() {
     let semantics = kfunc_semantics("bpf_path_d_path");
     assert_eq!(semantics.positive_size_args, &[2]);
