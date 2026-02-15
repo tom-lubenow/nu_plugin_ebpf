@@ -519,6 +519,57 @@ fn test_kfunc_path_d_path_requires_positive_size() {
 }
 
 #[test]
+fn test_kfunc_path_d_path_requires_bounded_size_for_stack_buffer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 2;
+
+    let path_ptr = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let buf_ptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: buf_ptr,
+        src: MirValue::StackSlot(buf_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_path_d_path".to_string(),
+        btf_id: None,
+        args: vec![path_ptr, buf_ptr, size],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        path_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(size, MirType::I64);
+    types.insert(
+        buf_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected path_d_path bounded-size error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg2 must have bounded upper range")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_kfunc_path_d_path_accepts_stack_buffer_rule() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
@@ -665,6 +716,49 @@ fn test_kfunc_scx_events_requires_positive_size() {
         err.iter().any(|e| e
             .message
             .contains("kfunc 'scx_bpf_events' arg1 must be > 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_scx_events_requires_bounded_size_for_stack_buffer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let size = func.alloc_vreg();
+    let events_ptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let events_slot = func.alloc_stack_slot(64, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: events_ptr,
+        src: MirValue::StackSlot(events_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_events".to_string(),
+        btf_id: None,
+        args: vec![events_ptr, size],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(size, MirType::I64);
+    types.insert(
+        events_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected scx_bpf_events bounded-size error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg1 must have bounded upper range")),
         "unexpected errors: {:?}",
         err
     );

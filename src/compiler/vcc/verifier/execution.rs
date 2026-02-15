@@ -134,7 +134,7 @@ impl VccVerifier {
                         ));
                         return;
                     }
-                    if let (VccAddrSpace::Stack(_), Some(bounds)) =
+                    if let (VccAddrSpace::Stack(_) | VccAddrSpace::MapValue, Some(bounds)) =
                         (ptr_info.space, ptr_info.bounds)
                     {
                         if bounds.shifted_with_size(0, size_range.max).is_none() {
@@ -144,6 +144,12 @@ impl VccVerifier {
                             ));
                         }
                     }
+                } else if matches!(ptr_info.space, VccAddrSpace::Stack(_) | VccAddrSpace::MapValue)
+                {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!("{op} size must have bounded upper range"),
+                    ));
                 }
             }
             VccInst::AssertStackSlotBase { ptr, op } => {

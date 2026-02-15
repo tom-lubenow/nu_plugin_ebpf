@@ -297,6 +297,7 @@ impl<'a> TypeInference<'a> {
             let Some(vreg) = args.get(rule.arg_idx) else {
                 continue;
             };
+            let size_from_arg = rule.size_from_arg;
             let access_size = match (rule.fixed_size, rule.size_from_arg) {
                 (Some(size), _) => Some(size),
                 (None, Some(size_arg)) => positive_size_bounds[size_arg],
@@ -325,6 +326,15 @@ impl<'a> TypeInference<'a> {
                             rule.op, allowed, address_space
                         )));
                         continue;
+                    }
+                    if let Some(size_arg) = size_from_arg
+                        && access_size.is_none()
+                        && matches!(address_space, AddressSpace::Stack | AddressSpace::Map)
+                    {
+                        errors.push(TypeError::new(format!(
+                            "kfunc '{}' arg{} must have bounded upper range for {}",
+                            kfunc, size_arg, rule.op
+                        )));
                     }
                     if let Some(size) = access_size {
                         match address_space {

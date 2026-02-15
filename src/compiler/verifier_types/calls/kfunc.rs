@@ -190,11 +190,27 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
         let Some(arg) = args.get(rule.arg_idx) else {
             continue;
         };
+        let size_from_arg = rule.size_from_arg;
         let access_size = match (rule.fixed_size, rule.size_from_arg) {
             (Some(size), _) => Some(size),
             (None, Some(size_arg)) => positive_size_bounds[size_arg],
             (None, None) => None,
         };
+        if let Some(size_arg) = size_from_arg
+            && access_size.is_none()
+            && matches!(
+                state.get(*arg),
+                VerifierType::Ptr {
+                    space: AddressSpace::Stack | AddressSpace::Map,
+                    ..
+                }
+            )
+        {
+            errors.push(VerifierTypeError::new(format!(
+                "kfunc '{}' arg{} must have bounded upper range for {}",
+                kfunc, size_arg, rule.op
+            )));
+        }
         check_kfunc_ptr_arg_value(
             *arg,
             rule.op,
