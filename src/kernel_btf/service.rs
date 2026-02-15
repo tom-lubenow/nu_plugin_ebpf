@@ -398,6 +398,10 @@ impl KernelBtf {
             || lower.starts_with("out_")
             || lower.ends_with("_out")
             || lower.ends_with("__out")
+            || lower == "dst"
+            || lower.starts_with("dst_")
+            || lower.ends_with("_dst")
+            || lower.ends_with("__dst")
             || lower == "err"
             || lower.ends_with("_err")
             || lower.ends_with("__err")
@@ -405,11 +409,15 @@ impl KernelBtf {
 
     fn is_probable_release_kfunc_name(name: &str) -> bool {
         name.contains("_release")
+            || name.contains("_destroy")
+            || name.contains("_unref")
             || name.starts_with("bpf_put_")
             || name.contains("_put_")
             || name.ends_with("_put")
             || name.contains("_drop")
             || name.contains("_free")
+            || name.contains("_dec_")
+            || name.ends_with("_dec")
     }
 
     fn load_kfunc_user_pointer_arg_map(&self) -> Result<HashMap<String, Vec<usize>>, BtfError> {
@@ -2373,9 +2381,13 @@ format:
         assert!(KernelBtf::is_probable_release_kfunc_name("foo_put_bar"));
         assert!(KernelBtf::is_probable_release_kfunc_name("foo_obj_drop"));
         assert!(KernelBtf::is_probable_release_kfunc_name("foo_obj_free"));
+        assert!(KernelBtf::is_probable_release_kfunc_name("foo_obj_destroy"));
+        assert!(KernelBtf::is_probable_release_kfunc_name("foo_obj_unref"));
+        assert!(KernelBtf::is_probable_release_kfunc_name("foo_obj_dec"));
         assert!(!KernelBtf::is_probable_release_kfunc_name(
             "bpf_task_acquire"
         ));
+        assert!(!KernelBtf::is_probable_release_kfunc_name("foo_obj_inc"));
     }
 
     #[test]
@@ -2383,6 +2395,9 @@ format:
         assert!(KernelBtf::is_probable_out_param_name("out"));
         assert!(KernelBtf::is_probable_out_param_name("out_task"));
         assert!(KernelBtf::is_probable_out_param_name("task_out"));
+        assert!(KernelBtf::is_probable_out_param_name("dst"));
+        assert!(KernelBtf::is_probable_out_param_name("dst_ctx"));
+        assert!(KernelBtf::is_probable_out_param_name("ctx_dst"));
         assert!(KernelBtf::is_probable_out_param_name("err"));
         assert!(KernelBtf::is_probable_out_param_name("user_err"));
         assert!(!KernelBtf::is_probable_out_param_name("task"));

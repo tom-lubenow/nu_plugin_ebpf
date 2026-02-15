@@ -520,11 +520,15 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
         _ => {
             if KfuncSignature::for_name(kfunc).is_none()
                 && (kfunc.contains("_release")
+                    || kfunc.contains("_destroy")
+                    || kfunc.contains("_unref")
                     || kfunc.starts_with("bpf_put_")
                     || kfunc.contains("_put_")
                     || kfunc.ends_with("_put")
                     || kfunc.contains("_drop")
-                    || kfunc.contains("_free"))
+                    || kfunc.contains("_free")
+                    || kfunc.contains("_dec_")
+                    || kfunc.ends_with("_dec"))
             {
                 let release_arg_idx = KernelBtf::get()
                     .kfunc_release_ref_arg_index(kfunc)
