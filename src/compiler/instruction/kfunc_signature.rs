@@ -97,6 +97,12 @@ impl KfuncSignature {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: KfuncRetKind::Void,
             }),
+            "bpf_crypto_encrypt" | "bpf_crypto_decrypt" => Some(Self {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, P, P, P, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
             "bpf_path_d_path" => Some(Self {
                 min_args: 3,
                 max_args: 3,

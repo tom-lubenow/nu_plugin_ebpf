@@ -301,7 +301,10 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
     }
     if matches!(
         (kfunc, arg_idx),
-        ("bpf_crypto_ctx_acquire", 0) | ("bpf_crypto_ctx_release", 0)
+        ("bpf_crypto_ctx_acquire", 0)
+            | ("bpf_crypto_ctx_release", 0)
+            | ("bpf_crypto_encrypt", 0)
+            | ("bpf_crypto_decrypt", 0)
     ) {
         return Some(KfuncRefKind::CryptoCtx);
     }

@@ -495,6 +495,26 @@ fn test_kfunc_signature_crypto_ctx_kfuncs() {
     assert_eq!(sig.max_args, 1);
     assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
     assert_eq!(sig.ret_kind, KfuncRetKind::Void);
+
+    let sig = KfuncSignature::for_name("bpf_crypto_encrypt")
+        .expect("expected bpf_crypto_encrypt kfunc signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(3), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
+    let sig = KfuncSignature::for_name("bpf_crypto_decrypt")
+        .expect("expected bpf_crypto_decrypt kfunc signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(3), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
 }
 
 #[test]
@@ -1226,6 +1246,14 @@ fn test_kfunc_pointer_arg_ref_kind_mappings() {
         Some(KfuncRefKind::CryptoCtx)
     );
     assert_eq!(
+        kfunc_pointer_arg_ref_kind("bpf_crypto_encrypt", 0),
+        Some(KfuncRefKind::CryptoCtx)
+    );
+    assert_eq!(
+        kfunc_pointer_arg_ref_kind("bpf_crypto_decrypt", 0),
+        Some(KfuncRefKind::CryptoCtx)
+    );
+    assert_eq!(
         kfunc_pointer_arg_ref_kind("bpf_obj_drop_impl", 0),
         Some(KfuncRefKind::Object)
     );
@@ -1324,6 +1352,7 @@ fn test_kfunc_pointer_arg_requires_kernel_mappings() {
         "bpf_crypto_ctx_release",
         0
     ));
+    assert!(kfunc_pointer_arg_requires_kernel("bpf_crypto_encrypt", 0));
     assert!(kfunc_pointer_arg_requires_kernel(
         "bpf_list_push_front_impl",
         0
