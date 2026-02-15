@@ -1606,6 +1606,88 @@ fn test_type_error_kfunc_iter_css_task_new_requires_stack_iterator_pointer() {
 }
 
 #[test]
+fn test_type_error_kfunc_iter_css_new_requires_kernel_css_pointer_arg1() {
+    let mut func = make_test_function();
+    let iter = func.alloc_vreg();
+    let css = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: css,
+        src: MirValue::VReg(iter),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_iter_css_new".to_string(),
+        btf_id: None,
+        args: vec![iter, css, flags],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected iter_css_new arg1 kernel-pointer type error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("arg1 expects kernel pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_kfunc_iter_css_task_new_requires_kernel_css_pointer_arg1() {
+    let mut func = make_test_function();
+    let iter = func.alloc_vreg();
+    let css = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: css,
+        src: MirValue::VReg(iter),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_iter_css_task_new".to_string(),
+        btf_id: None,
+        args: vec![iter, css, flags],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected iter_css_task_new arg1 kernel-pointer type error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("arg1 expects kernel pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_kfunc_iter_dmabuf_new_requires_stack_iterator_pointer() {
     let mut func = make_test_function();
     let pid = func.alloc_vreg();

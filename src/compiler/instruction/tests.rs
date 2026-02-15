@@ -1144,6 +1144,14 @@ fn test_kfunc_pointer_arg_ref_kind_mappings() {
         Some(KfuncRefKind::Cgroup)
     );
     assert_eq!(
+        kfunc_pointer_arg_ref_kind("bpf_iter_css_new", 1),
+        Some(KfuncRefKind::Cgroup)
+    );
+    assert_eq!(
+        kfunc_pointer_arg_ref_kind("bpf_iter_css_task_new", 1),
+        Some(KfuncRefKind::Cgroup)
+    );
+    assert_eq!(
         kfunc_pointer_arg_ref_kind("bpf_put_file", 0),
         Some(KfuncRefKind::File)
     );
@@ -1247,6 +1255,11 @@ fn test_kfunc_pointer_arg_requires_kernel_mappings() {
     ));
     assert!(kfunc_pointer_arg_requires_kernel(
         "bpf_iter_task_vma_new",
+        1
+    ));
+    assert!(kfunc_pointer_arg_requires_kernel("bpf_iter_css_new", 1));
+    assert!(kfunc_pointer_arg_requires_kernel(
+        "bpf_iter_css_task_new",
         1
     ));
     assert!(!kfunc_pointer_arg_requires_kernel(

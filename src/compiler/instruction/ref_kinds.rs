@@ -260,6 +260,8 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
         ("bpf_task_under_cgroup", 1)
             | ("bpf_cgroup_acquire", 0)
             | ("bpf_cgroup_ancestor", 0)
+            | ("bpf_iter_css_new", 1)
+            | ("bpf_iter_css_task_new", 1)
             | ("bpf_cgroup_release", 0)
     ) {
         return Some(KfuncRefKind::Cgroup);

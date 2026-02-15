@@ -2401,7 +2401,8 @@ fn test_kfunc_iter_css_new_requires_stack_slot_base_pointer() {
 
     let iter = func.alloc_vreg();
     let shifted_iter = func.alloc_vreg();
-    let ptr = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
     let flags = func.alloc_vreg();
     let dst = func.alloc_vreg();
     let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
@@ -2420,14 +2421,20 @@ fn test_kfunc_iter_css_new_requires_stack_slot_base_pointer() {
         src: MirValue::Const(0),
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: ptr,
-        src: MirValue::VReg(iter),
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
     });
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
         dst,
         kfunc: "bpf_iter_css_new".to_string(),
         btf_id: None,
-        args: vec![shifted_iter, ptr, flags],
+        args: vec![shifted_iter, task, flags],
     });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
@@ -2446,11 +2453,12 @@ fn test_kfunc_iter_css_new_requires_stack_slot_base_pointer() {
             address_space: AddressSpace::Stack,
         },
     );
+    types.insert(pid, MirType::I64);
     types.insert(
-        ptr,
+        task,
         MirType::Ptr {
             pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Stack,
+            address_space: AddressSpace::Kernel,
         },
     );
     types.insert(flags, MirType::I64);
@@ -2530,7 +2538,8 @@ fn test_kfunc_iter_css_task_new_requires_stack_slot_base_pointer() {
 
     let iter = func.alloc_vreg();
     let shifted_iter = func.alloc_vreg();
-    let ptr = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
     let flags = func.alloc_vreg();
     let dst = func.alloc_vreg();
     let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
@@ -2549,14 +2558,20 @@ fn test_kfunc_iter_css_task_new_requires_stack_slot_base_pointer() {
         src: MirValue::Const(0),
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: ptr,
-        src: MirValue::VReg(iter),
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
     });
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
         dst,
         kfunc: "bpf_iter_css_task_new".to_string(),
         btf_id: None,
-        args: vec![shifted_iter, ptr, flags],
+        args: vec![shifted_iter, task, flags],
     });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
@@ -2575,11 +2590,12 @@ fn test_kfunc_iter_css_task_new_requires_stack_slot_base_pointer() {
             address_space: AddressSpace::Stack,
         },
     );
+    types.insert(pid, MirType::I64);
     types.insert(
-        ptr,
+        task,
         MirType::Ptr {
             pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Stack,
+            address_space: AddressSpace::Kernel,
         },
     );
     types.insert(flags, MirType::I64);
@@ -2590,6 +2606,262 @@ fn test_kfunc_iter_css_task_new_requires_stack_slot_base_pointer() {
     assert!(
         err.iter()
             .any(|e| e.message.contains("arg0 expects stack slot base pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_iter_css_new_requires_kernel_css_pointer_arg1() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let iter = func.alloc_vreg();
+    let css = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: css,
+        src: MirValue::VReg(iter),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_iter_css_new".to_string(),
+        btf_id: None,
+        args: vec![iter, css, flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        css,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(flags, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected iter_css_new arg1 kernel-pointer error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg1 expects kernel pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_iter_css_task_new_requires_kernel_css_pointer_arg1() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let iter = func.alloc_vreg();
+    let css = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: css,
+        src: MirValue::VReg(iter),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_iter_css_task_new".to_string(),
+        btf_id: None,
+        args: vec![iter, css, flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        css,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(flags, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected iter_css_task_new arg1 kernel-pointer error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg1 expects kernel pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_iter_css_new_rejects_task_reference_for_css_arg() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let pid = func.alloc_vreg();
+    let iter = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_iter_css_new".to_string(),
+        btf_id: None,
+        args: vec![iter, task, flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(flags, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected iter_css_new cgroup provenance mismatch");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg1 expects cgroup reference")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_iter_css_task_new_rejects_task_reference_for_css_arg() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let pid = func.alloc_vreg();
+    let iter = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_iter_css_task_new".to_string(),
+        btf_id: None,
+        args: vec![iter, task, flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(flags, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected iter_css_task_new cgroup provenance mismatch");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg1 expects cgroup reference")),
         "unexpected errors: {:?}",
         err
     );
@@ -4428,7 +4700,8 @@ fn test_kfunc_iter_css_lifecycle_balanced() {
     func.param_count = 1;
 
     let iter = func.alloc_vreg();
-    let ptr = func.alloc_vreg();
+    let cpu = func.alloc_vreg();
+    let rq = func.alloc_vreg();
     let flags = func.alloc_vreg();
     let new_ret = func.alloc_vreg();
     let next_ret = func.alloc_vreg();
@@ -4439,8 +4712,14 @@ fn test_kfunc_iter_css_lifecycle_balanced() {
         src: MirValue::StackSlot(slot),
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: ptr,
-        src: MirValue::VReg(iter),
+        dst: cpu,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: rq,
+        kfunc: "scx_bpf_cpu_rq".to_string(),
+        btf_id: None,
+        args: vec![cpu],
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: flags,
@@ -4450,7 +4729,7 @@ fn test_kfunc_iter_css_lifecycle_balanced() {
         dst: new_ret,
         kfunc: "bpf_iter_css_new".to_string(),
         btf_id: None,
-        args: vec![iter, ptr, flags],
+        args: vec![iter, rq, flags],
     });
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
         dst: next_ret,
@@ -4474,11 +4753,12 @@ fn test_kfunc_iter_css_lifecycle_balanced() {
             address_space: AddressSpace::Stack,
         },
     );
+    types.insert(cpu, MirType::I64);
     types.insert(
-        ptr,
+        rq,
         MirType::Ptr {
             pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Stack,
+            address_space: AddressSpace::Kernel,
         },
     );
     types.insert(flags, MirType::I64);
@@ -4504,7 +4784,8 @@ fn test_kfunc_iter_css_next_requires_matching_new_slot() {
 
     let iter_new = func.alloc_vreg();
     let iter_next = func.alloc_vreg();
-    let ptr = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
     let flags = func.alloc_vreg();
     let new_ret = func.alloc_vreg();
     let next_ret = func.alloc_vreg();
@@ -4519,8 +4800,14 @@ fn test_kfunc_iter_css_next_requires_matching_new_slot() {
         src: MirValue::StackSlot(next_slot),
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: ptr,
-        src: MirValue::VReg(iter_new),
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: flags,
@@ -4530,7 +4817,7 @@ fn test_kfunc_iter_css_next_requires_matching_new_slot() {
         dst: new_ret,
         kfunc: "bpf_iter_css_new".to_string(),
         btf_id: None,
-        args: vec![iter_new, ptr, flags],
+        args: vec![iter_new, task, flags],
     });
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
         dst: next_ret,
@@ -4555,11 +4842,12 @@ fn test_kfunc_iter_css_next_requires_matching_new_slot() {
             address_space: AddressSpace::Stack,
         },
     );
+    types.insert(pid, MirType::I64);
     types.insert(
-        ptr,
+        task,
         MirType::Ptr {
             pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Stack,
+            address_space: AddressSpace::Kernel,
         },
     );
     types.insert(flags, MirType::I64);
@@ -4590,7 +4878,8 @@ fn test_kfunc_iter_css_destroy_requires_matching_new_slot() {
 
     let iter_new = func.alloc_vreg();
     let iter_destroy = func.alloc_vreg();
-    let ptr = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
     let flags = func.alloc_vreg();
     let new_ret = func.alloc_vreg();
     let destroy_ret = func.alloc_vreg();
@@ -4605,8 +4894,14 @@ fn test_kfunc_iter_css_destroy_requires_matching_new_slot() {
         src: MirValue::StackSlot(destroy_slot),
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: ptr,
-        src: MirValue::VReg(iter_new),
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: flags,
@@ -4616,7 +4911,7 @@ fn test_kfunc_iter_css_destroy_requires_matching_new_slot() {
         dst: new_ret,
         kfunc: "bpf_iter_css_new".to_string(),
         btf_id: None,
-        args: vec![iter_new, ptr, flags],
+        args: vec![iter_new, task, flags],
     });
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
         dst: destroy_ret,
@@ -4641,11 +4936,12 @@ fn test_kfunc_iter_css_destroy_requires_matching_new_slot() {
             address_space: AddressSpace::Stack,
         },
     );
+    types.insert(pid, MirType::I64);
     types.insert(
-        ptr,
+        task,
         MirType::Ptr {
             pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Stack,
+            address_space: AddressSpace::Kernel,
         },
     );
     types.insert(flags, MirType::I64);
@@ -4669,7 +4965,8 @@ fn test_kfunc_iter_css_new_must_be_destroyed_at_exit() {
     func.param_count = 1;
 
     let iter = func.alloc_vreg();
-    let ptr = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
     let flags = func.alloc_vreg();
     let new_ret = func.alloc_vreg();
     let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
@@ -4678,8 +4975,14 @@ fn test_kfunc_iter_css_new_must_be_destroyed_at_exit() {
         src: MirValue::StackSlot(slot),
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: ptr,
-        src: MirValue::VReg(iter),
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: flags,
@@ -4689,7 +4992,7 @@ fn test_kfunc_iter_css_new_must_be_destroyed_at_exit() {
         dst: new_ret,
         kfunc: "bpf_iter_css_new".to_string(),
         btf_id: None,
-        args: vec![iter, ptr, flags],
+        args: vec![iter, task, flags],
     });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
@@ -4701,11 +5004,12 @@ fn test_kfunc_iter_css_new_must_be_destroyed_at_exit() {
             address_space: AddressSpace::Stack,
         },
     );
+    types.insert(pid, MirType::I64);
     types.insert(
-        ptr,
+        task,
         MirType::Ptr {
             pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Stack,
+            address_space: AddressSpace::Kernel,
         },
     );
     types.insert(flags, MirType::I64);
@@ -4728,7 +5032,8 @@ fn test_kfunc_iter_css_task_lifecycle_balanced() {
     func.param_count = 1;
 
     let iter = func.alloc_vreg();
-    let ptr = func.alloc_vreg();
+    let cpu = func.alloc_vreg();
+    let rq = func.alloc_vreg();
     let flags = func.alloc_vreg();
     let new_ret = func.alloc_vreg();
     let next_ret = func.alloc_vreg();
@@ -4739,8 +5044,14 @@ fn test_kfunc_iter_css_task_lifecycle_balanced() {
         src: MirValue::StackSlot(slot),
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: ptr,
-        src: MirValue::VReg(iter),
+        dst: cpu,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: rq,
+        kfunc: "scx_bpf_cpu_rq".to_string(),
+        btf_id: None,
+        args: vec![cpu],
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: flags,
@@ -4750,7 +5061,7 @@ fn test_kfunc_iter_css_task_lifecycle_balanced() {
         dst: new_ret,
         kfunc: "bpf_iter_css_task_new".to_string(),
         btf_id: None,
-        args: vec![iter, ptr, flags],
+        args: vec![iter, rq, flags],
     });
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
         dst: next_ret,
@@ -4774,11 +5085,12 @@ fn test_kfunc_iter_css_task_lifecycle_balanced() {
             address_space: AddressSpace::Stack,
         },
     );
+    types.insert(cpu, MirType::I64);
     types.insert(
-        ptr,
+        rq,
         MirType::Ptr {
             pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Stack,
+            address_space: AddressSpace::Kernel,
         },
     );
     types.insert(flags, MirType::I64);
@@ -4804,7 +5116,8 @@ fn test_kfunc_iter_css_task_next_requires_matching_new_slot() {
 
     let iter_new = func.alloc_vreg();
     let iter_next = func.alloc_vreg();
-    let ptr = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
     let flags = func.alloc_vreg();
     let new_ret = func.alloc_vreg();
     let next_ret = func.alloc_vreg();
@@ -4819,8 +5132,14 @@ fn test_kfunc_iter_css_task_next_requires_matching_new_slot() {
         src: MirValue::StackSlot(next_slot),
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: ptr,
-        src: MirValue::VReg(iter_new),
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: flags,
@@ -4830,7 +5149,7 @@ fn test_kfunc_iter_css_task_next_requires_matching_new_slot() {
         dst: new_ret,
         kfunc: "bpf_iter_css_task_new".to_string(),
         btf_id: None,
-        args: vec![iter_new, ptr, flags],
+        args: vec![iter_new, task, flags],
     });
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
         dst: next_ret,
@@ -4855,11 +5174,12 @@ fn test_kfunc_iter_css_task_next_requires_matching_new_slot() {
             address_space: AddressSpace::Stack,
         },
     );
+    types.insert(pid, MirType::I64);
     types.insert(
-        ptr,
+        task,
         MirType::Ptr {
             pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Stack,
+            address_space: AddressSpace::Kernel,
         },
     );
     types.insert(flags, MirType::I64);
@@ -4891,7 +5211,8 @@ fn test_kfunc_iter_css_task_destroy_requires_matching_new_slot() {
 
     let iter_new = func.alloc_vreg();
     let iter_destroy = func.alloc_vreg();
-    let ptr = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
     let flags = func.alloc_vreg();
     let new_ret = func.alloc_vreg();
     let destroy_ret = func.alloc_vreg();
@@ -4906,8 +5227,14 @@ fn test_kfunc_iter_css_task_destroy_requires_matching_new_slot() {
         src: MirValue::StackSlot(destroy_slot),
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: ptr,
-        src: MirValue::VReg(iter_new),
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: flags,
@@ -4917,7 +5244,7 @@ fn test_kfunc_iter_css_task_destroy_requires_matching_new_slot() {
         dst: new_ret,
         kfunc: "bpf_iter_css_task_new".to_string(),
         btf_id: None,
-        args: vec![iter_new, ptr, flags],
+        args: vec![iter_new, task, flags],
     });
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
         dst: destroy_ret,
@@ -4942,11 +5269,12 @@ fn test_kfunc_iter_css_task_destroy_requires_matching_new_slot() {
             address_space: AddressSpace::Stack,
         },
     );
+    types.insert(pid, MirType::I64);
     types.insert(
-        ptr,
+        task,
         MirType::Ptr {
             pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Stack,
+            address_space: AddressSpace::Kernel,
         },
     );
     types.insert(flags, MirType::I64);
@@ -4971,7 +5299,8 @@ fn test_kfunc_iter_css_task_new_must_be_destroyed_at_exit() {
     func.param_count = 1;
 
     let iter = func.alloc_vreg();
-    let ptr = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
     let flags = func.alloc_vreg();
     let new_ret = func.alloc_vreg();
     let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
@@ -4980,8 +5309,14 @@ fn test_kfunc_iter_css_task_new_must_be_destroyed_at_exit() {
         src: MirValue::StackSlot(slot),
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: ptr,
-        src: MirValue::VReg(iter),
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: flags,
@@ -4991,7 +5326,7 @@ fn test_kfunc_iter_css_task_new_must_be_destroyed_at_exit() {
         dst: new_ret,
         kfunc: "bpf_iter_css_task_new".to_string(),
         btf_id: None,
-        args: vec![iter, ptr, flags],
+        args: vec![iter, task, flags],
     });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
@@ -5003,11 +5338,12 @@ fn test_kfunc_iter_css_task_new_must_be_destroyed_at_exit() {
             address_space: AddressSpace::Stack,
         },
     );
+    types.insert(pid, MirType::I64);
     types.insert(
-        ptr,
+        task,
         MirType::Ptr {
             pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Stack,
+            address_space: AddressSpace::Kernel,
         },
     );
     types.insert(flags, MirType::I64);
