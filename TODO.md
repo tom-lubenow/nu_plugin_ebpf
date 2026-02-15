@@ -231,9 +231,10 @@ Last updated: 2026-02-15.
   - Emit diagnostics at the highest possible level (HIR/MIR) before backend failure.
   - Recent progress: unknown-kfunc diagnostics now indicate when the symbol exists in kernel BTF but lacks a compiler-side typed signature.
 
-- [ ] Build a compatibility test matrix.
+- [~] Build a compatibility test matrix.
   - Add automated tests that exercise compilation and loading across representative kernel versions/configs.
   - Include differential checks against verifier behavior and manual attach smoke tests.
+  - Recent progress: added `scripts/manual_integration.sh` to run repeatable root-level attach/counters/read-str/list integration checks against the release plugin.
 
 - [ ] Add end-to-end non-tracing fixtures.
   - Create integration fixtures that validate map-heavy, helper-heavy, and control-flow-heavy programs.

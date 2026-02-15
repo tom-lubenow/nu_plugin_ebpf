@@ -96,6 +96,21 @@ ebpf attach -s 'tracepoint:syscalls/sys_enter_openat' {|ctx|
 }
 ```
 
+## Manual Integration Suite
+
+Run the repeatable manual integration checks (requires `sudo` and a built release plugin):
+
+```bash
+cargo build --release
+./scripts/manual_integration.sh
+```
+
+Override tool paths if needed:
+
+```bash
+NU_BIN=/path/to/nu PLUGIN_BIN=/path/to/nu_plugin_ebpf ./scripts/manual_integration.sh
+```
+
 ## Context Fields
 
 The closure receives a context parameter with these fields:
