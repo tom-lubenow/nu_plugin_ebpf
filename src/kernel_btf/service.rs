@@ -292,11 +292,9 @@ impl KernelBtf {
             };
             let mut nullable_args = Vec::new();
             for (arg_idx, param) in proto.params.iter().enumerate() {
-                if param
-                    .name
-                    .as_deref()
-                    .is_some_and(|param_name| param_name.ends_with("__nullable"))
-                {
+                if param.name.as_deref().is_some_and(|param_name| {
+                    param_name.ends_with("__nullable") || param_name.ends_with("__opt")
+                }) {
                     nullable_args.push(arg_idx);
                 }
             }
