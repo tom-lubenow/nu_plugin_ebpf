@@ -242,6 +242,7 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
             | ("bpf_task_under_cgroup", 0)
             | ("bpf_get_task_exe_file", 0)
             | ("bpf_iter_task_vma_new", 1)
+            | ("bpf_iter_task_new", 1)
             | ("scx_bpf_dsq_insert", 0)
             | ("scx_bpf_dsq_insert_vtime", 0)
             | ("scx_bpf_dsq_move", 1)

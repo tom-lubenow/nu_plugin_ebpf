@@ -1036,6 +1036,10 @@ fn test_kfunc_pointer_arg_ref_kind_mappings() {
         Some(KfuncRefKind::Task)
     );
     assert_eq!(
+        kfunc_pointer_arg_ref_kind("bpf_iter_task_new", 1),
+        Some(KfuncRefKind::Task)
+    );
+    assert_eq!(
         kfunc_pointer_arg_ref_kind("bpf_task_under_cgroup", 1),
         Some(KfuncRefKind::Cgroup)
     );
