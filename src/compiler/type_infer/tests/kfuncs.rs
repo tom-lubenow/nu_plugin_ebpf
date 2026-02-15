@@ -3156,3 +3156,93 @@ fn test_type_error_kfunc_crypto_decrypt_siv_rejects_non_zero_scalar() {
         errs
     );
 }
+
+#[test]
+fn test_kfunc_iter_task_new_task_allows_const_zero_scalar() {
+    let mut func = make_test_function();
+    let iter = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let new_ret = func.alloc_vreg();
+    let destroy_ret = func.alloc_vreg();
+    let iter_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(iter_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: task,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: new_ret,
+        kfunc: "bpf_iter_task_new".to_string(),
+        btf_id: None,
+        args: vec![iter, task, flags],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: destroy_ret,
+        kfunc: "bpf_iter_task_destroy".to_string(),
+        btf_id: None,
+        args: vec![iter],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    ti.infer(&func)
+        .expect("expected nullable bpf_iter_task_new task arg to allow scalar const zero");
+}
+
+#[test]
+fn test_type_error_kfunc_iter_task_new_task_rejects_non_zero_scalar() {
+    let mut func = make_test_function();
+    let iter = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let new_ret = func.alloc_vreg();
+    let destroy_ret = func.alloc_vreg();
+    let iter_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(iter_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: task,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: new_ret,
+        kfunc: "bpf_iter_task_new".to_string(),
+        btf_id: None,
+        args: vec![iter, task, flags],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: destroy_ret,
+        kfunc: "bpf_iter_task_destroy".to_string(),
+        btf_id: None,
+        args: vec![iter],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected non-zero scalar bpf_iter_task_new task type error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_iter_task_new' arg1 expects pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}

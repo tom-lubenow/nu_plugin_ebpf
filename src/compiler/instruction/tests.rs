@@ -1642,10 +1642,12 @@ fn test_kfunc_pointer_arg_requires_stack_slot_base_mappings() {
 fn test_kfunc_pointer_arg_allows_const_zero_mappings() {
     assert!(kfunc_pointer_arg_allows_const_zero("bpf_crypto_encrypt", 3));
     assert!(kfunc_pointer_arg_allows_const_zero("bpf_crypto_decrypt", 3));
+    assert!(kfunc_pointer_arg_allows_const_zero("bpf_iter_task_new", 1));
     assert!(!kfunc_pointer_arg_allows_const_zero(
         "bpf_crypto_encrypt",
         2
     ));
+    assert!(!kfunc_pointer_arg_allows_const_zero("bpf_iter_task_new", 0));
     assert!(!kfunc_pointer_arg_allows_const_zero(
         "bpf_crypto_decrypt",
         2

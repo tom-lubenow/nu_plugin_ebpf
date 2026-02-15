@@ -11795,3 +11795,118 @@ fn test_verify_mir_kfunc_crypto_decrypt_siv_rejects_non_zero_scalar() {
         err
     );
 }
+
+#[test]
+fn test_verify_mir_kfunc_iter_task_new_task_allows_const_zero_scalar() {
+    let (mut func, entry) = new_mir_function();
+
+    let iter = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let new_ret = func.alloc_vreg();
+    let destroy_ret = func.alloc_vreg();
+    let iter_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(iter_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: task,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: new_ret,
+        kfunc: "bpf_iter_task_new".to_string(),
+        btf_id: None,
+        args: vec![iter, task, flags],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: destroy_ret,
+        kfunc: "bpf_iter_task_destroy".to_string(),
+        btf_id: None,
+        args: vec![iter],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(task, MirType::I64);
+    types.insert(flags, MirType::I64);
+    types.insert(new_ret, MirType::I64);
+    types.insert(destroy_ret, MirType::I64);
+
+    verify_mir(&func, &types)
+        .expect("expected nullable bpf_iter_task_new task arg to allow scalar const zero");
+}
+
+#[test]
+fn test_verify_mir_kfunc_iter_task_new_task_rejects_non_zero_scalar() {
+    let (mut func, entry) = new_mir_function();
+
+    let iter = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let new_ret = func.alloc_vreg();
+    let destroy_ret = func.alloc_vreg();
+    let iter_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(iter_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: task,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: new_ret,
+        kfunc: "bpf_iter_task_new".to_string(),
+        btf_id: None,
+        args: vec![iter, task, flags],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: destroy_ret,
+        kfunc: "bpf_iter_task_destroy".to_string(),
+        btf_id: None,
+        args: vec![iter],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(task, MirType::I64);
+    types.insert(flags, MirType::I64);
+    types.insert(new_ret, MirType::I64);
+    types.insert(destroy_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected non-zero scalar iter_task_new task verifier error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_iter_task_new' arg1 expects null (0) or pointer value")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
