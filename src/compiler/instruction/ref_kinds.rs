@@ -371,5 +371,8 @@ pub fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
             | ("bpf_iter_task_vma_new", 0)
             | ("bpf_iter_task_vma_next", 0)
             | ("bpf_iter_task_vma_destroy", 0)
+            | ("bpf_iter_scx_dsq_new", 0)
+            | ("bpf_iter_scx_dsq_next", 0)
+            | ("bpf_iter_scx_dsq_destroy", 0)
     )
 }

@@ -87,6 +87,12 @@ impl<'a> VccLowerer<'a> {
                 KfuncArgKind::Pointer => {
                     self.require_pointer_reg(*arg)?;
                     self.verify_kfunc_ptr_arg_space(kfunc, idx, *arg)?;
+                    if Self::kfunc_pointer_arg_requires_stack(kfunc, idx) {
+                        out.push(VccInst::AssertStackSlotBase {
+                            ptr: VccReg(arg.0),
+                            op: format!("kfunc '{}' arg{}", kfunc, idx),
+                        });
+                    }
                     if let Some(kind) = Self::kfunc_pointer_arg_expected_ref_kind(kfunc, idx) {
                         out.push(VccInst::KfuncExpectRefKind {
                             ptr: VccValue::Reg(VccReg(arg.0)),
@@ -134,11 +140,11 @@ impl<'a> VccLowerer<'a> {
                     format!("kfunc '{}' arg{} expects stack slot pointer", kfunc, arg_idx),
                 ));
             }
-            if self
+            let is_stack_base = self
                 .value_ptr_info(&MirValue::VReg(arg))
                 .and_then(|ptr| ptr.bounds)
-                .is_some_and(|bounds| bounds.min != 0 || bounds.max != 0)
-            {
+                .is_some_and(|bounds| bounds.min == 0 && bounds.max == 0);
+            if !is_stack_base {
                 return Err(VccError::new(
                     VccErrorKind::PointerBounds,
                     format!("kfunc '{}' arg{} expects stack slot base pointer", kfunc, arg_idx),

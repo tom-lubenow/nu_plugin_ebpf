@@ -207,6 +207,10 @@ pub enum VccInst {
         size: VccValue,
         op: &'static str,
     },
+    AssertStackSlotBase {
+        ptr: VccReg,
+        op: String,
+    },
     StackAddr {
         dst: VccReg,
         slot: StackSlotId,

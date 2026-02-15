@@ -146,6 +146,9 @@ impl VccVerifier {
                     }
                 }
             }
+            VccInst::AssertStackSlotBase { ptr, op } => {
+                let _ = self.stack_slot_from_reg(state, *ptr, op);
+            }
             VccInst::StackAddr { dst, slot, size } => {
                 let bounds = if *size > 0 {
                     Some(VccBounds {

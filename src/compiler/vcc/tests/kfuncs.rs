@@ -1544,6 +1544,120 @@ fn test_verify_mir_kfunc_iter_task_vma_new_requires_stack_slot_base_pointer() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_iter_scx_dsq_new_requires_stack_iterator_pointer() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let iter = func.alloc_vreg();
+    let dsq_id = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dsq_id,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_iter_scx_dsq_new".to_string(),
+        btf_id: None,
+        args: vec![iter, dsq_id, flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dsq_id, MirType::I64);
+    types.insert(flags, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected iter_scx_dsq_new stack-pointer error");
+    assert!(
+        err.iter().any(|e| {
+            e.message.contains("arg0 expects pointer in [Stack]")
+                || e.message.contains("arg0 expects stack slot pointer")
+        }),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_iter_scx_dsq_new_requires_stack_slot_base_pointer() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let iter = func.alloc_vreg();
+    let shifted_iter = func.alloc_vreg();
+    let dsq_id = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: shifted_iter,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(iter),
+        rhs: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dsq_id,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_iter_scx_dsq_new".to_string(),
+        btf_id: None,
+        args: vec![shifted_iter, dsq_id, flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        shifted_iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(dsq_id, MirType::I64);
+    types.insert(flags, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected iter_scx_dsq_new stack-slot-base pointer error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg0 expects stack slot base pointer")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_kfunc_iter_task_vma_lifecycle_balanced() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;

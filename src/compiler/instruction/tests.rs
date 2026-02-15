@@ -561,6 +561,32 @@ fn test_kfunc_signature_task_vma_iter_kfuncs() {
 }
 
 #[test]
+fn test_kfunc_signature_scx_dsq_iter_kfuncs() {
+    let sig = KfuncSignature::for_name("bpf_iter_scx_dsq_new")
+        .expect("expected bpf_iter_scx_dsq_new kfunc signature");
+    assert_eq!(sig.min_args, 3);
+    assert_eq!(sig.max_args, 3);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
+    let sig = KfuncSignature::for_name("bpf_iter_scx_dsq_next")
+        .expect("expected bpf_iter_scx_dsq_next kfunc signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
+
+    let sig = KfuncSignature::for_name("bpf_iter_scx_dsq_destroy")
+        .expect("expected bpf_iter_scx_dsq_destroy kfunc signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Void);
+}
+
+#[test]
 fn test_kfunc_signature_cpumask_and() {
     let populate = KfuncSignature::for_name("bpf_cpumask_populate")
         .expect("expected bpf_cpumask_populate kfunc signature");
@@ -1089,12 +1115,19 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
         "bpf_iter_task_vma_destroy",
         0
     ));
+    assert!(kfunc_pointer_arg_requires_stack("bpf_iter_scx_dsq_new", 0));
+    assert!(kfunc_pointer_arg_requires_stack("bpf_iter_scx_dsq_next", 0));
+    assert!(kfunc_pointer_arg_requires_stack(
+        "bpf_iter_scx_dsq_destroy",
+        0
+    ));
     assert!(!kfunc_pointer_arg_requires_stack("bpf_res_spin_lock", 0));
     assert!(!kfunc_pointer_arg_requires_stack("bpf_task_release", 0));
     assert!(!kfunc_pointer_arg_requires_stack(
         "bpf_iter_task_vma_new",
         1
     ));
+    assert!(!kfunc_pointer_arg_requires_stack("bpf_iter_scx_dsq_new", 1));
 }
 
 #[test]
