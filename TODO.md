@@ -166,7 +166,7 @@ Last updated: 2026-02-15.
   - Added typed signature coverage for cgroup-subsys-state iterators (`bpf_iter_css_new` / `bpf_iter_css_next` / `bpf_iter_css_destroy`) with stack-pointer argument enforcement and stack-slot identity/lifetime tracking across type inference, verifier_types, and VCC.
   - Added typed signature coverage for cgroup-task iterators (`bpf_iter_css_task_new` / `bpf_iter_css_task_next` / `bpf_iter_css_task_destroy`) with stack-pointer argument enforcement and stack-slot identity/lifetime tracking across type inference, verifier_types, and VCC.
   - Added cgroup-pointer provenance and kernel-space checks for iterator constructor args (`bpf_iter_css_new arg1`, `bpf_iter_css_task_new arg1`) via shared ref-family metadata, including tracked-ref kind mismatch diagnostics.
-  - Added task-pointer provenance and kernel-space checks for `scx_bpf_dsq_move_set_slice arg0` / `scx_bpf_dsq_move_set_vtime arg0`, including tracked-ref kind mismatch diagnostics.
+  - Added stack-pointer and stack-slot-lifetime checks for `scx_bpf_dsq_move_set_slice arg0` / `scx_bpf_dsq_move_set_vtime arg0`, requiring a matching live `bpf_iter_scx_dsq_new` iterator slot.
   - Added cpumask-pointer provenance and kernel-space checks for `scx_bpf_select_cpu_dfl arg3`, including tracked-ref kind mismatch diagnostics.
   - Added stack-slot pointer requirements for SCX DSQ move iterators (`scx_bpf_dsq_move arg0`, `scx_bpf_dsq_move_vtime arg0`) across type inference, verifier_types, and VCC.
   - Added stack-slot identity/lifetime checks so `scx_bpf_dsq_move` / `scx_bpf_dsq_move_vtime` require a matching live `bpf_iter_scx_dsq_new` iterator slot.

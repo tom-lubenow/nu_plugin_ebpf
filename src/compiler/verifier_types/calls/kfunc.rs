@@ -468,6 +468,32 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
         }
         return;
     }
+    if kfunc == "scx_bpf_dsq_move_set_slice" {
+        let valid = args
+            .first()
+            .copied()
+            .and_then(|arg| stack_slot_from_arg(state, arg))
+            .is_some_and(|iter| state.use_iter_scx_dsq_slot(iter));
+        if !valid {
+            errors.push(VerifierTypeError::new(
+                "kfunc 'scx_bpf_dsq_move_set_slice' requires a matching bpf_iter_scx_dsq_new",
+            ));
+        }
+        return;
+    }
+    if kfunc == "scx_bpf_dsq_move_set_vtime" {
+        let valid = args
+            .first()
+            .copied()
+            .and_then(|arg| stack_slot_from_arg(state, arg))
+            .is_some_and(|iter| state.use_iter_scx_dsq_slot(iter));
+        if !valid {
+            errors.push(VerifierTypeError::new(
+                "kfunc 'scx_bpf_dsq_move_set_vtime' requires a matching bpf_iter_scx_dsq_new",
+            ));
+        }
+        return;
+    }
     if kfunc == "bpf_iter_num_new" {
         if let Some(iter) = args
             .first()

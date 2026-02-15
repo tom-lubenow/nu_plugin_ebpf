@@ -1663,23 +1663,23 @@ fn test_verify_mir_kfunc_scx_dsq_move_rejects_cgroup_task_argument() {
 }
 
 #[test]
-fn test_verify_mir_kfunc_scx_dsq_move_set_slice_rejects_cgroup_task_argument() {
+fn test_verify_mir_kfunc_scx_dsq_move_set_slice_requires_stack_iterator_pointer_arg0() {
     let (mut func, entry) = new_mir_function();
 
-    let cgid = func.alloc_vreg();
-    let cgroup = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let iter = func.alloc_vreg();
     let slice = func.alloc_vreg();
     let move_ret = func.alloc_vreg();
 
     func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: cgid,
+        dst: pid,
         src: MirValue::Const(1),
     });
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
-        dst: cgroup,
-        kfunc: "bpf_cgroup_from_id".to_string(),
+        dst: iter,
+        kfunc: "bpf_task_from_pid".to_string(),
         btf_id: None,
-        args: vec![cgid],
+        args: vec![pid],
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: slice,
@@ -1689,14 +1689,14 @@ fn test_verify_mir_kfunc_scx_dsq_move_set_slice_rejects_cgroup_task_argument() {
         dst: move_ret,
         kfunc: "scx_bpf_dsq_move_set_slice".to_string(),
         btf_id: None,
-        args: vec![cgroup, slice],
+        args: vec![iter, slice],
     });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
-    types.insert(cgid, MirType::I64);
+    types.insert(pid, MirType::I64);
     types.insert(
-        cgroup,
+        iter,
         MirType::Ptr {
             pointee: Box::new(MirType::Unknown),
             address_space: AddressSpace::Kernel,
@@ -1706,39 +1706,33 @@ fn test_verify_mir_kfunc_scx_dsq_move_set_slice_rejects_cgroup_task_argument() {
     types.insert(move_ret, MirType::I64);
 
     let err =
-        verify_mir(&func, &types).expect_err("expected scx dsq_move_set_slice provenance mismatch");
+        verify_mir(&func, &types).expect_err("expected scx dsq_move_set_slice stack-pointer error");
     assert!(
-        err.iter().any(|e| e
-            .message
-            .contains("kfunc 'scx_bpf_dsq_move_set_slice' arg0 expects task reference")),
-        "unexpected error messages: {:?}",
-        err
-    );
-    assert!(
-        err.iter().any(|e| e.message.contains("cgroup reference")),
+        err.iter()
+            .any(|e| e.message.contains("arg0 expects pointer in [Stack]")),
         "unexpected error messages: {:?}",
         err
     );
 }
 
 #[test]
-fn test_verify_mir_kfunc_scx_dsq_move_set_vtime_rejects_cgroup_task_argument() {
+fn test_verify_mir_kfunc_scx_dsq_move_set_vtime_requires_stack_iterator_pointer_arg0() {
     let (mut func, entry) = new_mir_function();
 
-    let cgid = func.alloc_vreg();
-    let cgroup = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let iter = func.alloc_vreg();
     let vtime = func.alloc_vreg();
     let move_ret = func.alloc_vreg();
 
     func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: cgid,
+        dst: pid,
         src: MirValue::Const(1),
     });
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
-        dst: cgroup,
-        kfunc: "bpf_cgroup_from_id".to_string(),
+        dst: iter,
+        kfunc: "bpf_task_from_pid".to_string(),
         btf_id: None,
-        args: vec![cgid],
+        args: vec![pid],
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: vtime,
@@ -1748,14 +1742,14 @@ fn test_verify_mir_kfunc_scx_dsq_move_set_vtime_rejects_cgroup_task_argument() {
         dst: move_ret,
         kfunc: "scx_bpf_dsq_move_set_vtime".to_string(),
         btf_id: None,
-        args: vec![cgroup, vtime],
+        args: vec![iter, vtime],
     });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
-    types.insert(cgid, MirType::I64);
+    types.insert(pid, MirType::I64);
     types.insert(
-        cgroup,
+        iter,
         MirType::Ptr {
             pointee: Box::new(MirType::Unknown),
             address_space: AddressSpace::Kernel,
@@ -1765,16 +1759,172 @@ fn test_verify_mir_kfunc_scx_dsq_move_set_vtime_rejects_cgroup_task_argument() {
     types.insert(move_ret, MirType::I64);
 
     let err =
-        verify_mir(&func, &types).expect_err("expected scx dsq_move_set_vtime provenance mismatch");
+        verify_mir(&func, &types).expect_err("expected scx dsq_move_set_vtime stack-pointer error");
     assert!(
-        err.iter().any(|e| e
-            .message
-            .contains("kfunc 'scx_bpf_dsq_move_set_vtime' arg0 expects task reference")),
+        err.iter()
+            .any(|e| e.message.contains("arg0 expects pointer in [Stack]")),
         "unexpected error messages: {:?}",
         err
     );
+}
+
+#[test]
+fn test_verify_mir_kfunc_scx_dsq_move_set_slice_requires_matching_iter_scx_dsq_slot() {
+    let (mut func, entry) = new_mir_function();
+
+    let iter_a_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let iter_b_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let iter_a = func.alloc_vreg();
+    let iter_b = func.alloc_vreg();
+    let dsq_id = func.alloc_vreg();
+    let slice = func.alloc_vreg();
+    let new_ret = func.alloc_vreg();
+    let move_ret = func.alloc_vreg();
+    let destroy_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter_a,
+        src: MirValue::StackSlot(iter_a_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter_b,
+        src: MirValue::StackSlot(iter_b_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dsq_id,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: slice,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: new_ret,
+        kfunc: "bpf_iter_scx_dsq_new".to_string(),
+        btf_id: None,
+        args: vec![iter_a, dsq_id, slice],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: move_ret,
+        kfunc: "scx_bpf_dsq_move_set_slice".to_string(),
+        btf_id: None,
+        args: vec![iter_b, slice],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: destroy_ret,
+        kfunc: "bpf_iter_scx_dsq_destroy".to_string(),
+        btf_id: None,
+        args: vec![iter_a],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        iter_a,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        iter_b,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(dsq_id, MirType::I64);
+    types.insert(slice, MirType::I64);
+    types.insert(new_ret, MirType::I64);
+    types.insert(move_ret, MirType::I64);
+    types.insert(destroy_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected scx dsq_move_set_slice slot mismatch");
     assert!(
-        err.iter().any(|e| e.message.contains("cgroup reference")),
+        err.iter().any(|e| e.message.contains(
+            "kfunc 'scx_bpf_dsq_move_set_slice' requires a matching bpf_iter_scx_dsq_new"
+        )),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_scx_dsq_move_set_vtime_requires_matching_iter_scx_dsq_slot() {
+    let (mut func, entry) = new_mir_function();
+
+    let iter_a_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let iter_b_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let iter_a = func.alloc_vreg();
+    let iter_b = func.alloc_vreg();
+    let dsq_id = func.alloc_vreg();
+    let vtime = func.alloc_vreg();
+    let new_ret = func.alloc_vreg();
+    let move_ret = func.alloc_vreg();
+    let destroy_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter_a,
+        src: MirValue::StackSlot(iter_a_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter_b,
+        src: MirValue::StackSlot(iter_b_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dsq_id,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: vtime,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: new_ret,
+        kfunc: "bpf_iter_scx_dsq_new".to_string(),
+        btf_id: None,
+        args: vec![iter_a, dsq_id, vtime],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: move_ret,
+        kfunc: "scx_bpf_dsq_move_set_vtime".to_string(),
+        btf_id: None,
+        args: vec![iter_b, vtime],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: destroy_ret,
+        kfunc: "bpf_iter_scx_dsq_destroy".to_string(),
+        btf_id: None,
+        args: vec![iter_a],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        iter_a,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        iter_b,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(dsq_id, MirType::I64);
+    types.insert(vtime, MirType::I64);
+    types.insert(new_ret, MirType::I64);
+    types.insert(move_ret, MirType::I64);
+    types.insert(destroy_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected scx dsq_move_set_vtime slot mismatch");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "kfunc 'scx_bpf_dsq_move_set_vtime' requires a matching bpf_iter_scx_dsq_new"
+        )),
         "unexpected error messages: {:?}",
         err
     );

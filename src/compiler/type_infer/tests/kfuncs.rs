@@ -82,16 +82,22 @@ fn test_type_error_kfunc_pointer_argument_requires_kernel_space() {
 }
 
 #[test]
-fn test_type_error_kfunc_scx_dsq_move_set_slice_requires_kernel_task_pointer() {
+fn test_type_error_kfunc_scx_dsq_move_set_slice_requires_stack_iterator_pointer() {
     let mut func = make_test_function();
-    let task = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let iter = func.alloc_vreg();
     let slice = func.alloc_vreg();
     let dst = func.alloc_vreg();
-    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
     let block = func.block_mut(BlockId(0));
     block.instructions.push(MirInst::Copy {
-        dst: task,
-        src: MirValue::StackSlot(slot),
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: iter,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
     });
     block.instructions.push(MirInst::Copy {
         dst: slice,
@@ -101,33 +107,39 @@ fn test_type_error_kfunc_scx_dsq_move_set_slice_requires_kernel_task_pointer() {
         dst,
         kfunc: "scx_bpf_dsq_move_set_slice".to_string(),
         btf_id: None,
-        args: vec![task, slice],
+        args: vec![iter, slice],
     });
     block.terminator = MirInst::Return { val: None };
 
     let mut ti = TypeInference::new(None);
     let errs = ti
         .infer(&func)
-        .expect_err("expected dsq_move_set_slice kernel-pointer type error");
+        .expect_err("expected dsq_move_set_slice stack-pointer type error");
     assert!(
         errs.iter()
-            .any(|e| e.message.contains("arg0 expects kernel pointer")),
+            .any(|e| e.message.contains("arg0 expects stack pointer")),
         "unexpected errors: {:?}",
         errs
     );
 }
 
 #[test]
-fn test_type_error_kfunc_scx_dsq_move_set_vtime_requires_kernel_task_pointer() {
+fn test_type_error_kfunc_scx_dsq_move_set_vtime_requires_stack_iterator_pointer() {
     let mut func = make_test_function();
-    let task = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let iter = func.alloc_vreg();
     let vtime = func.alloc_vreg();
     let dst = func.alloc_vreg();
-    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
     let block = func.block_mut(BlockId(0));
     block.instructions.push(MirInst::Copy {
-        dst: task,
-        src: MirValue::StackSlot(slot),
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: iter,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
     });
     block.instructions.push(MirInst::Copy {
         dst: vtime,
@@ -137,17 +149,17 @@ fn test_type_error_kfunc_scx_dsq_move_set_vtime_requires_kernel_task_pointer() {
         dst,
         kfunc: "scx_bpf_dsq_move_set_vtime".to_string(),
         btf_id: None,
-        args: vec![task, vtime],
+        args: vec![iter, vtime],
     });
     block.terminator = MirInst::Return { val: None };
 
     let mut ti = TypeInference::new(None);
     let errs = ti
         .infer(&func)
-        .expect_err("expected dsq_move_set_vtime kernel-pointer type error");
+        .expect_err("expected dsq_move_set_vtime stack-pointer type error");
     assert!(
         errs.iter()
-            .any(|e| e.message.contains("arg0 expects kernel pointer")),
+            .any(|e| e.message.contains("arg0 expects stack pointer")),
         "unexpected errors: {:?}",
         errs
     );

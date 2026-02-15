@@ -1213,11 +1213,11 @@ fn test_kfunc_pointer_arg_ref_kind_mappings() {
     );
     assert_eq!(
         kfunc_pointer_arg_ref_kind("scx_bpf_dsq_move_set_slice", 0),
-        Some(KfuncRefKind::Task)
+        None
     );
     assert_eq!(
         kfunc_pointer_arg_ref_kind("scx_bpf_dsq_move_set_vtime", 0),
-        Some(KfuncRefKind::Task)
+        None
     );
     assert_eq!(
         kfunc_pointer_arg_ref_kind("scx_bpf_pick_idle_cpu", 0),
@@ -1274,11 +1274,11 @@ fn test_kfunc_pointer_arg_requires_kernel_mappings() {
         "bpf_iter_css_task_new",
         1
     ));
-    assert!(kfunc_pointer_arg_requires_kernel(
+    assert!(!kfunc_pointer_arg_requires_kernel(
         "scx_bpf_dsq_move_set_slice",
         0
     ));
-    assert!(kfunc_pointer_arg_requires_kernel(
+    assert!(!kfunc_pointer_arg_requires_kernel(
         "scx_bpf_dsq_move_set_vtime",
         0
     ));
@@ -1345,6 +1345,14 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
     ));
     assert!(kfunc_pointer_arg_requires_stack("scx_bpf_dsq_move", 0));
     assert!(kfunc_pointer_arg_requires_stack(
+        "scx_bpf_dsq_move_set_slice",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack(
+        "scx_bpf_dsq_move_set_vtime",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack(
         "scx_bpf_dsq_move_vtime",
         0
     ));
@@ -1400,6 +1408,14 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
         1
     ));
     assert!(!kfunc_pointer_arg_requires_stack("scx_bpf_dsq_move", 1));
+    assert!(!kfunc_pointer_arg_requires_stack(
+        "scx_bpf_dsq_move_set_slice",
+        1
+    ));
+    assert!(!kfunc_pointer_arg_requires_stack(
+        "scx_bpf_dsq_move_set_vtime",
+        1
+    ));
     assert!(!kfunc_pointer_arg_requires_stack(
         "scx_bpf_dsq_move_vtime",
         1

@@ -306,6 +306,12 @@ pub enum VccInst {
     IterScxDsqMove {
         iter: VccReg,
     },
+    IterScxDsqMoveSetSlice {
+        iter: VccReg,
+    },
+    IterScxDsqMoveSetVtime {
+        iter: VccReg,
+    },
     IterScxDsqMoveVtime {
         iter: VccReg,
     },
