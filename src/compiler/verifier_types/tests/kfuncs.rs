@@ -1373,6 +1373,81 @@ fn test_kfunc_scx_dump_bstr_accepts_stack_fmt_and_data() {
 }
 
 #[test]
+fn test_kfunc_scx_error_bstr_requires_stack_slot_base_fmt() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let fmt_base = func.alloc_vreg();
+    let fmt_ptr = func.alloc_vreg();
+    let data_ptr = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let fmt_slot = func.alloc_stack_slot(64, 8, StackSlotKind::StringBuffer);
+    let data_slot = func.alloc_stack_slot(64, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: fmt_base,
+        src: MirValue::StackSlot(fmt_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: fmt_ptr,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(fmt_base),
+        rhs: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: data_ptr,
+        src: MirValue::StackSlot(data_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(16),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_error_bstr".to_string(),
+        btf_id: None,
+        args: vec![fmt_ptr, data_ptr, size],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        fmt_base,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        fmt_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        data_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(size, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected scx_bpf_error_bstr stack-slot-base error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg0 expects stack slot base pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_kfunc_scx_exit_bstr_requires_positive_data_size() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
@@ -1435,6 +1510,87 @@ fn test_kfunc_scx_exit_bstr_requires_positive_data_size() {
         err.iter().any(|e| e
             .message
             .contains("kfunc 'scx_bpf_exit_bstr' arg3 must be > 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_scx_exit_bstr_requires_stack_slot_base_data() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let code = func.alloc_vreg();
+    let fmt_ptr = func.alloc_vreg();
+    let data_base = func.alloc_vreg();
+    let data_ptr = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let fmt_slot = func.alloc_stack_slot(64, 8, StackSlotKind::StringBuffer);
+    let data_slot = func.alloc_stack_slot(64, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: code,
+        src: MirValue::Const(-1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: fmt_ptr,
+        src: MirValue::StackSlot(fmt_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: data_base,
+        src: MirValue::StackSlot(data_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: data_ptr,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(data_base),
+        rhs: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(16),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_exit_bstr".to_string(),
+        btf_id: None,
+        args: vec![code, fmt_ptr, data_ptr, size],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(code, MirType::I64);
+    types.insert(
+        fmt_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        data_base,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        data_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(size, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected scx_bpf_exit_bstr stack-slot-base error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg2 expects stack slot base pointer")),
         "unexpected errors: {:?}",
         err
     );
