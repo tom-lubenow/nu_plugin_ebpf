@@ -850,6 +850,40 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::IterNumNew { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_num_new' arg0")
+                else {
+                    return;
+                };
+                state.acquire_iter_num_slot(slot);
+            }
+            VccInst::IterNumNext { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_num_next' arg0")
+                else {
+                    return;
+                };
+                if !state.use_iter_num_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_iter_num_next' requires a matching bpf_iter_num_new",
+                    ));
+                }
+            }
+            VccInst::IterNumDestroy { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_num_destroy' arg0")
+                else {
+                    return;
+                };
+                if !state.release_iter_num_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_iter_num_destroy' requires a matching bpf_iter_num_new",
+                    ));
+                }
+            }
             VccInst::KfuncExpectRefKind {
                 ptr,
                 arg_idx,
@@ -1121,6 +1155,12 @@ impl VccVerifier {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased iter_scx_dsq iterator at function exit",
+                    ));
+                }
+                if state.has_live_iter_num() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "unreleased iter_num iterator at function exit",
                     ));
                 }
             }

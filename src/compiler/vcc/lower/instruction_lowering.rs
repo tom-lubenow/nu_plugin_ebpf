@@ -592,6 +592,27 @@ impl<'a> VccLowerer<'a> {
                         });
                     }
                 }
+                if kfunc == "bpf_iter_num_new" {
+                    if let Some(iter) = args.first() {
+                        out.push(VccInst::IterNumNew {
+                            iter: VccReg(iter.0),
+                        });
+                    }
+                }
+                if kfunc == "bpf_iter_num_next" {
+                    if let Some(iter) = args.first() {
+                        out.push(VccInst::IterNumNext {
+                            iter: VccReg(iter.0),
+                        });
+                    }
+                }
+                if kfunc == "bpf_iter_num_destroy" {
+                    if let Some(iter) = args.first() {
+                        out.push(VccInst::IterNumDestroy {
+                            iter: VccReg(iter.0),
+                        });
+                    }
+                }
             }
             MirInst::CallSubfn { dst, args, .. } => {
                 if args.len() > 5 {

@@ -294,6 +294,15 @@ pub enum VccInst {
     IterScxDsqDestroy {
         iter: VccReg,
     },
+    IterNumNew {
+        iter: VccReg,
+    },
+    IterNumNext {
+        iter: VccReg,
+    },
+    IterNumDestroy {
+        iter: VccReg,
+    },
     KfuncExpectRefKind {
         ptr: VccValue,
         arg_idx: usize,
