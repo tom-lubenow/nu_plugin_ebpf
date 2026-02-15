@@ -11756,7 +11756,7 @@ fn test_kfunc_crypto_encrypt_siv_rejects_non_zero_scalar() {
     assert!(
         err.iter().any(|e| e
             .message
-            .contains("kfunc 'bpf_crypto_encrypt' arg3 expects pointer")),
+            .contains("kfunc 'bpf_crypto_encrypt' arg3 expects null (0) or pointer")),
         "unexpected errors: {:?}",
         err
     );
@@ -11977,7 +11977,7 @@ fn test_kfunc_crypto_decrypt_siv_rejects_non_zero_scalar() {
     assert!(
         err.iter().any(|e| e
             .message
-            .contains("kfunc 'bpf_crypto_decrypt' arg3 expects pointer")),
+            .contains("kfunc 'bpf_crypto_decrypt' arg3 expects null (0) or pointer")),
         "unexpected errors: {:?}",
         err
     );
@@ -12096,7 +12096,7 @@ fn test_kfunc_iter_task_new_task_rejects_non_zero_scalar() {
     assert!(
         err.iter().any(|e| e
             .message
-            .contains("kfunc 'bpf_iter_task_new' arg1 expects pointer")),
+            .contains("kfunc 'bpf_iter_task_new' arg1 expects null (0) or pointer")),
         "unexpected errors: {:?}",
         err
     );

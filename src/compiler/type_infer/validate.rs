@@ -598,10 +598,17 @@ impl<'a> TypeInference<'a> {
                                             ValueRange::Known { min: 0, max: 0 }
                                         );
                                 if !allows_zero {
-                                    errors.push(TypeError::new(format!(
-                                        "kfunc '{}' arg{} expects pointer, got {:?}",
-                                        kfunc, idx, arg_ty
-                                    )));
+                                    if Self::kfunc_pointer_arg_allows_const_zero(kfunc, idx) {
+                                        errors.push(TypeError::new(format!(
+                                            "kfunc '{}' arg{} expects null (0) or pointer, got {:?}",
+                                            kfunc, idx, arg_ty
+                                        )));
+                                    } else {
+                                        errors.push(TypeError::new(format!(
+                                            "kfunc '{}' arg{} expects pointer, got {:?}",
+                                            kfunc, idx, arg_ty
+                                        )));
+                                    }
                                 }
                             }
                         },
