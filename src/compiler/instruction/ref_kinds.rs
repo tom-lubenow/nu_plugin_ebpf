@@ -418,14 +418,22 @@ pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
         | "scx_bpf_get_idle_smtmask_node" => Some(KfuncRefKind::Cpumask),
         "bpf_cpumask_create" | "bpf_cpumask_acquire" => Some(KfuncRefKind::Cpumask),
         _ => {
-            if KfuncSignature::for_name(kfunc).is_none()
-                && (kfunc.contains("_acquire")
-                    || kfunc.contains("_from_")
-                    || kfunc.contains("_create"))
-            {
-                return KernelBtf::get()
+            if KfuncSignature::for_name(kfunc).is_none() {
+                let Some(kind) = KernelBtf::get()
                     .kfunc_return_ref_family(kfunc)
-                    .map(ref_kind_from_btf_family);
+                    .map(ref_kind_from_btf_family)
+                else {
+                    return None;
+                };
+                if kfunc.contains("_acquire")
+                    || kfunc.contains("_from_")
+                    || kfunc.contains("_create")
+                    || kfunc.starts_with("bpf_get_")
+                    || kfunc.starts_with("scx_bpf_get_")
+                    || (kind == KfuncRefKind::Socket && kfunc.contains("lookup"))
+                {
+                    return Some(kind);
+                }
             }
             None
         }
