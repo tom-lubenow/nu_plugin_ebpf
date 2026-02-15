@@ -181,7 +181,7 @@ pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
             Some(KfuncRefKind::Cgroup)
         }
         "bpf_get_task_exe_file" => Some(KfuncRefKind::File),
-        "bpf_crypto_ctx_acquire" => Some(KfuncRefKind::CryptoCtx),
+        "bpf_crypto_ctx_acquire" | "bpf_crypto_ctx_create" => Some(KfuncRefKind::CryptoCtx),
         "bpf_obj_new_impl"
         | "bpf_refcount_acquire_impl"
         | "bpf_percpu_obj_new_impl"

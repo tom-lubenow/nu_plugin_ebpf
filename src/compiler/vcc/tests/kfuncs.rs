@@ -7542,6 +7542,172 @@ fn test_verify_mir_kfunc_crypto_ctx_release_rejects_task_reference() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_crypto_ctx_create_release_semantics() {
+    let (mut func, entry) = new_mir_function();
+    let release = func.alloc_block();
+    let done = func.alloc_block();
+
+    let params = func.alloc_vreg();
+    let params_sz = func.alloc_vreg();
+    let err = func.alloc_vreg();
+    let crypto_ctx = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+    let params_slot = func.alloc_stack_slot(512, 8, StackSlotKind::StringBuffer);
+    let err_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: params,
+        src: MirValue::StackSlot(params_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: params_sz,
+        src: MirValue::Const(408),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: err,
+        src: MirValue::StackSlot(err_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: crypto_ctx,
+        kfunc: "bpf_crypto_ctx_create".to_string(),
+        btf_id: None,
+        args: vec![params, params_sz, err],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(crypto_ctx),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: release,
+        if_false: done,
+    };
+
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_crypto_ctx_release".to_string(),
+            btf_id: None,
+            args: vec![crypto_ctx],
+        });
+    func.block_mut(release).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        params,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(params_sz, MirType::I64);
+    types.insert(
+        err,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        crypto_ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cond, MirType::Bool);
+    types.insert(release_ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected crypto_ctx_create reference to be released");
+}
+
+#[test]
+fn test_verify_mir_kfunc_crypto_ctx_create_leak_rejected() {
+    let (mut func, entry) = new_mir_function();
+    let leak = func.alloc_block();
+    let done = func.alloc_block();
+
+    let params = func.alloc_vreg();
+    let params_sz = func.alloc_vreg();
+    let err = func.alloc_vreg();
+    let crypto_ctx = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let params_slot = func.alloc_stack_slot(512, 8, StackSlotKind::StringBuffer);
+    let err_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: params,
+        src: MirValue::StackSlot(params_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: params_sz,
+        src: MirValue::Const(408),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: err,
+        src: MirValue::StackSlot(err_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: crypto_ctx,
+        kfunc: "bpf_crypto_ctx_create".to_string(),
+        btf_id: None,
+        args: vec![params, params_sz, err],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(crypto_ctx),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: leak,
+        if_false: done,
+    };
+
+    func.block_mut(leak).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        params,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(params_sz, MirType::I64);
+    types.insert(
+        err,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        crypto_ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cond, MirType::Bool);
+
+    let err = verify_mir(&func, &types).expect_err("expected crypto_ctx_create leak error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("unreleased kfunc reference")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_kfunc_cpumask_create_release_semantics() {
     let (mut func, entry) = new_mir_function();
     let release = func.alloc_block();

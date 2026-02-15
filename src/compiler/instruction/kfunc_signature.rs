@@ -85,6 +85,12 @@ impl KfuncSignature {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: KfuncRetKind::PointerMaybeNull,
             }),
+            "bpf_crypto_ctx_create" => Some(Self {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, S, P, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
             "bpf_crypto_ctx_release" => Some(Self {
                 min_args: 1,
                 max_args: 1,
