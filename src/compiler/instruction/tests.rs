@@ -1526,6 +1526,10 @@ fn test_kfunc_pointer_arg_ref_kind_mappings() {
         Some(KfuncRefKind::Cpumask)
     );
     assert_eq!(kfunc_pointer_arg_ref_kind("bpf_task_from_pid", 0), None);
+    assert_eq!(
+        kfunc_pointer_arg_ref_kind("__nu_plugin_ebpf_missing_kfunc__", 0),
+        None
+    );
 }
 
 #[test]

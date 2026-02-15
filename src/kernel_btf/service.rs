@@ -83,6 +83,18 @@ pub enum KfuncRetShape {
     PointerMaybeNull,
 }
 
+/// Coarse pointer reference-family inferred from kernel BTF pointee type names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KfuncPointerRefFamily {
+    Task,
+    Cgroup,
+    Inode,
+    Cpumask,
+    CryptoCtx,
+    File,
+    Socket,
+}
+
 /// Best-effort kfunc signature inferred from kernel BTF.
 ///
 /// This is intentionally coarse and only captures arity plus pointer-vs-scalar
@@ -129,6 +141,9 @@ pub struct KernelBtf {
     kfunc_user_pointer_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to pointer argument indices that require kernel pointers.
     kfunc_kernel_pointer_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
+    /// Cached mapping of kfunc names to pointer argument ref families.
+    kfunc_pointer_ref_family_cache:
+        RwLock<Option<HashMap<String, Vec<(usize, KfuncPointerRefFamily)>>>>,
     /// Cached mapping of kfunc names to scalar argument indices that must be known constants.
     kfunc_known_const_scalar_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to scalar argument indices that must be positive (> 0).
@@ -164,6 +179,7 @@ impl KernelBtf {
                 kfunc_nullable_arg_cache: RwLock::new(None),
                 kfunc_user_pointer_arg_cache: RwLock::new(None),
                 kfunc_kernel_pointer_arg_cache: RwLock::new(None),
+                kfunc_pointer_ref_family_cache: RwLock::new(None),
                 kfunc_known_const_scalar_arg_cache: RwLock::new(None),
                 kfunc_positive_scalar_arg_cache: RwLock::new(None),
                 kfunc_pointer_size_arg_cache: RwLock::new(None),
@@ -320,19 +336,30 @@ impl KernelBtf {
             .any(|tag| tag == "__user" || tag.contains("__user") || tag == "address_space(1)")
     }
 
-    fn is_kernel_object_type_name(name: &str) -> bool {
+    fn infer_pointer_ref_family(name: &str) -> Option<KfuncPointerRefFamily> {
         let lower = name.to_ascii_lowercase();
-        lower.contains("task_struct")
-            || lower.contains("cgroup")
-            || lower.contains("cpumask")
-            || lower == "inode"
-            || lower.ends_with("_inode")
-            || lower == "file"
-            || lower.ends_with("_file")
-            || lower == "sock"
-            || lower.contains("sock")
-            || lower.contains("socket")
-            || lower.contains("crypto_ctx")
+        if lower.contains("task_struct") {
+            return Some(KfuncPointerRefFamily::Task);
+        }
+        if lower.contains("cgroup") {
+            return Some(KfuncPointerRefFamily::Cgroup);
+        }
+        if lower.contains("cpumask") {
+            return Some(KfuncPointerRefFamily::Cpumask);
+        }
+        if lower == "inode" || lower.ends_with("_inode") {
+            return Some(KfuncPointerRefFamily::Inode);
+        }
+        if lower == "file" || lower.ends_with("_file") {
+            return Some(KfuncPointerRefFamily::File);
+        }
+        if lower.contains("sock") || lower.contains("socket") {
+            return Some(KfuncPointerRefFamily::Socket);
+        }
+        if lower.contains("crypto_ctx") {
+            return Some(KfuncPointerRefFamily::CryptoCtx);
+        }
+        None
     }
 
     fn load_kfunc_user_pointer_arg_map(&self) -> Result<HashMap<String, Vec<usize>>, BtfError> {
@@ -394,12 +421,53 @@ impl KernelBtf {
                 let Some(type_name) = param_ty.name.as_deref() else {
                     continue;
                 };
-                if Self::is_kernel_object_type_name(type_name) {
+                if Self::infer_pointer_ref_family(type_name).is_some() {
                     kernel_pointer_args.push(arg_idx);
                 }
             }
             if !kernel_pointer_args.is_empty() {
                 map.insert(name.clone(), kernel_pointer_args);
+            }
+        }
+        Ok(map)
+    }
+
+    fn load_kfunc_pointer_ref_family_map(
+        &self,
+    ) -> Result<HashMap<String, Vec<(usize, KfuncPointerRefFamily)>>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let mut map: HashMap<String, Vec<(usize, KfuncPointerRefFamily)>> = HashMap::new();
+        for ty in btf.get_types() {
+            if !ty.is_function || !Self::is_bpf_kfunc(ty) {
+                continue;
+            }
+            let Some(name) = ty.name.as_ref() else {
+                continue;
+            };
+            let Type::FunctionProto(proto) = &ty.base_type else {
+                continue;
+            };
+            let mut ref_family_args = Vec::new();
+            for (arg_idx, param) in proto.params.iter().enumerate() {
+                if param.type_id == 0 {
+                    continue;
+                }
+                let Ok(param_ty) = btf.get_type_by_id(param.type_id) else {
+                    continue;
+                };
+                if param_ty.num_refs == 0 || Self::has_user_type_tag(&param_ty.type_tags) {
+                    continue;
+                }
+                let Some(type_name) = param_ty.name.as_deref() else {
+                    continue;
+                };
+                let Some(ref_family) = Self::infer_pointer_ref_family(type_name) else {
+                    continue;
+                };
+                ref_family_args.push((arg_idx, ref_family));
+            }
+            if !ref_family_args.is_empty() {
+                map.insert(name.clone(), ref_family_args);
             }
         }
         Ok(map)
@@ -475,6 +543,36 @@ impl KernelBtf {
         }
 
         requires_kernel
+    }
+
+    /// Returns inferred pointer ref-family metadata for `kfunc_name` argument `arg_idx`.
+    pub fn kfunc_pointer_arg_ref_family(
+        &self,
+        kfunc_name: &str,
+        arg_idx: usize,
+    ) -> Option<KfuncPointerRefFamily> {
+        {
+            let cache = self.kfunc_pointer_ref_family_cache.read().unwrap();
+            if let Some(map) = cache.as_ref() {
+                return map
+                    .get(kfunc_name)
+                    .and_then(|pairs| pairs.iter().find(|(idx, _)| *idx == arg_idx))
+                    .map(|(_, family)| *family);
+            }
+        }
+
+        let map = self.load_kfunc_pointer_ref_family_map().unwrap_or_default();
+        let ref_family = map
+            .get(kfunc_name)
+            .and_then(|pairs| pairs.iter().find(|(idx, _)| *idx == arg_idx))
+            .map(|(_, family)| *family);
+
+        let mut cache = self.kfunc_pointer_ref_family_cache.write().unwrap();
+        if cache.is_none() {
+            *cache = Some(map);
+        }
+
+        ref_family
     }
 
     fn load_kfunc_signature_hint_map(
@@ -1473,6 +1571,7 @@ mod tests {
             kfunc_nullable_arg_cache: RwLock::new(None),
             kfunc_user_pointer_arg_cache: RwLock::new(None),
             kfunc_kernel_pointer_arg_cache: RwLock::new(None),
+            kfunc_pointer_ref_family_cache: RwLock::new(None),
             kfunc_known_const_scalar_arg_cache: RwLock::new(None),
             kfunc_positive_scalar_arg_cache: RwLock::new(None),
             kfunc_pointer_size_arg_cache: RwLock::new(None),
@@ -1620,6 +1719,19 @@ format:
     }
 
     #[test]
+    fn test_kfunc_pointer_ref_family_query_graceful_without_btf() {
+        let service = make_test_service();
+        assert_eq!(
+            service.kfunc_pointer_arg_ref_family("definitely_not_a_kfunc", 0),
+            None
+        );
+        assert_eq!(
+            service.kfunc_pointer_arg_ref_family("definitely_not_a_kfunc", 3),
+            None
+        );
+    }
+
+    #[test]
     fn test_kfunc_signature_hint_query_graceful_without_btf() {
         let service = make_test_service();
         assert_eq!(
@@ -1681,6 +1793,39 @@ format:
         assert_eq!(KernelBtf::kfunc_size_param_base_name("size"), None);
         assert_eq!(KernelBtf::kfunc_size_param_base_name("__sz"), None);
         assert_eq!(KernelBtf::kfunc_size_param_base_name("__szk"), None);
+    }
+
+    #[test]
+    fn test_infer_pointer_ref_family_from_type_name() {
+        assert_eq!(
+            KernelBtf::infer_pointer_ref_family("task_struct"),
+            Some(KfuncPointerRefFamily::Task)
+        );
+        assert_eq!(
+            KernelBtf::infer_pointer_ref_family("cgroup"),
+            Some(KfuncPointerRefFamily::Cgroup)
+        );
+        assert_eq!(
+            KernelBtf::infer_pointer_ref_family("bpf_cpumask"),
+            Some(KfuncPointerRefFamily::Cpumask)
+        );
+        assert_eq!(
+            KernelBtf::infer_pointer_ref_family("inode"),
+            Some(KfuncPointerRefFamily::Inode)
+        );
+        assert_eq!(
+            KernelBtf::infer_pointer_ref_family("file"),
+            Some(KfuncPointerRefFamily::File)
+        );
+        assert_eq!(
+            KernelBtf::infer_pointer_ref_family("sock_common"),
+            Some(KfuncPointerRefFamily::Socket)
+        );
+        assert_eq!(
+            KernelBtf::infer_pointer_ref_family("bpf_crypto_ctx"),
+            Some(KfuncPointerRefFamily::CryptoCtx)
+        );
+        assert_eq!(KernelBtf::infer_pointer_ref_family("u8"), None);
     }
 
     fn push_u16(buf: &mut Vec<u8>, value: u16, endianness: BtfEndianness) {

@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel_btf::KernelBtf;
+use crate::kernel_btf::{KernelBtf, KfuncPointerRefFamily};
 
 #[derive(Debug, Clone, Copy)]
 pub struct KfuncAllowedPtrSpaces {
@@ -594,6 +594,19 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
             | ("scx_bpf_select_cpu_dfl", 3)
     ) {
         return Some(KfuncRefKind::Cpumask);
+    }
+    if KfuncSignature::for_name(kfunc).is_none() {
+        return KernelBtf::get()
+            .kfunc_pointer_arg_ref_family(kfunc, arg_idx)
+            .map(|family| match family {
+                KfuncPointerRefFamily::Task => KfuncRefKind::Task,
+                KfuncPointerRefFamily::Cgroup => KfuncRefKind::Cgroup,
+                KfuncPointerRefFamily::Inode => KfuncRefKind::Inode,
+                KfuncPointerRefFamily::Cpumask => KfuncRefKind::Cpumask,
+                KfuncPointerRefFamily::CryptoCtx => KfuncRefKind::CryptoCtx,
+                KfuncPointerRefFamily::File => KfuncRefKind::File,
+                KfuncPointerRefFamily::Socket => KfuncRefKind::Socket,
+            });
     }
     None
 }
