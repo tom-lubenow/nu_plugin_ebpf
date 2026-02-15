@@ -197,6 +197,7 @@ Last updated: 2026-02-15.
   - Extended scalar known-constant checks to consult local kernel BTF parameter names (`*__szk` / `*__k`) via a cached query path, with shared type inference/verifier_types/VCC enforcement (while preserving explicit compiler-side mappings for deterministic baseline behavior).
   - Extended scalar positive-size checks to consult local kernel BTF parameter names (`*__sz` / `*__szk`) via a cached query path, with shared type inference/verifier_types/VCC enforcement.
   - Extended pointer-access size inference to consult local kernel BTF parameter naming (`arg` + `arg__sz` / `arg__szk`) for additional pointer-size bounds checks in type inference, verifier_types, and VCC when explicit static kfunc semantics are absent.
+  - Extended pointer-access size inference to consult local kernel BTF pointee sizes for pointer args without `*__sz`/`*__szk` partners, with shared type inference/verifier_types/VCC bounds checks when explicit static kfunc semantics are absent.
   - Added coarse kernel-BTF fallback kfunc signatures for unknown symbols (arity plus pointer/scalar argument kinds) and wired them through type inference, verifier_types, VCC, and codegen validation.
   - Coarse kernel-BTF fallback now also infers return kind (`void` / scalar / pointer-maybe-null) from function prototype return type IDs in raw kernel BTF.
   - Remaining: expand signature coverage and pointer/ref-lifetime semantics from richer BTF metadata.

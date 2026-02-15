@@ -283,28 +283,34 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
         if semantics
             .ptr_arg_rules
             .iter()
-            .any(|rule| rule.arg_idx == ptr_arg_idx && rule.size_from_arg.is_some())
+            .any(|rule| rule.arg_idx == ptr_arg_idx)
         {
             continue;
         }
-        let Some(size_arg_idx) = kfunc_pointer_arg_size_from_scalar(kfunc, ptr_arg_idx) else {
+        let access_size =
+            if let Some(size_arg_idx) = kfunc_pointer_arg_size_from_scalar(kfunc, ptr_arg_idx) {
+                let access_size = positive_size_bounds.get(size_arg_idx).copied().flatten();
+                if access_size.is_none()
+                    && matches!(
+                        state.get(*arg),
+                        VerifierType::Ptr {
+                            space: AddressSpace::Stack | AddressSpace::Map,
+                            ..
+                        }
+                    )
+                {
+                    errors.push(VerifierTypeError::new(format!(
+                        "kfunc '{}' arg{} must have bounded upper range for arg{} pointer access",
+                        kfunc, size_arg_idx, ptr_arg_idx
+                    )));
+                }
+                access_size
+            } else {
+                kfunc_pointer_arg_fixed_size(kfunc, ptr_arg_idx)
+            };
+        let Some(access_size) = access_size else {
             continue;
         };
-        let access_size = positive_size_bounds.get(size_arg_idx).copied().flatten();
-        if access_size.is_none()
-            && matches!(
-                state.get(*arg),
-                VerifierType::Ptr {
-                    space: AddressSpace::Stack | AddressSpace::Map,
-                    ..
-                }
-            )
-        {
-            errors.push(VerifierTypeError::new(format!(
-                "kfunc '{}' arg{} must have bounded upper range for arg{} pointer access",
-                kfunc, size_arg_idx, ptr_arg_idx
-            )));
-        }
         if !matches!(state.get(*arg), VerifierType::Ptr { .. }) {
             continue;
         }
@@ -318,7 +324,7 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
             true,
             true,
             true,
-            access_size,
+            Some(access_size),
             false,
             state,
             errors,
@@ -395,6 +401,13 @@ pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_size_from_scalar(
     arg_idx: usize,
 ) -> Option<usize> {
     kfunc_pointer_arg_size_from_scalar_shared(kfunc, arg_idx)
+}
+
+pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_fixed_size(
+    kfunc: &str,
+    arg_idx: usize,
+) -> Option<usize> {
+    kfunc_pointer_arg_fixed_size_shared(kfunc, arg_idx)
 }
 
 pub(in crate::compiler::verifier_types) fn kfunc_scalar_arg_requires_known_const(

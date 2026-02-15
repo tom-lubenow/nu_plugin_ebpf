@@ -6,7 +6,7 @@
 //! - Kernel BTF for function validation (future)
 //! - Well-known fallback layouts for common tracepoints
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::{OnceLock, RwLock};
@@ -133,6 +133,8 @@ pub struct KernelBtf {
     kfunc_positive_scalar_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to pointer->size argument relationships.
     kfunc_pointer_size_arg_cache: RwLock<Option<HashMap<String, Vec<(usize, usize)>>>>,
+    /// Cached mapping of kfunc names to pointer argument fixed access sizes.
+    kfunc_pointer_fixed_size_cache: RwLock<Option<HashMap<String, Vec<(usize, usize)>>>>,
     /// Cached mapping of kfunc names to inferred coarse signatures.
     kfunc_signature_hint_cache: RwLock<Option<HashMap<String, KfuncSignatureHint>>>,
 }
@@ -162,6 +164,7 @@ impl KernelBtf {
                 kfunc_known_const_scalar_arg_cache: RwLock::new(None),
                 kfunc_positive_scalar_arg_cache: RwLock::new(None),
                 kfunc_pointer_size_arg_cache: RwLock::new(None),
+                kfunc_pointer_fixed_size_cache: RwLock::new(None),
                 kfunc_signature_hint_cache: RwLock::new(None),
             }
         })
@@ -579,6 +582,125 @@ impl KernelBtf {
         Ok(map)
     }
 
+    fn flattened_base_type_bits(btf: &Btf, base_type: &Type) -> Option<u32> {
+        match base_type {
+            Type::Integer(int_ty) => Some(int_ty.bits),
+            Type::Float(float_ty) => Some(float_ty.bits),
+            Type::Enum32(_) => Some(32),
+            Type::Enum64(_) => Some(64),
+            Type::Array(array_ty) => btf
+                .get_type_by_id(array_ty.elem_type_id)
+                .ok()
+                .and_then(|elem_ty| elem_ty.bits.checked_mul(array_ty.num_elements)),
+            Type::Struct(struct_ty) | Type::Union(struct_ty) => {
+                let mut max_bits: u32 = 0;
+                for member in &struct_ty.members {
+                    let member_bits = if let Some(bitfield_bits) = member.bits {
+                        bitfield_bits
+                    } else {
+                        btf.get_type_by_id(member.type_id).ok()?.bits
+                    };
+                    let end = member.offset.checked_add(member_bits)?;
+                    max_bits = max_bits.max(end);
+                }
+                Some(max_bits)
+            }
+            Type::Void | Type::Fwd(_) | Type::FunctionProto(_) | Type::DataSection(_) => None,
+            Type::Pointer(_)
+            | Type::Typedef(_)
+            | Type::Volatile(_)
+            | Type::Const(_)
+            | Type::Restrict(_)
+            | Type::Function(_)
+            | Type::Variable(_)
+            | Type::DeclTag(_)
+            | Type::TypeTag(_) => None,
+        }
+    }
+
+    fn pointer_pointee_size_bytes(btf: &Btf, param_type_id: u32) -> Option<usize> {
+        let param_ty = btf.get_type_by_id(param_type_id).ok()?;
+        if param_ty.num_refs == 0 {
+            return None;
+        }
+        if param_ty.num_refs > 1 {
+            return Some(8);
+        }
+        let bits = Self::flattened_base_type_bits(btf, &param_ty.base_type)?;
+        if bits == 0 {
+            return None;
+        }
+        usize::try_from(bits.div_ceil(8)).ok()
+    }
+
+    fn load_kfunc_pointer_fixed_size_map(
+        &self,
+    ) -> Result<HashMap<String, Vec<(usize, usize)>>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let mut map: HashMap<String, Vec<(usize, usize)>> = HashMap::new();
+        for ty in btf.get_types() {
+            if !ty.is_function || !Self::is_bpf_kfunc(ty) {
+                continue;
+            }
+            let Some(name) = ty.name.as_ref() else {
+                continue;
+            };
+            let Type::FunctionProto(proto) = &ty.base_type else {
+                continue;
+            };
+
+            let mut pointer_args_by_name: HashMap<String, usize> = HashMap::new();
+            for (arg_idx, param) in proto.params.iter().enumerate() {
+                let Some(param_name) = param.name.as_deref() else {
+                    continue;
+                };
+                if param.type_id == 0 {
+                    continue;
+                }
+                let is_pointer = btf
+                    .get_type_by_id(param.type_id)
+                    .is_ok_and(|param_ty| param_ty.num_refs > 0);
+                if is_pointer {
+                    pointer_args_by_name
+                        .entry(param_name.to_string())
+                        .or_insert(arg_idx);
+                }
+            }
+
+            let mut pointer_args_with_dynamic_sizes: HashSet<usize> = HashSet::new();
+            for param in &proto.params {
+                let Some(param_name) = param.name.as_deref() else {
+                    continue;
+                };
+                let Some(base) = Self::kfunc_size_param_base_name(param_name) else {
+                    continue;
+                };
+                if let Some(ptr_arg_idx) = pointer_args_by_name.get(base).copied() {
+                    pointer_args_with_dynamic_sizes.insert(ptr_arg_idx);
+                }
+            }
+
+            let mut fixed_size_args: Vec<(usize, usize)> = Vec::new();
+            for (arg_idx, param) in proto.params.iter().enumerate() {
+                if pointer_args_with_dynamic_sizes.contains(&arg_idx) {
+                    continue;
+                }
+                let Some(size_bytes) = Self::pointer_pointee_size_bytes(&btf, param.type_id) else {
+                    continue;
+                };
+                if size_bytes == 0 {
+                    continue;
+                }
+                fixed_size_args.push((arg_idx, size_bytes));
+            }
+
+            if !fixed_size_args.is_empty() {
+                map.insert(name.clone(), fixed_size_args);
+            }
+        }
+        Ok(map)
+    }
+
     /// Returns a best-effort coarse kfunc signature inferred from local kernel BTF.
     pub fn kfunc_signature_hint(&self, kfunc_name: &str) -> Option<KfuncSignatureHint> {
         {
@@ -681,6 +803,35 @@ impl KernelBtf {
         }
 
         size_arg
+    }
+
+    /// Returns the inferred fixed access size for a pointer argument, if available.
+    ///
+    /// This is inferred from the local kernel BTF pointee type when no
+    /// name-paired dynamic `*__sz`/`*__szk` argument exists.
+    pub fn kfunc_pointer_arg_fixed_size(&self, kfunc_name: &str, arg_idx: usize) -> Option<usize> {
+        {
+            let cache = self.kfunc_pointer_fixed_size_cache.read().unwrap();
+            if let Some(map) = cache.as_ref() {
+                return map
+                    .get(kfunc_name)
+                    .and_then(|pairs| pairs.iter().find(|(ptr, _)| *ptr == arg_idx))
+                    .map(|(_, size)| *size);
+            }
+        }
+
+        let map = self.load_kfunc_pointer_fixed_size_map().unwrap_or_default();
+        let size = map
+            .get(kfunc_name)
+            .and_then(|pairs| pairs.iter().find(|(ptr, _)| *ptr == arg_idx))
+            .map(|(_, size)| *size);
+
+        let mut cache = self.kfunc_pointer_fixed_size_cache.write().unwrap();
+        if cache.is_none() {
+            *cache = Some(map);
+        }
+
+        size
     }
 
     /// Load the list of available kernel functions (lazy, cached)
@@ -1244,6 +1395,7 @@ mod tests {
             kfunc_known_const_scalar_arg_cache: RwLock::new(None),
             kfunc_positive_scalar_arg_cache: RwLock::new(None),
             kfunc_pointer_size_arg_cache: RwLock::new(None),
+            kfunc_pointer_fixed_size_cache: RwLock::new(None),
             kfunc_signature_hint_cache: RwLock::new(None),
         }
     }
@@ -1411,6 +1563,19 @@ format:
         );
         assert_eq!(
             service.kfunc_pointer_arg_size_arg("definitely_not_a_kfunc", 2),
+            None
+        );
+    }
+
+    #[test]
+    fn test_kfunc_pointer_fixed_size_query_graceful_without_btf() {
+        let service = make_test_service();
+        assert_eq!(
+            service.kfunc_pointer_arg_fixed_size("definitely_not_a_kfunc", 0),
+            None
+        );
+        assert_eq!(
+            service.kfunc_pointer_arg_fixed_size("definitely_not_a_kfunc", 2),
             None
         );
     }

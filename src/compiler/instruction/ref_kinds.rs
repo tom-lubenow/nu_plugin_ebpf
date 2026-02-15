@@ -772,3 +772,17 @@ pub fn kfunc_pointer_arg_size_from_scalar(kfunc: &str, arg_idx: usize) -> Option
     }
     KernelBtf::get().kfunc_pointer_arg_size_arg(kfunc, arg_idx)
 }
+
+pub fn kfunc_pointer_arg_fixed_size(kfunc: &str, arg_idx: usize) -> Option<usize> {
+    if let Some(rule) = kfunc_semantics(kfunc)
+        .ptr_arg_rules
+        .iter()
+        .find(|rule| rule.arg_idx == arg_idx)
+    {
+        return rule.fixed_size;
+    }
+    if KfuncSignature::for_name(kfunc).is_some() {
+        return None;
+    }
+    KernelBtf::get().kfunc_pointer_arg_fixed_size(kfunc, arg_idx)
+}

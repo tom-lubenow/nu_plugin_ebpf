@@ -1117,6 +1117,16 @@ fn test_kfunc_pointer_arg_size_from_scalar_static_mapping() {
 }
 
 #[test]
+fn test_kfunc_pointer_arg_fixed_size_static_mapping() {
+    assert_eq!(kfunc_pointer_arg_fixed_size("bpf_dynptr_size", 0), Some(16));
+    assert_eq!(
+        kfunc_pointer_arg_fixed_size("bpf_dynptr_clone", 0),
+        Some(16)
+    );
+    assert_eq!(kfunc_pointer_arg_fixed_size("bpf_path_d_path", 1), None);
+}
+
+#[test]
 fn test_kfunc_signature_scx_dsq_insert() {
     let sig = KfuncSignature::for_name("scx_bpf_dsq_insert")
         .expect("expected scx_bpf_dsq_insert kfunc signature");
