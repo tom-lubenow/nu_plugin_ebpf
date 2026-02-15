@@ -951,6 +951,24 @@ fn test_unknown_kfunc_signature_message_for_missing_symbol() {
 }
 
 #[test]
+fn test_kfunc_signature_for_name_or_kernel_btf_prefers_builtin() {
+    let sig = KfuncSignature::for_name_or_kernel_btf("bpf_task_from_pid")
+        .expect("expected built-in bpf_task_from_pid signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
+}
+
+#[test]
+fn test_kfunc_signature_for_name_or_kernel_btf_missing_symbol() {
+    assert!(
+        KfuncSignature::for_name_or_kernel_btf("__nu_plugin_ebpf_missing_kfunc_for_test__")
+            .is_none()
+    );
+}
+
+#[test]
 fn test_kfunc_signature_scx_dsq_insert() {
     let sig = KfuncSignature::for_name("scx_bpf_dsq_insert")
         .expect("expected scx_bpf_dsq_insert kfunc signature");

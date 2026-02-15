@@ -12,7 +12,7 @@ use std::path::Path;
 use std::sync::{OnceLock, RwLock};
 
 use btf::Btf;
-use btf::btf::Type;
+use btf::btf::{FlattenedType, Type};
 
 use super::pt_regs::{PtRegsError, PtRegsOffsets, fallback_offsets, offsets_from_btf};
 use super::tracepoint::TracepointContext;
@@ -68,6 +68,24 @@ pub enum FunctionCheckResult {
     CannotValidate,
 }
 
+/// Coarse argument shape inferred from kernel BTF.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KfuncArgShape {
+    Scalar,
+    Pointer,
+}
+
+/// Best-effort kfunc signature inferred from kernel BTF.
+///
+/// This is intentionally coarse and only captures arity plus pointer-vs-scalar
+/// argument kinds. Return-kind inference is not provided here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KfuncSignatureHint {
+    pub min_args: usize,
+    pub max_args: usize,
+    pub arg_shapes: [KfuncArgShape; 5],
+}
+
 /// Result of reading the function list (internal use)
 #[derive(Clone)]
 enum FunctionListResult {
@@ -98,9 +116,15 @@ pub struct KernelBtf {
     pt_regs_cache: RwLock<Option<Result<PtRegsOffsets, PtRegsError>>>,
     /// Cached mapping of kfunc names to nullable pointer argument indices.
     kfunc_nullable_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
+    /// Cached mapping of kfunc names to inferred coarse signatures.
+    kfunc_signature_hint_cache: RwLock<Option<HashMap<String, KfuncSignatureHint>>>,
 }
 
 impl KernelBtf {
+    fn is_bpf_kfunc(ty: &FlattenedType) -> bool {
+        ty.decl_tags.iter().any(|(_, tag)| tag == "bpf_kfunc")
+    }
+
     /// Get the global kernel BTF instance
     pub fn get() -> &'static KernelBtf {
         KERNEL_BTF.get_or_init(|| {
@@ -115,6 +139,7 @@ impl KernelBtf {
                 function_cache: RwLock::new(None),
                 pt_regs_cache: RwLock::new(None),
                 kfunc_nullable_arg_cache: RwLock::new(None),
+                kfunc_signature_hint_cache: RwLock::new(None),
             }
         })
     }
@@ -225,7 +250,7 @@ impl KernelBtf {
         let btf = self.load_kernel_btf_for_query()?;
         let mut map: HashMap<String, Vec<usize>> = HashMap::new();
         for ty in btf.get_types() {
-            if !ty.is_function {
+            if !ty.is_function || !Self::is_bpf_kfunc(ty) {
                 continue;
             }
             let Some(name) = ty.name.as_ref() else {
@@ -273,6 +298,76 @@ impl KernelBtf {
         }
 
         is_nullable
+    }
+
+    fn load_kfunc_signature_hint_map(
+        &self,
+    ) -> Result<HashMap<String, KfuncSignatureHint>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let mut map: HashMap<String, KfuncSignatureHint> = HashMap::new();
+        for ty in btf.get_types() {
+            if !ty.is_function || !Self::is_bpf_kfunc(ty) {
+                continue;
+            }
+            let Some(name) = ty.name.as_ref() else {
+                continue;
+            };
+            let Type::FunctionProto(proto) = &ty.base_type else {
+                continue;
+            };
+            if proto.params.len() > 5 {
+                continue;
+            }
+            // BTF varargs are represented by a terminal unnamed param with type_id=0.
+            if proto
+                .params
+                .last()
+                .is_some_and(|p| p.type_id == 0 && p.name.is_none())
+            {
+                continue;
+            }
+            let mut arg_shapes = [KfuncArgShape::Scalar; 5];
+            for (arg_idx, param) in proto.params.iter().enumerate() {
+                if param.type_id == 0 {
+                    continue;
+                }
+                if btf
+                    .get_type_by_id(param.type_id)
+                    .is_ok_and(|param_ty| param_ty.num_refs > 0)
+                {
+                    arg_shapes[arg_idx] = KfuncArgShape::Pointer;
+                }
+            }
+            map.insert(
+                name.clone(),
+                KfuncSignatureHint {
+                    min_args: proto.params.len(),
+                    max_args: proto.params.len(),
+                    arg_shapes,
+                },
+            );
+        }
+        Ok(map)
+    }
+
+    /// Returns a best-effort coarse kfunc signature inferred from local kernel BTF.
+    pub fn kfunc_signature_hint(&self, kfunc_name: &str) -> Option<KfuncSignatureHint> {
+        {
+            let cache = self.kfunc_signature_hint_cache.read().unwrap();
+            if let Some(map) = cache.as_ref() {
+                return map.get(kfunc_name).copied();
+            }
+        }
+
+        let map = self.load_kfunc_signature_hint_map().unwrap_or_default();
+        let hint = map.get(kfunc_name).copied();
+
+        let mut cache = self.kfunc_signature_hint_cache.write().unwrap();
+        if cache.is_none() {
+            *cache = Some(map);
+        }
+
+        hint
     }
 
     /// Load the list of available kernel functions (lazy, cached)
@@ -713,6 +808,7 @@ mod tests {
             function_cache: RwLock::new(None),
             pt_regs_cache: RwLock::new(None),
             kfunc_nullable_arg_cache: RwLock::new(None),
+            kfunc_signature_hint_cache: RwLock::new(None),
         }
     }
 
@@ -838,5 +934,14 @@ format:
         let service = make_test_service();
         assert!(!service.kfunc_pointer_arg_is_nullable("definitely_not_a_kfunc", 0));
         assert!(!service.kfunc_pointer_arg_is_nullable("definitely_not_a_kfunc", 1));
+    }
+
+    #[test]
+    fn test_kfunc_signature_hint_query_graceful_without_btf() {
+        let service = make_test_service();
+        assert_eq!(
+            service.kfunc_signature_hint("__nu_plugin_ebpf_missing_kfunc__"),
+            None
+        );
     }
 }

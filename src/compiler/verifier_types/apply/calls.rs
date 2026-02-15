@@ -125,7 +125,7 @@ pub(super) fn apply_call_kfunc_inst(
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
-    let Some(sig) = KfuncSignature::for_name(kfunc) else {
+    let Some(sig) = KfuncSignature::for_name_or_kernel_btf(kfunc) else {
         errors.push(VerifierTypeError::new(unknown_kfunc_signature_message(
             kfunc,
         )));

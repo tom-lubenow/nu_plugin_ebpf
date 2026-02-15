@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel_btf::KernelBtf;
+use crate::kernel_btf::{KernelBtf, KfuncArgShape};
 
 impl KfuncSignature {
     pub fn for_name(name: &str) -> Option<Self> {
@@ -889,6 +889,27 @@ impl KfuncSignature {
 
     pub fn arg_kind(&self, idx: usize) -> KfuncArgKind {
         self.arg_kinds[idx]
+    }
+
+    pub fn for_name_or_kernel_btf(name: &str) -> Option<Self> {
+        if let Some(sig) = Self::for_name(name) {
+            return Some(sig);
+        }
+        let hint = KernelBtf::get().kfunc_signature_hint(name)?;
+        let mut arg_kinds = [KfuncArgKind::Scalar; 5];
+        for (idx, shape) in hint.arg_shapes.iter().copied().enumerate() {
+            arg_kinds[idx] = match shape {
+                KfuncArgShape::Scalar => KfuncArgKind::Scalar,
+                KfuncArgShape::Pointer => KfuncArgKind::Pointer,
+            };
+        }
+        Some(Self {
+            min_args: hint.min_args,
+            max_args: hint.max_args,
+            arg_kinds,
+            // Conservative fallback: return is treated as scalar when inferred from BTF.
+            ret_kind: KfuncRetKind::Scalar,
+        })
     }
 }
 

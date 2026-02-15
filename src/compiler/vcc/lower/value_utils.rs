@@ -165,7 +165,7 @@ impl<'a> VccLowerer<'a> {
 
     pub(super) fn kfunc_return_type(&self, kfunc: &str, dst: VReg) -> VccValueType {
         let inferred = self.types.get(&dst).map(vcc_type_from_mir);
-        let Some(sig) = KfuncSignature::for_name(kfunc) else {
+        let Some(sig) = KfuncSignature::for_name_or_kernel_btf(kfunc) else {
             return inferred.unwrap_or(VccValueType::Unknown);
         };
 

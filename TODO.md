@@ -188,6 +188,7 @@ Last updated: 2026-02-15.
   - Added shared nullable-pointer kfunc argument support for scalar const-zero at selected arg sites (`bpf_crypto_encrypt arg3`, `bpf_crypto_decrypt arg3`), with type inference, verifier_types, and VCC parity checks that still reject non-zero scalars.
   - Extended shared nullable-pointer kfunc argument support to iterator initialization (`bpf_iter_task_new arg1 task__nullable`) with type inference, verifier_types, and VCC parity checks that still reject non-zero scalar stand-ins.
   - Extended nullable-pointer detection to consult local kernel BTF parameter names (`*__nullable`) via a cached query path, while preserving explicit compiler-side mappings for deterministic baseline behavior.
+  - Added coarse kernel-BTF fallback kfunc signatures for unknown symbols (arity plus pointer/scalar argument kinds) and wired them through type inference, verifier_types, VCC, and codegen validation; fallback currently models return as scalar.
   - Remaining: expand signature coverage and pointer/ref-lifetime semantics from richer BTF metadata.
   - Remaining: model richer by-reference out-parameter semantics (aliasing/copy semantics and typed stack object identity) for additional kfunc families beyond current lock/irq patterns.
 

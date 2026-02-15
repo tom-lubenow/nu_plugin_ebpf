@@ -373,7 +373,7 @@ impl<'a> HirToMirLowering<'a> {
                 }
 
                 let mut args = Vec::new();
-                let is_known_zero_arg = KfuncSignature::for_name(&kfunc)
+                let is_known_zero_arg = KfuncSignature::for_name_or_kernel_btf(&kfunc)
                     .map(|sig| sig.max_args == 0)
                     .unwrap_or(false);
                 if let Some(input) = self.pipeline_input {

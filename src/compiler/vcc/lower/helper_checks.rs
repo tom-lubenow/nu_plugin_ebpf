@@ -56,7 +56,7 @@ impl<'a> VccLowerer<'a> {
         args: &[VReg],
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
-        let sig = KfuncSignature::for_name(kfunc).ok_or_else(|| {
+        let sig = KfuncSignature::for_name_or_kernel_btf(kfunc).ok_or_else(|| {
             VccError::new(
                 VccErrorKind::UnsupportedInstruction,
                 unknown_kfunc_signature_message(kfunc),

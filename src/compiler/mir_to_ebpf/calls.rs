@@ -29,7 +29,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         btf_id: Option<u32>,
         args: &[VReg],
     ) -> Result<(), CompileError> {
-        let sig = KfuncSignature::for_name(kfunc).ok_or_else(|| {
+        let sig = KfuncSignature::for_name_or_kernel_btf(kfunc).ok_or_else(|| {
             CompileError::UnsupportedInstruction(unknown_kfunc_signature_message(kfunc))
         })?;
         if args.len() < sig.min_args || args.len() > sig.max_args {
