@@ -173,6 +173,175 @@ fn test_constant_false_branch_prunes_true_path() {
     verify_ok(&func);
 }
 
+#[test]
+fn test_dynptr_require_initialized_after_mark() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let ptr = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst: ptr,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::DynptrMarkInitialized {
+            ptr,
+            kfunc: "unknown_dynptr_init".to_string(),
+            arg_idx: 0,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::DynptrRequireInitialized {
+            ptr,
+            kfunc: "unknown_dynptr_use".to_string(),
+            arg_idx: 0,
+        });
+
+    verify_ok(&func);
+}
+
+#[test]
+fn test_dynptr_require_initialized_rejects_uninitialized() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let ptr = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst: ptr,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::DynptrRequireInitialized {
+            ptr,
+            kfunc: "unknown_dynptr_use".to_string(),
+            arg_idx: 0,
+        });
+
+    verify_err(&func, VccErrorKind::PointerBounds);
+}
+
+#[test]
+fn test_dynptr_copy_requires_distinct_slots() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let src = func.alloc_reg();
+    let dst = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst: src,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::DynptrMarkInitialized {
+            ptr: src,
+            kfunc: "unknown_dynptr_init".to_string(),
+            arg_idx: 0,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::DynptrCopy {
+            src,
+            dst,
+            kfunc: "unknown_dynptr_copy".to_string(),
+            src_arg_idx: 0,
+            dst_arg_idx: 1,
+        });
+
+    verify_err(&func, VccErrorKind::PointerBounds);
+}
+
+#[test]
+fn test_dynptr_copy_propagates_initialized_state() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let src = func.alloc_reg();
+    let dst = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst: src,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst,
+        slot: StackSlotId(1),
+        size: 16,
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::DynptrMarkInitialized {
+            ptr: src,
+            kfunc: "unknown_dynptr_init".to_string(),
+            arg_idx: 0,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::DynptrCopy {
+            src,
+            dst,
+            kfunc: "unknown_dynptr_copy".to_string(),
+            src_arg_idx: 0,
+            dst_arg_idx: 1,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::DynptrRequireInitialized {
+            ptr: dst,
+            kfunc: "unknown_dynptr_use".to_string(),
+            arg_idx: 0,
+        });
+
+    verify_ok(&func);
+}
+
+#[test]
+fn test_dynptr_copy_does_not_initialize_from_uninitialized_source() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let src = func.alloc_reg();
+    let dst = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst: src,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst,
+        slot: StackSlotId(1),
+        size: 16,
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::DynptrCopy {
+            src,
+            dst,
+            kfunc: "unknown_dynptr_copy".to_string(),
+            src_arg_idx: 0,
+            dst_arg_idx: 1,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::DynptrRequireInitialized {
+            ptr: dst,
+            kfunc: "unknown_dynptr_use".to_string(),
+            arg_idx: 0,
+        });
+
+    verify_err(&func, VccErrorKind::PointerBounds);
+}
+
 fn new_mir_function() -> (MirFunction, BlockId) {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

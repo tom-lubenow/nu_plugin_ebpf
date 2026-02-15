@@ -204,6 +204,8 @@ Last updated: 2026-02-15.
   - Unknown-kfunc named out-pointer args now also receive a minimum 1-byte stack/map bounds check when no explicit size metadata is available, tightening by-reference memory-safety parity.
   - Extended stack-pointer argument checks for unknown kfuncs to consult local kernel BTF pointee type names for stack object families (iterator and dynptr objects), with shared type inference/verifier_types/VCC enforcement while preserving explicit semantics for built-in typed kfuncs.
   - Added unknown-kfunc iterator stack-object lifecycle inference (`*_new` / `*_next` / `*_destroy`) from local kernel BTF stack-object pointee types, wiring slot-identity/lifetime checks through verifier_types and VCC for supported iterator families.
+  - Added unknown-kfunc dynptr stack-object role inference (`in` vs named `out`) from local kernel BTF metadata, with verifier_types/VCC dynptr slot-identity initialization tracking, use-before-init checks, and copy/clone distinct-slot + init-propagation semantics.
+  - Expanded unknown-kfunc name heuristics for release transitions (`*_destroy*`, `*_unref*`, `*_dec*`) and out-parameter inference (`dst*` / `*dst`) while still requiring unambiguous BTF pointer-family evidence.
   - Extended scalar known-constant checks to consult local kernel BTF parameter names (`*__szk` / `*__k`) via a cached query path, with shared type inference/verifier_types/VCC enforcement (while preserving explicit compiler-side mappings for deterministic baseline behavior).
   - Extended scalar positive-size checks to consult local kernel BTF parameter names (`*__sz` / `*__szk`) via a cached query path, with shared type inference/verifier_types/VCC enforcement.
   - Extended pointer-access size inference to consult local kernel BTF parameter naming (`arg` + `arg__sz` / `arg__szk`) for additional pointer-size bounds checks in type inference, verifier_types, and VCC when explicit static kfunc semantics are absent.
@@ -211,7 +213,7 @@ Last updated: 2026-02-15.
   - Added coarse kernel-BTF fallback kfunc signatures for unknown symbols (arity plus pointer/scalar argument kinds) and wired them through type inference, verifier_types, VCC, and codegen validation.
   - Coarse kernel-BTF fallback now also infers return kind (`void` / scalar / pointer-maybe-null) from function prototype return type IDs in raw kernel BTF.
   - Remaining: expand signature coverage and pointer/ref-lifetime semantics from richer BTF metadata.
-  - Remaining: model richer by-reference out-parameter semantics (aliasing/copy semantics and typed stack object identity) for additional kfunc families beyond current lock/irq patterns.
+  - Remaining: model richer by-reference out-parameter semantics (aliasing/copy semantics and typed stack object identity) for additional stack-object families beyond current iter/dynptr/lock/irq patterns.
 
 - [ ] Improve control-flow expressiveness safely.
   - Keep bounded-loop guarantees while supporting more realistic higher-level control patterns.

@@ -1,6 +1,26 @@
 use super::*;
 
 #[test]
+fn test_dynptr_initialized_slots_join_requires_all_paths() {
+    let slot = StackSlotId(7);
+    let mut initialized = VerifierState::new(1);
+    initialized.initialize_dynptr_slot(slot);
+    let uninitialized = VerifierState::new(1);
+
+    let merged = initialized.join(&uninitialized);
+    assert!(
+        !merged.is_dynptr_slot_initialized(slot),
+        "dynptr slot initialization should require all incoming paths"
+    );
+
+    let merged_initialized = initialized.join(&initialized);
+    assert!(
+        merged_initialized.is_dynptr_slot_initialized(slot),
+        "dynptr slot initialization should be preserved when all paths initialize"
+    );
+}
+
+#[test]
 fn test_kfunc_unknown_signature_rejected() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
