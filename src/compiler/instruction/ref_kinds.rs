@@ -41,6 +41,7 @@ pub struct KfuncSemantics {
 
 pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
     const STACK_MAP: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(true, true, false, false);
+    const USER_ONLY: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(false, false, false, true);
     const NONE: KfuncSemantics = KfuncSemantics {
         ptr_arg_rules: &[],
         positive_size_args: &[],
@@ -107,11 +108,51 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
             size_from_arg: Some(3),
         },
     ];
+    const COPY_FROM_USER_STR_RULES: &[KfuncPtrArgRule] = &[
+        KfuncPtrArgRule {
+            arg_idx: 0,
+            op: "kfunc bpf_copy_from_user_str dst",
+            allowed: STACK_MAP,
+            fixed_size: None,
+            size_from_arg: Some(1),
+        },
+        KfuncPtrArgRule {
+            arg_idx: 2,
+            op: "kfunc bpf_copy_from_user_str src",
+            allowed: USER_ONLY,
+            fixed_size: None,
+            size_from_arg: Some(1),
+        },
+    ];
+    const COPY_FROM_USER_TASK_STR_RULES: &[KfuncPtrArgRule] = &[
+        KfuncPtrArgRule {
+            arg_idx: 0,
+            op: "kfunc bpf_copy_from_user_task_str dst",
+            allowed: STACK_MAP,
+            fixed_size: None,
+            size_from_arg: Some(1),
+        },
+        KfuncPtrArgRule {
+            arg_idx: 2,
+            op: "kfunc bpf_copy_from_user_task_str src",
+            allowed: USER_ONLY,
+            fixed_size: None,
+            size_from_arg: Some(1),
+        },
+    ];
 
     match kfunc {
         "bpf_path_d_path" => KfuncSemantics {
             ptr_arg_rules: PATH_D_PATH_RULES,
             positive_size_args: &[2],
+        },
+        "bpf_copy_from_user_str" => KfuncSemantics {
+            ptr_arg_rules: COPY_FROM_USER_STR_RULES,
+            positive_size_args: &[1],
+        },
+        "bpf_copy_from_user_task_str" => KfuncSemantics {
+            ptr_arg_rules: COPY_FROM_USER_TASK_STR_RULES,
+            positive_size_args: &[1],
         },
         "scx_bpf_events" => KfuncSemantics {
             ptr_arg_rules: SCX_EVENTS_RULES,
@@ -243,6 +284,7 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
             | ("bpf_get_task_exe_file", 0)
             | ("bpf_iter_task_vma_new", 1)
             | ("bpf_iter_task_new", 1)
+            | ("bpf_copy_from_user_task_str", 3)
             | ("scx_bpf_dsq_insert", 0)
             | ("scx_bpf_dsq_insert_vtime", 0)
             | ("scx_bpf_dsq_move", 1)

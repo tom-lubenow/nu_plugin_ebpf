@@ -874,6 +874,30 @@ fn test_kfunc_signature_map_sum_elem_count() {
 }
 
 #[test]
+fn test_kfunc_signature_copy_from_user_strs() {
+    let sig = KfuncSignature::for_name("bpf_copy_from_user_str")
+        .expect("expected bpf_copy_from_user_str kfunc signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(3), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
+    let sig = KfuncSignature::for_name("bpf_copy_from_user_task_str")
+        .expect("expected bpf_copy_from_user_task_str kfunc signature");
+    assert_eq!(sig.min_args, 5);
+    assert_eq!(sig.max_args, 5);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(3), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(4), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+}
+
+#[test]
 fn test_unknown_kfunc_signature_message_for_missing_symbol() {
     let msg = unknown_kfunc_signature_message("__nu_plugin_ebpf_missing_kfunc_for_test__");
     assert!(msg.contains("unknown kfunc '__nu_plugin_ebpf_missing_kfunc_for_test__'"));
@@ -1200,6 +1224,10 @@ fn test_kfunc_pointer_arg_ref_kind_mappings() {
         Some(KfuncRefKind::Task)
     );
     assert_eq!(
+        kfunc_pointer_arg_ref_kind("bpf_copy_from_user_task_str", 3),
+        Some(KfuncRefKind::Task)
+    );
+    assert_eq!(
         kfunc_pointer_arg_ref_kind("scx_bpf_select_cpu_and", 0),
         Some(KfuncRefKind::Task)
     );
@@ -1286,12 +1314,20 @@ fn test_kfunc_pointer_arg_requires_kernel_mappings() {
         "scx_bpf_select_cpu_dfl",
         3
     ));
+    assert!(kfunc_pointer_arg_requires_kernel(
+        "bpf_copy_from_user_task_str",
+        3
+    ));
     assert!(!kfunc_pointer_arg_requires_kernel(
         "bpf_iter_task_vma_new",
         0
     ));
     assert!(!kfunc_pointer_arg_requires_kernel(
         "bpf_list_push_front_impl",
+        2
+    ));
+    assert!(!kfunc_pointer_arg_requires_kernel(
+        "bpf_copy_from_user_task_str",
         2
     ));
     assert!(!kfunc_pointer_arg_requires_kernel("bpf_obj_new_impl", 1));
@@ -1441,6 +1477,56 @@ fn test_kfunc_semantics_path_d_path_buffer_rule() {
     assert!(!rule.allowed.allow_kernel);
     assert!(!rule.allowed.allow_user);
     assert_eq!(rule.size_from_arg, Some(2));
+}
+
+#[test]
+fn test_kfunc_semantics_copy_from_user_str_rules() {
+    let semantics = kfunc_semantics("bpf_copy_from_user_str");
+    assert_eq!(semantics.positive_size_args, &[1]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+    let dst = semantics.ptr_arg_rules[0];
+    assert_eq!(dst.arg_idx, 0);
+    assert_eq!(dst.op, "kfunc bpf_copy_from_user_str dst");
+    assert!(dst.allowed.allow_stack);
+    assert!(dst.allowed.allow_map);
+    assert!(!dst.allowed.allow_kernel);
+    assert!(!dst.allowed.allow_user);
+    assert_eq!(dst.size_from_arg, Some(1));
+
+    let src = semantics.ptr_arg_rules[1];
+    assert_eq!(src.arg_idx, 2);
+    assert_eq!(src.op, "kfunc bpf_copy_from_user_str src");
+    assert!(!src.allowed.allow_stack);
+    assert!(!src.allowed.allow_map);
+    assert!(!src.allowed.allow_kernel);
+    assert!(src.allowed.allow_user);
+    assert_eq!(src.size_from_arg, Some(1));
+}
+
+#[test]
+fn test_kfunc_semantics_copy_from_user_task_str_rules() {
+    let semantics = kfunc_semantics("bpf_copy_from_user_task_str");
+    assert_eq!(semantics.positive_size_args, &[1]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+    let dst = semantics.ptr_arg_rules[0];
+    assert_eq!(dst.arg_idx, 0);
+    assert_eq!(dst.op, "kfunc bpf_copy_from_user_task_str dst");
+    assert!(dst.allowed.allow_stack);
+    assert!(dst.allowed.allow_map);
+    assert!(!dst.allowed.allow_kernel);
+    assert!(!dst.allowed.allow_user);
+    assert_eq!(dst.size_from_arg, Some(1));
+
+    let src = semantics.ptr_arg_rules[1];
+    assert_eq!(src.arg_idx, 2);
+    assert_eq!(src.op, "kfunc bpf_copy_from_user_task_str src");
+    assert!(!src.allowed.allow_stack);
+    assert!(!src.allowed.allow_map);
+    assert!(!src.allowed.allow_kernel);
+    assert!(src.allowed.allow_user);
+    assert_eq!(src.size_from_arg, Some(1));
 }
 
 #[test]
