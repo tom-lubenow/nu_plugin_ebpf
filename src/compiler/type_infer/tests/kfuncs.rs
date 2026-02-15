@@ -544,6 +544,56 @@ fn test_type_error_kfunc_path_d_path_requires_bounded_size_for_stack_buffer() {
 }
 
 #[test]
+fn test_type_error_kfunc_path_d_path_requires_stack_slot_base_buffer() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let path = func.alloc_vreg();
+    let buf = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(64, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(42),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: path,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::BinOp {
+        dst: buf,
+        op: BinOpKind::Add,
+        lhs: MirValue::StackSlot(buf_slot),
+        rhs: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(16),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_path_d_path".to_string(),
+        btf_id: None,
+        args: vec![path, buf, size],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected path_d_path stack-slot-base type error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("arg1 expects stack slot base pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_infer_kfunc_path_d_path_accepts_stack_buffer_rule() {
     let mut func = make_test_function();
     let pid = func.alloc_vreg();
@@ -627,6 +677,55 @@ fn test_type_error_kfunc_copy_from_user_str_src_requires_user_pointer() {
         errs.iter().any(|e| e
             .message
             .contains("kfunc bpf_copy_from_user_str src expects pointer in [User], got Stack")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_kfunc_copy_from_user_str_requires_stack_slot_base_dst() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let src = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let dst_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let src_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::BinOp {
+        dst,
+        op: BinOpKind::Add,
+        lhs: MirValue::StackSlot(dst_slot),
+        rhs: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(8),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: src,
+        src: MirValue::StackSlot(src_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_copy_from_user_str".to_string(),
+        btf_id: None,
+        args: vec![dst, size, src, flags],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected copy_from_user_str stack-slot-base type error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("arg0 expects stack slot base pointer")),
         "unexpected errors: {:?}",
         errs
     );

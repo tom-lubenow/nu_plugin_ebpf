@@ -202,6 +202,10 @@ impl<'a> VccLowerer<'a> {
         kfunc_pointer_arg_requires_stack_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_pointer_arg_requires_stack_slot_base_shared(kfunc, arg_idx)
+    }
+
     pub(super) fn kfunc_pointer_arg_expected_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRefKind> {
         kfunc_pointer_arg_ref_kind(kfunc, arg_idx)
     }
@@ -724,6 +728,14 @@ impl<'a> VccLowerer<'a> {
                     self.helper_space_name(effective_space)
                 ),
             ));
+        }
+        if Self::kfunc_pointer_arg_requires_stack_slot_base(kfunc, arg_idx)
+            && matches!(effective_space, VccAddrSpace::Stack(_))
+        {
+            out.push(VccInst::AssertStackSlotBase {
+                ptr: VccReg(arg.0),
+                op: format!("kfunc '{}' arg{}", kfunc, arg_idx),
+            });
         }
 
         if let Some(size) = access_size {

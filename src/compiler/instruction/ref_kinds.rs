@@ -447,3 +447,13 @@ pub fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
             | ("scx_bpf_dsq_move_vtime", 0)
     )
 }
+
+pub fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -> bool {
+    matches!(
+        (kfunc, arg_idx),
+        ("bpf_path_d_path", 1)
+            | ("scx_bpf_events", 0)
+            | ("bpf_copy_from_user_str", 0)
+            | ("bpf_copy_from_user_task_str", 0)
+    )
+}

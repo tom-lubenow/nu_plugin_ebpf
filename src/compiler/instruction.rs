@@ -288,8 +288,8 @@ pub use ref_kinds::{
     KfuncAllowedPtrSpaces, KfuncPtrArgRule, KfuncSemantics, helper_acquire_ref_kind,
     helper_pointer_arg_ref_kind, helper_release_ref_kind, kfunc_acquire_ref_kind,
     kfunc_pointer_arg_ref_kind, kfunc_pointer_arg_requires_kernel,
-    kfunc_pointer_arg_requires_stack, kfunc_release_ref_arg_index, kfunc_release_ref_kind,
-    kfunc_semantics,
+    kfunc_pointer_arg_requires_stack, kfunc_pointer_arg_requires_stack_slot_base,
+    kfunc_release_ref_arg_index, kfunc_release_ref_kind, kfunc_semantics,
 };
 
 #[path = "instruction/helper_metadata.rs"]

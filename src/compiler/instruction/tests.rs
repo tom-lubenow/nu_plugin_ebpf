@@ -1464,6 +1464,38 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
 }
 
 #[test]
+fn test_kfunc_pointer_arg_requires_stack_slot_base_mappings() {
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_path_d_path",
+        1
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "scx_bpf_events",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_copy_from_user_str",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_copy_from_user_task_str",
+        0
+    ));
+    assert!(!kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_path_d_path",
+        0
+    ));
+    assert!(!kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_copy_from_user_str",
+        2
+    ));
+    assert!(!kfunc_pointer_arg_requires_stack_slot_base(
+        "scx_bpf_dump_bstr",
+        0
+    ));
+}
+
+#[test]
 fn test_kfunc_semantics_path_d_path_buffer_rule() {
     let semantics = kfunc_semantics("bpf_path_d_path");
     assert_eq!(semantics.positive_size_args, &[2]);

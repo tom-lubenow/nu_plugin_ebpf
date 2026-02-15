@@ -12,6 +12,7 @@ use super::instruction::{
     helper_release_ref_kind, kfunc_acquire_ref_kind, kfunc_pointer_arg_ref_kind,
     kfunc_pointer_arg_requires_kernel as kfunc_pointer_arg_requires_kernel_shared,
     kfunc_pointer_arg_requires_stack as kfunc_pointer_arg_requires_stack_shared,
+    kfunc_pointer_arg_requires_stack_slot_base as kfunc_pointer_arg_requires_stack_slot_base_shared,
     kfunc_release_ref_arg_index, kfunc_release_ref_kind, kfunc_semantics,
 };
 use super::mir::{

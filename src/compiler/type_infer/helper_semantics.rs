@@ -50,6 +50,10 @@ impl<'a> TypeInference<'a> {
         kfunc_pointer_arg_requires_stack_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_pointer_arg_requires_stack_slot_base_shared(kfunc, arg_idx)
+    }
+
     pub(super) fn helper_pointer_arg_allows_const_zero(helper_id: u32, arg_idx: usize) -> bool {
         matches!(
             (BpfHelper::from_u32(helper_id), arg_idx),
@@ -326,6 +330,19 @@ impl<'a> TypeInference<'a> {
                             rule.op, allowed, address_space
                         )));
                         continue;
+                    }
+                    if address_space == AddressSpace::Stack
+                        && Self::kfunc_pointer_arg_requires_stack_slot_base(kfunc, rule.arg_idx)
+                    {
+                        let is_base = stack_bounds
+                            .get(vreg)
+                            .is_some_and(|bounds| bounds.min == 0 && bounds.max == 0);
+                        if !is_base {
+                            errors.push(TypeError::new(format!(
+                                "kfunc '{}' arg{} expects stack slot base pointer",
+                                kfunc, rule.arg_idx
+                            )));
+                        }
                     }
                     if let Some(size_arg) = size_from_arg
                         && access_size.is_none()

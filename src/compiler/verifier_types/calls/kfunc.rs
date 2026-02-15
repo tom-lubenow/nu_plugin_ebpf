@@ -150,6 +150,8 @@ pub(in crate::compiler::verifier_types) fn kfunc_allowed_spaces(
 }
 
 pub(in crate::compiler::verifier_types) fn check_kfunc_ptr_arg_value(
+    kfunc: &str,
+    arg_idx: usize,
     arg: VReg,
     op: &str,
     allow_stack: bool,
@@ -157,6 +159,7 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_ptr_arg_value(
     allow_kernel: bool,
     allow_user: bool,
     access_size: Option<usize>,
+    require_stack_slot_base: bool,
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
@@ -166,6 +169,19 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_ptr_arg_value(
     else {
         return;
     };
+    if require_stack_slot_base && space == AddressSpace::Stack {
+        let is_base = bounds.is_some_and(|ptr_bounds| {
+            matches!(ptr_bounds.origin(), PtrOrigin::Stack(_))
+                && ptr_bounds.min() == 0
+                && ptr_bounds.max() == 0
+        });
+        if !is_base {
+            errors.push(VerifierTypeError::new(format!(
+                "kfunc '{}' arg{} expects stack slot base pointer",
+                kfunc, arg_idx
+            )));
+        }
+    }
     if let Some(size) = access_size {
         check_ptr_bounds(op, space, bounds, 0, size, errors);
     }
@@ -212,6 +228,8 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
             )));
         }
         check_kfunc_ptr_arg_value(
+            kfunc,
+            rule.arg_idx,
             *arg,
             rule.op,
             rule.allowed.allow_stack,
@@ -219,6 +237,7 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
             rule.allowed.allow_kernel,
             rule.allowed.allow_user,
             access_size,
+            kfunc_pointer_arg_requires_stack_slot_base(kfunc, rule.arg_idx),
             state,
             errors,
         );
@@ -237,6 +256,13 @@ pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_requires_stack(
     arg_idx: usize,
 ) -> bool {
     kfunc_pointer_arg_requires_stack_shared(kfunc, arg_idx)
+}
+
+pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_requires_stack_slot_base(
+    kfunc: &str,
+    arg_idx: usize,
+) -> bool {
+    kfunc_pointer_arg_requires_stack_slot_base_shared(kfunc, arg_idx)
 }
 
 pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_expected_ref_kind(
