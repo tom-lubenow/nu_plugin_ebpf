@@ -140,6 +140,22 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
             size_from_arg: Some(1),
         },
     ];
+    const CRYPTO_CTX_CREATE_RULES: &[KfuncPtrArgRule] = &[
+        KfuncPtrArgRule {
+            arg_idx: 0,
+            op: "kfunc bpf_crypto_ctx_create params",
+            allowed: STACK_MAP,
+            fixed_size: None,
+            size_from_arg: Some(1),
+        },
+        KfuncPtrArgRule {
+            arg_idx: 2,
+            op: "kfunc bpf_crypto_ctx_create err",
+            allowed: STACK_MAP,
+            fixed_size: Some(4),
+            size_from_arg: None,
+        },
+    ];
 
     match kfunc {
         "bpf_path_d_path" => KfuncSemantics {
@@ -152,6 +168,10 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         },
         "bpf_copy_from_user_task_str" => KfuncSemantics {
             ptr_arg_rules: COPY_FROM_USER_TASK_STR_RULES,
+            positive_size_args: &[1],
+        },
+        "bpf_crypto_ctx_create" => KfuncSemantics {
+            ptr_arg_rules: CRYPTO_CTX_CREATE_RULES,
             positive_size_args: &[1],
         },
         "scx_bpf_events" => KfuncSemantics {
@@ -466,6 +486,8 @@ pub fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -
             | ("scx_bpf_events", 0)
             | ("bpf_copy_from_user_str", 0)
             | ("bpf_copy_from_user_task_str", 0)
+            | ("bpf_crypto_ctx_create", 0)
+            | ("bpf_crypto_ctx_create", 2)
             | ("scx_bpf_dump_bstr", 0)
             | ("scx_bpf_dump_bstr", 1)
             | ("scx_bpf_error_bstr", 0)

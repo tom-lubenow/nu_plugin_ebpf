@@ -1561,6 +1561,14 @@ fn test_kfunc_pointer_arg_requires_stack_slot_base_mappings() {
         0
     ));
     assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_crypto_ctx_create",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_crypto_ctx_create",
+        2
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
         "scx_bpf_dump_bstr",
         0
     ));
@@ -1591,6 +1599,10 @@ fn test_kfunc_pointer_arg_requires_stack_slot_base_mappings() {
     assert!(!kfunc_pointer_arg_requires_stack_slot_base(
         "bpf_copy_from_user_str",
         2
+    ));
+    assert!(!kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_crypto_ctx_create",
+        1
     ));
     assert!(!kfunc_pointer_arg_requires_stack_slot_base(
         "scx_bpf_exit_bstr",
@@ -1662,6 +1674,32 @@ fn test_kfunc_semantics_copy_from_user_task_str_rules() {
     assert!(!src.allowed.allow_kernel);
     assert!(src.allowed.allow_user);
     assert_eq!(src.size_from_arg, Some(1));
+}
+
+#[test]
+fn test_kfunc_semantics_crypto_ctx_create_rules() {
+    let semantics = kfunc_semantics("bpf_crypto_ctx_create");
+    assert_eq!(semantics.positive_size_args, &[1]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+    let params = semantics.ptr_arg_rules[0];
+    assert_eq!(params.arg_idx, 0);
+    assert_eq!(params.op, "kfunc bpf_crypto_ctx_create params");
+    assert!(params.allowed.allow_stack);
+    assert!(params.allowed.allow_map);
+    assert!(!params.allowed.allow_kernel);
+    assert!(!params.allowed.allow_user);
+    assert_eq!(params.size_from_arg, Some(1));
+
+    let err = semantics.ptr_arg_rules[1];
+    assert_eq!(err.arg_idx, 2);
+    assert_eq!(err.op, "kfunc bpf_crypto_ctx_create err");
+    assert!(err.allowed.allow_stack);
+    assert!(err.allowed.allow_map);
+    assert!(!err.allowed.allow_kernel);
+    assert!(!err.allowed.allow_user);
+    assert_eq!(err.fixed_size, Some(4));
+    assert_eq!(err.size_from_arg, None);
 }
 
 #[test]

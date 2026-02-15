@@ -8219,6 +8219,190 @@ fn test_kfunc_crypto_encrypt_rejects_task_reference_argument() {
 }
 
 #[test]
+fn test_kfunc_crypto_ctx_create_params_requires_stack_or_map_space() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let use_ctx = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let pid = func.alloc_vreg();
+    let kernel_params = func.alloc_vreg();
+    let params_sz = func.alloc_vreg();
+    let err = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let crypto_ctx = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+    let err_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(123),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: kernel_params,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: params_sz,
+        src: MirValue::Const(408),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: err,
+        src: MirValue::StackSlot(err_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(kernel_params),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: use_ctx,
+        if_false: done,
+    };
+
+    func.block_mut(use_ctx)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: crypto_ctx,
+            kfunc: "bpf_crypto_ctx_create".to_string(),
+            btf_id: None,
+            args: vec![kernel_params, params_sz, err],
+        });
+    func.block_mut(use_ctx)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_task_release".to_string(),
+            btf_id: None,
+            args: vec![kernel_params],
+        });
+    func.block_mut(use_ctx).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        kernel_params,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(params_sz, MirType::I64);
+    types.insert(
+        err,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        crypto_ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cond, MirType::Bool);
+    types.insert(release_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected crypto_ctx_create params-space error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "kfunc bpf_crypto_ctx_create params expects pointer in [Stack, Map], got Kernel"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_crypto_ctx_create_err_requires_stack_slot_base_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let params = func.alloc_vreg();
+    let params_sz = func.alloc_vreg();
+    let err_base = func.alloc_vreg();
+    let err_shifted = func.alloc_vreg();
+    let crypto_ctx = func.alloc_vreg();
+    let params_slot = func.alloc_stack_slot(512, 8, StackSlotKind::StringBuffer);
+    let err_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: params,
+        src: MirValue::StackSlot(params_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: params_sz,
+        src: MirValue::Const(408),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: err_base,
+        src: MirValue::StackSlot(err_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: err_shifted,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(err_base),
+        rhs: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: crypto_ctx,
+        kfunc: "bpf_crypto_ctx_create".to_string(),
+        btf_id: None,
+        args: vec![params, params_sz, err_shifted],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        params,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(params_sz, MirType::I64);
+    types.insert(
+        err_base,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        err_shifted,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        crypto_ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected crypto_ctx_create stack-slot-base error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg2 expects stack slot base pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_kfunc_cpumask_create_release_semantics() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
