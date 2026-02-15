@@ -227,6 +227,22 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         fixed_size: Some(16),
         size_from_arg: None,
     }];
+    const DYNPTR_SLICE_RULES: &[KfuncPtrArgRule] = &[
+        KfuncPtrArgRule {
+            arg_idx: 0,
+            op: "kfunc bpf_dynptr_slice p",
+            allowed: STACK_ONLY,
+            fixed_size: Some(16),
+            size_from_arg: None,
+        },
+        KfuncPtrArgRule {
+            arg_idx: 2,
+            op: "kfunc bpf_dynptr_slice buffer",
+            allowed: STACK_MAP,
+            fixed_size: None,
+            size_from_arg: Some(3),
+        },
+    ];
     const CRYPTO_CTX_CREATE_RULES: &[KfuncPtrArgRule] = &[
         KfuncPtrArgRule {
             arg_idx: 0,
@@ -329,6 +345,10 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         },
         "bpf_dynptr_memset" => KfuncSemantics {
             ptr_arg_rules: DYNPTR_MEMSET_RULES,
+            positive_size_args: &[],
+        },
+        "bpf_dynptr_slice" | "bpf_dynptr_slice_rdwr" => KfuncSemantics {
+            ptr_arg_rules: DYNPTR_SLICE_RULES,
             positive_size_args: &[],
         },
         "bpf_crypto_ctx_create" => KfuncSemantics {
@@ -655,6 +675,8 @@ pub fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
             | ("bpf_dynptr_is_null", 0)
             | ("bpf_dynptr_is_rdonly", 0)
             | ("bpf_dynptr_memset", 0)
+            | ("bpf_dynptr_slice", 0)
+            | ("bpf_dynptr_slice_rdwr", 0)
             | ("scx_bpf_dsq_move", 0)
             | ("scx_bpf_dsq_move_set_slice", 0)
             | ("scx_bpf_dsq_move_set_vtime", 0)
@@ -681,6 +703,10 @@ pub fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -
             | ("bpf_dynptr_is_null", 0)
             | ("bpf_dynptr_is_rdonly", 0)
             | ("bpf_dynptr_memset", 0)
+            | ("bpf_dynptr_slice", 0)
+            | ("bpf_dynptr_slice", 2)
+            | ("bpf_dynptr_slice_rdwr", 0)
+            | ("bpf_dynptr_slice_rdwr", 2)
             | ("bpf_crypto_ctx_create", 0)
             | ("bpf_crypto_ctx_create", 2)
             | ("bpf_crypto_encrypt", 1)
@@ -701,6 +727,10 @@ pub fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -
 pub fn kfunc_pointer_arg_allows_const_zero(kfunc: &str, arg_idx: usize) -> bool {
     matches!(
         (kfunc, arg_idx),
-        ("bpf_crypto_encrypt", 3) | ("bpf_crypto_decrypt", 3) | ("bpf_iter_task_new", 1)
+        ("bpf_crypto_encrypt", 3)
+            | ("bpf_crypto_decrypt", 3)
+            | ("bpf_iter_task_new", 1)
+            | ("bpf_dynptr_slice", 2)
+            | ("bpf_dynptr_slice_rdwr", 2)
     ) || KernelBtf::get().kfunc_pointer_arg_is_nullable(kfunc, arg_idx)
 }

@@ -12201,3 +12201,124 @@ fn test_verify_mir_kfunc_iter_task_new_task_rejects_non_zero_scalar() {
         err
     );
 }
+
+#[test]
+fn test_verify_mir_kfunc_dynptr_slice_buffer_allows_const_zero_scalar() {
+    let (mut func, entry) = new_mir_function();
+
+    let dptr = func.alloc_vreg();
+    let off = func.alloc_vreg();
+    let buffer = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dptr,
+        src: MirValue::StackSlot(dptr_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: off,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: buffer,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(8),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_dynptr_slice".to_string(),
+        btf_id: None,
+        args: vec![dptr, off, buffer, size],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        dptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(off, MirType::I64);
+    types.insert(buffer, MirType::I64);
+    types.insert(size, MirType::I64);
+    types.insert(
+        ret,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    verify_mir(&func, &types)
+        .expect("expected nullable bpf_dynptr_slice buffer arg to allow scalar const zero");
+}
+
+#[test]
+fn test_verify_mir_kfunc_dynptr_slice_buffer_rejects_non_zero_scalar() {
+    let (mut func, entry) = new_mir_function();
+
+    let dptr = func.alloc_vreg();
+    let off = func.alloc_vreg();
+    let buffer = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dptr,
+        src: MirValue::StackSlot(dptr_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: off,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: buffer,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(8),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_dynptr_slice".to_string(),
+        btf_id: None,
+        args: vec![dptr, off, buffer, size],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        dptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(off, MirType::I64);
+    types.insert(buffer, MirType::I64);
+    types.insert(size, MirType::I64);
+    types.insert(
+        ret,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected non-zero scalar dynptr_slice buffer verifier error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_dynptr_slice' arg2 expects null (0) or pointer value")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}

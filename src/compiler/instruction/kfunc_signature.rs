@@ -157,6 +157,12 @@ impl KfuncSignature {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: KfuncRetKind::Scalar,
             }),
+            "bpf_dynptr_slice" | "bpf_dynptr_slice_rdwr" => Some(Self {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, S, P, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
             "bpf_dynptr_memset" => Some(Self {
                 min_args: 4,
                 max_args: 4,
