@@ -158,6 +158,8 @@ pub struct KernelBtf {
     kfunc_pointer_size_arg_cache: RwLock<Option<HashMap<String, Vec<(usize, usize)>>>>,
     /// Cached mapping of kfunc names to pointer args that require stack-slot base pointers.
     kfunc_stack_slot_base_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
+    /// Cached mapping of kfunc names to pointer args inferred as by-reference out parameters.
+    kfunc_out_pointer_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to pointer argument fixed access sizes.
     kfunc_pointer_fixed_size_cache: RwLock<Option<HashMap<String, Vec<(usize, usize)>>>>,
     /// Cached mapping of kfunc names to inferred coarse signatures.
@@ -195,6 +197,7 @@ impl KernelBtf {
                 kfunc_positive_scalar_arg_cache: RwLock::new(None),
                 kfunc_pointer_size_arg_cache: RwLock::new(None),
                 kfunc_stack_slot_base_arg_cache: RwLock::new(None),
+                kfunc_out_pointer_arg_cache: RwLock::new(None),
                 kfunc_pointer_fixed_size_cache: RwLock::new(None),
                 kfunc_signature_hint_cache: RwLock::new(None),
             }
@@ -384,6 +387,17 @@ impl KernelBtf {
         }
         let lower = name.to_ascii_lowercase();
         lower == "bpf_map" || lower.contains("bpf_map")
+    }
+
+    fn is_probable_out_param_name(name: &str) -> bool {
+        let lower = name.to_ascii_lowercase();
+        lower == "out"
+            || lower.starts_with("out_")
+            || lower.ends_with("_out")
+            || lower.ends_with("__out")
+            || lower == "err"
+            || lower.ends_with("_err")
+            || lower.ends_with("__err")
     }
 
     fn is_probable_release_kfunc_name(name: &str) -> bool {
@@ -1040,6 +1054,44 @@ impl KernelBtf {
         Ok(map)
     }
 
+    fn load_kfunc_out_pointer_arg_map(&self) -> Result<HashMap<String, Vec<usize>>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let mut map: HashMap<String, Vec<usize>> = HashMap::new();
+        for ty in btf.get_types() {
+            if !ty.is_function || !Self::is_bpf_kfunc(ty) {
+                continue;
+            }
+            let Some(name) = ty.name.as_ref() else {
+                continue;
+            };
+            let Type::FunctionProto(proto) = &ty.base_type else {
+                continue;
+            };
+
+            let mut out_args = Vec::new();
+            for (arg_idx, param) in proto.params.iter().enumerate() {
+                let Some(param_name) = param.name.as_deref() else {
+                    continue;
+                };
+                if !Self::is_probable_out_param_name(param_name) || param.type_id == 0 {
+                    continue;
+                }
+                let Ok(param_ty) = btf.get_type_by_id(param.type_id) else {
+                    continue;
+                };
+                if param_ty.num_refs == 0 || Self::has_user_type_tag(&param_ty.type_tags) {
+                    continue;
+                }
+                out_args.push(arg_idx);
+            }
+
+            if !out_args.is_empty() {
+                map.insert(name.clone(), out_args);
+            }
+        }
+        Ok(map)
+    }
+
     fn flattened_base_type_bits(btf: &Btf, base_type: &Type) -> Option<u32> {
         match base_type {
             Type::Integer(int_ty) => Some(int_ty.bits),
@@ -1320,6 +1372,30 @@ impl KernelBtf {
         }
 
         requires_base
+    }
+
+    /// Returns whether `kfunc_name` pointer arg appears to be an output parameter by name.
+    pub fn kfunc_pointer_arg_is_named_out(&self, kfunc_name: &str, arg_idx: usize) -> bool {
+        {
+            let cache = self.kfunc_out_pointer_arg_cache.read().unwrap();
+            if let Some(map) = cache.as_ref() {
+                return map
+                    .get(kfunc_name)
+                    .is_some_and(|args| args.contains(&arg_idx));
+            }
+        }
+
+        let map = self.load_kfunc_out_pointer_arg_map().unwrap_or_default();
+        let is_named_out = map
+            .get(kfunc_name)
+            .is_some_and(|args| args.contains(&arg_idx));
+
+        let mut cache = self.kfunc_out_pointer_arg_cache.write().unwrap();
+        if cache.is_none() {
+            *cache = Some(map);
+        }
+
+        is_named_out
     }
 
     /// Load the list of available kernel functions (lazy, cached)
@@ -1889,6 +1965,7 @@ mod tests {
             kfunc_positive_scalar_arg_cache: RwLock::new(None),
             kfunc_pointer_size_arg_cache: RwLock::new(None),
             kfunc_stack_slot_base_arg_cache: RwLock::new(None),
+            kfunc_out_pointer_arg_cache: RwLock::new(None),
             kfunc_pointer_fixed_size_cache: RwLock::new(None),
             kfunc_signature_hint_cache: RwLock::new(None),
         }
@@ -2127,6 +2204,13 @@ format:
     }
 
     #[test]
+    fn test_kfunc_named_out_query_graceful_without_btf() {
+        let service = make_test_service();
+        assert!(!service.kfunc_pointer_arg_is_named_out("definitely_not_a_kfunc", 0));
+        assert!(!service.kfunc_pointer_arg_is_named_out("definitely_not_a_kfunc", 2));
+    }
+
+    #[test]
     fn test_kfunc_size_param_base_name() {
         assert_eq!(
             KernelBtf::kfunc_size_param_base_name("buf__sz"),
@@ -2203,6 +2287,17 @@ format:
         assert!(!KernelBtf::is_probable_release_kfunc_name(
             "bpf_task_acquire"
         ));
+    }
+
+    #[test]
+    fn test_is_probable_out_param_name() {
+        assert!(KernelBtf::is_probable_out_param_name("out"));
+        assert!(KernelBtf::is_probable_out_param_name("out_task"));
+        assert!(KernelBtf::is_probable_out_param_name("task_out"));
+        assert!(KernelBtf::is_probable_out_param_name("err"));
+        assert!(KernelBtf::is_probable_out_param_name("user_err"));
+        assert!(!KernelBtf::is_probable_out_param_name("task"));
+        assert!(!KernelBtf::is_probable_out_param_name("flags"));
     }
 
     fn push_u16(buf: &mut Vec<u8>, value: u16, endianness: BtfEndianness) {

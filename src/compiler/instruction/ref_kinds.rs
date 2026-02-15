@@ -826,7 +826,9 @@ pub fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -
     if KfuncSignature::for_name(kfunc).is_some() {
         return false;
     }
-    KernelBtf::get().kfunc_pointer_arg_requires_stack_slot_base(kfunc, arg_idx)
+    let kernel_btf = KernelBtf::get();
+    kernel_btf.kfunc_pointer_arg_requires_stack_slot_base(kfunc, arg_idx)
+        || kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx)
 }
 
 pub fn kfunc_pointer_arg_allows_const_zero(kfunc: &str, arg_idx: usize) -> bool {
