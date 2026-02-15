@@ -391,6 +391,8 @@ impl KernelBtf {
             || name.starts_with("bpf_put_")
             || name.contains("_put_")
             || name.ends_with("_put")
+            || name.contains("_drop")
+            || name.contains("_free")
     }
 
     fn load_kfunc_user_pointer_arg_map(&self) -> Result<HashMap<String, Vec<usize>>, BtfError> {
@@ -2196,6 +2198,8 @@ format:
         ));
         assert!(KernelBtf::is_probable_release_kfunc_name("bpf_put_file"));
         assert!(KernelBtf::is_probable_release_kfunc_name("foo_put_bar"));
+        assert!(KernelBtf::is_probable_release_kfunc_name("foo_obj_drop"));
+        assert!(KernelBtf::is_probable_release_kfunc_name("foo_obj_free"));
         assert!(!KernelBtf::is_probable_release_kfunc_name(
             "bpf_task_acquire"
         ));

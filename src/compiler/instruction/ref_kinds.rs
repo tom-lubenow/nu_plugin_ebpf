@@ -428,6 +428,7 @@ pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
                 if kfunc.contains("_acquire")
                     || kfunc.contains("_from_")
                     || kfunc.contains("_create")
+                    || kfunc.contains("_alloc")
                     || kfunc.starts_with("bpf_get_")
                     || kfunc.starts_with("scx_bpf_get_")
                     || (kind == KfuncRefKind::Socket && kfunc.contains("lookup"))
@@ -460,7 +461,9 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
                 && (kfunc.contains("_release")
                     || kfunc.starts_with("bpf_put_")
                     || kfunc.contains("_put_")
-                    || kfunc.ends_with("_put"))
+                    || kfunc.ends_with("_put")
+                    || kfunc.contains("_drop")
+                    || kfunc.contains("_free"))
             {
                 let release_arg_idx = KernelBtf::get()
                     .kfunc_release_ref_arg_index(kfunc)
