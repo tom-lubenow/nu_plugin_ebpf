@@ -378,6 +378,14 @@ impl KernelBtf {
         None
     }
 
+    fn is_kernel_pointer_type_name(name: &str) -> bool {
+        if Self::infer_pointer_ref_family(name).is_some() {
+            return true;
+        }
+        let lower = name.to_ascii_lowercase();
+        lower == "bpf_map" || lower.contains("bpf_map")
+    }
+
     fn is_probable_release_kfunc_name(name: &str) -> bool {
         name.contains("_release")
             || name.starts_with("bpf_put_")
@@ -482,7 +490,7 @@ impl KernelBtf {
                 let Some(type_name) = param_ty.name.as_deref() else {
                     continue;
                 };
-                if Self::infer_pointer_ref_family(type_name).is_some() {
+                if Self::is_kernel_pointer_type_name(type_name) {
                     kernel_pointer_args.push(arg_idx);
                 }
             }
@@ -2170,6 +2178,15 @@ format:
         assert!(KernelBtf::is_stack_object_type_name("bpf_dynptr"));
         assert!(KernelBtf::is_stack_object_type_name("bpf_dynptr_kern"));
         assert!(!KernelBtf::is_stack_object_type_name("task_struct"));
+    }
+
+    #[test]
+    fn test_is_kernel_pointer_type_name() {
+        assert!(KernelBtf::is_kernel_pointer_type_name("task_struct"));
+        assert!(KernelBtf::is_kernel_pointer_type_name("bpf_map"));
+        assert!(KernelBtf::is_kernel_pointer_type_name("bpf_map_array"));
+        assert!(!KernelBtf::is_kernel_pointer_type_name("bpf_iter_task"));
+        assert!(!KernelBtf::is_kernel_pointer_type_name("u8"));
     }
 
     #[test]
