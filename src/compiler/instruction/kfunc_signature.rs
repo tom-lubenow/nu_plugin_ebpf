@@ -193,6 +193,24 @@ impl KfuncSignature {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: KfuncRetKind::Void,
             }),
+            "bpf_iter_bits_new" => Some(Self {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_iter_bits_next" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "bpf_iter_bits_destroy" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
             "bpf_iter_scx_dsq_new" => Some(Self {
                 min_args: 3,
                 max_args: 3,

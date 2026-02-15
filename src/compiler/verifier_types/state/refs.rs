@@ -275,6 +275,43 @@ impl VerifierState {
         self.iter_num_max_depth > 0
     }
 
+    pub(in crate::compiler::verifier_types) fn acquire_iter_bits_slot(
+        &mut self,
+        slot: StackSlotId,
+    ) {
+        self.iter_bits_min_depth = self.iter_bits_min_depth.saturating_add(1);
+        self.iter_bits_max_depth = self.iter_bits_max_depth.saturating_add(1);
+        increment_slot_depth(&mut self.iter_bits_slots, slot);
+    }
+
+    pub(in crate::compiler::verifier_types) fn use_iter_bits_slot(
+        &self,
+        slot: StackSlotId,
+    ) -> bool {
+        self.iter_bits_slots
+            .get(&slot)
+            .is_some_and(|(min_depth, _)| *min_depth > 0)
+    }
+
+    pub(in crate::compiler::verifier_types) fn release_iter_bits_slot(
+        &mut self,
+        slot: StackSlotId,
+    ) -> bool {
+        if self.iter_bits_min_depth == 0 {
+            return false;
+        }
+        if !decrement_slot_depth(&mut self.iter_bits_slots, slot) {
+            return false;
+        }
+        self.iter_bits_min_depth -= 1;
+        self.iter_bits_max_depth -= 1;
+        true
+    }
+
+    pub(in crate::compiler::verifier_types) fn has_live_iter_bits(&self) -> bool {
+        self.iter_bits_max_depth > 0
+    }
+
     pub(in crate::compiler::verifier_types) fn acquire_res_spin_lock(&mut self) {
         self.res_spin_lock_min_depth = self.res_spin_lock_min_depth.saturating_add(1);
         self.res_spin_lock_max_depth = self.res_spin_lock_max_depth.saturating_add(1);

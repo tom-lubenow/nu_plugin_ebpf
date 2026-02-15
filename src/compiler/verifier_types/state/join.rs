@@ -26,6 +26,9 @@ impl VerifierState {
             && self.iter_num_min_depth == other.iter_num_min_depth
             && self.iter_num_max_depth == other.iter_num_max_depth
             && self.iter_num_slots == other.iter_num_slots
+            && self.iter_bits_min_depth == other.iter_bits_min_depth
+            && self.iter_bits_max_depth == other.iter_bits_max_depth
+            && self.iter_bits_slots == other.iter_bits_slots
             && self.res_spin_lock_min_depth == other.res_spin_lock_min_depth
             && self.res_spin_lock_max_depth == other.res_spin_lock_max_depth
             && self.res_spin_lock_irqsave_min_depth == other.res_spin_lock_irqsave_min_depth
@@ -175,6 +178,9 @@ impl VerifierState {
             iter_num_min_depth: self.iter_num_min_depth.min(other.iter_num_min_depth),
             iter_num_max_depth: self.iter_num_max_depth.max(other.iter_num_max_depth),
             iter_num_slots: join_slot_depths(&self.iter_num_slots, &other.iter_num_slots),
+            iter_bits_min_depth: self.iter_bits_min_depth.min(other.iter_bits_min_depth),
+            iter_bits_max_depth: self.iter_bits_max_depth.max(other.iter_bits_max_depth),
+            iter_bits_slots: join_slot_depths(&self.iter_bits_slots, &other.iter_bits_slots),
             res_spin_lock_min_depth: self
                 .res_spin_lock_min_depth
                 .min(other.res_spin_lock_min_depth),

@@ -884,6 +884,40 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::IterBitsNew { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_bits_new' arg0")
+                else {
+                    return;
+                };
+                state.acquire_iter_bits_slot(slot);
+            }
+            VccInst::IterBitsNext { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_bits_next' arg0")
+                else {
+                    return;
+                };
+                if !state.use_iter_bits_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_iter_bits_next' requires a matching bpf_iter_bits_new",
+                    ));
+                }
+            }
+            VccInst::IterBitsDestroy { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_bits_destroy' arg0")
+                else {
+                    return;
+                };
+                if !state.release_iter_bits_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_iter_bits_destroy' requires a matching bpf_iter_bits_new",
+                    ));
+                }
+            }
             VccInst::KfuncExpectRefKind {
                 ptr,
                 arg_idx,
@@ -1161,6 +1195,12 @@ impl VccVerifier {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased iter_num iterator at function exit",
+                    ));
+                }
+                if state.has_live_iter_bits() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "unreleased iter_bits iterator at function exit",
                     ));
                 }
             }
