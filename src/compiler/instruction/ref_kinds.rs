@@ -156,6 +156,52 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
             size_from_arg: None,
         },
     ];
+    const CRYPTO_ENCRYPT_RULES: &[KfuncPtrArgRule] = &[
+        KfuncPtrArgRule {
+            arg_idx: 1,
+            op: "kfunc bpf_crypto_encrypt src",
+            allowed: STACK_MAP,
+            fixed_size: Some(16),
+            size_from_arg: None,
+        },
+        KfuncPtrArgRule {
+            arg_idx: 2,
+            op: "kfunc bpf_crypto_encrypt dst",
+            allowed: STACK_MAP,
+            fixed_size: Some(16),
+            size_from_arg: None,
+        },
+        KfuncPtrArgRule {
+            arg_idx: 3,
+            op: "kfunc bpf_crypto_encrypt siv",
+            allowed: STACK_MAP,
+            fixed_size: Some(16),
+            size_from_arg: None,
+        },
+    ];
+    const CRYPTO_DECRYPT_RULES: &[KfuncPtrArgRule] = &[
+        KfuncPtrArgRule {
+            arg_idx: 1,
+            op: "kfunc bpf_crypto_decrypt src",
+            allowed: STACK_MAP,
+            fixed_size: Some(16),
+            size_from_arg: None,
+        },
+        KfuncPtrArgRule {
+            arg_idx: 2,
+            op: "kfunc bpf_crypto_decrypt dst",
+            allowed: STACK_MAP,
+            fixed_size: Some(16),
+            size_from_arg: None,
+        },
+        KfuncPtrArgRule {
+            arg_idx: 3,
+            op: "kfunc bpf_crypto_decrypt siv",
+            allowed: STACK_MAP,
+            fixed_size: Some(16),
+            size_from_arg: None,
+        },
+    ];
 
     match kfunc {
         "bpf_path_d_path" => KfuncSemantics {
@@ -173,6 +219,14 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         "bpf_crypto_ctx_create" => KfuncSemantics {
             ptr_arg_rules: CRYPTO_CTX_CREATE_RULES,
             positive_size_args: &[1],
+        },
+        "bpf_crypto_encrypt" => KfuncSemantics {
+            ptr_arg_rules: CRYPTO_ENCRYPT_RULES,
+            positive_size_args: &[],
+        },
+        "bpf_crypto_decrypt" => KfuncSemantics {
+            ptr_arg_rules: CRYPTO_DECRYPT_RULES,
+            positive_size_args: &[],
         },
         "scx_bpf_events" => KfuncSemantics {
             ptr_arg_rules: SCX_EVENTS_RULES,
@@ -488,6 +542,12 @@ pub fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -
             | ("bpf_copy_from_user_task_str", 0)
             | ("bpf_crypto_ctx_create", 0)
             | ("bpf_crypto_ctx_create", 2)
+            | ("bpf_crypto_encrypt", 1)
+            | ("bpf_crypto_encrypt", 2)
+            | ("bpf_crypto_encrypt", 3)
+            | ("bpf_crypto_decrypt", 1)
+            | ("bpf_crypto_decrypt", 2)
+            | ("bpf_crypto_decrypt", 3)
             | ("scx_bpf_dump_bstr", 0)
             | ("scx_bpf_dump_bstr", 1)
             | ("scx_bpf_error_bstr", 0)

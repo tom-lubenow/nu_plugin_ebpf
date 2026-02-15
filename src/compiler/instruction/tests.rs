@@ -1569,6 +1569,30 @@ fn test_kfunc_pointer_arg_requires_stack_slot_base_mappings() {
         2
     ));
     assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_crypto_encrypt",
+        1
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_crypto_encrypt",
+        2
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_crypto_encrypt",
+        3
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_crypto_decrypt",
+        1
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_crypto_decrypt",
+        2
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_crypto_decrypt",
+        3
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
         "scx_bpf_dump_bstr",
         0
     ));
@@ -1603,6 +1627,10 @@ fn test_kfunc_pointer_arg_requires_stack_slot_base_mappings() {
     assert!(!kfunc_pointer_arg_requires_stack_slot_base(
         "bpf_crypto_ctx_create",
         1
+    ));
+    assert!(!kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_crypto_encrypt",
+        0
     ));
     assert!(!kfunc_pointer_arg_requires_stack_slot_base(
         "scx_bpf_exit_bstr",
@@ -1700,6 +1728,54 @@ fn test_kfunc_semantics_crypto_ctx_create_rules() {
     assert!(!err.allowed.allow_user);
     assert_eq!(err.fixed_size, Some(4));
     assert_eq!(err.size_from_arg, None);
+}
+
+#[test]
+fn test_kfunc_semantics_crypto_encrypt_rules() {
+    let semantics = kfunc_semantics("bpf_crypto_encrypt");
+    assert!(semantics.positive_size_args.is_empty());
+    assert_eq!(semantics.ptr_arg_rules.len(), 3);
+
+    let src = semantics.ptr_arg_rules[0];
+    assert_eq!(src.arg_idx, 1);
+    assert_eq!(src.op, "kfunc bpf_crypto_encrypt src");
+    assert!(src.allowed.allow_stack);
+    assert!(src.allowed.allow_map);
+    assert!(!src.allowed.allow_kernel);
+    assert!(!src.allowed.allow_user);
+    assert_eq!(src.fixed_size, Some(16));
+
+    let dst = semantics.ptr_arg_rules[1];
+    assert_eq!(dst.arg_idx, 2);
+    assert_eq!(dst.op, "kfunc bpf_crypto_encrypt dst");
+    assert_eq!(dst.fixed_size, Some(16));
+
+    let siv = semantics.ptr_arg_rules[2];
+    assert_eq!(siv.arg_idx, 3);
+    assert_eq!(siv.op, "kfunc bpf_crypto_encrypt siv");
+    assert_eq!(siv.fixed_size, Some(16));
+}
+
+#[test]
+fn test_kfunc_semantics_crypto_decrypt_rules() {
+    let semantics = kfunc_semantics("bpf_crypto_decrypt");
+    assert!(semantics.positive_size_args.is_empty());
+    assert_eq!(semantics.ptr_arg_rules.len(), 3);
+
+    let src = semantics.ptr_arg_rules[0];
+    assert_eq!(src.arg_idx, 1);
+    assert_eq!(src.op, "kfunc bpf_crypto_decrypt src");
+    assert_eq!(src.fixed_size, Some(16));
+
+    let dst = semantics.ptr_arg_rules[1];
+    assert_eq!(dst.arg_idx, 2);
+    assert_eq!(dst.op, "kfunc bpf_crypto_decrypt dst");
+    assert_eq!(dst.fixed_size, Some(16));
+
+    let siv = semantics.ptr_arg_rules[2];
+    assert_eq!(siv.arg_idx, 3);
+    assert_eq!(siv.op, "kfunc bpf_crypto_decrypt siv");
+    assert_eq!(siv.fixed_size, Some(16));
 }
 
 #[test]
