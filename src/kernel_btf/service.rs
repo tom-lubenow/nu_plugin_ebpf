@@ -12,6 +12,7 @@ use std::path::Path;
 use std::sync::{OnceLock, RwLock};
 
 use btf::Btf;
+use btf::btf::Type;
 
 use super::pt_regs::{PtRegsError, PtRegsOffsets, fallback_offsets, offsets_from_btf};
 use super::tracepoint::TracepointContext;
@@ -95,6 +96,8 @@ pub struct KernelBtf {
     function_cache: RwLock<Option<FunctionListResult>>,
     /// Cached pt_regs offsets (lazy loaded)
     pt_regs_cache: RwLock<Option<Result<PtRegsOffsets, PtRegsError>>>,
+    /// Cached mapping of kfunc names to nullable pointer argument indices.
+    kfunc_nullable_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
 }
 
 impl KernelBtf {
@@ -111,6 +114,7 @@ impl KernelBtf {
                 tracepoint_cache: RwLock::new(HashMap::new()),
                 function_cache: RwLock::new(None),
                 pt_regs_cache: RwLock::new(None),
+                kfunc_nullable_arg_cache: RwLock::new(None),
             }
         })
     }
@@ -215,6 +219,60 @@ impl KernelBtf {
             }
         }
         Err(BtfError::TypeNotFound(kfunc_name.to_string()))
+    }
+
+    fn load_kfunc_nullable_arg_map(&self) -> Result<HashMap<String, Vec<usize>>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let mut map: HashMap<String, Vec<usize>> = HashMap::new();
+        for ty in btf.get_types() {
+            if !ty.is_function {
+                continue;
+            }
+            let Some(name) = ty.name.as_ref() else {
+                continue;
+            };
+            let Type::FunctionProto(proto) = &ty.base_type else {
+                continue;
+            };
+            let mut nullable_args = Vec::new();
+            for (arg_idx, param) in proto.params.iter().enumerate() {
+                if param
+                    .name
+                    .as_deref()
+                    .is_some_and(|param_name| param_name.ends_with("__nullable"))
+                {
+                    nullable_args.push(arg_idx);
+                }
+            }
+            if !nullable_args.is_empty() {
+                map.insert(name.clone(), nullable_args);
+            }
+        }
+        Ok(map)
+    }
+
+    /// Returns whether `kfunc_name` argument `arg_idx` is nullable in local kernel BTF.
+    pub fn kfunc_pointer_arg_is_nullable(&self, kfunc_name: &str, arg_idx: usize) -> bool {
+        {
+            let cache = self.kfunc_nullable_arg_cache.read().unwrap();
+            if let Some(map) = cache.as_ref() {
+                return map
+                    .get(kfunc_name)
+                    .is_some_and(|nullable_args| nullable_args.contains(&arg_idx));
+            }
+        }
+
+        let map = self.load_kfunc_nullable_arg_map().unwrap_or_default();
+        let is_nullable = map
+            .get(kfunc_name)
+            .is_some_and(|nullable_args| nullable_args.contains(&arg_idx));
+
+        let mut cache = self.kfunc_nullable_arg_cache.write().unwrap();
+        if cache.is_none() {
+            *cache = Some(map);
+        }
+
+        is_nullable
     }
 
     /// Load the list of available kernel functions (lazy, cached)
@@ -654,6 +712,7 @@ mod tests {
             tracepoint_cache: RwLock::new(HashMap::new()),
             function_cache: RwLock::new(None),
             pt_regs_cache: RwLock::new(None),
+            kfunc_nullable_arg_cache: RwLock::new(None),
         }
     }
 
@@ -772,5 +831,12 @@ format:
             service.check_function("any_function"),
             FunctionCheckResult::CannotValidate
         );
+    }
+
+    #[test]
+    fn test_kfunc_nullable_query_graceful_without_btf() {
+        let service = make_test_service();
+        assert!(!service.kfunc_pointer_arg_is_nullable("definitely_not_a_kfunc", 0));
+        assert!(!service.kfunc_pointer_arg_is_nullable("definitely_not_a_kfunc", 1));
     }
 }
