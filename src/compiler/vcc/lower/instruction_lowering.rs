@@ -767,6 +767,94 @@ impl<'a> VccLowerer<'a> {
                         });
                     }
                 }
+                if let Some(lifecycle) = Self::kfunc_unknown_iter_lifecycle(kfunc)
+                    && let Some(iter) = args.get(lifecycle.arg_idx)
+                {
+                    let iter = VccReg(iter.0);
+                    match (lifecycle.family, lifecycle.op) {
+                        (KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::New) => {
+                            out.push(VccInst::IterTaskVmaNew { iter });
+                        }
+                        (KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::Next) => {
+                            out.push(VccInst::IterTaskVmaNext { iter });
+                        }
+                        (KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::Destroy) => {
+                            out.push(VccInst::IterTaskVmaDestroy { iter });
+                        }
+                        (KfuncIterFamily::Task, KfuncIterLifecycleOp::New) => {
+                            out.push(VccInst::IterTaskNew { iter });
+                        }
+                        (KfuncIterFamily::Task, KfuncIterLifecycleOp::Next) => {
+                            out.push(VccInst::IterTaskNext { iter });
+                        }
+                        (KfuncIterFamily::Task, KfuncIterLifecycleOp::Destroy) => {
+                            out.push(VccInst::IterTaskDestroy { iter });
+                        }
+                        (KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::New) => {
+                            out.push(VccInst::IterScxDsqNew { iter });
+                        }
+                        (KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::Next) => {
+                            out.push(VccInst::IterScxDsqNext { iter });
+                        }
+                        (KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::Destroy) => {
+                            out.push(VccInst::IterScxDsqDestroy { iter });
+                        }
+                        (KfuncIterFamily::Num, KfuncIterLifecycleOp::New) => {
+                            out.push(VccInst::IterNumNew { iter });
+                        }
+                        (KfuncIterFamily::Num, KfuncIterLifecycleOp::Next) => {
+                            out.push(VccInst::IterNumNext { iter });
+                        }
+                        (KfuncIterFamily::Num, KfuncIterLifecycleOp::Destroy) => {
+                            out.push(VccInst::IterNumDestroy { iter });
+                        }
+                        (KfuncIterFamily::Bits, KfuncIterLifecycleOp::New) => {
+                            out.push(VccInst::IterBitsNew { iter });
+                        }
+                        (KfuncIterFamily::Bits, KfuncIterLifecycleOp::Next) => {
+                            out.push(VccInst::IterBitsNext { iter });
+                        }
+                        (KfuncIterFamily::Bits, KfuncIterLifecycleOp::Destroy) => {
+                            out.push(VccInst::IterBitsDestroy { iter });
+                        }
+                        (KfuncIterFamily::Css, KfuncIterLifecycleOp::New) => {
+                            out.push(VccInst::IterCssNew { iter });
+                        }
+                        (KfuncIterFamily::Css, KfuncIterLifecycleOp::Next) => {
+                            out.push(VccInst::IterCssNext { iter });
+                        }
+                        (KfuncIterFamily::Css, KfuncIterLifecycleOp::Destroy) => {
+                            out.push(VccInst::IterCssDestroy { iter });
+                        }
+                        (KfuncIterFamily::CssTask, KfuncIterLifecycleOp::New) => {
+                            out.push(VccInst::IterCssTaskNew { iter });
+                        }
+                        (KfuncIterFamily::CssTask, KfuncIterLifecycleOp::Next) => {
+                            out.push(VccInst::IterCssTaskNext { iter });
+                        }
+                        (KfuncIterFamily::CssTask, KfuncIterLifecycleOp::Destroy) => {
+                            out.push(VccInst::IterCssTaskDestroy { iter });
+                        }
+                        (KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::New) => {
+                            out.push(VccInst::IterDmabufNew { iter });
+                        }
+                        (KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::Next) => {
+                            out.push(VccInst::IterDmabufNext { iter });
+                        }
+                        (KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::Destroy) => {
+                            out.push(VccInst::IterDmabufDestroy { iter });
+                        }
+                        (KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::New) => {
+                            out.push(VccInst::IterKmemCacheNew { iter });
+                        }
+                        (KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::Next) => {
+                            out.push(VccInst::IterKmemCacheNext { iter });
+                        }
+                        (KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::Destroy) => {
+                            out.push(VccInst::IterKmemCacheDestroy { iter });
+                        }
+                    }
+                }
             }
             MirInst::CallSubfn { dst, args, .. } => {
                 if args.len() > 5 {

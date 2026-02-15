@@ -52,6 +52,49 @@ pub struct KfuncSemantics {
     pub positive_size_args: &'static [usize],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KfuncIterFamily {
+    TaskVma,
+    Task,
+    ScxDsq,
+    Num,
+    Bits,
+    Css,
+    CssTask,
+    Dmabuf,
+    KmemCache,
+}
+
+impl KfuncIterFamily {
+    pub const fn constructor_kfunc(self) -> &'static str {
+        match self {
+            Self::TaskVma => "bpf_iter_task_vma_new",
+            Self::Task => "bpf_iter_task_new",
+            Self::ScxDsq => "bpf_iter_scx_dsq_new",
+            Self::Num => "bpf_iter_num_new",
+            Self::Bits => "bpf_iter_bits_new",
+            Self::Css => "bpf_iter_css_new",
+            Self::CssTask => "bpf_iter_css_task_new",
+            Self::Dmabuf => "bpf_iter_dmabuf_new",
+            Self::KmemCache => "bpf_iter_kmem_cache_new",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KfuncIterLifecycleOp {
+    New,
+    Next,
+    Destroy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KfuncUnknownIterLifecycle {
+    pub family: KfuncIterFamily,
+    pub op: KfuncIterLifecycleOp,
+    pub arg_idx: usize,
+}
+
 pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
     const STACK_MAP: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(true, true, false, false);
     const STACK_ONLY: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(true, false, false, false);
@@ -861,6 +904,62 @@ pub fn kfunc_pointer_arg_min_access_size(kfunc: &str, arg_idx: usize) -> Option<
     }
 }
 
+fn iter_lifecycle_op_from_kfunc_name(kfunc: &str) -> Option<KfuncIterLifecycleOp> {
+    if kfunc.ends_with("_new") {
+        return Some(KfuncIterLifecycleOp::New);
+    }
+    if kfunc.ends_with("_next") {
+        return Some(KfuncIterLifecycleOp::Next);
+    }
+    if kfunc.ends_with("_destroy") {
+        return Some(KfuncIterLifecycleOp::Destroy);
+    }
+    None
+}
+
+fn iter_family_from_stack_object_type_name(type_name: &str) -> Option<KfuncIterFamily> {
+    match type_name {
+        "bpf_iter_task_vma" => Some(KfuncIterFamily::TaskVma),
+        "bpf_iter_task" => Some(KfuncIterFamily::Task),
+        "bpf_iter_scx_dsq" => Some(KfuncIterFamily::ScxDsq),
+        "bpf_iter_num" => Some(KfuncIterFamily::Num),
+        "bpf_iter_bits" => Some(KfuncIterFamily::Bits),
+        "bpf_iter_css" => Some(KfuncIterFamily::Css),
+        "bpf_iter_css_task" => Some(KfuncIterFamily::CssTask),
+        "bpf_iter_dmabuf" => Some(KfuncIterFamily::Dmabuf),
+        "bpf_iter_kmem_cache" => Some(KfuncIterFamily::KmemCache),
+        _ => None,
+    }
+}
+
+pub fn kfunc_unknown_iter_lifecycle(kfunc: &str) -> Option<KfuncUnknownIterLifecycle> {
+    if KfuncSignature::for_name(kfunc).is_some() {
+        return None;
+    }
+    let op = iter_lifecycle_op_from_kfunc_name(kfunc)?;
+    let kernel_btf = KernelBtf::get();
+    let mut match_hint: Option<KfuncUnknownIterLifecycle> = None;
+    for arg_idx in 0..5 {
+        let Some(type_name) = kernel_btf.kfunc_pointer_arg_stack_object_type_name(kfunc, arg_idx)
+        else {
+            continue;
+        };
+        let Some(family) = iter_family_from_stack_object_type_name(&type_name) else {
+            continue;
+        };
+        if match_hint.is_some() {
+            // Ambiguous stack-object args: do not infer lifecycle semantics.
+            return None;
+        }
+        match_hint = Some(KfuncUnknownIterLifecycle {
+            family,
+            op,
+            arg_idx,
+        });
+    }
+    match_hint
+}
+
 pub fn kfunc_pointer_arg_allows_const_zero(kfunc: &str, arg_idx: usize) -> bool {
     matches!(
         (kfunc, arg_idx),
@@ -907,4 +1006,67 @@ pub fn kfunc_pointer_arg_fixed_size(kfunc: &str, arg_idx: usize) -> Option<usize
         return None;
     }
     KernelBtf::get().kfunc_pointer_arg_fixed_size(kfunc, arg_idx)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_iter_lifecycle_op_from_kfunc_name() {
+        assert_eq!(
+            iter_lifecycle_op_from_kfunc_name("bpf_iter_task_new"),
+            Some(KfuncIterLifecycleOp::New)
+        );
+        assert_eq!(
+            iter_lifecycle_op_from_kfunc_name("bpf_iter_task_next"),
+            Some(KfuncIterLifecycleOp::Next)
+        );
+        assert_eq!(
+            iter_lifecycle_op_from_kfunc_name("bpf_iter_task_destroy"),
+            Some(KfuncIterLifecycleOp::Destroy)
+        );
+        assert_eq!(iter_lifecycle_op_from_kfunc_name("bpf_task_from_pid"), None);
+    }
+
+    #[test]
+    fn test_iter_family_from_stack_object_type_name() {
+        assert_eq!(
+            iter_family_from_stack_object_type_name("bpf_iter_task_vma"),
+            Some(KfuncIterFamily::TaskVma)
+        );
+        assert_eq!(
+            iter_family_from_stack_object_type_name("bpf_iter_task"),
+            Some(KfuncIterFamily::Task)
+        );
+        assert_eq!(
+            iter_family_from_stack_object_type_name("bpf_iter_scx_dsq"),
+            Some(KfuncIterFamily::ScxDsq)
+        );
+        assert_eq!(
+            iter_family_from_stack_object_type_name("bpf_iter_num"),
+            Some(KfuncIterFamily::Num)
+        );
+        assert_eq!(
+            iter_family_from_stack_object_type_name("bpf_iter_bits"),
+            Some(KfuncIterFamily::Bits)
+        );
+        assert_eq!(
+            iter_family_from_stack_object_type_name("bpf_iter_css"),
+            Some(KfuncIterFamily::Css)
+        );
+        assert_eq!(
+            iter_family_from_stack_object_type_name("bpf_iter_css_task"),
+            Some(KfuncIterFamily::CssTask)
+        );
+        assert_eq!(
+            iter_family_from_stack_object_type_name("bpf_iter_dmabuf"),
+            Some(KfuncIterFamily::Dmabuf)
+        );
+        assert_eq!(
+            iter_family_from_stack_object_type_name("bpf_iter_kmem_cache"),
+            Some(KfuncIterFamily::KmemCache)
+        );
+        assert_eq!(iter_family_from_stack_object_type_name("bpf_dynptr"), None);
+    }
 }

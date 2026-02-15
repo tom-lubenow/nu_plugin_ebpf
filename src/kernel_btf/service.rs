@@ -160,6 +160,8 @@ pub struct KernelBtf {
     kfunc_stack_slot_base_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to pointer args inferred as by-reference out parameters.
     kfunc_out_pointer_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
+    /// Cached mapping of kfunc names to stack-object pointer argument type names.
+    kfunc_stack_object_arg_cache: RwLock<Option<HashMap<String, Vec<(usize, String)>>>>,
     /// Cached mapping of kfunc names to pointer argument fixed access sizes.
     kfunc_pointer_fixed_size_cache: RwLock<Option<HashMap<String, Vec<(usize, usize)>>>>,
     /// Cached mapping of kfunc names to inferred coarse signatures.
@@ -198,6 +200,7 @@ impl KernelBtf {
                 kfunc_pointer_size_arg_cache: RwLock::new(None),
                 kfunc_stack_slot_base_arg_cache: RwLock::new(None),
                 kfunc_out_pointer_arg_cache: RwLock::new(None),
+                kfunc_stack_object_arg_cache: RwLock::new(None),
                 kfunc_pointer_fixed_size_cache: RwLock::new(None),
                 kfunc_signature_hint_cache: RwLock::new(None),
             }
@@ -1092,6 +1095,48 @@ impl KernelBtf {
         Ok(map)
     }
 
+    fn load_kfunc_stack_object_arg_map(
+        &self,
+    ) -> Result<HashMap<String, Vec<(usize, String)>>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let mut map: HashMap<String, Vec<(usize, String)>> = HashMap::new();
+        for ty in btf.get_types() {
+            if !ty.is_function || !Self::is_bpf_kfunc(ty) {
+                continue;
+            }
+            let Some(name) = ty.name.as_ref() else {
+                continue;
+            };
+            let Type::FunctionProto(proto) = &ty.base_type else {
+                continue;
+            };
+
+            let mut stack_object_args = Vec::new();
+            for (arg_idx, param) in proto.params.iter().enumerate() {
+                if param.type_id == 0 {
+                    continue;
+                }
+                let Ok(param_ty) = btf.get_type_by_id(param.type_id) else {
+                    continue;
+                };
+                if param_ty.num_refs == 0 || Self::has_user_type_tag(&param_ty.type_tags) {
+                    continue;
+                }
+                let Some(type_name) = param_ty.name.as_deref() else {
+                    continue;
+                };
+                if !Self::is_stack_object_type_name(type_name) {
+                    continue;
+                }
+                stack_object_args.push((arg_idx, type_name.to_string()));
+            }
+            if !stack_object_args.is_empty() {
+                map.insert(name.clone(), stack_object_args);
+            }
+        }
+        Ok(map)
+    }
+
     fn flattened_base_type_bits(btf: &Btf, base_type: &Type) -> Option<u32> {
         match base_type {
             Type::Integer(int_ty) => Some(int_ty.bits),
@@ -1396,6 +1441,36 @@ impl KernelBtf {
         }
 
         is_named_out
+    }
+
+    /// Returns the inferred stack-object pointee type name for a pointer argument, if any.
+    pub fn kfunc_pointer_arg_stack_object_type_name(
+        &self,
+        kfunc_name: &str,
+        arg_idx: usize,
+    ) -> Option<String> {
+        {
+            let cache = self.kfunc_stack_object_arg_cache.read().unwrap();
+            if let Some(map) = cache.as_ref() {
+                return map
+                    .get(kfunc_name)
+                    .and_then(|args| args.iter().find(|(idx, _)| *idx == arg_idx))
+                    .map(|(_, type_name)| type_name.clone());
+            }
+        }
+
+        let map = self.load_kfunc_stack_object_arg_map().unwrap_or_default();
+        let type_name = map
+            .get(kfunc_name)
+            .and_then(|args| args.iter().find(|(idx, _)| *idx == arg_idx))
+            .map(|(_, type_name)| type_name.clone());
+
+        let mut cache = self.kfunc_stack_object_arg_cache.write().unwrap();
+        if cache.is_none() {
+            *cache = Some(map);
+        }
+
+        type_name
     }
 
     /// Load the list of available kernel functions (lazy, cached)
@@ -1966,6 +2041,7 @@ mod tests {
             kfunc_pointer_size_arg_cache: RwLock::new(None),
             kfunc_stack_slot_base_arg_cache: RwLock::new(None),
             kfunc_out_pointer_arg_cache: RwLock::new(None),
+            kfunc_stack_object_arg_cache: RwLock::new(None),
             kfunc_pointer_fixed_size_cache: RwLock::new(None),
             kfunc_signature_hint_cache: RwLock::new(None),
         }
@@ -2208,6 +2284,19 @@ format:
         let service = make_test_service();
         assert!(!service.kfunc_pointer_arg_is_named_out("definitely_not_a_kfunc", 0));
         assert!(!service.kfunc_pointer_arg_is_named_out("definitely_not_a_kfunc", 2));
+    }
+
+    #[test]
+    fn test_kfunc_stack_object_type_query_graceful_without_btf() {
+        let service = make_test_service();
+        assert_eq!(
+            service.kfunc_pointer_arg_stack_object_type_name("definitely_not_a_kfunc", 0),
+            None
+        );
+        assert_eq!(
+            service.kfunc_pointer_arg_stack_object_type_name("definitely_not_a_kfunc", 2),
+            None
+        );
     }
 
     #[test]

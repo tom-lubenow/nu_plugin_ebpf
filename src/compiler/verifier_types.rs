@@ -7,9 +7,10 @@
 use std::collections::HashMap;
 
 use super::instruction::{
-    BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncRefKind,
-    KfuncRetKind, KfuncSignature, helper_acquire_ref_kind, helper_pointer_arg_ref_kind,
-    helper_release_ref_kind, kfunc_acquire_ref_kind,
+    BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncIterFamily,
+    KfuncIterLifecycleOp, KfuncRefKind, KfuncRetKind, KfuncSignature, KfuncUnknownIterLifecycle,
+    helper_acquire_ref_kind, helper_pointer_arg_ref_kind, helper_release_ref_kind,
+    kfunc_acquire_ref_kind,
     kfunc_pointer_arg_allows_const_zero as kfunc_pointer_arg_allows_const_zero_shared,
     kfunc_pointer_arg_fixed_size as kfunc_pointer_arg_fixed_size_shared,
     kfunc_pointer_arg_min_access_size as kfunc_pointer_arg_min_access_size_shared,
@@ -23,7 +24,7 @@ use super::instruction::{
     kfunc_release_ref_arg_index, kfunc_release_ref_kind,
     kfunc_scalar_arg_requires_known_const as kfunc_scalar_arg_requires_known_const_shared,
     kfunc_scalar_arg_requires_positive as kfunc_scalar_arg_requires_positive_shared,
-    kfunc_semantics,
+    kfunc_semantics, kfunc_unknown_iter_lifecycle as kfunc_unknown_iter_lifecycle_shared,
 };
 use super::mir::{
     AddressSpace, BinOpKind, BlockId, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME,
