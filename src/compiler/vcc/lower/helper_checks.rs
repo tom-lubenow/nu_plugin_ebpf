@@ -902,6 +902,35 @@ impl<'a> VccLowerer<'a> {
             )?;
         }
 
+        for (ptr_arg_idx, arg) in args.iter().enumerate() {
+            let handled_in_rule = semantics
+                .ptr_arg_rules
+                .iter()
+                .any(|rule| rule.arg_idx == ptr_arg_idx);
+            let handled_in_pointer_size = Self::kfunc_pointer_arg_size_from_scalar(kfunc, ptr_arg_idx)
+                .is_some()
+                || Self::kfunc_pointer_arg_fixed_size(kfunc, ptr_arg_idx).is_some();
+            if handled_in_rule || handled_in_pointer_size {
+                continue;
+            }
+            if !Self::kfunc_pointer_arg_requires_stack_slot_base(kfunc, ptr_arg_idx) {
+                continue;
+            }
+            self.check_kfunc_ptr_arg_value(
+                kfunc,
+                ptr_arg_idx,
+                *arg,
+                "kfunc stack-slot-base argument",
+                true,
+                true,
+                true,
+                true,
+                None,
+                None,
+                out,
+            )?;
+        }
+
         for (idx, arg) in args.iter().enumerate() {
             if !Self::kfunc_scalar_arg_requires_known_const(kfunc, idx) {
                 continue;

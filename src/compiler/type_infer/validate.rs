@@ -570,9 +570,9 @@ impl<'a> TypeInference<'a> {
                         }
                         KfuncArgKind::Pointer => match arg_ty {
                             MirType::Ptr { address_space, .. } => {
-                                if Self::kfunc_pointer_arg_requires_stack(kfunc, idx)
-                                    && address_space != AddressSpace::Stack
-                                {
+                                let requires_stack =
+                                    Self::kfunc_pointer_arg_requires_stack(kfunc, idx);
+                                if requires_stack && address_space != AddressSpace::Stack {
                                     errors.push(TypeError::new(format!(
                                         "kfunc '{}' arg{} expects stack pointer, got {:?}",
                                         kfunc, idx, address_space
@@ -593,6 +593,20 @@ impl<'a> TypeInference<'a> {
                                         "kfunc '{}' arg{} expects user pointer, got {:?}",
                                         kfunc, idx, address_space
                                     )));
+                                }
+                                if !requires_stack
+                                    && address_space == AddressSpace::Stack
+                                    && Self::kfunc_pointer_arg_requires_stack_slot_base(kfunc, idx)
+                                {
+                                    let is_base = stack_bounds
+                                        .get(arg)
+                                        .is_some_and(|bounds| bounds.min == 0 && bounds.max == 0);
+                                    if !is_base {
+                                        errors.push(TypeError::new(format!(
+                                            "kfunc '{}' arg{} expects stack slot base pointer",
+                                            kfunc, idx
+                                        )));
+                                    }
                                 }
                             }
                             _ => {

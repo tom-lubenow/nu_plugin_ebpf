@@ -36,7 +36,8 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
                     kfunc_ref,
                     ..
                 } => {
-                    if kfunc_pointer_arg_requires_stack(kfunc, arg_idx) {
+                    let requires_stack = kfunc_pointer_arg_requires_stack(kfunc, arg_idx);
+                    if requires_stack {
                         if !bounds.is_some_and(|ptr_bounds| {
                             matches!(ptr_bounds.origin(), PtrOrigin::Stack(_))
                         }) {
@@ -64,6 +65,22 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
                             errors.push(VerifierTypeError::new(format!(
                                 "kfunc '{}' arg{} expects stack pointer, got {:?}",
                                 kfunc, arg_idx, space
+                            )));
+                        }
+                    }
+                    if !requires_stack
+                        && space == AddressSpace::Stack
+                        && kfunc_pointer_arg_requires_stack_slot_base(kfunc, arg_idx)
+                    {
+                        let is_base = bounds.is_some_and(|ptr_bounds| {
+                            matches!(ptr_bounds.origin(), PtrOrigin::Stack(_))
+                                && ptr_bounds.min() == 0
+                                && ptr_bounds.max() == 0
+                        });
+                        if !is_base {
+                            errors.push(VerifierTypeError::new(format!(
+                                "kfunc '{}' arg{} expects stack slot base pointer",
+                                kfunc, arg_idx
                             )));
                         }
                     }
