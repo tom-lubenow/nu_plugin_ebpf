@@ -325,7 +325,7 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
             true,
             true,
             Some(access_size),
-            false,
+            kfunc_pointer_arg_requires_stack_slot_base(kfunc, ptr_arg_idx),
             state,
             errors,
         );

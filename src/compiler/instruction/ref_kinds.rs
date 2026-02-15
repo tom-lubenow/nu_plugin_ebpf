@@ -757,7 +757,7 @@ pub fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
 }
 
 pub fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -> bool {
-    matches!(
+    if matches!(
         (kfunc, arg_idx),
         ("bpf_path_d_path", 1)
             | ("scx_bpf_events", 0)
@@ -793,7 +793,13 @@ pub fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -
             | ("scx_bpf_error_bstr", 1)
             | ("scx_bpf_exit_bstr", 1)
             | ("scx_bpf_exit_bstr", 2)
-    )
+    ) {
+        return true;
+    }
+    if KfuncSignature::for_name(kfunc).is_some() {
+        return false;
+    }
+    KernelBtf::get().kfunc_pointer_arg_requires_stack_slot_base(kfunc, arg_idx)
 }
 
 pub fn kfunc_pointer_arg_allows_const_zero(kfunc: &str, arg_idx: usize) -> bool {

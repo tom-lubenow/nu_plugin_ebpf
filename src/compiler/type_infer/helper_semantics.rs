@@ -459,6 +459,17 @@ impl<'a> TypeInference<'a> {
                     pointee,
                 } => match address_space {
                     AddressSpace::Stack => {
+                        if Self::kfunc_pointer_arg_requires_stack_slot_base(kfunc, ptr_arg_idx) {
+                            let is_base = stack_bounds
+                                .get(ptr_vreg)
+                                .is_some_and(|bounds| bounds.min == 0 && bounds.max == 0);
+                            if !is_base {
+                                errors.push(TypeError::new(format!(
+                                    "kfunc '{}' arg{} expects stack slot base pointer",
+                                    kfunc, ptr_arg_idx
+                                )));
+                            }
+                        }
                         if let Some(bounds) = stack_bounds.get(ptr_vreg) {
                             let end = bounds.max + access_size as i64 - 1;
                             if bounds.min < 0 || end > bounds.limit {

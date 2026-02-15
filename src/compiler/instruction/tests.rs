@@ -1994,6 +1994,10 @@ fn test_kfunc_pointer_arg_requires_stack_slot_base_mappings() {
         "scx_bpf_exit_bstr",
         0
     ));
+    assert!(!kfunc_pointer_arg_requires_stack_slot_base(
+        "__nu_plugin_ebpf_missing_kfunc__",
+        0
+    ));
 }
 
 #[test]

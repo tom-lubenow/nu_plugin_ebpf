@@ -152,6 +152,8 @@ pub struct KernelBtf {
     kfunc_positive_scalar_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to pointer->size argument relationships.
     kfunc_pointer_size_arg_cache: RwLock<Option<HashMap<String, Vec<(usize, usize)>>>>,
+    /// Cached mapping of kfunc names to pointer args that require stack-slot base pointers.
+    kfunc_stack_slot_base_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to pointer argument fixed access sizes.
     kfunc_pointer_fixed_size_cache: RwLock<Option<HashMap<String, Vec<(usize, usize)>>>>,
     /// Cached mapping of kfunc names to inferred coarse signatures.
@@ -186,6 +188,7 @@ impl KernelBtf {
                 kfunc_known_const_scalar_arg_cache: RwLock::new(None),
                 kfunc_positive_scalar_arg_cache: RwLock::new(None),
                 kfunc_pointer_size_arg_cache: RwLock::new(None),
+                kfunc_stack_slot_base_arg_cache: RwLock::new(None),
                 kfunc_pointer_fixed_size_cache: RwLock::new(None),
                 kfunc_signature_hint_cache: RwLock::new(None),
             }
@@ -816,6 +819,74 @@ impl KernelBtf {
         Ok(map)
     }
 
+    fn load_kfunc_stack_slot_base_arg_map(&self) -> Result<HashMap<String, Vec<usize>>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let mut map: HashMap<String, Vec<usize>> = HashMap::new();
+        for ty in btf.get_types() {
+            if !ty.is_function || !Self::is_bpf_kfunc(ty) {
+                continue;
+            }
+            let Some(name) = ty.name.as_ref() else {
+                continue;
+            };
+            let Type::FunctionProto(proto) = &ty.base_type else {
+                continue;
+            };
+
+            let mut pointer_args_by_name: HashMap<String, usize> = HashMap::new();
+            for (arg_idx, param) in proto.params.iter().enumerate() {
+                let Some(param_name) = param.name.as_deref() else {
+                    continue;
+                };
+                if param.type_id == 0 {
+                    continue;
+                }
+                let is_pointer = btf
+                    .get_type_by_id(param.type_id)
+                    .is_ok_and(|param_ty| param_ty.num_refs > 0);
+                if is_pointer {
+                    pointer_args_by_name
+                        .entry(param_name.to_string())
+                        .or_insert(arg_idx);
+                }
+            }
+
+            let mut pointer_args_with_dynamic_sizes: HashSet<usize> = HashSet::new();
+            for param in &proto.params {
+                let Some(param_name) = param.name.as_deref() else {
+                    continue;
+                };
+                let Some(base) = Self::kfunc_size_param_base_name(param_name) else {
+                    continue;
+                };
+                if let Some(ptr_arg_idx) = pointer_args_by_name.get(base).copied() {
+                    pointer_args_with_dynamic_sizes.insert(ptr_arg_idx);
+                }
+            }
+
+            let mut stack_slot_base_args = Vec::new();
+            for (arg_idx, param) in proto.params.iter().enumerate() {
+                if pointer_args_with_dynamic_sizes.contains(&arg_idx) {
+                    continue;
+                }
+                let Ok(param_ty) = btf.get_type_by_id(param.type_id) else {
+                    continue;
+                };
+                if param_ty.num_refs != 1 || Self::has_user_type_tag(&param_ty.type_tags) {
+                    continue;
+                }
+                if matches!(param_ty.base_type, Type::Struct(_) | Type::Union(_)) {
+                    stack_slot_base_args.push(arg_idx);
+                }
+            }
+
+            if !stack_slot_base_args.is_empty() {
+                map.insert(name.clone(), stack_slot_base_args);
+            }
+        }
+        Ok(map)
+    }
+
     fn flattened_base_type_bits(btf: &Btf, base_type: &Type) -> Option<u32> {
         match base_type {
             Type::Integer(int_ty) => Some(int_ty.bits),
@@ -1066,6 +1137,36 @@ impl KernelBtf {
         }
 
         size
+    }
+
+    /// Returns whether `kfunc_name` pointer arg should be a stack-slot base when in stack space.
+    pub fn kfunc_pointer_arg_requires_stack_slot_base(
+        &self,
+        kfunc_name: &str,
+        arg_idx: usize,
+    ) -> bool {
+        {
+            let cache = self.kfunc_stack_slot_base_arg_cache.read().unwrap();
+            if let Some(map) = cache.as_ref() {
+                return map
+                    .get(kfunc_name)
+                    .is_some_and(|args| args.contains(&arg_idx));
+            }
+        }
+
+        let map = self
+            .load_kfunc_stack_slot_base_arg_map()
+            .unwrap_or_default();
+        let requires_base = map
+            .get(kfunc_name)
+            .is_some_and(|args| args.contains(&arg_idx));
+
+        let mut cache = self.kfunc_stack_slot_base_arg_cache.write().unwrap();
+        if cache.is_none() {
+            *cache = Some(map);
+        }
+
+        requires_base
     }
 
     /// Load the list of available kernel functions (lazy, cached)
@@ -1632,6 +1733,7 @@ mod tests {
             kfunc_known_const_scalar_arg_cache: RwLock::new(None),
             kfunc_positive_scalar_arg_cache: RwLock::new(None),
             kfunc_pointer_size_arg_cache: RwLock::new(None),
+            kfunc_stack_slot_base_arg_cache: RwLock::new(None),
             kfunc_pointer_fixed_size_cache: RwLock::new(None),
             kfunc_signature_hint_cache: RwLock::new(None),
         }
@@ -1844,6 +1946,13 @@ format:
             service.kfunc_pointer_arg_fixed_size("definitely_not_a_kfunc", 2),
             None
         );
+    }
+
+    #[test]
+    fn test_kfunc_stack_slot_base_query_graceful_without_btf() {
+        let service = make_test_service();
+        assert!(!service.kfunc_pointer_arg_requires_stack_slot_base("definitely_not_a_kfunc", 0));
+        assert!(!service.kfunc_pointer_arg_requires_stack_slot_base("definitely_not_a_kfunc", 2));
     }
 
     #[test]
