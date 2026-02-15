@@ -3030,3 +3030,129 @@ fn test_type_error_kfunc_crypto_encrypt_siv_rejects_non_zero_scalar() {
         errs
     );
 }
+
+#[test]
+fn test_kfunc_crypto_decrypt_siv_allows_const_zero_scalar() {
+    let mut func = make_test_function();
+    let params = func.alloc_vreg();
+    let params_sz = func.alloc_vreg();
+    let err_ptr = func.alloc_vreg();
+    let ctx = func.alloc_vreg();
+    let src = func.alloc_vreg();
+    let dst_buf = func.alloc_vreg();
+    let siv = func.alloc_vreg();
+    let decrypt_ret = func.alloc_vreg();
+    let params_slot = func.alloc_stack_slot(512, 8, StackSlotKind::StringBuffer);
+    let err_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: params,
+        src: MirValue::StackSlot(params_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: params_sz,
+        src: MirValue::Const(408),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: err_ptr,
+        src: MirValue::StackSlot(err_slot),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: ctx,
+        kfunc: "bpf_crypto_ctx_create".to_string(),
+        btf_id: None,
+        args: vec![params, params_sz, err_ptr],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: src,
+        src: MirValue::StackSlot(src_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: dst_buf,
+        src: MirValue::StackSlot(dst_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: siv,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: decrypt_ret,
+        kfunc: "bpf_crypto_decrypt".to_string(),
+        btf_id: None,
+        args: vec![ctx, src, dst_buf, siv],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    ti.infer(&func)
+        .expect("expected nullable bpf_crypto_decrypt siv argument to allow scalar const zero");
+}
+
+#[test]
+fn test_type_error_kfunc_crypto_decrypt_siv_rejects_non_zero_scalar() {
+    let mut func = make_test_function();
+    let params = func.alloc_vreg();
+    let params_sz = func.alloc_vreg();
+    let err_ptr = func.alloc_vreg();
+    let ctx = func.alloc_vreg();
+    let src = func.alloc_vreg();
+    let dst_buf = func.alloc_vreg();
+    let siv = func.alloc_vreg();
+    let decrypt_ret = func.alloc_vreg();
+    let params_slot = func.alloc_stack_slot(512, 8, StackSlotKind::StringBuffer);
+    let err_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: params,
+        src: MirValue::StackSlot(params_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: params_sz,
+        src: MirValue::Const(408),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: err_ptr,
+        src: MirValue::StackSlot(err_slot),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: ctx,
+        kfunc: "bpf_crypto_ctx_create".to_string(),
+        btf_id: None,
+        args: vec![params, params_sz, err_ptr],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: src,
+        src: MirValue::StackSlot(src_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: dst_buf,
+        src: MirValue::StackSlot(dst_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: siv,
+        src: MirValue::Const(9),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: decrypt_ret,
+        kfunc: "bpf_crypto_decrypt".to_string(),
+        btf_id: None,
+        args: vec![ctx, src, dst_buf, siv],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected non-zero scalar bpf_crypto_decrypt siv type error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_crypto_decrypt' arg3 expects pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
