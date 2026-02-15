@@ -405,6 +405,8 @@ impl KernelBtf {
             || lower == "err"
             || lower.ends_with("_err")
             || lower.ends_with("__err")
+            || lower.ends_with("_uninit")
+            || lower.ends_with("__uninit")
     }
 
     fn is_probable_release_kfunc_name(name: &str) -> bool {
@@ -2400,6 +2402,8 @@ format:
         assert!(KernelBtf::is_probable_out_param_name("ctx_dst"));
         assert!(KernelBtf::is_probable_out_param_name("err"));
         assert!(KernelBtf::is_probable_out_param_name("user_err"));
+        assert!(KernelBtf::is_probable_out_param_name("clone__uninit"));
+        assert!(KernelBtf::is_probable_out_param_name("ptr_uninit"));
         assert!(!KernelBtf::is_probable_out_param_name("task"));
         assert!(!KernelBtf::is_probable_out_param_name("flags"));
     }
