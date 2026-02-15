@@ -1,6 +1,20 @@
 use super::*;
 
 impl VerifierState {
+    pub(in crate::compiler::verifier_types) fn initialize_dynptr_slot(
+        &mut self,
+        slot: StackSlotId,
+    ) {
+        self.dynptr_initialized_slots.insert(slot);
+    }
+
+    pub(in crate::compiler::verifier_types) fn is_dynptr_slot_initialized(
+        &self,
+        slot: StackSlotId,
+    ) -> bool {
+        self.dynptr_initialized_slots.contains(&slot)
+    }
+
     pub(in crate::compiler::verifier_types) fn set_live_ringbuf_ref(
         &mut self,
         id: VReg,

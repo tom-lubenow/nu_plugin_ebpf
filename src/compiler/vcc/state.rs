@@ -43,6 +43,7 @@ struct VccState {
     res_spin_lock_irqsave_min_depth: u32,
     res_spin_lock_irqsave_max_depth: u32,
     res_spin_lock_irqsave_slots: HashMap<StackSlotId, (u32, u32)>,
+    dynptr_initialized_slots: HashSet<StackSlotId>,
     cond_refinements: HashMap<VccReg, VccCondRefinement>,
     reachable: bool,
 }
@@ -115,6 +116,7 @@ impl VccState {
             res_spin_lock_irqsave_min_depth: 0,
             res_spin_lock_irqsave_max_depth: 0,
             res_spin_lock_irqsave_slots: HashMap::new(),
+            dynptr_initialized_slots: HashSet::new(),
             cond_refinements: HashMap::new(),
             reachable: true,
         }
@@ -582,6 +584,14 @@ impl VccState {
         self.res_spin_lock_irqsave_max_depth > 0
     }
 
+    fn initialize_dynptr_slot(&mut self, slot: StackSlotId) {
+        self.dynptr_initialized_slots.insert(slot);
+    }
+
+    fn is_dynptr_slot_initialized(&self, slot: StackSlotId) -> bool {
+        self.dynptr_initialized_slots.contains(&slot)
+    }
+
     fn kfunc_ref_kind(&self, id: VccReg) -> Option<KfuncRefKind> {
         self.live_kfunc_refs.get(&id).copied().flatten()
     }
@@ -691,6 +701,11 @@ impl VccState {
                 not_equal_consts.insert(*reg, shared);
             }
         }
+        let dynptr_initialized_slots = self
+            .dynptr_initialized_slots
+            .intersection(&other.dynptr_initialized_slots)
+            .copied()
+            .collect();
         VccState {
             reg_types: merged,
             not_equal_consts,
@@ -774,6 +789,7 @@ impl VccState {
                 &self.res_spin_lock_irqsave_slots,
                 &other.res_spin_lock_irqsave_slots,
             ),
+            dynptr_initialized_slots,
             cond_refinements,
             reachable: true,
         }
@@ -841,6 +857,7 @@ impl VccState {
             res_spin_lock_irqsave_min_depth: self.res_spin_lock_irqsave_min_depth,
             res_spin_lock_irqsave_max_depth: self.res_spin_lock_irqsave_max_depth,
             res_spin_lock_irqsave_slots: self.res_spin_lock_irqsave_slots.clone(),
+            dynptr_initialized_slots: self.dynptr_initialized_slots.clone(),
             cond_refinements: HashMap::new(),
             reachable: self.reachable,
         }

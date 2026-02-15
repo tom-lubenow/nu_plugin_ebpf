@@ -855,6 +855,39 @@ impl<'a> VccLowerer<'a> {
                         }
                     }
                 }
+                let unknown_dynptr_args = Self::kfunc_unknown_dynptr_args(kfunc);
+                for dynptr_arg in &unknown_dynptr_args {
+                    if let Some(ptr) = args.get(dynptr_arg.arg_idx) {
+                        match dynptr_arg.role {
+                            KfuncUnknownDynptrArgRole::In => {
+                                out.push(VccInst::DynptrRequireInitialized {
+                                    ptr: VccReg(ptr.0),
+                                    kfunc: kfunc.clone(),
+                                    arg_idx: dynptr_arg.arg_idx,
+                                });
+                            }
+                            KfuncUnknownDynptrArgRole::Out => {
+                                out.push(VccInst::DynptrMarkInitialized {
+                                    ptr: VccReg(ptr.0),
+                                    kfunc: kfunc.clone(),
+                                    arg_idx: dynptr_arg.arg_idx,
+                                });
+                            }
+                        }
+                    }
+                }
+                if let Some(copy) = Self::kfunc_unknown_dynptr_copy(kfunc)
+                    && let (Some(src), Some(dst)) =
+                        (args.get(copy.src_arg_idx), args.get(copy.dst_arg_idx))
+                {
+                    out.push(VccInst::DynptrCopy {
+                        src: VccReg(src.0),
+                        dst: VccReg(dst.0),
+                        kfunc: kfunc.clone(),
+                        src_arg_idx: copy.src_arg_idx,
+                        dst_arg_idx: copy.dst_arg_idx,
+                    });
+                }
             }
             MirInst::CallSubfn { dst, args, .. } => {
                 if args.len() > 5 {

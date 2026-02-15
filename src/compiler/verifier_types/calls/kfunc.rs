@@ -478,6 +478,18 @@ pub(in crate::compiler::verifier_types) fn kfunc_unknown_iter_lifecycle(
     kfunc_unknown_iter_lifecycle_shared(kfunc)
 }
 
+pub(in crate::compiler::verifier_types) fn kfunc_unknown_dynptr_args(
+    kfunc: &str,
+) -> Vec<KfuncUnknownDynptrArg> {
+    kfunc_unknown_dynptr_args_shared(kfunc)
+}
+
+pub(in crate::compiler::verifier_types) fn kfunc_unknown_dynptr_copy(
+    kfunc: &str,
+) -> Option<KfuncUnknownDynptrCopy> {
+    kfunc_unknown_dynptr_copy_shared(kfunc)
+}
+
 fn apply_iter_lifecycle_op(
     state: &mut VerifierState,
     family: KfuncIterFamily,
@@ -1052,6 +1064,46 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
             )));
         }
         return;
+    }
+    let unknown_dynptr_args = kfunc_unknown_dynptr_args(kfunc);
+    if !unknown_dynptr_args.is_empty() {
+        for dynptr_arg in &unknown_dynptr_args {
+            let Some(ptr) = args.get(dynptr_arg.arg_idx).copied() else {
+                continue;
+            };
+            let Some(slot) = stack_slot_from_arg(state, ptr) else {
+                continue;
+            };
+            match dynptr_arg.role {
+                KfuncUnknownDynptrArgRole::In => {
+                    if !state.is_dynptr_slot_initialized(slot) {
+                        errors.push(VerifierTypeError::new(format!(
+                            "kfunc '{}' arg{} requires initialized dynptr stack object",
+                            kfunc, dynptr_arg.arg_idx
+                        )));
+                    }
+                }
+                KfuncUnknownDynptrArgRole::Out => {
+                    state.initialize_dynptr_slot(slot);
+                }
+            }
+        }
+        if let Some(copy) = kfunc_unknown_dynptr_copy(kfunc)
+            && let (Some(src), Some(dst)) = (
+                args.get(copy.src_arg_idx).copied(),
+                args.get(copy.dst_arg_idx).copied(),
+            )
+            && let (Some(src_slot), Some(dst_slot)) = (
+                stack_slot_from_arg(state, src),
+                stack_slot_from_arg(state, dst),
+            )
+            && src_slot == dst_slot
+        {
+            errors.push(VerifierTypeError::new(format!(
+                "kfunc '{}' arg{} must reference distinct stack slot from arg{}",
+                kfunc, copy.dst_arg_idx, copy.src_arg_idx
+            )));
+        }
     }
 
     let Some((release_arg_idx, expected_kind)) = kfunc_release_spec(kfunc) else {

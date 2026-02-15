@@ -49,6 +49,7 @@ impl VerifierState {
             && self.res_spin_lock_irqsave_min_depth == other.res_spin_lock_irqsave_min_depth
             && self.res_spin_lock_irqsave_max_depth == other.res_spin_lock_irqsave_max_depth
             && self.res_spin_lock_irqsave_slots == other.res_spin_lock_irqsave_slots
+            && self.dynptr_initialized_slots == other.dynptr_initialized_slots
             && self.guards == other.guards
             && self.reachable == other.reachable
     }
@@ -139,6 +140,11 @@ impl VerifierState {
                 guards.insert(*reg, *left);
             }
         }
+        let dynptr_initialized_slots = self
+            .dynptr_initialized_slots
+            .intersection(&other.dynptr_initialized_slots)
+            .copied()
+            .collect();
         VerifierState {
             regs,
             ranges,
@@ -241,6 +247,7 @@ impl VerifierState {
                 &self.res_spin_lock_irqsave_slots,
                 &other.res_spin_lock_irqsave_slots,
             ),
+            dynptr_initialized_slots,
             reachable: true,
             guards,
         }

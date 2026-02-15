@@ -1236,6 +1236,64 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::DynptrMarkInitialized {
+                ptr,
+                kfunc,
+                arg_idx,
+            } => {
+                let op = format!("kfunc '{}' arg{}", kfunc, arg_idx);
+                let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
+                    return;
+                };
+                state.initialize_dynptr_slot(slot);
+            }
+            VccInst::DynptrRequireInitialized {
+                ptr,
+                kfunc,
+                arg_idx,
+            } => {
+                let op = format!("kfunc '{}' arg{}", kfunc, arg_idx);
+                let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
+                    return;
+                };
+                if !state.is_dynptr_slot_initialized(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "kfunc '{}' arg{} requires initialized dynptr stack object",
+                            kfunc, arg_idx
+                        ),
+                    ));
+                }
+            }
+            VccInst::DynptrCopy {
+                src,
+                dst,
+                kfunc,
+                src_arg_idx,
+                dst_arg_idx,
+            } => {
+                let src_op = format!("kfunc '{}' arg{}", kfunc, src_arg_idx);
+                let Some(src_slot) = self.stack_slot_from_reg(state, *src, &src_op) else {
+                    return;
+                };
+                let dst_op = format!("kfunc '{}' arg{}", kfunc, dst_arg_idx);
+                let Some(dst_slot) = self.stack_slot_from_reg(state, *dst, &dst_op) else {
+                    return;
+                };
+                if src_slot == dst_slot {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "kfunc '{}' arg{} must reference distinct stack slot from arg{}",
+                            kfunc, dst_arg_idx, src_arg_idx
+                        ),
+                    ));
+                }
+                if state.is_dynptr_slot_initialized(src_slot) {
+                    state.initialize_dynptr_slot(dst_slot);
+                }
+            }
             VccInst::KfuncExpectRefKind {
                 ptr,
                 arg_idx,

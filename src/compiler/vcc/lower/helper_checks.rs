@@ -285,6 +285,18 @@ impl<'a> VccLowerer<'a> {
         kfunc_unknown_iter_lifecycle_shared(kfunc)
     }
 
+    pub(super) fn kfunc_unknown_dynptr_args(
+        kfunc: &str,
+    ) -> Vec<KfuncUnknownDynptrArg> {
+        kfunc_unknown_dynptr_args_shared(kfunc)
+    }
+
+    pub(super) fn kfunc_unknown_dynptr_copy(
+        kfunc: &str,
+    ) -> Option<KfuncUnknownDynptrCopy> {
+        kfunc_unknown_dynptr_copy_shared(kfunc)
+    }
+
     pub(super) fn kfunc_pointer_arg_expected_ref_kind(
         kfunc: &str,
         arg_idx: usize,

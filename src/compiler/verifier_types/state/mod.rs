@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashSet;
 
 mod join;
 mod refs;
@@ -143,6 +144,7 @@ pub(super) struct VerifierState {
     res_spin_lock_irqsave_min_depth: u32,
     res_spin_lock_irqsave_max_depth: u32,
     res_spin_lock_irqsave_slots: HashMap<StackSlotId, (u32, u32)>,
+    dynptr_initialized_slots: HashSet<StackSlotId>,
     reachable: bool,
     guards: HashMap<VReg, Guard>,
 }
@@ -199,6 +201,7 @@ impl VerifierState {
             res_spin_lock_irqsave_min_depth: 0,
             res_spin_lock_irqsave_max_depth: 0,
             res_spin_lock_irqsave_slots: HashMap::new(),
+            dynptr_initialized_slots: HashSet::new(),
             reachable: true,
             guards: HashMap::new(),
         }

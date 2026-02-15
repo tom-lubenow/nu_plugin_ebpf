@@ -95,6 +95,24 @@ pub struct KfuncUnknownIterLifecycle {
     pub arg_idx: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KfuncUnknownDynptrArgRole {
+    In,
+    Out,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KfuncUnknownDynptrArg {
+    pub arg_idx: usize,
+    pub role: KfuncUnknownDynptrArgRole,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KfuncUnknownDynptrCopy {
+    pub src_arg_idx: usize,
+    pub dst_arg_idx: usize,
+}
+
 pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
     const STACK_MAP: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(true, true, false, false);
     const STACK_ONLY: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(true, false, false, false);
@@ -932,6 +950,10 @@ fn iter_family_from_stack_object_type_name(type_name: &str) -> Option<KfuncIterF
     }
 }
 
+fn is_dynptr_stack_object_type_name(type_name: &str) -> bool {
+    type_name == "bpf_dynptr" || type_name.starts_with("bpf_dynptr_")
+}
+
 pub fn kfunc_unknown_iter_lifecycle(kfunc: &str) -> Option<KfuncUnknownIterLifecycle> {
     if KfuncSignature::for_name(kfunc).is_some() {
         return None;
@@ -958,6 +980,53 @@ pub fn kfunc_unknown_iter_lifecycle(kfunc: &str) -> Option<KfuncUnknownIterLifec
         });
     }
     match_hint
+}
+
+pub fn kfunc_unknown_dynptr_args(kfunc: &str) -> Vec<KfuncUnknownDynptrArg> {
+    if KfuncSignature::for_name(kfunc).is_some() {
+        return Vec::new();
+    }
+    let kernel_btf = KernelBtf::get();
+    let mut args = Vec::new();
+    for arg_idx in 0..5 {
+        let Some(type_name) = kernel_btf.kfunc_pointer_arg_stack_object_type_name(kfunc, arg_idx)
+        else {
+            continue;
+        };
+        if !is_dynptr_stack_object_type_name(&type_name) {
+            continue;
+        }
+        let role = if kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx) {
+            KfuncUnknownDynptrArgRole::Out
+        } else {
+            KfuncUnknownDynptrArgRole::In
+        };
+        args.push(KfuncUnknownDynptrArg { arg_idx, role });
+    }
+    args
+}
+
+pub fn kfunc_unknown_dynptr_copy(kfunc: &str) -> Option<KfuncUnknownDynptrCopy> {
+    if KfuncSignature::for_name(kfunc).is_some() {
+        return None;
+    }
+    if !kfunc.contains("_copy") && !kfunc.contains("_clone") {
+        return None;
+    }
+    let args = kfunc_unknown_dynptr_args(kfunc);
+    if args.len() != 2 {
+        return None;
+    }
+    let in_arg = args
+        .iter()
+        .find(|arg| arg.role == KfuncUnknownDynptrArgRole::In)?;
+    let out_arg = args
+        .iter()
+        .find(|arg| arg.role == KfuncUnknownDynptrArgRole::Out)?;
+    Some(KfuncUnknownDynptrCopy {
+        src_arg_idx: in_arg.arg_idx,
+        dst_arg_idx: out_arg.arg_idx,
+    })
 }
 
 pub fn kfunc_pointer_arg_allows_const_zero(kfunc: &str, arg_idx: usize) -> bool {
@@ -1068,5 +1137,12 @@ mod tests {
             Some(KfuncIterFamily::KmemCache)
         );
         assert_eq!(iter_family_from_stack_object_type_name("bpf_dynptr"), None);
+    }
+
+    #[test]
+    fn test_is_dynptr_stack_object_type_name() {
+        assert!(is_dynptr_stack_object_type_name("bpf_dynptr"));
+        assert!(is_dynptr_stack_object_type_name("bpf_dynptr_kern"));
+        assert!(!is_dynptr_stack_object_type_name("bpf_iter_task"));
     }
 }
