@@ -466,7 +466,14 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
 pub fn kfunc_release_ref_arg_index(kfunc: &str) -> Option<usize> {
     match kfunc {
         "bpf_list_push_front_impl" | "bpf_list_push_back_impl" | "bpf_rbtree_add_impl" => Some(1),
-        _ if kfunc_release_ref_kind(kfunc).is_some() => Some(0),
+        _ if kfunc_release_ref_kind(kfunc).is_some() => {
+            if KfuncSignature::for_name(kfunc).is_none() {
+                return KernelBtf::get()
+                    .kfunc_release_ref_arg_index(kfunc)
+                    .or(Some(0));
+            }
+            Some(0)
+        }
         _ => None,
     }
 }

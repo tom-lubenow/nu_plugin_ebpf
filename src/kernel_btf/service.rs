@@ -146,6 +146,8 @@ pub struct KernelBtf {
         RwLock<Option<HashMap<String, Vec<(usize, KfuncPointerRefFamily)>>>>,
     /// Cached mapping of kfunc names to return-value ref families.
     kfunc_return_ref_family_cache: RwLock<Option<HashMap<String, KfuncPointerRefFamily>>>,
+    /// Cached mapping of kfunc names to inferred release-arg indices.
+    kfunc_release_ref_arg_index_cache: RwLock<Option<HashMap<String, usize>>>,
     /// Cached mapping of kfunc names to scalar argument indices that must be known constants.
     kfunc_known_const_scalar_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to scalar argument indices that must be positive (> 0).
@@ -185,6 +187,7 @@ impl KernelBtf {
                 kfunc_kernel_pointer_arg_cache: RwLock::new(None),
                 kfunc_pointer_ref_family_cache: RwLock::new(None),
                 kfunc_return_ref_family_cache: RwLock::new(None),
+                kfunc_release_ref_arg_index_cache: RwLock::new(None),
                 kfunc_known_const_scalar_arg_cache: RwLock::new(None),
                 kfunc_positive_scalar_arg_cache: RwLock::new(None),
                 kfunc_pointer_size_arg_cache: RwLock::new(None),
@@ -368,6 +371,13 @@ impl KernelBtf {
         None
     }
 
+    fn is_probable_release_kfunc_name(name: &str) -> bool {
+        name.contains("_release")
+            || name.starts_with("bpf_put_")
+            || name.contains("_put_")
+            || name.ends_with("_put")
+    }
+
     fn load_kfunc_user_pointer_arg_map(&self) -> Result<HashMap<String, Vec<usize>>, BtfError> {
         let btf = self.load_kernel_btf_for_query()?;
         let mut map: HashMap<String, Vec<usize>> = HashMap::new();
@@ -512,6 +522,48 @@ impl KernelBtf {
         Ok(map)
     }
 
+    fn load_kfunc_release_ref_arg_index_map(&self) -> Result<HashMap<String, usize>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let mut map: HashMap<String, usize> = HashMap::new();
+        for ty in btf.get_types() {
+            if !ty.is_function || !Self::is_bpf_kfunc(ty) {
+                continue;
+            }
+            let Some(name) = ty.name.as_ref() else {
+                continue;
+            };
+            if !Self::is_probable_release_kfunc_name(name) {
+                continue;
+            }
+            let Type::FunctionProto(proto) = &ty.base_type else {
+                continue;
+            };
+
+            let mut family_args = Vec::new();
+            for (arg_idx, param) in proto.params.iter().enumerate() {
+                if param.type_id == 0 {
+                    continue;
+                }
+                let Ok(param_ty) = btf.get_type_by_id(param.type_id) else {
+                    continue;
+                };
+                if param_ty.num_refs == 0 || Self::has_user_type_tag(&param_ty.type_tags) {
+                    continue;
+                }
+                let Some(type_name) = param_ty.name.as_deref() else {
+                    continue;
+                };
+                if Self::infer_pointer_ref_family(type_name).is_some() {
+                    family_args.push(arg_idx);
+                }
+            }
+            if family_args.len() == 1 {
+                map.insert(name.clone(), family_args[0]);
+            }
+        }
+        Ok(map)
+    }
+
     /// Returns whether `kfunc_name` argument `arg_idx` is nullable in local kernel BTF.
     pub fn kfunc_pointer_arg_is_nullable(&self, kfunc_name: &str, arg_idx: usize) -> bool {
         {
@@ -632,6 +684,28 @@ impl KernelBtf {
         }
 
         ref_family
+    }
+
+    /// Returns inferred release-argument index for `kfunc_name` if unambiguous in local BTF.
+    pub fn kfunc_release_ref_arg_index(&self, kfunc_name: &str) -> Option<usize> {
+        {
+            let cache = self.kfunc_release_ref_arg_index_cache.read().unwrap();
+            if let Some(map) = cache.as_ref() {
+                return map.get(kfunc_name).copied();
+            }
+        }
+
+        let map = self
+            .load_kfunc_release_ref_arg_index_map()
+            .unwrap_or_default();
+        let arg_idx = map.get(kfunc_name).copied();
+
+        let mut cache = self.kfunc_release_ref_arg_index_cache.write().unwrap();
+        if cache.is_none() {
+            *cache = Some(map);
+        }
+
+        arg_idx
     }
 
     fn load_kfunc_signature_hint_map(
@@ -1730,6 +1804,7 @@ mod tests {
             kfunc_kernel_pointer_arg_cache: RwLock::new(None),
             kfunc_pointer_ref_family_cache: RwLock::new(None),
             kfunc_return_ref_family_cache: RwLock::new(None),
+            kfunc_release_ref_arg_index_cache: RwLock::new(None),
             kfunc_known_const_scalar_arg_cache: RwLock::new(None),
             kfunc_positive_scalar_arg_cache: RwLock::new(None),
             kfunc_pointer_size_arg_cache: RwLock::new(None),
@@ -1900,6 +1975,15 @@ format:
     }
 
     #[test]
+    fn test_kfunc_release_ref_arg_index_query_graceful_without_btf() {
+        let service = make_test_service();
+        assert_eq!(
+            service.kfunc_release_ref_arg_index("definitely_not_a_kfunc"),
+            None
+        );
+    }
+
+    #[test]
     fn test_kfunc_signature_hint_query_graceful_without_btf() {
         let service = make_test_service();
         assert_eq!(
@@ -2001,6 +2085,18 @@ format:
             Some(KfuncPointerRefFamily::CryptoCtx)
         );
         assert_eq!(KernelBtf::infer_pointer_ref_family("u8"), None);
+    }
+
+    #[test]
+    fn test_is_probable_release_kfunc_name() {
+        assert!(KernelBtf::is_probable_release_kfunc_name(
+            "bpf_task_release"
+        ));
+        assert!(KernelBtf::is_probable_release_kfunc_name("bpf_put_file"));
+        assert!(KernelBtf::is_probable_release_kfunc_name("foo_put_bar"));
+        assert!(!KernelBtf::is_probable_release_kfunc_name(
+            "bpf_task_acquire"
+        ));
     }
 
     fn push_u16(buf: &mut Vec<u8>, value: u16, endianness: BtfEndianness) {
