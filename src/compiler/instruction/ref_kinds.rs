@@ -455,5 +455,11 @@ pub fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -
             | ("scx_bpf_events", 0)
             | ("bpf_copy_from_user_str", 0)
             | ("bpf_copy_from_user_task_str", 0)
+            | ("scx_bpf_dump_bstr", 0)
+            | ("scx_bpf_dump_bstr", 1)
+            | ("scx_bpf_error_bstr", 0)
+            | ("scx_bpf_error_bstr", 1)
+            | ("scx_bpf_exit_bstr", 1)
+            | ("scx_bpf_exit_bstr", 2)
     )
 }

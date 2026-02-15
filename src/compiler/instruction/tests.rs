@@ -1481,6 +1481,30 @@ fn test_kfunc_pointer_arg_requires_stack_slot_base_mappings() {
         "bpf_copy_from_user_task_str",
         0
     ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "scx_bpf_dump_bstr",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "scx_bpf_dump_bstr",
+        1
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "scx_bpf_error_bstr",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "scx_bpf_error_bstr",
+        1
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "scx_bpf_exit_bstr",
+        1
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "scx_bpf_exit_bstr",
+        2
+    ));
     assert!(!kfunc_pointer_arg_requires_stack_slot_base(
         "bpf_path_d_path",
         0
@@ -1490,7 +1514,7 @@ fn test_kfunc_pointer_arg_requires_stack_slot_base_mappings() {
         2
     ));
     assert!(!kfunc_pointer_arg_requires_stack_slot_base(
-        "scx_bpf_dump_bstr",
+        "scx_bpf_exit_bstr",
         0
     ));
 }
