@@ -884,6 +884,32 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::IterScxDsqMove { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'scx_bpf_dsq_move' arg0")
+                else {
+                    return;
+                };
+                if !state.use_iter_scx_dsq_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'scx_bpf_dsq_move' requires a matching bpf_iter_scx_dsq_new",
+                    ));
+                }
+            }
+            VccInst::IterScxDsqMoveVtime { iter } => {
+                let Some(slot) = self
+                    .stack_slot_from_reg(state, *iter, "kfunc 'scx_bpf_dsq_move_vtime' arg0")
+                else {
+                    return;
+                };
+                if !state.use_iter_scx_dsq_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'scx_bpf_dsq_move_vtime' requires a matching bpf_iter_scx_dsq_new",
+                    ));
+                }
+            }
             VccInst::IterNumNew { iter } => {
                 let Some(slot) =
                     self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_num_new' arg0")

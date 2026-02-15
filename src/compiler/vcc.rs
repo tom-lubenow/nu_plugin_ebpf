@@ -303,6 +303,12 @@ pub enum VccInst {
     IterScxDsqDestroy {
         iter: VccReg,
     },
+    IterScxDsqMove {
+        iter: VccReg,
+    },
+    IterScxDsqMoveVtime {
+        iter: VccReg,
+    },
     IterNumNew {
         iter: VccReg,
     },

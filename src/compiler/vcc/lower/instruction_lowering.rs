@@ -613,6 +613,20 @@ impl<'a> VccLowerer<'a> {
                         });
                     }
                 }
+                if kfunc == "scx_bpf_dsq_move" {
+                    if let Some(iter) = args.first() {
+                        out.push(VccInst::IterScxDsqMove {
+                            iter: VccReg(iter.0),
+                        });
+                    }
+                }
+                if kfunc == "scx_bpf_dsq_move_vtime" {
+                    if let Some(iter) = args.first() {
+                        out.push(VccInst::IterScxDsqMoveVtime {
+                            iter: VccReg(iter.0),
+                        });
+                    }
+                }
                 if kfunc == "bpf_iter_num_new" {
                     if let Some(iter) = args.first() {
                         out.push(VccInst::IterNumNew {

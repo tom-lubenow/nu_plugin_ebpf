@@ -1444,6 +1444,212 @@ fn test_kfunc_scx_dsq_move_vtime_requires_stack_iterator_pointer_arg0() {
 }
 
 #[test]
+fn test_kfunc_scx_dsq_move_requires_matching_iter_scx_dsq_slot() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let iter_a_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let iter_b_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let iter_a = func.alloc_vreg();
+    let iter_b = func.alloc_vreg();
+    let dsq_id = func.alloc_vreg();
+    let enq_flags = func.alloc_vreg();
+    let cpu = func.alloc_vreg();
+    let rq = func.alloc_vreg();
+    let new_ret = func.alloc_vreg();
+    let move_ret = func.alloc_vreg();
+    let destroy_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter_a,
+        src: MirValue::StackSlot(iter_a_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter_b,
+        src: MirValue::StackSlot(iter_b_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dsq_id,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: enq_flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: cpu,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: rq,
+        kfunc: "scx_bpf_cpu_rq".to_string(),
+        btf_id: None,
+        args: vec![cpu],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: new_ret,
+        kfunc: "bpf_iter_scx_dsq_new".to_string(),
+        btf_id: None,
+        args: vec![iter_a, dsq_id, enq_flags],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: move_ret,
+        kfunc: "scx_bpf_dsq_move".to_string(),
+        btf_id: None,
+        args: vec![iter_b, rq, dsq_id, enq_flags],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: destroy_ret,
+        kfunc: "bpf_iter_scx_dsq_destroy".to_string(),
+        btf_id: None,
+        args: vec![iter_a],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        iter_a,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        iter_b,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(dsq_id, MirType::I64);
+    types.insert(enq_flags, MirType::I64);
+    types.insert(cpu, MirType::I64);
+    types.insert(
+        rq,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(new_ret, MirType::I64);
+    types.insert(move_ret, MirType::I64);
+    types.insert(destroy_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected scx dsq_move slot mismatch");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'scx_bpf_dsq_move' requires a matching bpf_iter_scx_dsq_new")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_scx_dsq_move_vtime_requires_matching_iter_scx_dsq_slot() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let iter_a_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let iter_b_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let iter_a = func.alloc_vreg();
+    let iter_b = func.alloc_vreg();
+    let dsq_id = func.alloc_vreg();
+    let vtime = func.alloc_vreg();
+    let cpu = func.alloc_vreg();
+    let rq = func.alloc_vreg();
+    let new_ret = func.alloc_vreg();
+    let move_ret = func.alloc_vreg();
+    let destroy_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter_a,
+        src: MirValue::StackSlot(iter_a_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter_b,
+        src: MirValue::StackSlot(iter_b_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dsq_id,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: vtime,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: cpu,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: rq,
+        kfunc: "scx_bpf_cpu_rq".to_string(),
+        btf_id: None,
+        args: vec![cpu],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: new_ret,
+        kfunc: "bpf_iter_scx_dsq_new".to_string(),
+        btf_id: None,
+        args: vec![iter_a, dsq_id, vtime],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: move_ret,
+        kfunc: "scx_bpf_dsq_move_vtime".to_string(),
+        btf_id: None,
+        args: vec![iter_b, rq, dsq_id, vtime],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: destroy_ret,
+        kfunc: "bpf_iter_scx_dsq_destroy".to_string(),
+        btf_id: None,
+        args: vec![iter_a],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        iter_a,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        iter_b,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(dsq_id, MirType::I64);
+    types.insert(vtime, MirType::I64);
+    types.insert(cpu, MirType::I64);
+    types.insert(
+        rq,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(new_ret, MirType::I64);
+    types.insert(move_ret, MirType::I64);
+    types.insert(destroy_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected scx dsq_move_vtime slot mismatch");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'scx_bpf_dsq_move_vtime' requires a matching bpf_iter_scx_dsq_new")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_kfunc_scx_dsq_move_rejects_cgroup_task_argument() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

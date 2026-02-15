@@ -169,6 +169,7 @@ Last updated: 2026-02-15.
   - Added task-pointer provenance and kernel-space checks for `scx_bpf_dsq_move_set_slice arg0` / `scx_bpf_dsq_move_set_vtime arg0`, including tracked-ref kind mismatch diagnostics.
   - Added cpumask-pointer provenance and kernel-space checks for `scx_bpf_select_cpu_dfl arg3`, including tracked-ref kind mismatch diagnostics.
   - Added stack-slot pointer requirements for SCX DSQ move iterators (`scx_bpf_dsq_move arg0`, `scx_bpf_dsq_move_vtime arg0`) across type inference, verifier_types, and VCC.
+  - Added stack-slot identity/lifetime checks so `scx_bpf_dsq_move` / `scx_bpf_dsq_move_vtime` require a matching live `bpf_iter_scx_dsq_new` iterator slot.
   - Added typed signature coverage for dma-buf iterators (`bpf_iter_dmabuf_new` / `bpf_iter_dmabuf_next` / `bpf_iter_dmabuf_destroy`) with stack-pointer argument enforcement and stack-slot identity/lifetime tracking across type inference, verifier_types, and VCC.
   - Added typed signature coverage for kmem_cache iterators (`bpf_iter_kmem_cache_new` / `bpf_iter_kmem_cache_next` / `bpf_iter_kmem_cache_destroy`) with stack-pointer argument enforcement and stack-slot identity/lifetime tracking across type inference, verifier_types, and VCC.
   - Added typed signature coverage for task iterators (`bpf_iter_task_new` / `bpf_iter_task_next` / `bpf_iter_task_destroy`) with stack-pointer argument enforcement, task-provenance validation on iterator initialization, and stack-slot identity/lifetime tracking across type inference, verifier_types, and VCC.
