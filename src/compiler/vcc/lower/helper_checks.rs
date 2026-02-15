@@ -223,6 +223,10 @@ impl<'a> VccLowerer<'a> {
         kfunc_pointer_arg_allows_const_zero_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_pointer_arg_size_from_scalar(kfunc: &str, arg_idx: usize) -> Option<usize> {
+        kfunc_pointer_arg_size_from_scalar_shared(kfunc, arg_idx)
+    }
+
     pub(super) fn kfunc_scalar_arg_requires_known_const(kfunc: &str, arg_idx: usize) -> bool {
         kfunc_scalar_arg_requires_known_const_shared(kfunc, arg_idx)
     }
@@ -828,6 +832,42 @@ impl<'a> VccLowerer<'a> {
                 rule.allowed.allow_map,
                 rule.allowed.allow_kernel,
                 rule.allowed.allow_user,
+                access_size,
+                dynamic_size,
+                out,
+            )?;
+        }
+
+        for (ptr_arg_idx, arg) in args.iter().enumerate() {
+            if semantics
+                .ptr_arg_rules
+                .iter()
+                .any(|rule| rule.arg_idx == ptr_arg_idx && rule.size_from_arg.is_some())
+            {
+                continue;
+            }
+            let Some(size_arg_idx) = Self::kfunc_pointer_arg_size_from_scalar(kfunc, ptr_arg_idx)
+            else {
+                continue;
+            };
+            let access_size = positive_size_bounds
+                .get(size_arg_idx)
+                .copied()
+                .flatten();
+            let dynamic_size = if access_size.is_none() {
+                args.get(size_arg_idx).copied()
+            } else {
+                None
+            };
+            self.check_kfunc_ptr_arg_value(
+                kfunc,
+                ptr_arg_idx,
+                *arg,
+                "kfunc pointer-size argument",
+                true,
+                true,
+                true,
+                true,
                 access_size,
                 dynamic_size,
                 out,

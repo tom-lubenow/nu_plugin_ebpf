@@ -1101,6 +1101,22 @@ fn test_kfunc_scalar_arg_requires_positive_static_mapping() {
 }
 
 #[test]
+fn test_kfunc_pointer_arg_size_from_scalar_static_mapping() {
+    assert_eq!(
+        kfunc_pointer_arg_size_from_scalar("bpf_path_d_path", 1),
+        Some(2)
+    );
+    assert_eq!(
+        kfunc_pointer_arg_size_from_scalar("bpf_copy_from_user_str", 0),
+        Some(1)
+    );
+    assert_eq!(
+        kfunc_pointer_arg_size_from_scalar("bpf_dynptr_size", 0),
+        None
+    );
+}
+
+#[test]
 fn test_kfunc_signature_scx_dsq_insert() {
     let sig = KfuncSignature::for_name("scx_bpf_dsq_insert")
         .expect("expected scx_bpf_dsq_insert kfunc signature");

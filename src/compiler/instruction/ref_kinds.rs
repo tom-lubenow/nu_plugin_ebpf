@@ -746,3 +746,14 @@ pub fn kfunc_scalar_arg_requires_positive(kfunc: &str, arg_idx: usize) -> bool {
     kfunc_semantics(kfunc).positive_size_args.contains(&arg_idx)
         || KernelBtf::get().kfunc_scalar_arg_requires_positive(kfunc, arg_idx)
 }
+
+pub fn kfunc_pointer_arg_size_from_scalar(kfunc: &str, arg_idx: usize) -> Option<usize> {
+    if let Some(rule) = kfunc_semantics(kfunc)
+        .ptr_arg_rules
+        .iter()
+        .find(|rule| rule.arg_idx == arg_idx)
+    {
+        return rule.size_from_arg;
+    }
+    KernelBtf::get().kfunc_pointer_arg_size_arg(kfunc, arg_idx)
+}

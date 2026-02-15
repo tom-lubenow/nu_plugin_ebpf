@@ -271,6 +271,52 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
         );
     }
 
+    for (ptr_arg_idx, arg) in args.iter().enumerate() {
+        if semantics
+            .ptr_arg_rules
+            .iter()
+            .any(|rule| rule.arg_idx == ptr_arg_idx && rule.size_from_arg.is_some())
+        {
+            continue;
+        }
+        let Some(size_arg_idx) = kfunc_pointer_arg_size_from_scalar(kfunc, ptr_arg_idx) else {
+            continue;
+        };
+        let access_size = positive_size_bounds.get(size_arg_idx).copied().flatten();
+        if access_size.is_none()
+            && matches!(
+                state.get(*arg),
+                VerifierType::Ptr {
+                    space: AddressSpace::Stack | AddressSpace::Map,
+                    ..
+                }
+            )
+        {
+            errors.push(VerifierTypeError::new(format!(
+                "kfunc '{}' arg{} must have bounded upper range for arg{} pointer access",
+                kfunc, size_arg_idx, ptr_arg_idx
+            )));
+        }
+        if !matches!(state.get(*arg), VerifierType::Ptr { .. }) {
+            continue;
+        }
+        let op = format!("kfunc '{}' arg{} pointer access", kfunc, ptr_arg_idx);
+        check_kfunc_ptr_arg_value(
+            kfunc,
+            ptr_arg_idx,
+            *arg,
+            &op,
+            true,
+            true,
+            true,
+            true,
+            access_size,
+            false,
+            state,
+            errors,
+        );
+    }
+
     if kfunc == "bpf_dynptr_clone"
         && let (Some(src), Some(dst)) = (args.first(), args.get(1))
         && let (Some(src_slot), Some(dst_slot)) = (
@@ -327,6 +373,13 @@ pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_requires_stack_slot
     arg_idx: usize,
 ) -> bool {
     kfunc_pointer_arg_requires_stack_slot_base_shared(kfunc, arg_idx)
+}
+
+pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_size_from_scalar(
+    kfunc: &str,
+    arg_idx: usize,
+) -> Option<usize> {
+    kfunc_pointer_arg_size_from_scalar_shared(kfunc, arg_idx)
 }
 
 pub(in crate::compiler::verifier_types) fn kfunc_scalar_arg_requires_known_const(

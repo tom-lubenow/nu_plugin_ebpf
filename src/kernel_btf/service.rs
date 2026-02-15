@@ -129,6 +129,8 @@ pub struct KernelBtf {
     kfunc_known_const_scalar_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to scalar argument indices that must be positive (> 0).
     kfunc_positive_scalar_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
+    /// Cached mapping of kfunc names to pointer->size argument relationships.
+    kfunc_pointer_size_arg_cache: RwLock<Option<HashMap<String, Vec<(usize, usize)>>>>,
     /// Cached mapping of kfunc names to inferred coarse signatures.
     kfunc_signature_hint_cache: RwLock<Option<HashMap<String, KfuncSignatureHint>>>,
 }
@@ -156,6 +158,7 @@ impl KernelBtf {
                 kfunc_nullable_arg_cache: RwLock::new(None),
                 kfunc_known_const_scalar_arg_cache: RwLock::new(None),
                 kfunc_positive_scalar_arg_cache: RwLock::new(None),
+                kfunc_pointer_size_arg_cache: RwLock::new(None),
                 kfunc_signature_hint_cache: RwLock::new(None),
             }
         })
@@ -445,6 +448,76 @@ impl KernelBtf {
         Ok(map)
     }
 
+    fn kfunc_size_param_base_name(param_name: &str) -> Option<&str> {
+        let base = param_name
+            .strip_suffix("__szk")
+            .or_else(|| param_name.strip_suffix("__sz"))?;
+        if base.is_empty() {
+            return None;
+        }
+        Some(base)
+    }
+
+    fn load_kfunc_pointer_size_arg_map(
+        &self,
+    ) -> Result<HashMap<String, Vec<(usize, usize)>>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let mut map: HashMap<String, Vec<(usize, usize)>> = HashMap::new();
+        for ty in btf.get_types() {
+            if !ty.is_function || !Self::is_bpf_kfunc(ty) {
+                continue;
+            }
+            let Some(name) = ty.name.as_ref() else {
+                continue;
+            };
+            let Type::FunctionProto(proto) = &ty.base_type else {
+                continue;
+            };
+
+            let mut pointer_args_by_name: HashMap<String, usize> = HashMap::new();
+            for (arg_idx, param) in proto.params.iter().enumerate() {
+                let Some(param_name) = param.name.as_deref() else {
+                    continue;
+                };
+                if param.type_id == 0 {
+                    continue;
+                }
+                let is_pointer = btf
+                    .get_type_by_id(param.type_id)
+                    .is_ok_and(|param_ty| param_ty.num_refs > 0);
+                if is_pointer {
+                    pointer_args_by_name
+                        .entry(param_name.to_string())
+                        .or_insert(arg_idx);
+                }
+            }
+
+            let mut ptr_size_pairs: Vec<(usize, usize)> = Vec::new();
+            for (size_arg_idx, param) in proto.params.iter().enumerate() {
+                let Some(param_name) = param.name.as_deref() else {
+                    continue;
+                };
+                let Some(base) = Self::kfunc_size_param_base_name(param_name) else {
+                    continue;
+                };
+                let Some(ptr_arg_idx) = pointer_args_by_name.get(base).copied() else {
+                    continue;
+                };
+                if !ptr_size_pairs
+                    .iter()
+                    .any(|(ptr, size)| *ptr == ptr_arg_idx && *size == size_arg_idx)
+                {
+                    ptr_size_pairs.push((ptr_arg_idx, size_arg_idx));
+                }
+            }
+
+            if !ptr_size_pairs.is_empty() {
+                map.insert(name.clone(), ptr_size_pairs);
+            }
+        }
+        Ok(map)
+    }
+
     /// Returns a best-effort coarse kfunc signature inferred from local kernel BTF.
     pub fn kfunc_signature_hint(&self, kfunc_name: &str) -> Option<KfuncSignatureHint> {
         {
@@ -519,6 +592,34 @@ impl KernelBtf {
         }
 
         is_positive
+    }
+
+    /// Returns the scalar size-argument index paired with a pointer argument, if available.
+    ///
+    /// This is inferred from kernel BTF parameter-name conventions `arg` + `arg__sz`/`arg__szk`.
+    pub fn kfunc_pointer_arg_size_arg(&self, kfunc_name: &str, arg_idx: usize) -> Option<usize> {
+        {
+            let cache = self.kfunc_pointer_size_arg_cache.read().unwrap();
+            if let Some(map) = cache.as_ref() {
+                return map
+                    .get(kfunc_name)
+                    .and_then(|pairs| pairs.iter().find(|(ptr, _)| *ptr == arg_idx))
+                    .map(|(_, size)| *size);
+            }
+        }
+
+        let map = self.load_kfunc_pointer_size_arg_map().unwrap_or_default();
+        let size_arg = map
+            .get(kfunc_name)
+            .and_then(|pairs| pairs.iter().find(|(ptr, _)| *ptr == arg_idx))
+            .map(|(_, size)| *size);
+
+        let mut cache = self.kfunc_pointer_size_arg_cache.write().unwrap();
+        if cache.is_none() {
+            *cache = Some(map);
+        }
+
+        size_arg
     }
 
     /// Load the list of available kernel functions (lazy, cached)
@@ -1080,6 +1181,7 @@ mod tests {
             kfunc_nullable_arg_cache: RwLock::new(None),
             kfunc_known_const_scalar_arg_cache: RwLock::new(None),
             kfunc_positive_scalar_arg_cache: RwLock::new(None),
+            kfunc_pointer_size_arg_cache: RwLock::new(None),
             kfunc_signature_hint_cache: RwLock::new(None),
         }
     }
@@ -1229,6 +1331,34 @@ format:
         let service = make_test_service();
         assert!(!service.kfunc_scalar_arg_requires_positive("definitely_not_a_kfunc", 0));
         assert!(!service.kfunc_scalar_arg_requires_positive("definitely_not_a_kfunc", 3));
+    }
+
+    #[test]
+    fn test_kfunc_pointer_size_arg_query_graceful_without_btf() {
+        let service = make_test_service();
+        assert_eq!(
+            service.kfunc_pointer_arg_size_arg("definitely_not_a_kfunc", 0),
+            None
+        );
+        assert_eq!(
+            service.kfunc_pointer_arg_size_arg("definitely_not_a_kfunc", 2),
+            None
+        );
+    }
+
+    #[test]
+    fn test_kfunc_size_param_base_name() {
+        assert_eq!(
+            KernelBtf::kfunc_size_param_base_name("buf__sz"),
+            Some("buf")
+        );
+        assert_eq!(
+            KernelBtf::kfunc_size_param_base_name("buffer__szk"),
+            Some("buffer")
+        );
+        assert_eq!(KernelBtf::kfunc_size_param_base_name("size"), None);
+        assert_eq!(KernelBtf::kfunc_size_param_base_name("__sz"), None);
+        assert_eq!(KernelBtf::kfunc_size_param_base_name("__szk"), None);
     }
 
     fn push_u16(buf: &mut Vec<u8>, value: u16, endianness: BtfEndianness) {

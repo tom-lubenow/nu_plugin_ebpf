@@ -58,6 +58,10 @@ impl<'a> TypeInference<'a> {
         kfunc_pointer_arg_allows_const_zero_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_pointer_arg_size_from_scalar(kfunc: &str, arg_idx: usize) -> Option<usize> {
+        kfunc_pointer_arg_size_from_scalar_shared(kfunc, arg_idx)
+    }
+
     pub(super) fn kfunc_scalar_arg_requires_known_const(kfunc: &str, arg_idx: usize) -> bool {
         kfunc_scalar_arg_requires_known_const_shared(kfunc, arg_idx)
     }
@@ -404,6 +408,66 @@ impl<'a> TypeInference<'a> {
                     "kfunc '{}' arg{} expects pointer value, got {:?}",
                     kfunc, rule.arg_idx, other
                 ))),
+            }
+        }
+
+        for (ptr_arg_idx, ptr_vreg) in args.iter().enumerate() {
+            if semantics
+                .ptr_arg_rules
+                .iter()
+                .any(|rule| rule.arg_idx == ptr_arg_idx && rule.size_from_arg.is_some())
+            {
+                continue;
+            }
+            let Some(size_arg_idx) = Self::kfunc_pointer_arg_size_from_scalar(kfunc, ptr_arg_idx)
+            else {
+                continue;
+            };
+            let Some(access_size) = positive_size_bounds.get(size_arg_idx).copied().flatten()
+            else {
+                if matches!(
+                    self.mir_type_for_vreg(*ptr_vreg, types),
+                    MirType::Ptr {
+                        address_space: AddressSpace::Stack | AddressSpace::Map,
+                        ..
+                    }
+                ) {
+                    errors.push(TypeError::new(format!(
+                        "kfunc '{}' arg{} must have bounded upper range for arg{} pointer access",
+                        kfunc, size_arg_idx, ptr_arg_idx
+                    )));
+                }
+                continue;
+            };
+
+            match self.mir_type_for_vreg(*ptr_vreg, types) {
+                MirType::Ptr {
+                    address_space,
+                    pointee,
+                } => match address_space {
+                    AddressSpace::Stack => {
+                        if let Some(bounds) = stack_bounds.get(ptr_vreg) {
+                            let end = bounds.max + access_size as i64 - 1;
+                            if bounds.min < 0 || end > bounds.limit {
+                                errors.push(TypeError::new(format!(
+                                    "kfunc '{}' arg{} pointer access requires {} bytes, stack pointer range [{}..{}] exceeds [0..{}]",
+                                    kfunc, ptr_arg_idx, access_size, bounds.min, bounds.max, bounds.limit
+                                )));
+                            }
+                        }
+                    }
+                    AddressSpace::Map => {
+                        let pointee_size = pointee.size();
+                        if access_size > pointee_size {
+                            errors.push(TypeError::new(format!(
+                                "kfunc '{}' arg{} pointer access requires {} bytes, map value has {} bytes",
+                                kfunc, ptr_arg_idx, access_size, pointee_size
+                            )));
+                        }
+                    }
+                    AddressSpace::Kernel | AddressSpace::User => {}
+                },
+                _ => {}
             }
         }
 

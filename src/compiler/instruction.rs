@@ -291,8 +291,8 @@ pub use ref_kinds::{
     helper_pointer_arg_ref_kind, helper_release_ref_kind, kfunc_acquire_ref_kind,
     kfunc_pointer_arg_allows_const_zero, kfunc_pointer_arg_ref_kind,
     kfunc_pointer_arg_requires_kernel, kfunc_pointer_arg_requires_stack,
-    kfunc_pointer_arg_requires_stack_slot_base, kfunc_release_ref_arg_index,
-    kfunc_release_ref_kind, kfunc_scalar_arg_requires_known_const,
+    kfunc_pointer_arg_requires_stack_slot_base, kfunc_pointer_arg_size_from_scalar,
+    kfunc_release_ref_arg_index, kfunc_release_ref_kind, kfunc_scalar_arg_requires_known_const,
     kfunc_scalar_arg_requires_positive, kfunc_semantics,
 };
 
