@@ -26,6 +26,9 @@ struct VccState {
     iter_bits_min_depth: u32,
     iter_bits_max_depth: u32,
     iter_bits_slots: HashMap<StackSlotId, (u32, u32)>,
+    iter_dmabuf_min_depth: u32,
+    iter_dmabuf_max_depth: u32,
+    iter_dmabuf_slots: HashMap<StackSlotId, (u32, u32)>,
     res_spin_lock_min_depth: u32,
     res_spin_lock_max_depth: u32,
     res_spin_lock_irqsave_min_depth: u32,
@@ -86,6 +89,9 @@ impl VccState {
             iter_bits_min_depth: 0,
             iter_bits_max_depth: 0,
             iter_bits_slots: HashMap::new(),
+            iter_dmabuf_min_depth: 0,
+            iter_dmabuf_max_depth: 0,
+            iter_dmabuf_slots: HashMap::new(),
             res_spin_lock_min_depth: 0,
             res_spin_lock_max_depth: 0,
             res_spin_lock_irqsave_min_depth: 0,
@@ -393,6 +399,34 @@ impl VccState {
         self.iter_bits_max_depth > 0
     }
 
+    fn acquire_iter_dmabuf_slot(&mut self, slot: StackSlotId) {
+        self.iter_dmabuf_min_depth = self.iter_dmabuf_min_depth.saturating_add(1);
+        self.iter_dmabuf_max_depth = self.iter_dmabuf_max_depth.saturating_add(1);
+        increment_slot_depth(&mut self.iter_dmabuf_slots, slot);
+    }
+
+    fn use_iter_dmabuf_slot(&self, slot: StackSlotId) -> bool {
+        self.iter_dmabuf_slots
+            .get(&slot)
+            .is_some_and(|(min_depth, _)| *min_depth > 0)
+    }
+
+    fn release_iter_dmabuf_slot(&mut self, slot: StackSlotId) -> bool {
+        if self.iter_dmabuf_min_depth == 0 {
+            return false;
+        }
+        if !decrement_slot_depth(&mut self.iter_dmabuf_slots, slot) {
+            return false;
+        }
+        self.iter_dmabuf_min_depth -= 1;
+        self.iter_dmabuf_max_depth -= 1;
+        true
+    }
+
+    fn has_live_iter_dmabuf(&self) -> bool {
+        self.iter_dmabuf_max_depth > 0
+    }
+
     fn acquire_res_spin_lock(&mut self) {
         self.res_spin_lock_min_depth = self.res_spin_lock_min_depth.saturating_add(1);
         self.res_spin_lock_max_depth = self.res_spin_lock_max_depth.saturating_add(1);
@@ -597,6 +631,12 @@ impl VccState {
             iter_bits_min_depth: self.iter_bits_min_depth.min(other.iter_bits_min_depth),
             iter_bits_max_depth: self.iter_bits_max_depth.max(other.iter_bits_max_depth),
             iter_bits_slots: merge_slot_depths(&self.iter_bits_slots, &other.iter_bits_slots),
+            iter_dmabuf_min_depth: self.iter_dmabuf_min_depth.min(other.iter_dmabuf_min_depth),
+            iter_dmabuf_max_depth: self.iter_dmabuf_max_depth.max(other.iter_dmabuf_max_depth),
+            iter_dmabuf_slots: merge_slot_depths(
+                &self.iter_dmabuf_slots,
+                &other.iter_dmabuf_slots,
+            ),
             res_spin_lock_min_depth: self
                 .res_spin_lock_min_depth
                 .min(other.res_spin_lock_min_depth),
@@ -663,6 +703,9 @@ impl VccState {
             iter_bits_min_depth: self.iter_bits_min_depth,
             iter_bits_max_depth: self.iter_bits_max_depth,
             iter_bits_slots: self.iter_bits_slots.clone(),
+            iter_dmabuf_min_depth: self.iter_dmabuf_min_depth,
+            iter_dmabuf_max_depth: self.iter_dmabuf_max_depth,
+            iter_dmabuf_slots: self.iter_dmabuf_slots.clone(),
             res_spin_lock_min_depth: self.res_spin_lock_min_depth,
             res_spin_lock_max_depth: self.res_spin_lock_max_depth,
             res_spin_lock_irqsave_min_depth: self.res_spin_lock_irqsave_min_depth,

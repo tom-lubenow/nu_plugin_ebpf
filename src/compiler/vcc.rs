@@ -321,6 +321,15 @@ pub enum VccInst {
     IterBitsDestroy {
         iter: VccReg,
     },
+    IterDmabufNew {
+        iter: VccReg,
+    },
+    IterDmabufNext {
+        iter: VccReg,
+    },
+    IterDmabufDestroy {
+        iter: VccReg,
+    },
     KfuncExpectRefKind {
         ptr: VccValue,
         arg_idx: usize,

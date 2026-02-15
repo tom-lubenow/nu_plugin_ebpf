@@ -952,6 +952,40 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::IterDmabufNew { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_dmabuf_new' arg0")
+                else {
+                    return;
+                };
+                state.acquire_iter_dmabuf_slot(slot);
+            }
+            VccInst::IterDmabufNext { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_dmabuf_next' arg0")
+                else {
+                    return;
+                };
+                if !state.use_iter_dmabuf_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_iter_dmabuf_next' requires a matching bpf_iter_dmabuf_new",
+                    ));
+                }
+            }
+            VccInst::IterDmabufDestroy { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_dmabuf_destroy' arg0")
+                else {
+                    return;
+                };
+                if !state.release_iter_dmabuf_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_iter_dmabuf_destroy' requires a matching bpf_iter_dmabuf_new",
+                    ));
+                }
+            }
             VccInst::KfuncExpectRefKind {
                 ptr,
                 arg_idx,
@@ -1241,6 +1275,12 @@ impl VccVerifier {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased iter_bits iterator at function exit",
+                    ));
+                }
+                if state.has_live_iter_dmabuf() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "unreleased iter_dmabuf iterator at function exit",
                     ));
                 }
             }
