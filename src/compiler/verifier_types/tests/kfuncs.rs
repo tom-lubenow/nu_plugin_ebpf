@@ -1148,6 +1148,74 @@ fn test_kfunc_copy_from_user_task_dynptr_rejects_cgroup_task_argument() {
 }
 
 #[test]
+fn test_kfunc_dynptr_clone_requires_stack_slot_base_dst() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let src = func.alloc_vreg();
+    let dst_base = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: src,
+        src: MirValue::StackSlot(src_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dst_base,
+        src: MirValue::StackSlot(dst_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(dst_base),
+        rhs: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_dynptr_clone".to_string(),
+        btf_id: None,
+        args: vec![src, dst],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        src,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        dst_base,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        dst,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected dynptr_clone stack-slot-base error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg1 expects stack slot base pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_kfunc_scx_events_buffer_requires_stack_or_map_space() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

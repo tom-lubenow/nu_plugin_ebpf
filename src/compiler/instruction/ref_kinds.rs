@@ -174,6 +174,59 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
             size_from_arg: Some(2),
         },
     ];
+    const DYNPTR_ADJUST_RULES: &[KfuncPtrArgRule] = &[KfuncPtrArgRule {
+        arg_idx: 0,
+        op: "kfunc bpf_dynptr_adjust p",
+        allowed: STACK_ONLY,
+        fixed_size: Some(16),
+        size_from_arg: None,
+    }];
+    const DYNPTR_CLONE_RULES: &[KfuncPtrArgRule] = &[
+        KfuncPtrArgRule {
+            arg_idx: 0,
+            op: "kfunc bpf_dynptr_clone src",
+            allowed: STACK_ONLY,
+            fixed_size: Some(16),
+            size_from_arg: None,
+        },
+        KfuncPtrArgRule {
+            arg_idx: 1,
+            op: "kfunc bpf_dynptr_clone dst",
+            allowed: STACK_ONLY,
+            fixed_size: Some(16),
+            size_from_arg: None,
+        },
+    ];
+    const DYNPTR_COPY_RULES: &[KfuncPtrArgRule] = &[
+        KfuncPtrArgRule {
+            arg_idx: 0,
+            op: "kfunc bpf_dynptr_copy dst",
+            allowed: STACK_ONLY,
+            fixed_size: Some(16),
+            size_from_arg: None,
+        },
+        KfuncPtrArgRule {
+            arg_idx: 2,
+            op: "kfunc bpf_dynptr_copy src",
+            allowed: STACK_ONLY,
+            fixed_size: Some(16),
+            size_from_arg: None,
+        },
+    ];
+    const DYNPTR_SIZE_RULES: &[KfuncPtrArgRule] = &[KfuncPtrArgRule {
+        arg_idx: 0,
+        op: "kfunc bpf_dynptr_size p",
+        allowed: STACK_ONLY,
+        fixed_size: Some(16),
+        size_from_arg: None,
+    }];
+    const DYNPTR_MEMSET_RULES: &[KfuncPtrArgRule] = &[KfuncPtrArgRule {
+        arg_idx: 0,
+        op: "kfunc bpf_dynptr_memset p",
+        allowed: STACK_ONLY,
+        fixed_size: Some(16),
+        size_from_arg: None,
+    }];
     const CRYPTO_CTX_CREATE_RULES: &[KfuncPtrArgRule] = &[
         KfuncPtrArgRule {
             arg_idx: 0,
@@ -257,6 +310,26 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         "bpf_copy_from_user_task_dynptr" | "bpf_copy_from_user_task_str_dynptr" => KfuncSemantics {
             ptr_arg_rules: COPY_FROM_USER_TASK_DYNPTR_RULES,
             positive_size_args: &[2],
+        },
+        "bpf_dynptr_adjust" => KfuncSemantics {
+            ptr_arg_rules: DYNPTR_ADJUST_RULES,
+            positive_size_args: &[],
+        },
+        "bpf_dynptr_clone" => KfuncSemantics {
+            ptr_arg_rules: DYNPTR_CLONE_RULES,
+            positive_size_args: &[],
+        },
+        "bpf_dynptr_copy" => KfuncSemantics {
+            ptr_arg_rules: DYNPTR_COPY_RULES,
+            positive_size_args: &[],
+        },
+        "bpf_dynptr_size" | "bpf_dynptr_is_null" | "bpf_dynptr_is_rdonly" => KfuncSemantics {
+            ptr_arg_rules: DYNPTR_SIZE_RULES,
+            positive_size_args: &[],
+        },
+        "bpf_dynptr_memset" => KfuncSemantics {
+            ptr_arg_rules: DYNPTR_MEMSET_RULES,
+            positive_size_args: &[],
         },
         "bpf_crypto_ctx_create" => KfuncSemantics {
             ptr_arg_rules: CRYPTO_CTX_CREATE_RULES,
@@ -573,6 +646,15 @@ pub fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
             | ("bpf_copy_from_user_dynptr", 0)
             | ("bpf_copy_from_user_task_dynptr", 0)
             | ("bpf_copy_from_user_task_str_dynptr", 0)
+            | ("bpf_dynptr_adjust", 0)
+            | ("bpf_dynptr_clone", 0)
+            | ("bpf_dynptr_clone", 1)
+            | ("bpf_dynptr_copy", 0)
+            | ("bpf_dynptr_copy", 2)
+            | ("bpf_dynptr_size", 0)
+            | ("bpf_dynptr_is_null", 0)
+            | ("bpf_dynptr_is_rdonly", 0)
+            | ("bpf_dynptr_memset", 0)
             | ("scx_bpf_dsq_move", 0)
             | ("scx_bpf_dsq_move_set_slice", 0)
             | ("scx_bpf_dsq_move_set_vtime", 0)
@@ -590,6 +672,15 @@ pub fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -
             | ("bpf_copy_from_user_dynptr", 0)
             | ("bpf_copy_from_user_task_dynptr", 0)
             | ("bpf_copy_from_user_task_str_dynptr", 0)
+            | ("bpf_dynptr_adjust", 0)
+            | ("bpf_dynptr_clone", 0)
+            | ("bpf_dynptr_clone", 1)
+            | ("bpf_dynptr_copy", 0)
+            | ("bpf_dynptr_copy", 2)
+            | ("bpf_dynptr_size", 0)
+            | ("bpf_dynptr_is_null", 0)
+            | ("bpf_dynptr_is_rdonly", 0)
+            | ("bpf_dynptr_memset", 0)
             | ("bpf_crypto_ctx_create", 0)
             | ("bpf_crypto_ctx_create", 2)
             | ("bpf_crypto_encrypt", 1)

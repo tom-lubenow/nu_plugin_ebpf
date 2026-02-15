@@ -935,6 +935,45 @@ fn test_type_error_kfunc_copy_from_user_task_dynptr_requires_kernel_task_arg() {
 }
 
 #[test]
+fn test_type_error_kfunc_dynptr_clone_requires_stack_slot_base_dst() {
+    let mut func = make_test_function();
+    let src = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: src,
+        src: MirValue::StackSlot(src_slot),
+    });
+    block.instructions.push(MirInst::BinOp {
+        dst,
+        op: BinOpKind::Add,
+        lhs: MirValue::StackSlot(dst_slot),
+        rhs: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_dynptr_clone".to_string(),
+        btf_id: None,
+        args: vec![src, dst],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected dynptr_clone stack-slot-base error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("arg1 expects stack slot base pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_kfunc_scx_events_buffer_requires_stack_or_map_space() {
     let mut func = make_test_function();
     let pid = func.alloc_vreg();

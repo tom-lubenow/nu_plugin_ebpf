@@ -976,6 +976,66 @@ fn test_kfunc_signature_copy_from_user_strs() {
 }
 
 #[test]
+fn test_kfunc_signature_dynptr_core_kfuncs() {
+    let sig =
+        KfuncSignature::for_name("bpf_dynptr_adjust").expect("expected bpf_dynptr_adjust sig");
+    assert_eq!(sig.min_args, 3);
+    assert_eq!(sig.max_args, 3);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
+    let sig = KfuncSignature::for_name("bpf_dynptr_clone").expect("expected bpf_dynptr_clone sig");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
+    let sig = KfuncSignature::for_name("bpf_dynptr_copy").expect("expected bpf_dynptr_copy sig");
+    assert_eq!(sig.min_args, 5);
+    assert_eq!(sig.max_args, 5);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(3), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(4), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
+    let sig =
+        KfuncSignature::for_name("bpf_dynptr_size").expect("expected bpf_dynptr_size signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
+    let sig = KfuncSignature::for_name("bpf_dynptr_is_null")
+        .expect("expected bpf_dynptr_is_null signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
+    let sig = KfuncSignature::for_name("bpf_dynptr_is_rdonly")
+        .expect("expected bpf_dynptr_is_rdonly signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
+    let sig =
+        KfuncSignature::for_name("bpf_dynptr_memset").expect("expected bpf_dynptr_memset sig");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+}
+
+#[test]
 fn test_unknown_kfunc_signature_message_for_missing_symbol() {
     let msg = unknown_kfunc_signature_message("__nu_plugin_ebpf_missing_kfunc_for_test__");
     assert!(msg.contains("unknown kfunc '__nu_plugin_ebpf_missing_kfunc_for_test__'"));
@@ -1540,6 +1600,15 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
         "bpf_copy_from_user_task_str_dynptr",
         0
     ));
+    assert!(kfunc_pointer_arg_requires_stack("bpf_dynptr_adjust", 0));
+    assert!(kfunc_pointer_arg_requires_stack("bpf_dynptr_clone", 0));
+    assert!(kfunc_pointer_arg_requires_stack("bpf_dynptr_clone", 1));
+    assert!(kfunc_pointer_arg_requires_stack("bpf_dynptr_copy", 0));
+    assert!(kfunc_pointer_arg_requires_stack("bpf_dynptr_copy", 2));
+    assert!(kfunc_pointer_arg_requires_stack("bpf_dynptr_size", 0));
+    assert!(kfunc_pointer_arg_requires_stack("bpf_dynptr_is_null", 0));
+    assert!(kfunc_pointer_arg_requires_stack("bpf_dynptr_is_rdonly", 0));
+    assert!(kfunc_pointer_arg_requires_stack("bpf_dynptr_memset", 0));
     assert!(kfunc_pointer_arg_requires_stack("scx_bpf_dsq_move", 0));
     assert!(kfunc_pointer_arg_requires_stack(
         "scx_bpf_dsq_move_set_slice",
@@ -1625,6 +1694,10 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
         "bpf_copy_from_user_task_dynptr",
         4
     ));
+    assert!(!kfunc_pointer_arg_requires_stack("bpf_dynptr_adjust", 1));
+    assert!(!kfunc_pointer_arg_requires_stack("bpf_dynptr_clone", 2));
+    assert!(!kfunc_pointer_arg_requires_stack("bpf_dynptr_copy", 4));
+    assert!(!kfunc_pointer_arg_requires_stack("bpf_dynptr_memset", 3));
     assert!(!kfunc_pointer_arg_requires_stack("bpf_iter_dmabuf_new", 1));
     assert!(!kfunc_pointer_arg_requires_stack(
         "bpf_iter_kmem_cache_new",
@@ -1663,6 +1736,42 @@ fn test_kfunc_pointer_arg_requires_stack_slot_base_mappings() {
         0
     ));
     assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_dynptr_adjust",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_dynptr_clone",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_dynptr_clone",
+        1
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_dynptr_copy",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_dynptr_copy",
+        2
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_dynptr_size",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_dynptr_is_null",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_dynptr_is_rdonly",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_dynptr_memset",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
         "bpf_crypto_ctx_create",
         0
     ));
@@ -1729,6 +1838,10 @@ fn test_kfunc_pointer_arg_requires_stack_slot_base_mappings() {
     assert!(!kfunc_pointer_arg_requires_stack_slot_base(
         "bpf_copy_from_user_dynptr",
         3
+    ));
+    assert!(!kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_dynptr_clone",
+        2
     ));
     assert!(!kfunc_pointer_arg_requires_stack_slot_base(
         "bpf_crypto_ctx_create",
@@ -1825,6 +1938,36 @@ fn test_kfunc_semantics_copy_from_user_dynptr_rules() {
     assert!(!src.allowed.allow_kernel);
     assert!(src.allowed.allow_user);
     assert_eq!(src.size_from_arg, Some(2));
+}
+
+#[test]
+fn test_kfunc_semantics_dynptr_core_rules() {
+    let clone = kfunc_semantics("bpf_dynptr_clone");
+    assert!(clone.positive_size_args.is_empty());
+    assert_eq!(clone.ptr_arg_rules.len(), 2);
+    assert_eq!(clone.ptr_arg_rules[0].arg_idx, 0);
+    assert_eq!(clone.ptr_arg_rules[0].op, "kfunc bpf_dynptr_clone src");
+    assert_eq!(clone.ptr_arg_rules[0].fixed_size, Some(16));
+    assert!(clone.ptr_arg_rules[0].allowed.allow_stack);
+    assert!(!clone.ptr_arg_rules[0].allowed.allow_map);
+    assert_eq!(clone.ptr_arg_rules[1].arg_idx, 1);
+    assert_eq!(clone.ptr_arg_rules[1].op, "kfunc bpf_dynptr_clone dst");
+    assert_eq!(clone.ptr_arg_rules[1].fixed_size, Some(16));
+
+    let copy = kfunc_semantics("bpf_dynptr_copy");
+    assert!(copy.positive_size_args.is_empty());
+    assert_eq!(copy.ptr_arg_rules.len(), 2);
+    assert_eq!(copy.ptr_arg_rules[0].arg_idx, 0);
+    assert_eq!(copy.ptr_arg_rules[0].op, "kfunc bpf_dynptr_copy dst");
+    assert_eq!(copy.ptr_arg_rules[0].fixed_size, Some(16));
+    assert_eq!(copy.ptr_arg_rules[1].arg_idx, 2);
+    assert_eq!(copy.ptr_arg_rules[1].op, "kfunc bpf_dynptr_copy src");
+    assert_eq!(copy.ptr_arg_rules[1].fixed_size, Some(16));
+
+    let size = kfunc_semantics("bpf_dynptr_size");
+    assert_eq!(size.ptr_arg_rules.len(), 1);
+    assert_eq!(size.ptr_arg_rules[0].arg_idx, 0);
+    assert_eq!(size.ptr_arg_rules[0].fixed_size, Some(16));
 }
 
 #[test]

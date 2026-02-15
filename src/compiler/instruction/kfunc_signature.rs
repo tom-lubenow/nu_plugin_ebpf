@@ -133,6 +133,36 @@ impl KfuncSignature {
                 arg_kinds: [P, S, S, P, P],
                 ret_kind: KfuncRetKind::Scalar,
             }),
+            "bpf_dynptr_adjust" => Some(Self {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_dynptr_clone" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_dynptr_copy" => Some(Self {
+                min_args: 5,
+                max_args: 5,
+                arg_kinds: [P, S, P, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_dynptr_is_null" | "bpf_dynptr_is_rdonly" | "bpf_dynptr_size" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_dynptr_memset" => Some(Self {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
             "bpf_map_sum_elem_count" => Some(Self {
                 min_args: 1,
                 max_args: 1,
