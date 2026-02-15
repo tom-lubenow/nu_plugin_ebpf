@@ -191,6 +191,24 @@ impl VccVerifier {
             VccInst::AssertStackSlotBase { ptr, op } => {
                 let _ = self.stack_slot_from_reg(state, *ptr, op);
             }
+            VccInst::AssertDistinctStackSlots { lhs, rhs, message } => {
+                let Some(lhs_slot) =
+                    self.stack_slot_from_reg(state, *lhs, "kfunc 'bpf_dynptr_clone' arg0")
+                else {
+                    return;
+                };
+                let Some(rhs_slot) =
+                    self.stack_slot_from_reg(state, *rhs, "kfunc 'bpf_dynptr_clone' arg1")
+                else {
+                    return;
+                };
+                if lhs_slot == rhs_slot {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        message.clone(),
+                    ));
+                }
+            }
             VccInst::StackAddr { dst, slot, size } => {
                 let bounds = if *size > 0 {
                     Some(VccBounds {

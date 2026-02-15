@@ -398,6 +398,24 @@ impl<'a> TypeInference<'a> {
                 ))),
             }
         }
+
+        if kfunc == "bpf_dynptr_clone"
+            && let (Some(src), Some(dst)) = (args.first(), args.get(1))
+        {
+            let src_slot = stack_bounds
+                .get(src)
+                .filter(|bounds| bounds.min == 0 && bounds.max == 0)
+                .map(|bounds| bounds.slot);
+            let dst_slot = stack_bounds
+                .get(dst)
+                .filter(|bounds| bounds.min == 0 && bounds.max == 0)
+                .map(|bounds| bounds.slot);
+            if src_slot.is_some() && src_slot == dst_slot {
+                errors.push(TypeError::new(
+                    "kfunc 'bpf_dynptr_clone' arg1 must reference distinct stack slot from arg0",
+                ));
+            }
+        }
     }
 
     pub(super) fn is_const_zero(value: &MirValue) -> bool {

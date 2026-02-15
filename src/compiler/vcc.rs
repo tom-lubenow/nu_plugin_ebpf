@@ -219,6 +219,11 @@ pub enum VccInst {
         ptr: VccReg,
         op: String,
     },
+    AssertDistinctStackSlots {
+        lhs: VccReg,
+        rhs: VccReg,
+        message: String,
+    },
     StackAddr {
         dst: VccReg,
         slot: StackSlotId,

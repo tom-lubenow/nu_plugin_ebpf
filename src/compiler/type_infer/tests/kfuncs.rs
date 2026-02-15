@@ -974,6 +974,43 @@ fn test_type_error_kfunc_dynptr_clone_requires_stack_slot_base_dst() {
 }
 
 #[test]
+fn test_type_error_kfunc_dynptr_clone_rejects_same_stack_slot_src_and_dst() {
+    let mut func = make_test_function();
+    let src = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: src,
+        src: MirValue::StackSlot(slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst,
+        src: MirValue::StackSlot(slot),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_dynptr_clone".to_string(),
+        btf_id: None,
+        args: vec![src, dst],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected dynptr_clone same-slot type error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("arg1 must reference distinct stack slot from arg0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_kfunc_scx_events_buffer_requires_stack_or_map_space() {
     let mut func = make_test_function();
     let pid = func.alloc_vreg();

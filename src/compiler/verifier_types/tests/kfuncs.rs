@@ -1216,6 +1216,60 @@ fn test_kfunc_dynptr_clone_requires_stack_slot_base_dst() {
 }
 
 #[test]
+fn test_kfunc_dynptr_clone_rejects_same_stack_slot_src_and_dst() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let src = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: src,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_dynptr_clone".to_string(),
+        btf_id: None,
+        args: vec![src, dst],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        src,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        dst,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected dynptr_clone same-slot error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("arg1 must reference distinct stack slot from arg0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_kfunc_scx_events_buffer_requires_stack_or_map_space() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

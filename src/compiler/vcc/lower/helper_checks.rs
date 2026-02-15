@@ -826,6 +826,18 @@ impl<'a> VccLowerer<'a> {
             )?;
         }
 
+        if kfunc == "bpf_dynptr_clone"
+            && let (Some(src), Some(dst)) = (args.first(), args.get(1))
+        {
+            out.push(VccInst::AssertDistinctStackSlots {
+                lhs: VccReg(src.0),
+                rhs: VccReg(dst.0),
+                message:
+                    "kfunc 'bpf_dynptr_clone' arg1 must reference distinct stack slot from arg0"
+                        .to_string(),
+            });
+        }
+
         Ok(())
     }
 
