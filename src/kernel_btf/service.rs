@@ -405,11 +405,9 @@ impl KernelBtf {
             };
             let mut known_const_args = Vec::new();
             for (arg_idx, param) in proto.params.iter().enumerate() {
-                if param
-                    .name
-                    .as_deref()
-                    .is_some_and(|param_name| param_name.ends_with("__szk"))
-                {
+                if param.name.as_deref().is_some_and(|param_name| {
+                    param_name.ends_with("__szk") || param_name.ends_with("__k")
+                }) {
                     known_const_args.push(arg_idx);
                 }
             }
@@ -540,7 +538,7 @@ impl KernelBtf {
 
     /// Returns whether `kfunc_name` scalar argument `arg_idx` must be known constant.
     ///
-    /// This is inferred from kernel BTF parameter-name convention `*__szk`.
+    /// This is inferred from kernel BTF parameter-name conventions `*__szk` / `*__k`.
     pub fn kfunc_scalar_arg_requires_known_const(&self, kfunc_name: &str, arg_idx: usize) -> bool {
         {
             let cache = self.kfunc_known_const_scalar_arg_cache.read().unwrap();
