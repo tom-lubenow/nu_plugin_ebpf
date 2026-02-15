@@ -42,6 +42,7 @@ pub struct KfuncSemantics {
 
 pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
     const STACK_MAP: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(true, true, false, false);
+    const STACK_ONLY: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(true, false, false, false);
     const USER_ONLY: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(false, false, false, true);
     const NONE: KfuncSemantics = KfuncSemantics {
         ptr_arg_rules: &[],
@@ -141,6 +142,38 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
             size_from_arg: Some(1),
         },
     ];
+    const COPY_FROM_USER_DYNPTR_RULES: &[KfuncPtrArgRule] = &[
+        KfuncPtrArgRule {
+            arg_idx: 0,
+            op: "kfunc bpf_copy_from_user_dynptr dptr",
+            allowed: STACK_ONLY,
+            fixed_size: Some(16),
+            size_from_arg: None,
+        },
+        KfuncPtrArgRule {
+            arg_idx: 3,
+            op: "kfunc bpf_copy_from_user_dynptr src",
+            allowed: USER_ONLY,
+            fixed_size: None,
+            size_from_arg: Some(2),
+        },
+    ];
+    const COPY_FROM_USER_TASK_DYNPTR_RULES: &[KfuncPtrArgRule] = &[
+        KfuncPtrArgRule {
+            arg_idx: 0,
+            op: "kfunc bpf_copy_from_user_task_dynptr dptr",
+            allowed: STACK_ONLY,
+            fixed_size: Some(16),
+            size_from_arg: None,
+        },
+        KfuncPtrArgRule {
+            arg_idx: 3,
+            op: "kfunc bpf_copy_from_user_task_dynptr src",
+            allowed: USER_ONLY,
+            fixed_size: None,
+            size_from_arg: Some(2),
+        },
+    ];
     const CRYPTO_CTX_CREATE_RULES: &[KfuncPtrArgRule] = &[
         KfuncPtrArgRule {
             arg_idx: 0,
@@ -213,9 +246,17 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
             ptr_arg_rules: COPY_FROM_USER_STR_RULES,
             positive_size_args: &[1],
         },
+        "bpf_copy_from_user_dynptr" => KfuncSemantics {
+            ptr_arg_rules: COPY_FROM_USER_DYNPTR_RULES,
+            positive_size_args: &[2],
+        },
         "bpf_copy_from_user_task_str" => KfuncSemantics {
             ptr_arg_rules: COPY_FROM_USER_TASK_STR_RULES,
             positive_size_args: &[1],
+        },
+        "bpf_copy_from_user_task_dynptr" | "bpf_copy_from_user_task_str_dynptr" => KfuncSemantics {
+            ptr_arg_rules: COPY_FROM_USER_TASK_DYNPTR_RULES,
+            positive_size_args: &[2],
         },
         "bpf_crypto_ctx_create" => KfuncSemantics {
             ptr_arg_rules: CRYPTO_CTX_CREATE_RULES,
@@ -362,6 +403,8 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
             | ("bpf_iter_task_vma_new", 1)
             | ("bpf_iter_task_new", 1)
             | ("bpf_copy_from_user_task_str", 3)
+            | ("bpf_copy_from_user_task_dynptr", 4)
+            | ("bpf_copy_from_user_task_str_dynptr", 4)
             | ("scx_bpf_dsq_insert", 0)
             | ("scx_bpf_dsq_insert_vtime", 0)
             | ("scx_bpf_dsq_move", 1)
@@ -527,6 +570,9 @@ pub fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
             | ("bpf_iter_scx_dsq_new", 0)
             | ("bpf_iter_scx_dsq_next", 0)
             | ("bpf_iter_scx_dsq_destroy", 0)
+            | ("bpf_copy_from_user_dynptr", 0)
+            | ("bpf_copy_from_user_task_dynptr", 0)
+            | ("bpf_copy_from_user_task_str_dynptr", 0)
             | ("scx_bpf_dsq_move", 0)
             | ("scx_bpf_dsq_move_set_slice", 0)
             | ("scx_bpf_dsq_move_set_vtime", 0)
@@ -541,6 +587,9 @@ pub fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -
             | ("scx_bpf_events", 0)
             | ("bpf_copy_from_user_str", 0)
             | ("bpf_copy_from_user_task_str", 0)
+            | ("bpf_copy_from_user_dynptr", 0)
+            | ("bpf_copy_from_user_task_dynptr", 0)
+            | ("bpf_copy_from_user_task_str_dynptr", 0)
             | ("bpf_crypto_ctx_create", 0)
             | ("bpf_crypto_ctx_create", 2)
             | ("bpf_crypto_encrypt", 1)

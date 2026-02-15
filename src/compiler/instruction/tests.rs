@@ -931,6 +931,16 @@ fn test_kfunc_signature_copy_from_user_strs() {
     assert_eq!(sig.arg_kind(3), KfuncArgKind::Scalar);
     assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
 
+    let sig = KfuncSignature::for_name("bpf_copy_from_user_dynptr")
+        .expect("expected bpf_copy_from_user_dynptr kfunc signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
     let sig = KfuncSignature::for_name("bpf_copy_from_user_task_str")
         .expect("expected bpf_copy_from_user_task_str kfunc signature");
     assert_eq!(sig.min_args, 5);
@@ -940,6 +950,28 @@ fn test_kfunc_signature_copy_from_user_strs() {
     assert_eq!(sig.arg_kind(2), KfuncArgKind::Pointer);
     assert_eq!(sig.arg_kind(3), KfuncArgKind::Pointer);
     assert_eq!(sig.arg_kind(4), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
+    let sig = KfuncSignature::for_name("bpf_copy_from_user_task_dynptr")
+        .expect("expected bpf_copy_from_user_task_dynptr kfunc signature");
+    assert_eq!(sig.min_args, 5);
+    assert_eq!(sig.max_args, 5);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(4), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
+    let sig = KfuncSignature::for_name("bpf_copy_from_user_task_str_dynptr")
+        .expect("expected bpf_copy_from_user_task_str_dynptr kfunc signature");
+    assert_eq!(sig.min_args, 5);
+    assert_eq!(sig.max_args, 5);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(4), KfuncArgKind::Pointer);
     assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
 }
 
@@ -1320,6 +1352,14 @@ fn test_kfunc_pointer_arg_ref_kind_mappings() {
         Some(KfuncRefKind::Task)
     );
     assert_eq!(
+        kfunc_pointer_arg_ref_kind("bpf_copy_from_user_task_dynptr", 4),
+        Some(KfuncRefKind::Task)
+    );
+    assert_eq!(
+        kfunc_pointer_arg_ref_kind("bpf_copy_from_user_task_str_dynptr", 4),
+        Some(KfuncRefKind::Task)
+    );
+    assert_eq!(
         kfunc_pointer_arg_ref_kind("scx_bpf_select_cpu_and", 0),
         Some(KfuncRefKind::Task)
     );
@@ -1415,6 +1455,14 @@ fn test_kfunc_pointer_arg_requires_kernel_mappings() {
         "bpf_copy_from_user_task_str",
         3
     ));
+    assert!(kfunc_pointer_arg_requires_kernel(
+        "bpf_copy_from_user_task_dynptr",
+        4
+    ));
+    assert!(kfunc_pointer_arg_requires_kernel(
+        "bpf_copy_from_user_task_str_dynptr",
+        4
+    ));
     assert!(!kfunc_pointer_arg_requires_kernel(
         "bpf_iter_task_vma_new",
         0
@@ -1426,6 +1474,10 @@ fn test_kfunc_pointer_arg_requires_kernel_mappings() {
     assert!(!kfunc_pointer_arg_requires_kernel(
         "bpf_copy_from_user_task_str",
         2
+    ));
+    assert!(!kfunc_pointer_arg_requires_kernel(
+        "bpf_copy_from_user_task_dynptr",
+        3
     ));
     assert!(!kfunc_pointer_arg_requires_kernel("bpf_obj_new_impl", 1));
     assert!(!kfunc_pointer_arg_requires_kernel("bpf_local_irq_save", 0));
@@ -1474,6 +1526,18 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
     assert!(kfunc_pointer_arg_requires_stack("bpf_iter_scx_dsq_next", 0));
     assert!(kfunc_pointer_arg_requires_stack(
         "bpf_iter_scx_dsq_destroy",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack(
+        "bpf_copy_from_user_dynptr",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack(
+        "bpf_copy_from_user_task_dynptr",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack(
+        "bpf_copy_from_user_task_str_dynptr",
         0
     ));
     assert!(kfunc_pointer_arg_requires_stack("scx_bpf_dsq_move", 0));
@@ -1553,6 +1617,14 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
         "scx_bpf_dsq_move_vtime",
         1
     ));
+    assert!(!kfunc_pointer_arg_requires_stack(
+        "bpf_copy_from_user_dynptr",
+        3
+    ));
+    assert!(!kfunc_pointer_arg_requires_stack(
+        "bpf_copy_from_user_task_dynptr",
+        4
+    ));
     assert!(!kfunc_pointer_arg_requires_stack("bpf_iter_dmabuf_new", 1));
     assert!(!kfunc_pointer_arg_requires_stack(
         "bpf_iter_kmem_cache_new",
@@ -1579,6 +1651,18 @@ fn test_kfunc_pointer_arg_requires_stack_slot_base_mappings() {
         0
     ));
     assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_copy_from_user_dynptr",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_copy_from_user_task_dynptr",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_copy_from_user_task_str_dynptr",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
         "bpf_crypto_ctx_create",
         0
     ));
@@ -1641,6 +1725,10 @@ fn test_kfunc_pointer_arg_requires_stack_slot_base_mappings() {
     assert!(!kfunc_pointer_arg_requires_stack_slot_base(
         "bpf_copy_from_user_str",
         2
+    ));
+    assert!(!kfunc_pointer_arg_requires_stack_slot_base(
+        "bpf_copy_from_user_dynptr",
+        3
     ));
     assert!(!kfunc_pointer_arg_requires_stack_slot_base(
         "bpf_crypto_ctx_create",
@@ -1712,6 +1800,31 @@ fn test_kfunc_semantics_copy_from_user_str_rules() {
     assert!(!src.allowed.allow_kernel);
     assert!(src.allowed.allow_user);
     assert_eq!(src.size_from_arg, Some(1));
+}
+
+#[test]
+fn test_kfunc_semantics_copy_from_user_dynptr_rules() {
+    let semantics = kfunc_semantics("bpf_copy_from_user_dynptr");
+    assert_eq!(semantics.positive_size_args, &[2]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+    let dptr = semantics.ptr_arg_rules[0];
+    assert_eq!(dptr.arg_idx, 0);
+    assert_eq!(dptr.op, "kfunc bpf_copy_from_user_dynptr dptr");
+    assert!(dptr.allowed.allow_stack);
+    assert!(!dptr.allowed.allow_map);
+    assert!(!dptr.allowed.allow_kernel);
+    assert!(!dptr.allowed.allow_user);
+    assert_eq!(dptr.fixed_size, Some(16));
+
+    let src = semantics.ptr_arg_rules[1];
+    assert_eq!(src.arg_idx, 3);
+    assert_eq!(src.op, "kfunc bpf_copy_from_user_dynptr src");
+    assert!(!src.allowed.allow_stack);
+    assert!(!src.allowed.allow_map);
+    assert!(!src.allowed.allow_kernel);
+    assert!(src.allowed.allow_user);
+    assert_eq!(src.size_from_arg, Some(2));
 }
 
 #[test]

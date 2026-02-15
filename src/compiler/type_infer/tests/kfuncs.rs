@@ -785,6 +785,156 @@ fn test_type_error_kfunc_copy_from_user_task_str_requires_kernel_task_arg() {
 }
 
 #[test]
+fn test_type_error_kfunc_copy_from_user_dynptr_src_requires_user_pointer() {
+    let mut func = make_test_function();
+    let dptr = func.alloc_vreg();
+    let off = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let src = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let src_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: dptr,
+        src: MirValue::StackSlot(dptr_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: off,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(8),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: src,
+        src: MirValue::StackSlot(src_slot),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_copy_from_user_dynptr".to_string(),
+        btf_id: None,
+        args: vec![dptr, off, size, src],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected copy_from_user_dynptr user-pointer source type error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc bpf_copy_from_user_dynptr src expects pointer in [User], got Stack")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_kfunc_copy_from_user_dynptr_requires_stack_slot_base_dptr() {
+    let mut func = make_test_function();
+    let dptr = func.alloc_vreg();
+    let off = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let src = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let src_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::BinOp {
+        dst: dptr,
+        op: BinOpKind::Add,
+        lhs: MirValue::StackSlot(dptr_slot),
+        rhs: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: off,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(8),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: src,
+        src: MirValue::StackSlot(src_slot),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_copy_from_user_dynptr".to_string(),
+        btf_id: None,
+        args: vec![dptr, off, size, src],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected copy_from_user_dynptr stack-slot-base type error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("arg0 expects stack slot base pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_kfunc_copy_from_user_task_dynptr_requires_kernel_task_arg() {
+    let mut func = make_test_function();
+    let dptr = func.alloc_vreg();
+    let off = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let src = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let src_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let task_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: dptr,
+        src: MirValue::StackSlot(dptr_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: off,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(8),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: src,
+        src: MirValue::StackSlot(src_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: task,
+        src: MirValue::StackSlot(task_slot),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_copy_from_user_task_dynptr".to_string(),
+        btf_id: None,
+        args: vec![dptr, off, size, src, task],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected copy_from_user_task_dynptr task-arg type error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("arg4 expects kernel pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_kfunc_scx_events_buffer_requires_stack_or_map_space() {
     let mut func = make_test_function();
     let pid = func.alloc_vreg();
