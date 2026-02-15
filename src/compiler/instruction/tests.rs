@@ -1228,6 +1228,10 @@ fn test_kfunc_pointer_arg_ref_kind_mappings() {
         Some(KfuncRefKind::Cpumask)
     );
     assert_eq!(
+        kfunc_pointer_arg_ref_kind("scx_bpf_select_cpu_dfl", 3),
+        Some(KfuncRefKind::Cpumask)
+    );
+    assert_eq!(
         kfunc_pointer_arg_ref_kind("scx_bpf_put_cpumask", 0),
         Some(KfuncRefKind::Cpumask)
     );
@@ -1277,6 +1281,10 @@ fn test_kfunc_pointer_arg_requires_kernel_mappings() {
     assert!(kfunc_pointer_arg_requires_kernel(
         "scx_bpf_dsq_move_set_vtime",
         0
+    ));
+    assert!(kfunc_pointer_arg_requires_kernel(
+        "scx_bpf_select_cpu_dfl",
+        3
     ));
     assert!(!kfunc_pointer_arg_requires_kernel(
         "bpf_iter_task_vma_new",

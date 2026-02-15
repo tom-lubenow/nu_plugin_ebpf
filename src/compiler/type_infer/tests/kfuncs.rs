@@ -154,6 +154,59 @@ fn test_type_error_kfunc_scx_dsq_move_set_vtime_requires_kernel_task_pointer() {
 }
 
 #[test]
+fn test_type_error_kfunc_scx_select_cpu_dfl_requires_kernel_cpumask_pointer_arg3() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let prev_cpu = func.alloc_vreg();
+    let wake_flags = func.alloc_vreg();
+    let cpumask = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let cpumask_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: prev_cpu,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: wake_flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: cpumask,
+        src: MirValue::StackSlot(cpumask_slot),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_select_cpu_dfl".to_string(),
+        btf_id: None,
+        args: vec![task, prev_cpu, wake_flags, cpumask],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected select_cpu_dfl arg3 kernel-pointer type error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("arg3 expects kernel pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_kfunc_list_push_front_requires_kernel_space() {
     let mut func = make_test_function();
     let head = func.alloc_vreg();

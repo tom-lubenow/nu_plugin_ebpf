@@ -1522,6 +1522,92 @@ fn test_kfunc_scx_dsq_move_set_vtime_rejects_cgroup_task_argument() {
 }
 
 #[test]
+fn test_kfunc_scx_select_cpu_dfl_rejects_task_reference_for_cpumask_arg3() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let cpu = func.alloc_vreg();
+    let rq = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let prev_cpu = func.alloc_vreg();
+    let wake_flags = func.alloc_vreg();
+    let selected_cpu = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: cpu,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: rq,
+        kfunc: "scx_bpf_cpu_rq".to_string(),
+        btf_id: None,
+        args: vec![cpu],
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: prev_cpu,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: wake_flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: selected_cpu,
+        kfunc: "scx_bpf_select_cpu_dfl".to_string(),
+        btf_id: None,
+        args: vec![rq, prev_cpu, wake_flags, task],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(cpu, MirType::I64);
+    types.insert(
+        rq,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(pid, MirType::I64);
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(prev_cpu, MirType::I64);
+    types.insert(wake_flags, MirType::I64);
+    types.insert(selected_cpu, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected scx select_cpu_dfl cpumask mismatch");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'scx_bpf_select_cpu_dfl' arg3 expects cpumask reference")),
+        "unexpected errors: {:?}",
+        err
+    );
+    assert!(
+        err.iter().any(|e| e.message.contains("task reference")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_kfunc_get_task_exe_file_requires_null_check_for_tracked_task_reference() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

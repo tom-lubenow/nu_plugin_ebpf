@@ -329,6 +329,7 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
             | ("scx_bpf_put_cpumask", 0)
             | ("scx_bpf_put_idle_cpumask", 0)
             | ("scx_bpf_select_cpu_and", 3)
+            | ("scx_bpf_select_cpu_dfl", 3)
     ) {
         return Some(KfuncRefKind::Cpumask);
     }
