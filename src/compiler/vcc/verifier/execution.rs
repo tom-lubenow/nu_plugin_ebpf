@@ -814,6 +814,42 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::IterScxDsqNew { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_scx_dsq_new' arg0")
+                else {
+                    return;
+                };
+                state.acquire_iter_scx_dsq_slot(slot);
+            }
+            VccInst::IterScxDsqNext { iter } => {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_scx_dsq_next' arg0")
+                else {
+                    return;
+                };
+                if !state.use_iter_scx_dsq_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_iter_scx_dsq_next' requires a matching bpf_iter_scx_dsq_new",
+                    ));
+                }
+            }
+            VccInst::IterScxDsqDestroy { iter } => {
+                let Some(slot) = self.stack_slot_from_reg(
+                    state,
+                    *iter,
+                    "kfunc 'bpf_iter_scx_dsq_destroy' arg0",
+                ) else {
+                    return;
+                };
+                if !state.release_iter_scx_dsq_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_iter_scx_dsq_destroy' requires a matching bpf_iter_scx_dsq_new",
+                    ));
+                }
+            }
             VccInst::KfuncExpectRefKind {
                 ptr,
                 arg_idx,
@@ -1079,6 +1115,12 @@ impl VccVerifier {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased iter_task_vma iterator at function exit",
+                    ));
+                }
+                if state.has_live_iter_scx_dsq() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "unreleased iter_scx_dsq iterator at function exit",
                     ));
                 }
             }

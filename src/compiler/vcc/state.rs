@@ -14,6 +14,9 @@ struct VccState {
     iter_task_vma_min_depth: u32,
     iter_task_vma_max_depth: u32,
     iter_task_vma_slots: HashMap<StackSlotId, (u32, u32)>,
+    iter_scx_dsq_min_depth: u32,
+    iter_scx_dsq_max_depth: u32,
+    iter_scx_dsq_slots: HashMap<StackSlotId, (u32, u32)>,
     res_spin_lock_min_depth: u32,
     res_spin_lock_max_depth: u32,
     res_spin_lock_irqsave_min_depth: u32,
@@ -62,6 +65,9 @@ impl VccState {
             iter_task_vma_min_depth: 0,
             iter_task_vma_max_depth: 0,
             iter_task_vma_slots: HashMap::new(),
+            iter_scx_dsq_min_depth: 0,
+            iter_scx_dsq_max_depth: 0,
+            iter_scx_dsq_slots: HashMap::new(),
             res_spin_lock_min_depth: 0,
             res_spin_lock_max_depth: 0,
             res_spin_lock_irqsave_min_depth: 0,
@@ -257,6 +263,34 @@ impl VccState {
         self.iter_task_vma_max_depth > 0
     }
 
+    fn acquire_iter_scx_dsq_slot(&mut self, slot: StackSlotId) {
+        self.iter_scx_dsq_min_depth = self.iter_scx_dsq_min_depth.saturating_add(1);
+        self.iter_scx_dsq_max_depth = self.iter_scx_dsq_max_depth.saturating_add(1);
+        increment_slot_depth(&mut self.iter_scx_dsq_slots, slot);
+    }
+
+    fn use_iter_scx_dsq_slot(&self, slot: StackSlotId) -> bool {
+        self.iter_scx_dsq_slots
+            .get(&slot)
+            .is_some_and(|(min_depth, _)| *min_depth > 0)
+    }
+
+    fn release_iter_scx_dsq_slot(&mut self, slot: StackSlotId) -> bool {
+        if self.iter_scx_dsq_min_depth == 0 {
+            return false;
+        }
+        if !decrement_slot_depth(&mut self.iter_scx_dsq_slots, slot) {
+            return false;
+        }
+        self.iter_scx_dsq_min_depth -= 1;
+        self.iter_scx_dsq_max_depth -= 1;
+        true
+    }
+
+    fn has_live_iter_scx_dsq(&self) -> bool {
+        self.iter_scx_dsq_max_depth > 0
+    }
+
     fn acquire_res_spin_lock(&mut self) {
         self.res_spin_lock_min_depth = self.res_spin_lock_min_depth.saturating_add(1);
         self.res_spin_lock_max_depth = self.res_spin_lock_max_depth.saturating_add(1);
@@ -449,6 +483,9 @@ impl VccState {
             iter_task_vma_min_depth: self.iter_task_vma_min_depth.min(other.iter_task_vma_min_depth),
             iter_task_vma_max_depth: self.iter_task_vma_max_depth.max(other.iter_task_vma_max_depth),
             iter_task_vma_slots: merge_slot_depths(&self.iter_task_vma_slots, &other.iter_task_vma_slots),
+            iter_scx_dsq_min_depth: self.iter_scx_dsq_min_depth.min(other.iter_scx_dsq_min_depth),
+            iter_scx_dsq_max_depth: self.iter_scx_dsq_max_depth.max(other.iter_scx_dsq_max_depth),
+            iter_scx_dsq_slots: merge_slot_depths(&self.iter_scx_dsq_slots, &other.iter_scx_dsq_slots),
             res_spin_lock_min_depth: self
                 .res_spin_lock_min_depth
                 .min(other.res_spin_lock_min_depth),
@@ -503,6 +540,9 @@ impl VccState {
             iter_task_vma_min_depth: self.iter_task_vma_min_depth,
             iter_task_vma_max_depth: self.iter_task_vma_max_depth,
             iter_task_vma_slots: self.iter_task_vma_slots.clone(),
+            iter_scx_dsq_min_depth: self.iter_scx_dsq_min_depth,
+            iter_scx_dsq_max_depth: self.iter_scx_dsq_max_depth,
+            iter_scx_dsq_slots: self.iter_scx_dsq_slots.clone(),
             res_spin_lock_min_depth: self.res_spin_lock_min_depth,
             res_spin_lock_max_depth: self.res_spin_lock_max_depth,
             res_spin_lock_irqsave_min_depth: self.res_spin_lock_irqsave_min_depth,
