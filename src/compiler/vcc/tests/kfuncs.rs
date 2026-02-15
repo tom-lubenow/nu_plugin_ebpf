@@ -1177,6 +1177,123 @@ fn test_verify_mir_kfunc_scx_put_cpumask_rejects_task_reference_argument() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_scx_dsq_move_requires_stack_iterator_pointer_arg0() {
+    let (mut func, entry) = new_mir_function();
+
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let dsq_id = func.alloc_vreg();
+    let enq_flags = func.alloc_vreg();
+    let move_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dsq_id,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: enq_flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: move_ret,
+        kfunc: "scx_bpf_dsq_move".to_string(),
+        btf_id: None,
+        args: vec![task, task, dsq_id, enq_flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dsq_id, MirType::I64);
+    types.insert(enq_flags, MirType::I64);
+    types.insert(move_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected scx dsq_move stack-pointer error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg0 expects pointer in [Stack]")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_scx_dsq_move_vtime_requires_stack_iterator_pointer_arg0() {
+    let (mut func, entry) = new_mir_function();
+
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let dsq_id = func.alloc_vreg();
+    let vtime = func.alloc_vreg();
+    let move_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dsq_id,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: vtime,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: move_ret,
+        kfunc: "scx_bpf_dsq_move_vtime".to_string(),
+        btf_id: None,
+        args: vec![task, task, dsq_id, vtime],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dsq_id, MirType::I64);
+    types.insert(vtime, MirType::I64);
+    types.insert(move_ret, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected scx dsq_move_vtime stack-pointer error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg0 expects pointer in [Stack]")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_kfunc_scx_dsq_move_rejects_cgroup_task_argument() {
     let (mut func, entry) = new_mir_function();
 

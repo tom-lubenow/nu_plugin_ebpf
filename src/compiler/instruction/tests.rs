@@ -1343,6 +1343,11 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
         "bpf_iter_scx_dsq_destroy",
         0
     ));
+    assert!(kfunc_pointer_arg_requires_stack("scx_bpf_dsq_move", 0));
+    assert!(kfunc_pointer_arg_requires_stack(
+        "scx_bpf_dsq_move_vtime",
+        0
+    ));
     assert!(kfunc_pointer_arg_requires_stack("bpf_iter_num_new", 0));
     assert!(kfunc_pointer_arg_requires_stack("bpf_iter_num_next", 0));
     assert!(kfunc_pointer_arg_requires_stack("bpf_iter_num_destroy", 0));
@@ -1392,6 +1397,11 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
     assert!(!kfunc_pointer_arg_requires_stack("bpf_iter_css_new", 1));
     assert!(!kfunc_pointer_arg_requires_stack(
         "bpf_iter_css_task_new",
+        1
+    ));
+    assert!(!kfunc_pointer_arg_requires_stack("scx_bpf_dsq_move", 1));
+    assert!(!kfunc_pointer_arg_requires_stack(
+        "scx_bpf_dsq_move_vtime",
         1
     ));
     assert!(!kfunc_pointer_arg_requires_stack("bpf_iter_dmabuf_new", 1));
