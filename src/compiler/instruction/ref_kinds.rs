@@ -831,6 +831,28 @@ pub fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -
         || kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx)
 }
 
+pub fn kfunc_pointer_arg_requires_stack_or_map(kfunc: &str, arg_idx: usize) -> bool {
+    if KfuncSignature::for_name(kfunc).is_some() {
+        return false;
+    }
+
+    let kernel_btf = KernelBtf::get();
+    if !kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx) {
+        return false;
+    }
+    if kernel_btf.kfunc_pointer_arg_requires_stack(kfunc, arg_idx)
+        || kernel_btf.kfunc_pointer_arg_requires_kernel(kfunc, arg_idx)
+        || kernel_btf.kfunc_pointer_arg_requires_user(kfunc, arg_idx)
+        || kernel_btf
+            .kfunc_pointer_arg_ref_family(kfunc, arg_idx)
+            .is_some()
+    {
+        return false;
+    }
+
+    true
+}
+
 pub fn kfunc_pointer_arg_allows_const_zero(kfunc: &str, arg_idx: usize) -> bool {
     matches!(
         (kfunc, arg_idx),

@@ -188,6 +188,20 @@ impl<'a> VccLowerer<'a> {
             }
             return Ok(());
         }
+        if Self::kfunc_pointer_arg_requires_stack_or_map(kfunc, arg_idx) {
+            if !matches!(space, VccAddrSpace::Stack(_) | VccAddrSpace::MapValue) {
+                return Err(VccError::new(
+                    VccErrorKind::PointerBounds,
+                    format!(
+                        "kfunc '{}' arg{} expects pointer in [Stack, Map], got {}",
+                        kfunc,
+                        arg_idx,
+                        self.helper_space_name(space)
+                    ),
+                ));
+            }
+            return Ok(());
+        }
         if !Self::kfunc_pointer_arg_requires_kernel(kfunc, arg_idx) {
             return Ok(());
         }
@@ -235,6 +249,10 @@ impl<'a> VccLowerer<'a> {
 
     pub(super) fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -> bool {
         kfunc_pointer_arg_requires_stack_slot_base_shared(kfunc, arg_idx)
+    }
+
+    pub(super) fn kfunc_pointer_arg_requires_stack_or_map(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_pointer_arg_requires_stack_or_map_shared(kfunc, arg_idx)
     }
 
     pub(super) fn kfunc_pointer_arg_allows_const_zero(kfunc: &str, arg_idx: usize) -> bool {

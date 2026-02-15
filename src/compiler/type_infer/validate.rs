@@ -594,6 +594,17 @@ impl<'a> TypeInference<'a> {
                                         kfunc, idx, address_space
                                     )));
                                 }
+                                if Self::kfunc_pointer_arg_requires_stack_or_map(kfunc, idx)
+                                    && !matches!(
+                                        address_space,
+                                        AddressSpace::Stack | AddressSpace::Map
+                                    )
+                                {
+                                    errors.push(TypeError::new(format!(
+                                        "kfunc '{}' arg{} expects stack or map pointer, got {:?}",
+                                        kfunc, idx, address_space
+                                    )));
+                                }
                                 if !requires_stack
                                     && address_space == AddressSpace::Stack
                                     && Self::kfunc_pointer_arg_requires_stack_slot_base(kfunc, idx)

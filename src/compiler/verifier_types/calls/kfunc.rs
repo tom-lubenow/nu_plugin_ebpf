@@ -100,6 +100,14 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
                             kfunc, arg_idx, space
                         )));
                     }
+                    if kfunc_pointer_arg_requires_stack_or_map(kfunc, arg_idx)
+                        && !matches!(space, AddressSpace::Stack | AddressSpace::Map)
+                    {
+                        errors.push(VerifierTypeError::new(format!(
+                            "kfunc '{}' arg{} expects stack or map pointer, got {:?}",
+                            kfunc, arg_idx, space
+                        )));
+                    }
                     if let Some(expected_kind) = kfunc_pointer_arg_expected_ref_kind(kfunc, arg_idx)
                     {
                         if let Some(ref_id) = kfunc_ref {
@@ -411,6 +419,13 @@ pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_requires_stack_slot
     arg_idx: usize,
 ) -> bool {
     kfunc_pointer_arg_requires_stack_slot_base_shared(kfunc, arg_idx)
+}
+
+pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_requires_stack_or_map(
+    kfunc: &str,
+    arg_idx: usize,
+) -> bool {
+    kfunc_pointer_arg_requires_stack_or_map_shared(kfunc, arg_idx)
 }
 
 pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_size_from_scalar(

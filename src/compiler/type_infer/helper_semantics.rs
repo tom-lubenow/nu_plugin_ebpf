@@ -58,6 +58,10 @@ impl<'a> TypeInference<'a> {
         kfunc_pointer_arg_requires_stack_slot_base_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_pointer_arg_requires_stack_or_map(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_pointer_arg_requires_stack_or_map_shared(kfunc, arg_idx)
+    }
+
     pub(super) fn kfunc_pointer_arg_allows_const_zero(kfunc: &str, arg_idx: usize) -> bool {
         kfunc_pointer_arg_allows_const_zero_shared(kfunc, arg_idx)
     }
