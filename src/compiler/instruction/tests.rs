@@ -1822,6 +1822,10 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
         "bpf_iter_kmem_cache_new",
         1
     ));
+    assert!(!kfunc_pointer_arg_requires_stack(
+        "__nu_plugin_ebpf_missing_kfunc__",
+        0
+    ));
 }
 
 #[test]

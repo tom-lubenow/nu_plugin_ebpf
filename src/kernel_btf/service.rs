@@ -139,6 +139,8 @@ pub struct KernelBtf {
     kfunc_nullable_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to pointer argument indices that require user-space pointers.
     kfunc_user_pointer_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
+    /// Cached mapping of kfunc names to pointer argument indices that require stack pointers.
+    kfunc_stack_pointer_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to pointer argument indices that require kernel pointers.
     kfunc_kernel_pointer_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to pointer argument ref families.
@@ -184,6 +186,7 @@ impl KernelBtf {
                 pt_regs_cache: RwLock::new(None),
                 kfunc_nullable_arg_cache: RwLock::new(None),
                 kfunc_user_pointer_arg_cache: RwLock::new(None),
+                kfunc_stack_pointer_arg_cache: RwLock::new(None),
                 kfunc_kernel_pointer_arg_cache: RwLock::new(None),
                 kfunc_pointer_ref_family_cache: RwLock::new(None),
                 kfunc_return_ref_family_cache: RwLock::new(None),
@@ -345,6 +348,10 @@ impl KernelBtf {
             .any(|tag| tag == "__user" || tag.contains("__user") || tag == "address_space(1)")
     }
 
+    fn is_stack_object_type_name(name: &str) -> bool {
+        name.starts_with("bpf_iter_") || name == "bpf_dynptr" || name.starts_with("bpf_dynptr_")
+    }
+
     fn infer_pointer_ref_family(name: &str) -> Option<KfuncPointerRefFamily> {
         let lower = name.to_ascii_lowercase();
         if lower.contains("task_struct") {
@@ -405,6 +412,44 @@ impl KernelBtf {
             }
             if !user_pointer_args.is_empty() {
                 map.insert(name.clone(), user_pointer_args);
+            }
+        }
+        Ok(map)
+    }
+
+    fn load_kfunc_stack_pointer_arg_map(&self) -> Result<HashMap<String, Vec<usize>>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let mut map: HashMap<String, Vec<usize>> = HashMap::new();
+        for ty in btf.get_types() {
+            if !ty.is_function || !Self::is_bpf_kfunc(ty) {
+                continue;
+            }
+            let Some(name) = ty.name.as_ref() else {
+                continue;
+            };
+            let Type::FunctionProto(proto) = &ty.base_type else {
+                continue;
+            };
+            let mut stack_pointer_args = Vec::new();
+            for (arg_idx, param) in proto.params.iter().enumerate() {
+                if param.type_id == 0 {
+                    continue;
+                }
+                let Ok(param_ty) = btf.get_type_by_id(param.type_id) else {
+                    continue;
+                };
+                if param_ty.num_refs == 0 || Self::has_user_type_tag(&param_ty.type_tags) {
+                    continue;
+                }
+                let Some(type_name) = param_ty.name.as_deref() else {
+                    continue;
+                };
+                if Self::is_stack_object_type_name(type_name) {
+                    stack_pointer_args.push(arg_idx);
+                }
+            }
+            if !stack_pointer_args.is_empty() {
+                map.insert(name.clone(), stack_pointer_args);
             }
         }
         Ok(map)
@@ -610,6 +655,30 @@ impl KernelBtf {
         }
 
         requires_user
+    }
+
+    /// Returns whether `kfunc_name` pointer argument `arg_idx` requires stack pointers.
+    pub fn kfunc_pointer_arg_requires_stack(&self, kfunc_name: &str, arg_idx: usize) -> bool {
+        {
+            let cache = self.kfunc_stack_pointer_arg_cache.read().unwrap();
+            if let Some(map) = cache.as_ref() {
+                return map
+                    .get(kfunc_name)
+                    .is_some_and(|stack_args| stack_args.contains(&arg_idx));
+            }
+        }
+
+        let map = self.load_kfunc_stack_pointer_arg_map().unwrap_or_default();
+        let requires_stack = map
+            .get(kfunc_name)
+            .is_some_and(|stack_args| stack_args.contains(&arg_idx));
+
+        let mut cache = self.kfunc_stack_pointer_arg_cache.write().unwrap();
+        if cache.is_none() {
+            *cache = Some(map);
+        }
+
+        requires_stack
     }
 
     /// Returns whether `kfunc_name` pointer argument `arg_idx` requires kernel-space pointers.
@@ -1801,6 +1870,7 @@ mod tests {
             pt_regs_cache: RwLock::new(None),
             kfunc_nullable_arg_cache: RwLock::new(None),
             kfunc_user_pointer_arg_cache: RwLock::new(None),
+            kfunc_stack_pointer_arg_cache: RwLock::new(None),
             kfunc_kernel_pointer_arg_cache: RwLock::new(None),
             kfunc_pointer_ref_family_cache: RwLock::new(None),
             kfunc_return_ref_family_cache: RwLock::new(None),
@@ -1946,6 +2016,13 @@ format:
     }
 
     #[test]
+    fn test_kfunc_stack_pointer_query_graceful_without_btf() {
+        let service = make_test_service();
+        assert!(!service.kfunc_pointer_arg_requires_stack("definitely_not_a_kfunc", 0));
+        assert!(!service.kfunc_pointer_arg_requires_stack("definitely_not_a_kfunc", 3));
+    }
+
+    #[test]
     fn test_kfunc_kernel_pointer_query_graceful_without_btf() {
         let service = make_test_service();
         assert!(!service.kfunc_pointer_arg_requires_kernel("definitely_not_a_kfunc", 0));
@@ -2085,6 +2162,14 @@ format:
             Some(KfuncPointerRefFamily::CryptoCtx)
         );
         assert_eq!(KernelBtf::infer_pointer_ref_family("u8"), None);
+    }
+
+    #[test]
+    fn test_is_stack_object_type_name() {
+        assert!(KernelBtf::is_stack_object_type_name("bpf_iter_task"));
+        assert!(KernelBtf::is_stack_object_type_name("bpf_dynptr"));
+        assert!(KernelBtf::is_stack_object_type_name("bpf_dynptr_kern"));
+        assert!(!KernelBtf::is_stack_object_type_name("task_struct"));
     }
 
     #[test]

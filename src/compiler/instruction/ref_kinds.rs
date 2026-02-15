@@ -709,7 +709,7 @@ pub fn kfunc_pointer_arg_requires_user(kfunc: &str, arg_idx: usize) -> bool {
 }
 
 pub fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
-    matches!(
+    if matches!(
         (kfunc, arg_idx),
         ("bpf_local_irq_save", 0)
             | ("bpf_local_irq_restore", 0)
@@ -760,7 +760,13 @@ pub fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
             | ("scx_bpf_dsq_move_set_slice", 0)
             | ("scx_bpf_dsq_move_set_vtime", 0)
             | ("scx_bpf_dsq_move_vtime", 0)
-    )
+    ) {
+        return true;
+    }
+    if KfuncSignature::for_name(kfunc).is_some() {
+        return false;
+    }
+    KernelBtf::get().kfunc_pointer_arg_requires_stack(kfunc, arg_idx)
 }
 
 pub fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -> bool {
