@@ -342,6 +342,134 @@ fn test_dynptr_copy_does_not_initialize_from_uninitialized_source() {
     verify_err(&func, VccErrorKind::PointerBounds);
 }
 
+#[test]
+fn test_unknown_stack_object_destroy_requires_initialized() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let ptr = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst: ptr,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::UnknownStackObjectDestroy {
+            ptr,
+            type_name: "bpf_wq".to_string(),
+            kfunc: "unknown_wq_destroy".to_string(),
+            arg_idx: 0,
+        });
+
+    verify_err(&func, VccErrorKind::PointerBounds);
+}
+
+#[test]
+fn test_unknown_stack_object_copy_propagates_initialized_state() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let src = func.alloc_reg();
+    let dst = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst: src,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst,
+        slot: StackSlotId(1),
+        size: 16,
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::UnknownStackObjectInit {
+            ptr: src,
+            type_name: "bpf_wq".to_string(),
+            kfunc: "unknown_wq_new".to_string(),
+            arg_idx: 0,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::UnknownStackObjectCopy {
+            src,
+            dst,
+            type_name: "bpf_wq".to_string(),
+            kfunc: "unknown_wq_copy".to_string(),
+            src_arg_idx: 0,
+            dst_arg_idx: 1,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::UnknownStackObjectDestroy {
+            ptr: dst,
+            type_name: "bpf_wq".to_string(),
+            kfunc: "unknown_wq_destroy".to_string(),
+            arg_idx: 0,
+        });
+
+    verify_ok(&func);
+}
+
+#[test]
+fn test_unknown_stack_object_copy_does_not_initialize_from_uninitialized_source() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let src = func.alloc_reg();
+    let dst = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst: src,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst,
+        slot: StackSlotId(1),
+        size: 16,
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::UnknownStackObjectCopy {
+            src,
+            dst,
+            type_name: "bpf_wq".to_string(),
+            kfunc: "unknown_wq_copy".to_string(),
+            src_arg_idx: 0,
+            dst_arg_idx: 1,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::UnknownStackObjectDestroy {
+            ptr: dst,
+            type_name: "bpf_wq".to_string(),
+            kfunc: "unknown_wq_destroy".to_string(),
+            arg_idx: 1,
+        });
+
+    let err = VccVerifier::default()
+        .verify_function(&func)
+        .expect_err("expected unknown stack-object source-init verifier errors");
+    assert!(
+        err.iter().any(|e| {
+            e.message
+                .contains("kfunc 'unknown_wq_copy' arg0 requires initialized bpf_wq stack object")
+        }),
+        "unexpected error messages: {:?}",
+        err
+    );
+    assert!(
+        err.iter().any(|e| {
+            e.message.contains(
+                "kfunc 'unknown_wq_destroy' arg1 requires initialized bpf_wq stack object",
+            )
+        }),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
 fn new_mir_function() -> (MirFunction, BlockId) {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

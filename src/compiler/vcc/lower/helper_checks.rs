@@ -297,6 +297,18 @@ impl<'a> VccLowerer<'a> {
         kfunc_unknown_dynptr_copy_shared(kfunc)
     }
 
+    pub(super) fn kfunc_unknown_stack_object_lifecycle(
+        kfunc: &str,
+    ) -> Option<KfuncUnknownStackObjectLifecycle> {
+        kfunc_unknown_stack_object_lifecycle_shared(kfunc)
+    }
+
+    pub(super) fn kfunc_unknown_stack_object_copy(
+        kfunc: &str,
+    ) -> Option<KfuncUnknownStackObjectCopy> {
+        kfunc_unknown_stack_object_copy_shared(kfunc)
+    }
+
     pub(super) fn kfunc_pointer_arg_expected_ref_kind(
         kfunc: &str,
         arg_idx: usize,

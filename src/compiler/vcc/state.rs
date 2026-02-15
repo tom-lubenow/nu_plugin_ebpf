@@ -44,6 +44,7 @@ struct VccState {
     res_spin_lock_irqsave_max_depth: u32,
     res_spin_lock_irqsave_slots: HashMap<StackSlotId, (u32, u32)>,
     dynptr_initialized_slots: HashSet<StackSlotId>,
+    unknown_stack_object_slots: HashMap<StackSlotId, String>,
     cond_refinements: HashMap<VccReg, VccCondRefinement>,
     reachable: bool,
 }
@@ -117,6 +118,7 @@ impl VccState {
             res_spin_lock_irqsave_max_depth: 0,
             res_spin_lock_irqsave_slots: HashMap::new(),
             dynptr_initialized_slots: HashSet::new(),
+            unknown_stack_object_slots: HashMap::new(),
             cond_refinements: HashMap::new(),
             reachable: true,
         }
@@ -592,6 +594,25 @@ impl VccState {
         self.dynptr_initialized_slots.contains(&slot)
     }
 
+    fn initialize_unknown_stack_object_slot(&mut self, slot: StackSlotId, type_name: &str) {
+        self.unknown_stack_object_slots
+            .insert(slot, type_name.to_string());
+    }
+
+    fn has_unknown_stack_object_slot(&self, slot: StackSlotId, type_name: &str) -> bool {
+        self.unknown_stack_object_slots
+            .get(&slot)
+            .is_some_and(|ty| ty == type_name)
+    }
+
+    fn release_unknown_stack_object_slot(&mut self, slot: StackSlotId, type_name: &str) -> bool {
+        if !self.has_unknown_stack_object_slot(slot, type_name) {
+            return false;
+        }
+        self.unknown_stack_object_slots.remove(&slot);
+        true
+    }
+
     fn kfunc_ref_kind(&self, id: VccReg) -> Option<KfuncRefKind> {
         self.live_kfunc_refs.get(&id).copied().flatten()
     }
@@ -706,6 +727,15 @@ impl VccState {
             .intersection(&other.dynptr_initialized_slots)
             .copied()
             .collect();
+        let mut unknown_stack_object_slots = HashMap::new();
+        for (slot, left_type) in &self.unknown_stack_object_slots {
+            let Some(right_type) = other.unknown_stack_object_slots.get(slot) else {
+                continue;
+            };
+            if left_type == right_type {
+                unknown_stack_object_slots.insert(*slot, left_type.clone());
+            }
+        }
         VccState {
             reg_types: merged,
             not_equal_consts,
@@ -790,6 +820,7 @@ impl VccState {
                 &other.res_spin_lock_irqsave_slots,
             ),
             dynptr_initialized_slots,
+            unknown_stack_object_slots,
             cond_refinements,
             reachable: true,
         }
@@ -858,6 +889,7 @@ impl VccState {
             res_spin_lock_irqsave_max_depth: self.res_spin_lock_irqsave_max_depth,
             res_spin_lock_irqsave_slots: self.res_spin_lock_irqsave_slots.clone(),
             dynptr_initialized_slots: self.dynptr_initialized_slots.clone(),
+            unknown_stack_object_slots: self.unknown_stack_object_slots.clone(),
             cond_refinements: HashMap::new(),
             reachable: self.reachable,
         }

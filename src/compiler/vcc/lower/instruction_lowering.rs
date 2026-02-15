@@ -888,6 +888,41 @@ impl<'a> VccLowerer<'a> {
                         dst_arg_idx: copy.dst_arg_idx,
                     });
                 }
+                if let Some(lifecycle) = Self::kfunc_unknown_stack_object_lifecycle(kfunc)
+                    && let Some(ptr) = args.get(lifecycle.arg_idx)
+                {
+                    match lifecycle.op {
+                        KfuncUnknownStackObjectLifecycleOp::Init => {
+                            out.push(VccInst::UnknownStackObjectInit {
+                                ptr: VccReg(ptr.0),
+                                type_name: lifecycle.type_name,
+                                kfunc: kfunc.clone(),
+                                arg_idx: lifecycle.arg_idx,
+                            });
+                        }
+                        KfuncUnknownStackObjectLifecycleOp::Destroy => {
+                            out.push(VccInst::UnknownStackObjectDestroy {
+                                ptr: VccReg(ptr.0),
+                                type_name: lifecycle.type_name,
+                                kfunc: kfunc.clone(),
+                                arg_idx: lifecycle.arg_idx,
+                            });
+                        }
+                    }
+                }
+                if let Some(copy) = Self::kfunc_unknown_stack_object_copy(kfunc)
+                    && let (Some(src), Some(dst)) =
+                        (args.get(copy.src_arg_idx), args.get(copy.dst_arg_idx))
+                {
+                    out.push(VccInst::UnknownStackObjectCopy {
+                        src: VccReg(src.0),
+                        dst: VccReg(dst.0),
+                        type_name: copy.type_name,
+                        kfunc: kfunc.clone(),
+                        src_arg_idx: copy.src_arg_idx,
+                        dst_arg_idx: copy.dst_arg_idx,
+                    });
+                }
             }
             MirInst::CallSubfn { dst, args, .. } => {
                 if args.len() > 5 {

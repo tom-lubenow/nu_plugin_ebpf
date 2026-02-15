@@ -145,6 +145,7 @@ pub(super) struct VerifierState {
     res_spin_lock_irqsave_max_depth: u32,
     res_spin_lock_irqsave_slots: HashMap<StackSlotId, (u32, u32)>,
     dynptr_initialized_slots: HashSet<StackSlotId>,
+    unknown_stack_object_slots: HashMap<StackSlotId, String>,
     reachable: bool,
     guards: HashMap<VReg, Guard>,
 }
@@ -202,6 +203,7 @@ impl VerifierState {
             res_spin_lock_irqsave_max_depth: 0,
             res_spin_lock_irqsave_slots: HashMap::new(),
             dynptr_initialized_slots: HashSet::new(),
+            unknown_stack_object_slots: HashMap::new(),
             reachable: true,
             guards: HashMap::new(),
         }

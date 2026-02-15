@@ -21,6 +21,26 @@ fn test_dynptr_initialized_slots_join_requires_all_paths() {
 }
 
 #[test]
+fn test_unknown_stack_object_slots_join_requires_all_paths() {
+    let slot = StackSlotId(11);
+    let mut initialized = VerifierState::new(1);
+    initialized.initialize_unknown_stack_object_slot(slot, "bpf_wq");
+    let uninitialized = VerifierState::new(1);
+
+    let merged = initialized.join(&uninitialized);
+    assert!(
+        !merged.has_unknown_stack_object_slot(slot, "bpf_wq"),
+        "unknown stack-object slot initialization should require all incoming paths"
+    );
+
+    let merged_initialized = initialized.join(&initialized);
+    assert!(
+        merged_initialized.has_unknown_stack_object_slot(slot, "bpf_wq"),
+        "unknown stack-object slot initialization should be preserved when all paths initialize"
+    );
+}
+
+#[test]
 fn test_kfunc_unknown_signature_rejected() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

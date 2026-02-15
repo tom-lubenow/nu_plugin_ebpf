@@ -15,6 +15,37 @@ impl VerifierState {
         self.dynptr_initialized_slots.contains(&slot)
     }
 
+    pub(in crate::compiler::verifier_types) fn initialize_unknown_stack_object_slot(
+        &mut self,
+        slot: StackSlotId,
+        type_name: &str,
+    ) {
+        self.unknown_stack_object_slots
+            .insert(slot, type_name.to_string());
+    }
+
+    pub(in crate::compiler::verifier_types) fn has_unknown_stack_object_slot(
+        &self,
+        slot: StackSlotId,
+        type_name: &str,
+    ) -> bool {
+        self.unknown_stack_object_slots
+            .get(&slot)
+            .is_some_and(|ty| ty == type_name)
+    }
+
+    pub(in crate::compiler::verifier_types) fn release_unknown_stack_object_slot(
+        &mut self,
+        slot: StackSlotId,
+        type_name: &str,
+    ) -> bool {
+        if !self.has_unknown_stack_object_slot(slot, type_name) {
+            return false;
+        }
+        self.unknown_stack_object_slots.remove(&slot);
+        true
+    }
+
     pub(in crate::compiler::verifier_types) fn set_live_ringbuf_ref(
         &mut self,
         id: VReg,

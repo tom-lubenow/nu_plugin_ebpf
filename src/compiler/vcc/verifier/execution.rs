@@ -1294,6 +1294,76 @@ impl VccVerifier {
                     state.initialize_dynptr_slot(dst_slot);
                 }
             }
+            VccInst::UnknownStackObjectInit {
+                ptr,
+                type_name,
+                kfunc,
+                arg_idx,
+            } => {
+                let op = format!("kfunc '{}' arg{}", kfunc, arg_idx);
+                let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
+                    return;
+                };
+                state.initialize_unknown_stack_object_slot(slot, type_name);
+            }
+            VccInst::UnknownStackObjectDestroy {
+                ptr,
+                type_name,
+                kfunc,
+                arg_idx,
+            } => {
+                let op = format!("kfunc '{}' arg{}", kfunc, arg_idx);
+                let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
+                    return;
+                };
+                if !state.release_unknown_stack_object_slot(slot, type_name) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "kfunc '{}' arg{} requires initialized {} stack object",
+                            kfunc, arg_idx, type_name
+                        ),
+                    ));
+                }
+            }
+            VccInst::UnknownStackObjectCopy {
+                src,
+                dst,
+                type_name,
+                kfunc,
+                src_arg_idx,
+                dst_arg_idx,
+            } => {
+                let src_op = format!("kfunc '{}' arg{}", kfunc, src_arg_idx);
+                let Some(src_slot) = self.stack_slot_from_reg(state, *src, &src_op) else {
+                    return;
+                };
+                let dst_op = format!("kfunc '{}' arg{}", kfunc, dst_arg_idx);
+                let Some(dst_slot) = self.stack_slot_from_reg(state, *dst, &dst_op) else {
+                    return;
+                };
+                if src_slot == dst_slot {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "kfunc '{}' arg{} must reference distinct stack slot from arg{}",
+                            kfunc, dst_arg_idx, src_arg_idx
+                        ),
+                    ));
+                    return;
+                }
+                if !state.has_unknown_stack_object_slot(src_slot, type_name) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "kfunc '{}' arg{} requires initialized {} stack object",
+                            kfunc, src_arg_idx, type_name
+                        ),
+                    ));
+                    return;
+                }
+                state.initialize_unknown_stack_object_slot(dst_slot, type_name);
+            }
             VccInst::KfuncExpectRefKind {
                 ptr,
                 arg_idx,

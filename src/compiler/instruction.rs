@@ -289,7 +289,8 @@ pub use kfunc_signature::unknown_kfunc_signature_message;
 pub use ref_kinds::{
     KfuncAllowedPtrSpaces, KfuncIterFamily, KfuncIterLifecycleOp, KfuncPtrArgRule, KfuncSemantics,
     KfuncUnknownDynptrArg, KfuncUnknownDynptrArgRole, KfuncUnknownDynptrCopy,
-    KfuncUnknownIterLifecycle, helper_acquire_ref_kind, helper_pointer_arg_ref_kind,
+    KfuncUnknownIterLifecycle, KfuncUnknownStackObjectCopy, KfuncUnknownStackObjectLifecycle,
+    KfuncUnknownStackObjectLifecycleOp, helper_acquire_ref_kind, helper_pointer_arg_ref_kind,
     helper_release_ref_kind, kfunc_acquire_ref_kind, kfunc_pointer_arg_allows_const_zero,
     kfunc_pointer_arg_fixed_size, kfunc_pointer_arg_min_access_size, kfunc_pointer_arg_ref_kind,
     kfunc_pointer_arg_requires_kernel, kfunc_pointer_arg_requires_stack,
@@ -297,7 +298,8 @@ pub use ref_kinds::{
     kfunc_pointer_arg_requires_user, kfunc_pointer_arg_size_from_scalar,
     kfunc_release_ref_arg_index, kfunc_release_ref_kind, kfunc_scalar_arg_requires_known_const,
     kfunc_scalar_arg_requires_positive, kfunc_semantics, kfunc_unknown_dynptr_args,
-    kfunc_unknown_dynptr_copy, kfunc_unknown_iter_lifecycle,
+    kfunc_unknown_dynptr_copy, kfunc_unknown_iter_lifecycle, kfunc_unknown_stack_object_copy,
+    kfunc_unknown_stack_object_lifecycle,
 };
 
 #[path = "instruction/helper_metadata.rs"]

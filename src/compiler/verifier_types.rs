@@ -10,8 +10,9 @@ use super::instruction::{
     BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncIterFamily,
     KfuncIterLifecycleOp, KfuncRefKind, KfuncRetKind, KfuncSignature, KfuncUnknownDynptrArg,
     KfuncUnknownDynptrArgRole, KfuncUnknownDynptrCopy, KfuncUnknownIterLifecycle,
-    helper_acquire_ref_kind, helper_pointer_arg_ref_kind, helper_release_ref_kind,
-    kfunc_acquire_ref_kind,
+    KfuncUnknownStackObjectCopy, KfuncUnknownStackObjectLifecycle,
+    KfuncUnknownStackObjectLifecycleOp, helper_acquire_ref_kind, helper_pointer_arg_ref_kind,
+    helper_release_ref_kind, kfunc_acquire_ref_kind,
     kfunc_pointer_arg_allows_const_zero as kfunc_pointer_arg_allows_const_zero_shared,
     kfunc_pointer_arg_fixed_size as kfunc_pointer_arg_fixed_size_shared,
     kfunc_pointer_arg_min_access_size as kfunc_pointer_arg_min_access_size_shared,
@@ -28,6 +29,8 @@ use super::instruction::{
     kfunc_semantics, kfunc_unknown_dynptr_args as kfunc_unknown_dynptr_args_shared,
     kfunc_unknown_dynptr_copy as kfunc_unknown_dynptr_copy_shared,
     kfunc_unknown_iter_lifecycle as kfunc_unknown_iter_lifecycle_shared,
+    kfunc_unknown_stack_object_copy as kfunc_unknown_stack_object_copy_shared,
+    kfunc_unknown_stack_object_lifecycle as kfunc_unknown_stack_object_lifecycle_shared,
 };
 use super::mir::{
     AddressSpace, BinOpKind, BlockId, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME,

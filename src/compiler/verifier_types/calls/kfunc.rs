@@ -490,6 +490,18 @@ pub(in crate::compiler::verifier_types) fn kfunc_unknown_dynptr_copy(
     kfunc_unknown_dynptr_copy_shared(kfunc)
 }
 
+pub(in crate::compiler::verifier_types) fn kfunc_unknown_stack_object_lifecycle(
+    kfunc: &str,
+) -> Option<KfuncUnknownStackObjectLifecycle> {
+    kfunc_unknown_stack_object_lifecycle_shared(kfunc)
+}
+
+pub(in crate::compiler::verifier_types) fn kfunc_unknown_stack_object_copy(
+    kfunc: &str,
+) -> Option<KfuncUnknownStackObjectCopy> {
+    kfunc_unknown_stack_object_copy_shared(kfunc)
+}
+
 fn apply_iter_lifecycle_op(
     state: &mut VerifierState,
     family: KfuncIterFamily,
@@ -1103,6 +1115,52 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
                 "kfunc '{}' arg{} must reference distinct stack slot from arg{}",
                 kfunc, copy.dst_arg_idx, copy.src_arg_idx
             )));
+        }
+    }
+    if let Some(lifecycle) = kfunc_unknown_stack_object_lifecycle(kfunc)
+        && let Some(ptr) = args
+            .get(lifecycle.arg_idx)
+            .copied()
+            .and_then(|arg| stack_slot_from_arg(state, arg))
+    {
+        match lifecycle.op {
+            KfuncUnknownStackObjectLifecycleOp::Init => {
+                state.initialize_unknown_stack_object_slot(ptr, &lifecycle.type_name);
+            }
+            KfuncUnknownStackObjectLifecycleOp::Destroy => {
+                if !state.release_unknown_stack_object_slot(ptr, &lifecycle.type_name) {
+                    errors.push(VerifierTypeError::new(format!(
+                        "kfunc '{}' arg{} requires initialized {} stack object",
+                        kfunc, lifecycle.arg_idx, lifecycle.type_name
+                    )));
+                }
+            }
+        }
+    }
+    if let Some(copy) = kfunc_unknown_stack_object_copy(kfunc)
+        && let (Some(src), Some(dst)) = (
+            args.get(copy.src_arg_idx).copied(),
+            args.get(copy.dst_arg_idx).copied(),
+        )
+        && let (Some(src_slot), Some(dst_slot)) = (
+            stack_slot_from_arg(state, src),
+            stack_slot_from_arg(state, dst),
+        )
+    {
+        if src_slot == dst_slot {
+            errors.push(VerifierTypeError::new(format!(
+                "kfunc '{}' arg{} must reference distinct stack slot from arg{}",
+                kfunc, copy.dst_arg_idx, copy.src_arg_idx
+            )));
+        } else {
+            if !state.has_unknown_stack_object_slot(src_slot, &copy.type_name) {
+                errors.push(VerifierTypeError::new(format!(
+                    "kfunc '{}' arg{} requires initialized {} stack object",
+                    kfunc, copy.src_arg_idx, copy.type_name
+                )));
+                return;
+            }
+            state.initialize_unknown_stack_object_slot(dst_slot, &copy.type_name);
         }
     }
 

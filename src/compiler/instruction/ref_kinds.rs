@@ -113,6 +113,26 @@ pub struct KfuncUnknownDynptrCopy {
     pub dst_arg_idx: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KfuncUnknownStackObjectLifecycleOp {
+    Init,
+    Destroy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KfuncUnknownStackObjectLifecycle {
+    pub type_name: String,
+    pub op: KfuncUnknownStackObjectLifecycleOp,
+    pub arg_idx: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KfuncUnknownStackObjectCopy {
+    pub type_name: String,
+    pub src_arg_idx: usize,
+    pub dst_arg_idx: usize,
+}
+
 pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
     const STACK_MAP: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(true, true, false, false);
     const STACK_ONLY: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(true, false, false, false);
@@ -958,6 +978,18 @@ fn is_dynptr_stack_object_type_name(type_name: &str) -> bool {
     type_name == "bpf_dynptr" || type_name.starts_with("bpf_dynptr_")
 }
 
+fn is_special_stack_object_type_name(type_name: &str) -> bool {
+    iter_family_from_stack_object_type_name(type_name).is_some()
+        || is_dynptr_stack_object_type_name(type_name)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct UnknownStackObjectArgInfo {
+    arg_idx: usize,
+    type_name: String,
+    named_out: bool,
+}
+
 pub fn kfunc_unknown_iter_lifecycle(kfunc: &str) -> Option<KfuncUnknownIterLifecycle> {
     if KfuncSignature::for_name(kfunc).is_some() {
         return None;
@@ -1030,6 +1062,100 @@ pub fn kfunc_unknown_dynptr_copy(kfunc: &str) -> Option<KfuncUnknownDynptrCopy> 
     Some(KfuncUnknownDynptrCopy {
         src_arg_idx: in_arg.arg_idx,
         dst_arg_idx: out_arg.arg_idx,
+    })
+}
+
+fn unknown_stack_object_lifecycle_op_from_kfunc_name(
+    kfunc: &str,
+) -> Option<KfuncUnknownStackObjectLifecycleOp> {
+    let lower = kfunc.to_ascii_lowercase();
+    if lower.ends_with("_init") || lower.ends_with("_new") || lower.contains("_init_") {
+        return Some(KfuncUnknownStackObjectLifecycleOp::Init);
+    }
+    if lower.ends_with("_destroy")
+        || lower.contains("_destroy_")
+        || lower.ends_with("_deinit")
+        || lower.ends_with("_fini")
+    {
+        return Some(KfuncUnknownStackObjectLifecycleOp::Destroy);
+    }
+    None
+}
+
+fn unknown_stack_object_args(kfunc: &str) -> Vec<UnknownStackObjectArgInfo> {
+    if KfuncSignature::for_name(kfunc).is_some() {
+        return Vec::new();
+    }
+    let kernel_btf = KernelBtf::get();
+    let mut args = Vec::new();
+    for arg_idx in 0..5 {
+        let Some(type_name) = kernel_btf.kfunc_pointer_arg_stack_object_type_name(kfunc, arg_idx)
+        else {
+            continue;
+        };
+        if is_special_stack_object_type_name(&type_name) {
+            continue;
+        }
+        args.push(UnknownStackObjectArgInfo {
+            arg_idx,
+            type_name,
+            named_out: kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx),
+        });
+    }
+    args
+}
+
+pub fn kfunc_unknown_stack_object_lifecycle(
+    kfunc: &str,
+) -> Option<KfuncUnknownStackObjectLifecycle> {
+    let op = unknown_stack_object_lifecycle_op_from_kfunc_name(kfunc)?;
+    let args = unknown_stack_object_args(kfunc);
+    if args.is_empty() {
+        return None;
+    }
+    let mut candidates: Vec<&UnknownStackObjectArgInfo> = match op {
+        KfuncUnknownStackObjectLifecycleOp::Init => {
+            args.iter().filter(|arg| arg.named_out).collect()
+        }
+        KfuncUnknownStackObjectLifecycleOp::Destroy => {
+            args.iter().filter(|arg| !arg.named_out).collect()
+        }
+    };
+    if candidates.is_empty() && args.len() == 1 {
+        candidates.push(&args[0]);
+    }
+    if candidates.len() != 1 {
+        return None;
+    }
+    let arg = candidates[0];
+    Some(KfuncUnknownStackObjectLifecycle {
+        type_name: arg.type_name.clone(),
+        op,
+        arg_idx: arg.arg_idx,
+    })
+}
+
+pub fn kfunc_unknown_stack_object_copy(kfunc: &str) -> Option<KfuncUnknownStackObjectCopy> {
+    if KfuncSignature::for_name(kfunc).is_some() {
+        return None;
+    }
+    let lower = kfunc.to_ascii_lowercase();
+    if !lower.contains("_copy") && !lower.contains("_clone") {
+        return None;
+    }
+    let args = unknown_stack_object_args(kfunc);
+    if args.len() != 2 {
+        return None;
+    }
+    let src = args.iter().find(|arg| !arg.named_out)?;
+    let dst = args.iter().find(|arg| arg.named_out)?;
+    if src.type_name != dst.type_name {
+        return None;
+    }
+    Some(KfuncUnknownStackObjectCopy {
+        type_name: src.type_name.clone(),
+        src_arg_idx: src.arg_idx,
+        dst_arg_idx: dst.arg_idx,
     })
 }
 
@@ -1148,5 +1274,29 @@ mod tests {
         assert!(is_dynptr_stack_object_type_name("bpf_dynptr"));
         assert!(is_dynptr_stack_object_type_name("bpf_dynptr_kern"));
         assert!(!is_dynptr_stack_object_type_name("bpf_iter_task"));
+    }
+
+    #[test]
+    fn test_unknown_stack_object_lifecycle_op_from_kfunc_name() {
+        assert_eq!(
+            unknown_stack_object_lifecycle_op_from_kfunc_name("foo_obj_init"),
+            Some(KfuncUnknownStackObjectLifecycleOp::Init)
+        );
+        assert_eq!(
+            unknown_stack_object_lifecycle_op_from_kfunc_name("foo_obj_new"),
+            Some(KfuncUnknownStackObjectLifecycleOp::Init)
+        );
+        assert_eq!(
+            unknown_stack_object_lifecycle_op_from_kfunc_name("foo_obj_destroy"),
+            Some(KfuncUnknownStackObjectLifecycleOp::Destroy)
+        );
+        assert_eq!(
+            unknown_stack_object_lifecycle_op_from_kfunc_name("foo_obj_deinit"),
+            Some(KfuncUnknownStackObjectLifecycleOp::Destroy)
+        );
+        assert_eq!(
+            unknown_stack_object_lifecycle_op_from_kfunc_name("foo_obj_query"),
+            None
+        );
     }
 }

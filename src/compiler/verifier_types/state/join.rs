@@ -50,6 +50,7 @@ impl VerifierState {
             && self.res_spin_lock_irqsave_max_depth == other.res_spin_lock_irqsave_max_depth
             && self.res_spin_lock_irqsave_slots == other.res_spin_lock_irqsave_slots
             && self.dynptr_initialized_slots == other.dynptr_initialized_slots
+            && self.unknown_stack_object_slots == other.unknown_stack_object_slots
             && self.guards == other.guards
             && self.reachable == other.reachable
     }
@@ -145,6 +146,15 @@ impl VerifierState {
             .intersection(&other.dynptr_initialized_slots)
             .copied()
             .collect();
+        let mut unknown_stack_object_slots = HashMap::new();
+        for (slot, left_type) in &self.unknown_stack_object_slots {
+            let Some(right_type) = other.unknown_stack_object_slots.get(slot) else {
+                continue;
+            };
+            if left_type == right_type {
+                unknown_stack_object_slots.insert(*slot, left_type.clone());
+            }
+        }
         VerifierState {
             regs,
             ranges,
@@ -248,6 +258,7 @@ impl VerifierState {
                 &other.res_spin_lock_irqsave_slots,
             ),
             dynptr_initialized_slots,
+            unknown_stack_object_slots,
             reachable: true,
             guards,
         }
