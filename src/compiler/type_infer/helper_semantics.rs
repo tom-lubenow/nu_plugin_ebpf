@@ -58,6 +58,10 @@ impl<'a> TypeInference<'a> {
         kfunc_pointer_arg_allows_const_zero_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_scalar_arg_requires_known_const(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_scalar_arg_requires_known_const_shared(kfunc, arg_idx)
+    }
+
     pub(super) fn helper_pointer_arg_allows_const_zero(helper_id: u32, arg_idx: usize) -> bool {
         matches!(
             (BpfHelper::from_u32(helper_id), arg_idx),
@@ -417,17 +421,18 @@ impl<'a> TypeInference<'a> {
             }
         }
 
-        if matches!(kfunc, "bpf_dynptr_slice" | "bpf_dynptr_slice_rdwr")
-            && let Some(size) = args.get(3)
-        {
+        for (idx, arg) in args.iter().enumerate() {
+            if !Self::kfunc_scalar_arg_requires_known_const(kfunc, idx) {
+                continue;
+            }
             let is_const = matches!(
-                self.value_range_for(&MirValue::VReg(*size), value_ranges),
+                self.value_range_for(&MirValue::VReg(*arg), value_ranges),
                 ValueRange::Known { min, max } if min == max
             );
             if !is_const {
                 errors.push(TypeError::new(format!(
-                    "kfunc '{}' arg3 must be known constant",
-                    kfunc
+                    "kfunc '{}' arg{} must be known constant",
+                    kfunc, idx
                 )));
             }
         }

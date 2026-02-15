@@ -22,7 +22,9 @@ use crate::compiler::instruction::{
     kfunc_pointer_arg_requires_kernel as kfunc_pointer_arg_requires_kernel_shared,
     kfunc_pointer_arg_requires_stack as kfunc_pointer_arg_requires_stack_shared,
     kfunc_pointer_arg_requires_stack_slot_base as kfunc_pointer_arg_requires_stack_slot_base_shared,
-    kfunc_release_ref_arg_index, kfunc_release_ref_kind, kfunc_semantics,
+    kfunc_release_ref_arg_index, kfunc_release_ref_kind,
+    kfunc_scalar_arg_requires_known_const as kfunc_scalar_arg_requires_known_const_shared,
+    kfunc_semantics,
 };
 use crate::compiler::mir::{
     AddressSpace, BinOpKind, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME,

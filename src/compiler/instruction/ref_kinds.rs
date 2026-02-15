@@ -734,3 +734,10 @@ pub fn kfunc_pointer_arg_allows_const_zero(kfunc: &str, arg_idx: usize) -> bool 
             | ("bpf_dynptr_slice_rdwr", 2)
     ) || KernelBtf::get().kfunc_pointer_arg_is_nullable(kfunc, arg_idx)
 }
+
+pub fn kfunc_scalar_arg_requires_known_const(kfunc: &str, arg_idx: usize) -> bool {
+    matches!(
+        (kfunc, arg_idx),
+        ("bpf_dynptr_slice", 3) | ("bpf_dynptr_slice_rdwr", 3)
+    ) || KernelBtf::get().kfunc_scalar_arg_requires_known_const(kfunc, arg_idx)
+}

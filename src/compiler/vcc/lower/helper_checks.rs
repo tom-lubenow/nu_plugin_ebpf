@@ -223,6 +223,10 @@ impl<'a> VccLowerer<'a> {
         kfunc_pointer_arg_allows_const_zero_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_scalar_arg_requires_known_const(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_scalar_arg_requires_known_const_shared(kfunc, arg_idx)
+    }
+
     pub(super) fn kfunc_pointer_arg_expected_ref_kind(
         kfunc: &str,
         arg_idx: usize,
@@ -826,12 +830,13 @@ impl<'a> VccLowerer<'a> {
             )?;
         }
 
-        if matches!(kfunc, "bpf_dynptr_slice" | "bpf_dynptr_slice_rdwr")
-            && let Some(size) = args.get(3)
-        {
+        for (idx, arg) in args.iter().enumerate() {
+            if !Self::kfunc_scalar_arg_requires_known_const(kfunc, idx) {
+                continue;
+            }
             out.push(VccInst::AssertKnownConst {
-                value: VccValue::Reg(VccReg(size.0)),
-                message: format!("kfunc '{}' arg3 must be known constant", kfunc),
+                value: VccValue::Reg(VccReg(arg.0)),
+                message: format!("kfunc '{}' arg{} must be known constant", kfunc, idx),
             });
         }
 

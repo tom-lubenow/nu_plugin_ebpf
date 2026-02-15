@@ -284,17 +284,18 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
         ));
     }
 
-    if matches!(kfunc, "bpf_dynptr_slice" | "bpf_dynptr_slice_rdwr")
-        && let Some(size) = args.get(3)
-    {
+    for (idx, arg) in args.iter().enumerate() {
+        if !kfunc_scalar_arg_requires_known_const(kfunc, idx) {
+            continue;
+        }
         let is_const = matches!(
-            value_range(&MirValue::VReg(*size), state),
+            value_range(&MirValue::VReg(*arg), state),
             ValueRange::Known { min, max } if min == max
         );
         if !is_const {
             errors.push(VerifierTypeError::new(format!(
-                "kfunc '{}' arg3 must be known constant",
-                kfunc
+                "kfunc '{}' arg{} must be known constant",
+                kfunc, idx
             )));
         }
     }
@@ -326,6 +327,13 @@ pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_requires_stack_slot
     arg_idx: usize,
 ) -> bool {
     kfunc_pointer_arg_requires_stack_slot_base_shared(kfunc, arg_idx)
+}
+
+pub(in crate::compiler::verifier_types) fn kfunc_scalar_arg_requires_known_const(
+    kfunc: &str,
+    arg_idx: usize,
+) -> bool {
+    kfunc_scalar_arg_requires_known_const_shared(kfunc, arg_idx)
 }
 
 pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_expected_ref_kind(
