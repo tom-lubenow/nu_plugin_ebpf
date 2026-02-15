@@ -120,6 +120,38 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::AssertKnownConst { value, message } => {
+                let ty = match state.value_type(*value) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                if ty.class() != VccTypeClass::Scalar && ty.class() != VccTypeClass::Bool {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::TypeMismatch {
+                            expected: VccTypeClass::Scalar,
+                            actual: ty.class(),
+                        },
+                        "expected scalar value",
+                    ));
+                    return;
+                }
+                let Some(range) = state.value_range(*value, ty) else {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message.clone(),
+                    ));
+                    return;
+                };
+                if range.min != range.max {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message.clone(),
+                    ));
+                }
+            }
             VccInst::AssertPtrAccess { ptr, size, op } => {
                 let ptr_ty = match state.reg_type(*ptr) {
                     Ok(ty) => ty,

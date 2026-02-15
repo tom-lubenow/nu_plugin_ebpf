@@ -283,6 +283,21 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
             "kfunc 'bpf_dynptr_clone' arg1 must reference distinct stack slot from arg0",
         ));
     }
+
+    if matches!(kfunc, "bpf_dynptr_slice" | "bpf_dynptr_slice_rdwr")
+        && let Some(size) = args.get(3)
+    {
+        let is_const = matches!(
+            value_range(&MirValue::VReg(*size), state),
+            ValueRange::Known { min, max } if min == max
+        );
+        if !is_const {
+            errors.push(VerifierTypeError::new(format!(
+                "kfunc '{}' arg3 must be known constant",
+                kfunc
+            )));
+        }
+    }
 }
 
 pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_requires_kernel(

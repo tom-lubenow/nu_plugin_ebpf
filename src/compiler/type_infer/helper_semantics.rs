@@ -416,6 +416,21 @@ impl<'a> TypeInference<'a> {
                 ));
             }
         }
+
+        if matches!(kfunc, "bpf_dynptr_slice" | "bpf_dynptr_slice_rdwr")
+            && let Some(size) = args.get(3)
+        {
+            let is_const = matches!(
+                self.value_range_for(&MirValue::VReg(*size), value_ranges),
+                ValueRange::Known { min, max } if min == max
+            );
+            if !is_const {
+                errors.push(TypeError::new(format!(
+                    "kfunc '{}' arg3 must be known constant",
+                    kfunc
+                )));
+            }
+        }
     }
 
     pub(super) fn is_const_zero(value: &MirValue) -> bool {

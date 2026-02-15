@@ -826,6 +826,15 @@ impl<'a> VccLowerer<'a> {
             )?;
         }
 
+        if matches!(kfunc, "bpf_dynptr_slice" | "bpf_dynptr_slice_rdwr")
+            && let Some(size) = args.get(3)
+        {
+            out.push(VccInst::AssertKnownConst {
+                value: VccValue::Reg(VccReg(size.0)),
+                message: format!("kfunc '{}' arg3 must be known constant", kfunc),
+            });
+        }
+
         if kfunc == "bpf_dynptr_clone"
             && let (Some(src), Some(dst)) = (args.first(), args.get(1))
         {

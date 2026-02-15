@@ -210,6 +210,10 @@ pub enum VccInst {
         expected: i64,
         message: String,
     },
+    AssertKnownConst {
+        value: VccValue,
+        message: String,
+    },
     AssertPtrAccess {
         ptr: VccReg,
         size: VccValue,

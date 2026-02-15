@@ -3558,3 +3558,48 @@ fn test_type_error_kfunc_dynptr_slice_buffer_rejects_non_zero_scalar() {
         errs
     );
 }
+
+#[test]
+fn test_type_error_kfunc_dynptr_slice_requires_constant_size_arg() {
+    let mut func = make_test_function();
+    func.param_count = 1;
+
+    let size = func.alloc_vreg();
+    let dptr = func.alloc_vreg();
+    let off = func.alloc_vreg();
+    let buffer = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: dptr,
+        src: MirValue::StackSlot(dptr_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: off,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: buffer,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_dynptr_slice".to_string(),
+        btf_id: None,
+        args: vec![dptr, off, buffer, size],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected dynptr_slice constant-size type error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_dynptr_slice' arg3 must be known constant")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
