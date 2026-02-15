@@ -2764,3 +2764,143 @@ fn test_type_error_kfunc_crypto_encrypt_src_requires_stack_or_map_space() {
             .contains("kfunc bpf_crypto_encrypt src expects pointer in [Stack, Map], got Kernel")
     }));
 }
+
+#[test]
+fn test_type_error_kfunc_crypto_decrypt_src_requires_stack_or_map_space() {
+    let mut func = make_test_function();
+    let params = func.alloc_vreg();
+    let params_sz = func.alloc_vreg();
+    let err_ptr = func.alloc_vreg();
+    let ctx = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let src = func.alloc_vreg();
+    let dst_buf = func.alloc_vreg();
+    let siv = func.alloc_vreg();
+    let decrypt_ret = func.alloc_vreg();
+    let params_slot = func.alloc_stack_slot(512, 8, StackSlotKind::StringBuffer);
+    let err_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let siv_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: params,
+        src: MirValue::StackSlot(params_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: params_sz,
+        src: MirValue::Const(408),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: err_ptr,
+        src: MirValue::StackSlot(err_slot),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: ctx,
+        kfunc: "bpf_crypto_ctx_create".to_string(),
+        btf_id: None,
+        args: vec![params, params_sz, err_ptr],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(42),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: src,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: dst_buf,
+        src: MirValue::StackSlot(dst_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: siv,
+        src: MirValue::StackSlot(siv_slot),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: decrypt_ret,
+        kfunc: "bpf_crypto_decrypt".to_string(),
+        btf_id: None,
+        args: vec![ctx, src, dst_buf, siv],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected crypto_decrypt src pointer-space type error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("kfunc bpf_crypto_decrypt src expects pointer in [Stack, Map], got Kernel")
+    }));
+}
+
+#[test]
+fn test_type_error_kfunc_crypto_encrypt_dst_requires_stack_slot_base_pointer() {
+    let mut func = make_test_function();
+    let params = func.alloc_vreg();
+    let params_sz = func.alloc_vreg();
+    let err_ptr = func.alloc_vreg();
+    let ctx = func.alloc_vreg();
+    let src = func.alloc_vreg();
+    let dst_buf = func.alloc_vreg();
+    let siv = func.alloc_vreg();
+    let encrypt_ret = func.alloc_vreg();
+    let params_slot = func.alloc_stack_slot(512, 8, StackSlotKind::StringBuffer);
+    let err_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let siv_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: params,
+        src: MirValue::StackSlot(params_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: params_sz,
+        src: MirValue::Const(408),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: err_ptr,
+        src: MirValue::StackSlot(err_slot),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: ctx,
+        kfunc: "bpf_crypto_ctx_create".to_string(),
+        btf_id: None,
+        args: vec![params, params_sz, err_ptr],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: src,
+        src: MirValue::StackSlot(src_slot),
+    });
+    block.instructions.push(MirInst::BinOp {
+        dst: dst_buf,
+        op: BinOpKind::Add,
+        lhs: MirValue::StackSlot(dst_slot),
+        rhs: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: siv,
+        src: MirValue::StackSlot(siv_slot),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: encrypt_ret,
+        kfunc: "bpf_crypto_encrypt".to_string(),
+        btf_id: None,
+        args: vec![ctx, src, dst_buf, siv],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected crypto_encrypt stack-slot-base type error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("arg2 expects stack slot base pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
