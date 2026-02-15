@@ -1621,6 +1621,10 @@ fn test_kfunc_pointer_arg_requires_kernel_mappings() {
         "bpf_res_spin_unlock_irqrestore",
         0
     ));
+    assert!(!kfunc_pointer_arg_requires_kernel(
+        "__nu_plugin_ebpf_missing_kfunc__",
+        0
+    ));
 }
 
 #[test]

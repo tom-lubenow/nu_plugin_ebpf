@@ -602,7 +602,7 @@ pub fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
     if kfunc_pointer_arg_ref_kind(kfunc, arg_idx).is_some() {
         return true;
     }
-    matches!(
+    if matches!(
         (kfunc, arg_idx),
         ("bpf_list_push_front_impl", 0)
             | ("bpf_list_push_front_impl", 1)
@@ -626,7 +626,24 @@ pub fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
             | ("bpf_rbtree_root", 0)
             | ("bpf_rbtree_left", 0)
             | ("bpf_rbtree_right", 0)
-    )
+    ) {
+        return true;
+    }
+    if let Some(rule) = kfunc_semantics(kfunc)
+        .ptr_arg_rules
+        .iter()
+        .find(|rule| rule.arg_idx == arg_idx)
+        && rule.allowed.allow_kernel
+        && !rule.allowed.allow_stack
+        && !rule.allowed.allow_map
+        && !rule.allowed.allow_user
+    {
+        return true;
+    }
+    if KfuncSignature::for_name(kfunc).is_some() {
+        return false;
+    }
+    KernelBtf::get().kfunc_pointer_arg_requires_kernel(kfunc, arg_idx)
 }
 
 pub fn kfunc_pointer_arg_requires_user(kfunc: &str, arg_idx: usize) -> bool {
