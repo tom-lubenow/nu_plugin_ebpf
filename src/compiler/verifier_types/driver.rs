@@ -138,6 +138,11 @@ pub fn verify_mir(
                         "unreleased iter_dmabuf iterator at function exit",
                     ));
                 }
+                if state.has_live_iter_kmem_cache() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased iter_kmem_cache iterator at function exit",
+                    ));
+                }
             }
             MirInst::TailCall { prog_map, index } => {
                 if prog_map.kind != MapKind::ProgArray {
@@ -216,6 +221,11 @@ pub fn verify_mir(
                 if state.has_live_iter_dmabuf() {
                     errors.push(VerifierTypeError::new(
                         "unreleased iter_dmabuf iterator at function exit",
+                    ));
+                }
+                if state.has_live_iter_kmem_cache() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased iter_kmem_cache iterator at function exit",
                     ));
                 }
             }

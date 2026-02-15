@@ -534,6 +534,42 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
         }
         return;
     }
+    if kfunc == "bpf_iter_kmem_cache_new" {
+        if let Some(iter) = args
+            .first()
+            .copied()
+            .and_then(|arg| stack_slot_from_arg(state, arg))
+        {
+            state.acquire_iter_kmem_cache_slot(iter);
+        }
+        return;
+    }
+    if kfunc == "bpf_iter_kmem_cache_next" {
+        let valid = args
+            .first()
+            .copied()
+            .and_then(|arg| stack_slot_from_arg(state, arg))
+            .is_some_and(|iter| state.use_iter_kmem_cache_slot(iter));
+        if !valid {
+            errors.push(VerifierTypeError::new(
+                "kfunc 'bpf_iter_kmem_cache_next' requires a matching bpf_iter_kmem_cache_new",
+            ));
+        }
+        return;
+    }
+    if kfunc == "bpf_iter_kmem_cache_destroy" {
+        let released = args
+            .first()
+            .copied()
+            .and_then(|arg| stack_slot_from_arg(state, arg))
+            .is_some_and(|iter| state.release_iter_kmem_cache_slot(iter));
+        if !released {
+            errors.push(VerifierTypeError::new(
+                "kfunc 'bpf_iter_kmem_cache_destroy' requires a matching bpf_iter_kmem_cache_new",
+            ));
+        }
+        return;
+    }
 
     let Some((release_arg_idx, expected_kind)) = kfunc_release_spec(kfunc) else {
         return;

@@ -2070,6 +2070,109 @@ fn test_verify_mir_kfunc_iter_dmabuf_new_requires_stack_slot_base_pointer() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_iter_kmem_cache_new_requires_stack_iterator_pointer() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_iter_kmem_cache_new".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected iter_kmem_cache_new stack-pointer error");
+    assert!(
+        err.iter().any(|e| {
+            e.message.contains("arg0 expects pointer in [Stack]")
+                || e.message.contains("arg0 expects stack slot pointer")
+        }),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_iter_kmem_cache_new_requires_stack_slot_base_pointer() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let iter = func.alloc_vreg();
+    let shifted_iter = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: shifted_iter,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(iter),
+        rhs: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_iter_kmem_cache_new".to_string(),
+        btf_id: None,
+        args: vec![shifted_iter],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        shifted_iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected iter_kmem_cache_new stack-slot-base pointer error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg0 expects stack slot base pointer")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_kfunc_iter_task_new_requires_stack_iterator_pointer() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;
@@ -3629,6 +3732,234 @@ fn test_verify_mir_kfunc_iter_dmabuf_new_must_be_destroyed_at_exit() {
     assert!(
         err.iter()
             .any(|e| e.message.contains("unreleased iter_dmabuf iterator")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_iter_kmem_cache_lifecycle_balanced() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let iter = func.alloc_vreg();
+    let new_ret = func.alloc_vreg();
+    let next_ret = func.alloc_vreg();
+    let destroy_ret = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: new_ret,
+        kfunc: "bpf_iter_kmem_cache_new".to_string(),
+        btf_id: None,
+        args: vec![iter],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: next_ret,
+        kfunc: "bpf_iter_kmem_cache_next".to_string(),
+        btf_id: None,
+        args: vec![iter],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: destroy_ret,
+        kfunc: "bpf_iter_kmem_cache_destroy".to_string(),
+        btf_id: None,
+        args: vec![iter],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(new_ret, MirType::I64);
+    types.insert(
+        next_ret,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(destroy_ret, MirType::I64);
+
+    verify_mir(&func, &types)
+        .expect("expected balanced iter_kmem_cache new/next/destroy to verify");
+}
+
+#[test]
+fn test_verify_mir_kfunc_iter_kmem_cache_next_requires_matching_new_slot() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let iter_new = func.alloc_vreg();
+    let iter_next = func.alloc_vreg();
+    let new_ret = func.alloc_vreg();
+    let next_ret = func.alloc_vreg();
+    let new_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let next_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter_new,
+        src: MirValue::StackSlot(new_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter_next,
+        src: MirValue::StackSlot(next_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: new_ret,
+        kfunc: "bpf_iter_kmem_cache_new".to_string(),
+        btf_id: None,
+        args: vec![iter_new],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: next_ret,
+        kfunc: "bpf_iter_kmem_cache_next".to_string(),
+        btf_id: None,
+        args: vec![iter_next],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        iter_new,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        iter_next,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(new_ret, MirType::I64);
+    types.insert(
+        next_ret,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected iter_kmem_cache_next slot mismatch");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires a matching bpf_iter_kmem_cache_new")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_iter_kmem_cache_destroy_requires_matching_new_slot() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let iter_new = func.alloc_vreg();
+    let iter_destroy = func.alloc_vreg();
+    let new_ret = func.alloc_vreg();
+    let destroy_ret = func.alloc_vreg();
+    let new_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let destroy_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter_new,
+        src: MirValue::StackSlot(new_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter_destroy,
+        src: MirValue::StackSlot(destroy_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: new_ret,
+        kfunc: "bpf_iter_kmem_cache_new".to_string(),
+        btf_id: None,
+        args: vec![iter_new],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: destroy_ret,
+        kfunc: "bpf_iter_kmem_cache_destroy".to_string(),
+        btf_id: None,
+        args: vec![iter_destroy],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        iter_new,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        iter_destroy,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(new_ret, MirType::I64);
+    types.insert(destroy_ret, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected iter_kmem_cache_destroy slot mismatch");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires a matching bpf_iter_kmem_cache_new")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_iter_kmem_cache_new_must_be_destroyed_at_exit() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let iter = func.alloc_vreg();
+    let new_ret = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: new_ret,
+        kfunc: "bpf_iter_kmem_cache_new".to_string(),
+        btf_id: None,
+        args: vec![iter],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(new_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected unreleased iter_kmem_cache iterator");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("unreleased iter_kmem_cache iterator")),
         "unexpected error messages: {:?}",
         err
     );

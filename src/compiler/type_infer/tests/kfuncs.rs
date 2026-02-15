@@ -980,6 +980,37 @@ fn test_infer_kfunc_iter_dmabuf_next_pointer_return() {
 }
 
 #[test]
+fn test_infer_kfunc_iter_kmem_cache_next_pointer_return() {
+    let mut func = make_test_function();
+    let it = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: it,
+        src: MirValue::StackSlot(slot),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_iter_kmem_cache_next".to_string(),
+        btf_id: None,
+        args: vec![it],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected iter_kmem_cache_next kfunc type inference");
+    match types.get(&dst) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(*address_space, AddressSpace::Kernel);
+        }
+        other => panic!("expected kernel pointer return, got {:?}", other),
+    }
+}
+
+#[test]
 fn test_infer_kfunc_scx_cpu_rq_pointer_return() {
     let mut func = make_test_function();
     let cpu = func.alloc_vreg();
@@ -1457,6 +1488,43 @@ fn test_type_error_kfunc_iter_dmabuf_new_requires_stack_iterator_pointer() {
     let errs = ti
         .infer(&func)
         .expect_err("expected iter_dmabuf_new stack-iterator type error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("arg0 expects stack pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_kfunc_iter_kmem_cache_new_requires_stack_iterator_pointer() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_iter_kmem_cache_new".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected iter_kmem_cache_new stack-iterator type error");
     assert!(
         errs.iter()
             .any(|e| e.message.contains("arg0 expects stack pointer")),

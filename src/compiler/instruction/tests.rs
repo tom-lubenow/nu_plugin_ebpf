@@ -689,6 +689,30 @@ fn test_kfunc_signature_iter_dmabuf_kfuncs() {
 }
 
 #[test]
+fn test_kfunc_signature_iter_kmem_cache_kfuncs() {
+    let sig = KfuncSignature::for_name("bpf_iter_kmem_cache_new")
+        .expect("expected bpf_iter_kmem_cache_new kfunc signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
+    let sig = KfuncSignature::for_name("bpf_iter_kmem_cache_next")
+        .expect("expected bpf_iter_kmem_cache_next kfunc signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
+
+    let sig = KfuncSignature::for_name("bpf_iter_kmem_cache_destroy")
+        .expect("expected bpf_iter_kmem_cache_destroy kfunc signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Void);
+}
+
+#[test]
 fn test_kfunc_signature_cpumask_and() {
     let populate = KfuncSignature::for_name("bpf_cpumask_populate")
         .expect("expected bpf_cpumask_populate kfunc signature");
@@ -1242,6 +1266,18 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
         "bpf_iter_dmabuf_destroy",
         0
     ));
+    assert!(kfunc_pointer_arg_requires_stack(
+        "bpf_iter_kmem_cache_new",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack(
+        "bpf_iter_kmem_cache_next",
+        0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack(
+        "bpf_iter_kmem_cache_destroy",
+        0
+    ));
     assert!(!kfunc_pointer_arg_requires_stack("bpf_res_spin_lock", 0));
     assert!(!kfunc_pointer_arg_requires_stack("bpf_task_release", 0));
     assert!(!kfunc_pointer_arg_requires_stack(
@@ -1253,6 +1289,10 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
     assert!(!kfunc_pointer_arg_requires_stack("bpf_iter_num_new", 1));
     assert!(!kfunc_pointer_arg_requires_stack("bpf_iter_bits_new", 1));
     assert!(!kfunc_pointer_arg_requires_stack("bpf_iter_dmabuf_new", 1));
+    assert!(!kfunc_pointer_arg_requires_stack(
+        "bpf_iter_kmem_cache_new",
+        1
+    ));
 }
 
 #[test]

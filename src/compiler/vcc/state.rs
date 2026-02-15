@@ -29,6 +29,9 @@ struct VccState {
     iter_dmabuf_min_depth: u32,
     iter_dmabuf_max_depth: u32,
     iter_dmabuf_slots: HashMap<StackSlotId, (u32, u32)>,
+    iter_kmem_cache_min_depth: u32,
+    iter_kmem_cache_max_depth: u32,
+    iter_kmem_cache_slots: HashMap<StackSlotId, (u32, u32)>,
     res_spin_lock_min_depth: u32,
     res_spin_lock_max_depth: u32,
     res_spin_lock_irqsave_min_depth: u32,
@@ -92,6 +95,9 @@ impl VccState {
             iter_dmabuf_min_depth: 0,
             iter_dmabuf_max_depth: 0,
             iter_dmabuf_slots: HashMap::new(),
+            iter_kmem_cache_min_depth: 0,
+            iter_kmem_cache_max_depth: 0,
+            iter_kmem_cache_slots: HashMap::new(),
             res_spin_lock_min_depth: 0,
             res_spin_lock_max_depth: 0,
             res_spin_lock_irqsave_min_depth: 0,
@@ -427,6 +433,34 @@ impl VccState {
         self.iter_dmabuf_max_depth > 0
     }
 
+    fn acquire_iter_kmem_cache_slot(&mut self, slot: StackSlotId) {
+        self.iter_kmem_cache_min_depth = self.iter_kmem_cache_min_depth.saturating_add(1);
+        self.iter_kmem_cache_max_depth = self.iter_kmem_cache_max_depth.saturating_add(1);
+        increment_slot_depth(&mut self.iter_kmem_cache_slots, slot);
+    }
+
+    fn use_iter_kmem_cache_slot(&self, slot: StackSlotId) -> bool {
+        self.iter_kmem_cache_slots
+            .get(&slot)
+            .is_some_and(|(min_depth, _)| *min_depth > 0)
+    }
+
+    fn release_iter_kmem_cache_slot(&mut self, slot: StackSlotId) -> bool {
+        if self.iter_kmem_cache_min_depth == 0 {
+            return false;
+        }
+        if !decrement_slot_depth(&mut self.iter_kmem_cache_slots, slot) {
+            return false;
+        }
+        self.iter_kmem_cache_min_depth -= 1;
+        self.iter_kmem_cache_max_depth -= 1;
+        true
+    }
+
+    fn has_live_iter_kmem_cache(&self) -> bool {
+        self.iter_kmem_cache_max_depth > 0
+    }
+
     fn acquire_res_spin_lock(&mut self) {
         self.res_spin_lock_min_depth = self.res_spin_lock_min_depth.saturating_add(1);
         self.res_spin_lock_max_depth = self.res_spin_lock_max_depth.saturating_add(1);
@@ -637,6 +671,16 @@ impl VccState {
                 &self.iter_dmabuf_slots,
                 &other.iter_dmabuf_slots,
             ),
+            iter_kmem_cache_min_depth: self
+                .iter_kmem_cache_min_depth
+                .min(other.iter_kmem_cache_min_depth),
+            iter_kmem_cache_max_depth: self
+                .iter_kmem_cache_max_depth
+                .max(other.iter_kmem_cache_max_depth),
+            iter_kmem_cache_slots: merge_slot_depths(
+                &self.iter_kmem_cache_slots,
+                &other.iter_kmem_cache_slots,
+            ),
             res_spin_lock_min_depth: self
                 .res_spin_lock_min_depth
                 .min(other.res_spin_lock_min_depth),
@@ -706,6 +750,9 @@ impl VccState {
             iter_dmabuf_min_depth: self.iter_dmabuf_min_depth,
             iter_dmabuf_max_depth: self.iter_dmabuf_max_depth,
             iter_dmabuf_slots: self.iter_dmabuf_slots.clone(),
+            iter_kmem_cache_min_depth: self.iter_kmem_cache_min_depth,
+            iter_kmem_cache_max_depth: self.iter_kmem_cache_max_depth,
+            iter_kmem_cache_slots: self.iter_kmem_cache_slots.clone(),
             res_spin_lock_min_depth: self.res_spin_lock_min_depth,
             res_spin_lock_max_depth: self.res_spin_lock_max_depth,
             res_spin_lock_irqsave_min_depth: self.res_spin_lock_irqsave_min_depth,

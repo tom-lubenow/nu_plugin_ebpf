@@ -986,6 +986,42 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::IterKmemCacheNew { iter } => {
+                let Some(slot) = self
+                    .stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_kmem_cache_new' arg0")
+                else {
+                    return;
+                };
+                state.acquire_iter_kmem_cache_slot(slot);
+            }
+            VccInst::IterKmemCacheNext { iter } => {
+                let Some(slot) = self
+                    .stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_kmem_cache_next' arg0")
+                else {
+                    return;
+                };
+                if !state.use_iter_kmem_cache_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_iter_kmem_cache_next' requires a matching bpf_iter_kmem_cache_new",
+                    ));
+                }
+            }
+            VccInst::IterKmemCacheDestroy { iter } => {
+                let Some(slot) = self.stack_slot_from_reg(
+                    state,
+                    *iter,
+                    "kfunc 'bpf_iter_kmem_cache_destroy' arg0",
+                ) else {
+                    return;
+                };
+                if !state.release_iter_kmem_cache_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_iter_kmem_cache_destroy' requires a matching bpf_iter_kmem_cache_new",
+                    ));
+                }
+            }
             VccInst::KfuncExpectRefKind {
                 ptr,
                 arg_idx,
@@ -1281,6 +1317,12 @@ impl VccVerifier {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased iter_dmabuf iterator at function exit",
+                    ));
+                }
+                if state.has_live_iter_kmem_cache() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "unreleased iter_kmem_cache iterator at function exit",
                     ));
                 }
             }
