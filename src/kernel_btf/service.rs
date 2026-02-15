@@ -75,15 +75,24 @@ pub enum KfuncArgShape {
     Pointer,
 }
 
+/// Coarse return shape inferred from kernel BTF.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KfuncRetShape {
+    Void,
+    Scalar,
+    PointerMaybeNull,
+}
+
 /// Best-effort kfunc signature inferred from kernel BTF.
 ///
 /// This is intentionally coarse and only captures arity plus pointer-vs-scalar
-/// argument kinds. Return-kind inference is not provided here.
+/// argument kinds, with coarse return-kind inference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KfuncSignatureHint {
     pub min_args: usize,
     pub max_args: usize,
     pub arg_shapes: [KfuncArgShape; 5],
+    pub ret_shape: KfuncRetShape,
 }
 
 /// Result of reading the function list (internal use)
@@ -121,6 +130,8 @@ pub struct KernelBtf {
 }
 
 impl KernelBtf {
+    const KERNEL_BTF_PATH: &str = "/sys/kernel/btf/vmlinux";
+
     fn is_bpf_kfunc(ty: &FlattenedType) -> bool {
         ty.decl_tags.iter().any(|(_, tag)| tag == "bpf_kfunc")
     }
@@ -223,16 +234,27 @@ impl KernelBtf {
     }
 
     fn load_kernel_btf(&self) -> Result<Btf, PtRegsError> {
-        let path = "/sys/kernel/btf/vmlinux";
+        let path = Self::KERNEL_BTF_PATH;
         Btf::from_file(path).map_err(|e| PtRegsError::new(format!("failed to parse {path}: {e}")))
     }
 
     fn load_kernel_btf_for_query(&self) -> Result<Btf, BtfError> {
-        let path = "/sys/kernel/btf/vmlinux";
+        let path = Self::KERNEL_BTF_PATH;
         if !Path::new(path).is_file() {
             return Err(BtfError::NotAvailable);
         }
         Btf::from_file(path).map_err(|e| BtfError::KernelBtfError(e.to_string()))
+    }
+
+    fn load_kfunc_return_type_id_map(&self) -> Result<HashMap<u32, u32>, BtfError> {
+        let raw = fs::read(Self::KERNEL_BTF_PATH).map_err(|e| {
+            BtfError::KernelBtfError(format!("failed to read {}: {e}", Self::KERNEL_BTF_PATH))
+        })?;
+        parse_function_return_type_ids_from_raw_btf(&raw).ok_or_else(|| {
+            BtfError::KernelBtfError(
+                "failed to parse raw kernel BTF function proto return ids".into(),
+            )
+        })
     }
 
     /// Resolve a kfunc name to its kernel BTF function ID.
@@ -304,6 +326,7 @@ impl KernelBtf {
         &self,
     ) -> Result<HashMap<String, KfuncSignatureHint>, BtfError> {
         let btf = self.load_kernel_btf_for_query()?;
+        let function_ret_type_ids = self.load_kfunc_return_type_id_map().unwrap_or_default();
         let mut map: HashMap<String, KfuncSignatureHint> = HashMap::new();
         for ty in btf.get_types() {
             if !ty.is_function || !Self::is_bpf_kfunc(ty) {
@@ -338,12 +361,18 @@ impl KernelBtf {
                     arg_shapes[arg_idx] = KfuncArgShape::Pointer;
                 }
             }
+            let ret_shape = function_ret_type_ids
+                .get(&ty.type_id)
+                .copied()
+                .map(|ret_type_id| infer_kfunc_ret_shape(&btf, ret_type_id))
+                .unwrap_or(KfuncRetShape::Scalar);
             map.insert(
                 name.clone(),
                 KfuncSignatureHint {
                     min_args: proto.params.len(),
                     max_args: proto.params.len(),
                     arg_shapes,
+                    ret_shape,
                 },
             );
         }
@@ -796,6 +825,125 @@ impl KernelBtf {
     }
 }
 
+#[derive(Clone, Copy)]
+enum BtfEndianness {
+    Little,
+    Big,
+}
+
+fn infer_kfunc_ret_shape(btf: &Btf, ret_type_id: u32) -> KfuncRetShape {
+    if ret_type_id == 0 {
+        return KfuncRetShape::Void;
+    }
+    if btf
+        .get_type_by_id(ret_type_id)
+        .is_ok_and(|ret_ty| ret_ty.num_refs > 0)
+    {
+        return KfuncRetShape::PointerMaybeNull;
+    }
+    KfuncRetShape::Scalar
+}
+
+fn parse_function_return_type_ids_from_raw_btf(raw: &[u8]) -> Option<HashMap<u32, u32>> {
+    let endianness = detect_btf_endianness(raw)?;
+    let hdr_len = read_u32(raw, 4, endianness)?;
+    let type_off = read_u32(raw, 8, endianness)?;
+    let type_len = read_u32(raw, 12, endianness)?;
+
+    let type_start = hdr_len.checked_add(type_off)?;
+    let type_end = type_start.checked_add(type_len)?;
+    if type_end as usize > raw.len() {
+        return None;
+    }
+
+    let mut func_to_proto: HashMap<u32, u32> = HashMap::new();
+    let mut proto_to_ret: HashMap<u32, u32> = HashMap::new();
+    let mut type_id: u32 = 1;
+    let mut cursor: u32 = type_start;
+
+    while cursor < type_end {
+        let header_end = cursor.checked_add(12)?;
+        if header_end > type_end {
+            return None;
+        }
+        let info = read_u32(raw, cursor as usize + 4, endianness)?;
+        let size_type = read_u32(raw, cursor as usize + 8, endianness)?;
+        let kind = (info >> 24) & 0x1f;
+        let vlen = info & 0xffff;
+
+        if kind == 12 {
+            // BTF_KIND_FUNC: size_type is function prototype type ID.
+            func_to_proto.insert(type_id, size_type);
+        } else if kind == 13 {
+            // BTF_KIND_FUNC_PROTO: size_type is return type ID.
+            proto_to_ret.insert(type_id, size_type);
+        }
+
+        let payload_len = btf_kind_payload_len(kind, vlen)?;
+        cursor = header_end.checked_add(payload_len)?;
+        if cursor > type_end {
+            return None;
+        }
+        type_id = type_id.checked_add(1)?;
+    }
+
+    if cursor != type_end {
+        return None;
+    }
+
+    let mut out = HashMap::with_capacity(func_to_proto.len());
+    for (func_type_id, proto_type_id) in func_to_proto {
+        if let Some(ret_type_id) = proto_to_ret.get(&proto_type_id).copied() {
+            out.insert(func_type_id, ret_type_id);
+        }
+    }
+    Some(out)
+}
+
+fn detect_btf_endianness(raw: &[u8]) -> Option<BtfEndianness> {
+    if raw.len() < 2 {
+        return None;
+    }
+    let magic_le = u16::from_le_bytes([raw[0], raw[1]]);
+    if magic_le == 0xeb9f {
+        return Some(BtfEndianness::Little);
+    }
+    let magic_be = u16::from_be_bytes([raw[0], raw[1]]);
+    if magic_be == 0xeb9f {
+        return Some(BtfEndianness::Big);
+    }
+    None
+}
+
+fn read_u32(raw: &[u8], offset: usize, endianness: BtfEndianness) -> Option<u32> {
+    let bytes = raw.get(offset..offset.checked_add(4)?)?;
+    let arr: [u8; 4] = bytes.try_into().ok()?;
+    Some(match endianness {
+        BtfEndianness::Little => u32::from_le_bytes(arr),
+        BtfEndianness::Big => u32::from_be_bytes(arr),
+    })
+}
+
+fn btf_kind_payload_len(kind: u32, vlen: u32) -> Option<u32> {
+    match kind {
+        1 => Some(4),                    // BTF_KIND_INT
+        2 => Some(0),                    // BTF_KIND_PTR
+        3 => Some(12),                   // BTF_KIND_ARRAY
+        4 | 5 => vlen.checked_mul(12),   // BTF_KIND_STRUCT / UNION
+        6 => vlen.checked_mul(8),        // BTF_KIND_ENUM
+        7 => Some(0),                    // BTF_KIND_FWD
+        8 | 9 | 10 | 11 | 12 => Some(0), // TYPEDEF / VOLATILE / CONST / RESTRICT / FUNC
+        13 => vlen.checked_mul(8),       // BTF_KIND_FUNC_PROTO
+        14 => Some(4),                   // BTF_KIND_VAR
+        15 => vlen.checked_mul(12),      // BTF_KIND_DATASEC
+        16 => Some(0),                   // BTF_KIND_FLOAT
+        17 => Some(8),                   // BTF_KIND_DECL_TAG
+        18 => Some(0),                   // BTF_KIND_TYPE_TAG
+        19 => vlen.checked_mul(12),      // BTF_KIND_ENUM64
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -943,5 +1091,85 @@ format:
             service.kfunc_signature_hint("__nu_plugin_ebpf_missing_kfunc__"),
             None
         );
+    }
+
+    fn push_u16(buf: &mut Vec<u8>, value: u16, endianness: BtfEndianness) {
+        match endianness {
+            BtfEndianness::Little => buf.extend_from_slice(&value.to_le_bytes()),
+            BtfEndianness::Big => buf.extend_from_slice(&value.to_be_bytes()),
+        }
+    }
+
+    fn push_u32(buf: &mut Vec<u8>, value: u32, endianness: BtfEndianness) {
+        match endianness {
+            BtfEndianness::Little => buf.extend_from_slice(&value.to_le_bytes()),
+            BtfEndianness::Big => buf.extend_from_slice(&value.to_be_bytes()),
+        }
+    }
+
+    fn make_minimal_raw_btf_with_type_headers(
+        endianness: BtfEndianness,
+        type_headers: &[(u32, u32)],
+    ) -> Vec<u8> {
+        let hdr_len = 24u32;
+        let type_len = (type_headers.len() as u32) * 12;
+        let str_off = type_len;
+        let str_len = 1u32;
+
+        let mut out = Vec::new();
+        push_u16(&mut out, 0xeb9f, endianness);
+        out.push(1); // version
+        out.push(0); // flags
+        push_u32(&mut out, hdr_len, endianness);
+        push_u32(&mut out, 0, endianness); // type_off
+        push_u32(&mut out, type_len, endianness);
+        push_u32(&mut out, str_off, endianness);
+        push_u32(&mut out, str_len, endianness);
+
+        for (info, size_type) in type_headers {
+            push_u32(&mut out, 0, endianness); // name_off
+            push_u32(&mut out, *info, endianness);
+            push_u32(&mut out, *size_type, endianness);
+        }
+
+        out.push(0); // string section null terminator
+        out
+    }
+
+    #[test]
+    fn test_parse_raw_btf_function_return_type_ids_little_endian() {
+        let type_headers = [
+            ((12u32 << 24) | 1, 2), // BTF_KIND_FUNC -> proto id 2
+            (13u32 << 24, 0),       // BTF_KIND_FUNC_PROTO -> void return
+        ];
+        let raw = make_minimal_raw_btf_with_type_headers(BtfEndianness::Little, &type_headers);
+        let parsed = parse_function_return_type_ids_from_raw_btf(&raw)
+            .expect("expected return-type map from raw BTF");
+        assert_eq!(parsed.get(&1).copied(), Some(0));
+    }
+
+    #[test]
+    fn test_parse_raw_btf_function_return_type_ids_pointer_return() {
+        let type_headers = [
+            ((12u32 << 24) | 1, 2), // BTF_KIND_FUNC -> proto id 2
+            (13u32 << 24, 3),       // BTF_KIND_FUNC_PROTO -> pointer return type id 3
+            (2u32 << 24, 0),        // BTF_KIND_PTR
+        ];
+        let raw = make_minimal_raw_btf_with_type_headers(BtfEndianness::Little, &type_headers);
+        let parsed = parse_function_return_type_ids_from_raw_btf(&raw)
+            .expect("expected return-type map from raw BTF");
+        assert_eq!(parsed.get(&1).copied(), Some(3));
+    }
+
+    #[test]
+    fn test_parse_raw_btf_function_return_type_ids_big_endian() {
+        let type_headers = [
+            ((12u32 << 24) | 1, 2), // BTF_KIND_FUNC -> proto id 2
+            (13u32 << 24, 0),       // BTF_KIND_FUNC_PROTO -> void return
+        ];
+        let raw = make_minimal_raw_btf_with_type_headers(BtfEndianness::Big, &type_headers);
+        let parsed = parse_function_return_type_ids_from_raw_btf(&raw)
+            .expect("expected return-type map from raw BTF");
+        assert_eq!(parsed.get(&1).copied(), Some(0));
     }
 }

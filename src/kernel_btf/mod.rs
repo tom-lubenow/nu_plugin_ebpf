@@ -13,6 +13,8 @@ mod tracepoint;
 mod types;
 
 pub use pt_regs::{PtRegsError, PtRegsOffsets};
-pub use service::{FunctionCheckResult, KernelBtf, KfuncArgShape, KfuncSignatureHint};
+pub use service::{
+    FunctionCheckResult, KernelBtf, KfuncArgShape, KfuncRetShape, KfuncSignatureHint,
+};
 pub use tracepoint::TracepointContext;
 pub use types::{FieldInfo, TypeInfo};
