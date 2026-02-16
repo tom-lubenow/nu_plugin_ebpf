@@ -478,6 +478,21 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
     }
 }
 
+fn should_infer_unknown_acquire_ref(
+    kfunc: &str,
+    kind: KfuncRefKind,
+    has_same_family_arg: bool,
+) -> bool {
+    kfunc.contains("_acquire")
+        || kfunc.contains("_from_")
+        || kfunc.contains("_create")
+        || kfunc.contains("_alloc")
+        || kfunc.starts_with("bpf_get_")
+        || kfunc.starts_with("scx_bpf_get_")
+        || (kind == KfuncRefKind::Socket && kfunc.contains("lookup"))
+        || !has_same_family_arg
+}
+
 pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
     match kfunc {
         "bpf_task_acquire" | "bpf_task_from_pid" | "bpf_task_from_vpid" => Some(KfuncRefKind::Task),
@@ -502,20 +517,20 @@ pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
         "bpf_cpumask_create" | "bpf_cpumask_acquire" => Some(KfuncRefKind::Cpumask),
         _ => {
             if KfuncSignature::for_name(kfunc).is_none() {
-                let Some(kind) = KernelBtf::get()
+                let kernel_btf = KernelBtf::get();
+                let Some(kind) = kernel_btf
                     .kfunc_return_ref_family(kfunc)
                     .map(ref_kind_from_btf_family)
                 else {
                     return None;
                 };
-                if kfunc.contains("_acquire")
-                    || kfunc.contains("_from_")
-                    || kfunc.contains("_create")
-                    || kfunc.contains("_alloc")
-                    || kfunc.starts_with("bpf_get_")
-                    || kfunc.starts_with("scx_bpf_get_")
-                    || (kind == KfuncRefKind::Socket && kfunc.contains("lookup"))
-                {
+                let has_same_family_arg = (0..5).any(|arg_idx| {
+                    kernel_btf
+                        .kfunc_pointer_arg_ref_family(kfunc, arg_idx)
+                        .map(ref_kind_from_btf_family)
+                        == Some(kind)
+                });
+                if should_infer_unknown_acquire_ref(kfunc, kind, has_same_family_arg) {
                     return Some(kind);
                 }
             }
@@ -1464,6 +1479,43 @@ mod tests {
             unknown_stack_object_lifecycle_op_from_kfunc_name("foo_obj_query"),
             None
         );
+    }
+
+    #[test]
+    fn test_should_infer_unknown_acquire_ref_name_hints() {
+        assert!(should_infer_unknown_acquire_ref(
+            "foo_task_acquire",
+            KfuncRefKind::Task,
+            true
+        ));
+        assert!(should_infer_unknown_acquire_ref(
+            "bpf_get_foo_task",
+            KfuncRefKind::Task,
+            true
+        ));
+        assert!(should_infer_unknown_acquire_ref(
+            "foo_lookup_sock",
+            KfuncRefKind::Socket,
+            true
+        ));
+    }
+
+    #[test]
+    fn test_should_infer_unknown_acquire_ref_without_same_family_args() {
+        assert!(should_infer_unknown_acquire_ref(
+            "foo_plain_name",
+            KfuncRefKind::Task,
+            false
+        ));
+    }
+
+    #[test]
+    fn test_should_not_infer_unknown_acquire_ref_without_hints_when_same_family_arg_exists() {
+        assert!(!should_infer_unknown_acquire_ref(
+            "foo_plain_name",
+            KfuncRefKind::Task,
+            true
+        ));
     }
 
     #[test]
