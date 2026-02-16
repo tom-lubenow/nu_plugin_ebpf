@@ -416,6 +416,18 @@ impl KernelBtf {
             || lower.starts_with("dst_")
             || lower.ends_with("_dst")
             || lower.ends_with("__dst")
+            || lower == "to"
+            || lower.starts_with("to_")
+            || lower.ends_with("_to")
+            || lower.ends_with("__to")
+            || lower == "new"
+            || lower.starts_with("new_")
+            || lower.ends_with("_new")
+            || lower.ends_with("__new")
+            || lower == "dup"
+            || lower.starts_with("dup_")
+            || lower.ends_with("_dup")
+            || lower.ends_with("__dup")
             || lower == "err"
             || lower.ends_with("_err")
             || lower.ends_with("__err")
@@ -437,6 +449,14 @@ impl KernelBtf {
             || lower.starts_with("from_")
             || lower.ends_with("_from")
             || lower.ends_with("__from")
+            || lower == "old"
+            || lower.starts_with("old_")
+            || lower.ends_with("_old")
+            || lower.ends_with("__old")
+            || lower == "orig"
+            || lower.starts_with("orig_")
+            || lower.ends_with("_orig")
+            || lower.ends_with("__orig")
     }
 
     fn is_probable_release_kfunc_name(name: &str) -> bool {
@@ -2505,6 +2525,15 @@ format:
         assert!(KernelBtf::is_probable_out_param_name("dst"));
         assert!(KernelBtf::is_probable_out_param_name("dst_ctx"));
         assert!(KernelBtf::is_probable_out_param_name("ctx_dst"));
+        assert!(KernelBtf::is_probable_out_param_name("to"));
+        assert!(KernelBtf::is_probable_out_param_name("task_to"));
+        assert!(KernelBtf::is_probable_out_param_name("to_task"));
+        assert!(KernelBtf::is_probable_out_param_name("new"));
+        assert!(KernelBtf::is_probable_out_param_name("new_ctx"));
+        assert!(KernelBtf::is_probable_out_param_name("ctx_new"));
+        assert!(KernelBtf::is_probable_out_param_name("dup"));
+        assert!(KernelBtf::is_probable_out_param_name("dup_ctx"));
+        assert!(KernelBtf::is_probable_out_param_name("ctx_dup"));
         assert!(KernelBtf::is_probable_out_param_name("err"));
         assert!(KernelBtf::is_probable_out_param_name("user_err"));
         assert!(KernelBtf::is_probable_out_param_name("clone__uninit"));
@@ -2524,6 +2553,12 @@ format:
         assert!(KernelBtf::is_probable_in_param_name("from"));
         assert!(KernelBtf::is_probable_in_param_name("from_task"));
         assert!(KernelBtf::is_probable_in_param_name("task_from"));
+        assert!(KernelBtf::is_probable_in_param_name("old"));
+        assert!(KernelBtf::is_probable_in_param_name("old_task"));
+        assert!(KernelBtf::is_probable_in_param_name("task_old"));
+        assert!(KernelBtf::is_probable_in_param_name("orig"));
+        assert!(KernelBtf::is_probable_in_param_name("orig_task"));
+        assert!(KernelBtf::is_probable_in_param_name("task_orig"));
         assert!(!KernelBtf::is_probable_in_param_name("dst"));
         assert!(!KernelBtf::is_probable_in_param_name("out"));
         assert!(!KernelBtf::is_probable_in_param_name("flags"));
