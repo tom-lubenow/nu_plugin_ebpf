@@ -1194,29 +1194,46 @@ fn infer_unknown_stack_object_copy_args(
     None
 }
 
+fn infer_unknown_stack_object_lifecycle_arg<'a>(
+    args: &'a [UnknownStackObjectArgInfo],
+    op: KfuncUnknownStackObjectLifecycleOp,
+) -> Option<&'a UnknownStackObjectArgInfo> {
+    if args.is_empty() {
+        return None;
+    }
+    if args.len() == 1 {
+        return args.first();
+    }
+
+    let mut candidates: Vec<&UnknownStackObjectArgInfo> = match op {
+        KfuncUnknownStackObjectLifecycleOp::Init => {
+            args.iter().filter(|arg| arg.named_out).collect()
+        }
+        KfuncUnknownStackObjectLifecycleOp::Destroy => args
+            .iter()
+            .filter(|arg| !arg.named_out && arg.named_in)
+            .collect(),
+    };
+    if candidates.len() == 1 {
+        return candidates.first().copied();
+    }
+
+    if matches!(op, KfuncUnknownStackObjectLifecycleOp::Destroy) {
+        candidates = args.iter().filter(|arg| !arg.named_out).collect();
+        if candidates.len() == 1 {
+            return candidates.first().copied();
+        }
+    }
+
+    None
+}
+
 pub fn kfunc_unknown_stack_object_lifecycle(
     kfunc: &str,
 ) -> Option<KfuncUnknownStackObjectLifecycle> {
     let op = unknown_stack_object_lifecycle_op_from_kfunc_name(kfunc)?;
     let args = unknown_stack_object_args(kfunc);
-    if args.is_empty() {
-        return None;
-    }
-    let mut candidates: Vec<&UnknownStackObjectArgInfo> = match op {
-        KfuncUnknownStackObjectLifecycleOp::Init => {
-            args.iter().filter(|arg| arg.named_out).collect()
-        }
-        KfuncUnknownStackObjectLifecycleOp::Destroy => {
-            args.iter().filter(|arg| !arg.named_out).collect()
-        }
-    };
-    if candidates.is_empty() && args.len() == 1 {
-        candidates.push(&args[0]);
-    }
-    if candidates.len() != 1 {
-        return None;
-    }
-    let arg = candidates[0];
+    let arg = infer_unknown_stack_object_lifecycle_arg(&args, op)?;
     Some(KfuncUnknownStackObjectLifecycle {
         type_name: arg.type_name.clone(),
         op,
@@ -1511,6 +1528,83 @@ mod tests {
             infer_unknown_stack_object_copy_args(&args).is_none(),
             "copy semantics require matching stack-object types for src and dst"
         );
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_lifecycle_arg_prefers_named_input_for_destroy() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: true,
+            },
+        ];
+
+        let selected = infer_unknown_stack_object_lifecycle_arg(
+            &args,
+            KfuncUnknownStackObjectLifecycleOp::Destroy,
+        )
+        .expect("expected named-in arg to disambiguate destroy lifecycle");
+        assert_eq!(selected.arg_idx, 1);
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_lifecycle_arg_requires_unique_match() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+        ];
+
+        assert!(
+            infer_unknown_stack_object_lifecycle_arg(
+                &args,
+                KfuncUnknownStackObjectLifecycleOp::Destroy
+            )
+            .is_none(),
+            "ambiguous destroy candidates should not infer lifecycle semantics"
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_lifecycle_arg_init_uses_named_out() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: true,
+            },
+        ];
+
+        let selected = infer_unknown_stack_object_lifecycle_arg(
+            &args,
+            KfuncUnknownStackObjectLifecycleOp::Init,
+        )
+        .expect("expected named-out arg to identify init target");
+        assert_eq!(selected.arg_idx, 0);
     }
 
     #[test]
