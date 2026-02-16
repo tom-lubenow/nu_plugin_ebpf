@@ -563,14 +563,51 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
     }
 }
 
+fn infer_release_arg_from_named_inputs(
+    expected_kind: KfuncRefKind,
+    candidates: &[(usize, Option<KfuncRefKind>, bool)],
+) -> Option<usize> {
+    let mut matches = candidates.iter().filter_map(|(arg_idx, kind, named_in)| {
+        if *named_in && *kind == Some(expected_kind) {
+            Some(*arg_idx)
+        } else {
+            None
+        }
+    });
+    let first = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    Some(first)
+}
+
 pub fn kfunc_release_ref_arg_index(kfunc: &str) -> Option<usize> {
     match kfunc {
         "bpf_list_push_front_impl" | "bpf_list_push_back_impl" | "bpf_rbtree_add_impl" => Some(1),
         _ if kfunc_release_ref_kind(kfunc).is_some() => {
             if KfuncSignature::for_name(kfunc).is_none() {
-                return KernelBtf::get()
-                    .kfunc_release_ref_arg_index(kfunc)
-                    .or(Some(0));
+                let kernel_btf = KernelBtf::get();
+                if let Some(arg_idx) = kernel_btf.kfunc_release_ref_arg_index(kfunc) {
+                    return Some(arg_idx);
+                }
+                if let Some(expected_kind) = kfunc_release_ref_kind(kfunc) {
+                    let mut candidates: Vec<(usize, Option<KfuncRefKind>, bool)> = Vec::new();
+                    for arg_idx in 0..5 {
+                        candidates.push((
+                            arg_idx,
+                            kernel_btf
+                                .kfunc_pointer_arg_ref_family(kfunc, arg_idx)
+                                .map(ref_kind_from_btf_family),
+                            kernel_btf.kfunc_pointer_arg_is_named_in(kfunc, arg_idx),
+                        ));
+                    }
+                    if let Some(arg_idx) =
+                        infer_release_arg_from_named_inputs(expected_kind, &candidates)
+                    {
+                        return Some(arg_idx);
+                    }
+                }
+                return Some(0);
             }
             Some(0)
         }
@@ -1418,6 +1455,40 @@ mod tests {
         );
         assert_eq!(
             unknown_stack_object_lifecycle_op_from_kfunc_name("foo_obj_query"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_infer_release_arg_from_named_inputs_selects_unique_match() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), false),
+            (1usize, Some(KfuncRefKind::Task), true),
+            (2usize, Some(KfuncRefKind::Cgroup), true),
+        ];
+        assert_eq!(
+            infer_release_arg_from_named_inputs(KfuncRefKind::Task, &candidates),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn test_infer_release_arg_from_named_inputs_rejects_ambiguous_match() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), true),
+            (1usize, Some(KfuncRefKind::Task), true),
+        ];
+        assert_eq!(
+            infer_release_arg_from_named_inputs(KfuncRefKind::Task, &candidates),
+            None
+        );
+    }
+
+    #[test]
+    fn test_infer_release_arg_from_named_inputs_requires_kind_match() {
+        let candidates = vec![(0usize, Some(KfuncRefKind::Cgroup), true)];
+        assert_eq!(
+            infer_release_arg_from_named_inputs(KfuncRefKind::Task, &candidates),
             None
         );
     }
