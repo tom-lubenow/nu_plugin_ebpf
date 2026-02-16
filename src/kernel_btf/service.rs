@@ -355,7 +355,18 @@ impl KernelBtf {
     }
 
     fn is_stack_object_type_name(name: &str) -> bool {
-        name.starts_with("bpf_iter_") || name == "bpf_dynptr" || name.starts_with("bpf_dynptr_")
+        if name.starts_with("bpf_iter_") || name == "bpf_dynptr" || name.starts_with("bpf_dynptr_")
+        {
+            return true;
+        }
+
+        // Broader stack-object heuristic for unknown kfuncs:
+        // treat remaining bpf_* struct/union pointer args as stack-object-like
+        // unless they clearly identify kernel/ref-family objects.
+        let lower = name.to_ascii_lowercase();
+        lower.starts_with("bpf_")
+            && !lower.contains("bpf_map")
+            && Self::infer_pointer_ref_family(&lower).is_none()
     }
 
     fn infer_pointer_ref_family(name: &str) -> Option<KfuncPointerRefFamily> {
@@ -2362,6 +2373,11 @@ format:
         assert!(KernelBtf::is_stack_object_type_name("bpf_iter_task"));
         assert!(KernelBtf::is_stack_object_type_name("bpf_dynptr"));
         assert!(KernelBtf::is_stack_object_type_name("bpf_dynptr_kern"));
+        assert!(KernelBtf::is_stack_object_type_name("bpf_wq"));
+        assert!(KernelBtf::is_stack_object_type_name("bpf_custom_state"));
+        assert!(!KernelBtf::is_stack_object_type_name("bpf_cpumask"));
+        assert!(!KernelBtf::is_stack_object_type_name("bpf_map"));
+        assert!(!KernelBtf::is_stack_object_type_name("bpf_socket"));
         assert!(!KernelBtf::is_stack_object_type_name("task_struct"));
     }
 
