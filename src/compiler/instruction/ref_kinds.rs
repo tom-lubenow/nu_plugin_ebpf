@@ -1069,11 +1069,24 @@ fn unknown_stack_object_lifecycle_op_from_kfunc_name(
     kfunc: &str,
 ) -> Option<KfuncUnknownStackObjectLifecycleOp> {
     let lower = kfunc.to_ascii_lowercase();
-    if lower.ends_with("_init") || lower.ends_with("_new") || lower.contains("_init_") {
+    if lower.ends_with("_init")
+        || lower.ends_with("_new")
+        || lower.ends_with("_create")
+        || lower.ends_with("_alloc")
+        || lower.contains("_init_")
+        || lower.contains("_create_")
+        || lower.contains("_alloc_")
+    {
         return Some(KfuncUnknownStackObjectLifecycleOp::Init);
     }
     if lower.ends_with("_destroy")
         || lower.contains("_destroy_")
+        || lower.ends_with("_release")
+        || lower.contains("_release_")
+        || lower.ends_with("_drop")
+        || lower.contains("_drop_")
+        || lower.ends_with("_cleanup")
+        || lower.contains("_cleanup_")
         || lower.ends_with("_deinit")
         || lower.ends_with("_fini")
     {
@@ -1304,7 +1317,27 @@ mod tests {
             Some(KfuncUnknownStackObjectLifecycleOp::Init)
         );
         assert_eq!(
+            unknown_stack_object_lifecycle_op_from_kfunc_name("foo_obj_create"),
+            Some(KfuncUnknownStackObjectLifecycleOp::Init)
+        );
+        assert_eq!(
+            unknown_stack_object_lifecycle_op_from_kfunc_name("foo_obj_alloc"),
+            Some(KfuncUnknownStackObjectLifecycleOp::Init)
+        );
+        assert_eq!(
             unknown_stack_object_lifecycle_op_from_kfunc_name("foo_obj_destroy"),
+            Some(KfuncUnknownStackObjectLifecycleOp::Destroy)
+        );
+        assert_eq!(
+            unknown_stack_object_lifecycle_op_from_kfunc_name("foo_obj_release"),
+            Some(KfuncUnknownStackObjectLifecycleOp::Destroy)
+        );
+        assert_eq!(
+            unknown_stack_object_lifecycle_op_from_kfunc_name("foo_obj_drop"),
+            Some(KfuncUnknownStackObjectLifecycleOp::Destroy)
+        );
+        assert_eq!(
+            unknown_stack_object_lifecycle_op_from_kfunc_name("foo_obj_cleanup"),
             Some(KfuncUnknownStackObjectLifecycleOp::Destroy)
         );
         assert_eq!(
