@@ -86,6 +86,16 @@ impl<'a> TypeInference<'a> {
         kfunc_scalar_arg_requires_positive_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_unknown_dynptr_copy(kfunc: &str) -> Option<KfuncUnknownDynptrCopy> {
+        kfunc_unknown_dynptr_copy_shared(kfunc)
+    }
+
+    pub(super) fn kfunc_unknown_stack_object_copy(
+        kfunc: &str,
+    ) -> Option<KfuncUnknownStackObjectCopy> {
+        kfunc_unknown_stack_object_copy_shared(kfunc)
+    }
+
     pub(super) fn helper_pointer_arg_allows_const_zero(helper_id: u32, arg_idx: usize) -> bool {
         matches!(
             (BpfHelper::from_u32(helper_id), arg_idx),
@@ -520,6 +530,44 @@ impl<'a> TypeInference<'a> {
                 errors.push(TypeError::new(
                     "kfunc 'bpf_dynptr_clone' arg1 must reference distinct stack slot from arg0",
                 ));
+            }
+        }
+
+        if let Some(copy) = Self::kfunc_unknown_dynptr_copy(kfunc)
+            && let (Some(src), Some(dst)) = (args.get(copy.src_arg_idx), args.get(copy.dst_arg_idx))
+        {
+            let src_slot = stack_bounds
+                .get(src)
+                .filter(|bounds| bounds.min == 0 && bounds.max == 0)
+                .map(|bounds| bounds.slot);
+            let dst_slot = stack_bounds
+                .get(dst)
+                .filter(|bounds| bounds.min == 0 && bounds.max == 0)
+                .map(|bounds| bounds.slot);
+            if src_slot.is_some() && src_slot == dst_slot {
+                errors.push(TypeError::new(format!(
+                    "kfunc '{}' arg{} must reference distinct stack slot from arg{}",
+                    kfunc, copy.dst_arg_idx, copy.src_arg_idx
+                )));
+            }
+        }
+
+        if let Some(copy) = Self::kfunc_unknown_stack_object_copy(kfunc)
+            && let (Some(src), Some(dst)) = (args.get(copy.src_arg_idx), args.get(copy.dst_arg_idx))
+        {
+            let src_slot = stack_bounds
+                .get(src)
+                .filter(|bounds| bounds.min == 0 && bounds.max == 0)
+                .map(|bounds| bounds.slot);
+            let dst_slot = stack_bounds
+                .get(dst)
+                .filter(|bounds| bounds.min == 0 && bounds.max == 0)
+                .map(|bounds| bounds.slot);
+            if src_slot.is_some() && src_slot == dst_slot {
+                errors.push(TypeError::new(format!(
+                    "kfunc '{}' arg{} must reference distinct {} stack object slot from arg{}",
+                    kfunc, copy.dst_arg_idx, copy.type_name, copy.src_arg_idx
+                )));
             }
         }
 
