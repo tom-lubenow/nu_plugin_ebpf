@@ -1343,6 +1343,7 @@ impl VccVerifier {
                 kfunc,
                 src_arg_idx,
                 dst_arg_idx,
+                move_semantics,
             } => {
                 let src_op = format!("kfunc '{}' arg{}", kfunc, src_arg_idx);
                 let Some(src_slot) = self.stack_slot_from_reg(state, *src, &src_op) else {
@@ -1378,6 +1379,18 @@ impl VccVerifier {
                         format!(
                             "kfunc '{}' arg{} requires uninitialized {} stack object slot",
                             kfunc, dst_arg_idx, type_name
+                        ),
+                    ));
+                    return;
+                }
+                if *move_semantics
+                    && !state.release_unknown_stack_object_slot(src_slot, type_name)
+                {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "kfunc '{}' arg{} requires initialized {} stack object",
+                            kfunc, src_arg_idx, type_name
                         ),
                     ));
                     return;

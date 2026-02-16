@@ -1174,6 +1174,15 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
                 )));
                 return;
             }
+            if copy.move_semantics
+                && !state.release_unknown_stack_object_slot(src_slot, &copy.type_name)
+            {
+                errors.push(VerifierTypeError::new(format!(
+                    "kfunc '{}' arg{} requires initialized {} stack object",
+                    kfunc, copy.src_arg_idx, copy.type_name
+                )));
+                return;
+            }
             state.initialize_unknown_stack_object_slot(dst_slot, &copy.type_name);
         }
     }

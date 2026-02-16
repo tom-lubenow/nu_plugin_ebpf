@@ -437,6 +437,7 @@ pub enum VccInst {
         kfunc: String,
         src_arg_idx: usize,
         dst_arg_idx: usize,
+        move_semantics: bool,
     },
     KfuncExpectRefKind {
         ptr: VccValue,

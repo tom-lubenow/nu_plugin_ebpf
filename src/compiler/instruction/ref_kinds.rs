@@ -131,6 +131,7 @@ pub struct KfuncUnknownStackObjectCopy {
     pub type_name: String,
     pub src_arg_idx: usize,
     pub dst_arg_idx: usize,
+    pub move_semantics: bool,
 }
 
 pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
@@ -1246,15 +1247,17 @@ pub fn kfunc_unknown_stack_object_copy(kfunc: &str) -> Option<KfuncUnknownStackO
         return None;
     }
     let lower = kfunc.to_ascii_lowercase();
-    if !lower.contains("_copy") && !lower.contains("_clone") {
+    if !lower.contains("_copy") && !lower.contains("_clone") && !lower.contains("_move") {
         return None;
     }
+    let move_semantics = lower.contains("_move") && !lower.contains("_copy");
     let args = unknown_stack_object_args(kfunc);
     let (src, dst) = infer_unknown_stack_object_copy_args(&args)?;
     Some(KfuncUnknownStackObjectCopy {
         type_name: src.type_name.clone(),
         src_arg_idx: src.arg_idx,
         dst_arg_idx: dst.arg_idx,
+        move_semantics,
     })
 }
 

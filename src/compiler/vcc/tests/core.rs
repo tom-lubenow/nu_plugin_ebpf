@@ -399,6 +399,7 @@ fn test_unknown_stack_object_copy_propagates_initialized_state() {
             kfunc: "unknown_wq_copy".to_string(),
             src_arg_idx: 0,
             dst_arg_idx: 1,
+            move_semantics: false,
         });
     func.block_mut(entry)
         .instructions
@@ -418,6 +419,111 @@ fn test_unknown_stack_object_copy_propagates_initialized_state() {
         });
 
     verify_ok(&func);
+}
+
+#[test]
+fn test_unknown_stack_object_move_transfers_initialized_state() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let src = func.alloc_reg();
+    let dst = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst: src,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst,
+        slot: StackSlotId(1),
+        size: 16,
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::UnknownStackObjectInit {
+            ptr: src,
+            type_name: "bpf_wq".to_string(),
+            kfunc: "unknown_wq_new".to_string(),
+            arg_idx: 0,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::UnknownStackObjectCopy {
+            src,
+            dst,
+            type_name: "bpf_wq".to_string(),
+            kfunc: "unknown_wq_move".to_string(),
+            src_arg_idx: 0,
+            dst_arg_idx: 1,
+            move_semantics: true,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::UnknownStackObjectDestroy {
+            ptr: dst,
+            type_name: "bpf_wq".to_string(),
+            kfunc: "unknown_wq_destroy".to_string(),
+            arg_idx: 1,
+        });
+
+    verify_ok(&func);
+}
+
+#[test]
+fn test_unknown_stack_object_move_invalidates_source() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let src = func.alloc_reg();
+    let dst = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst: src,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst,
+        slot: StackSlotId(1),
+        size: 16,
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::UnknownStackObjectInit {
+            ptr: src,
+            type_name: "bpf_wq".to_string(),
+            kfunc: "unknown_wq_new".to_string(),
+            arg_idx: 0,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::UnknownStackObjectCopy {
+            src,
+            dst,
+            type_name: "bpf_wq".to_string(),
+            kfunc: "unknown_wq_move".to_string(),
+            src_arg_idx: 0,
+            dst_arg_idx: 1,
+            move_semantics: true,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::UnknownStackObjectDestroy {
+            ptr: src,
+            type_name: "bpf_wq".to_string(),
+            kfunc: "unknown_wq_destroy".to_string(),
+            arg_idx: 0,
+        });
+
+    let err = VccVerifier::default()
+        .verify_function(&func)
+        .expect_err("expected moved source to be uninitialized");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'unknown_wq_destroy' arg0 requires initialized bpf_wq stack object")),
+        "unexpected error messages: {:?}",
+        err
+    );
 }
 
 #[test]
@@ -446,6 +552,7 @@ fn test_unknown_stack_object_copy_does_not_initialize_from_uninitialized_source(
             kfunc: "unknown_wq_copy".to_string(),
             src_arg_idx: 0,
             dst_arg_idx: 1,
+            move_semantics: false,
         });
     func.block_mut(entry)
         .instructions
@@ -657,6 +764,7 @@ fn test_unknown_stack_object_copy_rejects_initialized_destination() {
             kfunc: "unknown_wq_copy".to_string(),
             src_arg_idx: 0,
             dst_arg_idx: 1,
+            move_semantics: false,
         });
     func.block_mut(entry)
         .instructions
