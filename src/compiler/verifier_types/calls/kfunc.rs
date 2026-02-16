@@ -1129,7 +1129,9 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
             }
         }
     }
-    if let Some(lifecycle) = kfunc_unknown_stack_object_lifecycle(kfunc)
+    let unknown_stack_object_copy = kfunc_unknown_stack_object_copy(kfunc);
+    if unknown_stack_object_copy.is_none()
+        && let Some(lifecycle) = kfunc_unknown_stack_object_lifecycle(kfunc)
         && let Some(ptr) = args
             .get(lifecycle.arg_idx)
             .copied()
@@ -1156,7 +1158,7 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
             }
         }
     }
-    if let Some(copy) = kfunc_unknown_stack_object_copy(kfunc)
+    if let Some(copy) = unknown_stack_object_copy
         && let (Some(src), Some(dst)) = (
             args.get(copy.src_arg_idx).copied(),
             args.get(copy.dst_arg_idx).copied(),

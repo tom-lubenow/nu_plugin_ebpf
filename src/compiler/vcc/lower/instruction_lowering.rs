@@ -895,7 +895,9 @@ impl<'a> VccLowerer<'a> {
                         move_semantics: copy.move_semantics,
                     });
                 }
-                if let Some(lifecycle) = Self::kfunc_unknown_stack_object_lifecycle(kfunc)
+                let unknown_stack_object_copy = Self::kfunc_unknown_stack_object_copy(kfunc);
+                if unknown_stack_object_copy.is_none()
+                    && let Some(lifecycle) = Self::kfunc_unknown_stack_object_lifecycle(kfunc)
                     && let Some(ptr) = args.get(lifecycle.arg_idx)
                 {
                     match lifecycle.op {
@@ -917,7 +919,7 @@ impl<'a> VccLowerer<'a> {
                         }
                     }
                 }
-                if let Some(copy) = Self::kfunc_unknown_stack_object_copy(kfunc)
+                if let Some(copy) = unknown_stack_object_copy
                     && let (Some(src), Some(dst)) =
                         (args.get(copy.src_arg_idx), args.get(copy.dst_arg_idx))
                 {
