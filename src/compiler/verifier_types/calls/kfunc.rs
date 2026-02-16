@@ -1125,6 +1125,13 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
     {
         match lifecycle.op {
             KfuncUnknownStackObjectLifecycleOp::Init => {
+                if state.has_live_unknown_stack_object_slot(ptr) {
+                    errors.push(VerifierTypeError::new(format!(
+                        "kfunc '{}' arg{} requires uninitialized {} stack object slot",
+                        kfunc, lifecycle.arg_idx, lifecycle.type_name
+                    )));
+                    return;
+                }
                 state.initialize_unknown_stack_object_slot(ptr, &lifecycle.type_name);
             }
             KfuncUnknownStackObjectLifecycleOp::Destroy => {
@@ -1157,6 +1164,13 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
                 errors.push(VerifierTypeError::new(format!(
                     "kfunc '{}' arg{} requires initialized {} stack object",
                     kfunc, copy.src_arg_idx, copy.type_name
+                )));
+                return;
+            }
+            if state.has_live_unknown_stack_object_slot(dst_slot) {
+                errors.push(VerifierTypeError::new(format!(
+                    "kfunc '{}' arg{} requires uninitialized {} stack object slot",
+                    kfunc, copy.dst_arg_idx, copy.type_name
                 )));
                 return;
             }

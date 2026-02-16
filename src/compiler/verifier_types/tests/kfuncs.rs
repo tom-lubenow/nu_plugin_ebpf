@@ -59,6 +59,31 @@ fn test_unknown_stack_object_slots_join_tracks_maybe_live_for_exit_checks() {
 }
 
 #[test]
+fn test_unknown_stack_object_slot_live_presence() {
+    let slot = StackSlotId(17);
+    let mut state = VerifierState::new(1);
+    assert!(
+        !state.has_live_unknown_stack_object_slot(slot),
+        "slot should start with no live unknown stack object state"
+    );
+
+    state.initialize_unknown_stack_object_slot(slot, "bpf_wq");
+    assert!(
+        state.has_live_unknown_stack_object_slot(slot),
+        "initialized slot should be considered live"
+    );
+
+    assert!(
+        state.release_unknown_stack_object_slot(slot, "bpf_wq"),
+        "release should succeed for initialized slot"
+    );
+    assert!(
+        !state.has_live_unknown_stack_object_slot(slot),
+        "released slot should no longer be considered live"
+    );
+}
+
+#[test]
 fn test_kfunc_unknown_signature_rejected() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

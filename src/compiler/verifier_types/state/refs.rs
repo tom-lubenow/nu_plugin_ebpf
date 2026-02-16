@@ -53,6 +53,15 @@ impl VerifierState {
             .any(|(_, max_depth)| *max_depth > 0)
     }
 
+    pub(in crate::compiler::verifier_types) fn has_live_unknown_stack_object_slot(
+        &self,
+        slot: StackSlotId,
+    ) -> bool {
+        self.unknown_stack_object_slots
+            .iter()
+            .any(|((candidate_slot, _), (_, max_depth))| *candidate_slot == slot && *max_depth > 0)
+    }
+
     pub(in crate::compiler::verifier_types) fn set_live_ringbuf_ref(
         &mut self,
         id: VReg,

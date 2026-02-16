@@ -620,6 +620,12 @@ impl VccState {
             .any(|(_, max_depth)| *max_depth > 0)
     }
 
+    fn has_live_unknown_stack_object_slot(&self, slot: StackSlotId) -> bool {
+        self.unknown_stack_object_slots
+            .iter()
+            .any(|((candidate_slot, _), (_, max_depth))| *candidate_slot == slot && *max_depth > 0)
+    }
+
     fn kfunc_ref_kind(&self, id: VccReg) -> Option<KfuncRefKind> {
         self.live_kfunc_refs.get(&id).copied().flatten()
     }

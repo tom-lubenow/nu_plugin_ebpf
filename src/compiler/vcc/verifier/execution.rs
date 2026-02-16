@@ -1304,6 +1304,16 @@ impl VccVerifier {
                 let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
                     return;
                 };
+                if state.has_live_unknown_stack_object_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "kfunc '{}' arg{} requires uninitialized {} stack object slot",
+                            kfunc, arg_idx, type_name
+                        ),
+                    ));
+                    return;
+                }
                 state.initialize_unknown_stack_object_slot(slot, type_name);
             }
             VccInst::UnknownStackObjectDestroy {
@@ -1358,6 +1368,16 @@ impl VccVerifier {
                         format!(
                             "kfunc '{}' arg{} requires initialized {} stack object",
                             kfunc, src_arg_idx, type_name
+                        ),
+                    ));
+                    return;
+                }
+                if state.has_live_unknown_stack_object_slot(dst_slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "kfunc '{}' arg{} requires uninitialized {} stack object slot",
+                            kfunc, dst_arg_idx, type_name
                         ),
                     ));
                     return;
