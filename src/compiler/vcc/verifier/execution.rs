@@ -1699,10 +1699,13 @@ impl VccVerifier {
                         "unreleased iter_kmem_cache iterator at function exit",
                     ));
                 }
-                if state.has_live_unknown_stack_objects() {
+                if let Some((slot, type_name)) = state.first_live_unknown_stack_object() {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
-                        "unreleased unknown stack object at function exit",
+                        format!(
+                            "unreleased unknown stack object at function exit: {} in stack slot {}",
+                            type_name, slot.0
+                        ),
                     ));
                 }
             }

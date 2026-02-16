@@ -53,7 +53,7 @@ fn test_unknown_stack_object_slots_join_tracks_maybe_live_for_exit_checks() {
         "unknown stack-object use/release should still require all incoming paths"
     );
     assert!(
-        merged.has_live_unknown_stack_objects(),
+        merged.first_live_unknown_stack_object().is_some(),
         "mixed-path unknown stack-object state should still be considered live for exit checks"
     );
 }

@@ -153,10 +153,11 @@ pub fn verify_mir(
                         "unreleased iter_kmem_cache iterator at function exit",
                     ));
                 }
-                if state.has_live_unknown_stack_objects() {
-                    errors.push(VerifierTypeError::new(
-                        "unreleased unknown stack object at function exit",
-                    ));
+                if let Some((slot, type_name)) = state.first_live_unknown_stack_object() {
+                    errors.push(VerifierTypeError::new(format!(
+                        "unreleased unknown stack object at function exit: {} in stack slot {}",
+                        type_name, slot.0
+                    )));
                 }
             }
             MirInst::TailCall { prog_map, index } => {
@@ -253,10 +254,11 @@ pub fn verify_mir(
                         "unreleased iter_kmem_cache iterator at function exit",
                     ));
                 }
-                if state.has_live_unknown_stack_objects() {
-                    errors.push(VerifierTypeError::new(
-                        "unreleased unknown stack object at function exit",
-                    ));
+                if let Some((slot, type_name)) = state.first_live_unknown_stack_object() {
+                    errors.push(VerifierTypeError::new(format!(
+                        "unreleased unknown stack object at function exit: {} in stack slot {}",
+                        type_name, slot.0
+                    )));
                 }
             }
             _ => {}

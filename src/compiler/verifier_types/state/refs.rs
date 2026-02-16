@@ -47,10 +47,13 @@ impl VerifierState {
         )
     }
 
-    pub(in crate::compiler::verifier_types) fn has_live_unknown_stack_objects(&self) -> bool {
+    pub(in crate::compiler::verifier_types) fn first_live_unknown_stack_object(
+        &self,
+    ) -> Option<(StackSlotId, String)> {
         self.unknown_stack_object_slots
-            .values()
-            .any(|(_, max_depth)| *max_depth > 0)
+            .iter()
+            .find(|(_, (_, max_depth))| *max_depth > 0)
+            .map(|((slot, type_name), _)| (*slot, type_name.clone()))
     }
 
     pub(in crate::compiler::verifier_types) fn has_live_unknown_stack_object_slot(
