@@ -209,6 +209,7 @@ Last updated: 2026-02-15.
   - Unknown-kfunc dynptr copy/clone inference now supports signatures with additional dynptr args by requiring a unique out-arg destination and using BTF input-name hints (`in*` / `src*` / `from*`) to disambiguate the source when possible.
   - Unknown-kfunc dynptr transfer modeling now recognizes `*_move*` copy variants and applies move semantics (source deinitialization + destination initialization) across verifier_types and VCC.
   - Unknown-kfunc dynptr destination out-args for copy/move paths are no longer pre-marked initialized before source-validated transfer logic, preventing false initialized-state propagation on invalid copy paths.
+  - Unknown-kfunc dynptr out-parameter and transfer semantics now require uninitialized destination slots (rejecting dynptr re-init/overwrite of live destinations) across verifier_types and VCC.
   - Unknown stack-object state in verifier_types/VCC now tracks min/max slot-depth across CFG joins, so mixed-path init state still blocks unsafe use/release and is reported as unreleased at function exit.
   - Unknown stack-object init/copy semantics now require uninitialized destination slots (rejecting re-init/overwrite of live slots) across verifier_types and VCC.
   - Unknown-kfunc stack-object type inference from local kernel BTF now recognizes broader non-ref/non-map `bpf_*` pointee types (not just iter/dynptr), enabling stack-space/lifecycle checks for additional stack-object families.

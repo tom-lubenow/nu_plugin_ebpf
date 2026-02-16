@@ -308,6 +308,44 @@ fn test_dynptr_copy_propagates_initialized_state() {
 }
 
 #[test]
+fn test_dynptr_mark_initialized_rejects_reinit_of_live_slot() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let ptr = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst: ptr,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::DynptrMarkInitialized {
+            ptr,
+            kfunc: "unknown_dynptr_init".to_string(),
+            arg_idx: 0,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::DynptrMarkInitialized {
+            ptr,
+            kfunc: "unknown_dynptr_init".to_string(),
+            arg_idx: 0,
+        });
+
+    let err = VccVerifier::default()
+        .verify_function(&func)
+        .expect_err("expected dynptr reinit verifier error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "kfunc 'unknown_dynptr_init' arg0 requires uninitialized dynptr stack object slot",
+        )),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_dynptr_move_transfers_initialized_state() {
     let mut func = VccFunction::new();
     let entry = func.entry;
@@ -433,6 +471,60 @@ fn test_dynptr_copy_does_not_initialize_from_uninitialized_source() {
         });
 
     verify_err(&func, VccErrorKind::PointerBounds);
+}
+
+#[test]
+fn test_dynptr_copy_rejects_initialized_destination() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let src = func.alloc_reg();
+    let dst = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst: src,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst,
+        slot: StackSlotId(1),
+        size: 16,
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::DynptrMarkInitialized {
+            ptr: src,
+            kfunc: "unknown_dynptr_init".to_string(),
+            arg_idx: 0,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::DynptrMarkInitialized {
+            ptr: dst,
+            kfunc: "unknown_dynptr_init".to_string(),
+            arg_idx: 1,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::DynptrCopy {
+            src,
+            dst,
+            kfunc: "unknown_dynptr_copy".to_string(),
+            src_arg_idx: 0,
+            dst_arg_idx: 1,
+            move_semantics: false,
+        });
+
+    let err = VccVerifier::default()
+        .verify_function(&func)
+        .expect_err("expected dynptr copy-dst reinit verifier error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "kfunc 'unknown_dynptr_copy' arg1 requires uninitialized dynptr stack object slot",
+        )),
+        "unexpected error messages: {:?}",
+        err
+    );
 }
 
 #[test]
