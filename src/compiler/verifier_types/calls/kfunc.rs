@@ -1109,12 +1109,18 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
                 stack_slot_from_arg(state, src),
                 stack_slot_from_arg(state, dst),
             )
-            && src_slot == dst_slot
         {
-            errors.push(VerifierTypeError::new(format!(
-                "kfunc '{}' arg{} must reference distinct stack slot from arg{}",
-                kfunc, copy.dst_arg_idx, copy.src_arg_idx
-            )));
+            if src_slot == dst_slot {
+                errors.push(VerifierTypeError::new(format!(
+                    "kfunc '{}' arg{} must reference distinct stack slot from arg{}",
+                    kfunc, copy.dst_arg_idx, copy.src_arg_idx
+                )));
+            } else if state.is_dynptr_slot_initialized(src_slot) {
+                if copy.move_semantics {
+                    state.deinitialize_dynptr_slot(src_slot);
+                }
+                state.initialize_dynptr_slot(dst_slot);
+            }
         }
     }
     if let Some(lifecycle) = kfunc_unknown_stack_object_lifecycle(kfunc)

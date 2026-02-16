@@ -594,6 +594,10 @@ impl VccState {
         self.dynptr_initialized_slots.contains(&slot)
     }
 
+    fn deinitialize_dynptr_slot(&mut self, slot: StackSlotId) {
+        self.dynptr_initialized_slots.remove(&slot);
+    }
+
     fn initialize_unknown_stack_object_slot(&mut self, slot: StackSlotId, type_name: &str) {
         increment_typed_slot_depth(
             &mut self.unknown_stack_object_slots,

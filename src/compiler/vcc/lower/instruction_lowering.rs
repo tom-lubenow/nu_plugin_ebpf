@@ -886,6 +886,7 @@ impl<'a> VccLowerer<'a> {
                         kfunc: kfunc.clone(),
                         src_arg_idx: copy.src_arg_idx,
                         dst_arg_idx: copy.dst_arg_idx,
+                        move_semantics: copy.move_semantics,
                     });
                 }
                 if let Some(lifecycle) = Self::kfunc_unknown_stack_object_lifecycle(kfunc)

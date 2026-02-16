@@ -15,6 +15,13 @@ impl VerifierState {
         self.dynptr_initialized_slots.contains(&slot)
     }
 
+    pub(in crate::compiler::verifier_types) fn deinitialize_dynptr_slot(
+        &mut self,
+        slot: StackSlotId,
+    ) {
+        self.dynptr_initialized_slots.remove(&slot);
+    }
+
     pub(in crate::compiler::verifier_types) fn initialize_unknown_stack_object_slot(
         &mut self,
         slot: StackSlotId,

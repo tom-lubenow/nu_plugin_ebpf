@@ -1272,6 +1272,7 @@ impl VccVerifier {
                 kfunc,
                 src_arg_idx,
                 dst_arg_idx,
+                move_semantics,
             } => {
                 let src_op = format!("kfunc '{}' arg{}", kfunc, src_arg_idx);
                 let Some(src_slot) = self.stack_slot_from_reg(state, *src, &src_op) else {
@@ -1291,6 +1292,9 @@ impl VccVerifier {
                     ));
                 }
                 if state.is_dynptr_slot_initialized(src_slot) {
+                    if *move_semantics {
+                        state.deinitialize_dynptr_slot(src_slot);
+                    }
                     state.initialize_dynptr_slot(dst_slot);
                 }
             }

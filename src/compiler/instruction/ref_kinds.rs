@@ -111,6 +111,7 @@ pub struct KfuncUnknownDynptrArg {
 pub struct KfuncUnknownDynptrCopy {
     pub src_arg_idx: usize,
     pub dst_arg_idx: usize,
+    pub move_semantics: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1125,9 +1126,11 @@ pub fn kfunc_unknown_dynptr_copy(kfunc: &str) -> Option<KfuncUnknownDynptrCopy> 
     if KfuncSignature::for_name(kfunc).is_some() {
         return None;
     }
-    if !kfunc.contains("_copy") && !kfunc.contains("_clone") {
+    let lower = kfunc.to_ascii_lowercase();
+    if !lower.contains("_copy") && !lower.contains("_clone") && !lower.contains("_move") {
         return None;
     }
+    let move_semantics = lower.contains("_move") && !lower.contains("_copy");
     let args = kfunc_unknown_dynptr_args(kfunc);
     let named_in_args: Vec<usize> = args
         .iter()
@@ -1138,6 +1141,7 @@ pub fn kfunc_unknown_dynptr_copy(kfunc: &str) -> Option<KfuncUnknownDynptrCopy> 
     Some(KfuncUnknownDynptrCopy {
         src_arg_idx,
         dst_arg_idx,
+        move_semantics,
     })
 }
 
