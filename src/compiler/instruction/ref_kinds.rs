@@ -988,6 +988,7 @@ struct UnknownStackObjectArgInfo {
     arg_idx: usize,
     type_name: String,
     named_out: bool,
+    named_in: bool,
 }
 
 pub fn kfunc_unknown_iter_lifecycle(kfunc: &str) -> Option<KfuncUnknownIterLifecycle> {
@@ -1113,6 +1114,7 @@ fn unknown_stack_object_args(kfunc: &str) -> Vec<UnknownStackObjectArgInfo> {
             arg_idx,
             type_name,
             named_out: kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx),
+            named_in: kernel_btf.kfunc_pointer_arg_is_named_in(kfunc, arg_idx),
         });
     }
     args
@@ -1126,6 +1128,19 @@ fn infer_unknown_stack_object_copy_args(
     }
 
     let mut candidates: Vec<(&UnknownStackObjectArgInfo, &UnknownStackObjectArgInfo)> = Vec::new();
+    for src in args.iter().filter(|arg| arg.named_in) {
+        for dst in args.iter().filter(|arg| arg.named_out) {
+            if src.arg_idx == dst.arg_idx || src.type_name != dst.type_name {
+                continue;
+            }
+            candidates.push((src, dst));
+        }
+    }
+    if candidates.len() == 1 {
+        return candidates.first().copied();
+    }
+
+    candidates.clear();
     for src in args.iter().filter(|arg| !arg.named_out) {
         for dst in args.iter().filter(|arg| arg.named_out) {
             if src.arg_idx == dst.arg_idx || src.type_name != dst.type_name {
@@ -1357,16 +1372,19 @@ mod tests {
                 arg_idx: 0,
                 type_name: "bpf_wq".to_string(),
                 named_out: false,
+                named_in: true,
             },
             UnknownStackObjectArgInfo {
                 arg_idx: 1,
                 type_name: "bpf_wq".to_string(),
                 named_out: true,
+                named_in: false,
             },
             UnknownStackObjectArgInfo {
                 arg_idx: 2,
                 type_name: "bpf_custom".to_string(),
                 named_out: true,
+                named_in: false,
             },
         ];
 
@@ -1378,22 +1396,54 @@ mod tests {
     }
 
     #[test]
+    fn test_infer_unknown_stack_object_copy_args_prefers_named_input() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: true,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 2,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+                named_in: false,
+            },
+        ];
+
+        let (src, dst) = infer_unknown_stack_object_copy_args(&args)
+            .expect("expected named input to disambiguate copy source");
+        assert_eq!(src.arg_idx, 1);
+        assert_eq!(dst.arg_idx, 2);
+    }
+
+    #[test]
     fn test_infer_unknown_stack_object_copy_args_rejects_ambiguous_pairs() {
         let args = vec![
             UnknownStackObjectArgInfo {
                 arg_idx: 0,
                 type_name: "bpf_wq".to_string(),
                 named_out: false,
+                named_in: false,
             },
             UnknownStackObjectArgInfo {
                 arg_idx: 1,
                 type_name: "bpf_wq".to_string(),
                 named_out: true,
+                named_in: false,
             },
             UnknownStackObjectArgInfo {
                 arg_idx: 2,
                 type_name: "bpf_wq".to_string(),
                 named_out: true,
+                named_in: false,
             },
         ];
 
@@ -1410,11 +1460,13 @@ mod tests {
                 arg_idx: 0,
                 type_name: "bpf_wq".to_string(),
                 named_out: false,
+                named_in: false,
             },
             UnknownStackObjectArgInfo {
                 arg_idx: 1,
                 type_name: "bpf_other".to_string(),
                 named_out: true,
+                named_in: false,
             },
         ];
 
