@@ -1077,6 +1077,7 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
         }
         return;
     }
+    let unknown_dynptr_copy = kfunc_unknown_dynptr_copy(kfunc);
     let unknown_dynptr_args = kfunc_unknown_dynptr_args(kfunc);
     if !unknown_dynptr_args.is_empty() {
         for dynptr_arg in &unknown_dynptr_args {
@@ -1096,11 +1097,16 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
                     }
                 }
                 KfuncUnknownDynptrArgRole::Out => {
+                    if unknown_dynptr_copy
+                        .is_some_and(|copy| copy.dst_arg_idx == dynptr_arg.arg_idx)
+                    {
+                        continue;
+                    }
                     state.initialize_dynptr_slot(slot);
                 }
             }
         }
-        if let Some(copy) = kfunc_unknown_dynptr_copy(kfunc)
+        if let Some(copy) = unknown_dynptr_copy
             && let (Some(src), Some(dst)) = (
                 args.get(copy.src_arg_idx).copied(),
                 args.get(copy.dst_arg_idx).copied(),

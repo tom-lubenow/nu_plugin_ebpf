@@ -855,6 +855,7 @@ impl<'a> VccLowerer<'a> {
                         }
                     }
                 }
+                let unknown_dynptr_copy = Self::kfunc_unknown_dynptr_copy(kfunc);
                 let unknown_dynptr_args = Self::kfunc_unknown_dynptr_args(kfunc);
                 for dynptr_arg in &unknown_dynptr_args {
                     if let Some(ptr) = args.get(dynptr_arg.arg_idx) {
@@ -867,6 +868,11 @@ impl<'a> VccLowerer<'a> {
                                 });
                             }
                             KfuncUnknownDynptrArgRole::Out => {
+                                if unknown_dynptr_copy
+                                    .is_some_and(|copy| copy.dst_arg_idx == dynptr_arg.arg_idx)
+                                {
+                                    continue;
+                                }
                                 out.push(VccInst::DynptrMarkInitialized {
                                     ptr: VccReg(ptr.0),
                                     kfunc: kfunc.clone(),
@@ -876,7 +882,7 @@ impl<'a> VccLowerer<'a> {
                         }
                     }
                 }
-                if let Some(copy) = Self::kfunc_unknown_dynptr_copy(kfunc)
+                if let Some(copy) = unknown_dynptr_copy
                     && let (Some(src), Some(dst)) =
                         (args.get(copy.src_arg_idx), args.get(copy.dst_arg_idx))
                 {
