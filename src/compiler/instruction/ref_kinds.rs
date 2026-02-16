@@ -1105,6 +1105,30 @@ fn unknown_stack_object_args(kfunc: &str) -> Vec<UnknownStackObjectArgInfo> {
     args
 }
 
+fn infer_unknown_stack_object_copy_args(
+    args: &[UnknownStackObjectArgInfo],
+) -> Option<(&UnknownStackObjectArgInfo, &UnknownStackObjectArgInfo)> {
+    if args.len() < 2 {
+        return None;
+    }
+
+    let mut candidates: Vec<(&UnknownStackObjectArgInfo, &UnknownStackObjectArgInfo)> = Vec::new();
+    for src in args.iter().filter(|arg| !arg.named_out) {
+        for dst in args.iter().filter(|arg| arg.named_out) {
+            if src.arg_idx == dst.arg_idx || src.type_name != dst.type_name {
+                continue;
+            }
+            candidates.push((src, dst));
+        }
+    }
+
+    if candidates.len() == 1 {
+        return candidates.first().copied();
+    }
+
+    None
+}
+
 pub fn kfunc_unknown_stack_object_lifecycle(
     kfunc: &str,
 ) -> Option<KfuncUnknownStackObjectLifecycle> {
@@ -1144,14 +1168,7 @@ pub fn kfunc_unknown_stack_object_copy(kfunc: &str) -> Option<KfuncUnknownStackO
         return None;
     }
     let args = unknown_stack_object_args(kfunc);
-    if args.len() != 2 {
-        return None;
-    }
-    let src = args.iter().find(|arg| !arg.named_out)?;
-    let dst = args.iter().find(|arg| arg.named_out)?;
-    if src.type_name != dst.type_name {
-        return None;
-    }
+    let (src, dst) = infer_unknown_stack_object_copy_args(&args)?;
     Some(KfuncUnknownStackObjectCopy {
         type_name: src.type_name.clone(),
         src_arg_idx: src.arg_idx,
@@ -1297,6 +1314,80 @@ mod tests {
         assert_eq!(
             unknown_stack_object_lifecycle_op_from_kfunc_name("foo_obj_query"),
             None
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_copy_args_selects_unique_pair() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 2,
+                type_name: "bpf_custom".to_string(),
+                named_out: true,
+            },
+        ];
+
+        let (src, dst) =
+            infer_unknown_stack_object_copy_args(&args).expect("expected unique copy src/dst pair");
+        assert_eq!(src.arg_idx, 0);
+        assert_eq!(dst.arg_idx, 1);
+        assert_eq!(src.type_name, "bpf_wq");
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_copy_args_rejects_ambiguous_pairs() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 2,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+            },
+        ];
+
+        assert!(
+            infer_unknown_stack_object_copy_args(&args).is_none(),
+            "multiple possible destination slots should not infer copy semantics"
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_copy_args_requires_matching_types() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_other".to_string(),
+                named_out: true,
+            },
+        ];
+
+        assert!(
+            infer_unknown_stack_object_copy_args(&args).is_none(),
+            "copy semantics require matching stack-object types for src and dst"
         );
     }
 }

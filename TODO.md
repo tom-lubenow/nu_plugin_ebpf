@@ -209,6 +209,7 @@ Last updated: 2026-02-15.
   - Unknown stack-object state in verifier_types/VCC now tracks min/max slot-depth across CFG joins, so mixed-path init state still blocks unsafe use/release and is reported as unreleased at function exit.
   - Unknown stack-object init/copy semantics now require uninitialized destination slots (rejecting re-init/overwrite of live slots) across verifier_types and VCC.
   - Unknown-kfunc stack-object type inference from local kernel BTF now recognizes broader non-ref/non-map `bpf_*` pointee types (not just iter/dynptr), enabling stack-space/lifecycle checks for additional stack-object families.
+  - Unknown-kfunc stack-object copy inference now supports signatures with additional stack-object args by selecting a unique named-in/named-out src/dst pair with matching pointee type, while still rejecting ambiguous matches.
   - Expanded unknown-kfunc name heuristics for release transitions (`*_destroy*`, `*_unref*`, `*_dec*`) and out-parameter inference (`dst*` / `*dst`) while still requiring unambiguous BTF pointer-family evidence.
   - Extended scalar known-constant checks to consult local kernel BTF parameter names (`*__szk` / `*__k`) via a cached query path, with shared type inference/verifier_types/VCC enforcement (while preserving explicit compiler-side mappings for deterministic baseline behavior).
   - Extended scalar positive-size checks to consult local kernel BTF parameter names (`*__sz` / `*__szk`) via a cached query path, with shared type inference/verifier_types/VCC enforcement.
