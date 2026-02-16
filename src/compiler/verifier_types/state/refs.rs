@@ -20,8 +20,10 @@ impl VerifierState {
         slot: StackSlotId,
         type_name: &str,
     ) {
-        self.unknown_stack_object_slots
-            .insert(slot, type_name.to_string());
+        increment_typed_slot_depth(
+            &mut self.unknown_stack_object_slots,
+            (slot, type_name.to_string()),
+        );
     }
 
     pub(in crate::compiler::verifier_types) fn has_unknown_stack_object_slot(
@@ -30,8 +32,8 @@ impl VerifierState {
         type_name: &str,
     ) -> bool {
         self.unknown_stack_object_slots
-            .get(&slot)
-            .is_some_and(|ty| ty == type_name)
+            .get(&(slot, type_name.to_string()))
+            .is_some_and(|(min_depth, _)| *min_depth > 0)
     }
 
     pub(in crate::compiler::verifier_types) fn release_unknown_stack_object_slot(
@@ -39,11 +41,16 @@ impl VerifierState {
         slot: StackSlotId,
         type_name: &str,
     ) -> bool {
-        if !self.has_unknown_stack_object_slot(slot, type_name) {
-            return false;
-        }
-        self.unknown_stack_object_slots.remove(&slot);
-        true
+        decrement_typed_slot_depth(
+            &mut self.unknown_stack_object_slots,
+            (slot, type_name.to_string()),
+        )
+    }
+
+    pub(in crate::compiler::verifier_types) fn has_live_unknown_stack_objects(&self) -> bool {
+        self.unknown_stack_object_slots
+            .values()
+            .any(|(_, max_depth)| *max_depth > 0)
     }
 
     pub(in crate::compiler::verifier_types) fn set_live_ringbuf_ref(
@@ -603,6 +610,33 @@ fn increment_slot_depth(depths: &mut HashMap<StackSlotId, (u32, u32)>, slot: Sta
 }
 
 fn decrement_slot_depth(depths: &mut HashMap<StackSlotId, (u32, u32)>, slot: StackSlotId) -> bool {
+    let Some((min_depth, max_depth)) = depths.get_mut(&slot) else {
+        return false;
+    };
+    if *min_depth == 0 {
+        return false;
+    }
+    *min_depth -= 1;
+    *max_depth -= 1;
+    if *max_depth == 0 {
+        depths.remove(&slot);
+    }
+    true
+}
+
+fn increment_typed_slot_depth(
+    depths: &mut HashMap<(StackSlotId, String), (u32, u32)>,
+    slot: (StackSlotId, String),
+) {
+    let entry = depths.entry(slot).or_insert((0, 0));
+    entry.0 = entry.0.saturating_add(1);
+    entry.1 = entry.1.saturating_add(1);
+}
+
+fn decrement_typed_slot_depth(
+    depths: &mut HashMap<(StackSlotId, String), (u32, u32)>,
+    slot: (StackSlotId, String),
+) -> bool {
     let Some((min_depth, max_depth)) = depths.get_mut(&slot) else {
         return false;
     };

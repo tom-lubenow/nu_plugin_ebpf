@@ -146,15 +146,10 @@ impl VerifierState {
             .intersection(&other.dynptr_initialized_slots)
             .copied()
             .collect();
-        let mut unknown_stack_object_slots = HashMap::new();
-        for (slot, left_type) in &self.unknown_stack_object_slots {
-            let Some(right_type) = other.unknown_stack_object_slots.get(slot) else {
-                continue;
-            };
-            if left_type == right_type {
-                unknown_stack_object_slots.insert(*slot, left_type.clone());
-            }
-        }
+        let unknown_stack_object_slots = join_typed_slot_depths(
+            &self.unknown_stack_object_slots,
+            &other.unknown_stack_object_slots,
+        );
         VerifierState {
             regs,
             ranges,
@@ -277,6 +272,23 @@ fn join_slot_depths(
         let max_depth = lhs_max.max(rhs_max);
         if max_depth > 0 {
             merged.insert(*slot, (min_depth, max_depth));
+        }
+    }
+    merged
+}
+
+fn join_typed_slot_depths(
+    lhs: &HashMap<(StackSlotId, String), (u32, u32)>,
+    rhs: &HashMap<(StackSlotId, String), (u32, u32)>,
+) -> HashMap<(StackSlotId, String), (u32, u32)> {
+    let mut merged = HashMap::new();
+    for key in lhs.keys().chain(rhs.keys()) {
+        let (lhs_min, lhs_max) = lhs.get(key).copied().unwrap_or((0, 0));
+        let (rhs_min, rhs_max) = rhs.get(key).copied().unwrap_or((0, 0));
+        let min_depth = lhs_min.min(rhs_min);
+        let max_depth = lhs_max.max(rhs_max);
+        if max_depth > 0 {
+            merged.insert(key.clone(), (min_depth, max_depth));
         }
     }
     merged

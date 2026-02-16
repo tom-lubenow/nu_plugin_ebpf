@@ -1679,6 +1679,12 @@ impl VccVerifier {
                         "unreleased iter_kmem_cache iterator at function exit",
                     ));
                 }
+                if state.has_live_unknown_stack_objects() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "unreleased unknown stack object at function exit",
+                    ));
+                }
             }
         }
     }

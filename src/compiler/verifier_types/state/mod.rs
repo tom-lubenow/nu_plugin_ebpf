@@ -145,7 +145,7 @@ pub(super) struct VerifierState {
     res_spin_lock_irqsave_max_depth: u32,
     res_spin_lock_irqsave_slots: HashMap<StackSlotId, (u32, u32)>,
     dynptr_initialized_slots: HashSet<StackSlotId>,
-    unknown_stack_object_slots: HashMap<StackSlotId, String>,
+    unknown_stack_object_slots: HashMap<(StackSlotId, String), (u32, u32)>,
     reachable: bool,
     guards: HashMap<VReg, Guard>,
 }

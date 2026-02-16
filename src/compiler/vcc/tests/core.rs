@@ -408,6 +408,14 @@ fn test_unknown_stack_object_copy_propagates_initialized_state() {
             kfunc: "unknown_wq_destroy".to_string(),
             arg_idx: 0,
         });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::UnknownStackObjectDestroy {
+            ptr: src,
+            type_name: "bpf_wq".to_string(),
+            kfunc: "unknown_wq_destroy".to_string(),
+            arg_idx: 0,
+        });
 
     verify_ok(&func);
 }
@@ -465,6 +473,95 @@ fn test_unknown_stack_object_copy_does_not_initialize_from_uninitialized_source(
                 "kfunc 'unknown_wq_destroy' arg1 requires initialized bpf_wq stack object",
             )
         }),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_unknown_stack_object_init_requires_release_before_return() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let ptr = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst: ptr,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::UnknownStackObjectInit {
+            ptr,
+            type_name: "bpf_wq".to_string(),
+            kfunc: "unknown_wq_new".to_string(),
+            arg_idx: 0,
+        });
+
+    let err = VccVerifier::default()
+        .verify_function(&func)
+        .expect_err("expected unknown stack-object leak at return");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("unreleased unknown stack object at function exit")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_unknown_stack_object_destroy_rejected_after_mixed_join() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let init = func.alloc_block();
+    let skip = func.alloc_block();
+    let join = func.alloc_block();
+    let cond = func.alloc_reg();
+    let ptr = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst: ptr,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry).instructions.push(VccInst::Assume {
+        dst: cond,
+        ty: VccValueType::Scalar { range: None },
+    });
+    func.block_mut(entry).terminator = VccTerminator::Branch {
+        cond: VccValue::Reg(cond),
+        if_true: init,
+        if_false: skip,
+    };
+
+    func.block_mut(init)
+        .instructions
+        .push(VccInst::UnknownStackObjectInit {
+            ptr,
+            type_name: "bpf_wq".to_string(),
+            kfunc: "unknown_wq_new".to_string(),
+            arg_idx: 0,
+        });
+    func.block_mut(init).terminator = VccTerminator::Jump { target: join };
+    func.block_mut(skip).terminator = VccTerminator::Jump { target: join };
+
+    func.block_mut(join)
+        .instructions
+        .push(VccInst::UnknownStackObjectDestroy {
+            ptr,
+            type_name: "bpf_wq".to_string(),
+            kfunc: "unknown_wq_destroy".to_string(),
+            arg_idx: 0,
+        });
+
+    let err = VccVerifier::default()
+        .verify_function(&func)
+        .expect_err("expected mixed-path unknown stack-object destroy rejection");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'unknown_wq_destroy' arg0 requires initialized bpf_wq stack object",)),
         "unexpected error messages: {:?}",
         err
     );

@@ -153,6 +153,11 @@ pub fn verify_mir(
                         "unreleased iter_kmem_cache iterator at function exit",
                     ));
                 }
+                if state.has_live_unknown_stack_objects() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased unknown stack object at function exit",
+                    ));
+                }
             }
             MirInst::TailCall { prog_map, index } => {
                 if prog_map.kind != MapKind::ProgArray {
@@ -246,6 +251,11 @@ pub fn verify_mir(
                 if state.has_live_iter_kmem_cache() {
                     errors.push(VerifierTypeError::new(
                         "unreleased iter_kmem_cache iterator at function exit",
+                    ));
+                }
+                if state.has_live_unknown_stack_objects() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased unknown stack object at function exit",
                     ));
                 }
             }

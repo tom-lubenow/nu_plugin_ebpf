@@ -41,6 +41,24 @@ fn test_unknown_stack_object_slots_join_requires_all_paths() {
 }
 
 #[test]
+fn test_unknown_stack_object_slots_join_tracks_maybe_live_for_exit_checks() {
+    let slot = StackSlotId(13);
+    let mut initialized = VerifierState::new(1);
+    initialized.initialize_unknown_stack_object_slot(slot, "bpf_wq");
+    let uninitialized = VerifierState::new(1);
+
+    let merged = initialized.join(&uninitialized);
+    assert!(
+        !merged.has_unknown_stack_object_slot(slot, "bpf_wq"),
+        "unknown stack-object use/release should still require all incoming paths"
+    );
+    assert!(
+        merged.has_live_unknown_stack_objects(),
+        "mixed-path unknown stack-object state should still be considered live for exit checks"
+    );
+}
+
+#[test]
 fn test_kfunc_unknown_signature_rejected() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

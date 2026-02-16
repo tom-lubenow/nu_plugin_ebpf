@@ -44,7 +44,7 @@ struct VccState {
     res_spin_lock_irqsave_max_depth: u32,
     res_spin_lock_irqsave_slots: HashMap<StackSlotId, (u32, u32)>,
     dynptr_initialized_slots: HashSet<StackSlotId>,
-    unknown_stack_object_slots: HashMap<StackSlotId, String>,
+    unknown_stack_object_slots: HashMap<(StackSlotId, String), (u32, u32)>,
     cond_refinements: HashMap<VccReg, VccCondRefinement>,
     reachable: bool,
 }
@@ -595,22 +595,29 @@ impl VccState {
     }
 
     fn initialize_unknown_stack_object_slot(&mut self, slot: StackSlotId, type_name: &str) {
-        self.unknown_stack_object_slots
-            .insert(slot, type_name.to_string());
+        increment_typed_slot_depth(
+            &mut self.unknown_stack_object_slots,
+            (slot, type_name.to_string()),
+        );
     }
 
     fn has_unknown_stack_object_slot(&self, slot: StackSlotId, type_name: &str) -> bool {
         self.unknown_stack_object_slots
-            .get(&slot)
-            .is_some_and(|ty| ty == type_name)
+            .get(&(slot, type_name.to_string()))
+            .is_some_and(|(min_depth, _)| *min_depth > 0)
     }
 
     fn release_unknown_stack_object_slot(&mut self, slot: StackSlotId, type_name: &str) -> bool {
-        if !self.has_unknown_stack_object_slot(slot, type_name) {
-            return false;
-        }
-        self.unknown_stack_object_slots.remove(&slot);
-        true
+        decrement_typed_slot_depth(
+            &mut self.unknown_stack_object_slots,
+            (slot, type_name.to_string()),
+        )
+    }
+
+    fn has_live_unknown_stack_objects(&self) -> bool {
+        self.unknown_stack_object_slots
+            .values()
+            .any(|(_, max_depth)| *max_depth > 0)
     }
 
     fn kfunc_ref_kind(&self, id: VccReg) -> Option<KfuncRefKind> {
@@ -727,15 +734,10 @@ impl VccState {
             .intersection(&other.dynptr_initialized_slots)
             .copied()
             .collect();
-        let mut unknown_stack_object_slots = HashMap::new();
-        for (slot, left_type) in &self.unknown_stack_object_slots {
-            let Some(right_type) = other.unknown_stack_object_slots.get(slot) else {
-                continue;
-            };
-            if left_type == right_type {
-                unknown_stack_object_slots.insert(*slot, left_type.clone());
-            }
-        }
+        let unknown_stack_object_slots = merge_typed_slot_depths(
+            &self.unknown_stack_object_slots,
+            &other.unknown_stack_object_slots,
+        );
         VccState {
             reg_types: merged,
             not_equal_consts,
@@ -1200,6 +1202,50 @@ fn merge_slot_depths(
         let max_depth = lhs_max.max(rhs_max);
         if max_depth > 0 {
             merged.insert(*slot, (min_depth, max_depth));
+        }
+    }
+    merged
+}
+
+fn increment_typed_slot_depth(
+    depths: &mut HashMap<(StackSlotId, String), (u32, u32)>,
+    slot: (StackSlotId, String),
+) {
+    let entry = depths.entry(slot).or_insert((0, 0));
+    entry.0 = entry.0.saturating_add(1);
+    entry.1 = entry.1.saturating_add(1);
+}
+
+fn decrement_typed_slot_depth(
+    depths: &mut HashMap<(StackSlotId, String), (u32, u32)>,
+    slot: (StackSlotId, String),
+) -> bool {
+    let Some((min_depth, max_depth)) = depths.get_mut(&slot) else {
+        return false;
+    };
+    if *min_depth == 0 {
+        return false;
+    }
+    *min_depth -= 1;
+    *max_depth -= 1;
+    if *max_depth == 0 {
+        depths.remove(&slot);
+    }
+    true
+}
+
+fn merge_typed_slot_depths(
+    lhs: &HashMap<(StackSlotId, String), (u32, u32)>,
+    rhs: &HashMap<(StackSlotId, String), (u32, u32)>,
+) -> HashMap<(StackSlotId, String), (u32, u32)> {
+    let mut merged = HashMap::new();
+    for key in lhs.keys().chain(rhs.keys()) {
+        let (lhs_min, lhs_max) = lhs.get(key).copied().unwrap_or((0, 0));
+        let (rhs_min, rhs_max) = rhs.get(key).copied().unwrap_or((0, 0));
+        let min_depth = lhs_min.min(rhs_min);
+        let max_depth = lhs_max.max(rhs_max);
+        if max_depth > 0 {
+            merged.insert(key.clone(), (min_depth, max_depth));
         }
     }
     merged
