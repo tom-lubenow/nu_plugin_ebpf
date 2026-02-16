@@ -462,6 +462,9 @@ impl KernelBtf {
     fn is_probable_release_kfunc_name(name: &str) -> bool {
         name.contains("_release")
             || name.contains("_destroy")
+            || name.contains("_delete")
+            || name.contains("_detach")
+            || name.contains("_close")
             || name.contains("_unref")
             || name.starts_with("bpf_put_")
             || name.contains("_put_")
@@ -2509,6 +2512,9 @@ format:
         assert!(KernelBtf::is_probable_release_kfunc_name("foo_obj_drop"));
         assert!(KernelBtf::is_probable_release_kfunc_name("foo_obj_free"));
         assert!(KernelBtf::is_probable_release_kfunc_name("foo_obj_destroy"));
+        assert!(KernelBtf::is_probable_release_kfunc_name("foo_obj_delete"));
+        assert!(KernelBtf::is_probable_release_kfunc_name("foo_obj_detach"));
+        assert!(KernelBtf::is_probable_release_kfunc_name("foo_obj_close"));
         assert!(KernelBtf::is_probable_release_kfunc_name("foo_obj_unref"));
         assert!(KernelBtf::is_probable_release_kfunc_name("foo_obj_dec"));
         assert!(!KernelBtf::is_probable_release_kfunc_name(
