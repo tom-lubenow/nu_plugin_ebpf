@@ -1122,15 +1122,22 @@ fn infer_unknown_dynptr_copy_args(
     None
 }
 
+fn unknown_transfer_move_semantics_from_kfunc_name(kfunc: &str) -> Option<bool> {
+    let lower = kfunc.to_ascii_lowercase();
+    let has_copy_like =
+        lower.contains("_copy") || lower.contains("_clone") || lower.contains("_assign");
+    let has_move_like = lower.contains("_move");
+    if !has_copy_like && !has_move_like {
+        return None;
+    }
+    Some(has_move_like && !has_copy_like)
+}
+
 pub fn kfunc_unknown_dynptr_copy(kfunc: &str) -> Option<KfuncUnknownDynptrCopy> {
     if KfuncSignature::for_name(kfunc).is_some() {
         return None;
     }
-    let lower = kfunc.to_ascii_lowercase();
-    if !lower.contains("_copy") && !lower.contains("_clone") && !lower.contains("_move") {
-        return None;
-    }
-    let move_semantics = lower.contains("_move") && !lower.contains("_copy");
+    let move_semantics = unknown_transfer_move_semantics_from_kfunc_name(kfunc)?;
     let args = kfunc_unknown_dynptr_args(kfunc);
     let named_in_args: Vec<usize> = args
         .iter()
@@ -1287,11 +1294,7 @@ pub fn kfunc_unknown_stack_object_copy(kfunc: &str) -> Option<KfuncUnknownStackO
     if KfuncSignature::for_name(kfunc).is_some() {
         return None;
     }
-    let lower = kfunc.to_ascii_lowercase();
-    if !lower.contains("_copy") && !lower.contains("_clone") && !lower.contains("_move") {
-        return None;
-    }
-    let move_semantics = lower.contains("_move") && !lower.contains("_copy");
+    let move_semantics = unknown_transfer_move_semantics_from_kfunc_name(kfunc)?;
     let args = unknown_stack_object_args(kfunc);
     let (src, dst) = infer_unknown_stack_object_copy_args(&args)?;
     Some(KfuncUnknownStackObjectCopy {
@@ -1459,6 +1462,34 @@ mod tests {
         );
         assert_eq!(
             unknown_stack_object_lifecycle_op_from_kfunc_name("foo_obj_query"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_unknown_transfer_move_semantics_from_kfunc_name() {
+        assert_eq!(
+            unknown_transfer_move_semantics_from_kfunc_name("foo_obj_copy"),
+            Some(false)
+        );
+        assert_eq!(
+            unknown_transfer_move_semantics_from_kfunc_name("foo_obj_clone"),
+            Some(false)
+        );
+        assert_eq!(
+            unknown_transfer_move_semantics_from_kfunc_name("foo_obj_assign"),
+            Some(false)
+        );
+        assert_eq!(
+            unknown_transfer_move_semantics_from_kfunc_name("foo_obj_move"),
+            Some(true)
+        );
+        assert_eq!(
+            unknown_transfer_move_semantics_from_kfunc_name("foo_obj_move_copy"),
+            Some(false)
+        );
+        assert_eq!(
+            unknown_transfer_move_semantics_from_kfunc_name("foo_obj_swap"),
             None
         );
     }
