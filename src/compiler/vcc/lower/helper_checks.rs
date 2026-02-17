@@ -305,7 +305,7 @@ impl<'a> VccLowerer<'a> {
 
     pub(super) fn kfunc_unknown_stack_object_copy(
         kfunc: &str,
-    ) -> Option<KfuncUnknownStackObjectCopy> {
+    ) -> Vec<KfuncUnknownStackObjectCopy> {
         kfunc_unknown_stack_object_copy_shared(kfunc)
     }
 

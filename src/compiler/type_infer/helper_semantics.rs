@@ -90,9 +90,7 @@ impl<'a> TypeInference<'a> {
         kfunc_unknown_dynptr_copy_shared(kfunc)
     }
 
-    pub(super) fn kfunc_unknown_stack_object_copy(
-        kfunc: &str,
-    ) -> Option<KfuncUnknownStackObjectCopy> {
+    pub(super) fn kfunc_unknown_stack_object_copy(kfunc: &str) -> Vec<KfuncUnknownStackObjectCopy> {
         kfunc_unknown_stack_object_copy_shared(kfunc)
     }
 
@@ -552,22 +550,23 @@ impl<'a> TypeInference<'a> {
             }
         }
 
-        if let Some(copy) = Self::kfunc_unknown_stack_object_copy(kfunc)
-            && let (Some(src), Some(dst)) = (args.get(copy.src_arg_idx), args.get(copy.dst_arg_idx))
-        {
-            let src_slot = stack_bounds
-                .get(src)
-                .filter(|bounds| bounds.min == 0 && bounds.max == 0)
-                .map(|bounds| bounds.slot);
-            let dst_slot = stack_bounds
-                .get(dst)
-                .filter(|bounds| bounds.min == 0 && bounds.max == 0)
-                .map(|bounds| bounds.slot);
-            if src_slot.is_some() && src_slot == dst_slot {
-                errors.push(TypeError::new(format!(
-                    "kfunc '{}' arg{} must reference distinct {} stack object slot from arg{}",
-                    kfunc, copy.dst_arg_idx, copy.type_name, copy.src_arg_idx
-                )));
+        for copy in Self::kfunc_unknown_stack_object_copy(kfunc) {
+            if let (Some(src), Some(dst)) = (args.get(copy.src_arg_idx), args.get(copy.dst_arg_idx))
+            {
+                let src_slot = stack_bounds
+                    .get(src)
+                    .filter(|bounds| bounds.min == 0 && bounds.max == 0)
+                    .map(|bounds| bounds.slot);
+                let dst_slot = stack_bounds
+                    .get(dst)
+                    .filter(|bounds| bounds.min == 0 && bounds.max == 0)
+                    .map(|bounds| bounds.slot);
+                if src_slot.is_some() && src_slot == dst_slot {
+                    errors.push(TypeError::new(format!(
+                        "kfunc '{}' arg{} must reference distinct {} stack object slot from arg{}",
+                        kfunc, copy.dst_arg_idx, copy.type_name, copy.src_arg_idx
+                    )));
+                }
             }
         }
 

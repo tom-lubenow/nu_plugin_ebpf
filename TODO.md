@@ -215,7 +215,7 @@ Last updated: 2026-02-15.
   - Unknown stack-object init/copy semantics now require uninitialized destination slots (rejecting re-init/overwrite of live slots) across verifier_types and VCC.
   - Unknown-kfunc stack-object type inference from local kernel BTF now recognizes broader non-ref/non-map `bpf_*` pointee types (not just iter/dynptr), enabling stack-space/lifecycle checks for additional stack-object families.
   - Unknown-kfunc stack-object lifecycle inference now uses BTF input-name hints (`in*` / `src*` / `from*`) to disambiguate destroy targets when multiple non-out stack-object args are present.
-  - Unknown-kfunc stack-object copy inference now supports signatures with additional stack-object args by selecting a unique named-in/named-out src/dst pair with matching pointee type, while still rejecting ambiguous matches.
+  - Unknown-kfunc stack-object copy inference now supports signatures with additional stack-object args by inferring one copy/move pair per unambiguous stack-object type group (named-in/named-out preferred), while still rejecting ambiguous matches within a type group.
   - Unknown-kfunc stack-object transfer modeling now recognizes `*_move*` copy variants and applies move semantics (source invalidation + destination initialization) across verifier_types and VCC.
   - Unknown-kfunc transfer-name inference now also treats `*_assign*` as copy-like (non-move) for dynptr/stack-object transfer modeling.
   - Unknown-kfunc transfer-name inference now also treats `*_from_*` forms as copy-like (non-move), improving constructor-style transfer coverage when arg-role/type matching is unambiguous.

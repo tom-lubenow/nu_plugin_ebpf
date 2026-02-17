@@ -895,8 +895,8 @@ impl<'a> VccLowerer<'a> {
                         move_semantics: copy.move_semantics,
                     });
                 }
-                let unknown_stack_object_copy = Self::kfunc_unknown_stack_object_copy(kfunc);
-                if unknown_stack_object_copy.is_none()
+                let unknown_stack_object_copies = Self::kfunc_unknown_stack_object_copy(kfunc);
+                if unknown_stack_object_copies.is_empty()
                     && let Some(lifecycle) = Self::kfunc_unknown_stack_object_lifecycle(kfunc)
                     && let Some(ptr) = args.get(lifecycle.arg_idx)
                 {
@@ -919,19 +919,20 @@ impl<'a> VccLowerer<'a> {
                         }
                     }
                 }
-                if let Some(copy) = unknown_stack_object_copy
-                    && let (Some(src), Some(dst)) =
+                for copy in unknown_stack_object_copies {
+                    if let (Some(src), Some(dst)) =
                         (args.get(copy.src_arg_idx), args.get(copy.dst_arg_idx))
-                {
-                    out.push(VccInst::UnknownStackObjectCopy {
-                        src: VccReg(src.0),
-                        dst: VccReg(dst.0),
-                        type_name: copy.type_name,
-                        kfunc: kfunc.clone(),
-                        src_arg_idx: copy.src_arg_idx,
-                        dst_arg_idx: copy.dst_arg_idx,
-                        move_semantics: copy.move_semantics,
-                    });
+                    {
+                        out.push(VccInst::UnknownStackObjectCopy {
+                            src: VccReg(src.0),
+                            dst: VccReg(dst.0),
+                            type_name: copy.type_name,
+                            kfunc: kfunc.clone(),
+                            src_arg_idx: copy.src_arg_idx,
+                            dst_arg_idx: copy.dst_arg_idx,
+                            move_semantics: copy.move_semantics,
+                        });
+                    }
                 }
             }
             MirInst::CallSubfn { dst, args, .. } => {

@@ -498,7 +498,7 @@ pub(in crate::compiler::verifier_types) fn kfunc_unknown_stack_object_lifecycle(
 
 pub(in crate::compiler::verifier_types) fn kfunc_unknown_stack_object_copy(
     kfunc: &str,
-) -> Option<KfuncUnknownStackObjectCopy> {
+) -> Vec<KfuncUnknownStackObjectCopy> {
     kfunc_unknown_stack_object_copy_shared(kfunc)
 }
 
@@ -1141,8 +1141,8 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
             }
         }
     }
-    let unknown_stack_object_copy = kfunc_unknown_stack_object_copy(kfunc);
-    if unknown_stack_object_copy.is_none()
+    let unknown_stack_object_copies = kfunc_unknown_stack_object_copy(kfunc);
+    if unknown_stack_object_copies.is_empty()
         && let Some(lifecycle) = kfunc_unknown_stack_object_lifecycle(kfunc)
         && let Some(ptr) = args
             .get(lifecycle.arg_idx)
@@ -1170,46 +1170,45 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
             }
         }
     }
-    if let Some(copy) = unknown_stack_object_copy
-        && let (Some(src), Some(dst)) = (
+    for copy in unknown_stack_object_copies {
+        if let (Some(src), Some(dst)) = (
             args.get(copy.src_arg_idx).copied(),
             args.get(copy.dst_arg_idx).copied(),
-        )
-        && let (Some(src_slot), Some(dst_slot)) = (
+        ) && let (Some(src_slot), Some(dst_slot)) = (
             stack_slot_from_arg(state, src),
             stack_slot_from_arg(state, dst),
-        )
-    {
-        if src_slot == dst_slot {
-            errors.push(VerifierTypeError::new(format!(
-                "kfunc '{}' arg{} must reference distinct stack slot from arg{}",
-                kfunc, copy.dst_arg_idx, copy.src_arg_idx
-            )));
-        } else {
-            if !state.has_unknown_stack_object_slot(src_slot, &copy.type_name) {
+        ) {
+            if src_slot == dst_slot {
                 errors.push(VerifierTypeError::new(format!(
-                    "kfunc '{}' arg{} requires initialized {} stack object",
-                    kfunc, copy.src_arg_idx, copy.type_name
+                    "kfunc '{}' arg{} must reference distinct stack slot from arg{}",
+                    kfunc, copy.dst_arg_idx, copy.src_arg_idx
                 )));
-                return;
+            } else {
+                if !state.has_unknown_stack_object_slot(src_slot, &copy.type_name) {
+                    errors.push(VerifierTypeError::new(format!(
+                        "kfunc '{}' arg{} requires initialized {} stack object",
+                        kfunc, copy.src_arg_idx, copy.type_name
+                    )));
+                    return;
+                }
+                if state.has_live_unknown_stack_object_slot(dst_slot) {
+                    errors.push(VerifierTypeError::new(format!(
+                        "kfunc '{}' arg{} requires uninitialized {} stack object slot",
+                        kfunc, copy.dst_arg_idx, copy.type_name
+                    )));
+                    return;
+                }
+                if copy.move_semantics
+                    && !state.release_unknown_stack_object_slot(src_slot, &copy.type_name)
+                {
+                    errors.push(VerifierTypeError::new(format!(
+                        "kfunc '{}' arg{} requires initialized {} stack object",
+                        kfunc, copy.src_arg_idx, copy.type_name
+                    )));
+                    return;
+                }
+                state.initialize_unknown_stack_object_slot(dst_slot, &copy.type_name);
             }
-            if state.has_live_unknown_stack_object_slot(dst_slot) {
-                errors.push(VerifierTypeError::new(format!(
-                    "kfunc '{}' arg{} requires uninitialized {} stack object slot",
-                    kfunc, copy.dst_arg_idx, copy.type_name
-                )));
-                return;
-            }
-            if copy.move_semantics
-                && !state.release_unknown_stack_object_slot(src_slot, &copy.type_name)
-            {
-                errors.push(VerifierTypeError::new(format!(
-                    "kfunc '{}' arg{} requires initialized {} stack object",
-                    kfunc, copy.src_arg_idx, copy.type_name
-                )));
-                return;
-            }
-            state.initialize_unknown_stack_object_slot(dst_slot, &copy.type_name);
         }
     }
 
