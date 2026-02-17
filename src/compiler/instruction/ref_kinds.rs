@@ -483,6 +483,7 @@ fn should_infer_unknown_acquire_ref(
     kfunc: &str,
     kind: KfuncRefKind,
     has_same_family_arg: bool,
+    has_const_only_same_family_args: bool,
 ) -> bool {
     kfunc.contains("_acquire")
         || kfunc.contains("_from_")
@@ -496,6 +497,7 @@ fn should_infer_unknown_acquire_ref(
         || kfunc.contains("_clone")
         || (kind == KfuncRefKind::Socket && kfunc.contains("lookup"))
         || !has_same_family_arg
+        || has_const_only_same_family_args
 }
 
 pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
@@ -529,13 +531,29 @@ pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
                 else {
                     return None;
                 };
-                let has_same_family_arg = (0..5).any(|arg_idx| {
-                    kernel_btf
+                let mut has_same_family_arg = false;
+                let mut has_non_const_same_family_arg = false;
+                for arg_idx in 0..5 {
+                    if kernel_btf
                         .kfunc_pointer_arg_ref_family(kfunc, arg_idx)
                         .map(ref_kind_from_btf_family)
-                        == Some(kind)
-                });
-                if should_infer_unknown_acquire_ref(kfunc, kind, has_same_family_arg) {
+                        != Some(kind)
+                    {
+                        continue;
+                    }
+                    has_same_family_arg = true;
+                    if !kernel_btf.kfunc_pointer_arg_is_const(kfunc, arg_idx) {
+                        has_non_const_same_family_arg = true;
+                    }
+                }
+                let has_const_only_same_family_args =
+                    has_same_family_arg && !has_non_const_same_family_arg;
+                if should_infer_unknown_acquire_ref(
+                    kfunc,
+                    kind,
+                    has_same_family_arg,
+                    has_const_only_same_family_args,
+                ) {
                     return Some(kind);
                 }
             }
@@ -1776,37 +1794,44 @@ mod tests {
         assert!(should_infer_unknown_acquire_ref(
             "foo_task_acquire",
             KfuncRefKind::Task,
-            true
+            true,
+            false
         ));
         assert!(should_infer_unknown_acquire_ref(
             "bpf_get_foo_task",
             KfuncRefKind::Task,
-            true
+            true,
+            false
         ));
         assert!(should_infer_unknown_acquire_ref(
             "foo_get_task",
             KfuncRefKind::Task,
-            true
+            true,
+            false
         ));
         assert!(should_infer_unknown_acquire_ref(
             "foo_task_get",
             KfuncRefKind::Task,
-            true
+            true,
+            false
         ));
         assert!(should_infer_unknown_acquire_ref(
             "foo_task_dup",
             KfuncRefKind::Task,
-            true
+            true,
+            false
         ));
         assert!(should_infer_unknown_acquire_ref(
             "foo_task_clone",
             KfuncRefKind::Task,
-            true
+            true,
+            false
         ));
         assert!(should_infer_unknown_acquire_ref(
             "foo_lookup_sock",
             KfuncRefKind::Socket,
-            true
+            true,
+            false
         ));
     }
 
@@ -1815,7 +1840,18 @@ mod tests {
         assert!(should_infer_unknown_acquire_ref(
             "foo_plain_name",
             KfuncRefKind::Task,
+            false,
             false
+        ));
+    }
+
+    #[test]
+    fn test_should_infer_unknown_acquire_ref_with_const_only_same_family_args() {
+        assert!(should_infer_unknown_acquire_ref(
+            "foo_plain_name",
+            KfuncRefKind::Task,
+            true,
+            true
         ));
     }
 
@@ -1824,7 +1860,8 @@ mod tests {
         assert!(!should_infer_unknown_acquire_ref(
             "foo_plain_name",
             KfuncRefKind::Task,
-            true
+            true,
+            false
         ));
     }
 
