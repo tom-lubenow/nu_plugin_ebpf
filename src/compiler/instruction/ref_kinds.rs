@@ -1178,12 +1178,17 @@ fn infer_unknown_dynptr_copy_args(
         .filter(|arg| arg.role == KfuncUnknownDynptrArgRole::Out)
         .map(|arg| arg.arg_idx)
         .collect();
+    let has_out_hints = !all_out_args.is_empty();
     let mut out_args: Vec<usize> = all_out_args
         .iter()
         .copied()
         .filter(|arg_idx| !const_arg_indices.contains(arg_idx))
         .collect();
-    if out_args.is_empty() {
+    if out_args.is_empty() && has_out_hints {
+        if move_semantics {
+            // Move semantics require a writable destination.
+            return Vec::new();
+        }
         out_args = all_out_args;
     }
     let in_args: Vec<usize> = args
@@ -1225,6 +1230,10 @@ fn infer_unknown_dynptr_copy_args(
         } else {
             all_args[0]
         };
+        if move_semantics && const_arg_indices.contains(&dst_arg_idx) {
+            // Move semantics require a writable destination.
+            return Vec::new();
+        }
         return vec![(src_arg_idx, dst_arg_idx)];
     }
 
@@ -1414,6 +1423,10 @@ fn infer_unknown_stack_object_copy_args_for_type<'a>(
                 })
                 .collect();
             if destination_candidates.is_empty() {
+                if move_semantics {
+                    // Move semantics require a writable destination.
+                    return Vec::new();
+                }
                 destination_candidates = all_destination_candidates;
             }
 
@@ -1469,6 +1482,10 @@ fn infer_unknown_stack_object_copy_args_for_type<'a>(
         } else {
             args[0]
         };
+        if move_semantics && const_arg_indices.contains(&dst.arg_idx) {
+            // Move semantics require a writable destination.
+            return Vec::new();
+        }
         return vec![(src, dst)];
     }
 
@@ -2328,6 +2345,56 @@ mod tests {
     }
 
     #[test]
+    fn test_infer_unknown_stack_object_copy_args_for_type_move_requires_writable_destination() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: true,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+                named_in: false,
+            },
+        ];
+        let type_args: Vec<&UnknownStackObjectArgInfo> = args.iter().collect();
+        let const_args: std::collections::BTreeSet<usize> = [1usize].into_iter().collect();
+
+        assert!(
+            infer_unknown_stack_object_copy_args_for_type(&type_args, &const_args, true).is_empty(),
+            "move inference should reject const-only destinations"
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_copy_args_for_type_move_fallback_requires_writable_dst() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: true,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+        ];
+        let type_args: Vec<&UnknownStackObjectArgInfo> = args.iter().collect();
+        let const_args: std::collections::BTreeSet<usize> = [1usize].into_iter().collect();
+
+        assert!(
+            infer_unknown_stack_object_copy_args_for_type(&type_args, &const_args, true).is_empty(),
+            "unnamed move fallback should reject const destinations"
+        );
+    }
+
+    #[test]
     fn test_infer_unknown_stack_object_copy_args_from_const_hints() {
         let args = vec![
             UnknownStackObjectArgInfo {
@@ -2915,6 +2982,46 @@ mod tests {
             infer_unknown_dynptr_copy_args(&args, &[0], &[1], false),
             vec![(0, 1)],
             "copy inference should still use const destination when no alternative exists"
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_dynptr_copy_args_move_requires_writable_destination() {
+        let args = vec![
+            KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: KfuncUnknownDynptrArgRole::In,
+            },
+            KfuncUnknownDynptrArg {
+                arg_idx: 1,
+                role: KfuncUnknownDynptrArgRole::Out,
+            },
+        ];
+
+        assert_eq!(
+            infer_unknown_dynptr_copy_args(&args, &[0], &[1], true),
+            Vec::<(usize, usize)>::new(),
+            "move inference should reject const-only destinations"
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_dynptr_copy_args_move_fallback_requires_writable_destination() {
+        let args = vec![
+            KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: KfuncUnknownDynptrArgRole::In,
+            },
+            KfuncUnknownDynptrArg {
+                arg_idx: 1,
+                role: KfuncUnknownDynptrArgRole::In,
+            },
+        ];
+
+        assert_eq!(
+            infer_unknown_dynptr_copy_args(&args, &[0], &[1], true),
+            Vec::<(usize, usize)>::new(),
+            "unnamed move fallback should reject const destinations"
         );
     }
 
