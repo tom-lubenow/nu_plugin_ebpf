@@ -1,6 +1,6 @@
 use super::*;
 use crate::kernel_btf::{KernelBtf, KfuncPointerRefFamily};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn ref_kind_from_btf_family(family: KfuncPointerRefFamily) -> KfuncRefKind {
     match family {
@@ -1266,10 +1266,49 @@ fn unknown_stack_object_args(kfunc: &str) -> Vec<UnknownStackObjectArgInfo> {
 
 fn infer_unknown_stack_object_copy_args_for_type<'a>(
     args: &[&'a UnknownStackObjectArgInfo],
-) -> Option<(&'a UnknownStackObjectArgInfo, &'a UnknownStackObjectArgInfo)> {
+    move_semantics: bool,
+) -> Vec<(&'a UnknownStackObjectArgInfo, &'a UnknownStackObjectArgInfo)> {
     if args.len() < 2 {
-        return None;
+        return Vec::new();
     }
+
+    let infer_from_candidates =
+        |candidates: Vec<(&'a UnknownStackObjectArgInfo, &'a UnknownStackObjectArgInfo)>| {
+            if candidates.is_empty() {
+                return Vec::new();
+            }
+
+            let mut source_candidates = BTreeSet::new();
+            for (src, _) in &candidates {
+                source_candidates.insert(src.arg_idx);
+            }
+            if source_candidates.len() != 1 {
+                return Vec::new();
+            }
+            let src_arg_idx = source_candidates
+                .iter()
+                .next()
+                .copied()
+                .expect("source set is known non-empty");
+
+            let mut destination_candidates: BTreeMap<
+                usize,
+                (&'a UnknownStackObjectArgInfo, &'a UnknownStackObjectArgInfo),
+            > = BTreeMap::new();
+            for (src, dst) in candidates
+                .into_iter()
+                .filter(|(src, _)| src.arg_idx == src_arg_idx)
+            {
+                destination_candidates.insert(dst.arg_idx, (src, dst));
+            }
+            if destination_candidates.is_empty() {
+                return Vec::new();
+            }
+            if move_semantics && destination_candidates.len() != 1 {
+                return Vec::new();
+            }
+            destination_candidates.into_values().collect()
+        };
 
     let mut candidates: Vec<(&UnknownStackObjectArgInfo, &UnknownStackObjectArgInfo)> = Vec::new();
     for src in args.iter().copied().filter(|arg| arg.named_in) {
@@ -1280,11 +1319,12 @@ fn infer_unknown_stack_object_copy_args_for_type<'a>(
             candidates.push((src, dst));
         }
     }
-    if candidates.len() == 1 {
-        return candidates.first().copied();
+    let inferred = infer_from_candidates(candidates);
+    if !inferred.is_empty() {
+        return inferred;
     }
 
-    candidates.clear();
+    let mut candidates: Vec<(&UnknownStackObjectArgInfo, &UnknownStackObjectArgInfo)> = Vec::new();
     for src in args.iter().copied().filter(|arg| !arg.named_out) {
         for dst in args.iter().copied().filter(|arg| arg.named_out) {
             if src.arg_idx == dst.arg_idx || src.type_name != dst.type_name {
@@ -1294,15 +1334,12 @@ fn infer_unknown_stack_object_copy_args_for_type<'a>(
         }
     }
 
-    if candidates.len() == 1 {
-        return candidates.first().copied();
-    }
-
-    None
+    infer_from_candidates(candidates)
 }
 
 fn infer_unknown_stack_object_copy_args<'a>(
     args: &'a [UnknownStackObjectArgInfo],
+    move_semantics: bool,
 ) -> Vec<(&'a UnknownStackObjectArgInfo, &'a UnknownStackObjectArgInfo)> {
     if args.len() < 2 {
         return Vec::new();
@@ -1318,9 +1355,10 @@ fn infer_unknown_stack_object_copy_args<'a>(
 
     let mut copies = Vec::new();
     for type_args in args_by_type.values() {
-        if let Some(copy) = infer_unknown_stack_object_copy_args_for_type(type_args) {
-            copies.push(copy);
-        }
+        copies.extend(infer_unknown_stack_object_copy_args_for_type(
+            type_args,
+            move_semantics,
+        ));
     }
     copies
 }
@@ -1380,7 +1418,7 @@ pub fn kfunc_unknown_stack_object_copy(kfunc: &str) -> Vec<KfuncUnknownStackObje
         return Vec::new();
     };
     let args = unknown_stack_object_args(kfunc);
-    infer_unknown_stack_object_copy_args(&args)
+    infer_unknown_stack_object_copy_args(&args, move_semantics)
         .into_iter()
         .map(|(src, dst)| KfuncUnknownStackObjectCopy {
             type_name: src.type_name.clone(),
@@ -1723,7 +1761,7 @@ mod tests {
             },
         ];
 
-        let copies = infer_unknown_stack_object_copy_args(&args);
+        let copies = infer_unknown_stack_object_copy_args(&args, false);
         assert_eq!(copies.len(), 1, "expected one inferred copy pair");
         let (src, dst) = copies[0];
         assert_eq!(src.arg_idx, 0);
@@ -1754,7 +1792,7 @@ mod tests {
             },
         ];
 
-        let copies = infer_unknown_stack_object_copy_args(&args);
+        let copies = infer_unknown_stack_object_copy_args(&args, false);
         assert_eq!(copies.len(), 1, "expected one inferred copy pair");
         let (src, dst) = copies[0];
         assert_eq!(src.arg_idx, 1);
@@ -1762,7 +1800,48 @@ mod tests {
     }
 
     #[test]
-    fn test_infer_unknown_stack_object_copy_args_rejects_ambiguous_pairs() {
+    fn test_infer_unknown_stack_object_copy_args_allows_multiple_destinations_for_copy() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 2,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+                named_in: false,
+            },
+        ];
+
+        let copies = infer_unknown_stack_object_copy_args(&args, false);
+        assert_eq!(
+            copies.len(),
+            2,
+            "expected one source copied to two destinations"
+        );
+        assert!(
+            copies
+                .iter()
+                .any(|(src, dst)| src.arg_idx == 0 && dst.arg_idx == 1)
+        );
+        assert!(
+            copies
+                .iter()
+                .any(|(src, dst)| src.arg_idx == 0 && dst.arg_idx == 2)
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_copy_args_move_requires_single_destination() {
         let args = vec![
             UnknownStackObjectArgInfo {
                 arg_idx: 0,
@@ -1785,8 +1864,8 @@ mod tests {
         ];
 
         assert!(
-            infer_unknown_stack_object_copy_args(&args).is_empty(),
-            "multiple possible destination slots should not infer copy semantics"
+            infer_unknown_stack_object_copy_args(&args, true).is_empty(),
+            "move semantics should require a single destination slot"
         );
     }
 
@@ -1808,7 +1887,7 @@ mod tests {
         ];
 
         assert!(
-            infer_unknown_stack_object_copy_args(&args).is_empty(),
+            infer_unknown_stack_object_copy_args(&args, false).is_empty(),
             "copy semantics require matching stack-object types for src and dst"
         );
     }
@@ -1842,7 +1921,7 @@ mod tests {
             },
         ];
 
-        let copies = infer_unknown_stack_object_copy_args(&args);
+        let copies = infer_unknown_stack_object_copy_args(&args, false);
         assert_eq!(copies.len(), 2, "expected two inferred copy pairs");
         assert!(
             copies.iter().any(|(src, dst)| src.arg_idx == 0
@@ -1889,12 +1968,54 @@ mod tests {
             },
         ];
 
-        let copies = infer_unknown_stack_object_copy_args(&args);
-        assert_eq!(copies.len(), 1, "expected only the unambiguous type pair");
-        let (src, dst) = copies[0];
-        assert_eq!(src.arg_idx, 3);
-        assert_eq!(dst.arg_idx, 4);
-        assert_eq!(src.type_name, "bpf_custom");
+        let copies = infer_unknown_stack_object_copy_args(&args, false);
+        assert_eq!(
+            copies.len(),
+            3,
+            "expected two wq destinations plus custom pair"
+        );
+        assert!(
+            copies.iter().any(|(src, dst)| src.arg_idx == 0
+                && dst.arg_idx == 1
+                && src.type_name == "bpf_wq")
+        );
+        assert!(
+            copies.iter().any(|(src, dst)| src.arg_idx == 0
+                && dst.arg_idx == 2
+                && src.type_name == "bpf_wq")
+        );
+        assert!(copies.iter().any(|(src, dst)| {
+            src.arg_idx == 3 && dst.arg_idx == 4 && src.type_name == "bpf_custom"
+        }));
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_copy_args_rejects_ambiguous_source() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 2,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+                named_in: false,
+            },
+        ];
+
+        assert!(
+            infer_unknown_stack_object_copy_args(&args, false).is_empty(),
+            "copy inference should reject ambiguous source candidates"
+        );
     }
 
     #[test]
