@@ -1174,11 +1174,13 @@ fn infer_unknown_dynptr_copy_args(
 
 fn unknown_transfer_move_semantics_from_kfunc_name(kfunc: &str) -> Option<bool> {
     let lower = kfunc.to_ascii_lowercase();
+    let has_move_like = lower.contains("_move");
     let has_copy_like = lower.contains("_copy")
         || lower.contains("_clone")
         || lower.contains("_assign")
-        || lower.contains("_from_");
-    let has_move_like = lower.contains("_move");
+        || lower.contains("_from_")
+        || (lower.contains("_to_") && !has_move_like)
+        || lower.contains("_dup");
     if !has_copy_like && !has_move_like {
         return None;
     }
@@ -1606,7 +1608,19 @@ mod tests {
             Some(false)
         );
         assert_eq!(
+            unknown_transfer_move_semantics_from_kfunc_name("foo_obj_copy_to_buf"),
+            Some(false)
+        );
+        assert_eq!(
+            unknown_transfer_move_semantics_from_kfunc_name("foo_obj_dup"),
+            Some(false)
+        );
+        assert_eq!(
             unknown_transfer_move_semantics_from_kfunc_name("foo_obj_move"),
+            Some(true)
+        );
+        assert_eq!(
+            unknown_transfer_move_semantics_from_kfunc_name("foo_obj_move_to_slot"),
             Some(true)
         );
         assert_eq!(
