@@ -1142,15 +1142,41 @@ fn infer_unknown_dynptr_copy_args(
         .filter(|arg| arg.role == KfuncUnknownDynptrArgRole::Out)
         .map(|arg| arg.arg_idx)
         .collect();
-    if out_args.is_empty() {
-        return Vec::new();
-    }
-
     let in_args: Vec<usize> = args
         .iter()
         .filter(|arg| arg.role == KfuncUnknownDynptrArgRole::In)
         .map(|arg| arg.arg_idx)
         .collect();
+    let all_args: Vec<usize> = args.iter().map(|arg| arg.arg_idx).collect();
+    if in_args.is_empty() && all_args.is_empty() {
+        return Vec::new();
+    }
+
+    let named_in_matches: Vec<usize> = all_args
+        .iter()
+        .copied()
+        .filter(|arg_idx| named_in_arg_indices.contains(arg_idx))
+        .collect();
+    if out_args.is_empty() {
+        // Conservative unnamed fallback: only infer when exactly two args exist.
+        if all_args.len() != 2 {
+            return Vec::new();
+        }
+        let src_arg_idx = if named_in_matches.len() == 1 {
+            named_in_matches[0]
+        } else if named_in_matches.is_empty() {
+            all_args[0]
+        } else {
+            return Vec::new();
+        };
+        let dst_arg_idx = if all_args[0] == src_arg_idx {
+            all_args[1]
+        } else {
+            all_args[0]
+        };
+        return vec![(src_arg_idx, dst_arg_idx)];
+    }
+
     if in_args.is_empty() {
         return Vec::new();
     }
@@ -1338,7 +1364,32 @@ fn infer_unknown_stack_object_copy_args_for_type<'a>(
         }
     }
 
-    infer_from_candidates(candidates)
+    let inferred = infer_from_candidates(candidates);
+    if !inferred.is_empty() {
+        return inferred;
+    }
+
+    // Conservative unnamed fallback: if no destination hint exists and exactly
+    // two same-type args are present, treat one as src and the other as dst.
+    if args.len() == 2 && args.iter().all(|arg| !arg.named_out) {
+        let named_in: Vec<&UnknownStackObjectArgInfo> =
+            args.iter().copied().filter(|arg| arg.named_in).collect();
+        let src = if named_in.len() == 1 {
+            named_in[0]
+        } else if named_in.is_empty() {
+            args[0]
+        } else {
+            return Vec::new();
+        };
+        let dst = if args[0].arg_idx == src.arg_idx {
+            args[1]
+        } else {
+            args[0]
+        };
+        return vec![(src, dst)];
+    }
+
+    Vec::new()
 }
 
 fn infer_unknown_stack_object_copy_args<'a>(
@@ -1824,6 +1875,85 @@ mod tests {
     }
 
     #[test]
+    fn test_infer_unknown_stack_object_copy_args_falls_back_without_out_hints() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+        ];
+
+        let copies = infer_unknown_stack_object_copy_args(&args, false);
+        assert_eq!(
+            copies.len(),
+            1,
+            "expected unnamed two-arg fallback inference"
+        );
+        let (src, dst) = copies[0];
+        assert_eq!(src.arg_idx, 0);
+        assert_eq!(dst.arg_idx, 1);
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_copy_args_fallback_prefers_named_input() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: true,
+            },
+        ];
+
+        let copies = infer_unknown_stack_object_copy_args(&args, false);
+        assert_eq!(
+            copies.len(),
+            1,
+            "expected unnamed fallback with named-in source"
+        );
+        let (src, dst) = copies[0];
+        assert_eq!(src.arg_idx, 1);
+        assert_eq!(dst.arg_idx, 0);
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_copy_args_fallback_rejects_ambiguous_named_input() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: true,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: true,
+            },
+        ];
+
+        assert!(
+            infer_unknown_stack_object_copy_args(&args, false).is_empty(),
+            "unnamed fallback should reject ambiguous named-in source selection"
+        );
+    }
+
+    #[test]
     fn test_infer_unknown_stack_object_copy_args_allows_multiple_destinations_for_copy() {
         let args = vec![
             UnknownStackObjectArgInfo {
@@ -2164,6 +2294,70 @@ mod tests {
             infer_unknown_dynptr_copy_args(&args, &[], false),
             Vec::<(usize, usize)>::new(),
             "multiple possible source dynptr args should not infer copy semantics"
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_dynptr_copy_args_falls_back_without_out_hints() {
+        let args = vec![
+            KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: KfuncUnknownDynptrArgRole::In,
+            },
+            KfuncUnknownDynptrArg {
+                arg_idx: 1,
+                role: KfuncUnknownDynptrArgRole::In,
+            },
+        ];
+
+        assert_eq!(
+            infer_unknown_dynptr_copy_args(&args, &[], false),
+            vec![(0, 1)],
+            "unnamed two-arg fallback should infer arg0->arg1"
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_dynptr_copy_args_fallback_prefers_named_input() {
+        let args = vec![
+            KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: KfuncUnknownDynptrArgRole::In,
+            },
+            KfuncUnknownDynptrArg {
+                arg_idx: 1,
+                role: KfuncUnknownDynptrArgRole::In,
+            },
+        ];
+
+        assert_eq!(
+            infer_unknown_dynptr_copy_args(&args, &[1], false),
+            vec![(1, 0)],
+            "unnamed fallback should prefer the uniquely named-in source"
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_dynptr_copy_args_fallback_requires_two_args() {
+        let args = vec![
+            KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: KfuncUnknownDynptrArgRole::In,
+            },
+            KfuncUnknownDynptrArg {
+                arg_idx: 1,
+                role: KfuncUnknownDynptrArgRole::In,
+            },
+            KfuncUnknownDynptrArg {
+                arg_idx: 2,
+                role: KfuncUnknownDynptrArgRole::In,
+            },
+        ];
+
+        assert_eq!(
+            infer_unknown_dynptr_copy_args(&args, &[], false),
+            Vec::<(usize, usize)>::new(),
+            "unnamed fallback should require exactly two args"
         );
     }
 
