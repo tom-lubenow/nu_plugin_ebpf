@@ -593,16 +593,54 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
                     || kfunc.contains("_dec_")
                     || kfunc.ends_with("_dec"))
             {
-                let release_arg_idx = KernelBtf::get()
-                    .kfunc_release_ref_arg_index(kfunc)
-                    .unwrap_or(0);
-                return KernelBtf::get()
-                    .kfunc_pointer_arg_ref_family(kfunc, release_arg_idx)
+                let kernel_btf = KernelBtf::get();
+                if let Some(release_arg_idx) = kernel_btf.kfunc_release_ref_arg_index(kfunc) {
+                    return kernel_btf
+                        .kfunc_pointer_arg_ref_family(kfunc, release_arg_idx)
+                        .map(ref_kind_from_btf_family);
+                }
+
+                let mut candidates: Vec<(usize, Option<KfuncRefKind>, bool, bool)> = Vec::new();
+                for arg_idx in 0..5 {
+                    candidates.push((
+                        arg_idx,
+                        kernel_btf
+                            .kfunc_pointer_arg_ref_family(kfunc, arg_idx)
+                            .map(ref_kind_from_btf_family),
+                        kernel_btf.kfunc_pointer_arg_is_named_in(kfunc, arg_idx),
+                        kernel_btf.kfunc_pointer_arg_is_const(kfunc, arg_idx),
+                    ));
+                }
+                if let Some(kind) = infer_unique_release_kind(&candidates) {
+                    return Some(kind);
+                }
+
+                return kernel_btf
+                    .kfunc_pointer_arg_ref_family(kfunc, 0)
                     .map(ref_kind_from_btf_family);
             }
             None
         }
     }
+}
+
+fn infer_unique_release_kind(
+    candidates: &[(usize, Option<KfuncRefKind>, bool, bool)],
+) -> Option<KfuncRefKind> {
+    let mut selected: Option<KfuncRefKind> = None;
+    for (_, kind, _, _) in candidates {
+        let Some(kind) = kind else {
+            continue;
+        };
+        if let Some(existing) = selected {
+            if existing != *kind {
+                return None;
+            }
+        } else {
+            selected = Some(*kind);
+        }
+    }
+    selected
 }
 
 fn infer_release_arg_from_named_inputs(
@@ -2033,6 +2071,34 @@ mod tests {
             unknown_transfer_move_semantics_from_kfunc_name("foo_obj_swap"),
             None
         );
+    }
+
+    #[test]
+    fn test_infer_unique_release_kind_selects_unique_kind() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), false, false),
+            (1usize, None, false, false),
+            (2usize, Some(KfuncRefKind::Task), true, true),
+        ];
+        assert_eq!(
+            infer_unique_release_kind(&candidates),
+            Some(KfuncRefKind::Task)
+        );
+    }
+
+    #[test]
+    fn test_infer_unique_release_kind_rejects_mixed_kinds() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), false, false),
+            (1usize, Some(KfuncRefKind::Cgroup), false, false),
+        ];
+        assert_eq!(infer_unique_release_kind(&candidates), None);
+    }
+
+    #[test]
+    fn test_infer_unique_release_kind_requires_ref_family_candidates() {
+        let candidates = vec![(0usize, None, false, false), (1usize, None, true, true)];
+        assert_eq!(infer_unique_release_kind(&candidates), None);
     }
 
     #[test]
