@@ -203,6 +203,7 @@ Last updated: 2026-02-15.
   - Extended unknown-kfunc out-pointer inference from local kernel BTF parameter names to also treat `*__uninit` args as writable out-pointers.
   - Unified stack-slot-base enforcement for kfunc pointer args across type inference, verifier_types, and VCC so unknown-kfunc out-pointer checks apply during general pointer-arg validation (not only pointer-size checks).
   - Unknown-kfunc named out-pointer args now default to stack/map pointer-space requirements (unless BTF indicates explicit stack/kernel/user/ref-family semantics), improving by-reference parity for writable out buffers.
+  - Unknown-kfunc writable out-pointer inference now ignores const-qualified named-out args, reducing false writable-destination constraints for read-only pointer parameters.
   - Unknown-kfunc named out-pointer args now also receive a minimum 1-byte stack/map bounds check when no explicit size metadata is available, tightening by-reference memory-safety parity.
   - Extended stack-pointer argument checks for unknown kfuncs to consult local kernel BTF pointee type names for stack object families (iterator and dynptr objects), with shared type inference/verifier_types/VCC enforcement while preserving explicit semantics for built-in typed kfuncs.
   - Added unknown-kfunc iterator stack-object lifecycle inference (`*_new` / `*_next` / `*_destroy`) from local kernel BTF stack-object pointee types, wiring slot-identity/lifetime checks through verifier_types and VCC for supported iterator families.

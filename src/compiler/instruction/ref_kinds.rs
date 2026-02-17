@@ -988,6 +988,10 @@ pub fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
     KernelBtf::get().kfunc_pointer_arg_requires_stack(kfunc, arg_idx)
 }
 
+fn is_writable_named_out_hint(is_named_out: bool, is_const: bool) -> bool {
+    is_named_out && !is_const
+}
+
 pub fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -> bool {
     if matches!(
         (kfunc, arg_idx),
@@ -1033,7 +1037,10 @@ pub fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -
     }
     let kernel_btf = KernelBtf::get();
     kernel_btf.kfunc_pointer_arg_requires_stack_slot_base(kfunc, arg_idx)
-        || kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx)
+        || is_writable_named_out_hint(
+            kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx),
+            kernel_btf.kfunc_pointer_arg_is_const(kfunc, arg_idx),
+        )
 }
 
 pub fn kfunc_pointer_arg_requires_stack_or_map(kfunc: &str, arg_idx: usize) -> bool {
@@ -1042,7 +1049,10 @@ pub fn kfunc_pointer_arg_requires_stack_or_map(kfunc: &str, arg_idx: usize) -> b
     }
 
     let kernel_btf = KernelBtf::get();
-    if !kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx) {
+    if !is_writable_named_out_hint(
+        kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx),
+        kernel_btf.kfunc_pointer_arg_is_const(kfunc, arg_idx),
+    ) {
         return false;
     }
     if kernel_btf.kfunc_pointer_arg_requires_stack(kfunc, arg_idx)
@@ -1153,7 +1163,10 @@ pub fn kfunc_unknown_dynptr_args(kfunc: &str) -> Vec<KfuncUnknownDynptrArg> {
         if !is_dynptr_stack_object_type_name(&type_name) {
             continue;
         }
-        let role = if kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx) {
+        let role = if is_writable_named_out_hint(
+            kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx),
+            kernel_btf.kfunc_pointer_arg_is_const(kfunc, arg_idx),
+        ) {
             KfuncUnknownDynptrArgRole::Out
         } else {
             KfuncUnknownDynptrArgRole::In
@@ -1360,7 +1373,10 @@ fn unknown_stack_object_args(kfunc: &str) -> Vec<UnknownStackObjectArgInfo> {
         args.push(UnknownStackObjectArgInfo {
             arg_idx,
             type_name,
-            named_out: kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx),
+            named_out: is_writable_named_out_hint(
+                kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx),
+                kernel_btf.kfunc_pointer_arg_is_const(kfunc, arg_idx),
+            ),
             named_in: kernel_btf.kfunc_pointer_arg_is_named_in(kfunc, arg_idx),
         });
     }
@@ -1837,6 +1853,22 @@ mod tests {
         assert!(is_dynptr_stack_object_type_name("bpf_dynptr"));
         assert!(is_dynptr_stack_object_type_name("bpf_dynptr_kern"));
         assert!(!is_dynptr_stack_object_type_name("bpf_iter_task"));
+    }
+
+    #[test]
+    fn test_is_writable_named_out_hint() {
+        assert!(
+            is_writable_named_out_hint(true, false),
+            "non-const named-out args should be treated as writable out hints"
+        );
+        assert!(
+            !is_writable_named_out_hint(true, true),
+            "const named-out args should not be treated as writable out hints"
+        );
+        assert!(
+            !is_writable_named_out_hint(false, false),
+            "non-out args should not be treated as out hints"
+        );
     }
 
     #[test]
