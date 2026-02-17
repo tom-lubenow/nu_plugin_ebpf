@@ -228,6 +228,7 @@ Last updated: 2026-02-15.
   - Unknown-kfunc transfer-name inference now also treats `*_assign*` as copy-like (non-move) for dynptr/stack-object transfer modeling.
   - Unknown-kfunc transfer-name inference now also treats `*_from_*` forms as copy-like (non-move), improving constructor-style transfer coverage when arg-role/type matching is unambiguous.
   - Unknown-kfunc transfer-name inference now also treats `*_to_*` / `*_dup*` forms as copy-like (non-move), while preserving move semantics for `*_move*` names.
+  - Unknown-kfunc stack-object copy inference now also falls back to typed `named-in` -> `named-out` by-reference pairs (grouped by BTF type identity) when transfer-name hints are absent and no lifecycle-name hint applies, expanding conservative copy modeling for additional stack-object families.
   - Unknown stack-object lifecycle and transfer heuristics are now mutually exclusive per kfunc call site to avoid double-applying conflicting lifecycle+copy semantics on copy-like names.
   - Unknown-kfunc stack-object copy inference now also consults BTF parameter-name input hints (`in*` / `src*` / `from*`) to disambiguate source selection before falling back to generic non-out matching.
   - BTF by-reference name heuristics now also treat `old*`/`orig*` as likely input pointers and `new*`/`to*`/`dup*` as likely output pointers, improving unknown copy/lifecycle inference coverage.

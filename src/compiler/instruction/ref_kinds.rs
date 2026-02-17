@@ -1421,6 +1421,69 @@ fn unknown_stack_object_args(kfunc: &str) -> Vec<UnknownStackObjectArgInfo> {
     args
 }
 
+fn infer_unknown_stack_object_copy_from_candidates<'a>(
+    candidates: Vec<(&'a UnknownStackObjectArgInfo, &'a UnknownStackObjectArgInfo)>,
+    const_arg_indices: &BTreeSet<usize>,
+    move_semantics: bool,
+) -> Vec<(&'a UnknownStackObjectArgInfo, &'a UnknownStackObjectArgInfo)> {
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+
+    let mut source_candidates = BTreeSet::new();
+    for (src, _) in &candidates {
+        source_candidates.insert(src.arg_idx);
+    }
+    if source_candidates.len() != 1 {
+        return Vec::new();
+    }
+    let src_arg_idx = source_candidates
+        .iter()
+        .next()
+        .copied()
+        .expect("source set is known non-empty");
+
+    let mut all_destination_candidates: BTreeMap<
+        usize,
+        (&'a UnknownStackObjectArgInfo, &'a UnknownStackObjectArgInfo),
+    > = BTreeMap::new();
+    for (src, dst) in candidates
+        .into_iter()
+        .filter(|(src, _)| src.arg_idx == src_arg_idx)
+    {
+        all_destination_candidates.insert(dst.arg_idx, (src, dst));
+    }
+    if all_destination_candidates.is_empty() {
+        return Vec::new();
+    }
+
+    let mut destination_candidates: BTreeMap<
+        usize,
+        (&'a UnknownStackObjectArgInfo, &'a UnknownStackObjectArgInfo),
+    > = all_destination_candidates
+        .iter()
+        .filter_map(|(dst_arg_idx, pair)| {
+            if const_arg_indices.contains(dst_arg_idx) {
+                None
+            } else {
+                Some((*dst_arg_idx, *pair))
+            }
+        })
+        .collect();
+    if destination_candidates.is_empty() {
+        if move_semantics {
+            // Move semantics require a writable destination.
+            return Vec::new();
+        }
+        destination_candidates = all_destination_candidates;
+    }
+
+    if move_semantics && destination_candidates.len() != 1 {
+        return Vec::new();
+    }
+    destination_candidates.into_values().collect()
+}
+
 fn infer_unknown_stack_object_copy_args_for_type<'a>(
     args: &[&'a UnknownStackObjectArgInfo],
     const_arg_indices: &BTreeSet<usize>,
@@ -1429,66 +1492,6 @@ fn infer_unknown_stack_object_copy_args_for_type<'a>(
     if args.len() < 2 {
         return Vec::new();
     }
-
-    let infer_from_candidates =
-        |candidates: Vec<(&'a UnknownStackObjectArgInfo, &'a UnknownStackObjectArgInfo)>| {
-            if candidates.is_empty() {
-                return Vec::new();
-            }
-
-            let mut source_candidates = BTreeSet::new();
-            for (src, _) in &candidates {
-                source_candidates.insert(src.arg_idx);
-            }
-            if source_candidates.len() != 1 {
-                return Vec::new();
-            }
-            let src_arg_idx = source_candidates
-                .iter()
-                .next()
-                .copied()
-                .expect("source set is known non-empty");
-
-            let mut all_destination_candidates: BTreeMap<
-                usize,
-                (&'a UnknownStackObjectArgInfo, &'a UnknownStackObjectArgInfo),
-            > = BTreeMap::new();
-            for (src, dst) in candidates
-                .into_iter()
-                .filter(|(src, _)| src.arg_idx == src_arg_idx)
-            {
-                all_destination_candidates.insert(dst.arg_idx, (src, dst));
-            }
-            if all_destination_candidates.is_empty() {
-                return Vec::new();
-            }
-
-            let mut destination_candidates: BTreeMap<
-                usize,
-                (&'a UnknownStackObjectArgInfo, &'a UnknownStackObjectArgInfo),
-            > = all_destination_candidates
-                .iter()
-                .filter_map(|(dst_arg_idx, pair)| {
-                    if const_arg_indices.contains(dst_arg_idx) {
-                        None
-                    } else {
-                        Some((*dst_arg_idx, *pair))
-                    }
-                })
-                .collect();
-            if destination_candidates.is_empty() {
-                if move_semantics {
-                    // Move semantics require a writable destination.
-                    return Vec::new();
-                }
-                destination_candidates = all_destination_candidates;
-            }
-
-            if move_semantics && destination_candidates.len() != 1 {
-                return Vec::new();
-            }
-            destination_candidates.into_values().collect()
-        };
 
     let mut candidates: Vec<(&UnknownStackObjectArgInfo, &UnknownStackObjectArgInfo)> = Vec::new();
     for src in args.iter().copied().filter(|arg| arg.named_in) {
@@ -1499,7 +1502,11 @@ fn infer_unknown_stack_object_copy_args_for_type<'a>(
             candidates.push((src, dst));
         }
     }
-    let inferred = infer_from_candidates(candidates);
+    let inferred = infer_unknown_stack_object_copy_from_candidates(
+        candidates,
+        const_arg_indices,
+        move_semantics,
+    );
     if !inferred.is_empty() {
         return inferred;
     }
@@ -1514,7 +1521,11 @@ fn infer_unknown_stack_object_copy_args_for_type<'a>(
         }
     }
 
-    let inferred = infer_from_candidates(candidates);
+    let inferred = infer_unknown_stack_object_copy_from_candidates(
+        candidates,
+        const_arg_indices,
+        move_semantics,
+    );
     if !inferred.is_empty() {
         return inferred;
     }
@@ -1544,6 +1555,26 @@ fn infer_unknown_stack_object_copy_args_for_type<'a>(
     }
 
     Vec::new()
+}
+
+fn infer_unknown_stack_object_copy_args_from_named_pairs_for_type<'a>(
+    args: &[&'a UnknownStackObjectArgInfo],
+    const_arg_indices: &BTreeSet<usize>,
+) -> Vec<(&'a UnknownStackObjectArgInfo, &'a UnknownStackObjectArgInfo)> {
+    if args.len() < 2 {
+        return Vec::new();
+    }
+
+    let mut candidates: Vec<(&UnknownStackObjectArgInfo, &UnknownStackObjectArgInfo)> = Vec::new();
+    for src in args.iter().copied().filter(|arg| arg.named_in) {
+        for dst in args.iter().copied().filter(|arg| arg.named_out) {
+            if src.arg_idx == dst.arg_idx || src.type_name != dst.type_name {
+                continue;
+            }
+            candidates.push((src, dst));
+        }
+    }
+    infer_unknown_stack_object_copy_from_candidates(candidates, const_arg_indices, false)
 }
 
 fn infer_unknown_stack_object_copy_args_from_const_hints<'a>(
@@ -1730,9 +1761,13 @@ pub fn kfunc_unknown_stack_object_copy(kfunc: &str) -> Vec<KfuncUnknownStackObje
     if KfuncSignature::for_name(kfunc).is_some() {
         return Vec::new();
     }
-    let Some(move_semantics) = unknown_transfer_move_semantics_from_kfunc_name(kfunc) else {
+    let transfer_move_semantics = unknown_transfer_move_semantics_from_kfunc_name(kfunc);
+    if transfer_move_semantics.is_none()
+        && unknown_stack_object_lifecycle_op_from_kfunc_name(kfunc).is_some()
+    {
         return Vec::new();
-    };
+    }
+    let move_semantics = transfer_move_semantics.unwrap_or(false);
     let args = unknown_stack_object_args(kfunc);
     let kernel_btf = KernelBtf::get();
     let const_pointer_args: BTreeSet<usize> = args
@@ -1752,12 +1787,19 @@ pub fn kfunc_unknown_stack_object_copy(kfunc: &str) -> Vec<KfuncUnknownStackObje
 
     let mut copies = Vec::new();
     for type_args in args_by_identity.values() {
-        let mut inferred = infer_unknown_stack_object_copy_args_for_type(
-            type_args,
-            &const_pointer_args,
-            move_semantics,
-        );
-        if inferred.is_empty() {
+        let mut inferred = if transfer_move_semantics.is_some() {
+            infer_unknown_stack_object_copy_args_for_type(
+                type_args,
+                &const_pointer_args,
+                move_semantics,
+            )
+        } else {
+            infer_unknown_stack_object_copy_args_from_named_pairs_for_type(
+                type_args,
+                &const_pointer_args,
+            )
+        };
+        if inferred.is_empty() && transfer_move_semantics.is_some() {
             inferred = infer_unknown_stack_object_copy_args_from_const_hints(
                 type_args,
                 &const_pointer_args,
@@ -2400,6 +2442,122 @@ mod tests {
             infer_unknown_stack_object_copy_args(&args, true).is_empty(),
             "move semantics should require a single destination slot"
         );
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_copy_args_from_named_pairs_for_type() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: true,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 2,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+                named_in: false,
+            },
+        ];
+        let type_args: Vec<&UnknownStackObjectArgInfo> = args.iter().collect();
+
+        let inferred = infer_unknown_stack_object_copy_args_from_named_pairs_for_type(
+            &type_args,
+            &std::collections::BTreeSet::new(),
+        );
+        assert_eq!(
+            inferred.len(),
+            2,
+            "named in/out fallback should infer copy-like transfers without transfer-name hints"
+        );
+        assert!(
+            inferred
+                .iter()
+                .any(|(src, dst)| src.arg_idx == 0 && dst.arg_idx == 1)
+        );
+        assert!(
+            inferred
+                .iter()
+                .any(|(src, dst)| src.arg_idx == 0 && dst.arg_idx == 2)
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_copy_args_from_named_pairs_requires_unique_source() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: true,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: true,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 2,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+                named_in: false,
+            },
+        ];
+        let type_args: Vec<&UnknownStackObjectArgInfo> = args.iter().collect();
+
+        assert!(
+            infer_unknown_stack_object_copy_args_from_named_pairs_for_type(
+                &type_args,
+                &std::collections::BTreeSet::new()
+            )
+            .is_empty(),
+            "named in/out fallback should reject ambiguous source selection"
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_copy_args_from_named_pairs_prefers_non_const_destination() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: true,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 2,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+                named_in: false,
+            },
+        ];
+        let type_args: Vec<&UnknownStackObjectArgInfo> = args.iter().collect();
+        let const_args: std::collections::BTreeSet<usize> = [1usize].into_iter().collect();
+
+        let inferred =
+            infer_unknown_stack_object_copy_args_from_named_pairs_for_type(&type_args, &const_args);
+        assert_eq!(
+            inferred.len(),
+            1,
+            "named in/out fallback should prefer writable destinations when available"
+        );
+        let (src, dst) = inferred[0];
+        assert_eq!(src.arg_idx, 0);
+        assert_eq!(dst.arg_idx, 2);
     }
 
     #[test]
