@@ -1559,12 +1559,19 @@ fn infer_unknown_stack_object_copy_args<'a>(
 fn infer_unknown_stack_object_lifecycle_arg<'a>(
     args: &'a [UnknownStackObjectArgInfo],
     op: KfuncUnknownStackObjectLifecycleOp,
+    const_arg_indices: &BTreeSet<usize>,
 ) -> Option<&'a UnknownStackObjectArgInfo> {
     if args.is_empty() {
         return None;
     }
     if args.len() == 1 {
-        return args.first();
+        let arg = args.first()?;
+        if matches!(op, KfuncUnknownStackObjectLifecycleOp::Init)
+            && const_arg_indices.contains(&arg.arg_idx)
+        {
+            return None;
+        }
+        return Some(arg);
     }
 
     let mut candidates: Vec<&UnknownStackObjectArgInfo> = match op {
@@ -1576,8 +1583,29 @@ fn infer_unknown_stack_object_lifecycle_arg<'a>(
             .filter(|arg| !arg.named_out && arg.named_in)
             .collect(),
     };
+
+    if matches!(op, KfuncUnknownStackObjectLifecycleOp::Init) {
+        let writable_candidates: Vec<&UnknownStackObjectArgInfo> = candidates
+            .iter()
+            .copied()
+            .filter(|arg| !const_arg_indices.contains(&arg.arg_idx))
+            .collect();
+        if writable_candidates.len() == 1 {
+            return writable_candidates.first().copied();
+        }
+        if !writable_candidates.is_empty() {
+            candidates = writable_candidates;
+        }
+    }
+
     if candidates.len() == 1 {
-        return candidates.first().copied();
+        let arg = candidates.first().copied()?;
+        if matches!(op, KfuncUnknownStackObjectLifecycleOp::Init)
+            && const_arg_indices.contains(&arg.arg_idx)
+        {
+            return None;
+        }
+        return Some(arg);
     }
 
     if matches!(op, KfuncUnknownStackObjectLifecycleOp::Destroy) {
@@ -1634,7 +1662,7 @@ pub fn kfunc_unknown_stack_object_lifecycle(
         .filter(|arg| kernel_btf.kfunc_pointer_arg_is_const(kfunc, arg.arg_idx))
         .map(|arg| arg.arg_idx)
         .collect();
-    let arg = infer_unknown_stack_object_lifecycle_arg(&args, op).or_else(|| {
+    let arg = infer_unknown_stack_object_lifecycle_arg(&args, op, &const_args).or_else(|| {
         infer_unknown_stack_object_lifecycle_arg_from_const_hints(&args, op, &const_args)
     })?;
     Some(KfuncUnknownStackObjectLifecycle {
@@ -2661,10 +2689,12 @@ mod tests {
                 named_in: true,
             },
         ];
+        let const_args = std::collections::BTreeSet::new();
 
         let selected = infer_unknown_stack_object_lifecycle_arg(
             &args,
             KfuncUnknownStackObjectLifecycleOp::Destroy,
+            &const_args,
         )
         .expect("expected named-in arg to disambiguate destroy lifecycle");
         assert_eq!(selected.arg_idx, 1);
@@ -2686,11 +2716,13 @@ mod tests {
                 named_in: false,
             },
         ];
+        let const_args = std::collections::BTreeSet::new();
 
         assert!(
             infer_unknown_stack_object_lifecycle_arg(
                 &args,
-                KfuncUnknownStackObjectLifecycleOp::Destroy
+                KfuncUnknownStackObjectLifecycleOp::Destroy,
+                &const_args,
             )
             .is_none(),
             "ambiguous destroy candidates should not infer lifecycle semantics"
@@ -2713,13 +2745,63 @@ mod tests {
                 named_in: true,
             },
         ];
+        let const_args = std::collections::BTreeSet::new();
 
         let selected = infer_unknown_stack_object_lifecycle_arg(
             &args,
             KfuncUnknownStackObjectLifecycleOp::Init,
+            &const_args,
         )
         .expect("expected named-out arg to identify init target");
         assert_eq!(selected.arg_idx, 0);
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_lifecycle_arg_init_prefers_writable_named_out() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+                named_in: false,
+            },
+        ];
+        let const_args: std::collections::BTreeSet<usize> = [0usize].into_iter().collect();
+
+        let selected = infer_unknown_stack_object_lifecycle_arg(
+            &args,
+            KfuncUnknownStackObjectLifecycleOp::Init,
+            &const_args,
+        )
+        .expect("expected writable named-out arg to be preferred for init");
+        assert_eq!(selected.arg_idx, 1);
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_lifecycle_arg_init_rejects_const_only_target() {
+        let args = vec![UnknownStackObjectArgInfo {
+            arg_idx: 0,
+            type_name: "bpf_wq".to_string(),
+            named_out: true,
+            named_in: false,
+        }];
+        let const_args: std::collections::BTreeSet<usize> = [0usize].into_iter().collect();
+
+        assert!(
+            infer_unknown_stack_object_lifecycle_arg(
+                &args,
+                KfuncUnknownStackObjectLifecycleOp::Init,
+                &const_args
+            )
+            .is_none(),
+            "init inference should reject const-only destination args"
+        );
     }
 
     #[test]
