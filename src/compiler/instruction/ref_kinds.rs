@@ -607,38 +607,54 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
 
 fn infer_release_arg_from_named_inputs(
     expected_kind: KfuncRefKind,
-    candidates: &[(usize, Option<KfuncRefKind>, bool)],
+    candidates: &[(usize, Option<KfuncRefKind>, bool, bool)],
 ) -> Option<usize> {
-    let mut matches = candidates.iter().filter_map(|(arg_idx, kind, named_in)| {
-        if *named_in && *kind == Some(expected_kind) {
-            Some(*arg_idx)
-        } else {
-            None
+    let select_unique = |prefer_non_const: bool| {
+        let mut matches = candidates
+            .iter()
+            .filter_map(|(arg_idx, kind, named_in, is_const)| {
+                if *named_in && *kind == Some(expected_kind) && (!prefer_non_const || !*is_const) {
+                    Some(*arg_idx)
+                } else {
+                    None
+                }
+            });
+        let first = matches.next()?;
+        if matches.next().is_some() {
+            return None;
         }
-    });
-    let first = matches.next()?;
-    if matches.next().is_some() {
-        return None;
+        Some(first)
+    };
+    if let Some(idx) = select_unique(true) {
+        return Some(idx);
     }
-    Some(first)
+    select_unique(false)
 }
 
 fn infer_unique_release_arg_from_kind(
     expected_kind: KfuncRefKind,
-    candidates: &[(usize, Option<KfuncRefKind>, bool)],
+    candidates: &[(usize, Option<KfuncRefKind>, bool, bool)],
 ) -> Option<usize> {
-    let mut matches = candidates.iter().filter_map(|(arg_idx, kind, _)| {
-        if *kind == Some(expected_kind) {
-            Some(*arg_idx)
-        } else {
-            None
+    let select_unique = |prefer_non_const: bool| {
+        let mut matches = candidates
+            .iter()
+            .filter_map(|(arg_idx, kind, _, is_const)| {
+                if *kind == Some(expected_kind) && (!prefer_non_const || !*is_const) {
+                    Some(*arg_idx)
+                } else {
+                    None
+                }
+            });
+        let first = matches.next()?;
+        if matches.next().is_some() {
+            return None;
         }
-    });
-    let first = matches.next()?;
-    if matches.next().is_some() {
-        return None;
+        Some(first)
+    };
+    if let Some(idx) = select_unique(true) {
+        return Some(idx);
     }
-    Some(first)
+    select_unique(false)
 }
 
 pub fn kfunc_release_ref_arg_index(kfunc: &str) -> Option<usize> {
@@ -651,7 +667,7 @@ pub fn kfunc_release_ref_arg_index(kfunc: &str) -> Option<usize> {
                     return Some(arg_idx);
                 }
                 if let Some(expected_kind) = kfunc_release_ref_kind(kfunc) {
-                    let mut candidates: Vec<(usize, Option<KfuncRefKind>, bool)> = Vec::new();
+                    let mut candidates: Vec<(usize, Option<KfuncRefKind>, bool, bool)> = Vec::new();
                     for arg_idx in 0..5 {
                         candidates.push((
                             arg_idx,
@@ -659,6 +675,7 @@ pub fn kfunc_release_ref_arg_index(kfunc: &str) -> Option<usize> {
                                 .kfunc_pointer_arg_ref_family(kfunc, arg_idx)
                                 .map(ref_kind_from_btf_family),
                             kernel_btf.kfunc_pointer_arg_is_named_in(kfunc, arg_idx),
+                            kernel_btf.kfunc_pointer_arg_is_const(kfunc, arg_idx),
                         ));
                     }
                     if let Some(arg_idx) =
@@ -1912,9 +1929,9 @@ mod tests {
     #[test]
     fn test_infer_release_arg_from_named_inputs_selects_unique_match() {
         let candidates = vec![
-            (0usize, Some(KfuncRefKind::Task), false),
-            (1usize, Some(KfuncRefKind::Task), true),
-            (2usize, Some(KfuncRefKind::Cgroup), true),
+            (0usize, Some(KfuncRefKind::Task), false, false),
+            (1usize, Some(KfuncRefKind::Task), true, false),
+            (2usize, Some(KfuncRefKind::Cgroup), true, false),
         ];
         assert_eq!(
             infer_release_arg_from_named_inputs(KfuncRefKind::Task, &candidates),
@@ -1925,8 +1942,8 @@ mod tests {
     #[test]
     fn test_infer_release_arg_from_named_inputs_rejects_ambiguous_match() {
         let candidates = vec![
-            (0usize, Some(KfuncRefKind::Task), true),
-            (1usize, Some(KfuncRefKind::Task), true),
+            (0usize, Some(KfuncRefKind::Task), true, false),
+            (1usize, Some(KfuncRefKind::Task), true, false),
         ];
         assert_eq!(
             infer_release_arg_from_named_inputs(KfuncRefKind::Task, &candidates),
@@ -1936,7 +1953,7 @@ mod tests {
 
     #[test]
     fn test_infer_release_arg_from_named_inputs_requires_kind_match() {
-        let candidates = vec![(0usize, Some(KfuncRefKind::Cgroup), true)];
+        let candidates = vec![(0usize, Some(KfuncRefKind::Cgroup), true, false)];
         assert_eq!(
             infer_release_arg_from_named_inputs(KfuncRefKind::Task, &candidates),
             None
@@ -1944,10 +1961,22 @@ mod tests {
     }
 
     #[test]
+    fn test_infer_release_arg_from_named_inputs_prefers_non_const() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), true, true),
+            (1usize, Some(KfuncRefKind::Task), true, false),
+        ];
+        assert_eq!(
+            infer_release_arg_from_named_inputs(KfuncRefKind::Task, &candidates),
+            Some(1)
+        );
+    }
+
+    #[test]
     fn test_infer_unique_release_arg_from_kind_selects_unique_match() {
         let candidates = vec![
-            (0usize, Some(KfuncRefKind::Task), false),
-            (1usize, Some(KfuncRefKind::Cgroup), true),
+            (0usize, Some(KfuncRefKind::Task), false, false),
+            (1usize, Some(KfuncRefKind::Cgroup), true, false),
         ];
         assert_eq!(
             infer_unique_release_arg_from_kind(KfuncRefKind::Task, &candidates),
@@ -1958,8 +1987,8 @@ mod tests {
     #[test]
     fn test_infer_unique_release_arg_from_kind_rejects_ambiguous_match() {
         let candidates = vec![
-            (0usize, Some(KfuncRefKind::Task), false),
-            (1usize, Some(KfuncRefKind::Task), true),
+            (0usize, Some(KfuncRefKind::Task), false, false),
+            (1usize, Some(KfuncRefKind::Task), true, false),
         ];
         assert_eq!(
             infer_unique_release_arg_from_kind(KfuncRefKind::Task, &candidates),
@@ -1969,10 +1998,22 @@ mod tests {
 
     #[test]
     fn test_infer_unique_release_arg_from_kind_requires_kind_match() {
-        let candidates = vec![(0usize, Some(KfuncRefKind::Cgroup), false)];
+        let candidates = vec![(0usize, Some(KfuncRefKind::Cgroup), false, false)];
         assert_eq!(
             infer_unique_release_arg_from_kind(KfuncRefKind::Task, &candidates),
             None
+        );
+    }
+
+    #[test]
+    fn test_infer_unique_release_arg_from_kind_prefers_non_const() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), false, true),
+            (1usize, Some(KfuncRefKind::Task), false, false),
+        ];
+        assert_eq!(
+            infer_unique_release_arg_from_kind(KfuncRefKind::Task, &candidates),
+            Some(1)
         );
     }
 
