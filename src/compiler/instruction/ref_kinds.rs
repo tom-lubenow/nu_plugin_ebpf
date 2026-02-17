@@ -1131,6 +1131,7 @@ pub fn kfunc_unknown_dynptr_args(kfunc: &str) -> Vec<KfuncUnknownDynptrArg> {
 fn infer_unknown_dynptr_copy_args(
     args: &[KfuncUnknownDynptrArg],
     named_in_arg_indices: &[usize],
+    const_arg_indices: &[usize],
     move_semantics: bool,
 ) -> Vec<(usize, usize)> {
     if args.len() < 2 {
@@ -1157,6 +1158,11 @@ fn infer_unknown_dynptr_copy_args(
         .copied()
         .filter(|arg_idx| named_in_arg_indices.contains(arg_idx))
         .collect();
+    let const_in_matches_all: Vec<usize> = all_args
+        .iter()
+        .copied()
+        .filter(|arg_idx| const_arg_indices.contains(arg_idx))
+        .collect();
     if out_args.is_empty() {
         // Conservative unnamed fallback: only infer when exactly two args exist.
         if all_args.len() != 2 {
@@ -1164,6 +1170,8 @@ fn infer_unknown_dynptr_copy_args(
         }
         let src_arg_idx = if named_in_matches.len() == 1 {
             named_in_matches[0]
+        } else if named_in_matches.is_empty() && const_in_matches_all.len() == 1 {
+            const_in_matches_all[0]
         } else if named_in_matches.is_empty() {
             all_args[0]
         } else {
@@ -1186,9 +1194,16 @@ fn infer_unknown_dynptr_copy_args(
         .copied()
         .filter(|arg_idx| named_in_arg_indices.contains(arg_idx))
         .collect();
+    let const_in_matches: Vec<usize> = in_args
+        .iter()
+        .copied()
+        .filter(|arg_idx| const_arg_indices.contains(arg_idx))
+        .collect();
     let src_arg_idx = if named_in_matches.len() == 1 {
         named_in_matches[0]
-    } else if named_in_matches.is_empty() && in_args.len() == 1 {
+    } else if named_in_matches.is_empty() && const_in_matches.len() == 1 {
+        const_in_matches[0]
+    } else if named_in_matches.is_empty() && const_in_matches.is_empty() && in_args.len() == 1 {
         in_args[0]
     } else {
         return Vec::new();
@@ -1224,13 +1239,19 @@ pub fn kfunc_unknown_dynptr_copy(kfunc: &str) -> Vec<KfuncUnknownDynptrCopy> {
     let Some(move_semantics) = unknown_transfer_move_semantics_from_kfunc_name(kfunc) else {
         return Vec::new();
     };
+    let kernel_btf = KernelBtf::get();
     let args = kfunc_unknown_dynptr_args(kfunc);
     let named_in_args: Vec<usize> = args
         .iter()
-        .filter(|arg| KernelBtf::get().kfunc_pointer_arg_is_named_in(kfunc, arg.arg_idx))
+        .filter(|arg| kernel_btf.kfunc_pointer_arg_is_named_in(kfunc, arg.arg_idx))
         .map(|arg| arg.arg_idx)
         .collect();
-    infer_unknown_dynptr_copy_args(&args, &named_in_args, move_semantics)
+    let const_args: Vec<usize> = args
+        .iter()
+        .filter(|arg| kernel_btf.kfunc_pointer_arg_is_const(kfunc, arg.arg_idx))
+        .map(|arg| arg.arg_idx)
+        .collect();
+    infer_unknown_dynptr_copy_args(&args, &named_in_args, &const_args, move_semantics)
         .into_iter()
         .map(|(src_arg_idx, dst_arg_idx)| KfuncUnknownDynptrCopy {
             src_arg_idx,
@@ -1392,6 +1413,42 @@ fn infer_unknown_stack_object_copy_args_for_type<'a>(
     Vec::new()
 }
 
+fn infer_unknown_stack_object_copy_args_from_const_hints<'a>(
+    args: &[&'a UnknownStackObjectArgInfo],
+    const_arg_indices: &BTreeSet<usize>,
+    move_semantics: bool,
+) -> Vec<(&'a UnknownStackObjectArgInfo, &'a UnknownStackObjectArgInfo)> {
+    if args.len() < 2 {
+        return Vec::new();
+    }
+
+    let const_sources: Vec<&UnknownStackObjectArgInfo> = args
+        .iter()
+        .copied()
+        .filter(|arg| const_arg_indices.contains(&arg.arg_idx))
+        .collect();
+    if const_sources.len() != 1 {
+        return Vec::new();
+    }
+    let src = const_sources[0];
+
+    let mut dsts: BTreeMap<usize, &UnknownStackObjectArgInfo> = BTreeMap::new();
+    for dst in args
+        .iter()
+        .copied()
+        .filter(|arg| arg.arg_idx != src.arg_idx && !const_arg_indices.contains(&arg.arg_idx))
+    {
+        dsts.insert(dst.arg_idx, dst);
+    }
+    if dsts.is_empty() {
+        return Vec::new();
+    }
+    if move_semantics && dsts.len() != 1 {
+        return Vec::new();
+    }
+    dsts.into_values().map(|dst| (src, dst)).collect()
+}
+
 #[cfg(test)]
 fn infer_unknown_stack_object_copy_args<'a>(
     args: &'a [UnknownStackObjectArgInfo],
@@ -1475,6 +1532,11 @@ pub fn kfunc_unknown_stack_object_copy(kfunc: &str) -> Vec<KfuncUnknownStackObje
     };
     let args = unknown_stack_object_args(kfunc);
     let kernel_btf = KernelBtf::get();
+    let const_pointer_args: BTreeSet<usize> = args
+        .iter()
+        .filter(|arg| kernel_btf.kfunc_pointer_arg_is_const(kfunc, arg.arg_idx))
+        .map(|arg| arg.arg_idx)
+        .collect();
     let mut args_by_identity: BTreeMap<(Option<u32>, &str), Vec<&UnknownStackObjectArgInfo>> =
         BTreeMap::new();
     for arg in &args {
@@ -1487,7 +1549,15 @@ pub fn kfunc_unknown_stack_object_copy(kfunc: &str) -> Vec<KfuncUnknownStackObje
 
     let mut copies = Vec::new();
     for type_args in args_by_identity.values() {
-        for (src, dst) in infer_unknown_stack_object_copy_args_for_type(type_args, move_semantics) {
+        let mut inferred = infer_unknown_stack_object_copy_args_for_type(type_args, move_semantics);
+        if inferred.is_empty() {
+            inferred = infer_unknown_stack_object_copy_args_from_const_hints(
+                type_args,
+                &const_pointer_args,
+                move_semantics,
+            );
+        }
+        for (src, dst) in inferred {
             copies.push(KfuncUnknownStackObjectCopy {
                 type_name: src.type_name.clone(),
                 src_arg_idx: src.arg_idx,
@@ -2039,6 +2109,108 @@ mod tests {
     }
 
     #[test]
+    fn test_infer_unknown_stack_object_copy_args_from_const_hints() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 2,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+        ];
+        let type_args: Vec<&UnknownStackObjectArgInfo> = args.iter().collect();
+        let const_args: std::collections::BTreeSet<usize> = [0usize].into_iter().collect();
+
+        let inferred =
+            infer_unknown_stack_object_copy_args_from_const_hints(&type_args, &const_args, false);
+        assert_eq!(
+            inferred.len(),
+            2,
+            "expected const source -> two destinations"
+        );
+        assert!(
+            inferred
+                .iter()
+                .any(|(src, dst)| src.arg_idx == 0 && dst.arg_idx == 1)
+        );
+        assert!(
+            inferred
+                .iter()
+                .any(|(src, dst)| src.arg_idx == 0 && dst.arg_idx == 2)
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_copy_args_from_const_hints_move_requires_single_dst() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 2,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+        ];
+        let type_args: Vec<&UnknownStackObjectArgInfo> = args.iter().collect();
+        let const_args: std::collections::BTreeSet<usize> = [0usize].into_iter().collect();
+
+        assert!(
+            infer_unknown_stack_object_copy_args_from_const_hints(&type_args, &const_args, true)
+                .is_empty(),
+            "move semantics should require a single non-const destination"
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_copy_args_from_const_hints_requires_unique_source() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+        ];
+        let type_args: Vec<&UnknownStackObjectArgInfo> = args.iter().collect();
+        let const_args: std::collections::BTreeSet<usize> = [0usize, 1usize].into_iter().collect();
+
+        assert!(
+            infer_unknown_stack_object_copy_args_from_const_hints(&type_args, &const_args, false)
+                .is_empty(),
+            "const-hint fallback should reject ambiguous const sources"
+        );
+    }
+
+    #[test]
     fn test_infer_unknown_stack_object_copy_args_requires_matching_types() {
         let args = vec![
             UnknownStackObjectArgInfo {
@@ -2282,7 +2454,7 @@ mod tests {
         ];
 
         assert_eq!(
-            infer_unknown_dynptr_copy_args(&args, &[1], false),
+            infer_unknown_dynptr_copy_args(&args, &[1], &[], false),
             vec![(1, 2)],
             "named input should disambiguate dynptr copy source"
         );
@@ -2306,7 +2478,7 @@ mod tests {
         ];
 
         assert_eq!(
-            infer_unknown_dynptr_copy_args(&args, &[], false),
+            infer_unknown_dynptr_copy_args(&args, &[], &[], false),
             Vec::<(usize, usize)>::new(),
             "multiple possible source dynptr args should not infer copy semantics"
         );
@@ -2326,7 +2498,7 @@ mod tests {
         ];
 
         assert_eq!(
-            infer_unknown_dynptr_copy_args(&args, &[], false),
+            infer_unknown_dynptr_copy_args(&args, &[], &[], false),
             vec![(0, 1)],
             "unnamed two-arg fallback should infer arg0->arg1"
         );
@@ -2346,7 +2518,7 @@ mod tests {
         ];
 
         assert_eq!(
-            infer_unknown_dynptr_copy_args(&args, &[1], false),
+            infer_unknown_dynptr_copy_args(&args, &[1], &[], false),
             vec![(1, 0)],
             "unnamed fallback should prefer the uniquely named-in source"
         );
@@ -2370,9 +2542,33 @@ mod tests {
         ];
 
         assert_eq!(
-            infer_unknown_dynptr_copy_args(&args, &[], false),
+            infer_unknown_dynptr_copy_args(&args, &[], &[], false),
             Vec::<(usize, usize)>::new(),
             "unnamed fallback should require exactly two args"
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_dynptr_copy_args_prefers_const_input_hint() {
+        let args = vec![
+            KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: KfuncUnknownDynptrArgRole::In,
+            },
+            KfuncUnknownDynptrArg {
+                arg_idx: 1,
+                role: KfuncUnknownDynptrArgRole::In,
+            },
+            KfuncUnknownDynptrArg {
+                arg_idx: 2,
+                role: KfuncUnknownDynptrArgRole::Out,
+            },
+        ];
+
+        assert_eq!(
+            infer_unknown_dynptr_copy_args(&args, &[], &[1], false),
+            vec![(1, 2)],
+            "const-qualified unique input should disambiguate dynptr source"
         );
     }
 
@@ -2394,7 +2590,7 @@ mod tests {
         ];
 
         assert_eq!(
-            infer_unknown_dynptr_copy_args(&args, &[0], false),
+            infer_unknown_dynptr_copy_args(&args, &[0], &[], false),
             vec![(0, 1), (0, 2)],
             "copy-like dynptr transfers should infer all unambiguous destination pairs"
         );
@@ -2418,7 +2614,7 @@ mod tests {
         ];
 
         assert_eq!(
-            infer_unknown_dynptr_copy_args(&args, &[0], true),
+            infer_unknown_dynptr_copy_args(&args, &[0], &[], true),
             Vec::<(usize, usize)>::new(),
             "move-like dynptr transfers should require a single destination"
         );

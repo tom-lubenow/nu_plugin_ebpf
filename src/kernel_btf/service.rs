@@ -137,6 +137,8 @@ pub struct KernelBtf {
     pt_regs_cache: RwLock<Option<Result<PtRegsOffsets, PtRegsError>>>,
     /// Cached mapping of kfunc names to nullable pointer argument indices.
     kfunc_nullable_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
+    /// Cached mapping of kfunc names to const-qualified pointer argument indices.
+    kfunc_const_pointer_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to pointer argument indices that require user-space pointers.
     kfunc_user_pointer_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to pointer argument indices that require stack pointers.
@@ -192,6 +194,7 @@ impl KernelBtf {
                 function_cache: RwLock::new(None),
                 pt_regs_cache: RwLock::new(None),
                 kfunc_nullable_arg_cache: RwLock::new(None),
+                kfunc_const_pointer_arg_cache: RwLock::new(None),
                 kfunc_user_pointer_arg_cache: RwLock::new(None),
                 kfunc_stack_pointer_arg_cache: RwLock::new(None),
                 kfunc_kernel_pointer_arg_cache: RwLock::new(None),
@@ -508,6 +511,38 @@ impl KernelBtf {
         Ok(map)
     }
 
+    fn load_kfunc_const_pointer_arg_map(&self) -> Result<HashMap<String, Vec<usize>>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let mut map: HashMap<String, Vec<usize>> = HashMap::new();
+        for ty in btf.get_types() {
+            if !ty.is_function || !Self::is_bpf_kfunc(ty) {
+                continue;
+            }
+            let Some(name) = ty.name.as_ref() else {
+                continue;
+            };
+            let Type::FunctionProto(proto) = &ty.base_type else {
+                continue;
+            };
+            let mut const_pointer_args = Vec::new();
+            for (arg_idx, param) in proto.params.iter().enumerate() {
+                if param.type_id == 0 {
+                    continue;
+                }
+                let Ok(param_ty) = btf.get_type_by_id(param.type_id) else {
+                    continue;
+                };
+                if param_ty.num_refs > 0 && param_ty.is_const {
+                    const_pointer_args.push(arg_idx);
+                }
+            }
+            if !const_pointer_args.is_empty() {
+                map.insert(name.clone(), const_pointer_args);
+            }
+        }
+        Ok(map)
+    }
+
     fn load_kfunc_stack_pointer_arg_map(&self) -> Result<HashMap<String, Vec<usize>>, BtfError> {
         let btf = self.load_kernel_btf_for_query()?;
         let mut map: HashMap<String, Vec<usize>> = HashMap::new();
@@ -722,6 +757,30 @@ impl KernelBtf {
         }
 
         is_nullable
+    }
+
+    /// Returns whether `kfunc_name` pointer argument `arg_idx` is const-qualified.
+    pub fn kfunc_pointer_arg_is_const(&self, kfunc_name: &str, arg_idx: usize) -> bool {
+        {
+            let cache = self.kfunc_const_pointer_arg_cache.read().unwrap();
+            if let Some(map) = cache.as_ref() {
+                return map
+                    .get(kfunc_name)
+                    .is_some_and(|const_args| const_args.contains(&arg_idx));
+            }
+        }
+
+        let map = self.load_kfunc_const_pointer_arg_map().unwrap_or_default();
+        let is_const = map
+            .get(kfunc_name)
+            .is_some_and(|const_args| const_args.contains(&arg_idx));
+
+        let mut cache = self.kfunc_const_pointer_arg_cache.write().unwrap();
+        if cache.is_none() {
+            *cache = Some(map);
+        }
+
+        is_const
     }
 
     /// Returns whether `kfunc_name` pointer argument `arg_idx` requires user-space pointers.
@@ -2186,6 +2245,7 @@ mod tests {
             function_cache: RwLock::new(None),
             pt_regs_cache: RwLock::new(None),
             kfunc_nullable_arg_cache: RwLock::new(None),
+            kfunc_const_pointer_arg_cache: RwLock::new(None),
             kfunc_user_pointer_arg_cache: RwLock::new(None),
             kfunc_stack_pointer_arg_cache: RwLock::new(None),
             kfunc_kernel_pointer_arg_cache: RwLock::new(None),
@@ -2448,6 +2508,13 @@ format:
         let service = make_test_service();
         assert!(!service.kfunc_pointer_arg_is_named_in("definitely_not_a_kfunc", 0));
         assert!(!service.kfunc_pointer_arg_is_named_in("definitely_not_a_kfunc", 2));
+    }
+
+    #[test]
+    fn test_kfunc_const_pointer_query_graceful_without_btf() {
+        let service = make_test_service();
+        assert!(!service.kfunc_pointer_arg_is_const("definitely_not_a_kfunc", 0));
+        assert!(!service.kfunc_pointer_arg_is_const("definitely_not_a_kfunc", 2));
     }
 
     #[test]
