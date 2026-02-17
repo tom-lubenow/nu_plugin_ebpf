@@ -218,6 +218,7 @@ Last updated: 2026-02-15.
   - Unknown-kfunc stack-object copy inference now supports signatures with additional stack-object args by inferring one or more destination transfers per unambiguous stack-object type group (named-in/named-out preferred); move-like names still require a single destination and ambiguous source selection is rejected.
   - Unknown-kfunc stack-object and dynptr copy inference now also supports conservative unnamed two-arg fallback (`arg0 -> arg1`, or unique named-in source) when BTF lacks explicit out-parameter naming.
   - Unknown-kfunc stack-object and dynptr copy inference now also consults local-kernel BTF const-pointer metadata to disambiguate source-vs-destination roles when parameter-name hints are absent.
+  - Unknown-kfunc dynptr copy inference now prefers non-const destination pointers when BTF const metadata is available, while preserving a const-destination fallback when no writable destination candidate exists.
   - Unknown-kfunc stack-object lifecycle inference now also consults local-kernel BTF const-pointer metadata to disambiguate `init`/`destroy` argument roles when parameter-name hints are ambiguous.
   - Unknown-kfunc stack-object copy inference now keys type matching by local-kernel BTF pointee type ID (with name fallback), reducing same-name type-collision ambiguity for identity-sensitive transfer modeling.
   - Unknown-kfunc stack-object transfer modeling now recognizes `*_move*` copy variants and applies move semantics (source invalidation + destination initialization) across verifier_types and VCC.

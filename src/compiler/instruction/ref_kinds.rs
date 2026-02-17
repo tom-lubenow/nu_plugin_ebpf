@@ -1173,11 +1173,19 @@ fn infer_unknown_dynptr_copy_args(
         return Vec::new();
     }
 
-    let out_args: Vec<usize> = args
+    let all_out_args: Vec<usize> = args
         .iter()
         .filter(|arg| arg.role == KfuncUnknownDynptrArgRole::Out)
         .map(|arg| arg.arg_idx)
         .collect();
+    let mut out_args: Vec<usize> = all_out_args
+        .iter()
+        .copied()
+        .filter(|arg_idx| !const_arg_indices.contains(arg_idx))
+        .collect();
+    if out_args.is_empty() {
+        out_args = all_out_args;
+    }
     let in_args: Vec<usize> = args
         .iter()
         .filter(|arg| arg.role == KfuncUnknownDynptrArgRole::In)
@@ -2771,6 +2779,50 @@ mod tests {
             infer_unknown_dynptr_copy_args(&args, &[], &[1], false),
             vec![(1, 2)],
             "const-qualified unique input should disambiguate dynptr source"
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_dynptr_copy_args_prefers_non_const_destination() {
+        let args = vec![
+            KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: KfuncUnknownDynptrArgRole::In,
+            },
+            KfuncUnknownDynptrArg {
+                arg_idx: 1,
+                role: KfuncUnknownDynptrArgRole::Out,
+            },
+            KfuncUnknownDynptrArg {
+                arg_idx: 2,
+                role: KfuncUnknownDynptrArgRole::Out,
+            },
+        ];
+
+        assert_eq!(
+            infer_unknown_dynptr_copy_args(&args, &[0], &[1], false),
+            vec![(0, 2)],
+            "copy inference should prefer non-const destinations when available"
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_dynptr_copy_args_falls_back_to_const_destination() {
+        let args = vec![
+            KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: KfuncUnknownDynptrArgRole::In,
+            },
+            KfuncUnknownDynptrArg {
+                arg_idx: 1,
+                role: KfuncUnknownDynptrArgRole::Out,
+            },
+        ];
+
+        assert_eq!(
+            infer_unknown_dynptr_copy_args(&args, &[0], &[1], false),
+            vec![(0, 1)],
+            "copy inference should still use const destination when no alternative exists"
         );
     }
 
