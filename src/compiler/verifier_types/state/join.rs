@@ -278,9 +278,9 @@ fn join_slot_depths(
 }
 
 fn join_typed_slot_depths(
-    lhs: &HashMap<(StackSlotId, String), (u32, u32)>,
-    rhs: &HashMap<(StackSlotId, String), (u32, u32)>,
-) -> HashMap<(StackSlotId, String), (u32, u32)> {
+    lhs: &HashMap<(StackSlotId, UnknownStackObjectTypeKey), (u32, u32)>,
+    rhs: &HashMap<(StackSlotId, UnknownStackObjectTypeKey), (u32, u32)>,
+) -> HashMap<(StackSlotId, UnknownStackObjectTypeKey), (u32, u32)> {
     let mut merged = HashMap::new();
     for key in lhs.keys().chain(rhs.keys()) {
         let (lhs_min, lhs_max) = lhs.get(key).copied().unwrap_or((0, 0));

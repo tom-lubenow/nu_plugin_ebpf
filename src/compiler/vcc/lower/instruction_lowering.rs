@@ -907,6 +907,7 @@ impl<'a> VccLowerer<'a> {
                             out.push(VccInst::UnknownStackObjectInit {
                                 ptr: VccReg(ptr.0),
                                 type_name: lifecycle.type_name,
+                                type_id: lifecycle.type_id,
                                 kfunc: kfunc.clone(),
                                 arg_idx: lifecycle.arg_idx,
                             });
@@ -915,6 +916,7 @@ impl<'a> VccLowerer<'a> {
                             out.push(VccInst::UnknownStackObjectDestroy {
                                 ptr: VccReg(ptr.0),
                                 type_name: lifecycle.type_name,
+                                type_id: lifecycle.type_id,
                                 kfunc: kfunc.clone(),
                                 arg_idx: lifecycle.arg_idx,
                             });
@@ -929,6 +931,7 @@ impl<'a> VccLowerer<'a> {
                             src: VccReg(src.0),
                             dst: VccReg(dst.0),
                             type_name: copy.type_name,
+                            type_id: copy.type_id,
                             kfunc: kfunc.clone(),
                             src_arg_idx: copy.src_arg_idx,
                             dst_arg_idx: copy.dst_arg_idx,

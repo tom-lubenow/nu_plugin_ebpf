@@ -422,12 +422,14 @@ pub enum VccInst {
     UnknownStackObjectInit {
         ptr: VccReg,
         type_name: String,
+        type_id: Option<u32>,
         kfunc: String,
         arg_idx: usize,
     },
     UnknownStackObjectDestroy {
         ptr: VccReg,
         type_name: String,
+        type_id: Option<u32>,
         kfunc: String,
         arg_idx: usize,
     },
@@ -435,6 +437,7 @@ pub enum VccInst {
         src: VccReg,
         dst: VccReg,
         type_name: String,
+        type_id: Option<u32>,
         kfunc: String,
         src_arg_idx: usize,
         dst_arg_idx: usize,

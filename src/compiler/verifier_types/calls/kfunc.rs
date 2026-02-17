@@ -1158,10 +1158,18 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
                     )));
                     return;
                 }
-                state.initialize_unknown_stack_object_slot(ptr, &lifecycle.type_name);
+                state.initialize_unknown_stack_object_slot(
+                    ptr,
+                    &lifecycle.type_name,
+                    lifecycle.type_id,
+                );
             }
             KfuncUnknownStackObjectLifecycleOp::Destroy => {
-                if !state.release_unknown_stack_object_slot(ptr, &lifecycle.type_name) {
+                if !state.release_unknown_stack_object_slot(
+                    ptr,
+                    &lifecycle.type_name,
+                    lifecycle.type_id,
+                ) {
                     errors.push(VerifierTypeError::new(format!(
                         "kfunc '{}' arg{} requires initialized {} stack object",
                         kfunc, lifecycle.arg_idx, lifecycle.type_name
@@ -1184,7 +1192,7 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
                     kfunc, copy.dst_arg_idx, copy.src_arg_idx
                 )));
             } else {
-                if !state.has_unknown_stack_object_slot(src_slot, &copy.type_name) {
+                if !state.has_unknown_stack_object_slot(src_slot, &copy.type_name, copy.type_id) {
                     errors.push(VerifierTypeError::new(format!(
                         "kfunc '{}' arg{} requires initialized {} stack object",
                         kfunc, copy.src_arg_idx, copy.type_name
@@ -1199,7 +1207,11 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
                     return;
                 }
                 if copy.move_semantics
-                    && !state.release_unknown_stack_object_slot(src_slot, &copy.type_name)
+                    && !state.release_unknown_stack_object_slot(
+                        src_slot,
+                        &copy.type_name,
+                        copy.type_id,
+                    )
                 {
                     errors.push(VerifierTypeError::new(format!(
                         "kfunc '{}' arg{} requires initialized {} stack object",
@@ -1207,7 +1219,7 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
                     )));
                     return;
                 }
-                state.initialize_unknown_stack_object_slot(dst_slot, &copy.type_name);
+                state.initialize_unknown_stack_object_slot(dst_slot, &copy.type_name, copy.type_id);
             }
         }
     }

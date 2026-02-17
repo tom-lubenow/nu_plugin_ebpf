@@ -1322,6 +1322,7 @@ impl VccVerifier {
             VccInst::UnknownStackObjectInit {
                 ptr,
                 type_name,
+                type_id,
                 kfunc,
                 arg_idx,
             } => {
@@ -1339,11 +1340,12 @@ impl VccVerifier {
                     ));
                     return;
                 }
-                state.initialize_unknown_stack_object_slot(slot, type_name);
+                state.initialize_unknown_stack_object_slot(slot, type_name, *type_id);
             }
             VccInst::UnknownStackObjectDestroy {
                 ptr,
                 type_name,
+                type_id,
                 kfunc,
                 arg_idx,
             } => {
@@ -1351,7 +1353,7 @@ impl VccVerifier {
                 let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
                     return;
                 };
-                if !state.release_unknown_stack_object_slot(slot, type_name) {
+                if !state.release_unknown_stack_object_slot(slot, type_name, *type_id) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         format!(
@@ -1365,6 +1367,7 @@ impl VccVerifier {
                 src,
                 dst,
                 type_name,
+                type_id,
                 kfunc,
                 src_arg_idx,
                 dst_arg_idx,
@@ -1388,7 +1391,7 @@ impl VccVerifier {
                     ));
                     return;
                 }
-                if !state.has_unknown_stack_object_slot(src_slot, type_name) {
+                if !state.has_unknown_stack_object_slot(src_slot, type_name, *type_id) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         format!(
@@ -1409,7 +1412,7 @@ impl VccVerifier {
                     return;
                 }
                 if *move_semantics
-                    && !state.release_unknown_stack_object_slot(src_slot, type_name)
+                    && !state.release_unknown_stack_object_slot(src_slot, type_name, *type_id)
                 {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
@@ -1420,7 +1423,7 @@ impl VccVerifier {
                     ));
                     return;
                 }
-                state.initialize_unknown_stack_object_slot(dst_slot, type_name);
+                state.initialize_unknown_stack_object_slot(dst_slot, type_name, *type_id);
             }
             VccInst::KfuncExpectRefKind {
                 ptr,

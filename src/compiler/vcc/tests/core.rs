@@ -543,6 +543,7 @@ fn test_unknown_stack_object_destroy_requires_initialized() {
         .push(VccInst::UnknownStackObjectDestroy {
             ptr,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_destroy".to_string(),
             arg_idx: 0,
         });
@@ -572,6 +573,7 @@ fn test_unknown_stack_object_copy_propagates_initialized_state() {
         .push(VccInst::UnknownStackObjectInit {
             ptr: src,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_new".to_string(),
             arg_idx: 0,
         });
@@ -581,6 +583,7 @@ fn test_unknown_stack_object_copy_propagates_initialized_state() {
             src,
             dst,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_copy".to_string(),
             src_arg_idx: 0,
             dst_arg_idx: 1,
@@ -591,6 +594,7 @@ fn test_unknown_stack_object_copy_propagates_initialized_state() {
         .push(VccInst::UnknownStackObjectDestroy {
             ptr: dst,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_destroy".to_string(),
             arg_idx: 0,
         });
@@ -599,6 +603,7 @@ fn test_unknown_stack_object_copy_propagates_initialized_state() {
         .push(VccInst::UnknownStackObjectDestroy {
             ptr: src,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_destroy".to_string(),
             arg_idx: 0,
         });
@@ -628,6 +633,7 @@ fn test_unknown_stack_object_move_transfers_initialized_state() {
         .push(VccInst::UnknownStackObjectInit {
             ptr: src,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_new".to_string(),
             arg_idx: 0,
         });
@@ -637,6 +643,7 @@ fn test_unknown_stack_object_move_transfers_initialized_state() {
             src,
             dst,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_move".to_string(),
             src_arg_idx: 0,
             dst_arg_idx: 1,
@@ -647,6 +654,7 @@ fn test_unknown_stack_object_move_transfers_initialized_state() {
         .push(VccInst::UnknownStackObjectDestroy {
             ptr: dst,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_destroy".to_string(),
             arg_idx: 1,
         });
@@ -676,6 +684,7 @@ fn test_unknown_stack_object_move_invalidates_source() {
         .push(VccInst::UnknownStackObjectInit {
             ptr: src,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_new".to_string(),
             arg_idx: 0,
         });
@@ -685,6 +694,7 @@ fn test_unknown_stack_object_move_invalidates_source() {
             src,
             dst,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_move".to_string(),
             src_arg_idx: 0,
             dst_arg_idx: 1,
@@ -695,6 +705,7 @@ fn test_unknown_stack_object_move_invalidates_source() {
         .push(VccInst::UnknownStackObjectDestroy {
             ptr: src,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_destroy".to_string(),
             arg_idx: 0,
         });
@@ -734,6 +745,7 @@ fn test_unknown_stack_object_copy_does_not_initialize_from_uninitialized_source(
             src,
             dst,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_copy".to_string(),
             src_arg_idx: 0,
             dst_arg_idx: 1,
@@ -744,6 +756,7 @@ fn test_unknown_stack_object_copy_does_not_initialize_from_uninitialized_source(
         .push(VccInst::UnknownStackObjectDestroy {
             ptr: dst,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_destroy".to_string(),
             arg_idx: 1,
         });
@@ -786,6 +799,7 @@ fn test_unknown_stack_object_init_requires_release_before_return() {
         .push(VccInst::UnknownStackObjectInit {
             ptr,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_new".to_string(),
             arg_idx: 0,
         });
@@ -832,6 +846,7 @@ fn test_unknown_stack_object_destroy_rejected_after_mixed_join() {
         .push(VccInst::UnknownStackObjectInit {
             ptr,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_new".to_string(),
             arg_idx: 0,
         });
@@ -843,6 +858,7 @@ fn test_unknown_stack_object_destroy_rejected_after_mixed_join() {
         .push(VccInst::UnknownStackObjectDestroy {
             ptr,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_destroy".to_string(),
             arg_idx: 0,
         });
@@ -875,6 +891,7 @@ fn test_unknown_stack_object_init_rejects_reinit_of_live_slot() {
         .push(VccInst::UnknownStackObjectInit {
             ptr,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_new".to_string(),
             arg_idx: 0,
         });
@@ -883,6 +900,7 @@ fn test_unknown_stack_object_init_rejects_reinit_of_live_slot() {
         .push(VccInst::UnknownStackObjectInit {
             ptr,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_new".to_string(),
             arg_idx: 0,
         });
@@ -891,6 +909,7 @@ fn test_unknown_stack_object_init_rejects_reinit_of_live_slot() {
         .push(VccInst::UnknownStackObjectDestroy {
             ptr,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_destroy".to_string(),
             arg_idx: 0,
         });
@@ -929,6 +948,7 @@ fn test_unknown_stack_object_copy_rejects_initialized_destination() {
         .push(VccInst::UnknownStackObjectInit {
             ptr: src,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_new".to_string(),
             arg_idx: 0,
         });
@@ -937,6 +957,7 @@ fn test_unknown_stack_object_copy_rejects_initialized_destination() {
         .push(VccInst::UnknownStackObjectInit {
             ptr: dst,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_new".to_string(),
             arg_idx: 1,
         });
@@ -946,6 +967,7 @@ fn test_unknown_stack_object_copy_rejects_initialized_destination() {
             src,
             dst,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_copy".to_string(),
             src_arg_idx: 0,
             dst_arg_idx: 1,
@@ -956,6 +978,7 @@ fn test_unknown_stack_object_copy_rejects_initialized_destination() {
         .push(VccInst::UnknownStackObjectDestroy {
             ptr: src,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_destroy".to_string(),
             arg_idx: 0,
         });
@@ -964,6 +987,7 @@ fn test_unknown_stack_object_copy_rejects_initialized_destination() {
         .push(VccInst::UnknownStackObjectDestroy {
             ptr: dst,
             type_name: "bpf_wq".to_string(),
+            type_id: None,
             kfunc: "unknown_wq_destroy".to_string(),
             arg_idx: 1,
         });

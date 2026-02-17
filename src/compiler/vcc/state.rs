@@ -1,3 +1,12 @@
+type UnknownStackObjectTypeKey = (String, Option<u32>);
+
+fn unknown_stack_object_type_key(
+    type_name: &str,
+    type_id: Option<u32>,
+) -> UnknownStackObjectTypeKey {
+    (type_name.to_string(), type_id)
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct VccState {
     reg_types: HashMap<VccReg, VccValueType>,
@@ -44,7 +53,7 @@ struct VccState {
     res_spin_lock_irqsave_max_depth: u32,
     res_spin_lock_irqsave_slots: HashMap<StackSlotId, (u32, u32)>,
     dynptr_initialized_slots: HashSet<StackSlotId>,
-    unknown_stack_object_slots: HashMap<(StackSlotId, String), (u32, u32)>,
+    unknown_stack_object_slots: HashMap<(StackSlotId, UnknownStackObjectTypeKey), (u32, u32)>,
     cond_refinements: HashMap<VccReg, VccCondRefinement>,
     reachable: bool,
 }
@@ -598,23 +607,38 @@ impl VccState {
         self.dynptr_initialized_slots.remove(&slot);
     }
 
-    fn initialize_unknown_stack_object_slot(&mut self, slot: StackSlotId, type_name: &str) {
+    fn initialize_unknown_stack_object_slot(
+        &mut self,
+        slot: StackSlotId,
+        type_name: &str,
+        type_id: Option<u32>,
+    ) {
         increment_typed_slot_depth(
             &mut self.unknown_stack_object_slots,
-            (slot, type_name.to_string()),
+            (slot, unknown_stack_object_type_key(type_name, type_id)),
         );
     }
 
-    fn has_unknown_stack_object_slot(&self, slot: StackSlotId, type_name: &str) -> bool {
+    fn has_unknown_stack_object_slot(
+        &self,
+        slot: StackSlotId,
+        type_name: &str,
+        type_id: Option<u32>,
+    ) -> bool {
         self.unknown_stack_object_slots
-            .get(&(slot, type_name.to_string()))
+            .get(&(slot, unknown_stack_object_type_key(type_name, type_id)))
             .is_some_and(|(min_depth, _)| *min_depth > 0)
     }
 
-    fn release_unknown_stack_object_slot(&mut self, slot: StackSlotId, type_name: &str) -> bool {
+    fn release_unknown_stack_object_slot(
+        &mut self,
+        slot: StackSlotId,
+        type_name: &str,
+        type_id: Option<u32>,
+    ) -> bool {
         decrement_typed_slot_depth(
             &mut self.unknown_stack_object_slots,
-            (slot, type_name.to_string()),
+            (slot, unknown_stack_object_type_key(type_name, type_id)),
         )
     }
 
@@ -622,7 +646,7 @@ impl VccState {
         self.unknown_stack_object_slots
             .iter()
             .find(|(_, (_, max_depth))| *max_depth > 0)
-            .map(|((slot, type_name), _)| (*slot, type_name.clone()))
+            .map(|((slot, (type_name, _)), _)| (*slot, type_name.clone()))
     }
 
     fn has_live_unknown_stack_object_slot(&self, slot: StackSlotId) -> bool {
@@ -1219,8 +1243,8 @@ fn merge_slot_depths(
 }
 
 fn increment_typed_slot_depth(
-    depths: &mut HashMap<(StackSlotId, String), (u32, u32)>,
-    slot: (StackSlotId, String),
+    depths: &mut HashMap<(StackSlotId, UnknownStackObjectTypeKey), (u32, u32)>,
+    slot: (StackSlotId, UnknownStackObjectTypeKey),
 ) {
     let entry = depths.entry(slot).or_insert((0, 0));
     entry.0 = entry.0.saturating_add(1);
@@ -1228,8 +1252,8 @@ fn increment_typed_slot_depth(
 }
 
 fn decrement_typed_slot_depth(
-    depths: &mut HashMap<(StackSlotId, String), (u32, u32)>,
-    slot: (StackSlotId, String),
+    depths: &mut HashMap<(StackSlotId, UnknownStackObjectTypeKey), (u32, u32)>,
+    slot: (StackSlotId, UnknownStackObjectTypeKey),
 ) -> bool {
     let Some((min_depth, max_depth)) = depths.get_mut(&slot) else {
         return false;
@@ -1246,9 +1270,9 @@ fn decrement_typed_slot_depth(
 }
 
 fn merge_typed_slot_depths(
-    lhs: &HashMap<(StackSlotId, String), (u32, u32)>,
-    rhs: &HashMap<(StackSlotId, String), (u32, u32)>,
-) -> HashMap<(StackSlotId, String), (u32, u32)> {
+    lhs: &HashMap<(StackSlotId, UnknownStackObjectTypeKey), (u32, u32)>,
+    rhs: &HashMap<(StackSlotId, UnknownStackObjectTypeKey), (u32, u32)>,
+) -> HashMap<(StackSlotId, UnknownStackObjectTypeKey), (u32, u32)> {
     let mut merged = HashMap::new();
     for key in lhs.keys().chain(rhs.keys()) {
         let (lhs_min, lhs_max) = lhs.get(key).copied().unwrap_or((0, 0));

@@ -24,18 +24,18 @@ fn test_dynptr_initialized_slots_join_requires_all_paths() {
 fn test_unknown_stack_object_slots_join_requires_all_paths() {
     let slot = StackSlotId(11);
     let mut initialized = VerifierState::new(1);
-    initialized.initialize_unknown_stack_object_slot(slot, "bpf_wq");
+    initialized.initialize_unknown_stack_object_slot(slot, "bpf_wq", None);
     let uninitialized = VerifierState::new(1);
 
     let merged = initialized.join(&uninitialized);
     assert!(
-        !merged.has_unknown_stack_object_slot(slot, "bpf_wq"),
+        !merged.has_unknown_stack_object_slot(slot, "bpf_wq", None),
         "unknown stack-object slot initialization should require all incoming paths"
     );
 
     let merged_initialized = initialized.join(&initialized);
     assert!(
-        merged_initialized.has_unknown_stack_object_slot(slot, "bpf_wq"),
+        merged_initialized.has_unknown_stack_object_slot(slot, "bpf_wq", None),
         "unknown stack-object slot initialization should be preserved when all paths initialize"
     );
 }
@@ -44,12 +44,12 @@ fn test_unknown_stack_object_slots_join_requires_all_paths() {
 fn test_unknown_stack_object_slots_join_tracks_maybe_live_for_exit_checks() {
     let slot = StackSlotId(13);
     let mut initialized = VerifierState::new(1);
-    initialized.initialize_unknown_stack_object_slot(slot, "bpf_wq");
+    initialized.initialize_unknown_stack_object_slot(slot, "bpf_wq", None);
     let uninitialized = VerifierState::new(1);
 
     let merged = initialized.join(&uninitialized);
     assert!(
-        !merged.has_unknown_stack_object_slot(slot, "bpf_wq"),
+        !merged.has_unknown_stack_object_slot(slot, "bpf_wq", None),
         "unknown stack-object use/release should still require all incoming paths"
     );
     assert!(
@@ -67,14 +67,14 @@ fn test_unknown_stack_object_slot_live_presence() {
         "slot should start with no live unknown stack object state"
     );
 
-    state.initialize_unknown_stack_object_slot(slot, "bpf_wq");
+    state.initialize_unknown_stack_object_slot(slot, "bpf_wq", None);
     assert!(
         state.has_live_unknown_stack_object_slot(slot),
         "initialized slot should be considered live"
     );
 
     assert!(
-        state.release_unknown_stack_object_slot(slot, "bpf_wq"),
+        state.release_unknown_stack_object_slot(slot, "bpf_wq", None),
         "release should succeed for initialized slot"
     );
     assert!(

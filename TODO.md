@@ -224,6 +224,7 @@ Last updated: 2026-02-15.
   - Unknown-kfunc dynptr/stack-object move inference now requires writable destinations when BTF const metadata is available (const-destination fallback remains copy-like only).
   - Unknown-kfunc stack-object lifecycle inference now also consults local-kernel BTF const-pointer metadata to disambiguate `init`/`destroy` argument roles when parameter-name hints are ambiguous, and now requires writable `init` destinations when const metadata is available.
   - Unknown-kfunc stack-object copy inference now keys type matching by local-kernel BTF pointee type ID (with name fallback), reducing same-name type-collision ambiguity for identity-sensitive transfer modeling.
+  - Verifier_types and VCC unknown stack-object state tracking now keys lifecycle/copy state by `(type_name, BTF type_id)` identity (when available), reducing cross-family same-name collisions in initialized/released slot tracking.
   - Unknown-kfunc stack-object transfer modeling now recognizes `*_move*` copy variants and applies move semantics (source invalidation + destination initialization) across verifier_types and VCC.
   - Unknown-kfunc transfer-name inference now also treats `*_assign*` as copy-like (non-move) for dynptr/stack-object transfer modeling.
   - Unknown-kfunc transfer-name inference now also treats `*_from_*` forms as copy-like (non-move), improving constructor-style transfer coverage when arg-role/type matching is unambiguous.

@@ -124,6 +124,7 @@ pub enum KfuncUnknownStackObjectLifecycleOp {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KfuncUnknownStackObjectLifecycle {
     pub type_name: String,
+    pub type_id: Option<u32>,
     pub op: KfuncUnknownStackObjectLifecycleOp,
     pub arg_idx: usize,
 }
@@ -131,6 +132,7 @@ pub struct KfuncUnknownStackObjectLifecycle {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KfuncUnknownStackObjectCopy {
     pub type_name: String,
+    pub type_id: Option<u32>,
     pub src_arg_idx: usize,
     pub dst_arg_idx: usize,
     pub move_semantics: bool,
@@ -1752,6 +1754,7 @@ pub fn kfunc_unknown_stack_object_lifecycle(
     })?;
     Some(KfuncUnknownStackObjectLifecycle {
         type_name: arg.type_name.clone(),
+        type_id: kernel_btf.kfunc_pointer_arg_stack_object_type_id(kfunc, arg.arg_idx),
         op,
         arg_idx: arg.arg_idx,
     })
@@ -1809,6 +1812,7 @@ pub fn kfunc_unknown_stack_object_copy(kfunc: &str) -> Vec<KfuncUnknownStackObje
         for (src, dst) in inferred {
             copies.push(KfuncUnknownStackObjectCopy {
                 type_name: src.type_name.clone(),
+                type_id: kernel_btf.kfunc_pointer_arg_stack_object_type_id(kfunc, src.arg_idx),
                 src_arg_idx: src.arg_idx,
                 dst_arg_idx: dst.arg_idx,
                 move_semantics,

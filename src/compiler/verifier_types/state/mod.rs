@@ -4,6 +4,8 @@ use std::collections::HashSet;
 mod join;
 mod refs;
 
+type UnknownStackObjectTypeKey = (String, Option<u32>);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Nullability {
     NonNull,
@@ -145,7 +147,7 @@ pub(super) struct VerifierState {
     res_spin_lock_irqsave_max_depth: u32,
     res_spin_lock_irqsave_slots: HashMap<StackSlotId, (u32, u32)>,
     dynptr_initialized_slots: HashSet<StackSlotId>,
-    unknown_stack_object_slots: HashMap<(StackSlotId, String), (u32, u32)>,
+    unknown_stack_object_slots: HashMap<(StackSlotId, UnknownStackObjectTypeKey), (u32, u32)>,
     reachable: bool,
     guards: HashMap<VReg, Guard>,
 }
