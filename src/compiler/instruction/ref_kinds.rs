@@ -490,6 +490,10 @@ fn should_infer_unknown_acquire_ref(
         || kfunc.contains("_alloc")
         || kfunc.starts_with("bpf_get_")
         || kfunc.starts_with("scx_bpf_get_")
+        || kfunc.contains("_get_")
+        || kfunc.ends_with("_get")
+        || kfunc.contains("_dup")
+        || kfunc.contains("_clone")
         || (kind == KfuncRefKind::Socket && kfunc.contains("lookup"))
         || !has_same_family_arg
 }
@@ -1599,6 +1603,26 @@ mod tests {
         ));
         assert!(should_infer_unknown_acquire_ref(
             "bpf_get_foo_task",
+            KfuncRefKind::Task,
+            true
+        ));
+        assert!(should_infer_unknown_acquire_ref(
+            "foo_get_task",
+            KfuncRefKind::Task,
+            true
+        ));
+        assert!(should_infer_unknown_acquire_ref(
+            "foo_task_get",
+            KfuncRefKind::Task,
+            true
+        ));
+        assert!(should_infer_unknown_acquire_ref(
+            "foo_task_dup",
+            KfuncRefKind::Task,
+            true
+        ));
+        assert!(should_infer_unknown_acquire_ref(
+            "foo_task_clone",
             KfuncRefKind::Task,
             true
         ));
