@@ -1392,6 +1392,7 @@ fn infer_unknown_stack_object_copy_args_for_type<'a>(
     Vec::new()
 }
 
+#[cfg(test)]
 fn infer_unknown_stack_object_copy_args<'a>(
     args: &'a [UnknownStackObjectArgInfo],
     move_semantics: bool,
@@ -1473,15 +1474,29 @@ pub fn kfunc_unknown_stack_object_copy(kfunc: &str) -> Vec<KfuncUnknownStackObje
         return Vec::new();
     };
     let args = unknown_stack_object_args(kfunc);
-    infer_unknown_stack_object_copy_args(&args, move_semantics)
-        .into_iter()
-        .map(|(src, dst)| KfuncUnknownStackObjectCopy {
-            type_name: src.type_name.clone(),
-            src_arg_idx: src.arg_idx,
-            dst_arg_idx: dst.arg_idx,
-            move_semantics,
-        })
-        .collect()
+    let kernel_btf = KernelBtf::get();
+    let mut args_by_identity: BTreeMap<(Option<u32>, &str), Vec<&UnknownStackObjectArgInfo>> =
+        BTreeMap::new();
+    for arg in &args {
+        let identity = (
+            kernel_btf.kfunc_pointer_arg_stack_object_type_id(kfunc, arg.arg_idx),
+            arg.type_name.as_str(),
+        );
+        args_by_identity.entry(identity).or_default().push(arg);
+    }
+
+    let mut copies = Vec::new();
+    for type_args in args_by_identity.values() {
+        for (src, dst) in infer_unknown_stack_object_copy_args_for_type(type_args, move_semantics) {
+            copies.push(KfuncUnknownStackObjectCopy {
+                type_name: src.type_name.clone(),
+                src_arg_idx: src.arg_idx,
+                dst_arg_idx: dst.arg_idx,
+                move_semantics,
+            });
+        }
+    }
+    copies
 }
 
 pub fn kfunc_pointer_arg_allows_const_zero(kfunc: &str, arg_idx: usize) -> bool {

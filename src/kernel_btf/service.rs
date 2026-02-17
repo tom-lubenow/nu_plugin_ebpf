@@ -162,8 +162,9 @@ pub struct KernelBtf {
     kfunc_out_pointer_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to pointer args inferred as by-reference input parameters.
     kfunc_in_pointer_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
-    /// Cached mapping of kfunc names to stack-object pointer argument type names.
-    kfunc_stack_object_arg_cache: RwLock<Option<HashMap<String, Vec<(usize, String)>>>>,
+    /// Cached mapping of kfunc names to stack-object pointer argument metadata.
+    /// Tuple format: `(arg_idx, pointee_type_id, pointee_type_name)`.
+    kfunc_stack_object_arg_cache: RwLock<Option<HashMap<String, Vec<(usize, u32, String)>>>>,
     /// Cached mapping of kfunc names to pointer argument fixed access sizes.
     kfunc_pointer_fixed_size_cache: RwLock<Option<HashMap<String, Vec<(usize, usize)>>>>,
     /// Cached mapping of kfunc names to inferred coarse signatures.
@@ -1198,9 +1199,9 @@ impl KernelBtf {
 
     fn load_kfunc_stack_object_arg_map(
         &self,
-    ) -> Result<HashMap<String, Vec<(usize, String)>>, BtfError> {
+    ) -> Result<HashMap<String, Vec<(usize, u32, String)>>, BtfError> {
         let btf = self.load_kernel_btf_for_query()?;
-        let mut map: HashMap<String, Vec<(usize, String)>> = HashMap::new();
+        let mut map: HashMap<String, Vec<(usize, u32, String)>> = HashMap::new();
         for ty in btf.get_types() {
             if !ty.is_function || !Self::is_bpf_kfunc(ty) {
                 continue;
@@ -1229,7 +1230,7 @@ impl KernelBtf {
                 if !Self::is_stack_object_type_name(type_name) {
                     continue;
                 }
-                stack_object_args.push((arg_idx, type_name.to_string()));
+                stack_object_args.push((arg_idx, param_ty.type_id, type_name.to_string()));
             }
             if !stack_object_args.is_empty() {
                 map.insert(name.clone(), stack_object_args);
@@ -1579,16 +1580,16 @@ impl KernelBtf {
             if let Some(map) = cache.as_ref() {
                 return map
                     .get(kfunc_name)
-                    .and_then(|args| args.iter().find(|(idx, _)| *idx == arg_idx))
-                    .map(|(_, type_name)| type_name.clone());
+                    .and_then(|args| args.iter().find(|(idx, _, _)| *idx == arg_idx))
+                    .map(|(_, _, type_name)| type_name.clone());
             }
         }
 
         let map = self.load_kfunc_stack_object_arg_map().unwrap_or_default();
         let type_name = map
             .get(kfunc_name)
-            .and_then(|args| args.iter().find(|(idx, _)| *idx == arg_idx))
-            .map(|(_, type_name)| type_name.clone());
+            .and_then(|args| args.iter().find(|(idx, _, _)| *idx == arg_idx))
+            .map(|(_, _, type_name)| type_name.clone());
 
         let mut cache = self.kfunc_stack_object_arg_cache.write().unwrap();
         if cache.is_none() {
@@ -1596,6 +1597,36 @@ impl KernelBtf {
         }
 
         type_name
+    }
+
+    /// Returns the inferred stack-object pointee type ID for a pointer argument, if any.
+    pub fn kfunc_pointer_arg_stack_object_type_id(
+        &self,
+        kfunc_name: &str,
+        arg_idx: usize,
+    ) -> Option<u32> {
+        {
+            let cache = self.kfunc_stack_object_arg_cache.read().unwrap();
+            if let Some(map) = cache.as_ref() {
+                return map
+                    .get(kfunc_name)
+                    .and_then(|args| args.iter().find(|(idx, _, _)| *idx == arg_idx))
+                    .map(|(_, type_id, _)| *type_id);
+            }
+        }
+
+        let map = self.load_kfunc_stack_object_arg_map().unwrap_or_default();
+        let type_id = map
+            .get(kfunc_name)
+            .and_then(|args| args.iter().find(|(idx, _, _)| *idx == arg_idx))
+            .map(|(_, type_id, _)| *type_id);
+
+        let mut cache = self.kfunc_stack_object_arg_cache.write().unwrap();
+        if cache.is_none() {
+            *cache = Some(map);
+        }
+
+        type_id
     }
 
     /// Load the list of available kernel functions (lazy, cached)
@@ -2428,6 +2459,19 @@ format:
         );
         assert_eq!(
             service.kfunc_pointer_arg_stack_object_type_name("definitely_not_a_kfunc", 2),
+            None
+        );
+    }
+
+    #[test]
+    fn test_kfunc_stack_object_type_id_query_graceful_without_btf() {
+        let service = make_test_service();
+        assert_eq!(
+            service.kfunc_pointer_arg_stack_object_type_id("definitely_not_a_kfunc", 0),
+            None
+        );
+        assert_eq!(
+            service.kfunc_pointer_arg_stack_object_type_id("definitely_not_a_kfunc", 2),
             None
         );
     }
