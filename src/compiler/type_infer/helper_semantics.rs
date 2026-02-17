@@ -86,7 +86,7 @@ impl<'a> TypeInference<'a> {
         kfunc_scalar_arg_requires_positive_shared(kfunc, arg_idx)
     }
 
-    pub(super) fn kfunc_unknown_dynptr_copy(kfunc: &str) -> Option<KfuncUnknownDynptrCopy> {
+    pub(super) fn kfunc_unknown_dynptr_copy(kfunc: &str) -> Vec<KfuncUnknownDynptrCopy> {
         kfunc_unknown_dynptr_copy_shared(kfunc)
     }
 
@@ -531,22 +531,23 @@ impl<'a> TypeInference<'a> {
             }
         }
 
-        if let Some(copy) = Self::kfunc_unknown_dynptr_copy(kfunc)
-            && let (Some(src), Some(dst)) = (args.get(copy.src_arg_idx), args.get(copy.dst_arg_idx))
-        {
-            let src_slot = stack_bounds
-                .get(src)
-                .filter(|bounds| bounds.min == 0 && bounds.max == 0)
-                .map(|bounds| bounds.slot);
-            let dst_slot = stack_bounds
-                .get(dst)
-                .filter(|bounds| bounds.min == 0 && bounds.max == 0)
-                .map(|bounds| bounds.slot);
-            if src_slot.is_some() && src_slot == dst_slot {
-                errors.push(TypeError::new(format!(
-                    "kfunc '{}' arg{} must reference distinct stack slot from arg{}",
-                    kfunc, copy.dst_arg_idx, copy.src_arg_idx
-                )));
+        for copy in Self::kfunc_unknown_dynptr_copy(kfunc) {
+            if let (Some(src), Some(dst)) = (args.get(copy.src_arg_idx), args.get(copy.dst_arg_idx))
+            {
+                let src_slot = stack_bounds
+                    .get(src)
+                    .filter(|bounds| bounds.min == 0 && bounds.max == 0)
+                    .map(|bounds| bounds.slot);
+                let dst_slot = stack_bounds
+                    .get(dst)
+                    .filter(|bounds| bounds.min == 0 && bounds.max == 0)
+                    .map(|bounds| bounds.slot);
+                if src_slot.is_some() && src_slot == dst_slot {
+                    errors.push(TypeError::new(format!(
+                        "kfunc '{}' arg{} must reference distinct stack slot from arg{}",
+                        kfunc, copy.dst_arg_idx, copy.src_arg_idx
+                    )));
+                }
             }
         }
 

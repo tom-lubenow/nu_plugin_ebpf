@@ -486,7 +486,7 @@ pub(in crate::compiler::verifier_types) fn kfunc_unknown_dynptr_args(
 
 pub(in crate::compiler::verifier_types) fn kfunc_unknown_dynptr_copy(
     kfunc: &str,
-) -> Option<KfuncUnknownDynptrCopy> {
+) -> Vec<KfuncUnknownDynptrCopy> {
     kfunc_unknown_dynptr_copy_shared(kfunc)
 }
 
@@ -1077,7 +1077,7 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
         }
         return;
     }
-    let unknown_dynptr_copy = kfunc_unknown_dynptr_copy(kfunc);
+    let unknown_dynptr_copies = kfunc_unknown_dynptr_copy(kfunc);
     let unknown_dynptr_args = kfunc_unknown_dynptr_args(kfunc);
     if !unknown_dynptr_args.is_empty() {
         for dynptr_arg in &unknown_dynptr_args {
@@ -1097,8 +1097,9 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
                     }
                 }
                 KfuncUnknownDynptrArgRole::Out => {
-                    if unknown_dynptr_copy
-                        .is_some_and(|copy| copy.dst_arg_idx == dynptr_arg.arg_idx)
+                    if unknown_dynptr_copies
+                        .iter()
+                        .any(|copy| copy.dst_arg_idx == dynptr_arg.arg_idx)
                     {
                         continue;
                     }
@@ -1113,31 +1114,30 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
                 }
             }
         }
-        if let Some(copy) = unknown_dynptr_copy
-            && let (Some(src), Some(dst)) = (
+        for copy in unknown_dynptr_copies {
+            if let (Some(src), Some(dst)) = (
                 args.get(copy.src_arg_idx).copied(),
                 args.get(copy.dst_arg_idx).copied(),
-            )
-            && let (Some(src_slot), Some(dst_slot)) = (
+            ) && let (Some(src_slot), Some(dst_slot)) = (
                 stack_slot_from_arg(state, src),
                 stack_slot_from_arg(state, dst),
-            )
-        {
-            if src_slot == dst_slot {
-                errors.push(VerifierTypeError::new(format!(
-                    "kfunc '{}' arg{} must reference distinct stack slot from arg{}",
-                    kfunc, copy.dst_arg_idx, copy.src_arg_idx
-                )));
-            } else if state.is_dynptr_slot_initialized(dst_slot) {
-                errors.push(VerifierTypeError::new(format!(
-                    "kfunc '{}' arg{} requires uninitialized dynptr stack object slot",
-                    kfunc, copy.dst_arg_idx
-                )));
-            } else if state.is_dynptr_slot_initialized(src_slot) {
-                if copy.move_semantics {
-                    state.deinitialize_dynptr_slot(src_slot);
+            ) {
+                if src_slot == dst_slot {
+                    errors.push(VerifierTypeError::new(format!(
+                        "kfunc '{}' arg{} must reference distinct stack slot from arg{}",
+                        kfunc, copy.dst_arg_idx, copy.src_arg_idx
+                    )));
+                } else if state.is_dynptr_slot_initialized(dst_slot) {
+                    errors.push(VerifierTypeError::new(format!(
+                        "kfunc '{}' arg{} requires uninitialized dynptr stack object slot",
+                        kfunc, copy.dst_arg_idx
+                    )));
+                } else if state.is_dynptr_slot_initialized(src_slot) {
+                    if copy.move_semantics {
+                        state.deinitialize_dynptr_slot(src_slot);
+                    }
+                    state.initialize_dynptr_slot(dst_slot);
                 }
-                state.initialize_dynptr_slot(dst_slot);
             }
         }
     }

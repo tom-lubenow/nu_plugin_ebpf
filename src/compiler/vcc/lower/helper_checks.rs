@@ -293,7 +293,7 @@ impl<'a> VccLowerer<'a> {
 
     pub(super) fn kfunc_unknown_dynptr_copy(
         kfunc: &str,
-    ) -> Option<KfuncUnknownDynptrCopy> {
+    ) -> Vec<KfuncUnknownDynptrCopy> {
         kfunc_unknown_dynptr_copy_shared(kfunc)
     }
 

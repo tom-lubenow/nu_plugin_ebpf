@@ -855,7 +855,7 @@ impl<'a> VccLowerer<'a> {
                         }
                     }
                 }
-                let unknown_dynptr_copy = Self::kfunc_unknown_dynptr_copy(kfunc);
+                let unknown_dynptr_copies = Self::kfunc_unknown_dynptr_copy(kfunc);
                 let unknown_dynptr_args = Self::kfunc_unknown_dynptr_args(kfunc);
                 for dynptr_arg in &unknown_dynptr_args {
                     if let Some(ptr) = args.get(dynptr_arg.arg_idx) {
@@ -868,8 +868,9 @@ impl<'a> VccLowerer<'a> {
                                 });
                             }
                             KfuncUnknownDynptrArgRole::Out => {
-                                if unknown_dynptr_copy
-                                    .is_some_and(|copy| copy.dst_arg_idx == dynptr_arg.arg_idx)
+                                if unknown_dynptr_copies
+                                    .iter()
+                                    .any(|copy| copy.dst_arg_idx == dynptr_arg.arg_idx)
                                 {
                                     continue;
                                 }
@@ -882,18 +883,19 @@ impl<'a> VccLowerer<'a> {
                         }
                     }
                 }
-                if let Some(copy) = unknown_dynptr_copy
-                    && let (Some(src), Some(dst)) =
+                for copy in unknown_dynptr_copies {
+                    if let (Some(src), Some(dst)) =
                         (args.get(copy.src_arg_idx), args.get(copy.dst_arg_idx))
-                {
-                    out.push(VccInst::DynptrCopy {
-                        src: VccReg(src.0),
-                        dst: VccReg(dst.0),
-                        kfunc: kfunc.clone(),
-                        src_arg_idx: copy.src_arg_idx,
-                        dst_arg_idx: copy.dst_arg_idx,
-                        move_semantics: copy.move_semantics,
-                    });
+                    {
+                        out.push(VccInst::DynptrCopy {
+                            src: VccReg(src.0),
+                            dst: VccReg(dst.0),
+                            kfunc: kfunc.clone(),
+                            src_arg_idx: copy.src_arg_idx,
+                            dst_arg_idx: copy.dst_arg_idx,
+                            move_semantics: copy.move_semantics,
+                        });
+                    }
                 }
                 let unknown_stack_object_copies = Self::kfunc_unknown_stack_object_copy(kfunc);
                 if unknown_stack_object_copies.is_empty()

@@ -1127,41 +1127,49 @@ pub fn kfunc_unknown_dynptr_args(kfunc: &str) -> Vec<KfuncUnknownDynptrArg> {
 fn infer_unknown_dynptr_copy_args(
     args: &[KfuncUnknownDynptrArg],
     named_in_arg_indices: &[usize],
-) -> Option<(usize, usize)> {
+    move_semantics: bool,
+) -> Vec<(usize, usize)> {
     if args.len() < 2 {
-        return None;
+        return Vec::new();
     }
 
-    let out_args: Vec<&KfuncUnknownDynptrArg> = args
+    let out_args: Vec<usize> = args
         .iter()
         .filter(|arg| arg.role == KfuncUnknownDynptrArgRole::Out)
+        .map(|arg| arg.arg_idx)
         .collect();
-    if out_args.len() != 1 {
-        return None;
+    if out_args.is_empty() {
+        return Vec::new();
     }
-    let dst = out_args[0].arg_idx;
 
-    let in_args: Vec<&KfuncUnknownDynptrArg> = args
+    let in_args: Vec<usize> = args
         .iter()
         .filter(|arg| arg.role == KfuncUnknownDynptrArgRole::In)
+        .map(|arg| arg.arg_idx)
         .collect();
     if in_args.is_empty() {
-        return None;
+        return Vec::new();
     }
 
-    let named_in_matches: Vec<&KfuncUnknownDynptrArg> = in_args
+    let named_in_matches: Vec<usize> = in_args
         .iter()
         .copied()
-        .filter(|arg| named_in_arg_indices.contains(&arg.arg_idx))
+        .filter(|arg_idx| named_in_arg_indices.contains(arg_idx))
         .collect();
-    if named_in_matches.len() == 1 {
-        return Some((named_in_matches[0].arg_idx, dst));
+    let src_arg_idx = if named_in_matches.len() == 1 {
+        named_in_matches[0]
+    } else if named_in_matches.is_empty() && in_args.len() == 1 {
+        in_args[0]
+    } else {
+        return Vec::new();
+    };
+    if move_semantics && out_args.len() != 1 {
+        return Vec::new();
     }
-    if in_args.len() == 1 {
-        return Some((in_args[0].arg_idx, dst));
-    }
-
-    None
+    out_args
+        .into_iter()
+        .map(|dst_arg_idx| (src_arg_idx, dst_arg_idx))
+        .collect()
 }
 
 fn unknown_transfer_move_semantics_from_kfunc_name(kfunc: &str) -> Option<bool> {
@@ -1177,23 +1185,27 @@ fn unknown_transfer_move_semantics_from_kfunc_name(kfunc: &str) -> Option<bool> 
     Some(has_move_like && !has_copy_like)
 }
 
-pub fn kfunc_unknown_dynptr_copy(kfunc: &str) -> Option<KfuncUnknownDynptrCopy> {
+pub fn kfunc_unknown_dynptr_copy(kfunc: &str) -> Vec<KfuncUnknownDynptrCopy> {
     if KfuncSignature::for_name(kfunc).is_some() {
-        return None;
+        return Vec::new();
     }
-    let move_semantics = unknown_transfer_move_semantics_from_kfunc_name(kfunc)?;
+    let Some(move_semantics) = unknown_transfer_move_semantics_from_kfunc_name(kfunc) else {
+        return Vec::new();
+    };
     let args = kfunc_unknown_dynptr_args(kfunc);
     let named_in_args: Vec<usize> = args
         .iter()
         .filter(|arg| KernelBtf::get().kfunc_pointer_arg_is_named_in(kfunc, arg.arg_idx))
         .map(|arg| arg.arg_idx)
         .collect();
-    let (src_arg_idx, dst_arg_idx) = infer_unknown_dynptr_copy_args(&args, &named_in_args)?;
-    Some(KfuncUnknownDynptrCopy {
-        src_arg_idx,
-        dst_arg_idx,
-        move_semantics,
-    })
+    infer_unknown_dynptr_copy_args(&args, &named_in_args, move_semantics)
+        .into_iter()
+        .map(|(src_arg_idx, dst_arg_idx)| KfuncUnknownDynptrCopy {
+            src_arg_idx,
+            dst_arg_idx,
+            move_semantics,
+        })
+        .collect()
 }
 
 fn unknown_stack_object_lifecycle_op_from_kfunc_name(
@@ -1966,8 +1978,8 @@ mod tests {
         ];
 
         assert_eq!(
-            infer_unknown_dynptr_copy_args(&args, &[1]),
-            Some((1, 2)),
+            infer_unknown_dynptr_copy_args(&args, &[1], false),
+            vec![(1, 2)],
             "named input should disambiguate dynptr copy source"
         );
     }
@@ -1990,14 +2002,14 @@ mod tests {
         ];
 
         assert_eq!(
-            infer_unknown_dynptr_copy_args(&args, &[]),
-            None,
+            infer_unknown_dynptr_copy_args(&args, &[], false),
+            Vec::<(usize, usize)>::new(),
             "multiple possible source dynptr args should not infer copy semantics"
         );
     }
 
     #[test]
-    fn test_infer_unknown_dynptr_copy_args_requires_single_destination() {
+    fn test_infer_unknown_dynptr_copy_args_allows_multiple_destinations_for_copy() {
         let args = vec![
             KfuncUnknownDynptrArg {
                 arg_idx: 0,
@@ -2014,9 +2026,33 @@ mod tests {
         ];
 
         assert_eq!(
-            infer_unknown_dynptr_copy_args(&args, &[0]),
-            None,
-            "multiple destination dynptr args should not infer copy semantics"
+            infer_unknown_dynptr_copy_args(&args, &[0], false),
+            vec![(0, 1), (0, 2)],
+            "copy-like dynptr transfers should infer all unambiguous destination pairs"
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_dynptr_copy_args_move_requires_single_destination() {
+        let args = vec![
+            KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: KfuncUnknownDynptrArgRole::In,
+            },
+            KfuncUnknownDynptrArg {
+                arg_idx: 1,
+                role: KfuncUnknownDynptrArgRole::Out,
+            },
+            KfuncUnknownDynptrArg {
+                arg_idx: 2,
+                role: KfuncUnknownDynptrArgRole::Out,
+            },
+        ];
+
+        assert_eq!(
+            infer_unknown_dynptr_copy_args(&args, &[0], true),
+            Vec::<(usize, usize)>::new(),
+            "move-like dynptr transfers should require a single destination"
         );
     }
 }
