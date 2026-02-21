@@ -1337,11 +1337,22 @@ fn unknown_transfer_move_semantics_from_kfunc_name(kfunc: &str) -> Option<bool> 
     Some(has_move_like && !has_copy_like)
 }
 
+fn unknown_copy_move_semantics_with_named_pair_fallback(kfunc: &str) -> Option<bool> {
+    let transfer_move_semantics = unknown_transfer_move_semantics_from_kfunc_name(kfunc);
+    if transfer_move_semantics.is_some() {
+        return transfer_move_semantics;
+    }
+    if unknown_stack_object_lifecycle_op_from_kfunc_name(kfunc).is_some() {
+        return None;
+    }
+    Some(false)
+}
+
 pub fn kfunc_unknown_dynptr_copy(kfunc: &str) -> Vec<KfuncUnknownDynptrCopy> {
     if KfuncSignature::for_name(kfunc).is_some() {
         return Vec::new();
     }
-    let Some(move_semantics) = unknown_transfer_move_semantics_from_kfunc_name(kfunc) else {
+    let Some(move_semantics) = unknown_copy_move_semantics_with_named_pair_fallback(kfunc) else {
         return Vec::new();
     };
     let kernel_btf = KernelBtf::get();
@@ -1765,12 +1776,9 @@ pub fn kfunc_unknown_stack_object_copy(kfunc: &str) -> Vec<KfuncUnknownStackObje
         return Vec::new();
     }
     let transfer_move_semantics = unknown_transfer_move_semantics_from_kfunc_name(kfunc);
-    if transfer_move_semantics.is_none()
-        && unknown_stack_object_lifecycle_op_from_kfunc_name(kfunc).is_some()
-    {
+    let Some(move_semantics) = unknown_copy_move_semantics_with_named_pair_fallback(kfunc) else {
         return Vec::new();
-    }
-    let move_semantics = transfer_move_semantics.unwrap_or(false);
+    };
     let args = unknown_stack_object_args(kfunc);
     let kernel_btf = KernelBtf::get();
     let const_pointer_args: BTreeSet<usize> = args
@@ -2115,6 +2123,30 @@ mod tests {
         );
         assert_eq!(
             unknown_transfer_move_semantics_from_kfunc_name("foo_obj_swap"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_unknown_copy_move_semantics_with_named_pair_fallback() {
+        assert_eq!(
+            unknown_copy_move_semantics_with_named_pair_fallback("foo_obj_copy"),
+            Some(false)
+        );
+        assert_eq!(
+            unknown_copy_move_semantics_with_named_pair_fallback("foo_obj_move"),
+            Some(true)
+        );
+        assert_eq!(
+            unknown_copy_move_semantics_with_named_pair_fallback("foo_obj_plain"),
+            Some(false)
+        );
+        assert_eq!(
+            unknown_copy_move_semantics_with_named_pair_fallback("foo_obj_init"),
+            None
+        );
+        assert_eq!(
+            unknown_copy_move_semantics_with_named_pair_fallback("foo_obj_destroy"),
             None
         );
     }
