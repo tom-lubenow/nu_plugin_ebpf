@@ -613,6 +613,9 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
                         kernel_btf.kfunc_pointer_arg_is_const(kfunc, arg_idx),
                     ));
                 }
+                if let Some(kind) = infer_release_kind_from_name_hints(kfunc, &candidates) {
+                    return Some(kind);
+                }
                 if let Some(kind) = infer_unique_release_kind(&candidates) {
                     return Some(kind);
                 }
@@ -624,6 +627,49 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
             None
         }
     }
+}
+
+fn infer_release_kind_from_name_hints(
+    kfunc: &str,
+    candidates: &[(usize, Option<KfuncRefKind>, bool, bool)],
+) -> Option<KfuncRefKind> {
+    let mut candidate_kinds = Vec::new();
+    for (_, kind, _, _) in candidates {
+        if let Some(kind) = kind
+            && !candidate_kinds.contains(kind)
+        {
+            candidate_kinds.push(*kind);
+        }
+    }
+    if candidate_kinds.is_empty() {
+        return None;
+    }
+
+    let lower = kfunc.to_ascii_lowercase();
+    let mut hinted_kinds = Vec::new();
+    let mut push_if_matches = |kind: KfuncRefKind, condition: bool| {
+        if condition && candidate_kinds.contains(&kind) && !hinted_kinds.contains(&kind) {
+            hinted_kinds.push(kind);
+        }
+    };
+    push_if_matches(KfuncRefKind::Task, lower.contains("task"));
+    push_if_matches(KfuncRefKind::Cgroup, lower.contains("cgroup"));
+    push_if_matches(KfuncRefKind::Cpumask, lower.contains("cpumask"));
+    push_if_matches(KfuncRefKind::Inode, lower.contains("inode"));
+    push_if_matches(KfuncRefKind::File, lower.contains("file"));
+    push_if_matches(
+        KfuncRefKind::Socket,
+        lower.contains("socket") || lower.contains("sock"),
+    );
+    push_if_matches(
+        KfuncRefKind::CryptoCtx,
+        lower.contains("crypto_ctx") || lower.contains("crypto"),
+    );
+
+    if hinted_kinds.len() == 1 {
+        return hinted_kinds.first().copied();
+    }
+    None
 }
 
 fn infer_unique_release_kind(
@@ -2147,6 +2193,51 @@ mod tests {
         );
         assert_eq!(
             unknown_copy_move_semantics_with_named_pair_fallback("foo_obj_destroy"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_infer_release_kind_from_name_hints_selects_task() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), false, false),
+            (1usize, Some(KfuncRefKind::Cgroup), false, false),
+        ];
+        assert_eq!(
+            infer_release_kind_from_name_hints("foo_task_release", &candidates),
+            Some(KfuncRefKind::Task)
+        );
+    }
+
+    #[test]
+    fn test_infer_release_kind_from_name_hints_selects_socket_alias() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), false, false),
+            (1usize, Some(KfuncRefKind::Socket), false, false),
+        ];
+        assert_eq!(
+            infer_release_kind_from_name_hints("foo_put_sock_ref", &candidates),
+            Some(KfuncRefKind::Socket)
+        );
+    }
+
+    #[test]
+    fn test_infer_release_kind_from_name_hints_rejects_ambiguous_hints() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), false, false),
+            (1usize, Some(KfuncRefKind::Cgroup), false, false),
+        ];
+        assert_eq!(
+            infer_release_kind_from_name_hints("foo_task_cgroup_release", &candidates),
+            None
+        );
+    }
+
+    #[test]
+    fn test_infer_release_kind_from_name_hints_requires_matching_candidates() {
+        let candidates = vec![(0usize, Some(KfuncRefKind::Cgroup), false, false)];
+        assert_eq!(
+            infer_release_kind_from_name_hints("foo_task_release", &candidates),
             None
         );
     }
