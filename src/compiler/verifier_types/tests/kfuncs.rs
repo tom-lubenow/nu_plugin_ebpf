@@ -84,6 +84,34 @@ fn test_unknown_stack_object_slot_live_presence() {
 }
 
 #[test]
+fn test_unknown_stack_object_slots_distinguish_type_ids() {
+    let slot = StackSlotId(19);
+    let mut state = VerifierState::new(1);
+    state.initialize_unknown_stack_object_slot(slot, "bpf_wq", Some(11));
+
+    assert!(
+        state.has_unknown_stack_object_slot(slot, "bpf_wq", Some(11)),
+        "matching type id should resolve initialized state"
+    );
+    assert!(
+        !state.has_unknown_stack_object_slot(slot, "bpf_wq", Some(12)),
+        "different type id should not alias initialized state"
+    );
+    assert!(
+        !state.has_unknown_stack_object_slot(slot, "bpf_wq", None),
+        "missing type id should not alias typed initialized state"
+    );
+    assert!(
+        !state.release_unknown_stack_object_slot(slot, "bpf_wq", Some(12)),
+        "release should reject mismatched type id"
+    );
+    assert!(
+        state.release_unknown_stack_object_slot(slot, "bpf_wq", Some(11)),
+        "release should succeed for matching type id"
+    );
+}
+
+#[test]
 fn test_kfunc_unknown_signature_rejected() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

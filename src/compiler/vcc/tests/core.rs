@@ -1004,6 +1004,48 @@ fn test_unknown_stack_object_copy_rejects_initialized_destination() {
     );
 }
 
+#[test]
+fn test_unknown_stack_object_destroy_rejects_type_id_mismatch() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let ptr = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst: ptr,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::UnknownStackObjectInit {
+            ptr,
+            type_name: "bpf_wq".to_string(),
+            type_id: Some(11),
+            kfunc: "unknown_wq_new".to_string(),
+            arg_idx: 0,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::UnknownStackObjectDestroy {
+            ptr,
+            type_name: "bpf_wq".to_string(),
+            type_id: Some(12),
+            kfunc: "unknown_wq_destroy".to_string(),
+            arg_idx: 0,
+        });
+
+    let err = VccVerifier::default()
+        .verify_function(&func)
+        .expect_err("expected unknown stack-object type-id mismatch verifier error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'unknown_wq_destroy' arg0 requires initialized bpf_wq stack object")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
 fn new_mir_function() -> (MirFunction, BlockId) {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
