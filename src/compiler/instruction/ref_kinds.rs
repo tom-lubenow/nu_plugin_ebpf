@@ -880,6 +880,23 @@ fn fallback_release_arg_index_from_arg0(
     }
 }
 
+fn fallback_release_arg_index_from_arg0_preferring_non_out(
+    expected_kind: KfuncRefKind,
+    arg0_kind: Option<KfuncRefKind>,
+    arg0_named_out: bool,
+    candidates: &[(usize, Option<KfuncRefKind>, bool, bool, bool)],
+) -> Option<usize> {
+    if arg0_named_out {
+        let has_non_out_expected_kind = candidates
+            .iter()
+            .any(|(_, kind, _, _, named_out)| !*named_out && *kind == Some(expected_kind));
+        if has_non_out_expected_kind {
+            return None;
+        }
+    }
+    fallback_release_arg_index_from_arg0(expected_kind, arg0_kind)
+}
+
 pub fn kfunc_release_ref_arg_index(kfunc: &str) -> Option<usize> {
     match kfunc {
         "bpf_list_push_front_impl" | "bpf_list_push_back_impl" | "bpf_rbtree_add_impl" => Some(1),
@@ -931,7 +948,13 @@ pub fn kfunc_release_ref_arg_index(kfunc: &str) -> Option<usize> {
                     let arg0_kind = kernel_btf
                         .kfunc_pointer_arg_ref_family(kfunc, 0)
                         .map(ref_kind_from_btf_family);
-                    return fallback_release_arg_index_from_arg0(expected_kind, arg0_kind);
+                    let arg0_named_out = kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, 0);
+                    return fallback_release_arg_index_from_arg0_preferring_non_out(
+                        expected_kind,
+                        arg0_kind,
+                        arg0_named_out,
+                        &candidates_with_out,
+                    );
                 }
                 return Some(0);
             }
@@ -2774,6 +2797,54 @@ mod tests {
         assert_eq!(
             fallback_release_arg_index_from_arg0(KfuncRefKind::Task, Some(KfuncRefKind::Cgroup)),
             None
+        );
+    }
+
+    #[test]
+    fn test_fallback_release_arg_index_from_arg0_preferring_non_out_delegates() {
+        let candidates = vec![(0usize, Some(KfuncRefKind::Task), false, false, false)];
+        assert_eq!(
+            fallback_release_arg_index_from_arg0_preferring_non_out(
+                KfuncRefKind::Task,
+                Some(KfuncRefKind::Task),
+                false,
+                &candidates,
+            ),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn test_fallback_release_arg_index_from_arg0_preferring_non_out_rejects_named_out_arg0() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), false, false, true),
+            (1usize, Some(KfuncRefKind::Task), false, false, false),
+        ];
+        assert_eq!(
+            fallback_release_arg_index_from_arg0_preferring_non_out(
+                KfuncRefKind::Task,
+                Some(KfuncRefKind::Task),
+                true,
+                &candidates,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn test_fallback_release_arg_index_from_arg0_preferring_non_out_allows_without_non_out_match() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), false, false, true),
+            (1usize, Some(KfuncRefKind::Cgroup), false, false, false),
+        ];
+        assert_eq!(
+            fallback_release_arg_index_from_arg0_preferring_non_out(
+                KfuncRefKind::Task,
+                Some(KfuncRefKind::Task),
+                true,
+                &candidates,
+            ),
+            Some(0)
         );
     }
 
