@@ -435,6 +435,14 @@ impl KernelBtf {
             || lower == "err"
             || lower.ends_with("_err")
             || lower.ends_with("__err")
+            || lower == "result"
+            || lower.starts_with("result_")
+            || lower.ends_with("_result")
+            || lower.ends_with("__result")
+            || lower == "retval"
+            || lower.starts_with("retval_")
+            || lower.ends_with("_retval")
+            || lower.ends_with("__retval")
             || lower.ends_with("_uninit")
             || lower.ends_with("__uninit")
     }
@@ -2722,6 +2730,10 @@ format:
         assert!(KernelBtf::is_probable_out_param_name("ctx_dup"));
         assert!(KernelBtf::is_probable_out_param_name("err"));
         assert!(KernelBtf::is_probable_out_param_name("user_err"));
+        assert!(KernelBtf::is_probable_out_param_name("result"));
+        assert!(KernelBtf::is_probable_out_param_name("ctx_result"));
+        assert!(KernelBtf::is_probable_out_param_name("retval"));
+        assert!(KernelBtf::is_probable_out_param_name("ctx_retval"));
         assert!(KernelBtf::is_probable_out_param_name("clone__uninit"));
         assert!(KernelBtf::is_probable_out_param_name("ptr_uninit"));
         assert!(!KernelBtf::is_probable_out_param_name("task"));
