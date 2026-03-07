@@ -622,12 +622,6 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
         _ => {
             if KfuncSignature::for_name(kfunc).is_none() && is_release_like_kfunc_name(kfunc) {
                 let kernel_btf = KernelBtf::get();
-                if let Some(release_arg_idx) = kernel_btf.kfunc_release_ref_arg_index(kfunc) {
-                    return kernel_btf
-                        .kfunc_pointer_arg_ref_family(kfunc, release_arg_idx)
-                        .map(ref_kind_from_btf_family);
-                }
-
                 let mut candidates: Vec<(usize, Option<KfuncRefKind>, bool, bool)> = Vec::new();
                 let mut candidates_with_out: Vec<(usize, Option<KfuncRefKind>, bool, bool, bool)> =
                     Vec::new();
@@ -648,6 +642,12 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
                         candidate.3,
                         kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx),
                     ));
+                }
+                if let Some(kind) = infer_release_kind_from_arg_index(
+                    kernel_btf.kfunc_release_ref_arg_index(kfunc),
+                    &candidates,
+                ) {
+                    return Some(kind);
                 }
                 if let Some(kind) = infer_release_kind_from_name_hints(kfunc, &candidates)
                     && let Some(filtered) =
@@ -870,6 +870,31 @@ fn filter_release_kind_preferring_non_out(
     }
 }
 
+fn infer_release_kind_from_arg_index(
+    release_arg_idx: Option<usize>,
+    candidates: &[(usize, Option<KfuncRefKind>, bool, bool)],
+) -> Option<KfuncRefKind> {
+    let release_arg_idx = release_arg_idx?;
+    candidates
+        .iter()
+        .find(|(arg_idx, _, _, _)| *arg_idx == release_arg_idx)
+        .and_then(|(_, kind, _, _)| *kind)
+}
+
+fn release_arg_index_matches_expected_kind(
+    arg_idx: usize,
+    expected_kind: KfuncRefKind,
+    candidates: &[(usize, Option<KfuncRefKind>, bool, bool)],
+) -> bool {
+    match candidates
+        .iter()
+        .find(|(candidate_idx, _, _, _)| *candidate_idx == arg_idx)
+    {
+        Some((_, kind, _, _)) => kind.is_none() || *kind == Some(expected_kind),
+        None => true,
+    }
+}
+
 fn fallback_release_arg_index_from_arg0(
     expected_kind: KfuncRefKind,
     arg0_kind: Option<KfuncRefKind>,
@@ -903,9 +928,6 @@ pub fn kfunc_release_ref_arg_index(kfunc: &str) -> Option<usize> {
         _ if kfunc_release_ref_kind(kfunc).is_some() => {
             if KfuncSignature::for_name(kfunc).is_none() {
                 let kernel_btf = KernelBtf::get();
-                if let Some(arg_idx) = kernel_btf.kfunc_release_ref_arg_index(kfunc) {
-                    return Some(arg_idx);
-                }
                 if let Some(expected_kind) = kfunc_release_ref_kind(kfunc) {
                     let mut candidates: Vec<(usize, Option<KfuncRefKind>, bool, bool)> = Vec::new();
                     let mut candidates_with_out: Vec<(
@@ -932,6 +954,15 @@ pub fn kfunc_release_ref_arg_index(kfunc: &str) -> Option<usize> {
                             candidate.3,
                             kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx),
                         ));
+                    }
+                    if let Some(arg_idx) = kernel_btf.kfunc_release_ref_arg_index(kfunc)
+                        && release_arg_index_matches_expected_kind(
+                            arg_idx,
+                            expected_kind,
+                            &candidates,
+                        )
+                    {
+                        return Some(arg_idx);
                     }
                     if let Some(arg_idx) =
                         infer_release_arg_from_named_inputs(expected_kind, &candidates)
@@ -2774,6 +2805,55 @@ mod tests {
             filter_release_kind_preferring_non_out(KfuncRefKind::Task, &candidates),
             None
         );
+    }
+
+    #[test]
+    fn test_infer_release_kind_from_arg_index_selects_kind() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), false, false),
+            (1usize, Some(KfuncRefKind::Cgroup), false, false),
+        ];
+        assert_eq!(
+            infer_release_kind_from_arg_index(Some(1), &candidates),
+            Some(KfuncRefKind::Cgroup)
+        );
+    }
+
+    #[test]
+    fn test_infer_release_kind_from_arg_index_rejects_unknown_kind() {
+        let candidates = vec![(0usize, None, false, false)];
+        assert_eq!(
+            infer_release_kind_from_arg_index(Some(0), &candidates),
+            None
+        );
+    }
+
+    #[test]
+    fn test_release_arg_index_matches_expected_kind() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), false, false),
+            (1usize, Some(KfuncRefKind::Cgroup), false, false),
+        ];
+        assert!(release_arg_index_matches_expected_kind(
+            0,
+            KfuncRefKind::Task,
+            &candidates
+        ));
+        assert!(!release_arg_index_matches_expected_kind(
+            1,
+            KfuncRefKind::Task,
+            &candidates
+        ));
+    }
+
+    #[test]
+    fn test_release_arg_index_matches_expected_kind_allows_unknown_kind() {
+        let candidates = vec![(0usize, None, false, false)];
+        assert!(release_arg_index_matches_expected_kind(
+            0,
+            KfuncRefKind::Task,
+            &candidates
+        ));
     }
 
     #[test]
