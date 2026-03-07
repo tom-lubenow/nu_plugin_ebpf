@@ -616,6 +616,9 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
                 if let Some(kind) = infer_release_kind_from_name_hints(kfunc, &candidates) {
                     return Some(kind);
                 }
+                if let Some(kind) = infer_release_kind_from_named_inputs(&candidates) {
+                    return Some(kind);
+                }
                 if let Some(kind) = infer_unique_release_kind(&candidates) {
                     return Some(kind);
                 }
@@ -670,6 +673,34 @@ fn infer_release_kind_from_name_hints(
         return hinted_kinds.first().copied();
     }
     None
+}
+
+fn infer_release_kind_from_named_inputs(
+    candidates: &[(usize, Option<KfuncRefKind>, bool, bool)],
+) -> Option<KfuncRefKind> {
+    let select_unique = |prefer_non_const: bool| {
+        let mut selected: Option<KfuncRefKind> = None;
+        for (_, kind, named_in, is_const) in candidates {
+            if !*named_in || (prefer_non_const && *is_const) {
+                continue;
+            }
+            let Some(kind) = kind else {
+                continue;
+            };
+            if let Some(existing) = selected {
+                if existing != *kind {
+                    return None;
+                }
+            } else {
+                selected = Some(*kind);
+            }
+        }
+        selected
+    };
+    if let Some(kind) = select_unique(true) {
+        return Some(kind);
+    }
+    select_unique(false)
 }
 
 fn infer_unique_release_kind(
@@ -2274,6 +2305,49 @@ mod tests {
             infer_release_kind_from_name_hints("foo_task_release", &candidates),
             None
         );
+    }
+
+    #[test]
+    fn test_infer_release_kind_from_named_inputs_selects_unique_kind() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), true, false),
+            (1usize, Some(KfuncRefKind::Cgroup), false, false),
+        ];
+        assert_eq!(
+            infer_release_kind_from_named_inputs(&candidates),
+            Some(KfuncRefKind::Task)
+        );
+    }
+
+    #[test]
+    fn test_infer_release_kind_from_named_inputs_prefers_non_const() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), true, true),
+            (1usize, Some(KfuncRefKind::Cgroup), true, false),
+            (2usize, Some(KfuncRefKind::Task), false, false),
+        ];
+        assert_eq!(
+            infer_release_kind_from_named_inputs(&candidates),
+            Some(KfuncRefKind::Cgroup)
+        );
+    }
+
+    #[test]
+    fn test_infer_release_kind_from_named_inputs_rejects_ambiguous_kind() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), true, false),
+            (1usize, Some(KfuncRefKind::Cgroup), true, false),
+        ];
+        assert_eq!(infer_release_kind_from_named_inputs(&candidates), None);
+    }
+
+    #[test]
+    fn test_infer_release_kind_from_named_inputs_requires_named_inputs() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), false, false),
+            (1usize, Some(KfuncRefKind::Task), false, false),
+        ];
+        assert_eq!(infer_release_kind_from_named_inputs(&candidates), None);
     }
 
     #[test]

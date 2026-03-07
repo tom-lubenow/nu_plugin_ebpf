@@ -238,6 +238,7 @@ Last updated: 2026-02-15.
   - Type inference now mirrors unknown-kfunc by-reference alias checks for dynptr/stack-object copy-like operations, rejecting same-slot src/dst pairs earlier (before VCC/verifier).
   - Unknown-kfunc release ref-kind inference now also falls back to a unique pointer ref-family across args when kernel-BTF release-arg index metadata is absent, improving ownership-family detection beyond arg0-only fallback.
   - Unknown-kfunc release ref-kind inference now also consults kfunc name family hints (`task`/`cgroup`/`cpumask`/`inode`/`file`/`sock*`/`crypto*`) against BTF arg-family candidates when release-arg index metadata is absent.
+  - Unknown-kfunc release ref-kind inference now also consults BTF named-input pointer args (`in*` / `src*` / `from*` / `old*` / `orig*`) to select a unique release family before generic unique-kind/arg0 fallback.
   - Unknown-kfunc ref-release arg fallback now consults BTF input-name hints (`in*` / `src*` / `from*`) when kernel-BTF release-arg inference is ambiguous, before defaulting to arg0.
   - Unknown-kfunc ref-release arg fallback now also selects a unique same-family pointer argument when name hints are absent, before defaulting to arg0.
   - Unknown-kfunc ref-release arg fallback now prefers non-const same-family pointer args (for both named-input and unique-family selection) before considering const-qualified candidates.
