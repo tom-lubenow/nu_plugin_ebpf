@@ -483,18 +483,26 @@ impl KernelBtf {
             || name.ends_with("_dec")
     }
 
-    fn infer_release_arg_index_from_family_args(family_args: &[(usize, bool)]) -> Option<usize> {
-        let non_out_args: Vec<usize> = family_args
-            .iter()
-            .filter_map(|(arg_idx, named_out)| if !*named_out { Some(*arg_idx) } else { None })
-            .collect();
-        if non_out_args.len() == 1 {
-            return non_out_args.first().copied();
-        }
-        if non_out_args.is_empty() && family_args.len() == 1 {
-            return family_args.first().map(|(arg_idx, _)| *arg_idx);
-        }
-        None
+    fn infer_release_arg_index_from_family_args(
+        family_args: &[(usize, bool, bool)],
+    ) -> Option<usize> {
+        let select_unique = |pred: &dyn Fn(&(usize, bool, bool)) -> bool| {
+            let matches: Vec<usize> = family_args
+                .iter()
+                .filter(|arg| pred(arg))
+                .map(|(arg_idx, _, _)| *arg_idx)
+                .collect();
+            if matches.len() == 1 {
+                matches.first().copied()
+            } else {
+                None
+            }
+        };
+
+        select_unique(&|(_, named_out, is_const)| !*named_out && !*is_const)
+            .or_else(|| select_unique(&|(_, named_out, _)| !*named_out))
+            .or_else(|| select_unique(&|(_, _, is_const)| !*is_const))
+            .or_else(|| select_unique(&|_| true))
     }
 
     fn load_kfunc_user_pointer_arg_map(&self) -> Result<HashMap<String, Vec<usize>>, BtfError> {
@@ -728,7 +736,7 @@ impl KernelBtf {
                 continue;
             };
 
-            let mut family_args: Vec<(usize, bool)> = Vec::new();
+            let mut family_args: Vec<(usize, bool, bool)> = Vec::new();
             for (arg_idx, param) in proto.params.iter().enumerate() {
                 if param.type_id == 0 {
                     continue;
@@ -747,7 +755,7 @@ impl KernelBtf {
                         .name
                         .as_deref()
                         .is_some_and(Self::is_probable_out_param_name);
-                    family_args.push((arg_idx, is_named_out));
+                    family_args.push((arg_idx, is_named_out, param_ty.is_const));
                 }
             }
             if let Some(arg_idx) = Self::infer_release_arg_index_from_family_args(&family_args) {
@@ -2661,7 +2669,7 @@ format:
 
     #[test]
     fn test_infer_release_arg_index_from_family_args_prefers_non_out() {
-        let family_args = vec![(0usize, true), (1usize, false)];
+        let family_args = vec![(0usize, true, false), (1usize, false, false)];
         assert_eq!(
             KernelBtf::infer_release_arg_index_from_family_args(&family_args),
             Some(1)
@@ -2670,7 +2678,7 @@ format:
 
     #[test]
     fn test_infer_release_arg_index_from_family_args_falls_back_to_single_out() {
-        let family_args = vec![(0usize, true)];
+        let family_args = vec![(0usize, true, false)];
         assert_eq!(
             KernelBtf::infer_release_arg_index_from_family_args(&family_args),
             Some(0)
@@ -2679,10 +2687,19 @@ format:
 
     #[test]
     fn test_infer_release_arg_index_from_family_args_rejects_ambiguous_non_out() {
-        let family_args = vec![(0usize, false), (1usize, false)];
+        let family_args = vec![(0usize, false, false), (1usize, false, false)];
         assert_eq!(
             KernelBtf::infer_release_arg_index_from_family_args(&family_args),
             None
+        );
+    }
+
+    #[test]
+    fn test_infer_release_arg_index_from_family_args_prefers_writable() {
+        let family_args = vec![(0usize, false, true), (1usize, false, false)];
+        assert_eq!(
+            KernelBtf::infer_release_arg_index_from_family_args(&family_args),
+            Some(1)
         );
     }
 
