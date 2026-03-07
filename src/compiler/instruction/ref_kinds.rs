@@ -487,6 +487,9 @@ fn should_infer_unknown_acquire_ref(
     has_same_family_arg: bool,
     has_const_only_same_family_args: bool,
 ) -> bool {
+    if is_release_like_kfunc_name(kfunc) {
+        return false;
+    }
     kfunc.contains("_acquire")
         || kfunc.contains("_from_")
         || kfunc.contains("_create")
@@ -500,6 +503,23 @@ fn should_infer_unknown_acquire_ref(
         || (kind == KfuncRefKind::Socket && kfunc.contains("lookup"))
         || !has_same_family_arg
         || has_const_only_same_family_args
+}
+
+fn is_release_like_kfunc_name(kfunc: &str) -> bool {
+    let lower = kfunc.to_ascii_lowercase();
+    lower.contains("_release")
+        || lower.contains("_destroy")
+        || lower.contains("_delete")
+        || lower.contains("_detach")
+        || lower.contains("_close")
+        || lower.contains("_unref")
+        || lower.starts_with("bpf_put_")
+        || lower.contains("_put_")
+        || lower.ends_with("_put")
+        || lower.contains("_drop")
+        || lower.contains("_free")
+        || lower.contains("_dec_")
+        || lower.ends_with("_dec")
 }
 
 pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
@@ -580,21 +600,7 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
         | "scx_bpf_put_cpumask"
         | "scx_bpf_put_idle_cpumask" => Some(KfuncRefKind::Cpumask),
         _ => {
-            if KfuncSignature::for_name(kfunc).is_none()
-                && (kfunc.contains("_release")
-                    || kfunc.contains("_destroy")
-                    || kfunc.contains("_delete")
-                    || kfunc.contains("_detach")
-                    || kfunc.contains("_close")
-                    || kfunc.contains("_unref")
-                    || kfunc.starts_with("bpf_put_")
-                    || kfunc.contains("_put_")
-                    || kfunc.ends_with("_put")
-                    || kfunc.contains("_drop")
-                    || kfunc.contains("_free")
-                    || kfunc.contains("_dec_")
-                    || kfunc.ends_with("_dec"))
-            {
+            if KfuncSignature::for_name(kfunc).is_none() && is_release_like_kfunc_name(kfunc) {
                 let kernel_btf = KernelBtf::get();
                 if let Some(release_arg_idx) = kernel_btf.kfunc_release_ref_arg_index(kfunc) {
                     return kernel_btf
@@ -2192,6 +2198,33 @@ mod tests {
             true,
             false
         ));
+    }
+
+    #[test]
+    fn test_should_not_infer_unknown_acquire_ref_for_release_like_names() {
+        assert!(!should_infer_unknown_acquire_ref(
+            "foo_task_release_ref",
+            KfuncRefKind::Task,
+            false,
+            false
+        ));
+        assert!(!should_infer_unknown_acquire_ref(
+            "bpf_put_task_ref",
+            KfuncRefKind::Task,
+            false,
+            false
+        ));
+    }
+
+    #[test]
+    fn test_is_release_like_kfunc_name() {
+        assert!(is_release_like_kfunc_name("foo_task_release"));
+        assert!(is_release_like_kfunc_name("foo_task_destroy"));
+        assert!(is_release_like_kfunc_name("bpf_put_task"));
+        assert!(is_release_like_kfunc_name("foo_task_drop"));
+        assert!(is_release_like_kfunc_name("foo_task_dec"));
+        assert!(!is_release_like_kfunc_name("foo_task_acquire"));
+        assert!(!is_release_like_kfunc_name("foo_task_get"));
     }
 
     #[test]
