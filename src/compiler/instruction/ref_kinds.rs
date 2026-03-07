@@ -486,6 +486,8 @@ fn should_infer_unknown_acquire_ref(
     kind: KfuncRefKind,
     has_same_family_arg: bool,
     has_const_only_same_family_args: bool,
+    has_unique_writable_named_in_same_family_arg: bool,
+    has_writable_named_out_same_family_arg: bool,
 ) -> bool {
     if is_release_like_kfunc_name(kfunc) {
         return false;
@@ -503,6 +505,7 @@ fn should_infer_unknown_acquire_ref(
         || (kind == KfuncRefKind::Socket && kfunc.contains("lookup"))
         || !has_same_family_arg
         || has_const_only_same_family_args
+        || (has_unique_writable_named_in_same_family_arg && !has_writable_named_out_same_family_arg)
 }
 
 fn is_release_like_kfunc_name(kfunc: &str) -> bool {
@@ -555,6 +558,8 @@ pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
                 };
                 let mut has_same_family_arg = false;
                 let mut has_non_const_same_family_arg = false;
+                let mut same_family_writable_named_in_count = 0usize;
+                let mut has_writable_named_out_same_family_arg = false;
                 for arg_idx in 0..5 {
                     if kernel_btf
                         .kfunc_pointer_arg_ref_family(kfunc, arg_idx)
@@ -564,17 +569,28 @@ pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
                         continue;
                     }
                     has_same_family_arg = true;
-                    if !kernel_btf.kfunc_pointer_arg_is_const(kfunc, arg_idx) {
+                    let is_const = kernel_btf.kfunc_pointer_arg_is_const(kfunc, arg_idx);
+                    if !is_const {
                         has_non_const_same_family_arg = true;
+                    }
+                    if !is_const && kernel_btf.kfunc_pointer_arg_is_named_in(kfunc, arg_idx) {
+                        same_family_writable_named_in_count += 1;
+                    }
+                    if !is_const && kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx) {
+                        has_writable_named_out_same_family_arg = true;
                     }
                 }
                 let has_const_only_same_family_args =
                     has_same_family_arg && !has_non_const_same_family_arg;
+                let has_unique_writable_named_in_same_family_arg =
+                    same_family_writable_named_in_count == 1;
                 if should_infer_unknown_acquire_ref(
                     kfunc,
                     kind,
                     has_same_family_arg,
                     has_const_only_same_family_args,
+                    has_unique_writable_named_in_same_family_arg,
+                    has_writable_named_out_same_family_arg,
                 ) {
                     return Some(kind);
                 }
@@ -2145,42 +2161,56 @@ mod tests {
             "foo_task_acquire",
             KfuncRefKind::Task,
             true,
+            false,
+            false,
             false
         ));
         assert!(should_infer_unknown_acquire_ref(
             "bpf_get_foo_task",
             KfuncRefKind::Task,
             true,
+            false,
+            false,
             false
         ));
         assert!(should_infer_unknown_acquire_ref(
             "foo_get_task",
             KfuncRefKind::Task,
             true,
+            false,
+            false,
             false
         ));
         assert!(should_infer_unknown_acquire_ref(
             "foo_task_get",
             KfuncRefKind::Task,
             true,
+            false,
+            false,
             false
         ));
         assert!(should_infer_unknown_acquire_ref(
             "foo_task_dup",
             KfuncRefKind::Task,
             true,
+            false,
+            false,
             false
         ));
         assert!(should_infer_unknown_acquire_ref(
             "foo_task_clone",
             KfuncRefKind::Task,
             true,
+            false,
+            false,
             false
         ));
         assert!(should_infer_unknown_acquire_ref(
             "foo_lookup_sock",
             KfuncRefKind::Socket,
             true,
+            false,
+            false,
             false
         ));
     }
@@ -2190,6 +2220,8 @@ mod tests {
         assert!(should_infer_unknown_acquire_ref(
             "foo_plain_name",
             KfuncRefKind::Task,
+            false,
+            false,
             false,
             false
         ));
@@ -2201,7 +2233,9 @@ mod tests {
             "foo_plain_name",
             KfuncRefKind::Task,
             true,
-            true
+            true,
+            false,
+            false
         ));
     }
 
@@ -2211,6 +2245,8 @@ mod tests {
             "foo_plain_name",
             KfuncRefKind::Task,
             true,
+            false,
+            false,
             false
         ));
     }
@@ -2221,13 +2257,41 @@ mod tests {
             "foo_task_release_ref",
             KfuncRefKind::Task,
             false,
+            false,
+            false,
             false
         ));
         assert!(!should_infer_unknown_acquire_ref(
             "bpf_put_task_ref",
             KfuncRefKind::Task,
             false,
+            false,
+            false,
             false
+        ));
+    }
+
+    #[test]
+    fn test_should_infer_unknown_acquire_ref_for_unique_named_in_without_named_out() {
+        assert!(should_infer_unknown_acquire_ref(
+            "foo_plain_name",
+            KfuncRefKind::Task,
+            true,
+            false,
+            true,
+            false
+        ));
+    }
+
+    #[test]
+    fn test_should_not_infer_unknown_acquire_ref_for_named_in_when_named_out_exists() {
+        assert!(!should_infer_unknown_acquire_ref(
+            "foo_plain_name",
+            KfuncRefKind::Task,
+            true,
+            false,
+            true,
+            true
         ));
     }
 
