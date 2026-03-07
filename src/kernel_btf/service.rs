@@ -483,6 +483,20 @@ impl KernelBtf {
             || name.ends_with("_dec")
     }
 
+    fn infer_release_arg_index_from_family_args(family_args: &[(usize, bool)]) -> Option<usize> {
+        let non_out_args: Vec<usize> = family_args
+            .iter()
+            .filter_map(|(arg_idx, named_out)| if !*named_out { Some(*arg_idx) } else { None })
+            .collect();
+        if non_out_args.len() == 1 {
+            return non_out_args.first().copied();
+        }
+        if non_out_args.is_empty() && family_args.len() == 1 {
+            return family_args.first().map(|(arg_idx, _)| *arg_idx);
+        }
+        None
+    }
+
     fn load_kfunc_user_pointer_arg_map(&self) -> Result<HashMap<String, Vec<usize>>, BtfError> {
         let btf = self.load_kernel_btf_for_query()?;
         let mut map: HashMap<String, Vec<usize>> = HashMap::new();
@@ -714,7 +728,7 @@ impl KernelBtf {
                 continue;
             };
 
-            let mut family_args = Vec::new();
+            let mut family_args: Vec<(usize, bool)> = Vec::new();
             for (arg_idx, param) in proto.params.iter().enumerate() {
                 if param.type_id == 0 {
                     continue;
@@ -729,11 +743,15 @@ impl KernelBtf {
                     continue;
                 };
                 if Self::infer_pointer_ref_family(type_name).is_some() {
-                    family_args.push(arg_idx);
+                    let is_named_out = param
+                        .name
+                        .as_deref()
+                        .is_some_and(Self::is_probable_out_param_name);
+                    family_args.push((arg_idx, is_named_out));
                 }
             }
-            if family_args.len() == 1 {
-                map.insert(name.clone(), family_args[0]);
+            if let Some(arg_idx) = Self::infer_release_arg_index_from_family_args(&family_args) {
+                map.insert(name.clone(), arg_idx);
             }
         }
         Ok(map)
@@ -2639,6 +2657,33 @@ format:
             "bpf_task_acquire"
         ));
         assert!(!KernelBtf::is_probable_release_kfunc_name("foo_obj_inc"));
+    }
+
+    #[test]
+    fn test_infer_release_arg_index_from_family_args_prefers_non_out() {
+        let family_args = vec![(0usize, true), (1usize, false)];
+        assert_eq!(
+            KernelBtf::infer_release_arg_index_from_family_args(&family_args),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn test_infer_release_arg_index_from_family_args_falls_back_to_single_out() {
+        let family_args = vec![(0usize, true)];
+        assert_eq!(
+            KernelBtf::infer_release_arg_index_from_family_args(&family_args),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn test_infer_release_arg_index_from_family_args_rejects_ambiguous_non_out() {
+        let family_args = vec![(0usize, false), (1usize, false)];
+        assert_eq!(
+            KernelBtf::infer_release_arg_index_from_family_args(&family_args),
+            None
+        );
     }
 
     #[test]
