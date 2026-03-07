@@ -512,6 +512,10 @@ fn is_release_like_kfunc_name(kfunc: &str) -> bool {
     let lower = kfunc.to_ascii_lowercase();
     lower.contains("_release")
         || lower.contains("_destroy")
+        || lower.contains("_cleanup")
+        || lower.contains("_deinit")
+        || lower.contains("_fini_")
+        || lower.ends_with("_fini")
         || lower.contains("_delete")
         || lower.contains("_detach")
         || lower.contains("_close")
@@ -2299,6 +2303,9 @@ mod tests {
     fn test_is_release_like_kfunc_name() {
         assert!(is_release_like_kfunc_name("foo_task_release"));
         assert!(is_release_like_kfunc_name("foo_task_destroy"));
+        assert!(is_release_like_kfunc_name("foo_task_cleanup"));
+        assert!(is_release_like_kfunc_name("foo_task_deinit"));
+        assert!(is_release_like_kfunc_name("foo_task_fini"));
         assert!(is_release_like_kfunc_name("bpf_put_task"));
         assert!(is_release_like_kfunc_name("foo_task_drop"));
         assert!(is_release_like_kfunc_name("foo_task_dec"));
