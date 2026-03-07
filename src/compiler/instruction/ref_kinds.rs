@@ -649,11 +649,17 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
                         kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx),
                     ));
                 }
-                if let Some(kind) = infer_release_kind_from_name_hints(kfunc, &candidates) {
-                    return Some(kind);
+                if let Some(kind) = infer_release_kind_from_name_hints(kfunc, &candidates)
+                    && let Some(filtered) =
+                        filter_release_kind_preferring_non_out(kind, &candidates_with_out)
+                {
+                    return Some(filtered);
                 }
-                if let Some(kind) = infer_release_kind_from_named_inputs(&candidates) {
-                    return Some(kind);
+                if let Some(kind) = infer_release_kind_from_named_inputs(&candidates)
+                    && let Some(filtered) =
+                        filter_release_kind_preferring_non_out(kind, &candidates_with_out)
+                {
+                    return Some(filtered);
                 }
                 if let Some(kind) =
                     infer_unique_release_kind_preferring_non_out(&candidates_with_out)
@@ -842,6 +848,26 @@ fn infer_unique_release_arg_from_kind_preferring_non_out(
     }
     infer_unique_release_arg_from_kind(expected_kind, &non_out)
         .or_else(|| infer_unique_release_arg_from_kind(expected_kind, &all))
+}
+
+fn filter_release_kind_preferring_non_out(
+    kind: KfuncRefKind,
+    candidates: &[(usize, Option<KfuncRefKind>, bool, bool, bool)],
+) -> Option<KfuncRefKind> {
+    let has_any_non_out_ref = candidates
+        .iter()
+        .any(|(_, candidate_kind, _, _, named_out)| !*named_out && candidate_kind.is_some());
+    if !has_any_non_out_ref {
+        return Some(kind);
+    }
+    let has_non_out_for_kind = candidates
+        .iter()
+        .any(|(_, candidate_kind, _, _, named_out)| !*named_out && *candidate_kind == Some(kind));
+    if has_non_out_for_kind {
+        Some(kind)
+    } else {
+        None
+    }
 }
 
 fn fallback_release_arg_index_from_arg0(
@@ -2687,6 +2713,43 @@ mod tests {
         assert_eq!(
             infer_unique_release_arg_from_kind_preferring_non_out(KfuncRefKind::Task, &candidates),
             Some(0)
+        );
+    }
+
+    #[test]
+    fn test_filter_release_kind_preferring_non_out_accepts_when_no_non_out_refs() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), false, false, true),
+            (1usize, None, false, false, false),
+        ];
+        assert_eq!(
+            filter_release_kind_preferring_non_out(KfuncRefKind::Task, &candidates),
+            Some(KfuncRefKind::Task)
+        );
+    }
+
+    #[test]
+    fn test_filter_release_kind_preferring_non_out_accepts_matching_non_out_kind() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), false, false, true),
+            (1usize, Some(KfuncRefKind::Task), false, false, false),
+            (2usize, Some(KfuncRefKind::Cgroup), false, false, false),
+        ];
+        assert_eq!(
+            filter_release_kind_preferring_non_out(KfuncRefKind::Task, &candidates),
+            Some(KfuncRefKind::Task)
+        );
+    }
+
+    #[test]
+    fn test_filter_release_kind_preferring_non_out_rejects_out_only_kind() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), false, false, true),
+            (1usize, Some(KfuncRefKind::Cgroup), false, false, false),
+        ];
+        assert_eq!(
+            filter_release_kind_preferring_non_out(KfuncRefKind::Task, &candidates),
+            None
         );
     }
 
