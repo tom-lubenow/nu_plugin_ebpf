@@ -780,6 +780,16 @@ fn infer_unique_release_arg_from_kind(
     select_unique(false)
 }
 
+fn fallback_release_arg_index_from_arg0(
+    expected_kind: KfuncRefKind,
+    arg0_kind: Option<KfuncRefKind>,
+) -> Option<usize> {
+    match arg0_kind {
+        Some(kind) if kind != expected_kind => None,
+        _ => Some(0),
+    }
+}
+
 pub fn kfunc_release_ref_arg_index(kfunc: &str) -> Option<usize> {
     match kfunc {
         "bpf_list_push_front_impl" | "bpf_list_push_back_impl" | "bpf_rbtree_add_impl" => Some(1),
@@ -811,6 +821,11 @@ pub fn kfunc_release_ref_arg_index(kfunc: &str) -> Option<usize> {
                     {
                         return Some(arg_idx);
                     }
+
+                    let arg0_kind = kernel_btf
+                        .kfunc_pointer_arg_ref_family(kfunc, 0)
+                        .map(ref_kind_from_btf_family);
+                    return fallback_release_arg_index_from_arg0(expected_kind, arg0_kind);
                 }
                 return Some(0);
             }
@@ -2499,6 +2514,30 @@ mod tests {
         assert_eq!(
             infer_unique_release_arg_from_kind(KfuncRefKind::Task, &candidates),
             Some(1)
+        );
+    }
+
+    #[test]
+    fn test_fallback_release_arg_index_from_arg0_accepts_matching_kind() {
+        assert_eq!(
+            fallback_release_arg_index_from_arg0(KfuncRefKind::Task, Some(KfuncRefKind::Task)),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn test_fallback_release_arg_index_from_arg0_accepts_unknown_kind() {
+        assert_eq!(
+            fallback_release_arg_index_from_arg0(KfuncRefKind::Task, None),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn test_fallback_release_arg_index_from_arg0_rejects_mismatched_kind() {
+        assert_eq!(
+            fallback_release_arg_index_from_arg0(KfuncRefKind::Task, Some(KfuncRefKind::Cgroup)),
+            None
         );
     }
 
