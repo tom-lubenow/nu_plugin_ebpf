@@ -629,14 +629,24 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
                 }
 
                 let mut candidates: Vec<(usize, Option<KfuncRefKind>, bool, bool)> = Vec::new();
+                let mut candidates_with_out: Vec<(usize, Option<KfuncRefKind>, bool, bool, bool)> =
+                    Vec::new();
                 for arg_idx in 0..5 {
-                    candidates.push((
+                    let candidate = (
                         arg_idx,
                         kernel_btf
                             .kfunc_pointer_arg_ref_family(kfunc, arg_idx)
                             .map(ref_kind_from_btf_family),
                         kernel_btf.kfunc_pointer_arg_is_named_in(kfunc, arg_idx),
                         kernel_btf.kfunc_pointer_arg_is_const(kfunc, arg_idx),
+                    );
+                    candidates.push(candidate);
+                    candidates_with_out.push((
+                        candidate.0,
+                        candidate.1,
+                        candidate.2,
+                        candidate.3,
+                        kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx),
                     ));
                 }
                 if let Some(kind) = infer_release_kind_from_name_hints(kfunc, &candidates) {
@@ -645,7 +655,9 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
                 if let Some(kind) = infer_release_kind_from_named_inputs(&candidates) {
                     return Some(kind);
                 }
-                if let Some(kind) = infer_unique_release_kind(&candidates) {
+                if let Some(kind) =
+                    infer_unique_release_kind_preferring_non_out(&candidates_with_out)
+                {
                     return Some(kind);
                 }
 
@@ -800,6 +812,38 @@ fn infer_unique_release_arg_from_kind(
     select_unique(false)
 }
 
+fn infer_unique_release_kind_preferring_non_out(
+    candidates: &[(usize, Option<KfuncRefKind>, bool, bool, bool)],
+) -> Option<KfuncRefKind> {
+    let mut non_out = Vec::new();
+    let mut all = Vec::new();
+    for (arg_idx, kind, named_in, is_const, named_out) in candidates {
+        let candidate = (*arg_idx, *kind, *named_in, *is_const);
+        all.push(candidate);
+        if !*named_out {
+            non_out.push(candidate);
+        }
+    }
+    infer_unique_release_kind(&non_out).or_else(|| infer_unique_release_kind(&all))
+}
+
+fn infer_unique_release_arg_from_kind_preferring_non_out(
+    expected_kind: KfuncRefKind,
+    candidates: &[(usize, Option<KfuncRefKind>, bool, bool, bool)],
+) -> Option<usize> {
+    let mut non_out = Vec::new();
+    let mut all = Vec::new();
+    for (arg_idx, kind, named_in, is_const, named_out) in candidates {
+        let candidate = (*arg_idx, *kind, *named_in, *is_const);
+        all.push(candidate);
+        if !*named_out {
+            non_out.push(candidate);
+        }
+    }
+    infer_unique_release_arg_from_kind(expected_kind, &non_out)
+        .or_else(|| infer_unique_release_arg_from_kind(expected_kind, &all))
+}
+
 fn fallback_release_arg_index_from_arg0(
     expected_kind: KfuncRefKind,
     arg0_kind: Option<KfuncRefKind>,
@@ -821,14 +865,29 @@ pub fn kfunc_release_ref_arg_index(kfunc: &str) -> Option<usize> {
                 }
                 if let Some(expected_kind) = kfunc_release_ref_kind(kfunc) {
                     let mut candidates: Vec<(usize, Option<KfuncRefKind>, bool, bool)> = Vec::new();
+                    let mut candidates_with_out: Vec<(
+                        usize,
+                        Option<KfuncRefKind>,
+                        bool,
+                        bool,
+                        bool,
+                    )> = Vec::new();
                     for arg_idx in 0..5 {
-                        candidates.push((
+                        let candidate = (
                             arg_idx,
                             kernel_btf
                                 .kfunc_pointer_arg_ref_family(kfunc, arg_idx)
                                 .map(ref_kind_from_btf_family),
                             kernel_btf.kfunc_pointer_arg_is_named_in(kfunc, arg_idx),
                             kernel_btf.kfunc_pointer_arg_is_const(kfunc, arg_idx),
+                        );
+                        candidates.push(candidate);
+                        candidates_with_out.push((
+                            candidate.0,
+                            candidate.1,
+                            candidate.2,
+                            candidate.3,
+                            kernel_btf.kfunc_pointer_arg_is_named_out(kfunc, arg_idx),
                         ));
                     }
                     if let Some(arg_idx) =
@@ -836,9 +895,10 @@ pub fn kfunc_release_ref_arg_index(kfunc: &str) -> Option<usize> {
                     {
                         return Some(arg_idx);
                     }
-                    if let Some(arg_idx) =
-                        infer_unique_release_arg_from_kind(expected_kind, &candidates)
-                    {
+                    if let Some(arg_idx) = infer_unique_release_arg_from_kind_preferring_non_out(
+                        expected_kind,
+                        &candidates_with_out,
+                    ) {
                         return Some(arg_idx);
                     }
 
@@ -2498,6 +2558,27 @@ mod tests {
     }
 
     #[test]
+    fn test_infer_unique_release_kind_preferring_non_out_selects_non_out_kind() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), false, false, true),
+            (1usize, Some(KfuncRefKind::Cgroup), false, false, false),
+        ];
+        assert_eq!(
+            infer_unique_release_kind_preferring_non_out(&candidates),
+            Some(KfuncRefKind::Cgroup)
+        );
+    }
+
+    #[test]
+    fn test_infer_unique_release_kind_preferring_non_out_falls_back_to_all() {
+        let candidates = vec![(0usize, Some(KfuncRefKind::Task), false, false, true)];
+        assert_eq!(
+            infer_unique_release_kind_preferring_non_out(&candidates),
+            Some(KfuncRefKind::Task)
+        );
+    }
+
+    #[test]
     fn test_infer_release_arg_from_named_inputs_selects_unique_match() {
         let candidates = vec![
             (0usize, Some(KfuncRefKind::Task), false, false),
@@ -2585,6 +2666,27 @@ mod tests {
         assert_eq!(
             infer_unique_release_arg_from_kind(KfuncRefKind::Task, &candidates),
             Some(1)
+        );
+    }
+
+    #[test]
+    fn test_infer_unique_release_arg_from_kind_preferring_non_out_selects_non_out() {
+        let candidates = vec![
+            (0usize, Some(KfuncRefKind::Task), false, false, true),
+            (1usize, Some(KfuncRefKind::Task), false, false, false),
+        ];
+        assert_eq!(
+            infer_unique_release_arg_from_kind_preferring_non_out(KfuncRefKind::Task, &candidates),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn test_infer_unique_release_arg_from_kind_preferring_non_out_falls_back_to_all() {
+        let candidates = vec![(0usize, Some(KfuncRefKind::Task), false, false, true)];
+        assert_eq!(
+            infer_unique_release_arg_from_kind_preferring_non_out(KfuncRefKind::Task, &candidates),
+            Some(0)
         );
     }
 
