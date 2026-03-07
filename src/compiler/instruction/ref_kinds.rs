@@ -1795,10 +1795,29 @@ fn infer_unknown_stack_object_lifecycle_arg_from_const_hints<'a>(
     None
 }
 
+fn infer_unknown_stack_object_init_arg_from_named_out_fallback(
+    args: &[UnknownStackObjectArgInfo],
+) -> Option<&UnknownStackObjectArgInfo> {
+    if args.is_empty() {
+        return None;
+    }
+
+    // Conservative shape fallback: treat a single writable named-out stack
+    // object arg (with no named-in stack object args) as an init target.
+    if args.iter().any(|arg| arg.named_in) {
+        return None;
+    }
+    let named_out_args: Vec<&UnknownStackObjectArgInfo> =
+        args.iter().filter(|arg| arg.named_out).collect();
+    if named_out_args.len() != 1 {
+        return None;
+    }
+    named_out_args.first().copied()
+}
+
 pub fn kfunc_unknown_stack_object_lifecycle(
     kfunc: &str,
 ) -> Option<KfuncUnknownStackObjectLifecycle> {
-    let op = unknown_stack_object_lifecycle_op_from_kfunc_name(kfunc)?;
     let args = unknown_stack_object_args(kfunc);
     let kernel_btf = KernelBtf::get();
     let const_args: BTreeSet<usize> = args
@@ -1806,13 +1825,28 @@ pub fn kfunc_unknown_stack_object_lifecycle(
         .filter(|arg| kernel_btf.kfunc_pointer_arg_is_const(kfunc, arg.arg_idx))
         .map(|arg| arg.arg_idx)
         .collect();
-    let arg = infer_unknown_stack_object_lifecycle_arg(&args, op, &const_args).or_else(|| {
-        infer_unknown_stack_object_lifecycle_arg_from_const_hints(&args, op, &const_args)
-    })?;
+    if let Some(op) = unknown_stack_object_lifecycle_op_from_kfunc_name(kfunc) {
+        let arg =
+            infer_unknown_stack_object_lifecycle_arg(&args, op, &const_args).or_else(|| {
+                infer_unknown_stack_object_lifecycle_arg_from_const_hints(&args, op, &const_args)
+            })?;
+        return Some(KfuncUnknownStackObjectLifecycle {
+            type_name: arg.type_name.clone(),
+            type_id: kernel_btf.kfunc_pointer_arg_stack_object_type_id(kfunc, arg.arg_idx),
+            op,
+            arg_idx: arg.arg_idx,
+        });
+    }
+
+    if unknown_transfer_move_semantics_from_kfunc_name(kfunc).is_some() {
+        return None;
+    }
+
+    let arg = infer_unknown_stack_object_init_arg_from_named_out_fallback(&args)?;
     Some(KfuncUnknownStackObjectLifecycle {
         type_name: arg.type_name.clone(),
         type_id: kernel_btf.kfunc_pointer_arg_stack_object_type_id(kfunc, arg.arg_idx),
-        op,
+        op: KfuncUnknownStackObjectLifecycleOp::Init,
         arg_idx: arg.arg_idx,
     })
 }
@@ -3267,6 +3301,71 @@ mod tests {
             )
             .is_none(),
             "const-hint lifecycle fallback should reject ambiguous candidates"
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_init_arg_from_named_out_fallback_selects_unique_out() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: false,
+            },
+        ];
+        let selected = infer_unknown_stack_object_init_arg_from_named_out_fallback(&args)
+            .expect("expected unique named-out arg to identify init fallback target");
+        assert_eq!(selected.arg_idx, 0);
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_init_arg_from_named_out_fallback_rejects_named_in() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: false,
+                named_in: true,
+            },
+        ];
+        assert!(
+            infer_unknown_stack_object_init_arg_from_named_out_fallback(&args).is_none(),
+            "init fallback should not apply when named-in stack-object args exist"
+        );
+    }
+
+    #[test]
+    fn test_infer_unknown_stack_object_init_arg_from_named_out_fallback_requires_unique_out() {
+        let args = vec![
+            UnknownStackObjectArgInfo {
+                arg_idx: 0,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+                named_in: false,
+            },
+            UnknownStackObjectArgInfo {
+                arg_idx: 1,
+                type_name: "bpf_wq".to_string(),
+                named_out: true,
+                named_in: false,
+            },
+        ];
+        assert!(
+            infer_unknown_stack_object_init_arg_from_named_out_fallback(&args).is_none(),
+            "init fallback should require a unique named-out stack-object arg"
         );
     }
 
