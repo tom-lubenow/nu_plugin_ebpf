@@ -1844,25 +1844,30 @@ impl KernelBtf {
             ));
         }
 
-        let mut current_type_id = root_type_id;
+        let mut current_ty = btf
+            .get_type_by_id(root_type_id)
+            .map_err(|e| {
+                BtfError::KernelBtfError(format!(
+                    "failed to resolve kernel BTF type {}: {}",
+                    root_type_id, e
+                ))
+            })?
+            .clone();
         let mut path = Vec::with_capacity(field_path.len());
 
         let path_desc = Self::format_trampoline_field_path(field_path);
         for segment in field_path {
-            let ty = btf.get_type_by_id(current_type_id).map_err(|e| {
-                BtfError::KernelBtfError(format!(
-                    "failed to resolve kernel BTF type {}: {}",
-                    current_type_id, e
-                ))
-            })?;
-            let ty_name = ty.name.as_deref().unwrap_or("<anonymous>");
-            if ty.num_refs > 1 {
-                return Err(BtfError::KernelBtfError(format!(
-                    "trampoline field path '{}' crosses a multi-level pointer type '{}', which is not supported yet",
-                    path_desc, ty_name
-                )));
+            while current_ty.num_refs > 1 {
+                let mut deref_ty = current_ty.clone();
+                deref_ty.num_refs -= 1;
+                path.push(TrampolineFieldPathSegment {
+                    offset_bytes: 0,
+                    type_info: Self::type_info_from_btf_type(btf, &deref_ty, raw_type_sizes)?,
+                });
+                current_ty = deref_ty;
             }
-            let (next_type_id, offset_bytes) = match (segment, &ty.base_type) {
+            let ty_name = current_ty.name.as_deref().unwrap_or("<anonymous>");
+            let (next_ty, offset_bytes) = match (segment, &current_ty.base_type) {
                 (TrampolineFieldSelector::Field(segment), Type::Struct(struct_ty))
                 | (TrampolineFieldSelector::Field(segment), Type::Union(struct_ty)) => {
                     let member = struct_ty
@@ -1889,7 +1894,16 @@ impl KernelBtf {
                         )));
                     }
 
-                    (member.type_id, (member.offset / 8) as usize)
+                    let member_ty = btf
+                        .get_type_by_id(member.type_id)
+                        .map_err(|e| {
+                            BtfError::KernelBtfError(format!(
+                                "failed to resolve kernel BTF type {}: {}",
+                                member.type_id, e
+                            ))
+                        })?
+                        .clone();
+                    (member_ty, (member.offset / 8) as usize)
                 }
                 (TrampolineFieldSelector::Field(segment), Type::Array(_)) => {
                     return Err(BtfError::KernelBtfError(format!(
@@ -1911,12 +1925,15 @@ impl KernelBtf {
                             ty_name, index, num_elements
                         )));
                     }
-                    let elem_ty = btf.get_type_by_id(array_ty.elem_type_id).map_err(|e| {
-                        BtfError::KernelBtfError(format!(
-                            "failed to resolve kernel BTF type {}: {}",
-                            array_ty.elem_type_id, e
-                        ))
-                    })?;
+                    let elem_ty = btf
+                        .get_type_by_id(array_ty.elem_type_id)
+                        .map_err(|e| {
+                            BtfError::KernelBtfError(format!(
+                                "failed to resolve kernel BTF type {}: {}",
+                                array_ty.elem_type_id, e
+                            ))
+                        })?
+                        .clone();
                     let raw_size_bytes = raw_type_sizes
                         .get(&array_ty.elem_type_id)
                         .copied()
@@ -1929,7 +1946,7 @@ impl KernelBtf {
                             path_desc
                         ))
                     })?;
-                    (array_ty.elem_type_id, offset_bytes)
+                    (elem_ty, offset_bytes)
                 }
                 (TrampolineFieldSelector::Index(index), _) => {
                     return Err(BtfError::KernelBtfError(format!(
@@ -1939,17 +1956,11 @@ impl KernelBtf {
                 }
             };
 
-            current_type_id = next_type_id;
-            let member_ty = btf.get_type_by_id(current_type_id).map_err(|e| {
-                BtfError::KernelBtfError(format!(
-                    "failed to resolve kernel BTF type {}: {}",
-                    current_type_id, e
-                ))
-            })?;
             path.push(TrampolineFieldPathSegment {
                 offset_bytes,
-                type_info: Self::type_info_from_btf_type(btf, &member_ty, raw_type_sizes)?,
+                type_info: Self::type_info_from_btf_type(btf, &next_ty, raw_type_sizes)?,
             });
+            current_ty = next_ty;
         }
 
         let type_info = path
@@ -2023,22 +2034,20 @@ impl KernelBtf {
             .copied()
             .map(|size| size as usize);
         if ty.num_refs > 0 {
-            let target = if ty.num_refs == 1 {
-                let mut pointee_ty = ty.clone();
-                pointee_ty.num_refs = 0;
-                if pointer_type_depth == 0 || active_type_ids.contains(&pointee_ty.type_id) {
-                    Self::recursive_type_info_fallback(btf, &pointee_ty, raw_type_sizes)?
-                } else {
-                    Self::type_info_from_btf_type_inner(
-                        btf,
-                        &pointee_ty,
-                        raw_type_sizes,
-                        active_type_ids,
-                        pointer_type_depth - 1,
-                    )?
-                }
+            let mut pointee_ty = ty.clone();
+            pointee_ty.num_refs -= 1;
+            let target = if pointer_type_depth == 0
+                || (pointee_ty.num_refs == 0 && active_type_ids.contains(&pointee_ty.type_id))
+            {
+                Self::recursive_type_info_fallback(btf, &pointee_ty, raw_type_sizes)?
             } else {
-                TypeInfo::Unknown
+                Self::type_info_from_btf_type_inner(
+                    btf,
+                    &pointee_ty,
+                    raw_type_sizes,
+                    active_type_ids,
+                    pointer_type_depth - 1,
+                )?
             };
             return Ok(TypeInfo::Ptr {
                 target: Box::new(target),
@@ -3787,6 +3796,31 @@ format:
         assert!(matches!(
             nested.type_info,
             TypeInfo::Int { size: 4 | 8, .. }
+        ));
+    }
+
+    #[test]
+    fn test_function_trampoline_arg_field_resolves_multi_level_pointer_projection() {
+        let projection = KernelBtf::get()
+            .function_trampoline_arg_field(
+                "do_close_on_exec",
+                0,
+                &[
+                    TrampolineFieldSelector::Field("fdt".to_string()),
+                    TrampolineFieldSelector::Field("fd".to_string()),
+                    TrampolineFieldSelector::Field("f_inode".to_string()),
+                    TrampolineFieldSelector::Field("i_ino".to_string()),
+                ],
+            )
+            .expect("do_close_on_exec fdt.fd.f_inode.i_ino projection should resolve")
+            .expect("do_close_on_exec arg0.fdt.fd.f_inode.i_ino should exist");
+
+        assert_eq!(projection.path.len(), 5);
+        assert_eq!(projection.path[2].offset_bytes, 0);
+        assert!(matches!(projection.path[2].type_info, TypeInfo::Ptr { .. }));
+        assert!(matches!(
+            projection.type_info,
+            TypeInfo::Int { size: 8, .. }
         ));
     }
 

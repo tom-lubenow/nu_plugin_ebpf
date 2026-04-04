@@ -1193,7 +1193,7 @@ impl<'a> HirToMirLowering<'a> {
                 base_vreg: VReg,
                 address_space: AddressSpace,
                 base_offset: usize,
-                aggregate_ty: MirType,
+                target_ty: MirType,
             },
         }
 
@@ -1201,21 +1201,15 @@ impl<'a> HirToMirLowering<'a> {
             MirType::Ptr {
                 pointee,
                 address_space,
-            } if matches!(
-                pointee.as_ref(),
-                MirType::Array { .. } | MirType::Struct { .. }
-            ) =>
-            {
-                ValueCursor::Pointer {
-                    base_vreg,
-                    address_space: *address_space,
-                    base_offset: 0,
-                    aggregate_ty: pointee.as_ref().clone(),
-                }
-            }
+            } => ValueCursor::Pointer {
+                base_vreg,
+                address_space: *address_space,
+                base_offset: 0,
+                target_ty: pointee.as_ref().clone(),
+            },
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "typed field path '{}' requires a typed pointer to an aggregate, got {:?}",
+                    "typed field path '{}' requires a typed pointer value, got {:?}",
                     path_desc, base_runtime_ty
                 )));
             }
@@ -1223,14 +1217,80 @@ impl<'a> HirToMirLowering<'a> {
 
         for (segment_idx, member) in path_members.iter().enumerate() {
             let is_last = segment_idx + 1 == path_members.len();
+            loop {
+                let ValueCursor::Pointer {
+                    base_vreg,
+                    address_space,
+                    base_offset,
+                    target_ty,
+                } = &cursor;
+                let MirType::Ptr {
+                    pointee,
+                    address_space: next_space,
+                } = target_ty
+                else {
+                    break;
+                };
+
+                let current_base_vreg = *base_vreg;
+                let current_address_space = *address_space;
+                let current_base_offset = *base_offset;
+                let next_space = *next_space;
+                let ptr_ty = MirType::Ptr {
+                    pointee: pointee.clone(),
+                    address_space: next_space,
+                };
+                let ptr_vreg = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(ptr_vreg, ptr_ty.clone());
+                match current_address_space {
+                    AddressSpace::Stack | AddressSpace::Map => {
+                        self.emit(MirInst::Load {
+                            dst: ptr_vreg,
+                            ptr: current_base_vreg,
+                            offset: Self::trampoline_projection_offset_i32(
+                                current_base_offset,
+                                path_desc,
+                            )?,
+                            ty: ptr_ty,
+                        });
+                    }
+                    AddressSpace::Kernel | AddressSpace::User => {
+                        let pointer_slot =
+                            self.func
+                                .alloc_stack_slot(align_to_eight(8), 8, StackSlotKind::Local);
+                        self.record_stack_slot_type(pointer_slot, ptr_ty.clone());
+                        self.emit_trampoline_probe_read_to_slot(
+                            current_base_vreg,
+                            current_address_space,
+                            current_base_offset,
+                            pointer_slot,
+                            &ptr_ty,
+                            path_desc,
+                        )?;
+                        self.emit(MirInst::LoadSlot {
+                            dst: ptr_vreg,
+                            slot: pointer_slot,
+                            offset: 0,
+                            ty: ptr_ty,
+                        });
+                    }
+                }
+                cursor = ValueCursor::Pointer {
+                    base_vreg: ptr_vreg,
+                    address_space: next_space,
+                    base_offset: 0,
+                    target_ty: pointee.as_ref().clone(),
+                };
+            }
+
             let ValueCursor::Pointer {
                 base_vreg,
                 address_space,
                 base_offset,
-                aggregate_ty,
+                target_ty,
             } = &cursor;
             let (segment_offset, next_ty) =
-                Self::resolve_typed_value_projection_step(aggregate_ty, member, path_desc)?;
+                Self::resolve_typed_value_projection_step(target_ty, member, path_desc)?;
             let field_offset = base_offset.checked_add(segment_offset).ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
                     "typed field path '{}' offset overflowed",
@@ -1336,72 +1396,11 @@ impl<'a> HirToMirLowering<'a> {
                 return Ok(next_ty);
             }
 
-            cursor = match next_ty {
-                MirType::Array { .. } | MirType::Struct { .. } => ValueCursor::Pointer {
-                    base_vreg: *base_vreg,
-                    address_space: *address_space,
-                    base_offset: field_offset,
-                    aggregate_ty: next_ty,
-                },
-                MirType::Ptr {
-                    pointee,
-                    address_space: next_space,
-                } if matches!(
-                    pointee.as_ref(),
-                    MirType::Array { .. } | MirType::Struct { .. }
-                ) =>
-                {
-                    let ptr_vreg = self.func.alloc_vreg();
-                    let ptr_ty = MirType::Ptr {
-                        pointee: pointee.clone(),
-                        address_space: next_space,
-                    };
-                    self.vreg_type_hints.insert(ptr_vreg, ptr_ty.clone());
-                    match address_space {
-                        AddressSpace::Stack | AddressSpace::Map => {
-                            self.emit(MirInst::Load {
-                                dst: ptr_vreg,
-                                ptr: *base_vreg,
-                                offset: Self::trampoline_projection_offset_i32(
-                                    field_offset,
-                                    path_desc,
-                                )?,
-                                ty: ptr_ty,
-                            });
-                        }
-                        AddressSpace::Kernel | AddressSpace::User => {
-                            let pointer_slot =
-                                self.func.alloc_stack_slot(8, 8, StackSlotKind::Local);
-                            self.record_stack_slot_type(pointer_slot, ptr_ty.clone());
-                            self.emit_trampoline_probe_read_to_slot(
-                                *base_vreg,
-                                *address_space,
-                                field_offset,
-                                pointer_slot,
-                                &ptr_ty,
-                                path_desc,
-                            )?;
-                            self.emit(MirInst::LoadSlot {
-                                dst: ptr_vreg,
-                                slot: pointer_slot,
-                                offset: 0,
-                                ty: ptr_ty,
-                            });
-                        }
-                    }
-                    ValueCursor::Pointer {
-                        base_vreg: ptr_vreg,
-                        address_space: next_space,
-                        base_offset: 0,
-                        aggregate_ty: pointee.as_ref().clone(),
-                    }
-                }
-                other => {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "typed field path '{}' requires an aggregate or typed pointer before the final segment, got {:?}",
-                        path_desc, other
-                    )));
-                }
+            cursor = ValueCursor::Pointer {
+                base_vreg: *base_vreg,
+                address_space: *address_space,
+                base_offset: field_offset,
+                target_ty: next_ty,
             };
         }
 

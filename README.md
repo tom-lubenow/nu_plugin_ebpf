@@ -148,23 +148,23 @@ Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/fo
 trampoline values work directly. By-value trampoline args and pointer-backed
 trampoline args/returns can project scalar/pointer fields such as
 `ctx.arg0.some_field`; pointer-backed projections are lowered through
-null-guarded `bpf_probe_read_{kernel,user}` and can cross intermediate pointer
-fields such as `ctx.arg0.foo.bar`. Fixed-size arrays can also be indexed with
-numeric path segments like `ctx.arg0.comm.0`. Terminal array leaves and
-unsupported aggregate leaves are exposed as stack-backed byte buffers, while
-representable terminal struct leaves keep their field layouts for
-`count`/`ebpf counters`, and single-value `emit` can stream those struct leaves
-as records. Nested array/record fields inside emitted values also decode
-recursively when the compiler can preserve their layouts. `emit` still
-preserves unsupported aggregate layouts as binary payloads, and `count`
-supports them as byte-buffer keys. `ebpf counters` decodes those keys using any
-schema the compiler still has: arrays and typed structs can surface as strings,
-lists, or records, while opaque aggregate layouts still display as `binary`.
-These typed field projections also survive bindings and repeated cell-path
-access, for example `let inode = $ctx.arg0.f_inode; $inode.i_sb.s_flags`.
-16-byte byte-array/string keys such as `ctx.arg0.comm` continue to display as
-strings.
-Multi-level pointer fields like `foo **` are still unsupported.
+null-guarded `bpf_probe_read_{kernel,user}` and can cross intermediate and
+repeated pointer hops such as `ctx.arg0.foo.bar` or
+`ctx.arg0.fdt.fd.f_inode.i_ino`. Fixed-size arrays can also be indexed with
+numeric path segments like `ctx.arg0.comm.0`; arbitrary pointer indexing is
+still unsupported. Terminal array leaves and unsupported aggregate leaves are
+exposed as stack-backed byte buffers, while representable terminal struct
+leaves keep their field layouts for `count`/`ebpf counters`, and single-value
+`emit` can stream those struct leaves as records. Nested array/record fields
+inside emitted values also decode recursively when the compiler can preserve
+their layouts. `emit` still preserves unsupported aggregate layouts as binary
+payloads, and `count` supports them as byte-buffer keys. `ebpf counters`
+decodes those keys using any schema the compiler still has: arrays and typed
+structs can surface as strings, lists, or records, while opaque aggregate
+layouts still display as `binary`. These typed field projections also survive
+bindings and repeated cell-path access, for example
+`let inode = $ctx.arg0.f_inode; $inode.i_sb.s_flags`. 16-byte
+byte-array/string keys such as `ctx.arg0.comm` continue to display as strings.
 Aggregate `fexit` returns still depend on kernel trampoline support; some
 kernels reject struct returns entirely.
 

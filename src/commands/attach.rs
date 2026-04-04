@@ -562,23 +562,23 @@ Context parameter syntax (recommended):
     By-value trampoline args and pointer-backed trampoline args/returns
     support scalar/pointer field projection like ctx.arg0.some_field.
     Pointer-backed projections use null-guarded bpf_probe_read_{kernel,user}
-    and can cross intermediate pointer fields like ctx.arg0.foo.bar.
-    Fixed-size arrays can be indexed with numeric path segments like
-    ctx.arg0.comm.0. Terminal array leaves and unsupported aggregate leaves
-    are exposed as stack-backed byte buffers. Representable terminal struct
-    leaves keep their field layouts for count/counter decoding, and single-value
-    emit can now stream those struct leaves as records. Nested array/record
-    fields inside emitted values also decode recursively when the compiler can
-    preserve their layouts. emit still preserves unsupported aggregate layouts
-    as binary payloads, and count can use them as byte-buffer keys. ebpf
-    counters decodes those keys using any schema the compiler still has: arrays
-    and typed structs can surface as strings, lists, or records; opaque
-    aggregate layouts still display as binary. These typed field projections
-    also survive bindings and repeated cell-path access, for example
-    `let inode = $ctx.arg0.f_inode; $inode.i_sb.s_flags`. 16-byte
+    and can cross intermediate and repeated pointer hops like ctx.arg0.foo.bar
+    or ctx.arg0.fdt.fd.f_inode.i_ino. Fixed-size arrays can be indexed with
+    numeric path segments like ctx.arg0.comm.0, but arbitrary pointer indexing
+    is still unsupported. Terminal array leaves and unsupported aggregate
+    leaves are exposed as stack-backed byte buffers. Representable terminal
+    struct leaves keep their field layouts for count/counter decoding, and
+    single-value emit can now stream those struct leaves as records. Nested
+    array/record fields inside emitted values also decode recursively when the
+    compiler can preserve their layouts. emit still preserves unsupported
+    aggregate layouts as binary payloads, and count can use them as byte-buffer
+    keys. ebpf counters decodes those keys using any schema the compiler still
+    has: arrays and typed structs can surface as strings, lists, or records;
+    opaque aggregate layouts still display as binary. These typed field
+    projections also survive bindings and repeated cell-path access, for
+    example `let inode = $ctx.arg0.f_inode; $inode.i_sb.s_flags`. 16-byte
     byte-array/string keys such as ctx.arg0.comm continue to display as
     strings.
-    Multi-level pointer fields like foo ** are not supported yet.
     Aggregate fexit returns still depend on kernel trampoline support;
     some kernels reject struct returns entirely.
 
