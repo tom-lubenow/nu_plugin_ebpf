@@ -1,6 +1,8 @@
 use super::*;
 use crate::compiler::instruction::KfuncSignature;
-use crate::compiler::mir::{BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, STRING_COUNTER_MAP_NAME};
+use crate::compiler::mir::{
+    AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, STRING_COUNTER_MAP_NAME,
+};
 
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn set_call_args(&mut self, args: &HirCallArgs) -> Result<(), CompileError> {
@@ -626,6 +628,89 @@ impl<'a> HirToMirLowering<'a> {
                         out_meta.field_type = meta.field_type;
                         out_meta.string_slot = meta.string_slot;
                         out_meta.record_fields = meta.record_fields;
+                    }
+                }
+            }
+
+            "get" => {
+                if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "get does not accept named flags or arguments in eBPF".into(),
+                    ));
+                }
+
+                let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                let input_reg = self
+                    .pipeline_input_reg
+                    .or(src_dst_had_value.then_some(src_dst));
+                let (idx_vreg, _) = self.positional_args.first().copied().ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "get requires a numeric positional index argument".into(),
+                    )
+                })?;
+                if self.positional_args.len() != 1 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "get accepts exactly one positional index argument in eBPF".into(),
+                    ));
+                }
+
+                let idx = MirValue::VReg(idx_vreg);
+                let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
+                let mut handled_list_get = false;
+                if let Some(meta) = input_meta {
+                    if meta.list_buffer.is_some() {
+                        self.emit(MirInst::ListGet {
+                            dst: dst_vreg,
+                            list: input_vreg,
+                            idx: idx.clone(),
+                        });
+
+                        let out_meta = self.get_or_create_metadata(src_dst);
+                        out_meta.field_type = meta.field_type;
+                        handled_list_get = true;
+                    }
+                }
+
+                if handled_list_get {
+                    // Metadata is already updated for stack-backed list access.
+                } else {
+                    let input_reg = input_reg.ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "get requires a list value or typed kernel/user pointer input".into(),
+                        )
+                    })?;
+                    let base_runtime_ty = self
+                        .typed_value_runtime_type(input_reg, input_vreg)
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "get requires a list value or typed kernel/user pointer input"
+                                    .into(),
+                            )
+                        })?;
+
+                    match &base_runtime_ty {
+                        MirType::Ptr {
+                            address_space: AddressSpace::Kernel | AddressSpace::User,
+                            ..
+                        } => {
+                            self.lower_dynamic_typed_numeric_get(
+                                src_dst,
+                                input_vreg,
+                                &base_runtime_ty,
+                                idx,
+                            )?;
+                        }
+                        MirType::Ptr { .. } => {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "numeric get on typed stack/map values is not supported yet; use a static cell path or list indexing instead".into(),
+                            ));
+                        }
+                        _ => {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "get requires a list value or typed kernel/user pointer input, got {:?}",
+                                base_runtime_ty
+                            )));
+                        }
                     }
                 }
             }

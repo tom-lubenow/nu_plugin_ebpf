@@ -442,6 +442,14 @@ impl<'a> HirToMirLowering<'a> {
         out
     }
 
+    pub(super) fn typed_value_runtime_type(&self, reg: RegId, vreg: VReg) -> Option<MirType> {
+        self.vreg_type_hints
+            .get(&vreg)
+            .cloned()
+            .or_else(|| self.current_type_hints.get(&reg.get()).cloned())
+            .or_else(|| self.get_metadata(reg).and_then(|m| m.field_type.clone()))
+    }
+
     fn trampoline_value_spec(
         &self,
         field: &CtxField,
@@ -1528,6 +1536,162 @@ impl<'a> HirToMirLowering<'a> {
         )))
     }
 
+    pub(super) fn lower_dynamic_typed_numeric_get(
+        &mut self,
+        dst_reg: RegId,
+        base_vreg: VReg,
+        base_runtime_ty: &MirType,
+        idx: MirValue,
+    ) -> Result<MirType, CompileError> {
+        let dst_vreg = self.get_vreg(dst_reg);
+        let path_desc = match &idx {
+            MirValue::Const(value) => format!("get {}", value),
+            _ => "get <dynamic-index>".to_string(),
+        };
+
+        let MirType::Ptr {
+            pointee,
+            address_space,
+        } = base_runtime_ty
+        else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "numeric get requires a typed pointer value, got {:?}",
+                base_runtime_ty
+            )));
+        };
+
+        let (element_ty, element_size) = match pointee.as_ref() {
+            MirType::Array { elem, .. } => (elem.as_ref().clone(), elem.size()),
+            other => (other.clone(), other.size()),
+        };
+
+        if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) {
+            return Err(CompileError::UnsupportedInstruction(
+                "numeric get on typed stack/map values is not supported yet; use a static cell path or list indexing instead".into(),
+            ));
+        }
+
+        let base_copy = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: base_copy,
+            src: MirValue::VReg(base_vreg),
+        });
+        self.vreg_type_hints
+            .insert(base_copy, base_runtime_ty.clone());
+
+        let scaled_idx = if element_size == 1 {
+            idx.clone()
+        } else {
+            match idx {
+                MirValue::Const(value) => {
+                    let scaled = value
+                        .checked_mul(i64::try_from(element_size).map_err(|_| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "numeric get element size {} is too large",
+                                element_size
+                            ))
+                        })?)
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "numeric get index overflowed".into(),
+                            )
+                        })?;
+                    MirValue::Const(scaled)
+                }
+                MirValue::VReg(idx_vreg) => {
+                    let scaled_vreg = self.func.alloc_vreg();
+                    self.emit(MirInst::BinOp {
+                        dst: scaled_vreg,
+                        op: BinOpKind::Mul,
+                        lhs: MirValue::VReg(idx_vreg),
+                        rhs: MirValue::Const(i64::try_from(element_size).map_err(|_| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "numeric get element size {} is too large",
+                                element_size
+                            ))
+                        })?),
+                    });
+                    MirValue::VReg(scaled_vreg)
+                }
+                MirValue::StackSlot(_) => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "numeric get does not support stack-slot indices".into(),
+                    ));
+                }
+            }
+        };
+
+        let element_ptr_vreg = self.func.alloc_vreg();
+        let element_ptr_ty = MirType::Ptr {
+            pointee: Box::new(element_ty.clone()),
+            address_space: *address_space,
+        };
+        self.vreg_type_hints
+            .insert(element_ptr_vreg, element_ptr_ty.clone());
+        self.emit(MirInst::BinOp {
+            dst: element_ptr_vreg,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(base_copy),
+            rhs: scaled_idx,
+        });
+
+        if matches!(element_ty, MirType::Array { .. } | MirType::Struct { .. }) {
+            let projected_slot = self.func.alloc_stack_slot(
+                align_to_eight(element_ty.size()),
+                8,
+                StackSlotKind::Local,
+            );
+            self.record_stack_slot_type(projected_slot, element_ty.clone());
+            self.emit_trampoline_probe_read_to_slot(
+                element_ptr_vreg,
+                *address_space,
+                0,
+                projected_slot,
+                &element_ty,
+                &path_desc,
+            )?;
+            self.vreg_type_hints.insert(
+                dst_vreg,
+                MirType::Ptr {
+                    pointee: Box::new(element_ty.clone()),
+                    address_space: AddressSpace::Stack,
+                },
+            );
+            self.emit(MirInst::Copy {
+                dst: dst_vreg,
+                src: MirValue::StackSlot(projected_slot),
+            });
+        } else {
+            let projected_slot = self.func.alloc_stack_slot(
+                align_to_eight(element_ty.size()),
+                8,
+                StackSlotKind::Local,
+            );
+            self.record_stack_slot_type(projected_slot, element_ty.clone());
+            self.emit_trampoline_probe_read_to_slot(
+                element_ptr_vreg,
+                *address_space,
+                0,
+                projected_slot,
+                &element_ty,
+                &path_desc,
+            )?;
+            self.vreg_type_hints.insert(dst_vreg, element_ty.clone());
+            self.emit(MirInst::LoadSlot {
+                dst: dst_vreg,
+                slot: projected_slot,
+                offset: 0,
+                ty: element_ty.clone(),
+            });
+        }
+
+        let meta = self.get_or_create_metadata(dst_reg);
+        meta.is_context = false;
+        meta.field_type = Some(element_ty.clone());
+
+        Ok(element_ty)
+    }
+
     /// Lower FollowCellPath instruction (context field access like $ctx.pid)
     pub(super) fn lower_follow_cell_path(
         &mut self,
@@ -1551,14 +1715,7 @@ impl<'a> HirToMirLowering<'a> {
         if !self.is_context_reg(src_dst) {
             let path_desc = Self::typed_value_path_desc(&path.members);
             let base_runtime_ty = self
-                .vreg_type_hints
-                .get(&dst_vreg)
-                .cloned()
-                .or_else(|| self.current_type_hints.get(&src_dst.get()).cloned())
-                .or_else(|| {
-                    self.get_metadata(src_dst)
-                        .and_then(|m| m.field_type.clone())
-                })
+                .typed_value_runtime_type(src_dst, dst_vreg)
                 .ok_or_else(|| {
                     CompileError::UnsupportedInstruction(format!(
                         "typed field path '{}' requires type information for the base value",

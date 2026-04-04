@@ -684,8 +684,11 @@ Context parameter syntax (recommended):
     numeric path segments like ctx.arg0.comm.0, and pointer-backed sequences
     can now also be indexed with constant numeric segments such as
     `ctx.arg0.fdt.fd.0.f_inode.i_ino` or `let fd = $ctx.arg0.fdt.fd;
-    $fd.0.f_inode.i_ino`. Terminal array leaves and unsupported aggregate
-    leaves are exposed as stack-backed byte buffers. Representable terminal
+    $fd.0.f_inode.i_ino`. Numeric `get` now supports the same typed
+    kernel/user pointer traversal through a register value, for example
+    `let idx = 0; let fd = ($ctx.arg0.fdt.fd | get $idx); $fd.f_inode.i_ino`.
+    Terminal array leaves and unsupported aggregate leaves are exposed as
+    stack-backed byte buffers. Representable terminal
     struct leaves keep their field layouts for count/counter decoding, and
     single-value emit can now stream those struct leaves as records. Nested
     array/record fields inside emitted values also decode recursively when the
@@ -1343,6 +1346,70 @@ mod tests {
         HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
     }
 
+    fn make_bound_ctx_get_program(
+        binding: CellPath,
+        access: CellPath,
+        decl_id: DeclId,
+    ) -> HirProgram {
+        let ctx_var = VarId::new(0);
+        let bound_var = VarId::new(1);
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(binding)),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: bound_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: bound_var,
+                    },
+                    HirStmt::Call {
+                        decl_id,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(2)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::CellPath(Box::new(access)),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(3),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 9],
+            ast: vec![None; 9],
+            comments: vec![],
+            register_count: 4,
+            file_count: 0,
+        };
+        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+    }
+
     #[test]
     fn test_recover_optimized_type_hints_for_pointer_hop_trampoline_projection() {
         let hir = make_ctx_path_program(CellPath {
@@ -1533,6 +1600,51 @@ mod tests {
             Some(&lowering.type_hints),
         )
         .expect("optimized bound pointer-index projection should compile");
+        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+    }
+
+    #[test]
+    fn test_recover_optimized_type_hints_for_bound_numeric_get_projection() {
+        let hir = make_bound_ctx_get_program(
+            CellPath {
+                members: vec![
+                    string_member("arg0"),
+                    string_member("fdt"),
+                    string_member("fd"),
+                ],
+            },
+            CellPath {
+                members: vec![string_member("f_inode"), string_member("i_ino")],
+            },
+            DeclId::new(42),
+        );
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "do_close_on_exec");
+        let mut decl_names = HashMap::new();
+        decl_names.insert(DeclId::new(42), "get".to_string());
+
+        let mut lowering = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("bound numeric get projection should lower");
+
+        optimize_with_ssa(&mut lowering.program.main);
+        recover_optimized_type_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            &mut lowering.type_hints,
+        );
+
+        let result = compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .expect("optimized bound numeric get projection should compile");
         assert!(!result.bytecode.is_empty(), "Should produce bytecode");
     }
 }

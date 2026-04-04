@@ -701,17 +701,19 @@ impl<'a> TypeInference<'a> {
                 }
             }
             AddressSpace::Map => Ok(()),
-            AddressSpace::Kernel | AddressSpace::User => match Self::const_value(offset) {
-                Some(value) if value >= 0 => Ok(()),
-                Some(_) => Err(format!(
-                    "{:?} pointer arithmetic requires non-negative constant offsets",
-                    space
-                )),
-                None => Err(format!(
-                    "{:?} pointer arithmetic requires constant offsets",
-                    space
-                )),
-            },
+            AddressSpace::Kernel | AddressSpace::User => {
+                match self.value_range_for(offset, value_ranges) {
+                    ValueRange::Known { min, .. } if min >= 0 => Ok(()),
+                    ValueRange::Known { .. } => Err(format!(
+                        "{:?} pointer arithmetic requires non-negative offsets",
+                        space
+                    )),
+                    ValueRange::Unknown | ValueRange::Unset => Err(format!(
+                        "{:?} pointer arithmetic requires constant or bounded non-negative offsets",
+                        space
+                    )),
+                }
+            }
         }
     }
 }

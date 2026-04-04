@@ -154,8 +154,10 @@ repeated pointer hops such as `ctx.arg0.foo.bar` or
 numeric path segments like `ctx.arg0.comm.0`, and pointer-backed sequences
 can now also be indexed with constant numeric segments such as
 `ctx.arg0.fdt.fd.0.f_inode.i_ino` or `let fd = $ctx.arg0.fdt.fd;
-$fd.0.f_inode.i_ino`. Terminal array leaves and unsupported aggregate leaves
-are exposed as stack-backed byte buffers, while representable terminal struct
+$fd.0.f_inode.i_ino`. The same typed pointer traversal also works through
+numeric `get`, for example `let idx = 0; let fd = ($ctx.arg0.fdt.fd | get
+$idx); $fd.f_inode.i_ino`. Terminal array leaves and unsupported aggregate
+leaves are exposed as stack-backed byte buffers, while representable terminal struct
 leaves keep their field layouts for `count`/`ebpf counters`, and single-value
 `emit` can stream those struct leaves as records. Nested array/record fields
 inside emitted values also decode recursively when the compiler can preserve
@@ -167,7 +169,8 @@ layouts still display as `binary`. Plain trampoline `ctx.argN`/`ctx.retval`
 loads also preserve their typed pointer or aggregate layouts across bindings,
 so `let files = $ctx.arg0; $files.fdt.fd.f_inode.i_ino`,
 `ctx.arg0.fdt.fd.0.f_inode.i_ino`, `let fd = $ctx.arg0.fdt.fd;
-$fd.0.f_inode.i_ino`, and `let inode = $ctx.arg0.f_inode; $inode.i_sb.s_flags`
+$fd.0.f_inode.i_ino`, `let idx = 0; let fd = ($ctx.arg0.fdt.fd | get $idx);
+$fd.f_inode.i_ino`, and `let inode = $ctx.arg0.f_inode; $inode.i_sb.s_flags`
 continue to type-check and lower as expected. 16-byte byte-array/string keys
 such as `ctx.arg0.comm` continue to display as strings.
 Aggregate `fexit` returns still depend on kernel trampoline support; some
