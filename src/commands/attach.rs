@@ -690,8 +690,10 @@ Context parameter syntax (recommended):
     Bounded ascending `for` loops over static integer ranges now lower to
     verifier-safe loops, so `for i in 0..0 { ... get $i ... }` works.
     Bounded arithmetic on those indices, such as
-    `let j = (($i + 1) mod 2)`, is preserved too. Descending ranges are
-    still rejected.
+    `let j = (($i + 1) mod 2)`, is preserved too. The same range tracking
+    now works for typed unsigned runtime fields such as
+    `let idx = ($ctx.arg0.fdt.max_fds mod 2)`. Descending ranges are still
+    rejected.
     Terminal array leaves and unsupported aggregate leaves are exposed as
     stack-backed byte buffers. Representable terminal
     struct leaves keep their field layouts for count/counter decoding, and

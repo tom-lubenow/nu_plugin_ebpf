@@ -1,5 +1,13 @@
 use super::*;
 
+fn scalar_value_range_for_type(types: &HashMap<VReg, MirType>, dst: VReg) -> ValueRange {
+    types
+        .get(&dst)
+        .and_then(MirType::scalar_value_range)
+        .map(|(min, max)| ValueRange::Known { min, max })
+        .unwrap_or(ValueRange::Unknown)
+}
+
 pub(super) fn apply_load_inst(
     dst: VReg,
     ptr: VReg,
@@ -22,7 +30,7 @@ pub(super) fn apply_load_inst(
         .get(&dst)
         .map(verifier_type_from_mir)
         .unwrap_or(VerifierType::Scalar);
-    state.set(dst, ty);
+    state.set_with_range(dst, ty, scalar_value_range_for_type(types, dst));
 }
 
 pub(super) fn apply_store_inst(
@@ -59,7 +67,7 @@ pub(super) fn apply_load_slot_inst(
         .get(&dst)
         .map(verifier_type_from_mir)
         .unwrap_or(VerifierType::Scalar);
-    state.set(dst, dst_ty);
+    state.set_with_range(dst, dst_ty, scalar_value_range_for_type(types, dst));
 }
 
 pub(super) fn apply_store_slot_inst(
@@ -159,7 +167,7 @@ pub(super) fn apply_load_ctx_field_inst(
             kfunc_ref: None,
         };
     }
-    state.set(dst, ty);
+    state.set_with_range(dst, ty, scalar_value_range_for_type(types, dst));
     state.set_ctx_field_source(dst, Some(field.clone()));
 }
 

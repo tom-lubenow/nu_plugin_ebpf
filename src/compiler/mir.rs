@@ -154,6 +154,22 @@ impl MirType {
         }
     }
 
+    /// Inclusive scalar value bounds when they fit in the analysis range model.
+    pub fn scalar_value_range(&self) -> Option<(i64, i64)> {
+        match self {
+            MirType::Bool => Some((0, 1)),
+            MirType::I8 => Some((i8::MIN as i64, i8::MAX as i64)),
+            MirType::I16 => Some((i16::MIN as i64, i16::MAX as i64)),
+            MirType::I32 => Some((i32::MIN as i64, i32::MAX as i64)),
+            MirType::I64 => Some((i64::MIN, i64::MAX)),
+            MirType::U8 => Some((0, u8::MAX as i64)),
+            MirType::U16 => Some((0, u16::MAX as i64)),
+            MirType::U32 => Some((0, u32::MAX as i64)),
+            MirType::U64 => None,
+            _ => None,
+        }
+    }
+
     /// Return the backing kernel BTF type id for struct layouts when known.
     pub fn kernel_btf_type_id(&self) -> Option<u32> {
         match self {

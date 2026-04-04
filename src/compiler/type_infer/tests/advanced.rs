@@ -363,6 +363,124 @@ fn test_stack_pointer_add_with_loop_counter_bitand_index() {
 }
 
 #[test]
+fn test_stack_pointer_add_with_ctx_u32_mod_index() {
+    let mut func = make_test_function();
+    let list = func.alloc_vreg();
+    let idx = func.alloc_vreg();
+    let modded = func.alloc_vreg();
+    let scaled = func.alloc_vreg();
+    let ptr = func.alloc_vreg();
+    let loaded = func.alloc_vreg();
+
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::ListBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::ListNew {
+        dst: list,
+        buffer: slot,
+        max_len: 2,
+    });
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: idx,
+        field: CtxField::Pid,
+        slot: None,
+    });
+    block.instructions.push(MirInst::BinOp {
+        dst: modded,
+        op: BinOpKind::Mod,
+        lhs: MirValue::VReg(idx),
+        rhs: MirValue::Const(2),
+    });
+    block.instructions.push(MirInst::BinOp {
+        dst: scaled,
+        op: BinOpKind::Mul,
+        lhs: MirValue::VReg(modded),
+        rhs: MirValue::Const(8),
+    });
+    block.instructions.push(MirInst::BinOp {
+        dst: ptr,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(list),
+        rhs: MirValue::VReg(scaled),
+    });
+    block.instructions.push(MirInst::Load {
+        dst: loaded,
+        ptr,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    assert!(
+        ti.infer(&func).is_ok(),
+        "unsigned ctx-field ranges should bound mod-derived indices"
+    );
+}
+
+#[test]
+fn test_stack_pointer_add_with_u32_load_slot_mod_index() {
+    let mut func = make_test_function();
+    let list = func.alloc_vreg();
+    let idx = func.alloc_vreg();
+    let modded = func.alloc_vreg();
+    let scaled = func.alloc_vreg();
+    let ptr = func.alloc_vreg();
+    let loaded = func.alloc_vreg();
+
+    let list_slot = func.alloc_stack_slot(16, 8, StackSlotKind::ListBuffer);
+    let scalar_slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::ListNew {
+        dst: list,
+        buffer: list_slot,
+        max_len: 2,
+    });
+    block.instructions.push(MirInst::StoreSlot {
+        slot: scalar_slot,
+        offset: 0,
+        val: MirValue::Const(7),
+        ty: MirType::U32,
+    });
+    block.instructions.push(MirInst::LoadSlot {
+        dst: idx,
+        slot: scalar_slot,
+        offset: 0,
+        ty: MirType::U32,
+    });
+    block.instructions.push(MirInst::BinOp {
+        dst: modded,
+        op: BinOpKind::Mod,
+        lhs: MirValue::VReg(idx),
+        rhs: MirValue::Const(2),
+    });
+    block.instructions.push(MirInst::BinOp {
+        dst: scaled,
+        op: BinOpKind::Mul,
+        lhs: MirValue::VReg(modded),
+        rhs: MirValue::Const(8),
+    });
+    block.instructions.push(MirInst::BinOp {
+        dst: ptr,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(list),
+        rhs: MirValue::VReg(scaled),
+    });
+    block.instructions.push(MirInst::Load {
+        dst: loaded,
+        ptr,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    assert!(
+        ti.infer(&func).is_ok(),
+        "unsigned load-slot ranges should bound mod-derived indices"
+    );
+}
+
+#[test]
 fn test_type_error_read_str_non_ptr() {
     use crate::compiler::mir::StackSlotKind;
 

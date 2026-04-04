@@ -176,6 +176,9 @@ impl<'a> TypeInference<'a> {
                             let src_range = self.value_range_for(src, &ranges);
                             self.range_for_unary(*op, src_range)
                         }
+                        MirInst::LoadCtxField { .. } => self
+                            .scalar_type_range(&dst_ty)
+                            .unwrap_or(ValueRange::Unknown),
                         MirInst::ListLen { list, .. } => list_caps
                             .get(list)
                             .map(|cap| Self::list_len_range(*cap))
@@ -185,9 +188,11 @@ impl<'a> TypeInference<'a> {
                                 list_caps
                                     .get(ptr)
                                     .map(|cap| Self::list_len_range(*cap))
+                                    .or_else(|| self.scalar_type_range(&dst_ty))
                                     .unwrap_or(ValueRange::Unknown)
                             } else {
-                                ValueRange::Unknown
+                                self.scalar_type_range(&dst_ty)
+                                    .unwrap_or(ValueRange::Unknown)
                             }
                         }
                         MirInst::LoadSlot { slot, offset, .. } => {
@@ -195,9 +200,11 @@ impl<'a> TypeInference<'a> {
                                 slot_caps
                                     .get(slot)
                                     .map(|cap| Self::list_len_range(*cap))
+                                    .or_else(|| self.scalar_type_range(&dst_ty))
                                     .unwrap_or(ValueRange::Unknown)
                             } else {
-                                ValueRange::Unknown
+                                self.scalar_type_range(&dst_ty)
+                                    .unwrap_or(ValueRange::Unknown)
                             }
                         }
                         MirInst::Phi { args, .. } => {
@@ -466,6 +473,11 @@ impl<'a> TypeInference<'a> {
             MirValue::VReg(v) => ranges.get(v).copied().unwrap_or(ValueRange::Unknown),
             MirValue::StackSlot(_) => ValueRange::Unknown,
         }
+    }
+
+    pub(super) fn scalar_type_range(&self, ty: &MirType) -> Option<ValueRange> {
+        ty.scalar_value_range()
+            .map(|(min, max)| ValueRange::known(min, max))
     }
 
     pub(super) fn stack_bounds_for_value<'b>(
