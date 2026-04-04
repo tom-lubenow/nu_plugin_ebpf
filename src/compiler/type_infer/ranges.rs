@@ -1,4 +1,15 @@
 use super::*;
+use crate::compiler::mir::BlockId;
+use std::collections::{HashMap, VecDeque};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RangeGuard {
+    CompareConst {
+        reg: VReg,
+        op: BinOpKind,
+        value: i64,
+    },
+}
 
 impl<'a> TypeInference<'a> {
     pub(super) fn compute_list_caps(&self, func: &MirFunction) -> HashMap<VReg, usize> {
@@ -117,122 +128,147 @@ impl<'a> TypeInference<'a> {
             }
         }
         let total_vregs = func.vreg_count.max(func.param_count as u32);
-        let mut ranges: HashMap<VReg, ValueRange> = HashMap::new();
-        for i in 0..total_vregs {
-            ranges.insert(VReg(i), ValueRange::Unset);
-        }
+        let mut observed = vec![ValueRange::Unset; total_vregs as usize];
+        let mut in_states: HashMap<BlockId, Vec<ValueRange>> = HashMap::new();
+        let mut in_ctx_field_ranges: HashMap<BlockId, HashMap<CtxField, ValueRange>> =
+            HashMap::new();
+        let mut worklist = VecDeque::new();
 
-        let mut changed = true;
-        let max_iters = func.vreg_count.max(1);
-        for _ in 0..max_iters {
-            if !changed {
-                break;
+        in_states.insert(func.entry, vec![ValueRange::Unset; total_vregs as usize]);
+        in_ctx_field_ranges.insert(func.entry, HashMap::new());
+        worklist.push_back(func.entry);
+
+        while let Some(block_id) = worklist.pop_front() {
+            let Some(state_in) = in_states.get(&block_id).cloned() else {
+                continue;
+            };
+            let mut ctx_field_ranges = in_ctx_field_ranges
+                .get(&block_id)
+                .cloned()
+                .unwrap_or_default();
+            let block = func.block(block_id);
+            let mut state = state_in;
+            let mut guards: HashMap<VReg, RangeGuard> = HashMap::new();
+            let mut ctx_field_sources: HashMap<VReg, CtxField> = HashMap::new();
+
+            for inst in &block.instructions {
+                self.apply_range_inst(
+                    inst,
+                    types,
+                    list_caps,
+                    &slot_caps,
+                    &mut state,
+                    &mut ctx_field_ranges,
+                    &mut observed,
+                    &mut guards,
+                    &mut ctx_field_sources,
+                );
             }
-            changed = false;
-            for block in &func.blocks {
-                for inst in block
-                    .instructions
-                    .iter()
-                    .chain(std::iter::once(&block.terminator))
-                {
-                    if let MirInst::LoopHeader {
-                        counter,
-                        start,
-                        limit,
-                        ..
-                    } = inst
-                    {
-                        let max = if *start < *limit {
-                            limit.saturating_sub(1)
-                        } else {
-                            *start
-                        };
-                        let new_range = ValueRange::known(*start, max);
-                        let entry = ranges.entry(*counter).or_insert(ValueRange::Unknown);
-                        let merged = entry.merge(new_range);
-                        if *entry != merged {
-                            *entry = merged;
-                            changed = true;
-                        }
-                        continue;
+
+            match &block.terminator {
+                MirInst::Jump { target } => {
+                    self.propagate_range_state(
+                        *target,
+                        &state,
+                        &ctx_field_ranges,
+                        &mut in_states,
+                        &mut in_ctx_field_ranges,
+                        &mut worklist,
+                    );
+                }
+                MirInst::Branch {
+                    cond,
+                    if_true,
+                    if_false,
+                } => {
+                    if let Some((true_state, true_fields)) = self.refine_range_branch(
+                        &state,
+                        &ctx_field_ranges,
+                        &ctx_field_sources,
+                        *cond,
+                        &guards,
+                        true,
+                    ) {
+                        self.propagate_range_state(
+                            *if_true,
+                            &true_state,
+                            &true_fields,
+                            &mut in_states,
+                            &mut in_ctx_field_ranges,
+                            &mut worklist,
+                        );
                     }
-
-                    let Some(dst) = inst.def() else {
-                        continue;
-                    };
-                    let dst_ty = types.get(&dst).cloned().unwrap_or(MirType::Unknown);
-                    if !Self::mir_is_numeric(&dst_ty) {
-                        continue;
-                    }
-
-                    let new_range = match inst {
-                        MirInst::Copy { src, .. } => self.value_range_for(src, &ranges),
-                        MirInst::BinOp { op, lhs, rhs, .. } => {
-                            let lhs_range = self.value_range_for(lhs, &ranges);
-                            let rhs_range = self.value_range_for(rhs, &ranges);
-                            self.range_for_binop(*op, lhs_range, rhs_range)
-                        }
-                        MirInst::UnaryOp { op, src, .. } => {
-                            let src_range = self.value_range_for(src, &ranges);
-                            self.range_for_unary(*op, src_range)
-                        }
-                        MirInst::LoadCtxField { .. } => self
-                            .scalar_type_range(&dst_ty)
-                            .unwrap_or(ValueRange::Unknown),
-                        MirInst::ListLen { list, .. } => list_caps
-                            .get(list)
-                            .map(|cap| Self::list_len_range(*cap))
-                            .unwrap_or(ValueRange::Unknown),
-                        MirInst::Load { ptr, offset, .. } => {
-                            if *offset == 0 {
-                                list_caps
-                                    .get(ptr)
-                                    .map(|cap| Self::list_len_range(*cap))
-                                    .or_else(|| self.scalar_type_range(&dst_ty))
-                                    .unwrap_or(ValueRange::Unknown)
-                            } else {
-                                self.scalar_type_range(&dst_ty)
-                                    .unwrap_or(ValueRange::Unknown)
-                            }
-                        }
-                        MirInst::LoadSlot { slot, offset, .. } => {
-                            if *offset == 0 {
-                                slot_caps
-                                    .get(slot)
-                                    .map(|cap| Self::list_len_range(*cap))
-                                    .or_else(|| self.scalar_type_range(&dst_ty))
-                                    .unwrap_or(ValueRange::Unknown)
-                            } else {
-                                self.scalar_type_range(&dst_ty)
-                                    .unwrap_or(ValueRange::Unknown)
-                            }
-                        }
-                        MirInst::Phi { args, .. } => {
-                            let mut merged: Option<ValueRange> = None;
-                            for (_, vreg) in args {
-                                let range =
-                                    ranges.get(vreg).copied().unwrap_or(ValueRange::Unknown);
-                                merged = Some(match merged {
-                                    None => range,
-                                    Some(existing) => existing.merge(range),
-                                });
-                            }
-                            merged.unwrap_or(ValueRange::Unknown)
-                        }
-                        _ => ValueRange::Unknown,
-                    };
-
-                    let entry = ranges.entry(dst).or_insert(ValueRange::Unknown);
-                    let merged = entry.merge(new_range);
-                    if *entry != merged {
-                        *entry = merged;
-                        changed = true;
+                    if let Some((false_state, false_fields)) = self.refine_range_branch(
+                        &state,
+                        &ctx_field_ranges,
+                        &ctx_field_sources,
+                        *cond,
+                        &guards,
+                        false,
+                    ) {
+                        self.propagate_range_state(
+                            *if_false,
+                            &false_state,
+                            &false_fields,
+                            &mut in_states,
+                            &mut in_ctx_field_ranges,
+                            &mut worklist,
+                        );
                     }
                 }
+                MirInst::LoopHeader {
+                    counter,
+                    start,
+                    limit,
+                    body,
+                    exit,
+                } => {
+                    let mut body_state = state.clone();
+                    let max = if *start < *limit {
+                        limit.saturating_sub(1)
+                    } else {
+                        *start
+                    };
+                    let counter_range = ValueRange::known(*start, max);
+                    self.set_state_range(&mut body_state, *counter, counter_range);
+                    self.observe_range(&mut observed, *counter, counter_range);
+                    self.propagate_range_state(
+                        *body,
+                        &body_state,
+                        &ctx_field_ranges,
+                        &mut in_states,
+                        &mut in_ctx_field_ranges,
+                        &mut worklist,
+                    );
+                    self.propagate_range_state(
+                        *exit,
+                        &state,
+                        &ctx_field_ranges,
+                        &mut in_states,
+                        &mut in_ctx_field_ranges,
+                        &mut worklist,
+                    );
+                }
+                MirInst::LoopBack { header, .. } => {
+                    self.propagate_range_state(
+                        *header,
+                        &state,
+                        &ctx_field_ranges,
+                        &mut in_states,
+                        &mut in_ctx_field_ranges,
+                        &mut worklist,
+                    );
+                }
+                MirInst::Return { .. } | MirInst::TailCall { .. } | MirInst::Placeholder => {}
+                other => panic!("invalid terminator in range analysis: {other:?}"),
             }
         }
 
-        ranges
+        observed
+            .into_iter()
+            .enumerate()
+            .map(|(idx, range)| (VReg(idx as u32), range))
+            .collect()
     }
 
     pub(super) fn compute_stack_bounds(
@@ -478,6 +514,452 @@ impl<'a> TypeInference<'a> {
     pub(super) fn scalar_type_range(&self, ty: &MirType) -> Option<ValueRange> {
         ty.scalar_value_range()
             .map(|(min, max)| ValueRange::known(min, max))
+    }
+
+    fn value_range_for_state(&self, value: &MirValue, state: &[ValueRange]) -> ValueRange {
+        match value {
+            MirValue::Const(c) => ValueRange::known(*c, *c),
+            MirValue::VReg(v) => state
+                .get(v.0 as usize)
+                .copied()
+                .unwrap_or(ValueRange::Unknown),
+            MirValue::StackSlot(_) => ValueRange::Unknown,
+        }
+    }
+
+    fn set_state_range(&self, state: &mut [ValueRange], dst: VReg, range: ValueRange) {
+        if let Some(slot) = state.get_mut(dst.0 as usize) {
+            *slot = range;
+        }
+    }
+
+    fn observe_range(&self, observed: &mut [ValueRange], dst: VReg, range: ValueRange) {
+        if let Some(slot) = observed.get_mut(dst.0 as usize) {
+            *slot = slot.merge(range);
+        }
+    }
+
+    fn clear_guard(&self, guards: &mut HashMap<VReg, RangeGuard>, dst: VReg) {
+        guards.remove(&dst);
+    }
+
+    fn apply_range_inst(
+        &self,
+        inst: &MirInst,
+        types: &HashMap<VReg, MirType>,
+        list_caps: &HashMap<VReg, usize>,
+        slot_caps: &HashMap<StackSlotId, usize>,
+        state: &mut [ValueRange],
+        ctx_field_ranges: &mut HashMap<CtxField, ValueRange>,
+        observed: &mut [ValueRange],
+        guards: &mut HashMap<VReg, RangeGuard>,
+        ctx_field_sources: &mut HashMap<VReg, CtxField>,
+    ) {
+        match inst {
+            MirInst::Copy { dst, src } => {
+                let range = self.value_range_for_state(src, state);
+                self.set_state_range(state, *dst, range);
+                self.observe_range(observed, *dst, range);
+                match src {
+                    MirValue::VReg(src_vreg) => {
+                        if let Some(guard) = guards.get(src_vreg).copied() {
+                            guards.insert(*dst, guard);
+                        } else {
+                            self.clear_guard(guards, *dst);
+                        }
+                        if let Some(field) = ctx_field_sources.get(src_vreg).cloned() {
+                            ctx_field_sources.insert(*dst, field);
+                        } else {
+                            ctx_field_sources.remove(dst);
+                        }
+                    }
+                    _ => {
+                        self.clear_guard(guards, *dst);
+                        ctx_field_sources.remove(dst);
+                    }
+                }
+            }
+            MirInst::BinOp { dst, op, lhs, rhs } => {
+                let lhs_range = self.value_range_for_state(lhs, state);
+                let rhs_range = self.value_range_for_state(rhs, state);
+                let range = self.range_for_binop(*op, lhs_range, rhs_range);
+                self.set_state_range(state, *dst, range);
+                self.observe_range(observed, *dst, range);
+                if let Some(guard) = self.guard_from_compare(*op, lhs, rhs) {
+                    guards.insert(*dst, guard);
+                } else {
+                    self.clear_guard(guards, *dst);
+                }
+                ctx_field_sources.remove(dst);
+            }
+            MirInst::UnaryOp { dst, op, src } => {
+                let src_range = self.value_range_for_state(src, state);
+                let range = self.range_for_unary(*op, src_range);
+                self.set_state_range(state, *dst, range);
+                self.observe_range(observed, *dst, range);
+                if matches!(op, UnaryOpKind::Not) {
+                    let inverted = match src {
+                        MirValue::VReg(src_vreg) => guards
+                            .get(src_vreg)
+                            .copied()
+                            .and_then(|guard| self.invert_guard(guard)),
+                        _ => None,
+                    };
+                    if let Some(guard) = inverted {
+                        guards.insert(*dst, guard);
+                    } else {
+                        self.clear_guard(guards, *dst);
+                    }
+                } else {
+                    self.clear_guard(guards, *dst);
+                }
+                ctx_field_sources.remove(dst);
+            }
+            MirInst::LoadCtxField { dst, field, .. } => {
+                let dst_ty = types.get(dst).cloned().unwrap_or(MirType::Unknown);
+                let range = ctx_field_ranges
+                    .get(field)
+                    .copied()
+                    .or_else(|| self.scalar_type_range(&dst_ty))
+                    .unwrap_or(ValueRange::Unknown);
+                self.set_state_range(state, *dst, range);
+                self.observe_range(observed, *dst, range);
+                self.clear_guard(guards, *dst);
+                ctx_field_sources.insert(*dst, field.clone());
+            }
+            MirInst::ListLen { dst, list } => {
+                let range = list_caps
+                    .get(list)
+                    .map(|cap| Self::list_len_range(*cap))
+                    .unwrap_or(ValueRange::Unknown);
+                self.set_state_range(state, *dst, range);
+                self.observe_range(observed, *dst, range);
+                self.clear_guard(guards, *dst);
+                ctx_field_sources.remove(dst);
+            }
+            MirInst::Load {
+                dst, ptr, offset, ..
+            } => {
+                let dst_ty = types.get(dst).cloned().unwrap_or(MirType::Unknown);
+                let range = if *offset == 0 {
+                    list_caps
+                        .get(ptr)
+                        .map(|cap| Self::list_len_range(*cap))
+                        .or_else(|| self.scalar_type_range(&dst_ty))
+                        .unwrap_or(ValueRange::Unknown)
+                } else {
+                    self.scalar_type_range(&dst_ty)
+                        .unwrap_or(ValueRange::Unknown)
+                };
+                self.set_state_range(state, *dst, range);
+                self.observe_range(observed, *dst, range);
+                self.clear_guard(guards, *dst);
+                ctx_field_sources.remove(dst);
+            }
+            MirInst::LoadSlot {
+                dst, slot, offset, ..
+            } => {
+                let dst_ty = types.get(dst).cloned().unwrap_or(MirType::Unknown);
+                let range = if *offset == 0 {
+                    slot_caps
+                        .get(slot)
+                        .map(|cap| Self::list_len_range(*cap))
+                        .or_else(|| self.scalar_type_range(&dst_ty))
+                        .unwrap_or(ValueRange::Unknown)
+                } else {
+                    self.scalar_type_range(&dst_ty)
+                        .unwrap_or(ValueRange::Unknown)
+                };
+                self.set_state_range(state, *dst, range);
+                self.observe_range(observed, *dst, range);
+                self.clear_guard(guards, *dst);
+                ctx_field_sources.remove(dst);
+            }
+            MirInst::Phi { dst, args } => {
+                let mut merged: Option<ValueRange> = None;
+                for (_, vreg) in args {
+                    let range = state
+                        .get(vreg.0 as usize)
+                        .copied()
+                        .unwrap_or(ValueRange::Unknown);
+                    merged = Some(match merged {
+                        None => range,
+                        Some(existing) => existing.merge(range),
+                    });
+                }
+                let range = merged.unwrap_or(ValueRange::Unknown);
+                self.set_state_range(state, *dst, range);
+                self.observe_range(observed, *dst, range);
+                self.clear_guard(guards, *dst);
+                ctx_field_sources.remove(dst);
+            }
+            _ => {
+                if let Some(dst) = inst.def() {
+                    self.set_state_range(state, dst, ValueRange::Unknown);
+                    self.clear_guard(guards, dst);
+                    ctx_field_sources.remove(&dst);
+                }
+            }
+        }
+    }
+
+    fn propagate_range_state(
+        &self,
+        target: BlockId,
+        next: &[ValueRange],
+        next_ctx_field_ranges: &HashMap<CtxField, ValueRange>,
+        in_states: &mut HashMap<BlockId, Vec<ValueRange>>,
+        in_ctx_field_ranges: &mut HashMap<BlockId, HashMap<CtxField, ValueRange>>,
+        worklist: &mut VecDeque<BlockId>,
+    ) {
+        let entry = in_states
+            .entry(target)
+            .or_insert_with(|| vec![ValueRange::Unset; next.len()]);
+        let mut changed = false;
+        for (dst, src) in entry.iter_mut().zip(next.iter().copied()) {
+            let merged = dst.merge(src);
+            if *dst != merged {
+                *dst = merged;
+                changed = true;
+            }
+        }
+        let field_entry = in_ctx_field_ranges.entry(target).or_default();
+        for (field, incoming) in next_ctx_field_ranges {
+            let merged = field_entry
+                .get(field)
+                .copied()
+                .unwrap_or(ValueRange::Unset)
+                .merge(*incoming);
+            if field_entry.get(field).copied() != Some(merged) {
+                field_entry.insert(field.clone(), merged);
+                changed = true;
+            }
+        }
+        if changed {
+            worklist.push_back(target);
+        }
+    }
+
+    fn guard_from_compare(
+        &self,
+        op: BinOpKind,
+        lhs: &MirValue,
+        rhs: &MirValue,
+    ) -> Option<RangeGuard> {
+        match (lhs, rhs) {
+            (MirValue::VReg(vreg), MirValue::Const(value)) => {
+                self.guard_from_compare_reg_const(op, *vreg, *value)
+            }
+            (MirValue::Const(value), MirValue::VReg(vreg)) => self
+                .swap_compare(op)
+                .and_then(|swapped| self.guard_from_compare_reg_const(swapped, *vreg, *value)),
+            _ => None,
+        }
+    }
+
+    fn guard_from_compare_reg_const(
+        &self,
+        op: BinOpKind,
+        reg: VReg,
+        value: i64,
+    ) -> Option<RangeGuard> {
+        match op {
+            BinOpKind::Eq
+            | BinOpKind::Ne
+            | BinOpKind::Lt
+            | BinOpKind::Le
+            | BinOpKind::Gt
+            | BinOpKind::Ge => Some(RangeGuard::CompareConst { reg, op, value }),
+            _ => None,
+        }
+    }
+
+    fn swap_compare(&self, op: BinOpKind) -> Option<BinOpKind> {
+        Some(match op {
+            BinOpKind::Eq => BinOpKind::Eq,
+            BinOpKind::Ne => BinOpKind::Ne,
+            BinOpKind::Lt => BinOpKind::Gt,
+            BinOpKind::Le => BinOpKind::Ge,
+            BinOpKind::Gt => BinOpKind::Lt,
+            BinOpKind::Ge => BinOpKind::Le,
+            _ => return None,
+        })
+    }
+
+    fn negate_compare(&self, op: BinOpKind) -> Option<BinOpKind> {
+        Some(match op {
+            BinOpKind::Eq => BinOpKind::Ne,
+            BinOpKind::Ne => BinOpKind::Eq,
+            BinOpKind::Lt => BinOpKind::Ge,
+            BinOpKind::Le => BinOpKind::Gt,
+            BinOpKind::Gt => BinOpKind::Le,
+            BinOpKind::Ge => BinOpKind::Lt,
+            _ => return None,
+        })
+    }
+
+    fn invert_guard(&self, guard: RangeGuard) -> Option<RangeGuard> {
+        match guard {
+            RangeGuard::CompareConst { reg, op, value } => Some(RangeGuard::CompareConst {
+                reg,
+                op: self.negate_compare(op)?,
+                value,
+            }),
+        }
+    }
+
+    fn effective_branch_compare(&self, op: BinOpKind, take_true: bool) -> Option<BinOpKind> {
+        if take_true {
+            Some(op)
+        } else {
+            self.negate_compare(op)
+        }
+    }
+
+    fn range_may_equal(&self, range: ValueRange, value: i64) -> bool {
+        match range {
+            ValueRange::Known { min, max } => value >= min && value <= max,
+            ValueRange::Unknown | ValueRange::Unset => true,
+        }
+    }
+
+    fn range_can_satisfy_const_compare(
+        &self,
+        range: ValueRange,
+        op: BinOpKind,
+        value: i64,
+    ) -> bool {
+        match op {
+            BinOpKind::Eq => self.range_may_equal(range, value),
+            BinOpKind::Ne => match range {
+                ValueRange::Known { min, max } => !(min == max && min == value),
+                ValueRange::Unknown | ValueRange::Unset => true,
+            },
+            BinOpKind::Lt => match range {
+                ValueRange::Known { min, .. } => min < value,
+                ValueRange::Unknown | ValueRange::Unset => true,
+            },
+            BinOpKind::Le => match range {
+                ValueRange::Known { min, .. } => min <= value,
+                ValueRange::Unknown | ValueRange::Unset => true,
+            },
+            BinOpKind::Gt => match range {
+                ValueRange::Known { max, .. } => max > value,
+                ValueRange::Unknown | ValueRange::Unset => true,
+            },
+            BinOpKind::Ge => match range {
+                ValueRange::Known { max, .. } => max >= value,
+                ValueRange::Unknown | ValueRange::Unset => true,
+            },
+            _ => true,
+        }
+    }
+
+    fn intersect_range(
+        &self,
+        current: ValueRange,
+        min: Option<i64>,
+        max: Option<i64>,
+    ) -> ValueRange {
+        let (cur_min, cur_max) = match current {
+            ValueRange::Known { min, max } => (min, max),
+            ValueRange::Unknown | ValueRange::Unset => (i64::MIN, i64::MAX),
+        };
+        let next_min = min.unwrap_or(cur_min).max(cur_min);
+        let next_max = max.unwrap_or(cur_max).min(cur_max);
+        if next_min > next_max {
+            ValueRange::Unknown
+        } else {
+            ValueRange::known(next_min, next_max)
+        }
+    }
+
+    fn refine_range(
+        &self,
+        current: ValueRange,
+        op: BinOpKind,
+        value: i64,
+        take_true: bool,
+    ) -> ValueRange {
+        let op = if take_true {
+            op
+        } else {
+            let Some(negated) = self.negate_compare(op) else {
+                return current;
+            };
+            negated
+        };
+
+        if matches!(op, BinOpKind::Ne) {
+            return match current {
+                ValueRange::Known { min, max } => {
+                    if value < min || value > max {
+                        ValueRange::Known { min, max }
+                    } else if min == max {
+                        ValueRange::Unknown
+                    } else if value == min {
+                        ValueRange::Known {
+                            min: min.saturating_add(1),
+                            max,
+                        }
+                    } else if value == max {
+                        ValueRange::Known {
+                            min,
+                            max: max.saturating_sub(1),
+                        }
+                    } else {
+                        ValueRange::Known { min, max }
+                    }
+                }
+                ValueRange::Unknown | ValueRange::Unset => ValueRange::Unknown,
+            };
+        }
+
+        let (min, max) = match op {
+            BinOpKind::Eq => (Some(value), Some(value)),
+            BinOpKind::Lt => (None, Some(value.saturating_sub(1))),
+            BinOpKind::Le => (None, Some(value)),
+            BinOpKind::Gt => (Some(value.saturating_add(1)), None),
+            BinOpKind::Ge => (Some(value), None),
+            _ => return current,
+        };
+
+        self.intersect_range(current, min, max)
+    }
+
+    fn refine_range_branch(
+        &self,
+        state: &[ValueRange],
+        ctx_field_ranges: &HashMap<CtxField, ValueRange>,
+        ctx_field_sources: &HashMap<VReg, CtxField>,
+        cond: VReg,
+        guards: &HashMap<VReg, RangeGuard>,
+        take_true: bool,
+    ) -> Option<(Vec<ValueRange>, HashMap<CtxField, ValueRange>)> {
+        let Some(guard) = guards.get(&cond).copied() else {
+            return Some((state.to_vec(), ctx_field_ranges.clone()));
+        };
+
+        match guard {
+            RangeGuard::CompareConst { reg, op, value } => {
+                let effective_op = self.effective_branch_compare(op, take_true)?;
+                let current = state
+                    .get(reg.0 as usize)
+                    .copied()
+                    .unwrap_or(ValueRange::Unknown);
+                if !self.range_can_satisfy_const_compare(current, effective_op, value) {
+                    return None;
+                }
+                let mut next = state.to_vec();
+                let mut next_ctx_field_ranges = ctx_field_ranges.clone();
+                let refined = self.refine_range(current, op, value, take_true);
+                self.set_state_range(&mut next, reg, refined);
+                if let Some(field) = ctx_field_sources.get(&reg).cloned() {
+                    next_ctx_field_ranges.insert(field, refined);
+                }
+                Some((next, next_ctx_field_ranges))
+            }
+        }
     }
 
     pub(super) fn stack_bounds_for_value<'b>(

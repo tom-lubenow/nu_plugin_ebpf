@@ -365,7 +365,7 @@ pub enum UnaryOpKind {
 }
 
 /// Context field access
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CtxField {
     /// Process ID
     Pid,

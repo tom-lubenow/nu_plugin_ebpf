@@ -692,8 +692,10 @@ Context parameter syntax (recommended):
     Bounded arithmetic on those indices, such as
     `let j = (($i + 1) mod 2)`, is preserved too. The same range tracking
     now works for typed unsigned runtime fields such as
-    `let idx = ($ctx.arg0.fdt.max_fds mod 2)`. Descending ranges are still
-    rejected.
+    `let idx = ($ctx.arg0.fdt.max_fds mod 2)`. Branch-sensitive narrowing
+    also works when you keep the refined value in a binding, for example
+    `let max = $ctx.arg0.fdt.max_fds; if $max > 0 { let idx = ($max - 1);
+    ... }`. Descending ranges are still rejected.
     Terminal array leaves and unsupported aggregate leaves are exposed as
     stack-backed byte buffers. Representable terminal
     struct leaves keep their field layouts for count/counter decoding, and
