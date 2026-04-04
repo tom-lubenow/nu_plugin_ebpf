@@ -512,25 +512,95 @@ impl<'a> HirToMirLowering<'a> {
                     len: *len,
                 })
             }
-            TypeInfo::Struct { name, size } => {
-                let size = *size;
-                if size == 0 {
+            TypeInfo::Struct { name, size, fields } => {
+                if *size == 0 {
                     return None;
                 }
+                if fields.is_empty() {
+                    return Self::opaque_trampoline_struct_type(name, *size);
+                }
+
+                let mut mir_fields = Vec::with_capacity(fields.len() + 1);
+                let mut cursor = 0usize;
+                let mut pad_index = 0usize;
+                for field in fields {
+                    if field.offset < cursor {
+                        return Self::opaque_trampoline_struct_type(name, *size);
+                    }
+                    if field.offset > cursor {
+                        mir_fields.push(Self::synthetic_padding_field(
+                            cursor,
+                            field.offset - cursor,
+                            pad_index,
+                        )?);
+                        pad_index += 1;
+                    }
+
+                    let field_ty = Self::projected_trampoline_field_type(&field.type_info)
+                        .or_else(|| Self::trampoline_byte_array_type(field.size))
+                        .filter(|ty| ty.size() == field.size)
+                        .or_else(|| Self::trampoline_byte_array_type(field.size))?;
+                    mir_fields.push(crate::compiler::mir::StructField {
+                        name: field.name.clone(),
+                        ty: field_ty,
+                        offset: field.offset,
+                        synthetic: false,
+                    });
+                    cursor = field.offset + field.size;
+                }
+                if cursor > *size {
+                    return Self::opaque_trampoline_struct_type(name, *size);
+                }
+                if cursor < *size {
+                    mir_fields.push(Self::synthetic_padding_field(
+                        cursor,
+                        *size - cursor,
+                        pad_index,
+                    )?);
+                }
+
                 Some(MirType::Struct {
                     name: Some(name.clone()),
-                    fields: vec![crate::compiler::mir::StructField {
-                        name: "__opaque".to_string(),
-                        ty: MirType::Array {
-                            elem: Box::new(MirType::U8),
-                            len: size,
-                        },
-                        offset: 0,
-                    }],
+                    fields: mir_fields,
                 })
             }
             _ => None,
         }
+    }
+
+    fn trampoline_byte_array_type(size: usize) -> Option<MirType> {
+        if size == 0 {
+            return None;
+        }
+        Some(MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: size,
+        })
+    }
+
+    fn opaque_trampoline_struct_type(name: &str, size: usize) -> Option<MirType> {
+        Some(MirType::Struct {
+            name: Some(name.to_string()),
+            fields: vec![crate::compiler::mir::StructField {
+                name: "__opaque".to_string(),
+                ty: Self::trampoline_byte_array_type(size)?,
+                offset: 0,
+                synthetic: false,
+            }],
+        })
+    }
+
+    fn synthetic_padding_field(
+        offset: usize,
+        size: usize,
+        pad_index: usize,
+    ) -> Option<crate::compiler::mir::StructField> {
+        Some(crate::compiler::mir::StructField {
+            name: format!("__layout_pad{}", pad_index),
+            ty: Self::trampoline_byte_array_type(size)?,
+            offset,
+            synthetic: true,
+        })
     }
 
     fn trampoline_pointer_type(address_space: AddressSpace) -> MirType {
@@ -716,6 +786,7 @@ impl<'a> HirToMirLowering<'a> {
                                 len: size_bytes,
                             },
                             offset: 0,
+                            synthetic: false,
                         }],
                     },
                 );
@@ -1082,6 +1153,7 @@ impl<'a> HirToMirLowering<'a> {
                 &path_desc,
             )?;
 
+            let projected_ty = projected_ty.clone();
             let meta = self.get_or_create_metadata(src_dst);
             meta.is_context = false;
             meta.field_type = Some(projected_ty);

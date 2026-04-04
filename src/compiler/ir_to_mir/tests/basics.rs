@@ -710,6 +710,54 @@ fn test_lower_fentry_struct_leaf_emit_uses_struct_size() {
 }
 
 #[test]
+fn test_lower_fentry_struct_leaf_preserves_struct_fields() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("arg0"), string_member("f_path")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("struct leaf access should lower");
+
+    let hinted_ty = result
+        .type_hints
+        .main
+        .values()
+        .find_map(|ty| match ty {
+            MirType::Ptr { pointee, .. } => match pointee.as_ref() {
+                MirType::Struct { name, .. } if name.as_deref() == Some("path") => {
+                    Some(pointee.as_ref().clone())
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("expected struct leaf type hint");
+
+    let MirType::Struct { fields, .. } = hinted_ty else {
+        panic!("expected trampoline struct hint");
+    };
+    assert!(
+        fields
+            .iter()
+            .any(|field| field.name == "mnt" && !field.synthetic)
+    );
+    assert!(
+        fields
+            .iter()
+            .any(|field| field.name == "dentry" && !field.synthetic)
+    );
+    assert!(!fields.iter().any(|field| field.name == "__opaque"));
+}
+
+#[test]
 fn test_lower_fentry_struct_leaf_count_uses_bytes_counter_map() {
     let hir = make_ctx_path_call_program(
         CellPath {

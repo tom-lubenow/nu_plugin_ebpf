@@ -23,6 +23,8 @@ pub enum TypeInfo {
         name: String,
         /// Size in bytes
         size: usize,
+        /// Fields in declaration order. Empty means the layout is opaque.
+        fields: Vec<FieldInfo>,
     },
     /// Array type
     Array {

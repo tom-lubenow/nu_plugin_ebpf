@@ -118,6 +118,7 @@ impl HMType {
                         name: field_name.clone(),
                         ty: mir_ty,
                         offset,
+                        synthetic: false,
                     });
                     offset += size;
                 }

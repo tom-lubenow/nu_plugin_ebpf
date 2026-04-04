@@ -375,22 +375,18 @@ impl CounterKeySchema {
 
                 let schema_fields: Vec<CounterKeySchemaField> = fields
                     .iter()
+                    .filter(|field| !field.synthetic)
                     .map(|field| CounterKeySchemaField {
                         name: field.name.clone(),
                         schema: Self::from_mir_type(&field.ty),
                         offset: field.offset,
                     })
                     .collect();
-                let total_size = schema_fields
-                    .iter()
-                    .map(|field| field.offset + field.schema.size())
-                    .max()
-                    .unwrap_or(0);
 
                 CounterKeySchema::Record {
                     name: name.clone(),
                     fields: schema_fields,
-                    total_size,
+                    total_size: ty.size(),
                 }
             }
         }

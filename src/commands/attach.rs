@@ -564,12 +564,13 @@ Context parameter syntax (recommended):
     Pointer-backed projections use null-guarded bpf_probe_read_{kernel,user}
     and can cross intermediate pointer fields like ctx.arg0.foo.bar.
     Fixed-size arrays can be indexed with numeric path segments like
-    ctx.arg0.comm.0, and terminal array/aggregate leaves like ctx.arg0.comm
-    are exposed as opaque stack-backed byte buffers. emit preserves those
-    leaves as binary payloads, and count can use them as byte-buffer keys.
-    ebpf counters decodes those keys using any schema the compiler still has:
-    arrays/typed structs can surface as strings, lists, or records; opaque
-    aggregate layouts still display as binary. 16-byte byte-array/string
+    ctx.arg0.comm.0. Terminal array leaves and unsupported aggregate leaves
+    are exposed as stack-backed byte buffers. Representable terminal struct
+    leaves keep their field layouts for count/counter decoding. emit preserves
+    aggregate leaves as binary payloads, and count can use them as byte-buffer
+    keys. ebpf counters decodes those keys using any schema the compiler still
+    has: arrays and typed structs can surface as strings, lists, or records;
+    opaque aggregate layouts still display as binary. 16-byte byte-array/string
     keys such as ctx.arg0.comm continue to display as strings.
     Multi-level pointer fields like foo ** are not supported yet.
     Aggregate fexit returns still depend on kernel trampoline support;
@@ -1071,7 +1072,8 @@ mod tests {
     use crate::compiler::hir_to_mir::lower_hir_to_mir_with_hints;
     use crate::compiler::passes::optimize_with_ssa;
     use crate::compiler::{
-        CounterKeySchema, EbpfProgramType, ProbeContext, compile_mir_to_ebpf_with_hints,
+        CounterKeySchema, CounterKeySchemaField, EbpfProgramType, ProbeContext,
+        compile_mir_to_ebpf_with_hints,
     };
     use nu_protocol::DeclId;
     use nu_protocol::ast::{CellPath, PathMember};
@@ -1221,9 +1223,30 @@ mod tests {
             Some(&lowering.type_hints),
         )
         .expect("optimized struct-leaf count should compile");
-        assert!(matches!(
+        assert_eq!(
             result.bytes_counter_key_schema,
-            Some(CounterKeySchema::Bytes { .. })
-        ));
+            Some(CounterKeySchema::Record {
+                name: Some("path".to_string()),
+                fields: vec![
+                    CounterKeySchemaField {
+                        name: "mnt".to_string(),
+                        schema: CounterKeySchema::Int {
+                            size: 8,
+                            signed: false,
+                        },
+                        offset: 0,
+                    },
+                    CounterKeySchemaField {
+                        name: "dentry".to_string(),
+                        schema: CounterKeySchema::Int {
+                            size: 8,
+                            signed: false,
+                        },
+                        offset: 8,
+                    },
+                ],
+                total_size: 16,
+            })
+        );
     }
 }

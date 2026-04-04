@@ -1,5 +1,5 @@
 use super::*;
-use crate::compiler::mir::CtxField;
+use crate::compiler::mir::{CtxField, MirType, StructField};
 
 #[test]
 fn test_hello_world_creation() {
@@ -73,4 +73,52 @@ fn test_probe_context_allows_arg_on_fentry() {
 fn test_probe_context_allows_retval_on_fexit() {
     let ctx = ProbeContext::new(EbpfProgramType::Fexit, "ksys_read");
     assert!(ctx.ctx_field_access_error(&CtxField::RetVal).is_none());
+}
+
+#[test]
+fn test_counter_key_schema_filters_synthetic_padding_fields() {
+    let ty = MirType::Struct {
+        name: Some("padded".to_string()),
+        fields: vec![
+            StructField {
+                name: "a".to_string(),
+                ty: MirType::U8,
+                offset: 0,
+                synthetic: false,
+            },
+            StructField {
+                name: "__layout_pad0".to_string(),
+                ty: MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: 7,
+                },
+                offset: 1,
+                synthetic: true,
+            },
+            StructField {
+                name: "b".to_string(),
+                ty: MirType::U64,
+                offset: 8,
+                synthetic: false,
+            },
+        ],
+    };
+
+    let schema = CounterKeySchema::from_mir_type(&ty);
+    let CounterKeySchema::Record {
+        name,
+        fields,
+        total_size,
+    } = schema
+    else {
+        panic!("expected record schema");
+    };
+
+    assert_eq!(name.as_deref(), Some("padded"));
+    assert_eq!(total_size, 16);
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].name, "a");
+    assert_eq!(fields[0].offset, 0);
+    assert_eq!(fields[1].name, "b");
+    assert_eq!(fields[1].offset, 8);
 }

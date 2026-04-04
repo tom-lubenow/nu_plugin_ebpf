@@ -189,6 +189,7 @@ pub struct StructField {
     pub name: String,
     pub ty: MirType,
     pub offset: usize,
+    pub synthetic: bool,
 }
 
 /// A field in a record being emitted

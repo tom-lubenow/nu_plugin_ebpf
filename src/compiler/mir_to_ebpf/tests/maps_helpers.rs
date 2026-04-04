@@ -224,6 +224,7 @@ fn test_emit_event_registers_bytes_schema_for_struct_payload() {
                         len: 24,
                     },
                     offset: 0,
+                    synthetic: false,
                 }],
             }),
             address_space: AddressSpace::Stack,
@@ -486,6 +487,7 @@ fn test_bytes_counter_map_emits_struct_key_size() {
                         len: 24,
                     },
                     offset: 0,
+                    synthetic: false,
                 }],
             }),
             address_space: AddressSpace::Stack,
@@ -576,6 +578,7 @@ fn test_bytes_counter_map_rejects_mixed_key_schemas() {
                     name: "value".to_string(),
                     ty: MirType::U64,
                     offset: 0,
+                    synthetic: false,
                 }],
             }),
             address_space: AddressSpace::Stack,
@@ -593,6 +596,101 @@ fn test_bytes_counter_map_rejects_mixed_key_schemas() {
             );
         }
     }
+}
+
+#[test]
+fn test_bytes_counter_map_preserves_struct_record_schema() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::Local);
+    let key = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+        map: MapRef {
+            name: BYTES_COUNTER_MAP_NAME.to_string(),
+            kind: MapKind::Hash,
+        },
+        key,
+        val: key,
+        flags: 0,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let lir = lower_mir_to_lir(&program);
+    let mut program_types = ProgramVregTypes::default();
+    program_types.main.insert(
+        key,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Struct {
+                name: Some("path".to_string()),
+                fields: vec![
+                    StructField {
+                        name: "mnt".to_string(),
+                        ty: MirType::Ptr {
+                            pointee: Box::new(MirType::U8),
+                            address_space: AddressSpace::Kernel,
+                        },
+                        offset: 0,
+                        synthetic: false,
+                    },
+                    StructField {
+                        name: "dentry".to_string(),
+                        ty: MirType::Ptr {
+                            pointee: Box::new(MirType::U8),
+                            address_space: AddressSpace::Kernel,
+                        },
+                        offset: 8,
+                        synthetic: false,
+                    },
+                ],
+            }),
+            address_space: AddressSpace::Stack,
+        },
+    );
+
+    let compiler = MirToEbpfCompiler::new_with_types(&lir, None, program_types);
+    let result = compiler
+        .compile()
+        .expect("bytes counter map with typed struct key should compile");
+
+    assert_eq!(
+        result.bytes_counter_key_schema,
+        Some(crate::compiler::CounterKeySchema::Record {
+            name: Some("path".to_string()),
+            fields: vec![
+                crate::compiler::CounterKeySchemaField {
+                    name: "mnt".to_string(),
+                    schema: crate::compiler::CounterKeySchema::Int {
+                        size: 8,
+                        signed: false,
+                    },
+                    offset: 0,
+                },
+                crate::compiler::CounterKeySchemaField {
+                    name: "dentry".to_string(),
+                    schema: crate::compiler::CounterKeySchema::Int {
+                        size: 8,
+                        signed: false,
+                    },
+                    offset: 8,
+                },
+            ],
+            total_size: 16,
+        })
+    );
 }
 
 #[test]
@@ -640,6 +738,7 @@ fn test_counter_map_rejects_stack_struct_pointer_key() {
                         len: 24,
                     },
                     offset: 0,
+                    synthetic: false,
                 }],
             }),
             address_space: AddressSpace::Stack,

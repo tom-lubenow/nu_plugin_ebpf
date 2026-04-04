@@ -1933,13 +1933,9 @@ impl KernelBtf {
                     current_type_id, e
                 ))
             })?;
-            let raw_size_bytes = raw_type_sizes
-                .get(&current_type_id)
-                .copied()
-                .map(|size| size as usize);
             path.push(TrampolineFieldPathSegment {
                 offset_bytes,
-                type_info: Self::type_info_from_btf_type(btf, &member_ty, raw_size_bytes)?,
+                type_info: Self::type_info_from_btf_type(btf, &member_ty, raw_type_sizes)?,
             });
         }
 
@@ -1970,8 +1966,12 @@ impl KernelBtf {
     fn type_info_from_btf_type(
         btf: &Btf,
         ty: &FlattenedType,
-        raw_size_bytes: Option<usize>,
+        raw_type_sizes: &HashMap<u32, u32>,
     ) -> Result<TypeInfo, BtfError> {
+        let raw_size_bytes = raw_type_sizes
+            .get(&ty.type_id)
+            .copied()
+            .map(|size| size as usize);
         if ty.num_refs > 0 {
             return Ok(TypeInfo::Ptr {
                 target: Box::new(TypeInfo::Unknown),
@@ -2005,13 +2005,31 @@ impl KernelBtf {
                     ))
                 })?;
                 Ok(TypeInfo::Array {
-                    element: Box::new(Self::type_info_from_btf_type(btf, &elem_ty, None)?),
+                    element: Box::new(Self::type_info_from_btf_type(
+                        btf,
+                        &elem_ty,
+                        raw_type_sizes,
+                    )?),
                     len: array_ty.num_elements as usize,
                 })
             }
-            Type::Struct(_) | Type::Union(_) => Ok(TypeInfo::Struct {
+            Type::Struct(struct_ty) => {
+                let size = Self::trampoline_size_bytes(btf, ty, raw_size_bytes)?;
+                Ok(TypeInfo::Struct {
+                    name: ty.name.clone().unwrap_or_else(|| "<anonymous>".to_string()),
+                    size,
+                    fields: Self::struct_field_infos_from_btf_type(
+                        btf,
+                        struct_ty,
+                        size,
+                        raw_type_sizes,
+                    )?,
+                })
+            }
+            Type::Union(_) => Ok(TypeInfo::Struct {
                 name: ty.name.clone().unwrap_or_else(|| "<anonymous>".to_string()),
                 size: Self::trampoline_size_bytes(btf, ty, raw_size_bytes)?,
+                fields: Vec::new(),
             }),
             Type::Void => Ok(TypeInfo::Void),
             Type::Float(_)
@@ -2028,6 +2046,57 @@ impl KernelBtf {
             | Type::DeclTag(_)
             | Type::TypeTag(_) => Ok(TypeInfo::Unknown),
         }
+    }
+
+    fn struct_field_infos_from_btf_type(
+        btf: &Btf,
+        struct_ty: &btf::btf::Struct,
+        struct_size: usize,
+        raw_type_sizes: &HashMap<u32, u32>,
+    ) -> Result<Vec<FieldInfo>, BtfError> {
+        let mut fields = Vec::with_capacity(struct_ty.members.len());
+        for member in &struct_ty.members {
+            let Some(name) = member.name.clone() else {
+                return Ok(Vec::new());
+            };
+            if name.is_empty() {
+                return Ok(Vec::new());
+            }
+            if member.bits.is_some_and(|bits| bits != 0) || member.offset % 8 != 0 {
+                return Ok(Vec::new());
+            }
+
+            let offset = (member.offset / 8) as usize;
+            let member_ty = btf.get_type_by_id(member.type_id).map_err(|e| {
+                BtfError::KernelBtfError(format!(
+                    "failed to resolve kernel BTF type {}: {}",
+                    member.type_id, e
+                ))
+            })?;
+            let raw_size_bytes = raw_type_sizes
+                .get(&member.type_id)
+                .copied()
+                .map(|size| size as usize);
+            let size = Self::trampoline_size_bytes(btf, &member_ty, raw_size_bytes)?;
+            let end = offset.checked_add(size).ok_or_else(|| {
+                BtfError::KernelBtfError(format!(
+                    "size overflow while resolving trampoline aggregate member '{}'",
+                    name
+                ))
+            })?;
+            if end > struct_size {
+                return Ok(Vec::new());
+            }
+
+            fields.push(FieldInfo {
+                name,
+                type_info: Self::type_info_from_btf_type(btf, &member_ty, raw_type_sizes)?,
+                offset,
+                size,
+            });
+        }
+
+        Ok(fields)
     }
 
     fn pointer_pointee_size_bytes(btf: &Btf, param_type_id: u32) -> Option<usize> {
@@ -3545,6 +3614,31 @@ format:
             projection.type_info,
             TypeInfo::Int { size: 1, .. }
         ));
+    }
+
+    #[test]
+    fn test_function_trampoline_arg_field_struct_leaf_preserves_member_layout() {
+        let projection = KernelBtf::get()
+            .function_trampoline_arg_field(
+                "security_file_open",
+                0,
+                &[TrampolineFieldSelector::Field("f_path".to_string())],
+            )
+            .expect("security_file_open f_path projection should resolve")
+            .expect("security_file_open arg0.f_path should exist");
+
+        let TypeInfo::Struct { size, fields, .. } = projection.type_info else {
+            panic!("expected security_file_open arg0.f_path to resolve to a struct");
+        };
+
+        assert_eq!(size, 16);
+        assert!(fields.len() >= 2);
+        assert_eq!(fields[0].name, "mnt");
+        assert!(matches!(fields[0].type_info, TypeInfo::Ptr { .. }));
+        assert_eq!(fields[0].offset, 0);
+        assert_eq!(fields[1].name, "dentry");
+        assert!(matches!(fields[1].type_info, TypeInfo::Ptr { .. }));
+        assert_eq!(fields[1].offset, 8);
     }
 
     fn push_u32(buf: &mut Vec<u8>, value: u32, endianness: BtfEndianness) {

@@ -265,6 +265,16 @@ impl<'a> TypeInference<'a> {
             let mir_type = self.hm_to_mir(&hm_type);
             result.insert(*vreg, mir_type);
         }
+        if let Some(hints) = self.type_hints {
+            for (vreg, hint) in hints {
+                let Some(inferred) = result.get_mut(vreg) else {
+                    continue;
+                };
+                if Self::can_restore_layout_hint(hint, inferred) {
+                    *inferred = hint.clone();
+                }
+            }
+        }
 
         // Phase 5: Validate operations with resolved types
         self.validate_types(func, &result, &mut errors);
@@ -274,6 +284,13 @@ impl<'a> TypeInference<'a> {
         }
 
         Ok(result)
+    }
+
+    fn can_restore_layout_hint(hint: &MirType, inferred: &MirType) -> bool {
+        if matches!(hint, MirType::Unknown) || matches!(inferred, MirType::Unknown) {
+            return false;
+        }
+        HMType::from_mir_type(hint) == HMType::from_mir_type(inferred)
     }
 }
 

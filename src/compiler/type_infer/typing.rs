@@ -377,6 +377,7 @@ impl<'a> TypeInference<'a> {
                         name: field_name,
                         ty: mir_ty,
                         offset,
+                        synthetic: false,
                     });
                     offset += size;
                 }
