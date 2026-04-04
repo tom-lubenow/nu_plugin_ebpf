@@ -72,6 +72,21 @@ pub fn verify_mir(
                 propagate_state(*if_true, &true_state, &mut in_states, &mut worklist);
                 propagate_state(*if_false, &false_state, &mut in_states, &mut worklist);
             }
+            MirInst::LoopHeader { body, exit, .. } => {
+                let mut body_state = state.clone();
+                apply_inst(
+                    &block.terminator,
+                    types,
+                    &slot_sizes,
+                    &mut body_state,
+                    &mut errors,
+                );
+                propagate_state(*body, &body_state, &mut in_states, &mut worklist);
+                propagate_state(*exit, &state, &mut in_states, &mut worklist);
+            }
+            MirInst::LoopBack { header, .. } => {
+                propagate_state(*header, &state, &mut in_states, &mut worklist);
+            }
             MirInst::Return { .. } => {
                 if state.has_live_ringbuf_refs() {
                     errors.push(VerifierTypeError::new(

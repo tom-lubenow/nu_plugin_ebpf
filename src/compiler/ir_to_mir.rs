@@ -233,8 +233,8 @@ pub struct HirToMirLowering<'a> {
     loop_contexts: Vec<LoopContext>,
     /// Mapping from HIR block to MIR block
     hir_block_map: HashMap<HirBlockId, BlockId>,
-    /// Loop body initializations (copy counter into dst)
-    loop_body_inits: HashMap<BlockId, Vec<(VReg, VReg)>>,
+    /// Block entry initializations for lowered loop/control-flow edges.
+    loop_body_inits: HashMap<BlockId, Vec<(VReg, MirValue)>>,
     /// Type hints for the current HIR function (RegId -> MirType)
     current_type_hints: HashMap<u32, MirType>,
     /// Type hints for closure HIR functions (BlockId -> RegId -> MirType)

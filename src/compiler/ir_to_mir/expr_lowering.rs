@@ -33,6 +33,15 @@ impl<'a> HirToMirLowering<'a> {
                 });
             }
 
+            HirLiteral::Nothing => {
+                // `nothing` is used by Nushell IR for omitted range steps and
+                // other optional parser slots. Lower it to a zero placeholder.
+                self.emit(MirInst::Copy {
+                    dst: dst_vreg,
+                    src: MirValue::Const(0),
+                });
+            }
+
             HirLiteral::String(bytes) => {
                 // Warn if string exceeds eBPF limits
                 let string_len = bytes.len();

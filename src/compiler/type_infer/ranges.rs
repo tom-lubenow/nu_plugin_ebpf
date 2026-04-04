@@ -135,6 +135,28 @@ impl<'a> TypeInference<'a> {
                     .iter()
                     .chain(std::iter::once(&block.terminator))
                 {
+                    if let MirInst::LoopHeader {
+                        counter,
+                        start,
+                        limit,
+                        ..
+                    } = inst
+                    {
+                        let max = if *start < *limit {
+                            limit.saturating_sub(1)
+                        } else {
+                            *start
+                        };
+                        let new_range = ValueRange::known(*start, max);
+                        let entry = ranges.entry(*counter).or_insert(ValueRange::Unknown);
+                        let merged = entry.merge(new_range);
+                        if *entry != merged {
+                            *entry = merged;
+                            changed = true;
+                        }
+                        continue;
+                    }
+
                     let Some(dst) = inst.def() else {
                         continue;
                     };

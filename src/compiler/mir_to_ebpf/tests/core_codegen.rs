@@ -965,6 +965,7 @@ fn test_mir_loop() {
     let mut header = BasicBlock::new(BlockId(1));
     header.terminator = MirInst::LoopHeader {
         counter: VReg(0),
+        start: 0,
         limit: 10,
         body: BlockId(2),
         exit: BlockId(3),

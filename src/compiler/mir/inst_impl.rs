@@ -89,7 +89,7 @@ impl MirInst {
                 }
             }
             MirInst::TailCall { index, .. } => visit_value!(index),
-            MirInst::LoopHeader { .. } => {}
+            MirInst::LoopHeader { counter, .. } => f(counter),
             MirInst::LoopBack { counter, .. } => f(counter),
             MirInst::Placeholder => {}
             MirInst::Phi { args, .. } => {
@@ -133,7 +133,6 @@ impl MirInst {
             | MirInst::LoadCtxField { dst, .. }
             | MirInst::StrCmp { dst, .. }
             | MirInst::StopTimer { dst, .. }
-            | MirInst::LoopHeader { counter: dst, .. }
             | MirInst::ListNew { dst, .. }
             | MirInst::ListLen { dst, .. }
             | MirInst::ListGet { dst, .. }

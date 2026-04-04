@@ -479,12 +479,14 @@ fn lower_inst(
         MirInst::Return { val } => out.push(LirInst::Return { val: val.clone() }),
         MirInst::LoopHeader {
             counter,
+            start,
             limit,
             body,
             exit,
         } => {
             out.push(LirInst::LoopHeader {
                 counter: *counter,
+                start: *start,
                 limit: *limit,
                 body: *body,
                 exit: *exit,

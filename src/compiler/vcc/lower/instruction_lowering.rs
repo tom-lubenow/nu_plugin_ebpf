@@ -1222,6 +1222,7 @@ impl<'a> VccLowerer<'a> {
             }
             MirInst::LoopHeader {
                 counter,
+                start: _,
                 limit,
                 body,
                 exit,

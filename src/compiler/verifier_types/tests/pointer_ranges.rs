@@ -120,6 +120,89 @@ fn test_stack_pointer_offset_in_bounds() {
 }
 
 #[test]
+fn test_stack_pointer_loop_counter_range_in_bounds() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let header = func.alloc_block();
+    let body = func.alloc_block();
+    let exit = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(24, 8, StackSlotKind::ListBuffer);
+    let list = func.alloc_vreg();
+    let counter = func.alloc_vreg();
+    let scaled = func.alloc_vreg();
+    let ptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::ListNew {
+        dst: list,
+        buffer: slot,
+        max_len: 2,
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: counter,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Jump { target: header };
+
+    func.block_mut(header).terminator = MirInst::LoopHeader {
+        counter,
+        start: 0,
+        limit: 2,
+        body,
+        exit,
+    };
+
+    func.block_mut(body).instructions.push(MirInst::BinOp {
+        dst: scaled,
+        op: BinOpKind::Mul,
+        lhs: MirValue::VReg(counter),
+        rhs: MirValue::Const(8),
+    });
+    func.block_mut(body).instructions.push(MirInst::BinOp {
+        dst: ptr,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(list),
+        rhs: MirValue::VReg(scaled),
+    });
+    func.block_mut(body).instructions.push(MirInst::Load {
+        dst,
+        ptr,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    func.block_mut(body).terminator = MirInst::LoopBack {
+        counter,
+        step: 1,
+        header,
+    };
+
+    func.block_mut(exit).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        list,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(counter, MirType::I64);
+    types.insert(scaled, MirType::I64);
+    types.insert(
+        ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types).expect("bounded loop counter should preserve stack bounds");
+}
+
+#[test]
 fn test_read_str_rejects_non_user_ptr_for_user_space() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

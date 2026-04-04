@@ -71,10 +71,16 @@ pub(super) fn apply_inst(
         MirInst::CallSubfn { dst, args, .. } => {
             apply_call_subfn_inst(*dst, args, types, state, errors);
         }
-        MirInst::StrCmp { dst, .. }
-        | MirInst::StopTimer { dst, .. }
-        | MirInst::LoopHeader { counter: dst, .. } => {
+        MirInst::StrCmp { dst, .. } | MirInst::StopTimer { dst, .. } => {
             apply_typed_dst_inst(*dst, types, state);
+        }
+        MirInst::LoopHeader {
+            counter: dst,
+            start,
+            limit,
+            ..
+        } => {
+            apply_loop_header_inst(*dst, *start, *limit, types, state);
         }
         MirInst::Phi { dst, args } => {
             apply_phi_inst(*dst, args, types, state);

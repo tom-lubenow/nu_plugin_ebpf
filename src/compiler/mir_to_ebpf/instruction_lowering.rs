@@ -124,6 +124,7 @@ impl<'a> MirToEbpfCompiler<'a> {
 
             LirInst::LoopHeader {
                 counter,
+                start: _,
                 limit,
                 body,
                 exit,

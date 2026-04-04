@@ -143,10 +143,7 @@ impl<'a> HirToMirLowering<'a> {
 
             if let Some(inits) = self.loop_body_inits.remove(&self.current_block) {
                 for (dst, src) in inits {
-                    self.emit(MirInst::Copy {
-                        dst,
-                        src: MirValue::VReg(src),
-                    });
+                    self.emit(MirInst::Copy { dst, src });
                 }
             }
 

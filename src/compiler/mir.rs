@@ -621,6 +621,7 @@ pub enum MirInst {
     /// Bounded loop header (eBPF verifier requirement)
     LoopHeader {
         counter: VReg,
+        start: i64,
         limit: i64,
         body: BlockId,
         exit: BlockId,

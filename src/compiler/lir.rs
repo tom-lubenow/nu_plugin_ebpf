@@ -334,6 +334,7 @@ pub enum LirInst {
     // Loop headers/backedges (lowered during codegen)
     LoopHeader {
         counter: VReg,
+        start: i64,
         limit: i64,
         body: BlockId,
         exit: BlockId,
@@ -377,7 +378,6 @@ impl LirInst {
             | LirInst::LoadCtxField { dst, .. }
             | LirInst::StrCmp { dst, .. }
             | LirInst::StopTimer { dst, .. }
-            | LirInst::LoopHeader { counter: dst, .. }
             | LirInst::ListNew { dst, .. }
             | LirInst::ListLen { dst, .. }
             | LirInst::ListGet { dst, .. }

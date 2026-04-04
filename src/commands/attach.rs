@@ -687,6 +687,9 @@ Context parameter syntax (recommended):
     $fd.0.f_inode.i_ino`. Numeric `get` now supports the same typed
     kernel/user pointer traversal through a register value, for example
     `let idx = 0; let fd = ($ctx.arg0.fdt.fd | get $idx); $fd.f_inode.i_ino`.
+    Bounded ascending `for` loops over static integer ranges now lower to
+    verifier-safe loops, so `for i in 0..0 { ... get $i ... }` works;
+    descending ranges are still rejected.
     Terminal array leaves and unsupported aggregate leaves are exposed as
     stack-backed byte buffers. Representable terminal
     struct leaves keep their field layouts for count/counter decoding, and

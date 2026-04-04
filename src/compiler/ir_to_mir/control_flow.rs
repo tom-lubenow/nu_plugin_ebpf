@@ -19,10 +19,7 @@ impl<'a> HirToMirLowering<'a> {
 
             if let Some(inits) = self.loop_body_inits.remove(&self.current_block) {
                 for (dst, src) in inits {
-                    self.emit(MirInst::Copy {
-                        dst,
-                        src: MirValue::VReg(src),
-                    });
+                    self.emit(MirInst::Copy { dst, src });
                 }
             }
 
@@ -484,6 +481,11 @@ impl<'a> HirToMirLowering<'a> {
                             "Iterate requires a compile-time known range (e.g., 1..10)".into(),
                         )
                     })?;
+                if range.step < 0 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "descending ranges are not supported in eBPF loops yet".into(),
+                    ));
+                }
 
                 let dst_vreg = self.get_vreg(*dst);
                 let counter_vreg = self.get_vreg(*stream);
@@ -503,6 +505,7 @@ impl<'a> HirToMirLowering<'a> {
 
                 self.terminate(MirInst::LoopHeader {
                     counter: counter_vreg,
+                    start: range.start,
                     limit,
                     body: body_block,
                     exit: exit_block,
@@ -511,7 +514,11 @@ impl<'a> HirToMirLowering<'a> {
                 self.loop_body_inits
                     .entry(body_block)
                     .or_default()
-                    .push((dst_vreg, counter_vreg));
+                    .push((dst_vreg, MirValue::VReg(counter_vreg)));
+                self.loop_body_inits
+                    .entry(exit_block)
+                    .or_default()
+                    .push((dst_vreg, MirValue::Const(0)));
 
                 self.loop_contexts.push(LoopContext {
                     header_block: self.current_block,

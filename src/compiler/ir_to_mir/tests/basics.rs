@@ -6,7 +6,7 @@ use crate::compiler::hir::{
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
-use nu_protocol::ast::{CellPath, PathMember};
+use nu_protocol::ast::{CellPath, PathMember, RangeInclusion};
 use nu_protocol::casing::Casing;
 use nu_protocol::{DeclId, RegId, Span, VarId};
 use std::collections::HashMap;
@@ -415,6 +415,64 @@ fn make_bound_ctx_get_program(binding: CellPath, access: CellPath, decl_id: Decl
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_range_iterate_program(start: i64, step: HirLiteral, end: i64) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Int(start),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: step,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(end),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Range {
+                            start: RegId::new(0),
+                            step: RegId::new(1),
+                            end: RegId::new(2),
+                            inclusion: RangeInclusion::Inclusive,
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Iterate {
+                    dst: RegId::new(4),
+                    stream: RegId::new(3),
+                    body: HirBlockId(1),
+                    end: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(0),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 5],
+        ast: vec![None; 5],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn string_member(name: &str) -> PathMember {
     PathMember::test_string(name.to_string(), false, Casing::Sensitive)
 }
@@ -425,6 +483,83 @@ fn int_member(index: usize) -> PathMember {
         span: Span::test_data(),
         optional: false,
     }
+}
+
+#[test]
+fn test_lower_default_step_range_iterate_emits_loop_header_start() {
+    let hir = make_range_iterate_program(0, HirLiteral::Nothing, 1);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("default-step iterate should lower");
+
+    let loop_header = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .find_map(|block| match &block.terminator {
+            MirInst::LoopHeader {
+                start,
+                limit,
+                body,
+                exit,
+                ..
+            } => Some((*start, *limit, *body, *exit)),
+            _ => None,
+        })
+        .expect("expected loop header");
+    assert_eq!(loop_header.0, 0);
+    assert_eq!(loop_header.1, 2);
+    assert_eq!(
+        result.program.main.block(loop_header.2).instructions.len(),
+        1
+    );
+    assert!(
+        result
+            .program
+            .main
+            .block(loop_header.3)
+            .instructions
+            .iter()
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(0),
+                    ..
+                }
+            )),
+        "expected exit edge to initialize the loop result register"
+    );
+}
+
+#[test]
+fn test_lower_descending_range_iterate_is_rejected() {
+    let hir = make_range_iterate_program(3, HirLiteral::Int(-1), 0);
+
+    let err = match lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    ) {
+        Ok(_) => panic!("descending iterate should be rejected"),
+        Err(err) => err,
+    };
+
+    assert!(
+        err.to_string()
+            .contains("descending ranges are not supported"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

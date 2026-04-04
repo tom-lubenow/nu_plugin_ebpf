@@ -156,7 +156,9 @@ can now also be indexed with constant numeric segments such as
 `ctx.arg0.fdt.fd.0.f_inode.i_ino` or `let fd = $ctx.arg0.fdt.fd;
 $fd.0.f_inode.i_ino`. The same typed pointer traversal also works through
 numeric `get`, for example `let idx = 0; let fd = ($ctx.arg0.fdt.fd | get
-$idx); $fd.f_inode.i_ino`. Terminal array leaves and unsupported aggregate
+$idx); $fd.f_inode.i_ino`. Bounded ascending `for` loops over static integer
+ranges also lower to verifier-safe loops, so `for i in 0..0 { ... get $i ...
+}` now works; descending ranges are still rejected. Terminal array leaves and unsupported aggregate
 leaves are exposed as stack-backed byte buffers, while representable terminal struct
 leaves keep their field layouts for `count`/`ebpf counters`, and single-value
 `emit` can stream those struct leaves as records. Nested array/record fields

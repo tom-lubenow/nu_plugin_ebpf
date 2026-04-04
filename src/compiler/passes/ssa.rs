@@ -355,7 +355,6 @@ fn update_def(inst: &mut MirInst, new_dst: VReg) {
         | MirInst::MapLookup { dst, .. }
         | MirInst::StrCmp { dst, .. }
         | MirInst::StopTimer { dst, .. }
-        | MirInst::LoopHeader { counter: dst, .. }
         | MirInst::ListNew { dst, .. }
         | MirInst::ListLen { dst, .. }
         | MirInst::ListGet { dst, .. }

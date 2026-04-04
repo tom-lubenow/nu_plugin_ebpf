@@ -119,6 +119,25 @@ pub(super) fn apply_typed_dst_inst(
     state.set_with_range(dst, ty, ValueRange::Unknown);
 }
 
+pub(super) fn apply_loop_header_inst(
+    dst: VReg,
+    start: i64,
+    limit: i64,
+    types: &HashMap<VReg, MirType>,
+    state: &mut VerifierState,
+) {
+    let ty = types
+        .get(&dst)
+        .map(verifier_type_from_mir)
+        .unwrap_or(VerifierType::Scalar);
+    let max = if start < limit {
+        limit.saturating_sub(1)
+    } else {
+        start
+    };
+    state.set_with_range(dst, ty, ValueRange::Known { min: start, max });
+}
+
 pub(super) fn apply_phi_inst(
     dst: VReg,
     args: &[(BlockId, VReg)],
