@@ -489,7 +489,13 @@ impl<'a> TypeInference<'a> {
             BinOpKind::Add => self.range_add(lhs, rhs),
             BinOpKind::Sub => self.range_sub(lhs, rhs),
             BinOpKind::Mul => self.range_mul(lhs, rhs),
-            BinOpKind::Shl | BinOpKind::Shr => self.range_shift(lhs, rhs),
+            BinOpKind::Div => self.range_div(lhs, rhs),
+            BinOpKind::Mod => self.range_mod(lhs, rhs),
+            BinOpKind::Shl => self.range_shift(lhs, rhs, true),
+            BinOpKind::Shr => self.range_shift(lhs, rhs, false),
+            BinOpKind::And => self.range_and(lhs, rhs),
+            BinOpKind::Or => self.range_or(lhs, rhs),
+            BinOpKind::Xor => self.range_xor(lhs, rhs),
             _ => ValueRange::Unknown,
         }
     }
@@ -552,18 +558,204 @@ impl<'a> TypeInference<'a> {
             _ => return ValueRange::Unknown,
         };
         let candidates = [
-            lmin.saturating_mul(rmin),
-            lmin.saturating_mul(rmax),
-            lmax.saturating_mul(rmin),
-            lmax.saturating_mul(rmax),
+            (lmin as i128) * (rmin as i128),
+            (lmin as i128) * (rmax as i128),
+            (lmax as i128) * (rmin as i128),
+            (lmax as i128) * (rmax as i128),
         ];
-        let min = *candidates.iter().min().unwrap_or(&0);
-        let max = *candidates.iter().max().unwrap_or(&0);
-        ValueRange::known(min, max)
+        let min = candidates.iter().copied().min().unwrap_or(0);
+        let max = candidates.iter().copied().max().unwrap_or(0);
+        ValueRange::known(self.clamp_i128_to_i64(min), self.clamp_i128_to_i64(max))
     }
 
-    pub(super) fn range_shift(&self, lhs: ValueRange, rhs: ValueRange) -> ValueRange {
-        let _ = (lhs, rhs);
-        ValueRange::Unknown
+    pub(super) fn range_div(&self, lhs: ValueRange, rhs: ValueRange) -> ValueRange {
+        match (lhs, rhs) {
+            (
+                ValueRange::Known {
+                    min: lhs_min,
+                    max: lhs_max,
+                },
+                ValueRange::Known {
+                    min: rhs_min,
+                    max: rhs_max,
+                },
+            ) => {
+                if rhs_min <= 0 && rhs_max >= 0 {
+                    return ValueRange::Unknown;
+                }
+                let candidates = [
+                    (lhs_min as i128) / (rhs_min as i128),
+                    (lhs_min as i128) / (rhs_max as i128),
+                    (lhs_max as i128) / (rhs_min as i128),
+                    (lhs_max as i128) / (rhs_max as i128),
+                ];
+                let min = candidates.iter().copied().min().unwrap_or(0);
+                let max = candidates.iter().copied().max().unwrap_or(0);
+                ValueRange::known(self.clamp_i128_to_i64(min), self.clamp_i128_to_i64(max))
+            }
+            _ => ValueRange::Unknown,
+        }
+    }
+
+    pub(super) fn range_mod(&self, lhs: ValueRange, rhs: ValueRange) -> ValueRange {
+        match (lhs, rhs) {
+            (
+                ValueRange::Known { min: lhs_min, .. },
+                ValueRange::Known {
+                    min: rhs_min,
+                    max: rhs_max,
+                },
+            ) => {
+                if rhs_min <= 0 || rhs_max <= 0 || lhs_min < 0 {
+                    return ValueRange::Unknown;
+                }
+                ValueRange::known(0, rhs_max.saturating_sub(1))
+            }
+            _ => ValueRange::Unknown,
+        }
+    }
+
+    pub(super) fn range_and(&self, lhs: ValueRange, rhs: ValueRange) -> ValueRange {
+        let (lhs_min, lhs_max, rhs_min, rhs_max) = match (lhs, rhs) {
+            (
+                ValueRange::Known {
+                    min: lhs_min,
+                    max: lhs_max,
+                },
+                ValueRange::Known {
+                    min: rhs_min,
+                    max: rhs_max,
+                },
+            ) => (lhs_min, lhs_max, rhs_min, rhs_max),
+            _ => return ValueRange::Unknown,
+        };
+        if lhs_min == lhs_max && rhs_min == rhs_max {
+            let val = lhs_min & rhs_min;
+            return ValueRange::known(val, val);
+        }
+        if lhs_min < 0 || rhs_min < 0 {
+            return ValueRange::Unknown;
+        }
+        let mask = self.mask_for_max(lhs_max) & self.mask_for_max(rhs_max);
+        let max = lhs_max.min(rhs_max).min(mask as i64);
+        ValueRange::known(0, max)
+    }
+
+    pub(super) fn range_or(&self, lhs: ValueRange, rhs: ValueRange) -> ValueRange {
+        let (lhs_min, lhs_max, rhs_min, rhs_max) = match (lhs, rhs) {
+            (
+                ValueRange::Known {
+                    min: lhs_min,
+                    max: lhs_max,
+                },
+                ValueRange::Known {
+                    min: rhs_min,
+                    max: rhs_max,
+                },
+            ) => (lhs_min, lhs_max, rhs_min, rhs_max),
+            _ => return ValueRange::Unknown,
+        };
+        if lhs_min == lhs_max && rhs_min == rhs_max {
+            let val = lhs_min | rhs_min;
+            return ValueRange::known(val, val);
+        }
+        if lhs_min < 0 || rhs_min < 0 {
+            return ValueRange::Unknown;
+        }
+        let mask = self.mask_for_max(lhs_max) | self.mask_for_max(rhs_max);
+        let max = (mask as i64).min(lhs_max.saturating_add(rhs_max));
+        ValueRange::known(0, max)
+    }
+
+    pub(super) fn range_xor(&self, lhs: ValueRange, rhs: ValueRange) -> ValueRange {
+        let (lhs_min, lhs_max, rhs_min, rhs_max) = match (lhs, rhs) {
+            (
+                ValueRange::Known {
+                    min: lhs_min,
+                    max: lhs_max,
+                },
+                ValueRange::Known {
+                    min: rhs_min,
+                    max: rhs_max,
+                },
+            ) => (lhs_min, lhs_max, rhs_min, rhs_max),
+            _ => return ValueRange::Unknown,
+        };
+        if lhs_min == lhs_max && rhs_min == rhs_max {
+            let val = lhs_min ^ rhs_min;
+            return ValueRange::known(val, val);
+        }
+        if lhs_min < 0 || rhs_min < 0 {
+            return ValueRange::Unknown;
+        }
+        let mask = self.mask_for_max(lhs_max) | self.mask_for_max(rhs_max);
+        let max = (mask as i64).min(lhs_max.saturating_add(rhs_max));
+        ValueRange::known(0, max)
+    }
+
+    pub(super) fn range_shift(
+        &self,
+        lhs: ValueRange,
+        rhs: ValueRange,
+        is_left: bool,
+    ) -> ValueRange {
+        let (lhs_min, lhs_max, rhs_min, rhs_max) = match (lhs, rhs) {
+            (
+                ValueRange::Known {
+                    min: lhs_min,
+                    max: lhs_max,
+                },
+                ValueRange::Known {
+                    min: rhs_min,
+                    max: rhs_max,
+                },
+            ) => (lhs_min, lhs_max, rhs_min, rhs_max),
+            _ => return ValueRange::Unknown,
+        };
+        if rhs_min < 0 || rhs_max > 63 {
+            return ValueRange::Unknown;
+        }
+
+        let mut min = i128::MAX;
+        let mut max = i128::MIN;
+        for lhs_val in [lhs_min, lhs_max] {
+            for rhs_val in [rhs_min, rhs_max] {
+                let shifted = if is_left {
+                    (lhs_val as i128) << rhs_val
+                } else {
+                    (lhs_val as i128) >> rhs_val
+                };
+                min = min.min(shifted);
+                max = max.max(shifted);
+            }
+        }
+
+        ValueRange::known(self.clamp_i128_to_i64(min), self.clamp_i128_to_i64(max))
+    }
+
+    fn clamp_i128_to_i64(&self, value: i128) -> i64 {
+        if value > i64::MAX as i128 {
+            i64::MAX
+        } else if value < i64::MIN as i128 {
+            i64::MIN
+        } else {
+            value as i64
+        }
+    }
+
+    fn mask_for_max(&self, max: i64) -> u64 {
+        if max <= 0 {
+            return 0;
+        }
+        let max = max as u64;
+        if max == u64::MAX {
+            return u64::MAX;
+        }
+        let bit = 64 - max.leading_zeros();
+        if bit >= 64 {
+            u64::MAX
+        } else {
+            (1u64 << bit) - 1
+        }
     }
 }
