@@ -342,10 +342,19 @@ impl<'a> HirToMirLowering<'a> {
                     src: MirValue::VReg(src_vreg),
                 });
                 self.var_mappings.insert(*var_id, preserved);
+                if let Some(meta) = self.get_metadata(*src).cloned() {
+                    self.var_metadata.insert(*var_id, meta);
+                } else {
+                    self.var_metadata.remove(var_id);
+                }
+                if let Some(ty) = self.vreg_type_hints.get(&src_vreg).cloned() {
+                    self.vreg_type_hints.insert(preserved, ty);
+                }
             }
 
             HirStmt::DropVariable { var_id } => {
                 self.var_mappings.remove(var_id);
+                self.var_metadata.remove(var_id);
             }
 
             // === Environment Variables (not supported in eBPF) ===

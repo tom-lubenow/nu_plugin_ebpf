@@ -219,6 +219,8 @@ pub struct HirToMirLowering<'a> {
     named_args: HashMap<String, (VReg, RegId)>,
     /// Variable mappings for inlined functions (VarId -> VReg)
     var_mappings: HashMap<VarId, VReg>,
+    /// Preserved metadata for variables that have been stored.
+    var_metadata: HashMap<VarId, RegMetadata>,
     /// Needs ringbuf map
     pub needs_ringbuf: bool,
     /// Needs counter map
@@ -303,6 +305,7 @@ impl<'a> HirToMirLowering<'a> {
             named_flags: Vec::new(),
             named_args: HashMap::new(),
             var_mappings: HashMap::new(),
+            var_metadata: HashMap::new(),
             needs_ringbuf: false,
             needs_counter_map: false,
             needs_histogram_map: false,

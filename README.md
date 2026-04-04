@@ -161,10 +161,12 @@ their layouts. `emit` still preserves unsupported aggregate layouts as binary
 payloads, and `count` supports them as byte-buffer keys. `ebpf counters`
 decodes those keys using any schema the compiler still has: arrays and typed
 structs can surface as strings, lists, or records, while opaque aggregate
-layouts still display as `binary`. These typed field projections also survive
-bindings and repeated cell-path access, for example
-`let inode = $ctx.arg0.f_inode; $inode.i_sb.s_flags`. 16-byte
-byte-array/string keys such as `ctx.arg0.comm` continue to display as strings.
+layouts still display as `binary`. Plain trampoline `ctx.argN`/`ctx.retval`
+loads also preserve their typed pointer or aggregate layouts across bindings,
+so both `let files = $ctx.arg0; $files.fdt.fd.f_inode.i_ino` and
+`let inode = $ctx.arg0.f_inode; $inode.i_sb.s_flags` continue to type-check
+and lower as expected. 16-byte byte-array/string keys such as `ctx.arg0.comm`
+continue to display as strings.
 Aggregate `fexit` returns still depend on kernel trampoline support; some
 kernels reject struct returns entirely.
 

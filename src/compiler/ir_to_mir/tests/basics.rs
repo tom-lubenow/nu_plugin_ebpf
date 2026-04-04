@@ -307,6 +307,54 @@ fn make_chained_ctx_path_program(paths: Vec<CellPath>) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_bound_ctx_path_program(binding: CellPath, access: CellPath) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let local_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(binding)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::StoreVariable {
+                    var_id: local_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: local_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::CellPath(Box::new(access)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(2),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 8],
+        ast: vec![None; 8],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn string_member(name: &str) -> PathMember {
     PathMember::test_string(name.to_string(), false, Casing::Sensitive)
 }
@@ -970,6 +1018,106 @@ fn test_lower_generic_field_projection_after_multi_level_pointer_binding() {
             )),
         "expected final inode number load from helper scratch slot"
     );
+}
+
+#[test]
+fn test_lower_generic_field_projection_after_binding_root_trampoline_arg() {
+    let hir = make_bound_ctx_path_program(
+        CellPath {
+            members: vec![string_member("arg0")],
+        },
+        CellPath {
+            members: vec![
+                string_member("fdt"),
+                string_member("fd"),
+                string_member("f_inode"),
+                string_member("i_ino"),
+            ],
+        },
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "do_close_on_exec");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bound root trampoline arg projection should lower");
+
+    let helper_reads = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::CallHelper { helper, .. }
+                    if *helper == BpfHelper::ProbeReadKernel as u32
+            )
+        })
+        .count();
+    assert!(
+        helper_reads >= 4,
+        "expected chained helper reads after binding a root trampoline pointer arg"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadSlot {
+                    ty: MirType::U64,
+                    ..
+                }
+            )),
+        "expected final inode number load from the bound trampoline arg"
+    );
+}
+
+#[test]
+fn test_lower_generic_field_projection_after_binding_root_trampoline_aggregate() {
+    let hir = make_bound_ctx_path_program(
+        CellPath {
+            members: vec![string_member("arg0")],
+        },
+        CellPath {
+            members: vec![string_member("tv_nsec")],
+        },
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "__audit_tk_injoffset");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bound root trampoline aggregate projection should lower");
+
+    let load = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::Load { offset, ty, .. } => Some((*offset, ty.clone())),
+            _ => None,
+        })
+        .expect("expected aggregate field load after binding the root trampoline value");
+    assert_eq!(load.0, 8);
+    assert_eq!(load.1, MirType::I64);
 }
 
 #[test]

@@ -604,6 +604,74 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn trampoline_root_type_info(
+        &self,
+        field: &CtxField,
+    ) -> Result<Option<TypeInfo>, CompileError> {
+        match (self.probe_ctx, field) {
+            (Some(ctx), CtxField::Arg(idx))
+                if matches!(
+                    ctx.probe_type,
+                    EbpfProgramType::Fentry | EbpfProgramType::Fexit
+                ) =>
+            {
+                KernelBtf::get()
+                    .function_trampoline_arg_type_info(&ctx.target, *idx as usize)
+                    .map_err(|e| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "failed to resolve ctx.arg{} type for {}:{}: {}",
+                            idx,
+                            ctx.probe_type.section_prefix(),
+                            ctx.target,
+                            e
+                        ))
+                    })
+            }
+            (Some(ctx), CtxField::RetVal) if matches!(ctx.probe_type, EbpfProgramType::Fexit) => {
+                KernelBtf::get()
+                    .function_trampoline_ret_type_info(&ctx.target)
+                    .map_err(|e| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "failed to resolve ctx.retval type for fexit:{}: {}",
+                            ctx.target, e
+                        ))
+                    })
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn root_trampoline_value_types(
+        type_info: &TypeInfo,
+        kind: TrampolineValueKind,
+    ) -> Option<(MirType, MirType)> {
+        match kind {
+            TrampolineValueKind::Scalar => {
+                let ty = Self::projected_trampoline_field_type(type_info).unwrap_or(MirType::I64);
+                Some((ty.clone(), ty))
+            }
+            TrampolineValueKind::Pointer { user_space } => {
+                let address_space = if user_space {
+                    AddressSpace::User
+                } else {
+                    AddressSpace::Kernel
+                };
+                let runtime_ty = Self::projected_trampoline_field_type(type_info)
+                    .unwrap_or_else(|| Self::trampoline_pointer_type(address_space));
+                Some((runtime_ty.clone(), runtime_ty))
+            }
+            TrampolineValueKind::Aggregate { size_bytes } => {
+                let semantic_ty = Self::projected_trampoline_field_type(type_info)
+                    .or_else(|| Self::trampoline_byte_array_type(size_bytes))?;
+                let runtime_ty = MirType::Ptr {
+                    pointee: Box::new(semantic_ty.clone()),
+                    address_space: AddressSpace::Stack,
+                };
+                Some((semantic_ty, runtime_ty))
+            }
+        }
+    }
+
     fn trampoline_byte_array_type(size: usize) -> Option<MirType> {
         if size == 0 {
             return None;
@@ -1568,26 +1636,60 @@ impl<'a> HirToMirLowering<'a> {
                 _ => None,
             })
             .or_else(|| self.get_metadata(src_dst).and_then(|m| m.string_slot));
+        let precise_trampoline_types = trampoline_value_spec
+            .zip(self.trampoline_root_type_info(&ctx_field)?)
+            .and_then(|(spec, type_info)| Self::root_trampoline_value_types(&type_info, spec.kind));
+        if let (
+            Some(slot),
+            Some((
+                _,
+                MirType::Ptr {
+                    pointee,
+                    address_space,
+                },
+            )),
+        ) = (slot, precise_trampoline_types.as_ref())
+            && *address_space == AddressSpace::Stack
+        {
+            self.record_stack_slot_type(slot, pointee.as_ref().clone());
+        }
         self.emit(MirInst::LoadCtxField {
             dst: dst_vreg,
             field: ctx_field.clone(),
             slot,
         });
 
-        let field_type = match &ctx_field {
-            CtxField::Comm => MirType::Array {
-                elem: Box::new(MirType::U8),
-                len: 16,
-            },
-            CtxField::Pid | CtxField::Tid | CtxField::Uid | CtxField::Gid => MirType::I32,
-            _ => match trampoline_value_spec.map(|spec| spec.kind) {
-                Some(TrampolineValueKind::Aggregate { size_bytes }) => MirType::Array {
+        let (field_type, runtime_type_hint) = match &ctx_field {
+            CtxField::Comm => {
+                let semantic_ty = MirType::Array {
                     elem: Box::new(MirType::U8),
-                    len: size_bytes,
-                },
-                _ => MirType::I64,
-            },
+                    len: 16,
+                };
+                let runtime_ty = MirType::Ptr {
+                    pointee: Box::new(semantic_ty.clone()),
+                    address_space: AddressSpace::Stack,
+                };
+                (semantic_ty, Some(runtime_ty))
+            }
+            CtxField::Pid | CtxField::Tid | CtxField::Uid | CtxField::Gid => {
+                (MirType::I32, Some(MirType::I32))
+            }
+            _ => precise_trampoline_types
+                .map(|(semantic_ty, runtime_ty)| (semantic_ty, Some(runtime_ty)))
+                .unwrap_or_else(|| match trampoline_value_spec.map(|spec| spec.kind) {
+                    Some(TrampolineValueKind::Aggregate { size_bytes }) => (
+                        MirType::Array {
+                            elem: Box::new(MirType::U8),
+                            len: size_bytes,
+                        },
+                        None,
+                    ),
+                    _ => (MirType::I64, None),
+                }),
         };
+        if let Some(runtime_ty) = runtime_type_hint {
+            self.vreg_type_hints.insert(dst_vreg, runtime_ty);
+        }
 
         let meta = self.get_or_create_metadata(src_dst);
         meta.is_context = false;

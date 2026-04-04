@@ -220,6 +220,12 @@ impl<'a> HirToMirLowering<'a> {
                 dst: dst_vreg,
                 src: MirValue::VReg(param_vreg),
             });
+            if let Some(meta) = self.var_metadata.get(&var_id).cloned() {
+                self.reg_metadata.insert(dst.get(), meta);
+            }
+            if let Some(ty) = self.vreg_type_hints.get(&param_vreg).cloned() {
+                self.vreg_type_hints.insert(dst_vreg, ty);
+            }
             return Ok(());
         }
 

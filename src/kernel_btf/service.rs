@@ -432,6 +432,46 @@ impl KernelBtf {
         )))
     }
 
+    /// Resolve the exact kernel-BTF type for a trampoline argument.
+    ///
+    /// Returns `Ok(None)` when the function exists but does not have that argument.
+    pub fn function_trampoline_arg_type_info(
+        &self,
+        function_name: &str,
+        arg_idx: usize,
+    ) -> Result<Option<TypeInfo>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let ty = btf
+            .get_types()
+            .iter()
+            .find(|ty| ty.is_function && ty.name.as_deref() == Some(function_name))
+            .ok_or_else(|| BtfError::TypeNotFound(function_name.to_string()))?;
+        let Type::FunctionProto(proto) = &ty.base_type else {
+            return Err(BtfError::KernelBtfError(format!(
+                "function '{}' is missing a function prototype in kernel BTF",
+                function_name
+            )));
+        };
+
+        let Some(param) = proto
+            .params
+            .iter()
+            .take_while(|param| param.type_id != 0)
+            .nth(arg_idx)
+        else {
+            return Ok(None);
+        };
+
+        let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
+        let param_ty = btf.get_type_by_id(param.type_id).map_err(|e| {
+            BtfError::KernelBtfError(format!(
+                "failed to resolve kernel BTF type {}: {}",
+                param.type_id, e
+            ))
+        })?;
+        Self::type_info_from_btf_type(&btf, &param_ty, &raw_type_sizes).map(Some)
+    }
+
     /// Resolve a typed trampoline return-value slot for an attached function.
     ///
     /// Returns `Ok(None)` when the function returns `void`.
@@ -455,6 +495,37 @@ impl KernelBtf {
                 .as_deref()
                 .unwrap_or("unknown layout")
         )))
+    }
+
+    /// Resolve the exact kernel-BTF type for a trampoline return value.
+    ///
+    /// Returns `Ok(None)` when the function returns `void`.
+    pub fn function_trampoline_ret_type_info(
+        &self,
+        function_name: &str,
+    ) -> Result<Option<TypeInfo>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let function_ret_type_ids = self.load_kfunc_return_type_id_map().unwrap_or_default();
+        let ty = btf
+            .get_types()
+            .iter()
+            .find(|ty| ty.is_function && ty.name.as_deref() == Some(function_name))
+            .ok_or_else(|| BtfError::TypeNotFound(function_name.to_string()))?;
+        let Some(ret_type_id) = function_ret_type_ids.get(&ty.type_id).copied() else {
+            return Ok(None);
+        };
+        if ret_type_id == 0 {
+            return Ok(None);
+        }
+
+        let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
+        let ret_ty = btf.get_type_by_id(ret_type_id).map_err(|e| {
+            BtfError::KernelBtfError(format!(
+                "failed to resolve kernel BTF type {}: {}",
+                ret_type_id, e
+            ))
+        })?;
+        Self::type_info_from_btf_type(&btf, &ret_ty, &raw_type_sizes).map(Some)
     }
 
     /// Validate that a function target is attachable via an fentry trampoline.
@@ -3822,6 +3893,34 @@ format:
             projection.type_info,
             TypeInfo::Int { size: 8, .. }
         ));
+    }
+
+    #[test]
+    fn test_function_trampoline_arg_type_info_preserves_root_pointer_layout() {
+        let type_info = KernelBtf::get()
+            .function_trampoline_arg_type_info("do_close_on_exec", 0)
+            .expect("do_close_on_exec arg0 type info should resolve")
+            .expect("do_close_on_exec arg0 should exist");
+
+        let TypeInfo::Ptr { target, .. } = type_info else {
+            panic!("expected do_close_on_exec arg0 to resolve to a pointer");
+        };
+        let TypeInfo::Struct {
+            btf_type_id,
+            fields,
+            ..
+        } = target.as_ref()
+        else {
+            panic!("expected do_close_on_exec arg0 pointee to be a struct");
+        };
+        assert!(
+            btf_type_id.is_some(),
+            "expected root trampoline type to preserve a kernel BTF type id"
+        );
+        assert!(
+            fields.iter().any(|field| field.name == "fdt"),
+            "expected files_struct root type to preserve the fdt field"
+        );
     }
 
     fn push_u32(buf: &mut Vec<u8>, value: u32, endianness: BtfEndianness) {
