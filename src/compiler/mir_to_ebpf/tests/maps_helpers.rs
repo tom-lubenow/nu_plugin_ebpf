@@ -217,6 +217,7 @@ fn test_emit_event_registers_bytes_schema_for_struct_payload() {
         MirType::Ptr {
             pointee: Box::new(MirType::Struct {
                 name: Some("opaque_path".to_string()),
+                kernel_btf_type_id: None,
                 fields: vec![StructField {
                     name: "__opaque".to_string(),
                     ty: MirType::Array {
@@ -277,6 +278,7 @@ fn test_emit_event_registers_typed_schema_for_struct_payload() {
         MirType::Ptr {
             pointee: Box::new(MirType::Struct {
                 name: Some("path".to_string()),
+                kernel_btf_type_id: None,
                 fields: vec![
                     StructField {
                         name: "mnt".to_string(),
@@ -361,6 +363,7 @@ fn test_emit_event_preserves_nested_field_schemas() {
 
     let inner_ty = MirType::Struct {
         name: Some("inner".to_string()),
+        kernel_btf_type_id: None,
         fields: vec![
             StructField {
                 name: "id".to_string(),
@@ -392,6 +395,7 @@ fn test_emit_event_preserves_nested_field_schemas() {
         MirType::Ptr {
             pointee: Box::new(MirType::Struct {
                 name: Some("outer".to_string()),
+                kernel_btf_type_id: None,
                 fields: vec![
                     StructField {
                         name: "inner".to_string(),
@@ -549,6 +553,7 @@ fn test_emit_record_preserves_nested_struct_field_schema() {
                 value: v0,
                 ty: MirType::Struct {
                     name: Some("path".to_string()),
+                    kernel_btf_type_id: None,
                     fields: vec![
                         StructField {
                             name: "mnt".to_string(),
@@ -587,6 +592,7 @@ fn test_emit_record_preserves_nested_struct_field_schema() {
         MirType::Ptr {
             pointee: Box::new(MirType::Struct {
                 name: Some("path".to_string()),
+                kernel_btf_type_id: None,
                 fields: vec![
                     StructField {
                         name: "mnt".to_string(),
@@ -827,6 +833,7 @@ fn test_bytes_counter_map_emits_struct_key_size() {
         MirType::Ptr {
             pointee: Box::new(MirType::Struct {
                 name: Some("opaque_path".to_string()),
+                kernel_btf_type_id: None,
                 fields: vec![StructField {
                     name: "__opaque".to_string(),
                     ty: MirType::Array {
@@ -921,6 +928,7 @@ fn test_bytes_counter_map_rejects_mixed_key_schemas() {
         MirType::Ptr {
             pointee: Box::new(MirType::Struct {
                 name: Some("pair".to_string()),
+                kernel_btf_type_id: None,
                 fields: vec![StructField {
                     name: "value".to_string(),
                     ty: MirType::U64,
@@ -983,6 +991,7 @@ fn test_bytes_counter_map_preserves_struct_record_schema() {
         MirType::Ptr {
             pointee: Box::new(MirType::Struct {
                 name: Some("path".to_string()),
+                kernel_btf_type_id: None,
                 fields: vec![
                     StructField {
                         name: "mnt".to_string(),
@@ -1078,6 +1087,7 @@ fn test_counter_map_rejects_stack_struct_pointer_key() {
         MirType::Ptr {
             pointee: Box::new(MirType::Struct {
                 name: Some("opaque_path".to_string()),
+                kernel_btf_type_id: None,
                 fields: vec![StructField {
                     name: "__opaque".to_string(),
                     ty: MirType::Array {

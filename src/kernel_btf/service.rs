@@ -582,6 +582,17 @@ impl KernelBtf {
             .map(Some)
     }
 
+    /// Resolve a field path from an arbitrary kernel BTF type id.
+    pub fn kernel_type_field_projection(
+        &self,
+        root_type_id: u32,
+        field_path: &[TrampolineFieldSelector],
+    ) -> Result<TrampolineFieldProjection, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
+        self.resolve_trampoline_field_projection(&btf, root_type_id, field_path, &raw_type_sizes)
+    }
+
     fn function_trampoline_layout(
         &self,
         function_name: &str,
@@ -1992,6 +2003,7 @@ impl KernelBtf {
         match &ty.base_type {
             Type::Struct(_) | Type::Union(_) => Ok(TypeInfo::Struct {
                 name: ty.name.clone().unwrap_or_else(|| "<anonymous>".to_string()),
+                btf_type_id: Some(ty.type_id),
                 size: Self::trampoline_size_bytes(btf, ty, raw_size_bytes)?,
                 fields: Vec::new(),
             }),
@@ -2078,6 +2090,7 @@ impl KernelBtf {
                 let size = Self::trampoline_size_bytes(btf, ty, raw_size_bytes)?;
                 Ok(TypeInfo::Struct {
                     name: ty.name.clone().unwrap_or_else(|| "<anonymous>".to_string()),
+                    btf_type_id: Some(ty.type_id),
                     size,
                     fields: Self::struct_field_infos_from_btf_type(
                         btf,
@@ -2091,6 +2104,7 @@ impl KernelBtf {
             }
             Type::Union(_) => Ok(TypeInfo::Struct {
                 name: ty.name.clone().unwrap_or_else(|| "<anonymous>".to_string()),
+                btf_type_id: Some(ty.type_id),
                 size: Self::trampoline_size_bytes(btf, ty, raw_size_bytes)?,
                 fields: Vec::new(),
             }),
@@ -3739,6 +3753,41 @@ format:
             }),
             "expected typed inode projection to preserve i_ino"
         );
+    }
+
+    #[test]
+    fn test_kernel_type_field_projection_resolves_deeper_pointer_target_member() {
+        let projection = KernelBtf::get()
+            .function_trampoline_arg_field(
+                "security_file_open",
+                0,
+                &[
+                    TrampolineFieldSelector::Field("f_inode".to_string()),
+                    TrampolineFieldSelector::Field("i_sb".to_string()),
+                ],
+            )
+            .expect("security_file_open f_inode.i_sb projection should resolve")
+            .expect("security_file_open arg0.f_inode.i_sb should exist");
+
+        let TypeInfo::Ptr { target, .. } = projection.type_info else {
+            panic!("expected security_file_open arg0.f_inode.i_sb to resolve to a pointer");
+        };
+        let type_id = target
+            .kernel_btf_type_id()
+            .expect("expected super_block target to preserve kernel BTF type id");
+
+        let nested = KernelBtf::get()
+            .kernel_type_field_projection(
+                type_id,
+                &[TrampolineFieldSelector::Field("s_flags".to_string())],
+            )
+            .expect("expected kernel type field projection for super_block.s_flags");
+
+        assert_eq!(nested.path.len(), 1);
+        assert!(matches!(
+            nested.type_info,
+            TypeInfo::Int { size: 4 | 8, .. }
+        ));
     }
 
     fn push_u32(buf: &mut Vec<u8>, value: u32, endianness: BtfEndianness) {

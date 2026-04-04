@@ -21,6 +21,8 @@ pub enum TypeInfo {
     Struct {
         /// Struct name
         name: String,
+        /// Kernel BTF type id when this layout came from kernel BTF.
+        btf_type_id: Option<u32>,
         /// Size in bytes
         size: usize,
         /// Fields in declaration order. Empty means the layout is opaque.
@@ -60,6 +62,14 @@ impl TypeInfo {
     /// Check if this is a pointer type
     pub fn is_ptr(&self) -> bool {
         matches!(self, TypeInfo::Ptr { .. })
+    }
+
+    /// Return the kernel BTF type id for struct layouts when known.
+    pub fn kernel_btf_type_id(&self) -> Option<u32> {
+        match self {
+            TypeInfo::Struct { btf_type_id, .. } => *btf_type_id,
+            _ => None,
+        }
     }
 }
 

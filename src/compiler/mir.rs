@@ -114,6 +114,7 @@ pub enum MirType {
     // Struct with named fields
     Struct {
         name: Option<String>,
+        kernel_btf_type_id: Option<u32>,
         fields: Vec<StructField>,
     },
 
@@ -149,6 +150,16 @@ impl MirType {
             MirType::Array { elem, len } if matches!(elem.as_ref(), MirType::I8 | MirType::U8) => {
                 Some(*len)
             }
+            _ => None,
+        }
+    }
+
+    /// Return the backing kernel BTF type id for struct layouts when known.
+    pub fn kernel_btf_type_id(&self) -> Option<u32> {
+        match self {
+            MirType::Struct {
+                kernel_btf_type_id, ..
+            } => *kernel_btf_type_id,
             _ => None,
         }
     }

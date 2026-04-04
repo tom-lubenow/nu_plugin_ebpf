@@ -124,6 +124,7 @@ impl HMType {
                 }
                 Some(MirType::Struct {
                     name: name.clone(),
+                    kernel_btf_type_id: None,
                     fields: mir_fields,
                 })
             }
@@ -159,7 +160,7 @@ impl HMType {
                 elem: Box::new(HMType::from_mir_type(elem)),
                 len: *len,
             },
-            MirType::Struct { name, fields } => HMType::Struct {
+            MirType::Struct { name, fields, .. } => HMType::Struct {
                 name: name.clone(),
                 fields: fields
                     .iter()

@@ -364,7 +364,7 @@ impl CounterKeySchema {
                 elem: Box::new(Self::from_mir_type(elem)),
                 len: *len,
             },
-            MirType::Struct { name, fields } => {
+            MirType::Struct { name, fields, .. } => {
                 if fields.len() == 1
                     && fields[0].name == "__opaque"
                     && fields[0].offset == 0

@@ -530,12 +530,17 @@ impl<'a> HirToMirLowering<'a> {
                     len: *len,
                 })
             }
-            TypeInfo::Struct { name, size, fields } => {
+            TypeInfo::Struct {
+                name,
+                btf_type_id,
+                size,
+                fields,
+            } => {
                 if *size == 0 {
                     return None;
                 }
                 if fields.is_empty() {
-                    return Self::opaque_trampoline_struct_type(name, *size);
+                    return Self::opaque_trampoline_struct_type(name, *size, *btf_type_id);
                 }
 
                 let mut mir_fields = Vec::with_capacity(fields.len() + 1);
@@ -579,7 +584,7 @@ impl<'a> HirToMirLowering<'a> {
                     cursor = field_end;
                 }
                 if mir_fields.is_empty() {
-                    return Self::opaque_trampoline_struct_type(name, *size);
+                    return Self::opaque_trampoline_struct_type(name, *size, *btf_type_id);
                 }
                 if cursor < *size {
                     mir_fields.push(Self::synthetic_padding_field(
@@ -591,6 +596,7 @@ impl<'a> HirToMirLowering<'a> {
 
                 Some(MirType::Struct {
                     name: Some(name.clone()),
+                    kernel_btf_type_id: *btf_type_id,
                     fields: mir_fields,
                 })
             }
@@ -608,9 +614,14 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
-    fn opaque_trampoline_struct_type(name: &str, size: usize) -> Option<MirType> {
+    fn opaque_trampoline_struct_type(
+        name: &str,
+        size: usize,
+        kernel_btf_type_id: Option<u32>,
+    ) -> Option<MirType> {
         Some(MirType::Struct {
             name: Some(name.to_string()),
+            kernel_btf_type_id,
             fields: vec![crate::compiler::mir::StructField {
                 name: "__opaque".to_string(),
                 ty: Self::trampoline_byte_array_type(size)?,
@@ -809,6 +820,7 @@ impl<'a> HirToMirLowering<'a> {
                     backing_slot,
                     MirType::Struct {
                         name: None,
+                        kernel_btf_type_id: None,
                         fields: vec![crate::compiler::mir::StructField {
                             name: "__opaque".to_string(),
                             ty: MirType::Array {
@@ -1066,23 +1078,70 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn resolve_kernel_btf_struct_field_step(
+        type_id: u32,
+        field_name: &str,
+        path_desc: &str,
+    ) -> Result<(usize, MirType), CompileError> {
+        let projection = KernelBtf::get()
+            .kernel_type_field_projection(
+                type_id,
+                &[TrampolineFieldSelector::Field(field_name.to_string())],
+            )
+            .map_err(|e| {
+                CompileError::UnsupportedInstruction(format!(
+                    "failed to resolve typed field path '{}' from kernel BTF: {}",
+                    path_desc, e
+                ))
+            })?;
+        let offset = projection
+            .path
+            .first()
+            .map(|segment| segment.offset_bytes)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "failed to resolve typed field path '{}' from kernel BTF",
+                    path_desc
+                ))
+            })?;
+        let projected_ty = Self::projected_trampoline_field_type(&projection.type_info)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "typed field path '{}' resolved to unsupported kernel type {:?}",
+                    path_desc, projection.type_info
+                ))
+            })?;
+        Ok((offset, projected_ty))
+    }
+
     fn resolve_typed_value_projection_step(
         current_ty: &MirType,
         member: &PathMember,
         path_desc: &str,
     ) -> Result<(usize, MirType), CompileError> {
         match (current_ty, member) {
-            (MirType::Struct { fields, .. }, PathMember::String { val, .. }) => {
+            (
+                MirType::Struct {
+                    fields,
+                    kernel_btf_type_id,
+                    ..
+                },
+                PathMember::String { val, .. },
+            ) => {
                 let field = fields
                     .iter()
                     .find(|field| !field.synthetic && field.name == *val)
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(format!(
-                            "typed field path '{}' has no field '{}'",
-                            path_desc, val
-                        ))
-                    })?;
-                Ok((field.offset, field.ty.clone()))
+                    .map(|field| (field.offset, field.ty.clone()));
+                if let Some(field) = field {
+                    return Ok(field);
+                }
+                if let Some(type_id) = *kernel_btf_type_id {
+                    return Self::resolve_kernel_btf_struct_field_step(type_id, val, path_desc);
+                }
+                Err(CompileError::UnsupportedInstruction(format!(
+                    "typed field path '{}' has no field '{}'",
+                    path_desc, val
+                )))
             }
             (MirType::Struct { .. }, PathMember::Int { val, .. }) => {
                 Err(CompileError::UnsupportedInstruction(format!(

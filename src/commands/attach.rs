@@ -573,8 +573,11 @@ Context parameter syntax (recommended):
     as binary payloads, and count can use them as byte-buffer keys. ebpf
     counters decodes those keys using any schema the compiler still has: arrays
     and typed structs can surface as strings, lists, or records; opaque
-    aggregate layouts still display as binary. 16-byte byte-array/string
-    keys such as ctx.arg0.comm continue to display as strings.
+    aggregate layouts still display as binary. These typed field projections
+    also survive bindings and repeated cell-path access, for example
+    `let inode = $ctx.arg0.f_inode; $inode.i_sb.s_flags`. 16-byte
+    byte-array/string keys such as ctx.arg0.comm continue to display as
+    strings.
     Multi-level pointer fields like foo ** are not supported yet.
     Aggregate fexit returns still depend on kernel trampoline support;
     some kernels reject struct returns entirely.

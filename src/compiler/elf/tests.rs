@@ -79,6 +79,7 @@ fn test_probe_context_allows_retval_on_fexit() {
 fn test_counter_key_schema_filters_synthetic_padding_fields() {
     let ty = MirType::Struct {
         name: Some("padded".to_string()),
+        kernel_btf_type_id: None,
         fields: vec![
             StructField {
                 name: "a".to_string(),

@@ -383,6 +383,7 @@ impl<'a> TypeInference<'a> {
                 }
                 MirType::Struct {
                     name,
+                    kernel_btf_type_id: None,
                     fields: mir_fields,
                 }
             }

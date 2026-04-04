@@ -794,6 +794,64 @@ fn test_lower_generic_field_projection_after_pointer_binding() {
 }
 
 #[test]
+fn test_lower_generic_field_projection_after_deeper_pointer_binding() {
+    let hir = make_chained_ctx_path_program(vec![
+        CellPath {
+            members: vec![string_member("arg0"), string_member("f_inode")],
+        },
+        CellPath {
+            members: vec![string_member("i_sb"), string_member("s_flags")],
+        },
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("deeper generic pointer field projection should lower");
+
+    let helper_reads = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::CallHelper { helper, .. }
+                    if *helper == BpfHelper::ProbeReadKernel as u32
+            )
+        })
+        .count();
+    assert!(
+        helper_reads >= 3,
+        "expected chained kernel reads across a deeper post-binding pointer path"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadSlot {
+                    ty: MirType::U32 | MirType::U64 | MirType::I32 | MirType::I64,
+                    ..
+                }
+            )),
+        "expected final scalar load from helper scratch slot"
+    );
+}
+
+#[test]
 fn test_lower_fentry_struct_leaf_emit_uses_struct_size() {
     let projection = KernelBtf::get()
         .function_trampoline_arg_field(
