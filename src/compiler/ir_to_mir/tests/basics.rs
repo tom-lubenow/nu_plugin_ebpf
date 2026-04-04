@@ -959,6 +959,66 @@ fn test_lower_fentry_multi_level_pointer_field_projection() {
 }
 
 #[test]
+fn test_lower_fentry_multi_level_pointer_index_projection() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("arg0"),
+            string_member("fdt"),
+            string_member("fd"),
+            int_member(0),
+            string_member("f_inode"),
+            string_member("i_ino"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "do_close_on_exec");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("multi-level pointer index projection should lower");
+
+    let helper_reads = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::CallHelper { helper, .. }
+                    if *helper == BpfHelper::ProbeReadKernel as u32
+            )
+        })
+        .count();
+    assert!(
+        helper_reads >= 5,
+        "expected chained helper reads across direct pointer indexing and subsequent pointer hops"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadSlot {
+                    ty: MirType::U64,
+                    ..
+                }
+            )),
+        "expected final inode-number load from the indexed multi-level pointer field"
+    );
+}
+
+#[test]
 fn test_lower_generic_field_projection_after_multi_level_pointer_binding() {
     let hir = make_chained_ctx_path_program(vec![
         CellPath {

@@ -151,26 +151,25 @@ trampoline args/returns can project scalar/pointer fields such as
 null-guarded `bpf_probe_read_{kernel,user}` and can cross intermediate and
 repeated pointer hops such as `ctx.arg0.foo.bar` or
 `ctx.arg0.fdt.fd.f_inode.i_ino`. Fixed-size arrays can also be indexed with
-numeric path segments like `ctx.arg0.comm.0`. Bound typed pointers can also
-use numeric segments to index pointer-backed sequences, for example
-`let fd = $ctx.arg0.fdt.fd; $fd.0.f_inode.i_ino`. Direct trampoline `ctx`
-paths still do not support pointer indexing. Terminal array leaves and
-unsupported aggregate leaves are exposed as stack-backed byte buffers, while
-representable terminal struct leaves keep their field layouts for
-`count`/`ebpf counters`, and single-value `emit` can stream those struct
-leaves as records. Nested array/record fields inside emitted values also
-decode recursively when the compiler can preserve their layouts. `emit` still
-preserves unsupported aggregate layouts as binary payloads, and `count`
-supports them as byte-buffer keys. `ebpf counters` decodes those keys using
-any schema the compiler still has: arrays and typed structs can surface as
-strings, lists, or records, while opaque aggregate layouts still display as
-`binary`. Plain trampoline `ctx.argN`/`ctx.retval` loads also preserve their
-typed pointer or aggregate layouts across bindings, so both
-`let files = $ctx.arg0; $files.fdt.fd.f_inode.i_ino`,
-`let fd = $ctx.arg0.fdt.fd; $fd.0.f_inode.i_ino`, and
-`let inode = $ctx.arg0.f_inode; $inode.i_sb.s_flags` continue to type-check
-and lower as expected. 16-byte byte-array/string keys such as `ctx.arg0.comm`
-continue to display as strings.
+numeric path segments like `ctx.arg0.comm.0`, and pointer-backed sequences
+can now also be indexed with constant numeric segments such as
+`ctx.arg0.fdt.fd.0.f_inode.i_ino` or `let fd = $ctx.arg0.fdt.fd;
+$fd.0.f_inode.i_ino`. Terminal array leaves and unsupported aggregate leaves
+are exposed as stack-backed byte buffers, while representable terminal struct
+leaves keep their field layouts for `count`/`ebpf counters`, and single-value
+`emit` can stream those struct leaves as records. Nested array/record fields
+inside emitted values also decode recursively when the compiler can preserve
+their layouts. `emit` still preserves unsupported aggregate layouts as binary
+payloads, and `count` supports them as byte-buffer keys. `ebpf counters`
+decodes those keys using any schema the compiler still has: arrays and typed
+structs can surface as strings, lists, or records, while opaque aggregate
+layouts still display as `binary`. Plain trampoline `ctx.argN`/`ctx.retval`
+loads also preserve their typed pointer or aggregate layouts across bindings,
+so `let files = $ctx.arg0; $files.fdt.fd.f_inode.i_ino`,
+`ctx.arg0.fdt.fd.0.f_inode.i_ino`, `let fd = $ctx.arg0.fdt.fd;
+$fd.0.f_inode.i_ino`, and `let inode = $ctx.arg0.f_inode; $inode.i_sb.s_flags`
+continue to type-check and lower as expected. 16-byte byte-array/string keys
+such as `ctx.arg0.comm` continue to display as strings.
 Aggregate `fexit` returns still depend on kernel trampoline support; some
 kernels reject struct returns entirely.
 

@@ -1928,7 +1928,7 @@ impl KernelBtf {
 
         let path_desc = Self::format_trampoline_field_path(field_path);
         for segment in field_path {
-            while current_ty.num_refs > 1 {
+            while current_ty.num_refs > 1 && !matches!(segment, TrampolineFieldSelector::Index(_)) {
                 let mut deref_ty = current_ty.clone();
                 deref_ty.num_refs -= 1;
                 path.push(TrampolineFieldPathSegment {
@@ -1987,6 +1987,23 @@ impl KernelBtf {
                         "trampoline field path '{}' requires a struct/union or array, got '{}'",
                         path_desc, ty_name
                     )));
+                }
+                (TrampolineFieldSelector::Index(index), _) if current_ty.num_refs > 0 => {
+                    let mut elem_ty = current_ty.clone();
+                    elem_ty.num_refs -= 1;
+                    let raw_size_bytes = raw_type_sizes
+                        .get(&elem_ty.type_id)
+                        .copied()
+                        .map(|size| size as usize);
+                    let elem_size_bytes =
+                        Self::trampoline_size_bytes(btf, &elem_ty, raw_size_bytes)?;
+                    let offset_bytes = index.checked_mul(elem_size_bytes).ok_or_else(|| {
+                        BtfError::KernelBtfError(format!(
+                            "offset overflow while resolving trampoline field '{}'",
+                            path_desc
+                        ))
+                    })?;
+                    (elem_ty, offset_bytes)
                 }
                 (TrampolineFieldSelector::Index(index), Type::Array(array_ty)) => {
                     let num_elements = array_ty.num_elements as usize;
@@ -3885,6 +3902,32 @@ format:
             )
             .expect("do_close_on_exec fdt.fd.f_inode.i_ino projection should resolve")
             .expect("do_close_on_exec arg0.fdt.fd.f_inode.i_ino should exist");
+
+        assert_eq!(projection.path.len(), 5);
+        assert_eq!(projection.path[2].offset_bytes, 0);
+        assert!(matches!(projection.path[2].type_info, TypeInfo::Ptr { .. }));
+        assert!(matches!(
+            projection.type_info,
+            TypeInfo::Int { size: 8, .. }
+        ));
+    }
+
+    #[test]
+    fn test_function_trampoline_arg_field_resolves_pointer_index_projection() {
+        let projection = KernelBtf::get()
+            .function_trampoline_arg_field(
+                "do_close_on_exec",
+                0,
+                &[
+                    TrampolineFieldSelector::Field("fdt".to_string()),
+                    TrampolineFieldSelector::Field("fd".to_string()),
+                    TrampolineFieldSelector::Index(0),
+                    TrampolineFieldSelector::Field("f_inode".to_string()),
+                    TrampolineFieldSelector::Field("i_ino".to_string()),
+                ],
+            )
+            .expect("do_close_on_exec fdt.fd.0.f_inode.i_ino projection should resolve")
+            .expect("do_close_on_exec arg0.fdt.fd.0.f_inode.i_ino should exist");
 
         assert_eq!(projection.path.len(), 5);
         assert_eq!(projection.path[2].offset_bytes, 0);
