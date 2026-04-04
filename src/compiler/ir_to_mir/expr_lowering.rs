@@ -1002,6 +1002,7 @@ impl<'a> HirToMirLowering<'a> {
                                 });
                             }
                         } else {
+                            self.vreg_type_hints.insert(dst_vreg, projected_ty.clone());
                             self.emit(MirInst::Load {
                                 dst: dst_vreg,
                                 ptr: base_vreg,
@@ -1097,6 +1098,7 @@ impl<'a> HirToMirLowering<'a> {
                                 src: MirValue::StackSlot(projected_slot),
                             });
                         } else {
+                            self.vreg_type_hints.insert(dst_vreg, projected_ty.clone());
                             self.emit(MirInst::LoadSlot {
                                 dst: dst_vreg,
                                 slot: projected_slot,
@@ -1263,6 +1265,20 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn resolve_pointer_sequence_index_step(
+        current_ty: &MirType,
+        index: usize,
+        path_desc: &str,
+    ) -> Result<(usize, MirType), CompileError> {
+        let offset = index.checked_mul(current_ty.size()).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "typed field path '{}' pointer index {} overflowed",
+                path_desc, index
+            ))
+        })?;
+        Ok((offset, current_ty.clone()))
+    }
+
     fn lower_typed_value_projection(
         &mut self,
         dst_vreg: VReg,
@@ -1280,6 +1296,7 @@ impl<'a> HirToMirLowering<'a> {
                 address_space: AddressSpace,
                 base_offset: usize,
                 target_ty: MirType,
+                direct: bool,
             },
         }
 
@@ -1292,6 +1309,7 @@ impl<'a> HirToMirLowering<'a> {
                 address_space: *address_space,
                 base_offset: 0,
                 target_ty: pointee.as_ref().clone(),
+                direct: true,
             },
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(
@@ -1309,6 +1327,7 @@ impl<'a> HirToMirLowering<'a> {
                     address_space,
                     base_offset,
                     target_ty,
+                    direct,
                 } = &cursor;
                 let MirType::Ptr {
                     pointee,
@@ -1317,6 +1336,9 @@ impl<'a> HirToMirLowering<'a> {
                 else {
                     break;
                 };
+                if *direct && matches!(member, PathMember::Int { .. }) {
+                    break;
+                }
 
                 let current_base_vreg = *base_vreg;
                 let current_address_space = *address_space;
@@ -1366,6 +1388,7 @@ impl<'a> HirToMirLowering<'a> {
                     address_space: next_space,
                     base_offset: 0,
                     target_ty: pointee.as_ref().clone(),
+                    direct: true,
                 };
             }
 
@@ -1374,9 +1397,16 @@ impl<'a> HirToMirLowering<'a> {
                 address_space,
                 base_offset,
                 target_ty,
+                direct,
             } = &cursor;
-            let (segment_offset, next_ty) =
-                Self::resolve_typed_value_projection_step(target_ty, member, path_desc)?;
+            let (segment_offset, next_ty) = match (direct, member) {
+                (true, PathMember::Int { val, .. })
+                    if !matches!(target_ty, MirType::Array { .. }) =>
+                {
+                    Self::resolve_pointer_sequence_index_step(target_ty, *val, path_desc)?
+                }
+                _ => Self::resolve_typed_value_projection_step(target_ty, member, path_desc)?,
+            };
             let field_offset = base_offset.checked_add(segment_offset).ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
                     "typed field path '{}' offset overflowed",
@@ -1443,6 +1473,7 @@ impl<'a> HirToMirLowering<'a> {
                         }
                     }
                 } else {
+                    self.vreg_type_hints.insert(dst_vreg, next_ty.clone());
                     match address_space {
                         AddressSpace::Stack | AddressSpace::Map => {
                             self.emit(MirInst::Load {
@@ -1487,6 +1518,7 @@ impl<'a> HirToMirLowering<'a> {
                 address_space: *address_space,
                 base_offset: field_offset,
                 target_ty: next_ty,
+                direct: false,
             };
         }
 
@@ -1533,9 +1565,21 @@ impl<'a> HirToMirLowering<'a> {
                         path_desc
                     ))
                 })?;
+            let base_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::Copy {
+                dst: base_vreg,
+                src: MirValue::VReg(dst_vreg),
+            });
+            self.vreg_type_hints.insert(
+                base_vreg,
+                self.vreg_type_hints
+                    .get(&dst_vreg)
+                    .cloned()
+                    .unwrap_or_else(|| base_runtime_ty.clone()),
+            );
             let projected_ty = self.lower_typed_value_projection(
                 dst_vreg,
-                dst_vreg,
+                base_vreg,
                 &base_runtime_ty,
                 &path.members,
                 &path_desc,

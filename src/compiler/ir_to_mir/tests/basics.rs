@@ -1084,6 +1084,72 @@ fn test_lower_generic_field_projection_after_binding_root_trampoline_arg() {
 }
 
 #[test]
+fn test_lower_generic_pointer_index_projection_after_binding_root_trampoline_arg() {
+    let hir = make_bound_ctx_path_program(
+        CellPath {
+            members: vec![
+                string_member("arg0"),
+                string_member("fdt"),
+                string_member("fd"),
+            ],
+        },
+        CellPath {
+            members: vec![
+                int_member(0),
+                string_member("f_inode"),
+                string_member("i_ino"),
+            ],
+        },
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "do_close_on_exec");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bound root trampoline pointer indexing should lower");
+
+    let helper_reads = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::CallHelper { helper, .. }
+                    if *helper == BpfHelper::ProbeReadKernel as u32
+            )
+        })
+        .count();
+    assert!(
+        helper_reads >= 4,
+        "expected helper reads across bound pointer indexing and subsequent pointer hops"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadSlot {
+                    ty: MirType::U64,
+                    ..
+                }
+            )),
+        "expected final inode number load from the indexed bound pointer"
+    );
+}
+
+#[test]
 fn test_lower_generic_field_projection_after_binding_root_trampoline_aggregate() {
     let hir = make_bound_ctx_path_program(
         CellPath {

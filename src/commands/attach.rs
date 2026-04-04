@@ -681,10 +681,13 @@ Context parameter syntax (recommended):
     Pointer-backed projections use null-guarded bpf_probe_read_{kernel,user}
     and can cross intermediate and repeated pointer hops like ctx.arg0.foo.bar
     or ctx.arg0.fdt.fd.f_inode.i_ino. Fixed-size arrays can be indexed with
-    numeric path segments like ctx.arg0.comm.0, but arbitrary pointer indexing
-    is still unsupported. Terminal array leaves and unsupported aggregate
-    leaves are exposed as stack-backed byte buffers. Representable terminal
-    struct leaves keep their field layouts for count/counter decoding, and
+    numeric path segments like ctx.arg0.comm.0. Bound typed pointers can also
+    use numeric segments to index pointer-backed sequences, for example
+    `let fd = $ctx.arg0.fdt.fd; $fd.0.f_inode.i_ino`. Direct trampoline ctx
+    paths still do not support pointer indexing. Terminal array leaves and
+    unsupported aggregate leaves are exposed as stack-backed byte buffers.
+    Representable terminal struct leaves keep their field layouts for
+    count/counter decoding, and
     single-value emit can now stream those struct leaves as records. Nested
     array/record fields inside emitted values also decode recursively when the
     compiler can preserve their layouts. emit still preserves unsupported
@@ -1293,6 +1296,54 @@ mod tests {
         HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
     }
 
+    fn make_bound_ctx_path_program(binding: CellPath, access: CellPath) -> HirProgram {
+        let ctx_var = VarId::new(0);
+        let bound_var = VarId::new(1);
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(binding)),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: bound_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: bound_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::CellPath(Box::new(access)),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(2),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 7],
+            ast: vec![None; 7],
+            comments: vec![],
+            register_count: 3,
+            file_count: 0,
+        };
+        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+    }
+
     #[test]
     fn test_recover_optimized_type_hints_for_pointer_hop_trampoline_projection() {
         let hir = make_ctx_path_program(CellPath {
@@ -1390,5 +1441,55 @@ mod tests {
                 total_size: 16,
             })
         );
+    }
+
+    #[test]
+    fn test_recover_optimized_type_hints_for_bound_pointer_index_projection() {
+        let hir = make_bound_ctx_path_program(
+            CellPath {
+                members: vec![
+                    string_member("arg0"),
+                    string_member("fdt"),
+                    string_member("fd"),
+                ],
+            },
+            CellPath {
+                members: vec![
+                    PathMember::Int {
+                        val: 0,
+                        span: Span::test_data(),
+                        optional: false,
+                    },
+                    string_member("f_inode"),
+                    string_member("i_ino"),
+                ],
+            },
+        );
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "do_close_on_exec");
+
+        let mut lowering = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("bound pointer-index projection should lower");
+
+        optimize_with_ssa(&mut lowering.program.main);
+        recover_optimized_type_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            &mut lowering.type_hints,
+        );
+
+        let result = compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .expect("optimized bound pointer-index projection should compile");
+        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
     }
 }
