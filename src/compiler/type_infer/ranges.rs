@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::BlockId;
 use std::collections::{HashMap, VecDeque};
 
@@ -9,6 +10,51 @@ enum RangeGuard {
         op: BinOpKind,
         value: i64,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum RangeSourceOp {
+    Deref,
+    Offset(usize),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct RangeSource {
+    root: CtxField,
+    ops: Vec<RangeSourceOp>,
+}
+
+impl RangeSource {
+    fn root(field: CtxField) -> Self {
+        Self {
+            root: field,
+            ops: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SlotSourceState {
+    Unset,
+    Zeroed,
+    Known(RangeSource),
+    Unknown,
+}
+
+impl SlotSourceState {
+    fn merge(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Unset, other) => other.clone(),
+            (known, Self::Unset) => known.clone(),
+            (Self::Zeroed, Self::Zeroed) => Self::Zeroed,
+            (Self::Zeroed, Self::Known(source)) | (Self::Known(source), Self::Zeroed) => {
+                Self::Known(source.clone())
+            }
+            (Self::Known(lhs), Self::Known(rhs)) if lhs == rhs => Self::Known(lhs.clone()),
+            (Self::Unknown, _) | (_, Self::Unknown) => Self::Unknown,
+            _ => Self::Unknown,
+        }
+    }
 }
 
 impl<'a> TypeInference<'a> {
@@ -130,26 +176,36 @@ impl<'a> TypeInference<'a> {
         let total_vregs = func.vreg_count.max(func.param_count as u32);
         let mut observed = vec![ValueRange::Unset; total_vregs as usize];
         let mut in_states: HashMap<BlockId, Vec<ValueRange>> = HashMap::new();
-        let mut in_ctx_field_ranges: HashMap<BlockId, HashMap<CtxField, ValueRange>> =
+        let mut in_source_ranges: HashMap<BlockId, HashMap<RangeSource, ValueRange>> =
+            HashMap::new();
+        let mut in_reg_sources: HashMap<BlockId, HashMap<VReg, SlotSourceState>> =
+            HashMap::new();
+        let mut in_slot_sources: HashMap<BlockId, HashMap<StackSlotId, SlotSourceState>> =
             HashMap::new();
         let mut worklist = VecDeque::new();
 
         in_states.insert(func.entry, vec![ValueRange::Unset; total_vregs as usize]);
-        in_ctx_field_ranges.insert(func.entry, HashMap::new());
+        in_source_ranges.insert(func.entry, HashMap::new());
+        in_reg_sources.insert(func.entry, HashMap::new());
+        in_slot_sources.insert(func.entry, HashMap::new());
         worklist.push_back(func.entry);
 
         while let Some(block_id) = worklist.pop_front() {
             let Some(state_in) = in_states.get(&block_id).cloned() else {
                 continue;
             };
-            let mut ctx_field_ranges = in_ctx_field_ranges
+            let mut source_ranges = in_source_ranges
+                .get(&block_id)
+                .cloned()
+                .unwrap_or_default();
+            let mut reg_sources = in_reg_sources.get(&block_id).cloned().unwrap_or_default();
+            let mut slot_sources = in_slot_sources
                 .get(&block_id)
                 .cloned()
                 .unwrap_or_default();
             let block = func.block(block_id);
             let mut state = state_in;
             let mut guards: HashMap<VReg, RangeGuard> = HashMap::new();
-            let mut ctx_field_sources: HashMap<VReg, CtxField> = HashMap::new();
 
             for inst in &block.instructions {
                 self.apply_range_inst(
@@ -158,10 +214,11 @@ impl<'a> TypeInference<'a> {
                     list_caps,
                     &slot_caps,
                     &mut state,
-                    &mut ctx_field_ranges,
+                    &mut source_ranges,
+                    &mut reg_sources,
+                    &mut slot_sources,
                     &mut observed,
                     &mut guards,
-                    &mut ctx_field_sources,
                 );
             }
 
@@ -170,9 +227,13 @@ impl<'a> TypeInference<'a> {
                     self.propagate_range_state(
                         *target,
                         &state,
-                        &ctx_field_ranges,
+                        &source_ranges,
+                        &reg_sources,
+                        &slot_sources,
                         &mut in_states,
-                        &mut in_ctx_field_ranges,
+                        &mut in_source_ranges,
+                        &mut in_reg_sources,
+                        &mut in_slot_sources,
                         &mut worklist,
                     );
                 }
@@ -183,8 +244,8 @@ impl<'a> TypeInference<'a> {
                 } => {
                     if let Some((true_state, true_fields)) = self.refine_range_branch(
                         &state,
-                        &ctx_field_ranges,
-                        &ctx_field_sources,
+                        &source_ranges,
+                        &reg_sources,
                         *cond,
                         &guards,
                         true,
@@ -193,15 +254,19 @@ impl<'a> TypeInference<'a> {
                             *if_true,
                             &true_state,
                             &true_fields,
+                            &reg_sources,
+                            &slot_sources,
                             &mut in_states,
-                            &mut in_ctx_field_ranges,
+                            &mut in_source_ranges,
+                            &mut in_reg_sources,
+                            &mut in_slot_sources,
                             &mut worklist,
                         );
                     }
                     if let Some((false_state, false_fields)) = self.refine_range_branch(
                         &state,
-                        &ctx_field_ranges,
-                        &ctx_field_sources,
+                        &source_ranges,
+                        &reg_sources,
                         *cond,
                         &guards,
                         false,
@@ -210,8 +275,12 @@ impl<'a> TypeInference<'a> {
                             *if_false,
                             &false_state,
                             &false_fields,
+                            &reg_sources,
+                            &slot_sources,
                             &mut in_states,
-                            &mut in_ctx_field_ranges,
+                            &mut in_source_ranges,
+                            &mut in_reg_sources,
+                            &mut in_slot_sources,
                             &mut worklist,
                         );
                     }
@@ -235,17 +304,25 @@ impl<'a> TypeInference<'a> {
                     self.propagate_range_state(
                         *body,
                         &body_state,
-                        &ctx_field_ranges,
+                        &source_ranges,
+                        &reg_sources,
+                        &slot_sources,
                         &mut in_states,
-                        &mut in_ctx_field_ranges,
+                        &mut in_source_ranges,
+                        &mut in_reg_sources,
+                        &mut in_slot_sources,
                         &mut worklist,
                     );
                     self.propagate_range_state(
                         *exit,
                         &state,
-                        &ctx_field_ranges,
+                        &source_ranges,
+                        &reg_sources,
+                        &slot_sources,
                         &mut in_states,
-                        &mut in_ctx_field_ranges,
+                        &mut in_source_ranges,
+                        &mut in_reg_sources,
+                        &mut in_slot_sources,
                         &mut worklist,
                     );
                 }
@@ -253,9 +330,13 @@ impl<'a> TypeInference<'a> {
                     self.propagate_range_state(
                         *header,
                         &state,
-                        &ctx_field_ranges,
+                        &source_ranges,
+                        &reg_sources,
+                        &slot_sources,
                         &mut in_states,
-                        &mut in_ctx_field_ranges,
+                        &mut in_source_ranges,
+                        &mut in_reg_sources,
+                        &mut in_slot_sources,
                         &mut worklist,
                     );
                 }
@@ -264,7 +345,43 @@ impl<'a> TypeInference<'a> {
             }
         }
 
-        observed
+        let mut final_observed = vec![ValueRange::Unset; total_vregs as usize];
+        for block in &func.blocks {
+            let mut state = in_states
+                .get(&block.id)
+                .cloned()
+                .unwrap_or_else(|| vec![ValueRange::Unset; total_vregs as usize]);
+            let mut source_ranges = in_source_ranges
+                .get(&block.id)
+                .cloned()
+                .unwrap_or_default();
+            let mut reg_sources = in_reg_sources.get(&block.id).cloned().unwrap_or_default();
+            let mut slot_sources = in_slot_sources.get(&block.id).cloned().unwrap_or_default();
+            let mut guards: HashMap<VReg, RangeGuard> = HashMap::new();
+
+            for (idx, range) in state.iter().copied().enumerate() {
+                if let Some(slot) = final_observed.get_mut(idx) {
+                    *slot = slot.merge(range);
+                }
+            }
+
+            for inst in &block.instructions {
+                self.apply_range_inst(
+                    inst,
+                    types,
+                    list_caps,
+                    &slot_caps,
+                    &mut state,
+                    &mut source_ranges,
+                    &mut reg_sources,
+                    &mut slot_sources,
+                    &mut final_observed,
+                    &mut guards,
+                );
+            }
+        }
+
+        final_observed
             .into_iter()
             .enumerate()
             .map(|(idx, range)| (VReg(idx as u32), range))
@@ -543,6 +660,89 @@ impl<'a> TypeInference<'a> {
         guards.remove(&dst);
     }
 
+    fn source_with_offset(&self, source: &RangeSource, offset: i32) -> Option<RangeSource> {
+        if offset < 0 {
+            return None;
+        }
+        if offset == 0 {
+            return Some(source.clone());
+        }
+        let mut next = source.clone();
+        next.ops.push(RangeSourceOp::Offset(offset as usize));
+        Some(next)
+    }
+
+    fn source_deref(&self, source: &RangeSource) -> RangeSource {
+        let mut next = source.clone();
+        next.ops.push(RangeSourceOp::Deref);
+        next
+    }
+
+    fn pointer_source_for_binop(
+        &self,
+        op: BinOpKind,
+        lhs: &MirValue,
+        rhs: &MirValue,
+        reg_sources: &HashMap<VReg, SlotSourceState>,
+    ) -> Option<RangeSource> {
+        match op {
+            BinOpKind::Add => match (lhs, rhs) {
+                (MirValue::VReg(base), MirValue::Const(offset))
+                | (MirValue::Const(offset), MirValue::VReg(base)) => match reg_sources.get(base) {
+                    Some(SlotSourceState::Known(source)) => {
+                        self.source_with_offset(source, *offset as i32)
+                    }
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn source_range_for_load(
+        &self,
+        source_ranges: &HashMap<RangeSource, ValueRange>,
+        source: &Option<RangeSource>,
+        fallback: Option<ValueRange>,
+    ) -> ValueRange {
+        source
+            .as_ref()
+            .and_then(|source| source_ranges.get(source).copied())
+            .or(fallback)
+            .unwrap_or(ValueRange::Unknown)
+    }
+
+    fn reg_source_for_loaded_value(
+        &self,
+        value_source: &RangeSource,
+        _dst_ty: &MirType,
+    ) -> Option<RangeSource> {
+        Some(value_source.clone())
+    }
+
+    fn slot_known_source(
+        &self,
+        slot_sources: &HashMap<StackSlotId, SlotSourceState>,
+        slot: StackSlotId,
+    ) -> Option<RangeSource> {
+        match slot_sources.get(&slot) {
+            Some(SlotSourceState::Known(source)) => Some(source.clone()),
+            _ => None,
+        }
+    }
+
+    fn reg_known_source(
+        &self,
+        reg_sources: &HashMap<VReg, SlotSourceState>,
+        reg: VReg,
+    ) -> Option<RangeSource> {
+        match reg_sources.get(&reg) {
+            Some(SlotSourceState::Known(source)) => Some(source.clone()),
+            _ => None,
+        }
+    }
+
     fn apply_range_inst(
         &self,
         inst: &MirInst,
@@ -550,32 +750,46 @@ impl<'a> TypeInference<'a> {
         list_caps: &HashMap<VReg, usize>,
         slot_caps: &HashMap<StackSlotId, usize>,
         state: &mut [ValueRange],
-        ctx_field_ranges: &mut HashMap<CtxField, ValueRange>,
+        source_ranges: &mut HashMap<RangeSource, ValueRange>,
+        reg_sources: &mut HashMap<VReg, SlotSourceState>,
+        slot_sources: &mut HashMap<StackSlotId, SlotSourceState>,
         observed: &mut [ValueRange],
         guards: &mut HashMap<VReg, RangeGuard>,
-        ctx_field_sources: &mut HashMap<VReg, CtxField>,
     ) {
         match inst {
             MirInst::Copy { dst, src } => {
-                let range = self.value_range_for_state(src, state);
+                let dst_ty = types.get(dst).cloned().unwrap_or(MirType::Unknown);
+                let mut range = self.value_range_for_state(src, state);
                 self.set_state_range(state, *dst, range);
                 self.observe_range(observed, *dst, range);
                 match src {
                     MirValue::VReg(src_vreg) => {
+                        if !matches!(dst_ty, MirType::Ptr { .. })
+                            && let Some(source) = self.reg_known_source(reg_sources, *src_vreg)
+                            && let ValueRange::Known { min, max } = self.source_range_for_load(
+                                source_ranges,
+                                &Some(source),
+                                self.scalar_type_range(&dst_ty),
+                            )
+                        {
+                            range = self.intersect_range(range, Some(min), Some(max));
+                            self.set_state_range(state, *dst, range);
+                            self.observe_range(observed, *dst, range);
+                        }
                         if let Some(guard) = guards.get(src_vreg).copied() {
                             guards.insert(*dst, guard);
                         } else {
                             self.clear_guard(guards, *dst);
                         }
-                        if let Some(field) = ctx_field_sources.get(src_vreg).cloned() {
-                            ctx_field_sources.insert(*dst, field);
+                        if let Some(source) = reg_sources.get(src_vreg).cloned() {
+                            reg_sources.insert(*dst, source);
                         } else {
-                            ctx_field_sources.remove(dst);
+                            reg_sources.insert(*dst, SlotSourceState::Unknown);
                         }
                     }
                     _ => {
                         self.clear_guard(guards, *dst);
-                        ctx_field_sources.remove(dst);
+                        reg_sources.insert(*dst, SlotSourceState::Unknown);
                     }
                 }
             }
@@ -590,7 +804,17 @@ impl<'a> TypeInference<'a> {
                 } else {
                     self.clear_guard(guards, *dst);
                 }
-                ctx_field_sources.remove(dst);
+                let dst_ty = types.get(dst).cloned().unwrap_or(MirType::Unknown);
+                if matches!(dst_ty, MirType::Ptr { .. }) {
+                    if let Some(source) = self.pointer_source_for_binop(*op, lhs, rhs, reg_sources)
+                    {
+                        reg_sources.insert(*dst, SlotSourceState::Known(source));
+                    } else {
+                        reg_sources.insert(*dst, SlotSourceState::Unknown);
+                    }
+                } else {
+                    reg_sources.insert(*dst, SlotSourceState::Unknown);
+                }
             }
             MirInst::UnaryOp { dst, op, src } => {
                 let src_range = self.value_range_for_state(src, state);
@@ -613,19 +837,25 @@ impl<'a> TypeInference<'a> {
                 } else {
                     self.clear_guard(guards, *dst);
                 }
-                ctx_field_sources.remove(dst);
+                reg_sources.insert(*dst, SlotSourceState::Unknown);
             }
             MirInst::LoadCtxField { dst, field, .. } => {
                 let dst_ty = types.get(dst).cloned().unwrap_or(MirType::Unknown);
-                let range = ctx_field_ranges
-                    .get(field)
-                    .copied()
-                    .or_else(|| self.scalar_type_range(&dst_ty))
-                    .unwrap_or(ValueRange::Unknown);
+                let source = RangeSource::root(field.clone());
+                let range = if matches!(dst_ty, MirType::Ptr { .. }) {
+                    self.scalar_type_range(&dst_ty)
+                        .unwrap_or(ValueRange::Unknown)
+                } else {
+                    self.source_range_for_load(
+                        source_ranges,
+                        &Some(source.clone()),
+                        self.scalar_type_range(&dst_ty),
+                    )
+                };
                 self.set_state_range(state, *dst, range);
                 self.observe_range(observed, *dst, range);
                 self.clear_guard(guards, *dst);
-                ctx_field_sources.insert(*dst, field.clone());
+                reg_sources.insert(*dst, SlotSourceState::Known(source));
             }
             MirInst::ListLen { dst, list } => {
                 let range = list_caps
@@ -635,45 +865,71 @@ impl<'a> TypeInference<'a> {
                 self.set_state_range(state, *dst, range);
                 self.observe_range(observed, *dst, range);
                 self.clear_guard(guards, *dst);
-                ctx_field_sources.remove(dst);
+                reg_sources.insert(*dst, SlotSourceState::Unknown);
             }
             MirInst::Load {
                 dst, ptr, offset, ..
             } => {
                 let dst_ty = types.get(dst).cloned().unwrap_or(MirType::Unknown);
-                let range = if *offset == 0 {
+                let source = self
+                    .reg_known_source(reg_sources, *ptr)
+                    .and_then(|source| self.source_with_offset(&source, *offset));
+                let fallback = if *offset == 0 {
                     list_caps
                         .get(ptr)
                         .map(|cap| Self::list_len_range(*cap))
                         .or_else(|| self.scalar_type_range(&dst_ty))
-                        .unwrap_or(ValueRange::Unknown)
                 } else {
                     self.scalar_type_range(&dst_ty)
-                        .unwrap_or(ValueRange::Unknown)
+                };
+                let range = if matches!(dst_ty, MirType::Ptr { .. }) {
+                    fallback.unwrap_or(ValueRange::Unknown)
+                } else {
+                    self.source_range_for_load(source_ranges, &source, fallback)
                 };
                 self.set_state_range(state, *dst, range);
                 self.observe_range(observed, *dst, range);
                 self.clear_guard(guards, *dst);
-                ctx_field_sources.remove(dst);
+                if let Some(source) = source
+                    .as_ref()
+                    .and_then(|source| self.reg_source_for_loaded_value(source, &dst_ty))
+                {
+                    reg_sources.insert(*dst, SlotSourceState::Known(source));
+                } else {
+                    reg_sources.insert(*dst, SlotSourceState::Unknown);
+                }
             }
             MirInst::LoadSlot {
                 dst, slot, offset, ..
             } => {
                 let dst_ty = types.get(dst).cloned().unwrap_or(MirType::Unknown);
-                let range = if *offset == 0 {
+                let source = self
+                    .slot_known_source(slot_sources, *slot)
+                    .and_then(|source| self.source_with_offset(&source, *offset));
+                let fallback = if *offset == 0 {
                     slot_caps
                         .get(slot)
                         .map(|cap| Self::list_len_range(*cap))
                         .or_else(|| self.scalar_type_range(&dst_ty))
-                        .unwrap_or(ValueRange::Unknown)
                 } else {
                     self.scalar_type_range(&dst_ty)
-                        .unwrap_or(ValueRange::Unknown)
+                };
+                let range = if matches!(dst_ty, MirType::Ptr { .. }) {
+                    fallback.unwrap_or(ValueRange::Unknown)
+                } else {
+                    self.source_range_for_load(source_ranges, &source, fallback)
                 };
                 self.set_state_range(state, *dst, range);
                 self.observe_range(observed, *dst, range);
                 self.clear_guard(guards, *dst);
-                ctx_field_sources.remove(dst);
+                if let Some(source) = source
+                    .as_ref()
+                    .and_then(|source| self.reg_source_for_loaded_value(source, &dst_ty))
+                {
+                    reg_sources.insert(*dst, SlotSourceState::Known(source));
+                } else {
+                    reg_sources.insert(*dst, SlotSourceState::Unknown);
+                }
             }
             MirInst::Phi { dst, args } => {
                 let mut merged: Option<ValueRange> = None;
@@ -691,13 +947,42 @@ impl<'a> TypeInference<'a> {
                 self.set_state_range(state, *dst, range);
                 self.observe_range(observed, *dst, range);
                 self.clear_guard(guards, *dst);
-                ctx_field_sources.remove(dst);
+                reg_sources.insert(*dst, SlotSourceState::Unknown);
+            }
+            MirInst::StoreSlot { slot, val, .. } => {
+                let state_next = if matches!(val, MirValue::Const(0)) {
+                    SlotSourceState::Zeroed
+                } else {
+                    SlotSourceState::Unknown
+                };
+                slot_sources.insert(*slot, state_next);
+            }
+            MirInst::CallHelper { helper, args, .. } => {
+                if matches!(
+                    BpfHelper::from_u32(*helper),
+                    Some(BpfHelper::ProbeReadKernel | BpfHelper::ProbeReadUser)
+                ) {
+                    if let [MirValue::StackSlot(slot), _, MirValue::VReg(src_ptr)] = args.as_slice() {
+                        let state_next = match reg_sources.get(src_ptr) {
+                            Some(SlotSourceState::Known(source)) => {
+                                SlotSourceState::Known(self.source_deref(source))
+                            }
+                            _ => SlotSourceState::Unknown,
+                        };
+                        slot_sources.insert(*slot, state_next);
+                    }
+                }
+                if let Some(dst) = inst.def() {
+                    self.set_state_range(state, dst, ValueRange::Unknown);
+                    self.clear_guard(guards, dst);
+                    reg_sources.insert(dst, SlotSourceState::Unknown);
+                }
             }
             _ => {
                 if let Some(dst) = inst.def() {
                     self.set_state_range(state, dst, ValueRange::Unknown);
                     self.clear_guard(guards, dst);
-                    ctx_field_sources.remove(&dst);
+                    reg_sources.insert(dst, SlotSourceState::Unknown);
                 }
             }
         }
@@ -707,9 +992,13 @@ impl<'a> TypeInference<'a> {
         &self,
         target: BlockId,
         next: &[ValueRange],
-        next_ctx_field_ranges: &HashMap<CtxField, ValueRange>,
+        next_source_ranges: &HashMap<RangeSource, ValueRange>,
+        next_reg_sources: &HashMap<VReg, SlotSourceState>,
+        next_slot_sources: &HashMap<StackSlotId, SlotSourceState>,
         in_states: &mut HashMap<BlockId, Vec<ValueRange>>,
-        in_ctx_field_ranges: &mut HashMap<BlockId, HashMap<CtxField, ValueRange>>,
+        in_source_ranges: &mut HashMap<BlockId, HashMap<RangeSource, ValueRange>>,
+        in_reg_sources: &mut HashMap<BlockId, HashMap<VReg, SlotSourceState>>,
+        in_slot_sources: &mut HashMap<BlockId, HashMap<StackSlotId, SlotSourceState>>,
         worklist: &mut VecDeque<BlockId>,
     ) {
         let entry = in_states
@@ -723,15 +1012,39 @@ impl<'a> TypeInference<'a> {
                 changed = true;
             }
         }
-        let field_entry = in_ctx_field_ranges.entry(target).or_default();
-        for (field, incoming) in next_ctx_field_ranges {
-            let merged = field_entry
-                .get(field)
+        let source_entry = in_source_ranges.entry(target).or_default();
+        for (source, incoming) in next_source_ranges {
+            let merged = source_entry
+                .get(source)
                 .copied()
                 .unwrap_or(ValueRange::Unset)
                 .merge(*incoming);
-            if field_entry.get(field).copied() != Some(merged) {
-                field_entry.insert(field.clone(), merged);
+            if source_entry.get(source).copied() != Some(merged) {
+                source_entry.insert(source.clone(), merged);
+                changed = true;
+            }
+        }
+        let reg_entry = in_reg_sources.entry(target).or_default();
+        for (reg, incoming) in next_reg_sources {
+            let merged = reg_entry
+                .get(reg)
+                .cloned()
+                .unwrap_or(SlotSourceState::Unset)
+                .merge(incoming);
+            if reg_entry.get(reg).cloned() != Some(merged.clone()) {
+                reg_entry.insert(*reg, merged);
+                changed = true;
+            }
+        }
+        let slot_entry = in_slot_sources.entry(target).or_default();
+        for (slot, incoming) in next_slot_sources {
+            let merged = slot_entry
+                .get(slot)
+                .cloned()
+                .unwrap_or(SlotSourceState::Unset)
+                .merge(incoming);
+            if slot_entry.get(slot).cloned() != Some(merged.clone()) {
+                slot_entry.insert(*slot, merged);
                 changed = true;
             }
         }
@@ -930,14 +1243,14 @@ impl<'a> TypeInference<'a> {
     fn refine_range_branch(
         &self,
         state: &[ValueRange],
-        ctx_field_ranges: &HashMap<CtxField, ValueRange>,
-        ctx_field_sources: &HashMap<VReg, CtxField>,
+        source_ranges: &HashMap<RangeSource, ValueRange>,
+        reg_sources: &HashMap<VReg, SlotSourceState>,
         cond: VReg,
         guards: &HashMap<VReg, RangeGuard>,
         take_true: bool,
-    ) -> Option<(Vec<ValueRange>, HashMap<CtxField, ValueRange>)> {
+    ) -> Option<(Vec<ValueRange>, HashMap<RangeSource, ValueRange>)> {
         let Some(guard) = guards.get(&cond).copied() else {
-            return Some((state.to_vec(), ctx_field_ranges.clone()));
+            return Some((state.to_vec(), source_ranges.clone()));
         };
 
         match guard {
@@ -951,13 +1264,15 @@ impl<'a> TypeInference<'a> {
                     return None;
                 }
                 let mut next = state.to_vec();
-                let mut next_ctx_field_ranges = ctx_field_ranges.clone();
+                let mut next_source_ranges = source_ranges.clone();
                 let refined = self.refine_range(current, op, value, take_true);
                 self.set_state_range(&mut next, reg, refined);
-                if let Some(field) = ctx_field_sources.get(&reg).cloned() {
-                    next_ctx_field_ranges.insert(field, refined);
+                if matches!(refined, ValueRange::Known { .. })
+                    && let Some(SlotSourceState::Known(source)) = reg_sources.get(&reg).cloned()
+                {
+                    next_source_ranges.insert(source, refined);
                 }
-                Some((next, next_ctx_field_ranges))
+                Some((next, next_source_ranges))
             }
         }
     }

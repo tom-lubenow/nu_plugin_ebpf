@@ -162,9 +162,10 @@ ranges also lower to verifier-safe loops, so `for i in 0..0 { ... get $i ...
 `let j = (($i + 1) mod 2)` is preserved too. The same range tracking now
 works for typed unsigned runtime fields such as
 `let idx = ($ctx.arg0.fdt.max_fds mod 2)`; descending ranges are still
-rejected. Branch-sensitive narrowing also works when you keep the refined
-value in a binding, for example `let max = $ctx.arg0.fdt.max_fds; if $max >
-0 { let idx = ($max - 1); ... }`. Terminal array leaves and unsupported aggregate
+rejected. Branch-sensitive narrowing also works for both bound and repeated
+direct paths, for example `let max = $ctx.arg0.fdt.max_fds; if $max > 0 {
+let idx = ($max - 1); ... }` or `if $ctx.arg0.fdt.max_fds > 0 { let idx =
+($ctx.arg0.fdt.max_fds - 1); ... }`. Terminal array leaves and unsupported aggregate
 leaves are exposed as stack-backed byte buffers, while representable terminal struct
 leaves keep their field layouts for `count`/`ebpf counters`, and single-value
 `emit` can stream those struct leaves as records. Nested array/record fields
