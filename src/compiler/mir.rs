@@ -74,6 +74,13 @@ pub const TIMESTAMP_MAP_NAME: &str = "timestamps";
 pub const KSTACK_MAP_NAME: &str = "kstacks";
 pub const USTACK_MAP_NAME: &str = "ustacks";
 
+/// Bitfield extraction metadata for a logical struct field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BitfieldInfo {
+    pub bit_offset: u32,
+    pub bit_size: u32,
+}
+
 /// Type of value being appended in StringAppend
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StringAppendType {
@@ -138,7 +145,11 @@ impl MirType {
             MirType::I64 | MirType::U64 => 8,
             MirType::Ptr { .. } => 8,
             MirType::Array { elem, len } => elem.size() * len,
-            MirType::Struct { fields, .. } => fields.iter().map(|f| f.ty.size()).sum(),
+            MirType::Struct { fields, .. } => fields
+                .iter()
+                .filter_map(|field| field.offset.checked_add(field.ty.size()))
+                .max()
+                .unwrap_or(0),
             MirType::MapRef { .. } => 8, // Map FD
             MirType::Unknown => 8,       // Default to 64-bit
         }
@@ -217,6 +228,7 @@ pub struct StructField {
     pub ty: MirType,
     pub offset: usize,
     pub synthetic: bool,
+    pub bitfield: Option<BitfieldInfo>,
 }
 
 /// A field in a record being emitted

@@ -1,5 +1,12 @@
 //! Type representations for kernel BTF information
 
+/// Bitfield extraction metadata for a typed BTF field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BitfieldInfo {
+    pub bit_offset: u32,
+    pub bit_size: u32,
+}
+
 /// Information about a type from kernel BTF
 #[derive(Debug, Clone)]
 pub enum TypeInfo {
@@ -84,4 +91,6 @@ pub struct FieldInfo {
     pub offset: usize,
     /// Size in bytes
     pub size: usize,
+    /// Optional bitfield extraction metadata relative to the field's storage.
+    pub bitfield: Option<BitfieldInfo>,
 }

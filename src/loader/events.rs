@@ -20,6 +20,39 @@ impl EbpfState {
         }
     }
 
+    fn decode_bitfield_scalar(
+        field_buf: &[u8],
+        size: usize,
+        signed: bool,
+        bitfield: crate::compiler::mir::BitfieldInfo,
+    ) -> i64 {
+        if size == 0 || bitfield.bit_size == 0 {
+            return 0;
+        }
+
+        let storage = Self::decode_scalar_field(field_buf, size, false) as u64;
+        let storage_bits = (size.min(8) * 8) as u32;
+        if bitfield.bit_offset >= storage_bits || bitfield.bit_size > storage_bits {
+            return 0;
+        }
+        match bitfield.bit_offset.checked_add(bitfield.bit_size) {
+            Some(end) if end <= storage_bits => end,
+            _ => return 0,
+        };
+        let value = if bitfield.bit_size == 64 {
+            storage >> bitfield.bit_offset
+        } else {
+            let mask = (1u64 << bitfield.bit_size) - 1;
+            (storage >> bitfield.bit_offset) & mask
+        };
+        if !signed || bitfield.bit_size == 64 {
+            value as i64
+        } else {
+            let shift = 64 - bitfield.bit_size;
+            ((value << shift) as i64) >> shift
+        }
+    }
+
     fn decode_fixed_string(field_buf: &[u8], size: usize) -> String {
         let max_len = field_buf.len().min(size);
         let null_pos = field_buf[..max_len]
@@ -67,10 +100,15 @@ impl EbpfState {
                     } else {
                         &[]
                     };
-                    values.push((
-                        field.name.clone(),
-                        Self::decode_structured_field_with_schema(field_buf, &field.schema),
-                    ));
+                    let value = match (&field.schema, field.bitfield) {
+                        (CounterKeySchema::Int { size, signed }, Some(bitfield)) => {
+                            BpfFieldValue::Int(Self::decode_bitfield_scalar(
+                                field_buf, *size, *signed, bitfield,
+                            ))
+                        }
+                        _ => Self::decode_structured_field_with_schema(field_buf, &field.schema),
+                    };
+                    values.push((field.name.clone(), value));
                 }
                 BpfFieldValue::Record(values)
             }
@@ -164,7 +202,14 @@ impl EbpfState {
                 .get(idx + 1)
                 .map(|f| f.offset)
                 .unwrap_or(schema.total_size);
-            let field_size = next_offset.saturating_sub(field.offset);
+            let field_size = field
+                .value_schema
+                .as_ref()
+                .map(|schema| schema.size())
+                .unwrap_or_else(|| match field.field_type {
+                    BpfFieldType::String => next_offset.saturating_sub(field.offset),
+                    _ => field.field_type.size(),
+                });
             // Bounds check: ensure field.offset is within buffer
             if field.offset >= buf.len() {
                 // Field offset out of bounds, skip this field
@@ -178,7 +223,13 @@ impl EbpfState {
             } else {
                 match field.field_type {
                     BpfFieldType::Int { size, signed } => {
-                        BpfFieldValue::Int(Self::decode_scalar_field(field_buf, size, signed))
+                        if let Some(bitfield) = field.bitfield {
+                            BpfFieldValue::Int(Self::decode_bitfield_scalar(
+                                field_buf, size, signed, bitfield,
+                            ))
+                        } else {
+                            BpfFieldValue::Int(Self::decode_scalar_field(field_buf, size, signed))
+                        }
                     }
                     BpfFieldType::Comm => {
                         BpfFieldValue::String(Self::decode_fixed_string(field_buf, 16))

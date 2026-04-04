@@ -19,4 +19,4 @@ pub use service::{
     TrampolineFieldProjection, TrampolineFieldSelector, TrampolineValueKind, TrampolineValueSpec,
 };
 pub use tracepoint::TracepointContext;
-pub use types::{FieldInfo, TypeInfo};
+pub use types::{BitfieldInfo, FieldInfo, TypeInfo};

@@ -123,6 +123,7 @@ impl HMType {
                         ty: mir_ty,
                         offset,
                         synthetic: false,
+                        bitfield: None,
                     });
                     offset += size;
                 }

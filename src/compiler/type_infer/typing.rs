@@ -26,6 +26,7 @@ impl<'a> TypeInference<'a> {
                 ty: Self::byte_array_mir_type(size)?,
                 offset: 0,
                 synthetic: false,
+                bitfield: None,
             }],
         })
     }
@@ -40,6 +41,7 @@ impl<'a> TypeInference<'a> {
             ty: Self::byte_array_mir_type(size)?,
             offset,
             synthetic: true,
+            bitfield: None,
         })
     }
 
@@ -91,7 +93,7 @@ impl<'a> TypeInference<'a> {
                     if field.size == 0 || field.offset >= *size {
                         continue;
                     }
-                    if field.offset < cursor {
+                    if field.offset < cursor && field.bitfield.is_none() {
                         continue;
                     }
                     if field.offset > cursor {
@@ -116,8 +118,14 @@ impl<'a> TypeInference<'a> {
                         ty: field_ty,
                         offset: field.offset,
                         synthetic: false,
+                        bitfield: field.bitfield.map(|bitfield| {
+                            crate::compiler::mir::BitfieldInfo {
+                                bit_offset: bitfield.bit_offset,
+                                bit_size: bitfield.bit_size,
+                            }
+                        }),
                     });
-                    cursor = field_end;
+                    cursor = cursor.max(field_end);
                 }
                 if mir_fields.is_empty() {
                     return Self::opaque_struct_mir_type(name, *size, *btf_type_id);
@@ -530,6 +538,7 @@ impl<'a> TypeInference<'a> {
                         ty: mir_ty,
                         offset,
                         synthetic: false,
+                        bitfield: None,
                     });
                     offset += size;
                 }
@@ -548,11 +557,60 @@ impl<'a> TypeInference<'a> {
         }
     }
 
+    fn mir_type_carries_non_hm_layout(ty: &MirType) -> bool {
+        match ty {
+            MirType::Ptr { pointee, .. } => Self::mir_type_carries_non_hm_layout(pointee),
+            MirType::Array { elem, .. } => Self::mir_type_carries_non_hm_layout(elem),
+            MirType::Struct {
+                kernel_btf_type_id,
+                fields,
+                ..
+            } => {
+                if kernel_btf_type_id.is_some() {
+                    return true;
+                }
+
+                let mut cursor = 0usize;
+                for field in fields {
+                    if field.synthetic || field.bitfield.is_some() {
+                        return true;
+                    }
+                    if field.offset != cursor {
+                        return true;
+                    }
+                    let Some(next_cursor) = cursor.checked_add(field.ty.size()) else {
+                        return true;
+                    };
+                    cursor = next_cursor;
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
+    fn preferred_hint_layout(&self, vreg: VReg, inferred: MirType) -> MirType {
+        let Some(hints) = self.type_hints else {
+            return inferred;
+        };
+        let Some(hint) = hints.get(&vreg) else {
+            return inferred;
+        };
+        if !Self::mir_type_carries_non_hm_layout(hint) {
+            return inferred;
+        }
+        if HMType::from_mir_type(hint) == HMType::from_mir_type(&inferred) {
+            hint.clone()
+        } else {
+            inferred
+        }
+    }
+
     /// Get the type for a vreg (after inference)
     pub fn get_type(&self, vreg: VReg) -> Option<MirType> {
         let tvar = self.vreg_vars.get(&vreg)?;
         let hm_type = self.substitution.apply(&HMType::Var(*tvar));
-        Some(self.hm_to_mir(&hm_type))
+        Some(self.preferred_hint_layout(vreg, self.hm_to_mir(&hm_type)))
     }
 
     /// Get all inferred types
@@ -560,7 +618,10 @@ impl<'a> TypeInference<'a> {
         let mut result = HashMap::new();
         for (vreg, tvar) in &self.vreg_vars {
             let hm_type = self.substitution.apply(&HMType::Var(*tvar));
-            result.insert(*vreg, self.hm_to_mir(&hm_type));
+            result.insert(
+                *vreg,
+                self.preferred_hint_layout(*vreg, self.hm_to_mir(&hm_type)),
+            );
         }
         result
     }

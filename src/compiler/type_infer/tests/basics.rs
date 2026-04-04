@@ -86,6 +86,7 @@ fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
                         ty: byte_array(*size)?,
                         offset: 0,
                         synthetic: false,
+                        bitfield: None,
                     }],
                 });
             }
@@ -93,7 +94,10 @@ fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
             let mut cursor = 0usize;
             let mut pad_index = 0usize;
             for field in fields {
-                if field.size == 0 || field.offset >= *size || field.offset < cursor {
+                if field.size == 0
+                    || field.offset >= *size
+                    || (field.offset < cursor && field.bitfield.is_none())
+                {
                     continue;
                 }
                 if field.offset > cursor {
@@ -102,6 +106,7 @@ fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
                         ty: byte_array(field.offset - cursor)?,
                         offset: cursor,
                         synthetic: false,
+                        bitfield: None,
                     });
                     pad_index += 1;
                 }
@@ -118,8 +123,14 @@ fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
                     ty: ty.clone(),
                     offset: field.offset,
                     synthetic: false,
+                    bitfield: field
+                        .bitfield
+                        .map(|bitfield| crate::compiler::mir::BitfieldInfo {
+                            bit_offset: bitfield.bit_offset,
+                            bit_size: bitfield.bit_size,
+                        }),
                 });
-                cursor = field_end;
+                cursor = cursor.max(field_end);
             }
             if out.is_empty() {
                 return Some(MirType::Struct {
@@ -130,6 +141,7 @@ fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
                         ty: byte_array(*size)?,
                         offset: 0,
                         synthetic: false,
+                        bitfield: None,
                     }],
                 });
             }
@@ -139,6 +151,7 @@ fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
                     ty: byte_array(*size - cursor)?,
                     offset: cursor,
                     synthetic: false,
+                    bitfield: None,
                 });
             }
             Some(MirType::Struct {

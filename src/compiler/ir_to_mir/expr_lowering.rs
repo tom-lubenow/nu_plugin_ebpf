@@ -567,7 +567,7 @@ impl<'a> HirToMirLowering<'a> {
                     if field.size == 0 || field.offset >= *size {
                         continue;
                     }
-                    if field.offset < cursor {
+                    if field.offset < cursor && field.bitfield.is_none() {
                         continue;
                     }
                     if field.offset > cursor {
@@ -597,8 +597,14 @@ impl<'a> HirToMirLowering<'a> {
                         ty: field_ty,
                         offset: field.offset,
                         synthetic: false,
+                        bitfield: field.bitfield.map(|bitfield| {
+                            crate::compiler::mir::BitfieldInfo {
+                                bit_offset: bitfield.bit_offset,
+                                bit_size: bitfield.bit_size,
+                            }
+                        }),
                     });
-                    cursor = field_end;
+                    cursor = cursor.max(field_end);
                 }
                 if mir_fields.is_empty() {
                     return Self::opaque_trampoline_struct_type(name, *size, *btf_type_id);
@@ -830,6 +836,7 @@ impl<'a> HirToMirLowering<'a> {
                 ty: Self::trampoline_byte_array_type(size)?,
                 offset: 0,
                 synthetic: false,
+                bitfield: None,
             }],
         })
     }
@@ -844,6 +851,7 @@ impl<'a> HirToMirLowering<'a> {
             ty: Self::trampoline_byte_array_type(size)?,
             offset,
             synthetic: true,
+            bitfield: None,
         })
     }
 
@@ -1044,6 +1052,7 @@ impl<'a> HirToMirLowering<'a> {
                                 },
                                 offset: 0,
                                 synthetic: false,
+                                bitfield: None,
                             }],
                         },
                     );
@@ -1403,7 +1412,16 @@ impl<'a> HirToMirLowering<'a> {
                 let field = fields
                     .iter()
                     .find(|field| !field.synthetic && field.name == *val)
-                    .map(|field| (field.offset, field.ty.clone(), None));
+                    .map(|field| {
+                        (
+                            field.offset,
+                            field.ty.clone(),
+                            field.bitfield.map(|bitfield| TrampolineBitfieldInfo {
+                                bit_offset: bitfield.bit_offset,
+                                bit_size: bitfield.bit_size,
+                            }),
+                        )
+                    });
                 if let Some(field) = field {
                     return Ok(field);
                 }

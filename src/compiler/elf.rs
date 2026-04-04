@@ -15,7 +15,7 @@ use object::{
 use super::CompileError;
 use super::btf::BtfBuilder;
 use super::instruction::EbpfBuilder;
-use super::mir::{CtxField, MirType};
+use super::mir::{BitfieldInfo, CtxField, MirType};
 
 mod program_impl;
 
@@ -262,6 +262,8 @@ pub struct SchemaField {
     pub value_schema: Option<CounterKeySchema>,
     /// Byte offset within the event struct
     pub offset: usize,
+    /// Optional bitfield extraction metadata relative to this field's storage.
+    pub bitfield: Option<BitfieldInfo>,
 }
 
 /// Schema describing the structure of events emitted by an eBPF program
@@ -282,6 +284,8 @@ pub struct CounterKeySchemaField {
     pub schema: CounterKeySchema,
     /// Byte offset within the enclosing record
     pub offset: usize,
+    /// Optional bitfield extraction metadata relative to this field's storage.
+    pub bitfield: Option<BitfieldInfo>,
 }
 
 /// Recursive schema describing a `bytes_counters` key.
@@ -382,6 +386,7 @@ impl CounterKeySchema {
                         name: field.name.clone(),
                         schema: Self::from_mir_type(&field.ty),
                         offset: field.offset,
+                        bitfield: field.bitfield,
                     })
                     .collect();
 

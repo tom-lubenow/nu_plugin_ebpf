@@ -74,6 +74,7 @@ impl TracepointContext {
                 },
                 offset: 8, // After trace_entry
                 size: 8,
+                bitfield: None,
             },
             FieldInfo {
                 name: "args".into(),
@@ -86,6 +87,7 @@ impl TracepointContext {
                 },
                 offset: 16, // After id
                 size: 48,
+                bitfield: None,
             },
         ];
 
@@ -111,6 +113,7 @@ impl TracepointContext {
                 },
                 offset: 8,
                 size: 8,
+                bitfield: None,
             },
             FieldInfo {
                 name: "ret".into(),
@@ -120,6 +123,7 @@ impl TracepointContext {
                 },
                 offset: 16,
                 size: 8,
+                bitfield: None,
             },
         ];
 

@@ -592,6 +592,7 @@ fn test_compile_fentry_struct_leaf_emit_registers_record_schema() {
                     },
                     value_schema: None,
                     offset: 0,
+                    bitfield: None,
                 },
                 crate::compiler::SchemaField {
                     name: "dentry".to_string(),
@@ -601,6 +602,7 @@ fn test_compile_fentry_struct_leaf_emit_registers_record_schema() {
                     },
                     value_schema: None,
                     offset: 8,
+                    bitfield: None,
                 },
             ],
             total_size: 16,

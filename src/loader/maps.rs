@@ -87,6 +87,39 @@ fn decode_scalar_le(buf: &[u8], size: usize, signed: bool) -> i64 {
     i64::from_le_bytes(bytes)
 }
 
+fn decode_bitfield_le(
+    buf: &[u8],
+    size: usize,
+    signed: bool,
+    bitfield: crate::compiler::mir::BitfieldInfo,
+) -> i64 {
+    if size == 0 || bitfield.bit_size == 0 {
+        return 0;
+    }
+
+    let storage = decode_scalar_le(buf, size, false) as u64;
+    let storage_bits = (size.min(8) * 8) as u32;
+    if bitfield.bit_offset >= storage_bits || bitfield.bit_size > storage_bits {
+        return 0;
+    }
+    let end = match bitfield.bit_offset.checked_add(bitfield.bit_size) {
+        Some(end) if end <= storage_bits => end,
+        _ => return 0,
+    };
+    let value = if bitfield.bit_size == 64 {
+        storage >> bitfield.bit_offset
+    } else {
+        let mask = (1u64 << bitfield.bit_size) - 1;
+        (storage >> bitfield.bit_offset) & mask
+    };
+    if !signed || end == 64 {
+        value as i64
+    } else {
+        let shift = 64 - bitfield.bit_size;
+        ((value << shift) as i64) >> shift
+    }
+}
+
 fn decode_fixed_string(buf: &[u8], size: usize) -> String {
     let max_len = buf.len().min(size);
     let null_pos = buf[..max_len]
@@ -150,10 +183,18 @@ impl EbpfState {
                     } else {
                         &[]
                     };
-                    values.push((
-                        field.name.clone(),
-                        Self::deserialize_bytes_counter_key_with_schema(field_buf, &field.schema),
-                    ));
+                    let value = match (&field.schema, field.bitfield) {
+                        (CounterKeySchema::Int { size, signed }, Some(bitfield)) => {
+                            CounterKeyValue::Int(decode_bitfield_le(
+                                field_buf, *size, *signed, bitfield,
+                            ))
+                        }
+                        _ => Self::deserialize_bytes_counter_key_with_schema(
+                            field_buf,
+                            &field.schema,
+                        ),
+                    };
+                    values.push((field.name.clone(), value));
                 }
                 CounterKeyValue::Record(values)
             }

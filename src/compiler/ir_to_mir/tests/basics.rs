@@ -1934,6 +1934,79 @@ fn test_lower_fentry_struct_leaf_preserves_struct_fields() {
 }
 
 #[test]
+fn test_lower_runtime_get_bitfield_struct_preserves_overlapping_layout() {
+    let hir = make_bound_ctx_runtime_get_program(
+        CellPath {
+            members: vec![string_member("arg0"), string_member("uclamp_req")],
+        },
+        CellPath {
+            members: vec![string_member("pid")],
+        },
+        2,
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "wake_up_new_task");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "get".to_string());
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bitfield struct runtime get should lower");
+
+    let hinted_ty = result
+        .type_hints
+        .main
+        .values()
+        .find_map(|ty| match ty {
+            MirType::Ptr { pointee, .. } => match pointee.as_ref() {
+                MirType::Struct { name, .. } if name.as_deref() == Some("uclamp_se") => {
+                    Some(pointee.as_ref().clone())
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("expected uclamp_se pointer hint");
+
+    assert_eq!(hinted_ty.size(), 4);
+    let MirType::Struct { fields, .. } = hinted_ty else {
+        panic!("expected uclamp_se struct hint");
+    };
+    let names: Vec<_> = fields
+        .iter()
+        .filter(|field| !field.synthetic)
+        .map(|field| field.name.as_str())
+        .collect();
+    assert_eq!(names, vec!["value", "bucket_id", "active", "user_defined"]);
+    assert!(
+        fields
+            .iter()
+            .filter(|field| !field.synthetic)
+            .all(|field| field.offset == 0)
+    );
+    assert_eq!(
+        fields[0].bitfield,
+        Some(crate::compiler::mir::BitfieldInfo {
+            bit_offset: 0,
+            bit_size: 11,
+        })
+    );
+    assert_eq!(
+        fields[1].bitfield,
+        Some(crate::compiler::mir::BitfieldInfo {
+            bit_offset: 11,
+            bit_size: 3,
+        })
+    );
+}
+
+#[test]
 fn test_lower_fentry_struct_leaf_count_uses_bytes_counter_map() {
     let hir = make_ctx_path_call_program(
         CellPath {

@@ -86,6 +86,7 @@ fn test_counter_key_schema_filters_synthetic_padding_fields() {
                 ty: MirType::U8,
                 offset: 0,
                 synthetic: false,
+                bitfield: None,
             },
             StructField {
                 name: "__layout_pad0".to_string(),
@@ -95,12 +96,14 @@ fn test_counter_key_schema_filters_synthetic_padding_fields() {
                 },
                 offset: 1,
                 synthetic: true,
+                bitfield: None,
             },
             StructField {
                 name: "b".to_string(),
                 ty: MirType::U64,
                 offset: 8,
                 synthetic: false,
+                bitfield: None,
             },
         ],
     };

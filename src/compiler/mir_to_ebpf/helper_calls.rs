@@ -46,6 +46,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 field_type,
                 value_schema: self.single_emit_recursive_value_schema(data),
                 offset: 0,
+                bitfield: None,
             }],
             total_size: event_size,
         };
@@ -91,6 +92,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 field_type: self.native_layout_bpf_field_type(&field.ty),
                 value_schema: self.recursive_event_value_schema(&field.ty),
                 offset: field.offset,
+                bitfield: field.bitfield,
             })
             .collect();
         if schema_fields.is_empty() {
@@ -401,6 +403,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 field_type,
                 value_schema: self.recursive_event_value_schema(&field.ty),
                 offset,
+                bitfield: None,
             });
             offset += size;
             total_size += size;

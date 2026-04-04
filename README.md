@@ -171,11 +171,12 @@ let idx = ($max - 1); ... }` or `if $ctx.arg0.fdt.max_fds > 0 { let idx =
 after numeric `get`, for example `let idx = ($ctx.pid mod 2); let clamp =
 ($ctx.arg0.uclamp_req | get $idx); $clamp.value`. Terminal array leaves and unsupported aggregate
 leaves are exposed as stack-backed byte buffers, while representable terminal struct
-leaves keep their field layouts for `count`/`ebpf counters`, and single-value
-`emit` can stream those struct leaves as records. Nested array/record fields
-inside emitted values also decode recursively when the compiler can preserve
-their layouts. `emit` still preserves unsupported aggregate layouts as binary
-payloads, and `count` supports them as byte-buffer keys. `ebpf counters`
+leaves keep their field layouts, including BTF bitfield members, for
+`count`/`ebpf counters`, and single-value `emit` can stream those struct
+leaves as records. Nested array/record fields inside emitted values also
+decode recursively when the compiler can preserve their layouts. `emit` still
+preserves unsupported aggregate layouts as binary payloads, and `count`
+supports them as byte-buffer keys. `ebpf counters`
 decodes those keys using any schema the compiler still has: arrays and typed
 structs can surface as strings, lists, or records, while opaque aggregate
 layouts still display as `binary`. Plain trampoline `ctx.argN`/`ctx.retval`

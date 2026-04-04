@@ -351,6 +351,7 @@ fn opaque_struct_mir_type(
             ty: byte_array_mir_type(size)?,
             offset: 0,
             synthetic: false,
+            bitfield: None,
         }],
     })
 }
@@ -397,7 +398,10 @@ fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
             let mut cursor = 0usize;
             let mut pad_index = 0usize;
             for field in fields {
-                if field.size == 0 || field.offset >= *size || field.offset < cursor {
+                if field.size == 0
+                    || field.offset >= *size
+                    || (field.offset < cursor && field.bitfield.is_none())
+                {
                     continue;
                 }
                 if field.offset > cursor {
@@ -406,6 +410,7 @@ fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
                         ty: byte_array_mir_type(field.offset - cursor)?,
                         offset: cursor,
                         synthetic: false,
+                        bitfield: None,
                     });
                     pad_index += 1;
                 }
@@ -422,8 +427,14 @@ fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
                     ty,
                     offset: field.offset,
                     synthetic: false,
+                    bitfield: field
+                        .bitfield
+                        .map(|bitfield| crate::compiler::mir::BitfieldInfo {
+                            bit_offset: bitfield.bit_offset,
+                            bit_size: bitfield.bit_size,
+                        }),
                 });
-                cursor = field_end;
+                cursor = cursor.max(field_end);
             }
             if out.is_empty() {
                 return opaque_struct_mir_type(name, *size, *btf_type_id);
@@ -434,6 +445,7 @@ fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
                     ty: byte_array_mir_type(*size - cursor)?,
                     offset: cursor,
                     synthetic: false,
+                    bitfield: None,
                 });
             }
             Some(MirType::Struct {
@@ -510,6 +522,22 @@ fn recover_ctx_field_hint(
     }
 }
 
+fn recover_pointer_arith_result_hint(ty: &MirType) -> MirType {
+    match ty {
+        MirType::Ptr {
+            pointee,
+            address_space,
+        } => match pointee.as_ref() {
+            MirType::Array { elem, .. } => MirType::Ptr {
+                pointee: Box::new(elem.as_ref().clone()),
+                address_space: *address_space,
+            },
+            _ => ty.clone(),
+        },
+        _ => ty.clone(),
+    }
+}
+
 fn recover_function_type_hints(
     func: &MirFunction,
     probe_ctx: Option<&ProbeContext>,
@@ -576,12 +604,12 @@ fn recover_function_type_hints(
                         };
                         lhs_ptr
                             .filter(|ty| matches!(ty, MirType::Ptr { .. }))
-                            .cloned()
+                            .map(recover_pointer_arith_result_hint)
                             .or_else(|| {
                                 if matches!(op, BinOpKind::Add) {
                                     rhs_ptr
                                         .filter(|ty| matches!(ty, MirType::Ptr { .. }))
-                                        .cloned()
+                                        .map(recover_pointer_arith_result_hint)
                                 } else {
                                     None
                                 }
@@ -704,16 +732,17 @@ Context parameter syntax (recommended):
     ($ctx.pid mod 2); let clamp = ($ctx.arg0.uclamp_req | get $idx);
     $clamp.value`.
     Terminal array leaves and unsupported aggregate leaves are exposed as
-    stack-backed byte buffers. Representable terminal
-    struct leaves keep their field layouts for count/counter decoding, and
-    single-value emit can now stream those struct leaves as records. Nested
-    array/record fields inside emitted values also decode recursively when the
-    compiler can preserve their layouts. emit still preserves unsupported
-    aggregate layouts as binary payloads, and count can use them as byte-buffer
-    keys. ebpf counters decodes those keys using any schema the compiler still
-    has: arrays and typed structs can surface as strings, lists, or records;
-    opaque aggregate layouts still display as binary. Plain trampoline ctx.argN
-    and ctx.retval loads also preserve their typed pointer or aggregate layouts
+    stack-backed byte buffers. Representable terminal struct leaves keep their
+    field layouts, including BTF bitfield members, for count/counter decoding,
+    and single-value emit can now stream those struct leaves as records.
+    Nested array/record fields inside emitted values also decode recursively
+    when the compiler can preserve their layouts. emit still preserves
+    unsupported aggregate layouts as binary payloads, and count can use them
+    as byte-buffer keys. ebpf counters decodes those keys using any schema the
+    compiler still has: arrays and typed structs can surface as strings,
+    lists, or records; opaque aggregate layouts still display as binary. Plain
+    trampoline ctx.argN and ctx.retval loads also preserve their typed pointer
+    or aggregate layouts
     across bindings, for example `let files = $ctx.arg0;
     $files.fdt.fd.f_inode.i_ino` or `let inode = $ctx.arg0.f_inode;
     $inode.i_sb.s_flags`. 16-byte byte-array/string keys such as ctx.arg0.comm
@@ -1509,6 +1538,94 @@ mod tests {
         HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
     }
 
+    fn make_bound_ctx_runtime_get_then_call_program(
+        binding: CellPath,
+        idx_binding: CellPath,
+        modulus: i64,
+        decl_id: DeclId,
+    ) -> HirProgram {
+        let ctx_var = VarId::new(0);
+        let idx_var = VarId::new(1);
+        let value_var = VarId::new(2);
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(idx_binding)),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(modulus),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Math(Math::Modulo),
+                        rhs: RegId::new(2),
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: idx_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(binding)),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(2),
+                        var_id: idx_var,
+                    },
+                    HirStmt::Call {
+                        decl_id: DeclId::new(42),
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(2)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: value_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: value_var,
+                    },
+                    HirStmt::Call {
+                        decl_id,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 14],
+            ast: vec![None; 14],
+            comments: vec![],
+            register_count: 3,
+            file_count: 0,
+        };
+        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+    }
+
     fn make_bound_ctx_runtime_get_path_program(
         binding: CellPath,
         idx_binding: CellPath,
@@ -1809,6 +1926,7 @@ mod tests {
                             signed: false,
                         },
                         offset: 0,
+                        bitfield: None,
                     },
                     CounterKeySchemaField {
                         name: "dentry".to_string(),
@@ -1817,6 +1935,7 @@ mod tests {
                             signed: false,
                         },
                         offset: 8,
+                        bitfield: None,
                     },
                 ],
                 total_size: 16,
@@ -2100,5 +2219,114 @@ mod tests {
         )
         .expect("optimized stack-backed bitfield projection after numeric get should compile");
         assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+    }
+
+    #[test]
+    fn test_recover_optimized_type_hints_for_stack_backed_bitfield_struct_count_after_numeric_get()
+    {
+        let hir = make_bound_ctx_runtime_get_then_call_program(
+            CellPath {
+                members: vec![string_member("arg0"), string_member("uclamp_req")],
+            },
+            CellPath {
+                members: vec![string_member("pid")],
+            },
+            2,
+            DeclId::new(43),
+        );
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "wake_up_new_task");
+        let mut decl_names = HashMap::new();
+        decl_names.insert(DeclId::new(42), "get".to_string());
+        decl_names.insert(DeclId::new(43), "count".to_string());
+
+        let mut lowering = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("stack-backed bitfield struct count after numeric get should lower");
+
+        optimize_with_ssa(&mut lowering.program.main);
+        recover_optimized_type_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            &mut lowering.type_hints,
+        );
+
+        let result = compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .expect("optimized stack-backed bitfield struct count should compile");
+        assert!(
+            matches!(
+                result.bytes_counter_key_schema,
+                Some(CounterKeySchema::Record { .. })
+            ),
+            "bitfield struct count should preserve a record schema"
+        );
+    }
+
+    #[test]
+    fn test_recover_optimized_type_hints_for_stack_backed_bitfield_struct_emit_after_numeric_get() {
+        let hir = make_bound_ctx_runtime_get_then_call_program(
+            CellPath {
+                members: vec![string_member("arg0"), string_member("uclamp_req")],
+            },
+            CellPath {
+                members: vec![string_member("pid")],
+            },
+            2,
+            DeclId::new(43),
+        );
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "wake_up_new_task");
+        let mut decl_names = HashMap::new();
+        decl_names.insert(DeclId::new(42), "get".to_string());
+        decl_names.insert(DeclId::new(43), "emit".to_string());
+
+        let mut lowering = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("stack-backed bitfield struct emit after numeric get should lower");
+
+        optimize_with_ssa(&mut lowering.program.main);
+        recover_optimized_type_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            &mut lowering.type_hints,
+        );
+
+        let result = compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .expect("optimized stack-backed bitfield struct emit should compile");
+        let schema = result
+            .event_schema
+            .expect("single-value emit should preserve a schema");
+        assert!(
+            schema.fields.iter().map(|field| field.name.as_str()).eq([
+                "value",
+                "bucket_id",
+                "active",
+                "user_defined"
+            ]
+            .into_iter()),
+            "bitfield struct emit should preserve top-level record fields"
+        );
+        assert!(
+            schema.fields[0].bitfield.is_some() && schema.fields[1].bitfield.is_some(),
+            "bitfield struct emit should preserve bitfield metadata"
+        );
     }
 }
