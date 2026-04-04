@@ -42,6 +42,7 @@ use crate::compiler::mir::{
 };
 use crate::compiler::mir_to_lir::lower_mir_to_lir_checked;
 use crate::compiler::passes::{ListLowering, MirPass, SsaDestruction};
+use crate::compiler::type_hints::recover_optimized_mir_type_hints;
 use crate::compiler::type_infer::{TypeInference, infer_subfunction_schemes};
 use crate::compiler::vcc;
 use crate::compiler::verifier_types;
@@ -398,6 +399,7 @@ pub fn compile_mir_to_ebpf_with_hints(
     type_hints: Option<&MirTypeHints>,
 ) -> Result<MirCompileResult, CompileError> {
     let mut program = mir.clone();
+    let mut normalized_type_hints = type_hints.cloned();
     let list_lowering = ListLowering;
     let ssa_destruct = SsaDestruction;
     let cfg = CFG::build(&program.main);
@@ -411,7 +413,10 @@ pub fn compile_mir_to_ebpf_with_hints(
         let _ = ssa_destruct.run(subfn, &cfg);
     }
 
-    let program_types = verify_mir_program(&program, probe_ctx, type_hints)?;
+    if let Some(hints) = normalized_type_hints.as_mut() {
+        recover_optimized_mir_type_hints(&program, probe_ctx, hints);
+    }
+    let program_types = verify_mir_program(&program, probe_ctx, normalized_type_hints.as_ref())?;
     let lir_program = lower_mir_to_lir_checked(&program)?;
 
     let compiler = MirToEbpfCompiler::new_with_types(&lir_program, probe_ctx, program_types);
