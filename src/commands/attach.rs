@@ -566,11 +566,12 @@ Context parameter syntax (recommended):
     Fixed-size arrays can be indexed with numeric path segments like
     ctx.arg0.comm.0. Terminal array leaves and unsupported aggregate leaves
     are exposed as stack-backed byte buffers. Representable terminal struct
-    leaves keep their field layouts for count/counter decoding. emit preserves
-    aggregate leaves as binary payloads, and count can use them as byte-buffer
-    keys. ebpf counters decodes those keys using any schema the compiler still
-    has: arrays and typed structs can surface as strings, lists, or records;
-    opaque aggregate layouts still display as binary. 16-byte byte-array/string
+    leaves keep their field layouts for count/counter decoding, and single-value
+    emit can now stream those struct leaves as records. emit still preserves
+    unsupported aggregate layouts as binary payloads, and count can use them as
+    byte-buffer keys. ebpf counters decodes those keys using any schema the
+    compiler still has: arrays and typed structs can surface as strings, lists,
+    or records; opaque aggregate layouts still display as binary. 16-byte byte-array/string
     keys such as ctx.arg0.comm continue to display as strings.
     Multi-level pointer fields like foo ** are not supported yet.
     Aggregate fexit returns still depend on kernel trampoline support;

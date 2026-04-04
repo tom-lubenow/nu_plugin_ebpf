@@ -143,7 +143,7 @@ impl std::fmt::Debug for ActiveProbe {
 }
 
 /// A field value in a structured event
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BpfFieldValue {
     /// An integer value
     Int(i64),

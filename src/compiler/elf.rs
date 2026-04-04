@@ -229,8 +229,8 @@ pub struct SubfunctionSymbol {
 /// Field type for structured events
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BpfFieldType {
-    /// 64-bit integer (8 bytes)
-    Int,
+    /// Integer-like scalar with an explicit encoded width
+    Int { size: usize, signed: bool },
     /// Short string from bpf-comm (16 bytes, TASK_COMM_LEN)
     Comm,
     /// Long string from bpf-read-str (128 bytes max)
@@ -243,7 +243,7 @@ impl BpfFieldType {
     /// Get the size in bytes for this field type
     pub fn size(&self) -> usize {
         match self {
-            BpfFieldType::Int => 8,
+            BpfFieldType::Int { size, .. } => *size,
             BpfFieldType::Comm => 16,
             BpfFieldType::String => 128,
             BpfFieldType::Bytes(size) => *size,

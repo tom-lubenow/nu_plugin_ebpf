@@ -8,21 +8,37 @@ impl<'a> MirToEbpfCompiler<'a> {
         size: usize,
     ) -> Result<(), CompileError> {
         let event_size = if size > 0 { size } else { 8 };
-        let (mut field_type, _) = self
+        if let Some(new_schema) = self
             .current_types
             .get(&data)
-            .map(|ty| self.mir_type_to_bpf_field(ty))
+            .and_then(|ty| self.single_emit_struct_schema(ty, event_size))
+        {
+            if let Some(existing) = &self.event_schema {
+                if existing != &new_schema {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "emit schema mismatch: multiple event payload shapes in one program".into(),
+                    ));
+                }
+            } else {
+                self.event_schema = Some(new_schema);
+            }
+            return Ok(());
+        }
+
+        let field_type = self
+            .current_types
+            .get(&data)
+            .map(|ty| self.single_emit_value_field_type(ty, event_size))
             .unwrap_or_else(|| {
                 if event_size == 8 {
-                    (BpfFieldType::Int, 8)
+                    BpfFieldType::Int {
+                        size: 8,
+                        signed: true,
+                    }
                 } else {
-                    (BpfFieldType::Bytes(event_size), event_size)
+                    BpfFieldType::Bytes(event_size)
                 }
             });
-
-        if matches!(field_type, BpfFieldType::Int) && event_size != 8 {
-            field_type = BpfFieldType::Bytes(event_size);
-        }
 
         let new_schema = EventSchema {
             fields: vec![SchemaField {
@@ -44,6 +60,138 @@ impl<'a> MirToEbpfCompiler<'a> {
         }
 
         Ok(())
+    }
+
+    fn single_emit_struct_schema(&self, ty: &MirType, event_size: usize) -> Option<EventSchema> {
+        let fields = match ty {
+            MirType::Struct { fields, .. } if ty.size() == event_size => fields,
+            MirType::Ptr { pointee, .. } if pointee.size() == event_size => {
+                match pointee.as_ref() {
+                    MirType::Struct { fields, .. } => fields,
+                    _ => return None,
+                }
+            }
+            _ => return None,
+        };
+
+        if fields.len() == 1
+            && fields[0].name == "__opaque"
+            && !fields[0].synthetic
+            && fields[0].offset == 0
+        {
+            return None;
+        }
+
+        let schema_fields: Vec<SchemaField> = fields
+            .iter()
+            .filter(|field| !field.synthetic)
+            .map(|field| SchemaField {
+                name: field.name.clone(),
+                field_type: self.native_layout_bpf_field_type(&field.ty),
+                offset: field.offset,
+            })
+            .collect();
+        if schema_fields.is_empty() {
+            return None;
+        }
+
+        Some(EventSchema {
+            fields: schema_fields,
+            total_size: event_size,
+        })
+    }
+
+    fn single_emit_value_field_type(&self, ty: &MirType, event_size: usize) -> BpfFieldType {
+        match ty {
+            MirType::I64 | MirType::I32 | MirType::I16 | MirType::I8 => BpfFieldType::Int {
+                size: event_size.min(8),
+                signed: true,
+            },
+            MirType::Ptr { pointee, .. }
+                if pointee.byte_array_len() == Some(16) && event_size == 16 =>
+            {
+                BpfFieldType::Comm
+            }
+            MirType::Ptr { pointee, .. }
+                if pointee.byte_array_len().is_some() && pointee.size() == event_size =>
+            {
+                BpfFieldType::String
+            }
+            MirType::Ptr { pointee, .. }
+                if matches!(
+                    pointee.as_ref(),
+                    MirType::Array { .. } | MirType::Struct { .. }
+                ) && pointee.size() == event_size =>
+            {
+                BpfFieldType::Bytes(event_size)
+            }
+            MirType::U64
+            | MirType::U32
+            | MirType::U16
+            | MirType::U8
+            | MirType::Bool
+            | MirType::Ptr { .. }
+            | MirType::MapRef { .. } => BpfFieldType::Int {
+                size: event_size.min(8),
+                signed: false,
+            },
+            _ => {
+                let (field_type, _) = self.mir_type_to_bpf_field(ty);
+                match field_type {
+                    BpfFieldType::Int { .. } if event_size == 8 => BpfFieldType::Int {
+                        size: 8,
+                        signed: matches!(
+                            ty,
+                            MirType::I64 | MirType::I32 | MirType::I16 | MirType::I8
+                        ),
+                    },
+                    BpfFieldType::Int { .. } => BpfFieldType::Bytes(event_size),
+                    other => other,
+                }
+            }
+        }
+    }
+
+    fn native_layout_bpf_field_type(&self, ty: &MirType) -> BpfFieldType {
+        match ty {
+            MirType::I8 => BpfFieldType::Int {
+                size: 1,
+                signed: true,
+            },
+            MirType::I16 => BpfFieldType::Int {
+                size: 2,
+                signed: true,
+            },
+            MirType::I32 => BpfFieldType::Int {
+                size: 4,
+                signed: true,
+            },
+            MirType::I64 => BpfFieldType::Int {
+                size: 8,
+                signed: true,
+            },
+            MirType::U8 | MirType::Bool => BpfFieldType::Int {
+                size: 1,
+                signed: false,
+            },
+            MirType::U16 => BpfFieldType::Int {
+                size: 2,
+                signed: false,
+            },
+            MirType::U32 => BpfFieldType::Int {
+                size: 4,
+                signed: false,
+            },
+            MirType::U64 | MirType::Ptr { .. } | MirType::MapRef { .. } | MirType::Unknown => {
+                BpfFieldType::Int {
+                    size: 8,
+                    signed: false,
+                }
+            }
+            ty if ty.byte_array_len() == Some(16) => BpfFieldType::Comm,
+            ty if ty.byte_array_len().is_some() => BpfFieldType::String,
+            MirType::Array { .. } | MirType::Struct { .. } => BpfFieldType::Bytes(ty.size().max(1)),
+        }
     }
 
     pub(super) fn vreg_stack_or_map_copy_size(
@@ -318,11 +466,63 @@ impl<'a> MirToEbpfCompiler<'a> {
     /// Note: All sizes are aligned to 8 bytes for eBPF stack alignment requirements
     fn mir_type_to_bpf_field(&self, ty: &MirType) -> (BpfFieldType, usize) {
         match ty {
-            MirType::I64 | MirType::U64 => (BpfFieldType::Int, 8),
+            MirType::I64 => (
+                BpfFieldType::Int {
+                    size: 8,
+                    signed: true,
+                },
+                8,
+            ),
+            MirType::U64 => (
+                BpfFieldType::Int {
+                    size: 8,
+                    signed: false,
+                },
+                8,
+            ),
             // I32 still uses 8 bytes for stack alignment
-            MirType::I32 | MirType::U32 => (BpfFieldType::Int, 8),
-            MirType::I16 | MirType::U16 => (BpfFieldType::Int, 8),
-            MirType::I8 | MirType::U8 | MirType::Bool => (BpfFieldType::Int, 8),
+            MirType::I32 => (
+                BpfFieldType::Int {
+                    size: 8,
+                    signed: true,
+                },
+                8,
+            ),
+            MirType::U32 => (
+                BpfFieldType::Int {
+                    size: 8,
+                    signed: false,
+                },
+                8,
+            ),
+            MirType::I16 => (
+                BpfFieldType::Int {
+                    size: 8,
+                    signed: true,
+                },
+                8,
+            ),
+            MirType::U16 => (
+                BpfFieldType::Int {
+                    size: 8,
+                    signed: false,
+                },
+                8,
+            ),
+            MirType::I8 => (
+                BpfFieldType::Int {
+                    size: 8,
+                    signed: true,
+                },
+                8,
+            ),
+            MirType::U8 | MirType::Bool => (
+                BpfFieldType::Int {
+                    size: 8,
+                    signed: false,
+                },
+                8,
+            ),
             ty if ty.byte_array_len() == Some(16) => (BpfFieldType::Comm, 16),
             ty if ty.byte_array_len().is_some() => {
                 let len = ty
@@ -335,7 +535,13 @@ impl<'a> MirToEbpfCompiler<'a> {
             MirType::Array { .. } | MirType::Struct { .. } => {
                 (BpfFieldType::Bytes(ty.size().max(1)), ty.size().max(1))
             }
-            _ => (BpfFieldType::Int, 8), // Default to 64-bit int
+            _ => (
+                BpfFieldType::Int {
+                    size: 8,
+                    signed: false,
+                },
+                8,
+            ), // Default to 64-bit int
         }
     }
 

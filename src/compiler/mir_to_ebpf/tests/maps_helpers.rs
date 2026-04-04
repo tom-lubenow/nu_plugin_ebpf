@@ -244,6 +244,94 @@ fn test_emit_event_registers_bytes_schema_for_struct_payload() {
 }
 
 #[test]
+fn test_emit_event_registers_typed_schema_for_struct_payload() {
+    use crate::compiler::elf::BpfFieldType;
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::Local);
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: v0,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::EmitEvent { data: v0, size: 16 });
+    func.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let mut program_types = ProgramVregTypes::default();
+    program_types.main.insert(
+        v0,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Struct {
+                name: Some("path".to_string()),
+                fields: vec![
+                    StructField {
+                        name: "mnt".to_string(),
+                        ty: MirType::Ptr {
+                            pointee: Box::new(MirType::U8),
+                            address_space: AddressSpace::Kernel,
+                        },
+                        offset: 0,
+                        synthetic: false,
+                    },
+                    StructField {
+                        name: "dentry".to_string(),
+                        ty: MirType::Ptr {
+                            pointee: Box::new(MirType::U8),
+                            address_space: AddressSpace::Kernel,
+                        },
+                        offset: 8,
+                        synthetic: false,
+                    },
+                ],
+            }),
+            address_space: AddressSpace::Stack,
+        },
+    );
+
+    let lir = lower_mir_to_lir(&program);
+    let compiler = MirToEbpfCompiler::new_with_types(&lir, None, program_types);
+    let result = compiler
+        .compile()
+        .expect("typed struct emit should compile");
+    let schema = result.event_schema.expect("expected emit schema");
+
+    assert_eq!(schema.total_size, 16);
+    assert_eq!(schema.fields.len(), 2);
+    assert_eq!(schema.fields[0].name, "mnt");
+    assert_eq!(
+        schema.fields[0].field_type,
+        BpfFieldType::Int {
+            size: 8,
+            signed: false,
+        }
+    );
+    assert_eq!(schema.fields[0].offset, 0);
+    assert_eq!(schema.fields[1].name, "dentry");
+    assert_eq!(
+        schema.fields[1].field_type,
+        BpfFieldType::Int {
+            size: 8,
+            signed: false,
+        }
+    );
+    assert_eq!(schema.fields[1].offset, 8);
+}
+
+#[test]
 fn test_emit_record_schema_mismatch_errors() {
     use crate::compiler::CompileError;
     use crate::compiler::mir::*;

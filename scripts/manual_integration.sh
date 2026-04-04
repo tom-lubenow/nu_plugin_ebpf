@@ -46,16 +46,16 @@ run_nu "let id = (ebpf attach 'fentry:wake_up_new_task' {|ctx| \$ctx.arg0.comm.0
 echo "[8/12] fentry trampoline array leaf"
 run_nu "let id = (ebpf attach 'fentry:wake_up_new_task' {|ctx| \$ctx.arg0.comm | count }); ^true; sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one trampoline array-leaf row' } }; { id: \$id, rows: \$rows }"
 
-echo "[9/12] fentry trampoline struct leaf emits binary"
+echo "[9/12] fentry trampoline struct leaf emit decodes record"
 struct_emit_out="$(mktemp)"
 trap 'rm -f "$struct_emit_out"' EXIT
-run_nu "ebpf attach -s 'fentry:security_file_open' {|ctx| \$ctx.arg0.f_path | emit } | first 1 | get 0.value | describe" >"$struct_emit_out" &
+run_nu "ebpf attach -s 'fentry:security_file_open' {|ctx| \$ctx.arg0.f_path | emit } | first 1 | columns | sort | to nuon" >"$struct_emit_out" &
 struct_emit_pid=$!
 sleep 1
 cat "$REPO_ROOT/Cargo.toml" >/dev/null
 wait "$struct_emit_pid"
-if ! grep -qx 'binary' "$struct_emit_out"; then
-    echo "expected struct leaf emit to produce a binary value, got:" >&2
+if ! grep -qx '\[cpu, dentry, mnt\]' "$struct_emit_out"; then
+    echo "expected struct leaf emit to produce record fields cpu/dentry/mnt, got:" >&2
     cat "$struct_emit_out" >&2
     exit 1
 fi

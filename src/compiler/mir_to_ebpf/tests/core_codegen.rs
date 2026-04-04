@@ -541,6 +541,71 @@ fn test_compile_fentry_array_leaf_projection() {
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
+#[test]
+fn test_compile_fentry_struct_leaf_emit_registers_record_schema() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("arg0"), string_member("f_path")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("struct leaf projection should lower");
+
+    let mut program = lowering.program.clone();
+    let status = program.main.alloc_vreg();
+    let return_block = program
+        .main
+        .blocks
+        .iter_mut()
+        .find(|block| matches!(block.terminator, MirInst::Return { .. }))
+        .expect("expected return block");
+    return_block.instructions.push(MirInst::EmitEvent {
+        data: crate::compiler::mir::VReg(0),
+        size: 16,
+    });
+    return_block.instructions.push(MirInst::Copy {
+        dst: status,
+        src: MirValue::Const(0),
+    });
+    return_block.terminator = MirInst::Return {
+        val: Some(MirValue::VReg(status)),
+    };
+
+    let result =
+        compile_mir_to_ebpf_with_hints(&program, Some(&probe_ctx), Some(&lowering.type_hints))
+            .expect("struct leaf emit should compile");
+    assert_eq!(
+        result.event_schema,
+        Some(crate::compiler::EventSchema {
+            fields: vec![
+                crate::compiler::SchemaField {
+                    name: "mnt".to_string(),
+                    field_type: crate::compiler::BpfFieldType::Int {
+                        size: 8,
+                        signed: false,
+                    },
+                    offset: 0,
+                },
+                crate::compiler::SchemaField {
+                    name: "dentry".to_string(),
+                    field_type: crate::compiler::BpfFieldType::Int {
+                        size: 8,
+                        signed: false,
+                    },
+                    offset: 8,
+                },
+            ],
+            total_size: 16,
+        })
+    );
+}
+
 /// Test that old compiler handles branching (MIR branch test is separate)
 #[test]
 fn test_branch() {

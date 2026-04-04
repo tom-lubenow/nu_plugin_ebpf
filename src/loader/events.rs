@@ -1,6 +1,25 @@
 use super::*;
 
 impl EbpfState {
+    fn decode_scalar_field(field_buf: &[u8], size: usize, signed: bool) -> i64 {
+        let width = size.min(8);
+        if width == 0 || field_buf.len() < width {
+            return 0;
+        }
+
+        let mut bytes = [0u8; 8];
+        bytes[..width].copy_from_slice(&field_buf[..width]);
+        if signed && width < 8 && (field_buf[width - 1] & 0x80) != 0 {
+            bytes[width..].fill(0xff);
+        }
+
+        if signed {
+            i64::from_le_bytes(bytes)
+        } else {
+            u64::from_le_bytes(bytes) as i64
+        }
+    }
+
     /// Poll for events from a probe's ring buffer
     ///
     /// Returns events emitted by the eBPF program via bpf-emit.
@@ -98,13 +117,8 @@ impl EbpfState {
             let slice_len = field_size.min(available);
             let field_buf = &buf[field.offset..field.offset + slice_len];
             let value = match field.field_type {
-                BpfFieldType::Int => {
-                    if field_buf.len() >= 8 {
-                        let val = i64::from_le_bytes(field_buf[0..8].try_into().unwrap());
-                        BpfFieldValue::Int(val)
-                    } else {
-                        BpfFieldValue::Int(0)
-                    }
+                BpfFieldType::Int { size, signed } => {
+                    BpfFieldValue::Int(Self::decode_scalar_field(field_buf, size, signed))
                 }
                 BpfFieldType::Comm => {
                     // 16-byte comm string

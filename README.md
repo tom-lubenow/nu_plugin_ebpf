@@ -153,11 +153,12 @@ fields such as `ctx.arg0.foo.bar`. Fixed-size arrays can also be indexed with
 numeric path segments like `ctx.arg0.comm.0`. Terminal array leaves and
 unsupported aggregate leaves are exposed as stack-backed byte buffers, while
 representable terminal struct leaves keep their field layouts for
-`count`/`ebpf counters`. `emit` preserves aggregate leaves as binary payloads,
-and `count` supports them as byte-buffer keys. `ebpf counters` decodes those
-keys using any schema the compiler still has: arrays and typed structs can
-surface as strings, lists, or records, while opaque aggregate layouts still
-display as `binary`.
+`count`/`ebpf counters`, and single-value `emit` can stream those struct leaves
+as records. `emit` still preserves unsupported aggregate layouts as binary
+payloads, and `count` supports them as byte-buffer keys. `ebpf counters`
+decodes those keys using any schema the compiler still has: arrays and typed
+structs can surface as strings, lists, or records, while opaque aggregate
+layouts still display as `binary`.
 16-byte byte-array/string keys such as `ctx.arg0.comm` continue to display as
 strings.
 Multi-level pointer fields like `foo **` are still unsupported.

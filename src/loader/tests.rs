@@ -163,7 +163,10 @@ fn test_structured_event_string_respects_field_size() {
             },
             crate::compiler::SchemaField {
                 name: "value".to_string(),
-                field_type: BpfFieldType::Int,
+                field_type: BpfFieldType::Int {
+                    size: 8,
+                    signed: true,
+                },
                 offset: 24,
             },
         ],
@@ -192,6 +195,47 @@ fn test_structured_event_string_respects_field_size() {
             let expected_msg = String::from_utf8_lossy(&msg_bytes).to_string();
             assert_eq!(msg, Some(expected_msg));
             assert_eq!(value, Some(0x0102030405060708i64));
+        }
+        _ => panic!("expected structured record"),
+    }
+}
+
+#[test]
+fn test_structured_event_sized_scalar_fields_decode() {
+    let schema = EventSchema {
+        fields: vec![
+            crate::compiler::SchemaField {
+                name: "flag".to_string(),
+                field_type: BpfFieldType::Int {
+                    size: 1,
+                    signed: false,
+                },
+                offset: 0,
+            },
+            crate::compiler::SchemaField {
+                name: "delta".to_string(),
+                field_type: BpfFieldType::Int {
+                    size: 4,
+                    signed: true,
+                },
+                offset: 4,
+            },
+        ],
+        total_size: 8,
+    };
+
+    let mut buf = vec![0u8; 8];
+    buf[0] = 0xff;
+    buf[4..8].copy_from_slice(&(-2i32).to_le_bytes());
+
+    let data =
+        EbpfState::deserialize_structured_event(&buf, &schema).expect("expected structured event");
+
+    match data {
+        BpfEventData::Record(fields) => {
+            assert_eq!(fields.len(), 2);
+            assert_eq!(fields[0], ("flag".to_string(), BpfFieldValue::Int(255)));
+            assert_eq!(fields[1], ("delta".to_string(), BpfFieldValue::Int(-2)));
         }
         _ => panic!("expected structured record"),
     }
