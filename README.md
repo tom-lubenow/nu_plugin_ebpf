@@ -167,7 +167,9 @@ works for typed unsigned runtime fields such as
 rejected. Branch-sensitive narrowing also works for both bound and repeated
 direct paths, for example `let max = $ctx.arg0.fdt.max_fds; if $max > 0 {
 let idx = ($max - 1); ... }` or `if $ctx.arg0.fdt.max_fds > 0 { let idx =
-($ctx.arg0.fdt.max_fds - 1); ... }`. Terminal array leaves and unsupported aggregate
+($ctx.arg0.fdt.max_fds - 1); ... }`. Typed BTF bitfields can also be projected through the same paths, including
+after numeric `get`, for example `let idx = ($ctx.pid mod 2); let clamp =
+($ctx.arg0.uclamp_req | get $idx); $clamp.value`. Terminal array leaves and unsupported aggregate
 leaves are exposed as stack-backed byte buffers, while representable terminal struct
 leaves keep their field layouts for `count`/`ebpf counters`, and single-value
 `emit` can stream those struct leaves as records. Nested array/record fields

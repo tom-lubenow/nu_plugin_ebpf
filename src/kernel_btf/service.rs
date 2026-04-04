@@ -129,6 +129,13 @@ pub struct TrampolineFieldProjection {
     pub type_info: TypeInfo,
 }
 
+/// Bitfield extraction metadata for a resolved trampoline field segment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TrampolineBitfieldInfo {
+    pub bit_offset: u32,
+    pub bit_size: u32,
+}
+
 /// One requested selector in a trampoline field path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrampolineFieldSelector {
@@ -141,6 +148,7 @@ pub enum TrampolineFieldSelector {
 pub struct TrampolineFieldPathSegment {
     pub offset_bytes: usize,
     pub type_info: TypeInfo,
+    pub bitfield: Option<TrampolineBitfieldInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1934,11 +1942,15 @@ impl KernelBtf {
                 path.push(TrampolineFieldPathSegment {
                     offset_bytes: 0,
                     type_info: Self::type_info_from_btf_type(btf, &deref_ty, raw_type_sizes)?,
+                    bitfield: None,
                 });
                 current_ty = deref_ty;
             }
             let ty_name = current_ty.name.as_deref().unwrap_or("<anonymous>");
-            let (next_ty, offset_bytes) = match (segment, &current_ty.base_type) {
+            let (next_ty, offset_bytes, bitfield, next_type_info) = match (
+                segment,
+                &current_ty.base_type,
+            ) {
                 (TrampolineFieldSelector::Field(segment), Type::Struct(struct_ty))
                 | (TrampolineFieldSelector::Field(segment), Type::Union(struct_ty)) => {
                     let member = struct_ty
@@ -1952,19 +1964,6 @@ impl KernelBtf {
                             ))
                         })?;
 
-                    if member.bits.is_some_and(|bits| bits != 0) {
-                        return Err(BtfError::KernelBtfError(format!(
-                            "bitfield projection is not supported for trampoline field '{}.{}'",
-                            ty_name, segment
-                        )));
-                    }
-                    if member.offset % 8 != 0 {
-                        return Err(BtfError::KernelBtfError(format!(
-                            "trampoline field '{}.{}' is not byte-aligned",
-                            ty_name, segment
-                        )));
-                    }
-
                     let member_ty = btf
                         .get_type_by_id(member.type_id)
                         .map_err(|e| {
@@ -1974,7 +1973,103 @@ impl KernelBtf {
                             ))
                         })?
                         .clone();
-                    (member_ty, (member.offset / 8) as usize)
+                    let member_type_info =
+                        Self::type_info_from_btf_type(btf, &member_ty, raw_type_sizes)?;
+
+                    let (offset_bytes, bitfield) = if let Some(bit_size) =
+                        member.bits.filter(|bits| *bits != 0)
+                    {
+                        if !matches!(member_type_info, TypeInfo::Int { .. }) {
+                            return Err(BtfError::KernelBtfError(format!(
+                                "trampoline bitfield '{}.{}' uses unsupported storage type {:?}",
+                                ty_name, segment, member_type_info
+                            )));
+                        }
+
+                        let raw_size_bytes = raw_type_sizes
+                            .get(&member.type_id)
+                            .copied()
+                            .map(|size| size as usize);
+                        let storage_size_bytes =
+                            Self::trampoline_size_bytes(btf, &member_ty, raw_size_bytes)?;
+                        let storage_bits =
+                            u32::try_from(storage_size_bytes.checked_mul(8).ok_or_else(|| {
+                                BtfError::KernelBtfError(format!(
+                                    "size overflow while resolving trampoline bitfield '{}.{}'",
+                                    ty_name, segment
+                                ))
+                            })?)
+                            .map_err(|_| {
+                                BtfError::KernelBtfError(format!(
+                                    "size overflow while resolving trampoline bitfield '{}.{}'",
+                                    ty_name, segment
+                                ))
+                            })?;
+                        if storage_bits == 0 {
+                            return Err(BtfError::KernelBtfError(format!(
+                                "trampoline bitfield '{}.{}' has zero-sized storage",
+                                ty_name, segment
+                            )));
+                        }
+                        let storage_base_bits = (member.offset / storage_bits)
+                            .checked_mul(storage_bits)
+                            .ok_or_else(|| {
+                                BtfError::KernelBtfError(format!(
+                                    "offset overflow while resolving trampoline bitfield '{}.{}'",
+                                    ty_name, segment
+                                ))
+                            })?;
+                        let bit_offset = member.offset.checked_sub(storage_base_bits).ok_or_else(
+                            || {
+                                BtfError::KernelBtfError(format!(
+                                    "offset underflow while resolving trampoline bitfield '{}.{}'",
+                                    ty_name, segment
+                                ))
+                            },
+                        )?;
+                        let end_bits = bit_offset.checked_add(bit_size).ok_or_else(|| {
+                            BtfError::KernelBtfError(format!(
+                                "size overflow while resolving trampoline bitfield '{}.{}'",
+                                ty_name, segment
+                            ))
+                        })?;
+                        if end_bits > storage_bits {
+                            return Err(BtfError::KernelBtfError(format!(
+                                "trampoline bitfield '{}.{}' spans multiple storage units",
+                                ty_name, segment
+                            )));
+                        }
+                        (
+                            usize::try_from(storage_base_bits / 8).map_err(|_| {
+                                BtfError::KernelBtfError(format!(
+                                    "offset overflow while resolving trampoline bitfield '{}.{}'",
+                                    ty_name, segment
+                                ))
+                            })?,
+                            Some(TrampolineBitfieldInfo {
+                                bit_offset,
+                                bit_size,
+                            }),
+                        )
+                    } else {
+                        if member.offset % 8 != 0 {
+                            return Err(BtfError::KernelBtfError(format!(
+                                "trampoline field '{}.{}' is not byte-aligned",
+                                ty_name, segment
+                            )));
+                        }
+                        (
+                            usize::try_from(member.offset / 8).map_err(|_| {
+                                BtfError::KernelBtfError(format!(
+                                    "offset overflow while resolving trampoline field '{}.{}'",
+                                    ty_name, segment
+                                ))
+                            })?,
+                            None,
+                        )
+                    };
+
+                    (member_ty, offset_bytes, bitfield, Some(member_type_info))
                 }
                 (TrampolineFieldSelector::Field(segment), Type::Array(_)) => {
                     return Err(BtfError::KernelBtfError(format!(
@@ -2003,7 +2098,7 @@ impl KernelBtf {
                             path_desc
                         ))
                     })?;
-                    (elem_ty, offset_bytes)
+                    (elem_ty, offset_bytes, None, None)
                 }
                 (TrampolineFieldSelector::Index(index), Type::Array(array_ty)) => {
                     let num_elements = array_ty.num_elements as usize;
@@ -2034,7 +2129,7 @@ impl KernelBtf {
                             path_desc
                         ))
                     })?;
-                    (elem_ty, offset_bytes)
+                    (elem_ty, offset_bytes, None, None)
                 }
                 (TrampolineFieldSelector::Index(index), _) => {
                     return Err(BtfError::KernelBtfError(format!(
@@ -2046,7 +2141,11 @@ impl KernelBtf {
 
             path.push(TrampolineFieldPathSegment {
                 offset_bytes,
-                type_info: Self::type_info_from_btf_type(btf, &next_ty, raw_type_sizes)?,
+                type_info: match next_type_info {
+                    Some(type_info) => type_info,
+                    None => Self::type_info_from_btf_type(btf, &next_ty, raw_type_sizes)?,
+                },
+                bitfield,
             });
             current_ty = next_ty;
         }
@@ -3798,6 +3897,39 @@ format:
         assert!(matches!(
             projection.type_info,
             TypeInfo::Int { size: 1, .. }
+        ));
+    }
+
+    #[test]
+    fn test_function_trampoline_arg_field_resolves_bitfield_leaf() {
+        let projection = KernelBtf::get()
+            .function_trampoline_arg_field(
+                "wake_up_new_task",
+                0,
+                &[
+                    TrampolineFieldSelector::Field("uclamp_req".to_string()),
+                    TrampolineFieldSelector::Index(0),
+                    TrampolineFieldSelector::Field("value".to_string()),
+                ],
+            )
+            .expect("wake_up_new_task bitfield projection should resolve")
+            .expect("wake_up_new_task arg0 should exist");
+
+        assert_eq!(projection.path.len(), 3);
+        assert_eq!(projection.path[2].offset_bytes, 0);
+        assert_eq!(
+            projection.path[2].bitfield,
+            Some(TrampolineBitfieldInfo {
+                bit_offset: 0,
+                bit_size: 11,
+            })
+        );
+        assert!(matches!(
+            projection.type_info,
+            TypeInfo::Int {
+                size: 4,
+                signed: false
+            }
         ));
     }
 

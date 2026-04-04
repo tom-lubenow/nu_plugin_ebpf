@@ -3,8 +3,8 @@ use crate::compiler::EbpfProgramType;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
 use crate::kernel_btf::{
-    KernelBtf, TrampolineFieldProjection, TrampolineFieldSelector, TrampolineValueKind,
-    TrampolineValueSpec, TypeInfo,
+    KernelBtf, TrampolineBitfieldInfo, TrampolineFieldProjection, TrampolineFieldSelector,
+    TrampolineValueKind, TrampolineValueSpec, TypeInfo,
 };
 
 impl<'a> HirToMirLowering<'a> {
@@ -621,6 +621,124 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn mir_type_is_signed(ty: &MirType) -> bool {
+        matches!(ty, MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64)
+    }
+
+    fn large_const_operand(&mut self, ty: &MirType, value: i64) -> MirValue {
+        if i32::try_from(value).is_ok() {
+            return MirValue::Const(value);
+        }
+
+        let const_vreg = self.func.alloc_vreg();
+        self.vreg_type_hints.insert(const_vreg, ty.clone());
+        self.emit(MirInst::Copy {
+            dst: const_vreg,
+            src: MirValue::Const(value),
+        });
+        MirValue::VReg(const_vreg)
+    }
+
+    fn emit_bitfield_extract(
+        &mut self,
+        dst_vreg: VReg,
+        loaded_vreg: VReg,
+        projected_ty: &MirType,
+        bitfield: TrampolineBitfieldInfo,
+    ) -> Result<(), CompileError> {
+        let storage_bits = u32::try_from(projected_ty.size().checked_mul(8).ok_or_else(|| {
+            CompileError::UnsupportedInstruction("bitfield extraction size overflowed".to_string())
+        })?)
+        .map_err(|_| {
+            CompileError::UnsupportedInstruction("bitfield extraction size overflowed".to_string())
+        })?;
+        if bitfield.bit_size == 0 || bitfield.bit_size > storage_bits {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "unsupported {}-bit bitfield extraction from {:?}",
+                bitfield.bit_size, projected_ty
+            )));
+        }
+        let bitfield_end = bitfield
+            .bit_offset
+            .checked_add(bitfield.bit_size)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction("bitfield extraction overflowed".to_string())
+            })?;
+        if bitfield_end > storage_bits {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "bitfield extraction exceeds {:?} storage width",
+                projected_ty
+            )));
+        }
+
+        let mut current_vreg = loaded_vreg;
+        if bitfield.bit_offset > 0 {
+            let shifted_vreg = self.func.alloc_vreg();
+            self.vreg_type_hints
+                .insert(shifted_vreg, projected_ty.clone());
+            let shift_amount =
+                self.large_const_operand(projected_ty, i64::from(bitfield.bit_offset));
+            self.emit(MirInst::BinOp {
+                dst: shifted_vreg,
+                op: BinOpKind::Shr,
+                lhs: MirValue::VReg(current_vreg),
+                rhs: shift_amount,
+            });
+            current_vreg = shifted_vreg;
+        }
+
+        if bitfield.bit_size < storage_bits {
+            let masked_vreg = self.func.alloc_vreg();
+            self.vreg_type_hints
+                .insert(masked_vreg, projected_ty.clone());
+            let mask = ((1u128 << bitfield.bit_size) - 1) as i64;
+            let mask_value = self.large_const_operand(projected_ty, mask);
+            self.emit(MirInst::BinOp {
+                dst: masked_vreg,
+                op: BinOpKind::And,
+                lhs: MirValue::VReg(current_vreg),
+                rhs: mask_value,
+            });
+            current_vreg = masked_vreg;
+        }
+
+        if Self::mir_type_is_signed(projected_ty) && bitfield.bit_size < storage_bits {
+            let sign_bit = 1i64.checked_shl(bitfield.bit_size - 1).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "bitfield sign extension overflowed".to_string(),
+                )
+            })?;
+            let xor_vreg = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(xor_vreg, projected_ty.clone());
+            let sign_bit_value = self.large_const_operand(projected_ty, sign_bit);
+            self.emit(MirInst::BinOp {
+                dst: xor_vreg,
+                op: BinOpKind::Xor,
+                lhs: MirValue::VReg(current_vreg),
+                rhs: sign_bit_value,
+            });
+
+            let signed_vreg = self.func.alloc_vreg();
+            self.vreg_type_hints
+                .insert(signed_vreg, projected_ty.clone());
+            let sign_bit_value = self.large_const_operand(projected_ty, sign_bit);
+            self.emit(MirInst::BinOp {
+                dst: signed_vreg,
+                op: BinOpKind::Sub,
+                lhs: MirValue::VReg(xor_vreg),
+                rhs: sign_bit_value,
+            });
+            current_vreg = signed_vreg;
+        }
+
+        self.vreg_type_hints.insert(dst_vreg, projected_ty.clone());
+        self.emit(MirInst::Copy {
+            dst: dst_vreg,
+            src: MirValue::VReg(current_vreg),
+        });
+        Ok(())
+    }
+
     fn trampoline_root_type_info(
         &self,
         field: &CtxField,
@@ -1019,16 +1137,42 @@ impl<'a> HirToMirLowering<'a> {
                                 });
                             }
                         } else {
-                            self.vreg_type_hints.insert(dst_vreg, projected_ty.clone());
-                            self.emit(MirInst::Load {
-                                dst: dst_vreg,
-                                ptr: base_vreg,
-                                offset: Self::trampoline_projection_offset_i32(
-                                    field_offset,
-                                    path_desc,
-                                )?,
-                                ty: projected_ty.clone(),
-                            });
+                            let loaded_vreg = if segment.bitfield.is_some() {
+                                let storage_vreg = self.func.alloc_vreg();
+                                self.vreg_type_hints
+                                    .insert(storage_vreg, projected_ty.clone());
+                                self.emit(MirInst::Load {
+                                    dst: storage_vreg,
+                                    ptr: base_vreg,
+                                    offset: Self::trampoline_projection_offset_i32(
+                                        field_offset,
+                                        path_desc,
+                                    )?,
+                                    ty: projected_ty.clone(),
+                                });
+                                storage_vreg
+                            } else {
+                                dst_vreg
+                            };
+                            if let Some(bitfield) = segment.bitfield {
+                                self.emit_bitfield_extract(
+                                    dst_vreg,
+                                    loaded_vreg,
+                                    projected_ty,
+                                    bitfield,
+                                )?;
+                            } else {
+                                self.vreg_type_hints.insert(dst_vreg, projected_ty.clone());
+                                self.emit(MirInst::Load {
+                                    dst: dst_vreg,
+                                    ptr: base_vreg,
+                                    offset: Self::trampoline_projection_offset_i32(
+                                        field_offset,
+                                        path_desc,
+                                    )?,
+                                    ty: projected_ty.clone(),
+                                });
+                            }
                         }
                         break;
                     }
@@ -1115,13 +1259,36 @@ impl<'a> HirToMirLowering<'a> {
                                 src: MirValue::StackSlot(projected_slot),
                             });
                         } else {
-                            self.vreg_type_hints.insert(dst_vreg, projected_ty.clone());
-                            self.emit(MirInst::LoadSlot {
-                                dst: dst_vreg,
-                                slot: projected_slot,
-                                offset: 0,
-                                ty: projected_ty.clone(),
-                            });
+                            let loaded_vreg = if segment.bitfield.is_some() {
+                                let storage_vreg = self.func.alloc_vreg();
+                                self.vreg_type_hints
+                                    .insert(storage_vreg, projected_ty.clone());
+                                self.emit(MirInst::LoadSlot {
+                                    dst: storage_vreg,
+                                    slot: projected_slot,
+                                    offset: 0,
+                                    ty: projected_ty.clone(),
+                                });
+                                storage_vreg
+                            } else {
+                                dst_vreg
+                            };
+                            if let Some(bitfield) = segment.bitfield {
+                                self.emit_bitfield_extract(
+                                    dst_vreg,
+                                    loaded_vreg,
+                                    projected_ty,
+                                    bitfield,
+                                )?;
+                            } else {
+                                self.vreg_type_hints.insert(dst_vreg, projected_ty.clone());
+                                self.emit(MirInst::LoadSlot {
+                                    dst: dst_vreg,
+                                    slot: projected_slot,
+                                    offset: 0,
+                                    ty: projected_ty.clone(),
+                                });
+                            }
                         }
                         break;
                     }
@@ -1187,7 +1354,7 @@ impl<'a> HirToMirLowering<'a> {
         type_id: u32,
         field_name: &str,
         path_desc: &str,
-    ) -> Result<(usize, MirType), CompileError> {
+    ) -> Result<(usize, MirType, Option<TrampolineBitfieldInfo>), CompileError> {
         let projection = KernelBtf::get()
             .kernel_type_field_projection(
                 type_id,
@@ -1216,14 +1383,14 @@ impl<'a> HirToMirLowering<'a> {
                     path_desc, projection.type_info
                 ))
             })?;
-        Ok((offset, projected_ty))
+        Ok((offset, projected_ty, projection.path[0].bitfield))
     }
 
     fn resolve_typed_value_projection_step(
         current_ty: &MirType,
         member: &PathMember,
         path_desc: &str,
-    ) -> Result<(usize, MirType), CompileError> {
+    ) -> Result<(usize, MirType, Option<TrampolineBitfieldInfo>), CompileError> {
         match (current_ty, member) {
             (
                 MirType::Struct {
@@ -1236,7 +1403,7 @@ impl<'a> HirToMirLowering<'a> {
                 let field = fields
                     .iter()
                     .find(|field| !field.synthetic && field.name == *val)
-                    .map(|field| (field.offset, field.ty.clone()));
+                    .map(|field| (field.offset, field.ty.clone(), None));
                 if let Some(field) = field {
                     return Ok(field);
                 }
@@ -1267,7 +1434,7 @@ impl<'a> HirToMirLowering<'a> {
                         path_desc, index, len
                     )));
                 }
-                Ok((index * elem.size(), elem.as_ref().clone()))
+                Ok((index * elem.size(), elem.as_ref().clone(), None))
             }
             (MirType::Array { .. }, PathMember::String { val, .. }) => {
                 Err(CompileError::UnsupportedInstruction(format!(
@@ -1286,14 +1453,14 @@ impl<'a> HirToMirLowering<'a> {
         current_ty: &MirType,
         index: usize,
         path_desc: &str,
-    ) -> Result<(usize, MirType), CompileError> {
+    ) -> Result<(usize, MirType, Option<TrampolineBitfieldInfo>), CompileError> {
         let offset = index.checked_mul(current_ty.size()).ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
                 "typed field path '{}' pointer index {} overflowed",
                 path_desc, index
             ))
         })?;
-        Ok((offset, current_ty.clone()))
+        Ok((offset, current_ty.clone(), None))
     }
 
     fn lower_typed_value_projection(
@@ -1416,7 +1583,7 @@ impl<'a> HirToMirLowering<'a> {
                 target_ty,
                 direct,
             } = &cursor;
-            let (segment_offset, next_ty) = match (direct, member) {
+            let (segment_offset, next_ty, bitfield) = match (direct, member) {
                 (true, PathMember::Int { val, .. })
                     if !matches!(target_ty, MirType::Array { .. }) =>
                 {
@@ -1490,18 +1657,43 @@ impl<'a> HirToMirLowering<'a> {
                         }
                     }
                 } else {
-                    self.vreg_type_hints.insert(dst_vreg, next_ty.clone());
                     match address_space {
                         AddressSpace::Stack | AddressSpace::Map => {
-                            self.emit(MirInst::Load {
-                                dst: dst_vreg,
-                                ptr: *base_vreg,
-                                offset: Self::trampoline_projection_offset_i32(
-                                    field_offset,
-                                    path_desc,
-                                )?,
-                                ty: next_ty.clone(),
-                            });
+                            let loaded_vreg = if bitfield.is_some() {
+                                let storage_vreg = self.func.alloc_vreg();
+                                self.vreg_type_hints.insert(storage_vreg, next_ty.clone());
+                                self.emit(MirInst::Load {
+                                    dst: storage_vreg,
+                                    ptr: *base_vreg,
+                                    offset: Self::trampoline_projection_offset_i32(
+                                        field_offset,
+                                        path_desc,
+                                    )?,
+                                    ty: next_ty.clone(),
+                                });
+                                storage_vreg
+                            } else {
+                                dst_vreg
+                            };
+                            if let Some(bitfield) = bitfield {
+                                self.emit_bitfield_extract(
+                                    dst_vreg,
+                                    loaded_vreg,
+                                    &next_ty,
+                                    bitfield,
+                                )?;
+                            } else {
+                                self.vreg_type_hints.insert(dst_vreg, next_ty.clone());
+                                self.emit(MirInst::Load {
+                                    dst: dst_vreg,
+                                    ptr: *base_vreg,
+                                    offset: Self::trampoline_projection_offset_i32(
+                                        field_offset,
+                                        path_desc,
+                                    )?,
+                                    ty: next_ty.clone(),
+                                });
+                            }
                         }
                         AddressSpace::Kernel | AddressSpace::User => {
                             let projected_slot = self.func.alloc_stack_slot(
@@ -1518,12 +1710,35 @@ impl<'a> HirToMirLowering<'a> {
                                 &next_ty,
                                 path_desc,
                             )?;
-                            self.emit(MirInst::LoadSlot {
-                                dst: dst_vreg,
-                                slot: projected_slot,
-                                offset: 0,
-                                ty: next_ty.clone(),
-                            });
+                            let loaded_vreg = if bitfield.is_some() {
+                                let storage_vreg = self.func.alloc_vreg();
+                                self.vreg_type_hints.insert(storage_vreg, next_ty.clone());
+                                self.emit(MirInst::LoadSlot {
+                                    dst: storage_vreg,
+                                    slot: projected_slot,
+                                    offset: 0,
+                                    ty: next_ty.clone(),
+                                });
+                                storage_vreg
+                            } else {
+                                dst_vreg
+                            };
+                            if let Some(bitfield) = bitfield {
+                                self.emit_bitfield_extract(
+                                    dst_vreg,
+                                    loaded_vreg,
+                                    &next_ty,
+                                    bitfield,
+                                )?;
+                            } else {
+                                self.vreg_type_hints.insert(dst_vreg, next_ty.clone());
+                                self.emit(MirInst::LoadSlot {
+                                    dst: dst_vreg,
+                                    slot: projected_slot,
+                                    offset: 0,
+                                    ty: next_ty.clone(),
+                                });
+                            }
                         }
                     }
                 }

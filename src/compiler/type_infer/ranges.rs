@@ -178,8 +178,7 @@ impl<'a> TypeInference<'a> {
         let mut in_states: HashMap<BlockId, Vec<ValueRange>> = HashMap::new();
         let mut in_source_ranges: HashMap<BlockId, HashMap<RangeSource, ValueRange>> =
             HashMap::new();
-        let mut in_reg_sources: HashMap<BlockId, HashMap<VReg, SlotSourceState>> =
-            HashMap::new();
+        let mut in_reg_sources: HashMap<BlockId, HashMap<VReg, SlotSourceState>> = HashMap::new();
         let mut in_slot_sources: HashMap<BlockId, HashMap<StackSlotId, SlotSourceState>> =
             HashMap::new();
         let mut worklist = VecDeque::new();
@@ -194,15 +193,9 @@ impl<'a> TypeInference<'a> {
             let Some(state_in) = in_states.get(&block_id).cloned() else {
                 continue;
             };
-            let mut source_ranges = in_source_ranges
-                .get(&block_id)
-                .cloned()
-                .unwrap_or_default();
+            let mut source_ranges = in_source_ranges.get(&block_id).cloned().unwrap_or_default();
             let mut reg_sources = in_reg_sources.get(&block_id).cloned().unwrap_or_default();
-            let mut slot_sources = in_slot_sources
-                .get(&block_id)
-                .cloned()
-                .unwrap_or_default();
+            let mut slot_sources = in_slot_sources.get(&block_id).cloned().unwrap_or_default();
             let block = func.block(block_id);
             let mut state = state_in;
             let mut guards: HashMap<VReg, RangeGuard> = HashMap::new();
@@ -351,10 +344,7 @@ impl<'a> TypeInference<'a> {
                 .get(&block.id)
                 .cloned()
                 .unwrap_or_else(|| vec![ValueRange::Unset; total_vregs as usize]);
-            let mut source_ranges = in_source_ranges
-                .get(&block.id)
-                .cloned()
-                .unwrap_or_default();
+            let mut source_ranges = in_source_ranges.get(&block.id).cloned().unwrap_or_default();
             let mut reg_sources = in_reg_sources.get(&block.id).cloned().unwrap_or_default();
             let mut slot_sources = in_slot_sources.get(&block.id).cloned().unwrap_or_default();
             let mut guards: HashMap<VReg, RangeGuard> = HashMap::new();
@@ -962,7 +952,8 @@ impl<'a> TypeInference<'a> {
                     BpfHelper::from_u32(*helper),
                     Some(BpfHelper::ProbeReadKernel | BpfHelper::ProbeReadUser)
                 ) {
-                    if let [MirValue::StackSlot(slot), _, MirValue::VReg(src_ptr)] = args.as_slice() {
+                    if let [MirValue::StackSlot(slot), _, MirValue::VReg(src_ptr)] = args.as_slice()
+                    {
                         let state_next = match reg_sources.get(src_ptr) {
                             Some(SlotSourceState::Known(source)) => {
                                 SlotSourceState::Known(self.source_deref(source))

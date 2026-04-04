@@ -498,6 +498,98 @@ fn make_bound_ctx_runtime_get_program(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_bound_ctx_runtime_get_path_program(
+    binding: CellPath,
+    idx_binding: CellPath,
+    modulus: i64,
+    access: CellPath,
+    decl_id: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let bound_var = VarId::new(1);
+    let idx_var = VarId::new(2);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(idx_binding)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(modulus),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: Operator::Math(Math::Modulo),
+                    rhs: RegId::new(2),
+                },
+                HirStmt::StoreVariable {
+                    var_id: idx_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(binding)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::StoreVariable {
+                    var_id: bound_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: bound_var,
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(2),
+                    var_id: idx_var,
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(access)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 15],
+        ast: vec![None; 15],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_range_iterate_program(start: i64, step: HirLiteral, end: i64) -> HirProgram {
     let func = HirFunction {
         blocks: vec![
@@ -1624,6 +1716,87 @@ fn test_lower_generic_numeric_get_after_binding_stack_backed_array() {
                 }
             )),
         "expected stack-backed array numeric get to load the selected scalar element directly from stack"
+    );
+}
+
+#[test]
+fn test_lower_generic_field_projection_after_runtime_get_stack_backed_bitfield_struct() {
+    let hir = make_bound_ctx_runtime_get_path_program(
+        CellPath {
+            members: vec![string_member("arg0"), string_member("uclamp_req")],
+        },
+        CellPath {
+            members: vec![string_member("pid")],
+        },
+        2,
+        CellPath {
+            members: vec![string_member("bucket_id")],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "wake_up_new_task");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "get".to_string());
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("stack-backed aggregate bitfield projection after numeric get should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Shr,
+                    rhs: MirValue::Const(11),
+                    ..
+                }
+            )),
+        "expected bitfield projection to shift bucket_id into place"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::And,
+                    rhs: MirValue::Const(7),
+                    ..
+                }
+            )),
+        "expected bitfield projection to mask the bucket_id width"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::U32,
+                    ..
+                }
+            )),
+        "expected bitfield projection to load the 32-bit storage word before extraction"
     );
 }
 

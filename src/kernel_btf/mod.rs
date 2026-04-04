@@ -15,8 +15,8 @@ mod types;
 pub use pt_regs::{PtRegsError, PtRegsOffsets};
 pub use service::{
     FunctionCheckResult, KernelBtf, KfuncArgShape, KfuncPointerRefFamily, KfuncRetShape,
-    KfuncSignatureHint, TrampolineFieldPathSegment, TrampolineFieldProjection,
-    TrampolineFieldSelector, TrampolineValueKind, TrampolineValueSpec,
+    KfuncSignatureHint, TrampolineBitfieldInfo, TrampolineFieldPathSegment,
+    TrampolineFieldProjection, TrampolineFieldSelector, TrampolineValueKind, TrampolineValueSpec,
 };
 pub use tracepoint::TracepointContext;
 pub use types::{FieldInfo, TypeInfo};
