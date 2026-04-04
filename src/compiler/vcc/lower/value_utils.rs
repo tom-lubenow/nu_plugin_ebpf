@@ -66,8 +66,17 @@ impl<'a> VccLowerer<'a> {
     }
 
     pub(super) fn maybe_assume_type(&mut self, dst: VReg, ty: &MirType, out: &mut Vec<VccInst>) {
-        let vcc_ty = vcc_type_from_mir(ty);
-        if matches!(vcc_ty, VccValueType::Ptr(_) | VccValueType::Bool) {
+        let vcc_ty = if let Some((min, max)) = ty.scalar_value_range() {
+            VccValueType::Scalar {
+                range: Some(VccRange { min, max }),
+            }
+        } else {
+            vcc_type_from_mir(ty)
+        };
+        if matches!(
+            vcc_ty,
+            VccValueType::Ptr(_) | VccValueType::Bool | VccValueType::Scalar { range: Some(_) }
+        ) {
             out.push(VccInst::Assume {
                 dst: VccReg(dst.0),
                 ty: vcc_ty,

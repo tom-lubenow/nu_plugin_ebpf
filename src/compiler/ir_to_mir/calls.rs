@@ -1,8 +1,6 @@
 use super::*;
 use crate::compiler::instruction::KfuncSignature;
-use crate::compiler::mir::{
-    AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, STRING_COUNTER_MAP_NAME,
-};
+use crate::compiler::mir::{BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, STRING_COUNTER_MAP_NAME};
 
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn set_call_args(&mut self, args: &HirCallArgs) -> Result<(), CompileError> {
@@ -690,10 +688,7 @@ impl<'a> HirToMirLowering<'a> {
                         })?;
 
                     match &base_runtime_ty {
-                        MirType::Ptr {
-                            address_space: AddressSpace::Kernel | AddressSpace::User,
-                            ..
-                        } => {
+                        MirType::Ptr { .. } => {
                             self.lower_dynamic_typed_numeric_get(
                                 src_dst,
                                 input_vreg,
@@ -701,14 +696,9 @@ impl<'a> HirToMirLowering<'a> {
                                 idx,
                             )?;
                         }
-                        MirType::Ptr { .. } => {
-                            return Err(CompileError::UnsupportedInstruction(
-                                "numeric get on typed stack/map values is not supported yet; use a static cell path or list indexing instead".into(),
-                            ));
-                        }
                         _ => {
                             return Err(CompileError::UnsupportedInstruction(format!(
-                                "get requires a list value or typed kernel/user pointer input, got {:?}",
+                                "get requires a list value or typed pointer input, got {:?}",
                                 base_runtime_ty
                             )));
                         }

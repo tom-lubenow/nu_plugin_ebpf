@@ -256,7 +256,14 @@ impl<'a> VccLowerer<'a> {
                     let ty = self
                         .types
                         .get(dst)
-                        .map(vcc_type_from_mir)
+                        .map(|mir_ty| {
+                            mir_ty
+                                .scalar_value_range()
+                                .map(|(min, max)| VccValueType::Scalar {
+                                    range: Some(VccRange { min, max }),
+                                })
+                                .unwrap_or_else(|| vcc_type_from_mir(mir_ty))
+                        })
                         .unwrap_or(VccValueType::Unknown);
                     out.push(VccInst::Assume {
                         dst: VccReg(dst.0),

@@ -685,7 +685,9 @@ Context parameter syntax (recommended):
     can now also be indexed with constant numeric segments such as
     `ctx.arg0.fdt.fd.0.f_inode.i_ino` or `let fd = $ctx.arg0.fdt.fd;
     $fd.0.f_inode.i_ino`. Numeric `get` now supports the same typed
-    kernel/user pointer traversal through a register value, for example
+    kernel/user pointer traversal through a register value, and also supports
+    stack-backed fixed arrays such as `let idx = ($ctx.pid mod 2);
+    ($ctx.arg0.comm | get $idx)`. Pointer-valued examples include
     `let idx = 0; let fd = ($ctx.arg0.fdt.fd | get $idx); $fd.f_inode.i_ino`.
     Bounded ascending `for` loops over static integer ranges now lower to
     verifier-safe loops, so `for i in 0..0 { ... get $i ... }` works.
@@ -1421,6 +1423,89 @@ mod tests {
         HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
     }
 
+    fn make_bound_ctx_runtime_get_program(
+        binding: CellPath,
+        idx_binding: CellPath,
+        modulus: i64,
+        decl_id: DeclId,
+    ) -> HirProgram {
+        let ctx_var = VarId::new(0);
+        let bound_var = VarId::new(1);
+        let idx_var = VarId::new(2);
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(idx_binding)),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(modulus),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Math(Math::Modulo),
+                        rhs: RegId::new(2),
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: idx_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(binding)),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: bound_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: bound_var,
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(2),
+                        var_id: idx_var,
+                    },
+                    HirStmt::Call {
+                        decl_id,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(2)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 13],
+            ast: vec![None; 13],
+            comments: vec![],
+            register_count: 3,
+            file_count: 0,
+        };
+        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+    }
+
     fn make_branch_refined_bound_ctx_get_program(
         scalar_binding: CellPath,
         pointer_binding: CellPath,
@@ -1832,6 +1917,48 @@ mod tests {
             Some(&lowering.type_hints),
         )
         .expect("optimized branch-refined bound numeric get projection should compile");
+        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+    }
+
+    #[test]
+    fn test_recover_optimized_type_hints_for_stack_backed_array_numeric_get() {
+        let hir = make_bound_ctx_runtime_get_program(
+            CellPath {
+                members: vec![string_member("arg0"), string_member("comm")],
+            },
+            CellPath {
+                members: vec![string_member("pid")],
+            },
+            2,
+            DeclId::new(42),
+        );
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "wake_up_new_task");
+        let mut decl_names = HashMap::new();
+        decl_names.insert(DeclId::new(42), "get".to_string());
+
+        let mut lowering = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("stack-backed array numeric get should lower");
+
+        optimize_with_ssa(&mut lowering.program.main);
+        recover_optimized_type_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            &mut lowering.type_hints,
+        );
+
+        let result = compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .expect("optimized stack-backed array numeric get should compile");
         assert!(!result.bytecode.is_empty(), "Should produce bytecode");
     }
 }

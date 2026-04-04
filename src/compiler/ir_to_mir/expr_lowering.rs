@@ -1574,12 +1574,6 @@ impl<'a> HirToMirLowering<'a> {
             other => (other.clone(), other.size()),
         };
 
-        if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) {
-            return Err(CompileError::UnsupportedInstruction(
-                "numeric get on typed stack/map values is not supported yet; use a static cell path or list indexing instead".into(),
-            ));
-        }
-
         let base_copy = self.func.alloc_vreg();
         self.emit(MirInst::Copy {
             dst: base_copy,
@@ -1644,54 +1638,81 @@ impl<'a> HirToMirLowering<'a> {
             rhs: scaled_idx,
         });
 
-        if matches!(element_ty, MirType::Array { .. } | MirType::Struct { .. }) {
-            let projected_slot = self.func.alloc_stack_slot(
-                align_to_eight(element_ty.size()),
-                8,
-                StackSlotKind::Local,
-            );
-            self.record_stack_slot_type(projected_slot, element_ty.clone());
-            self.emit_trampoline_probe_read_to_slot(
-                element_ptr_vreg,
-                *address_space,
-                0,
-                projected_slot,
-                &element_ty,
-                &path_desc,
-            )?;
-            self.vreg_type_hints.insert(
-                dst_vreg,
-                MirType::Ptr {
-                    pointee: Box::new(element_ty.clone()),
-                    address_space: AddressSpace::Stack,
-                },
-            );
-            self.emit(MirInst::Copy {
-                dst: dst_vreg,
-                src: MirValue::StackSlot(projected_slot),
-            });
-        } else {
-            let projected_slot = self.func.alloc_stack_slot(
-                align_to_eight(element_ty.size()),
-                8,
-                StackSlotKind::Local,
-            );
-            self.record_stack_slot_type(projected_slot, element_ty.clone());
-            self.emit_trampoline_probe_read_to_slot(
-                element_ptr_vreg,
-                *address_space,
-                0,
-                projected_slot,
-                &element_ty,
-                &path_desc,
-            )?;
-            self.vreg_type_hints.insert(dst_vreg, element_ty.clone());
-            self.emit(MirInst::LoadSlot {
-                dst: dst_vreg,
-                slot: projected_slot,
-                offset: 0,
-                ty: element_ty.clone(),
-            });
+        match address_space {
+            AddressSpace::Kernel | AddressSpace::User => {
+                if matches!(element_ty, MirType::Array { .. } | MirType::Struct { .. }) {
+                    let projected_slot = self.func.alloc_stack_slot(
+                        align_to_eight(element_ty.size()),
+                        8,
+                        StackSlotKind::Local,
+                    );
+                    self.record_stack_slot_type(projected_slot, element_ty.clone());
+                    self.emit_trampoline_probe_read_to_slot(
+                        element_ptr_vreg,
+                        *address_space,
+                        0,
+                        projected_slot,
+                        &element_ty,
+                        &path_desc,
+                    )?;
+                    self.vreg_type_hints.insert(
+                        dst_vreg,
+                        MirType::Ptr {
+                            pointee: Box::new(element_ty.clone()),
+                            address_space: AddressSpace::Stack,
+                        },
+                    );
+                    self.emit(MirInst::Copy {
+                        dst: dst_vreg,
+                        src: MirValue::StackSlot(projected_slot),
+                    });
+                } else {
+                    let projected_slot = self.func.alloc_stack_slot(
+                        align_to_eight(element_ty.size()),
+                        8,
+                        StackSlotKind::Local,
+                    );
+                    self.record_stack_slot_type(projected_slot, element_ty.clone());
+                    self.emit_trampoline_probe_read_to_slot(
+                        element_ptr_vreg,
+                        *address_space,
+                        0,
+                        projected_slot,
+                        &element_ty,
+                        &path_desc,
+                    )?;
+                    self.vreg_type_hints.insert(dst_vreg, element_ty.clone());
+                    self.emit(MirInst::LoadSlot {
+                        dst: dst_vreg,
+                        slot: projected_slot,
+                        offset: 0,
+                        ty: element_ty.clone(),
+                    });
+                }
+            }
+            AddressSpace::Stack | AddressSpace::Map => {
+                if matches!(element_ty, MirType::Array { .. } | MirType::Struct { .. }) {
+                    self.vreg_type_hints.insert(
+                        dst_vreg,
+                        MirType::Ptr {
+                            pointee: Box::new(element_ty.clone()),
+                            address_space: *address_space,
+                        },
+                    );
+                    self.emit(MirInst::Copy {
+                        dst: dst_vreg,
+                        src: MirValue::VReg(element_ptr_vreg),
+                    });
+                } else {
+                    self.vreg_type_hints.insert(dst_vreg, element_ty.clone());
+                    self.emit(MirInst::Load {
+                        dst: dst_vreg,
+                        ptr: element_ptr_vreg,
+                        offset: 0,
+                        ty: element_ty.clone(),
+                    });
+                }
+            }
         }
 
         let meta = self.get_or_create_metadata(dst_reg);

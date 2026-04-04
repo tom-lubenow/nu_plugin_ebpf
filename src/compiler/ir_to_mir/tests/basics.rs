@@ -6,7 +6,7 @@ use crate::compiler::hir::{
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
-use nu_protocol::ast::{CellPath, PathMember, RangeInclusion};
+use nu_protocol::ast::{CellPath, Math, Operator, PathMember, RangeInclusion};
 use nu_protocol::casing::Casing;
 use nu_protocol::{DeclId, RegId, Span, VarId};
 use std::collections::HashMap;
@@ -410,6 +410,89 @@ fn make_bound_ctx_get_program(binding: CellPath, access: CellPath, decl_id: Decl
         ast: vec![None; 9],
         comments: vec![],
         register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_bound_ctx_runtime_get_program(
+    binding: CellPath,
+    idx_binding: CellPath,
+    modulus: i64,
+    decl_id: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let bound_var = VarId::new(1);
+    let idx_var = VarId::new(2);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(idx_binding)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(modulus),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: Operator::Math(Math::Modulo),
+                    rhs: RegId::new(2),
+                },
+                HirStmt::StoreVariable {
+                    var_id: idx_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(binding)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::StoreVariable {
+                    var_id: bound_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: bound_var,
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(2),
+                    var_id: idx_var,
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 13],
+        ast: vec![None; 13],
+        comments: vec![],
+        register_count: 3,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
@@ -1479,6 +1562,68 @@ fn test_lower_generic_numeric_get_after_binding_pointer_sequence() {
                 }
             )),
         "expected final inode-number load after numeric get"
+    );
+}
+
+#[test]
+fn test_lower_generic_numeric_get_after_binding_stack_backed_array() {
+    let hir = make_bound_ctx_runtime_get_program(
+        CellPath {
+            members: vec![string_member("arg0"), string_member("comm")],
+        },
+        CellPath {
+            members: vec![string_member("pid")],
+        },
+        2,
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "wake_up_new_task");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "get".to_string());
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("stack-backed array numeric get should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Add,
+                    rhs: MirValue::VReg(_),
+                    ..
+                }
+            )),
+        "expected numeric get to add a bounded runtime index to the stack-backed array base"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::I8 | MirType::U8,
+                    offset: 0,
+                    ..
+                }
+            )),
+        "expected stack-backed array numeric get to load the selected scalar element directly from stack"
     );
 }
 
