@@ -332,6 +332,139 @@ fn test_emit_event_registers_typed_schema_for_struct_payload() {
 }
 
 #[test]
+fn test_emit_event_preserves_nested_field_schemas() {
+    use crate::compiler::elf::BpfFieldType;
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(12, 8, StackSlotKind::Local);
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: v0,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::EmitEvent { data: v0, size: 12 });
+    func.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let inner_ty = MirType::Struct {
+        name: Some("inner".to_string()),
+        fields: vec![
+            StructField {
+                name: "id".to_string(),
+                ty: MirType::U32,
+                offset: 0,
+                synthetic: false,
+            },
+            StructField {
+                name: "tag".to_string(),
+                ty: MirType::U8,
+                offset: 4,
+                synthetic: false,
+            },
+            StructField {
+                name: "__layout_pad0".to_string(),
+                ty: MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: 3,
+                },
+                offset: 5,
+                synthetic: true,
+            },
+        ],
+    };
+
+    let mut program_types = ProgramVregTypes::default();
+    program_types.main.insert(
+        v0,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Struct {
+                name: Some("outer".to_string()),
+                fields: vec![
+                    StructField {
+                        name: "inner".to_string(),
+                        ty: inner_ty.clone(),
+                        offset: 0,
+                        synthetic: false,
+                    },
+                    StructField {
+                        name: "nums".to_string(),
+                        ty: MirType::Array {
+                            elem: Box::new(MirType::U16),
+                            len: 2,
+                        },
+                        offset: 8,
+                        synthetic: false,
+                    },
+                ],
+            }),
+            address_space: AddressSpace::Stack,
+        },
+    );
+
+    let lir = lower_mir_to_lir(&program);
+    let compiler = MirToEbpfCompiler::new_with_types(&lir, None, program_types);
+    let result = compiler
+        .compile()
+        .expect("nested typed struct emit should compile");
+    let schema = result.event_schema.expect("expected emit schema");
+
+    assert_eq!(schema.total_size, 12);
+    assert_eq!(schema.fields.len(), 2);
+    assert_eq!(schema.fields[0].name, "inner");
+    assert_eq!(schema.fields[0].field_type, BpfFieldType::Bytes(8));
+    assert_eq!(
+        schema.fields[0].value_schema,
+        Some(crate::compiler::CounterKeySchema::Record {
+            name: Some("inner".to_string()),
+            fields: vec![
+                crate::compiler::CounterKeySchemaField {
+                    name: "id".to_string(),
+                    schema: crate::compiler::CounterKeySchema::Int {
+                        size: 4,
+                        signed: false,
+                    },
+                    offset: 0,
+                },
+                crate::compiler::CounterKeySchemaField {
+                    name: "tag".to_string(),
+                    schema: crate::compiler::CounterKeySchema::Int {
+                        size: 1,
+                        signed: false,
+                    },
+                    offset: 4,
+                },
+            ],
+            total_size: 8,
+        })
+    );
+    assert_eq!(schema.fields[1].name, "nums");
+    assert_eq!(schema.fields[1].field_type, BpfFieldType::Bytes(4));
+    assert_eq!(
+        schema.fields[1].value_schema,
+        Some(crate::compiler::CounterKeySchema::Array {
+            elem: Box::new(crate::compiler::CounterKeySchema::Int {
+                size: 2,
+                signed: false,
+            }),
+            len: 2,
+        })
+    );
+}
+
+#[test]
 fn test_emit_record_schema_mismatch_errors() {
     use crate::compiler::CompileError;
     use crate::compiler::mir::*;
@@ -391,6 +524,132 @@ fn test_emit_record_schema_mismatch_errors() {
         Ok(_) => panic!("Expected schema mismatch error, got Ok"),
         Err(e) => panic!("Expected schema mismatch error, got: {e:?}"),
     }
+}
+
+#[test]
+fn test_emit_record_preserves_nested_struct_field_schema() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::Local);
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: v0,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::EmitRecord {
+            fields: vec![RecordFieldDef {
+                name: "path".to_string(),
+                value: v0,
+                ty: MirType::Struct {
+                    name: Some("path".to_string()),
+                    fields: vec![
+                        StructField {
+                            name: "mnt".to_string(),
+                            ty: MirType::Ptr {
+                                pointee: Box::new(MirType::U8),
+                                address_space: AddressSpace::Kernel,
+                            },
+                            offset: 0,
+                            synthetic: false,
+                        },
+                        StructField {
+                            name: "dentry".to_string(),
+                            ty: MirType::Ptr {
+                                pointee: Box::new(MirType::U8),
+                                address_space: AddressSpace::Kernel,
+                            },
+                            offset: 8,
+                            synthetic: false,
+                        },
+                    ],
+                },
+            }],
+        });
+    func.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let mut program_types = ProgramVregTypes::default();
+    program_types.main.insert(
+        v0,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Struct {
+                name: Some("path".to_string()),
+                fields: vec![
+                    StructField {
+                        name: "mnt".to_string(),
+                        ty: MirType::Ptr {
+                            pointee: Box::new(MirType::U8),
+                            address_space: AddressSpace::Kernel,
+                        },
+                        offset: 0,
+                        synthetic: false,
+                    },
+                    StructField {
+                        name: "dentry".to_string(),
+                        ty: MirType::Ptr {
+                            pointee: Box::new(MirType::U8),
+                            address_space: AddressSpace::Kernel,
+                        },
+                        offset: 8,
+                        synthetic: false,
+                    },
+                ],
+            }),
+            address_space: AddressSpace::Stack,
+        },
+    );
+
+    let lir = lower_mir_to_lir(&program);
+    let compiler = MirToEbpfCompiler::new_with_types(&lir, None, program_types);
+    let result = compiler
+        .compile()
+        .expect("emit record with nested struct field should compile");
+    assert_eq!(
+        result.event_schema,
+        Some(crate::compiler::EventSchema {
+            fields: vec![crate::compiler::SchemaField {
+                name: "path".to_string(),
+                field_type: BpfFieldType::Bytes(16),
+                value_schema: Some(crate::compiler::CounterKeySchema::Record {
+                    name: Some("path".to_string()),
+                    fields: vec![
+                        crate::compiler::CounterKeySchemaField {
+                            name: "mnt".to_string(),
+                            schema: crate::compiler::CounterKeySchema::Int {
+                                size: 8,
+                                signed: false,
+                            },
+                            offset: 0,
+                        },
+                        crate::compiler::CounterKeySchemaField {
+                            name: "dentry".to_string(),
+                            schema: crate::compiler::CounterKeySchema::Int {
+                                size: 8,
+                                signed: false,
+                            },
+                            offset: 8,
+                        },
+                    ],
+                    total_size: 16,
+                }),
+                offset: 0,
+            }],
+            total_size: 16,
+        })
+    );
 }
 
 #[test]

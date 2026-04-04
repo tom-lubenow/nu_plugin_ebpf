@@ -44,6 +44,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             fields: vec![SchemaField {
                 name: "value".to_string(),
                 field_type,
+                value_schema: self.single_emit_recursive_value_schema(data),
                 offset: 0,
             }],
             total_size: event_size,
@@ -88,6 +89,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             .map(|field| SchemaField {
                 name: field.name.clone(),
                 field_type: self.native_layout_bpf_field_type(&field.ty),
+                value_schema: self.recursive_event_value_schema(&field.ty),
                 offset: field.offset,
             })
             .collect();
@@ -191,6 +193,29 @@ impl<'a> MirToEbpfCompiler<'a> {
             ty if ty.byte_array_len() == Some(16) => BpfFieldType::Comm,
             ty if ty.byte_array_len().is_some() => BpfFieldType::String,
             MirType::Array { .. } | MirType::Struct { .. } => BpfFieldType::Bytes(ty.size().max(1)),
+        }
+    }
+
+    fn recursive_event_value_schema(&self, ty: &MirType) -> Option<CounterKeySchema> {
+        match ty {
+            MirType::Array { .. } | MirType::Struct { .. } => {
+                let schema = CounterKeySchema::from_mir_type(ty);
+                match schema {
+                    CounterKeySchema::Array { .. } | CounterKeySchema::Record { .. } => {
+                        Some(schema)
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn single_emit_recursive_value_schema(&self, data: VReg) -> Option<CounterKeySchema> {
+        match self.current_types.get(&data) {
+            Some(MirType::Ptr { pointee, .. }) => self.recursive_event_value_schema(pointee),
+            Some(ty) => self.recursive_event_value_schema(ty),
+            None => None,
         }
     }
 
@@ -374,6 +399,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             schema_fields.push(SchemaField {
                 name: field.name.clone(),
                 field_type,
+                value_schema: self.recursive_event_value_schema(&field.ty),
                 offset,
             });
             offset += size;

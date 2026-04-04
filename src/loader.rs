@@ -151,6 +151,10 @@ pub enum BpfFieldValue {
     String(String),
     /// Raw bytes
     Bytes(Vec<u8>),
+    /// Fixed-size array/list
+    Array(Vec<BpfFieldValue>),
+    /// Struct/record
+    Record(Vec<(String, BpfFieldValue)>),
 }
 
 /// A decoded value used for schema-aware `bytes_counters` keys.

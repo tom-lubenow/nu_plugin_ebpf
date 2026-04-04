@@ -20,6 +20,63 @@ impl EbpfState {
         }
     }
 
+    fn decode_fixed_string(field_buf: &[u8], size: usize) -> String {
+        let max_len = field_buf.len().min(size);
+        let null_pos = field_buf[..max_len]
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(max_len);
+        String::from_utf8_lossy(&field_buf[..null_pos]).to_string()
+    }
+
+    fn decode_structured_field_with_schema(buf: &[u8], schema: &CounterKeySchema) -> BpfFieldValue {
+        match schema {
+            CounterKeySchema::Int { size, signed } => {
+                BpfFieldValue::Int(Self::decode_scalar_field(buf, *size, *signed))
+            }
+            CounterKeySchema::String { size } => {
+                BpfFieldValue::String(Self::decode_fixed_string(buf, *size))
+            }
+            CounterKeySchema::Bytes { size } => {
+                BpfFieldValue::Bytes(buf[..buf.len().min(*size)].to_vec())
+            }
+            CounterKeySchema::Array { elem, len } => {
+                let elem_size = elem.size().max(1);
+                let mut values = Vec::with_capacity(*len);
+                for idx in 0..*len {
+                    let start = idx * elem_size;
+                    let end = start.saturating_add(elem_size).min(buf.len());
+                    let elem_buf = if start < buf.len() {
+                        &buf[start..end]
+                    } else {
+                        &[]
+                    };
+                    values.push(Self::decode_structured_field_with_schema(elem_buf, elem));
+                }
+                BpfFieldValue::Array(values)
+            }
+            CounterKeySchema::Record { fields, .. } => {
+                let mut values = Vec::with_capacity(fields.len());
+                for field in fields {
+                    let end = field
+                        .offset
+                        .saturating_add(field.schema.size())
+                        .min(buf.len());
+                    let field_buf = if field.offset < buf.len() {
+                        &buf[field.offset..end]
+                    } else {
+                        &[]
+                    };
+                    values.push((
+                        field.name.clone(),
+                        Self::decode_structured_field_with_schema(field_buf, &field.schema),
+                    ));
+                }
+                BpfFieldValue::Record(values)
+            }
+        }
+    }
+
     /// Poll for events from a probe's ring buffer
     ///
     /// Returns events emitted by the eBPF program via bpf-emit.
@@ -116,31 +173,21 @@ impl EbpfState {
             let available = buf.len() - field.offset;
             let slice_len = field_size.min(available);
             let field_buf = &buf[field.offset..field.offset + slice_len];
-            let value = match field.field_type {
-                BpfFieldType::Int { size, signed } => {
-                    BpfFieldValue::Int(Self::decode_scalar_field(field_buf, size, signed))
+            let value = if let Some(value_schema) = &field.value_schema {
+                Self::decode_structured_field_with_schema(field_buf, value_schema)
+            } else {
+                match field.field_type {
+                    BpfFieldType::Int { size, signed } => {
+                        BpfFieldValue::Int(Self::decode_scalar_field(field_buf, size, signed))
+                    }
+                    BpfFieldType::Comm => {
+                        BpfFieldValue::String(Self::decode_fixed_string(field_buf, 16))
+                    }
+                    BpfFieldType::String => {
+                        BpfFieldValue::String(Self::decode_fixed_string(field_buf, field_buf.len()))
+                    }
+                    BpfFieldType::Bytes(_) => BpfFieldValue::Bytes(field_buf.to_vec()),
                 }
-                BpfFieldType::Comm => {
-                    // 16-byte comm string
-                    let max_len = field_buf.len().min(16);
-                    let null_pos = field_buf[..max_len]
-                        .iter()
-                        .position(|&b| b == 0)
-                        .unwrap_or(max_len);
-                    let s = String::from_utf8_lossy(&field_buf[..null_pos]).to_string();
-                    BpfFieldValue::String(s)
-                }
-                BpfFieldType::String => {
-                    // String size is derived from schema offsets
-                    let max_len = field_buf.len();
-                    let null_pos = field_buf[..max_len]
-                        .iter()
-                        .position(|&b| b == 0)
-                        .unwrap_or(max_len);
-                    let s = String::from_utf8_lossy(&field_buf[..null_pos]).to_string();
-                    BpfFieldValue::String(s)
-                }
-                BpfFieldType::Bytes(_) => BpfFieldValue::Bytes(field_buf.to_vec()),
             };
             fields.push((field.name.clone(), value));
         }

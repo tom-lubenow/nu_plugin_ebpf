@@ -567,11 +567,13 @@ Context parameter syntax (recommended):
     ctx.arg0.comm.0. Terminal array leaves and unsupported aggregate leaves
     are exposed as stack-backed byte buffers. Representable terminal struct
     leaves keep their field layouts for count/counter decoding, and single-value
-    emit can now stream those struct leaves as records. emit still preserves
-    unsupported aggregate layouts as binary payloads, and count can use them as
-    byte-buffer keys. ebpf counters decodes those keys using any schema the
-    compiler still has: arrays and typed structs can surface as strings, lists,
-    or records; opaque aggregate layouts still display as binary. 16-byte byte-array/string
+    emit can now stream those struct leaves as records. Nested array/record
+    fields inside emitted values also decode recursively when the compiler can
+    preserve their layouts. emit still preserves unsupported aggregate layouts
+    as binary payloads, and count can use them as byte-buffer keys. ebpf
+    counters decodes those keys using any schema the compiler still has: arrays
+    and typed structs can surface as strings, lists, or records; opaque
+    aggregate layouts still display as binary. 16-byte byte-array/string
     keys such as ctx.arg0.comm continue to display as strings.
     Multi-level pointer fields like foo ** are not supported yet.
     Aggregate fexit returns still depend on kernel trampoline support;
@@ -988,7 +990,7 @@ impl EventStreamIterator {
     }
 
     fn poll_batch(&mut self) {
-        use crate::loader::{BpfEventData, BpfFieldValue, get_state};
+        use crate::loader::{BpfEventData, get_state};
         use std::time::Duration;
 
         let state = get_state();
@@ -998,11 +1000,7 @@ impl EventStreamIterator {
                     BpfEventData::Record(fields) => {
                         let mut rec = Record::new();
                         for (name, value) in fields {
-                            let val = match value {
-                                BpfFieldValue::Int(v) => Value::int(v, self.span),
-                                BpfFieldValue::String(s) => Value::string(s, self.span),
-                                BpfFieldValue::Bytes(b) => Value::binary(b, self.span),
-                            };
+                            let val = Self::field_value_to_nu_value(value, self.span);
                             rec.push(name, val);
                         }
                         rec.push("cpu", Value::int(e.cpu as i64, self.span));
@@ -1025,6 +1023,28 @@ impl EventStreamIterator {
                     }
                 };
                 self.pending_events.push_back(value);
+            }
+        }
+    }
+
+    fn field_value_to_nu_value(value: crate::loader::BpfFieldValue, span: Span) -> Value {
+        match value {
+            crate::loader::BpfFieldValue::Int(v) => Value::int(v, span),
+            crate::loader::BpfFieldValue::String(s) => Value::string(s, span),
+            crate::loader::BpfFieldValue::Bytes(b) => Value::binary(b, span),
+            crate::loader::BpfFieldValue::Array(values) => Value::list(
+                values
+                    .into_iter()
+                    .map(|value| Self::field_value_to_nu_value(value, span))
+                    .collect(),
+                span,
+            ),
+            crate::loader::BpfFieldValue::Record(fields) => {
+                let mut rec = Record::new();
+                for (name, value) in fields {
+                    rec.push(name, Self::field_value_to_nu_value(value, span));
+                }
+                Value::record(rec, span)
             }
         }
     }

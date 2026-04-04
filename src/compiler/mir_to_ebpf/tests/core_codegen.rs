@@ -590,6 +590,7 @@ fn test_compile_fentry_struct_leaf_emit_registers_record_schema() {
                         size: 8,
                         signed: false,
                     },
+                    value_schema: None,
                     offset: 0,
                 },
                 crate::compiler::SchemaField {
@@ -598,6 +599,7 @@ fn test_compile_fentry_struct_leaf_emit_registers_record_schema() {
                         size: 8,
                         signed: false,
                     },
+                    value_schema: None,
                     offset: 8,
                 },
             ],

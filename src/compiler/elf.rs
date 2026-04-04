@@ -258,6 +258,8 @@ pub struct SchemaField {
     pub name: String,
     /// Field type
     pub field_type: BpfFieldType,
+    /// Optional recursive schema for nested arrays/records carried in this field
+    pub value_schema: Option<CounterKeySchema>,
     /// Byte offset within the event struct
     pub offset: usize,
 }

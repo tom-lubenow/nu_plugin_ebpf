@@ -39,7 +39,8 @@ impl PluginCommand for Emit {
         r#"Supports both single values (integers) and structured records.
 When given a record, all fields are emitted as a single structured event.
 Representable typed struct values from trampoline projections can also stream
-as structured events.
+as structured events, including nested arrays/records when the compiler can
+preserve their layouts.
 
 Examples:
   {|ctx| $ctx.pid | emit }

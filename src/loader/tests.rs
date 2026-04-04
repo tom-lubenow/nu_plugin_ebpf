@@ -159,6 +159,7 @@ fn test_structured_event_string_respects_field_size() {
             crate::compiler::SchemaField {
                 name: "msg".to_string(),
                 field_type: BpfFieldType::String,
+                value_schema: None,
                 offset: 0,
             },
             crate::compiler::SchemaField {
@@ -167,6 +168,7 @@ fn test_structured_event_string_respects_field_size() {
                     size: 8,
                     signed: true,
                 },
+                value_schema: None,
                 offset: 24,
             },
         ],
@@ -210,6 +212,7 @@ fn test_structured_event_sized_scalar_fields_decode() {
                     size: 1,
                     signed: false,
                 },
+                value_schema: None,
                 offset: 0,
             },
             crate::compiler::SchemaField {
@@ -218,6 +221,7 @@ fn test_structured_event_sized_scalar_fields_decode() {
                     size: 4,
                     signed: true,
                 },
+                value_schema: None,
                 offset: 4,
             },
         ],
@@ -247,6 +251,7 @@ fn test_structured_event_bytes_field_preserved() {
         fields: vec![crate::compiler::SchemaField {
             name: "raw".to_string(),
             field_type: BpfFieldType::Bytes(12),
+            value_schema: None,
             offset: 0,
         }],
         total_size: 12,
@@ -266,6 +271,90 @@ fn test_structured_event_bytes_field_preserved() {
                 }
                 other => panic!("expected bytes field, got {:?}", other),
             }
+        }
+        _ => panic!("expected structured record"),
+    }
+}
+
+#[test]
+fn test_structured_event_nested_record_and_array_schema_decode() {
+    let schema = EventSchema {
+        fields: vec![
+            crate::compiler::SchemaField {
+                name: "path".to_string(),
+                field_type: BpfFieldType::Bytes(16),
+                value_schema: Some(CounterKeySchema::Record {
+                    name: Some("path".to_string()),
+                    fields: vec![
+                        CounterKeySchemaField {
+                            name: "mnt".to_string(),
+                            schema: CounterKeySchema::Int {
+                                size: 8,
+                                signed: false,
+                            },
+                            offset: 0,
+                        },
+                        CounterKeySchemaField {
+                            name: "dentry".to_string(),
+                            schema: CounterKeySchema::Int {
+                                size: 8,
+                                signed: false,
+                            },
+                            offset: 8,
+                        },
+                    ],
+                    total_size: 16,
+                }),
+                offset: 0,
+            },
+            crate::compiler::SchemaField {
+                name: "bytes".to_string(),
+                field_type: BpfFieldType::Bytes(4),
+                value_schema: Some(CounterKeySchema::Array {
+                    elem: Box::new(CounterKeySchema::Int {
+                        size: 1,
+                        signed: false,
+                    }),
+                    len: 4,
+                }),
+                offset: 16,
+            },
+        ],
+        total_size: 20,
+    };
+
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&0x0102030405060708u64.to_le_bytes());
+    buf.extend_from_slice(&0x1112131415161718u64.to_le_bytes());
+    buf.extend_from_slice(&[1, 2, 3, 4]);
+
+    let data =
+        EbpfState::deserialize_structured_event(&buf, &schema).expect("expected structured event");
+
+    match data {
+        BpfEventData::Record(fields) => {
+            assert_eq!(
+                fields[0],
+                (
+                    "path".to_string(),
+                    BpfFieldValue::Record(vec![
+                        ("mnt".to_string(), BpfFieldValue::Int(0x0102030405060708)),
+                        ("dentry".to_string(), BpfFieldValue::Int(0x1112131415161718)),
+                    ])
+                )
+            );
+            assert_eq!(
+                fields[1],
+                (
+                    "bytes".to_string(),
+                    BpfFieldValue::Array(vec![
+                        BpfFieldValue::Int(1),
+                        BpfFieldValue::Int(2),
+                        BpfFieldValue::Int(3),
+                        BpfFieldValue::Int(4),
+                    ])
+                )
+            );
         }
         _ => panic!("expected structured record"),
     }
