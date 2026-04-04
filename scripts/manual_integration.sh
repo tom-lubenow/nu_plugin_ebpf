@@ -22,31 +22,34 @@ run_nu() {
     "$SUDO_BIN" "$NU_BIN" -c "plugin add $PLUGIN_BIN; plugin use ebpf; $script"
 }
 
-echo "[1/12] stream attach (kprobe:ksys_read)"
+echo "[1/13] stream attach (kprobe:ksys_read)"
 run_nu 'ebpf attach -s "kprobe:ksys_read" {|ctx| $ctx.pid | emit } | first 1'
 
-echo "[2/12] attach -> counters -> detach"
+echo "[2/13] attach -> counters -> detach"
 run_nu 'let id = (ebpf attach "kprobe:ksys_read" {|ctx| $ctx.pid | count }); sleep 1sec; let rows = ((ebpf counters $id) | length); ebpf detach $id; if $rows < 1 { error make { msg: "expected at least one counter row" } }; { id: $id, rows: $rows }'
 
-echo "[3/12] tracepoint + read-str with null guard"
+echo "[3/13] tracepoint + read-str with null guard"
 run_nu 'ebpf attach -s "tracepoint:syscalls/sys_enter_openat" {|ctx| if $ctx.filename != 0 { { pid: $ctx.pid, file: ($ctx.filename | read-str --max-len 32) } | emit } } | first 1'
 
-echo "[4/12] fentry trampoline arg"
+echo "[4/13] fentry trampoline arg"
 run_nu "let path = '$REPO_ROOT/Cargo.toml'; let id = (ebpf attach 'fentry:do_sys_openat2' {|ctx| if \$ctx.arg1 != 0 { 1 | count }}); let _ = (open --raw \$path | str length); sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one fentry trampoline counter row' } }; { id: \$id, rows: \$rows }"
 
-echo "[5/12] fentry pointer-backed trampoline field"
+echo "[5/13] fentry pointer-backed trampoline field"
 run_nu "let path = '$REPO_ROOT/Cargo.toml'; let id = (ebpf attach 'fentry:do_sys_openat2' {|ctx| \$ctx.arg2.flags | count }); let _ = (open --raw \$path | str length); sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one pointer-backed trampoline field row' } }; { id: \$id, rows: \$rows }"
 
-echo "[6/12] fentry intermediate trampoline pointer hop"
+echo "[6/13] fentry intermediate trampoline pointer hop"
 run_nu "let path = '$REPO_ROOT/Cargo.toml'; let id = (ebpf attach 'fentry:security_file_open' {|ctx| \$ctx.arg0.f_inode.i_ino | count }); let _ = (open --raw \$path | str length); sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one intermediate trampoline pointer-hop row' } }; { id: \$id, rows: \$rows }"
 
-echo "[7/12] fentry trampoline array element"
+echo "[7/13] fentry post-binding pointer field projection"
+run_nu "let path = '$REPO_ROOT/Cargo.toml'; let id = (ebpf attach 'fentry:security_file_open' {|ctx| let inode = \$ctx.arg0.f_inode; \$inode.i_ino | count }); let _ = (open --raw \$path | str length); sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one post-binding pointer field row' } }; { id: \$id, rows: \$rows }"
+
+echo "[8/13] fentry trampoline array element"
 run_nu "let id = (ebpf attach 'fentry:wake_up_new_task' {|ctx| \$ctx.arg0.comm.0 | count }); ^true; sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one trampoline array-element row' } }; { id: \$id, rows: \$rows }"
 
-echo "[8/12] fentry trampoline array leaf"
+echo "[9/13] fentry trampoline array leaf"
 run_nu "let id = (ebpf attach 'fentry:wake_up_new_task' {|ctx| \$ctx.arg0.comm | count }); ^true; sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one trampoline array-leaf row' } }; { id: \$id, rows: \$rows }"
 
-echo "[9/12] fentry trampoline struct leaf emit decodes record"
+echo "[10/13] fentry trampoline struct leaf emit decodes record"
 struct_emit_out="$(mktemp)"
 trap 'rm -f "$struct_emit_out"' EXIT
 run_nu "ebpf attach -s 'fentry:security_file_open' {|ctx| \$ctx.arg0.f_path | emit } | first 1 | columns | sort | to nuon" >"$struct_emit_out" &
@@ -62,13 +65,13 @@ fi
 rm -f "$struct_emit_out"
 trap - EXIT
 
-echo "[10/12] fentry trampoline struct leaf count decodes record key"
+echo "[11/13] fentry trampoline struct leaf count decodes record key"
 run_nu "let path = '$REPO_ROOT/Cargo.toml'; let id = (ebpf attach 'fentry:security_file_open' {|ctx| \$ctx.arg0.f_path | count }); let _ = (open --raw \$path | str length); sleep 1sec; let rows = (ebpf counters \$id); let row_count = (\$rows | length); let key_fields = (\$rows | get 0.key | columns | sort); ebpf detach \$id; if \$row_count < 1 { error make { msg: 'expected at least one struct-leaf counter row' } }; if \$key_fields != [dentry mnt] { error make { msg: \$\"expected record counter key fields [dentry mnt], got (\$key_fields)\" } }; { id: \$id, rows: \$row_count, key_fields: \$key_fields }"
 
-echo "[11/12] fexit trampoline retval"
+echo "[12/13] fexit trampoline retval"
 run_nu "let path = '$REPO_ROOT/Cargo.toml'; let id = (ebpf attach 'fexit:do_sys_openat2' {|ctx| \$ctx.retval | count }); let _ = (open --raw \$path | str length); sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one fexit retval counter row' } }; { id: \$id, rows: \$rows }"
 
-echo "[12/12] verify no leaked probes"
+echo "[13/13] verify no leaked probes"
 run_nu 'let remaining = (ebpf list | length); if $remaining != 0 { error make { msg: $"expected empty probe list, got ($remaining)" } }; "ok"'
 
 echo "Manual integration suite passed."

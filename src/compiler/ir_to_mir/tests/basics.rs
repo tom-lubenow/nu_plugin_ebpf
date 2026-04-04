@@ -269,6 +269,44 @@ fn make_ctx_path_call_program(path: CellPath, decl_id: DeclId) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_chained_ctx_path_program(paths: Vec<CellPath>) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let mut stmts = vec![HirStmt::LoadVariable {
+        dst: RegId::new(0),
+        var_id: ctx_var,
+    }];
+    for (idx, path) in paths.into_iter().enumerate() {
+        let path_reg = RegId::new((idx + 1) as u32);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: path_reg,
+            lit: HirLiteral::CellPath(Box::new(path)),
+        });
+        stmts.push(HirStmt::FollowCellPath {
+            src_dst: RegId::new(0),
+            path: path_reg,
+        });
+    }
+    let register_count = 1 + stmts
+        .iter()
+        .filter(|stmt| matches!(stmt, HirStmt::LoadLiteral { .. }))
+        .count() as u32;
+    let span_count = stmts.len() + 1;
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); span_count],
+        ast: vec![None; span_count],
+        comments: vec![],
+        register_count,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn string_member(name: &str) -> PathMember {
     PathMember::test_string(name.to_string(), false, Casing::Sensitive)
 }
@@ -346,13 +384,13 @@ fn test_lower_fentry_aggregate_pointer_field_projection() {
         })
         .expect("expected projected pointer field load");
     assert_eq!(load.0, 0);
-    assert_eq!(
+    assert!(matches!(
         load.1,
         MirType::Ptr {
-            pointee: Box::new(MirType::U8),
             address_space: AddressSpace::Kernel,
+            ..
         }
-    );
+    ));
 }
 
 #[test]
@@ -659,6 +697,100 @@ fn test_lower_fentry_array_leaf_count_uses_string_counter_map() {
         })
         .expect("expected map update");
     assert_eq!(map_name, "str_counters");
+}
+
+#[test]
+fn test_lower_generic_field_projection_after_array_leaf_binding() {
+    let hir = make_chained_ctx_path_program(vec![
+        CellPath {
+            members: vec![string_member("arg0"), string_member("comm")],
+        },
+        CellPath {
+            members: vec![int_member(0)],
+        },
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "wake_up_new_task");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("generic array field projection should lower");
+
+    let load = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .rev()
+        .find_map(|inst| match inst {
+            MirInst::Load { offset, ty, .. } => Some((*offset, ty.clone())),
+            _ => None,
+        })
+        .expect("expected projected array element load");
+    assert_eq!(load.0, 0);
+    assert!(matches!(load.1, MirType::I8 | MirType::U8));
+}
+
+#[test]
+fn test_lower_generic_field_projection_after_pointer_binding() {
+    let hir = make_chained_ctx_path_program(vec![
+        CellPath {
+            members: vec![string_member("arg0"), string_member("f_inode")],
+        },
+        CellPath {
+            members: vec![string_member("i_ino")],
+        },
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("generic pointer field projection should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper {
+                    helper,
+                    args,
+                    ..
+                } if *helper == BpfHelper::ProbeReadKernel as u32
+                    && matches!(args.get(0), Some(MirValue::StackSlot(_)))
+            ))
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadSlot {
+                    ty: MirType::U64,
+                    ..
+                }
+            ))
+    );
 }
 
 #[test]

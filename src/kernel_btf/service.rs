@@ -228,6 +228,8 @@ pub struct KernelBtf {
 }
 
 impl KernelBtf {
+    const TRAMPOLINE_POINTER_TYPE_DEPTH: usize = 2;
+
     const KERNEL_BTF_PATH: &str = "/sys/kernel/btf/vmlinux";
 
     fn is_bpf_kfunc(ty: &FlattenedType) -> bool {
@@ -1968,18 +1970,75 @@ impl KernelBtf {
         ty: &FlattenedType,
         raw_type_sizes: &HashMap<u32, u32>,
     ) -> Result<TypeInfo, BtfError> {
+        let mut active_type_ids = HashSet::new();
+        Self::type_info_from_btf_type_inner(
+            btf,
+            ty,
+            raw_type_sizes,
+            &mut active_type_ids,
+            Self::TRAMPOLINE_POINTER_TYPE_DEPTH,
+        )
+    }
+
+    fn recursive_type_info_fallback(
+        btf: &Btf,
+        ty: &FlattenedType,
+        raw_type_sizes: &HashMap<u32, u32>,
+    ) -> Result<TypeInfo, BtfError> {
+        let raw_size_bytes = raw_type_sizes
+            .get(&ty.type_id)
+            .copied()
+            .map(|size| size as usize);
+        match &ty.base_type {
+            Type::Struct(_) | Type::Union(_) => Ok(TypeInfo::Struct {
+                name: ty.name.clone().unwrap_or_else(|| "<anonymous>".to_string()),
+                size: Self::trampoline_size_bytes(btf, ty, raw_size_bytes)?,
+                fields: Vec::new(),
+            }),
+            _ => Ok(TypeInfo::Unknown),
+        }
+    }
+
+    fn type_info_from_btf_type_inner(
+        btf: &Btf,
+        ty: &FlattenedType,
+        raw_type_sizes: &HashMap<u32, u32>,
+        active_type_ids: &mut HashSet<u32>,
+        pointer_type_depth: usize,
+    ) -> Result<TypeInfo, BtfError> {
         let raw_size_bytes = raw_type_sizes
             .get(&ty.type_id)
             .copied()
             .map(|size| size as usize);
         if ty.num_refs > 0 {
+            let target = if ty.num_refs == 1 {
+                let mut pointee_ty = ty.clone();
+                pointee_ty.num_refs = 0;
+                if pointer_type_depth == 0 || active_type_ids.contains(&pointee_ty.type_id) {
+                    Self::recursive_type_info_fallback(btf, &pointee_ty, raw_type_sizes)?
+                } else {
+                    Self::type_info_from_btf_type_inner(
+                        btf,
+                        &pointee_ty,
+                        raw_type_sizes,
+                        active_type_ids,
+                        pointer_type_depth - 1,
+                    )?
+                }
+            } else {
+                TypeInfo::Unknown
+            };
             return Ok(TypeInfo::Ptr {
-                target: Box::new(TypeInfo::Unknown),
+                target: Box::new(target),
                 is_user: Self::has_user_type_tag(&ty.type_tags),
             });
         }
 
-        match &ty.base_type {
+        if !active_type_ids.insert(ty.type_id) {
+            return Self::recursive_type_info_fallback(btf, ty, raw_type_sizes);
+        }
+
+        let result = match &ty.base_type {
             Type::Integer(int_ty) => Ok(TypeInfo::Int {
                 size: usize::try_from(int_ty.bits.div_ceil(8)).map_err(|_| {
                     BtfError::KernelBtfError(format!(
@@ -2005,10 +2064,12 @@ impl KernelBtf {
                     ))
                 })?;
                 Ok(TypeInfo::Array {
-                    element: Box::new(Self::type_info_from_btf_type(
+                    element: Box::new(Self::type_info_from_btf_type_inner(
                         btf,
                         &elem_ty,
                         raw_type_sizes,
+                        active_type_ids,
+                        pointer_type_depth,
                     )?),
                     len: array_ty.num_elements as usize,
                 })
@@ -2023,6 +2084,8 @@ impl KernelBtf {
                         struct_ty,
                         size,
                         raw_type_sizes,
+                        active_type_ids,
+                        pointer_type_depth,
                     )?,
                 })
             }
@@ -2045,7 +2108,10 @@ impl KernelBtf {
             | Type::Variable(_)
             | Type::DeclTag(_)
             | Type::TypeTag(_) => Ok(TypeInfo::Unknown),
-        }
+        };
+
+        active_type_ids.remove(&ty.type_id);
+        result
     }
 
     fn struct_field_infos_from_btf_type(
@@ -2053,17 +2119,19 @@ impl KernelBtf {
         struct_ty: &btf::btf::Struct,
         struct_size: usize,
         raw_type_sizes: &HashMap<u32, u32>,
+        active_type_ids: &mut HashSet<u32>,
+        pointer_type_depth: usize,
     ) -> Result<Vec<FieldInfo>, BtfError> {
         let mut fields = Vec::with_capacity(struct_ty.members.len());
         for member in &struct_ty.members {
             let Some(name) = member.name.clone() else {
-                return Ok(Vec::new());
+                continue;
             };
             if name.is_empty() {
-                return Ok(Vec::new());
+                continue;
             }
             if member.bits.is_some_and(|bits| bits != 0) || member.offset % 8 != 0 {
-                return Ok(Vec::new());
+                continue;
             }
 
             let offset = (member.offset / 8) as usize;
@@ -2085,12 +2153,18 @@ impl KernelBtf {
                 ))
             })?;
             if end > struct_size {
-                return Ok(Vec::new());
+                continue;
             }
 
             fields.push(FieldInfo {
                 name,
-                type_info: Self::type_info_from_btf_type(btf, &member_ty, raw_type_sizes)?,
+                type_info: Self::type_info_from_btf_type_inner(
+                    btf,
+                    &member_ty,
+                    raw_type_sizes,
+                    active_type_ids,
+                    pointer_type_depth,
+                )?,
                 offset,
                 size,
             });
@@ -3639,6 +3713,32 @@ format:
         assert_eq!(fields[1].name, "dentry");
         assert!(matches!(fields[1].type_info, TypeInfo::Ptr { .. }));
         assert_eq!(fields[1].offset, 8);
+    }
+
+    #[test]
+    fn test_function_trampoline_arg_field_pointer_target_keeps_representable_members() {
+        let projection = KernelBtf::get()
+            .function_trampoline_arg_field(
+                "security_file_open",
+                0,
+                &[TrampolineFieldSelector::Field("f_inode".to_string())],
+            )
+            .expect("security_file_open f_inode projection should resolve")
+            .expect("security_file_open arg0.f_inode should exist");
+
+        let TypeInfo::Ptr { target, .. } = projection.type_info else {
+            panic!("expected security_file_open arg0.f_inode to resolve to a pointer");
+        };
+        let TypeInfo::Struct { fields, .. } = target.as_ref() else {
+            panic!("expected security_file_open arg0.f_inode target to be a struct");
+        };
+
+        assert!(
+            fields.iter().any(|field| {
+                field.name == "i_ino" && matches!(field.type_info, TypeInfo::Int { size: 8, .. })
+            }),
+            "expected typed inode projection to preserve i_ino"
+        );
     }
 
     fn push_u32(buf: &mut Vec<u8>, value: u32, endianness: BtfEndianness) {

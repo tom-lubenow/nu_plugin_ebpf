@@ -61,6 +61,9 @@ impl<'a> HirToMirLowering<'a> {
                 if let Some(meta) = self.get_metadata(*src).cloned() {
                     self.reg_metadata.insert(dst.get(), meta);
                 }
+                if let Some(ty) = self.vreg_type_hints.get(&src_vreg).cloned() {
+                    self.vreg_type_hints.insert(dst_vreg, ty);
+                }
             }
 
             HirStmt::Clone { dst, src } => {
@@ -73,6 +76,9 @@ impl<'a> HirToMirLowering<'a> {
                 });
                 if let Some(meta) = self.get_metadata(*src).cloned() {
                     self.reg_metadata.insert(dst.get(), meta);
+                }
+                if let Some(ty) = self.vreg_type_hints.get(&src_vreg).cloned() {
+                    self.vreg_type_hints.insert(dst_vreg, ty);
                 }
             }
 
@@ -104,6 +110,9 @@ impl<'a> HirToMirLowering<'a> {
                 });
                 if let Some(meta) = self.get_metadata(*src).cloned() {
                     self.reg_metadata.insert(dst.get(), meta);
+                }
+                if let Some(ty) = self.vreg_type_hints.get(&src_vreg).cloned() {
+                    self.vreg_type_hints.insert(dst_vreg, ty);
                 }
                 self.lower_follow_cell_path(*dst, *path)?;
             }

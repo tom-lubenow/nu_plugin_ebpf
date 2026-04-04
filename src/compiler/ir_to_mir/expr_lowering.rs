@@ -428,6 +428,20 @@ impl<'a> HirToMirLowering<'a> {
         out
     }
 
+    fn typed_value_path_desc(path: &[PathMember]) -> String {
+        let mut out = String::new();
+        for (idx, member) in path.iter().enumerate() {
+            if idx > 0 {
+                out.push('.');
+            }
+            match member {
+                PathMember::String { val, .. } => out.push_str(val),
+                PathMember::Int { val, .. } => out.push_str(&val.to_string()),
+            }
+        }
+        out
+    }
+
     fn trampoline_value_spec(
         &self,
         field: &CtxField,
@@ -494,8 +508,12 @@ impl<'a> HirToMirLowering<'a> {
                 (8, true) => MirType::I64,
                 _ => return None,
             }),
-            TypeInfo::Ptr { is_user, .. } => Some(MirType::Ptr {
-                pointee: Box::new(MirType::U8),
+            TypeInfo::Ptr {
+                target, is_user, ..
+            } => Some(MirType::Ptr {
+                pointee: Box::new(
+                    Self::projected_trampoline_field_type(target).unwrap_or(MirType::U8),
+                ),
                 address_space: if *is_user {
                     AddressSpace::User
                 } else {
@@ -524,8 +542,11 @@ impl<'a> HirToMirLowering<'a> {
                 let mut cursor = 0usize;
                 let mut pad_index = 0usize;
                 for field in fields {
+                    if field.size == 0 || field.offset >= *size {
+                        continue;
+                    }
                     if field.offset < cursor {
-                        return Self::opaque_trampoline_struct_type(name, *size);
+                        continue;
                     }
                     if field.offset > cursor {
                         mir_fields.push(Self::synthetic_padding_field(
@@ -536,19 +557,28 @@ impl<'a> HirToMirLowering<'a> {
                         pad_index += 1;
                     }
 
-                    let field_ty = Self::projected_trampoline_field_type(&field.type_info)
+                    let Some(field_ty) = Self::projected_trampoline_field_type(&field.type_info)
                         .or_else(|| Self::trampoline_byte_array_type(field.size))
                         .filter(|ty| ty.size() == field.size)
-                        .or_else(|| Self::trampoline_byte_array_type(field.size))?;
+                        .or_else(|| Self::trampoline_byte_array_type(field.size))
+                    else {
+                        continue;
+                    };
+                    let Some(field_end) = field.offset.checked_add(field.size) else {
+                        continue;
+                    };
+                    if field_end > *size {
+                        continue;
+                    }
                     mir_fields.push(crate::compiler::mir::StructField {
                         name: field.name.clone(),
                         ty: field_ty,
                         offset: field.offset,
                         synthetic: false,
                     });
-                    cursor = field.offset + field.size;
+                    cursor = field_end;
                 }
-                if cursor > *size {
+                if mir_fields.is_empty() {
                     return Self::opaque_trampoline_struct_type(name, *size);
                 }
                 if cursor < *size {
@@ -1036,18 +1066,298 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn resolve_typed_value_projection_step(
+        current_ty: &MirType,
+        member: &PathMember,
+        path_desc: &str,
+    ) -> Result<(usize, MirType), CompileError> {
+        match (current_ty, member) {
+            (MirType::Struct { fields, .. }, PathMember::String { val, .. }) => {
+                let field = fields
+                    .iter()
+                    .find(|field| !field.synthetic && field.name == *val)
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "typed field path '{}' has no field '{}'",
+                            path_desc, val
+                        ))
+                    })?;
+                Ok((field.offset, field.ty.clone()))
+            }
+            (MirType::Struct { .. }, PathMember::Int { val, .. }) => {
+                Err(CompileError::UnsupportedInstruction(format!(
+                    "typed field path '{}' cannot index {} on a struct",
+                    path_desc, val
+                )))
+            }
+            (MirType::Array { elem, len }, PathMember::Int { val, .. }) => {
+                let index = usize::try_from(*val).map_err(|_| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "typed field path '{}' requires a non-negative array index",
+                        path_desc
+                    ))
+                })?;
+                if index >= *len {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "typed field path '{}' index {} is out of bounds (len {})",
+                        path_desc, index, len
+                    )));
+                }
+                Ok((index * elem.size(), elem.as_ref().clone()))
+            }
+            (MirType::Array { .. }, PathMember::String { val, .. }) => {
+                Err(CompileError::UnsupportedInstruction(format!(
+                    "typed field path '{}' cannot access field '{}' on an array; use a numeric index",
+                    path_desc, val
+                )))
+            }
+            _ => Err(CompileError::UnsupportedInstruction(format!(
+                "typed field path '{}' requires an aggregate or pointer to one, got {:?}",
+                path_desc, current_ty
+            ))),
+        }
+    }
+
+    fn lower_typed_value_projection(
+        &mut self,
+        dst_vreg: VReg,
+        base_vreg: VReg,
+        base_runtime_ty: &MirType,
+        path_members: &[PathMember],
+        path_desc: &str,
+    ) -> Result<MirType, CompileError> {
+        let projected_by_ref =
+            |ty: &MirType| matches!(ty, MirType::Array { .. } | MirType::Struct { .. });
+
+        enum ValueCursor {
+            Pointer {
+                base_vreg: VReg,
+                address_space: AddressSpace,
+                base_offset: usize,
+                aggregate_ty: MirType,
+            },
+        }
+
+        let mut cursor = match base_runtime_ty {
+            MirType::Ptr {
+                pointee,
+                address_space,
+            } if matches!(
+                pointee.as_ref(),
+                MirType::Array { .. } | MirType::Struct { .. }
+            ) =>
+            {
+                ValueCursor::Pointer {
+                    base_vreg,
+                    address_space: *address_space,
+                    base_offset: 0,
+                    aggregate_ty: pointee.as_ref().clone(),
+                }
+            }
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "typed field path '{}' requires a typed pointer to an aggregate, got {:?}",
+                    path_desc, base_runtime_ty
+                )));
+            }
+        };
+
+        for (segment_idx, member) in path_members.iter().enumerate() {
+            let is_last = segment_idx + 1 == path_members.len();
+            let ValueCursor::Pointer {
+                base_vreg,
+                address_space,
+                base_offset,
+                aggregate_ty,
+            } = &cursor;
+            let (segment_offset, next_ty) =
+                Self::resolve_typed_value_projection_step(aggregate_ty, member, path_desc)?;
+            let field_offset = base_offset.checked_add(segment_offset).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "typed field path '{}' offset overflowed",
+                    path_desc
+                ))
+            })?;
+
+            if is_last {
+                if projected_by_ref(&next_ty) {
+                    match address_space {
+                        AddressSpace::Stack | AddressSpace::Map => {
+                            self.vreg_type_hints.insert(
+                                dst_vreg,
+                                MirType::Ptr {
+                                    pointee: Box::new(next_ty.clone()),
+                                    address_space: *address_space,
+                                },
+                            );
+                            if field_offset == 0 {
+                                self.emit(MirInst::Copy {
+                                    dst: dst_vreg,
+                                    src: MirValue::VReg(*base_vreg),
+                                });
+                            } else {
+                                self.emit(MirInst::BinOp {
+                                    dst: dst_vreg,
+                                    op: BinOpKind::Add,
+                                    lhs: MirValue::VReg(*base_vreg),
+                                    rhs: MirValue::Const(i64::from(
+                                        Self::trampoline_projection_offset_i32(
+                                            field_offset,
+                                            path_desc,
+                                        )?,
+                                    )),
+                                });
+                            }
+                        }
+                        AddressSpace::Kernel | AddressSpace::User => {
+                            let projected_slot = self.func.alloc_stack_slot(
+                                align_to_eight(next_ty.size()),
+                                8,
+                                StackSlotKind::Local,
+                            );
+                            self.record_stack_slot_type(projected_slot, next_ty.clone());
+                            self.emit_trampoline_probe_read_to_slot(
+                                *base_vreg,
+                                *address_space,
+                                field_offset,
+                                projected_slot,
+                                &next_ty,
+                                path_desc,
+                            )?;
+                            self.vreg_type_hints.insert(
+                                dst_vreg,
+                                MirType::Ptr {
+                                    pointee: Box::new(next_ty.clone()),
+                                    address_space: AddressSpace::Stack,
+                                },
+                            );
+                            self.emit(MirInst::Copy {
+                                dst: dst_vreg,
+                                src: MirValue::StackSlot(projected_slot),
+                            });
+                        }
+                    }
+                } else {
+                    match address_space {
+                        AddressSpace::Stack | AddressSpace::Map => {
+                            self.emit(MirInst::Load {
+                                dst: dst_vreg,
+                                ptr: *base_vreg,
+                                offset: Self::trampoline_projection_offset_i32(
+                                    field_offset,
+                                    path_desc,
+                                )?,
+                                ty: next_ty.clone(),
+                            });
+                        }
+                        AddressSpace::Kernel | AddressSpace::User => {
+                            let projected_slot = self.func.alloc_stack_slot(
+                                align_to_eight(next_ty.size()),
+                                8,
+                                StackSlotKind::Local,
+                            );
+                            self.record_stack_slot_type(projected_slot, next_ty.clone());
+                            self.emit_trampoline_probe_read_to_slot(
+                                *base_vreg,
+                                *address_space,
+                                field_offset,
+                                projected_slot,
+                                &next_ty,
+                                path_desc,
+                            )?;
+                            self.emit(MirInst::LoadSlot {
+                                dst: dst_vreg,
+                                slot: projected_slot,
+                                offset: 0,
+                                ty: next_ty.clone(),
+                            });
+                        }
+                    }
+                }
+                return Ok(next_ty);
+            }
+
+            cursor = match next_ty {
+                MirType::Array { .. } | MirType::Struct { .. } => ValueCursor::Pointer {
+                    base_vreg: *base_vreg,
+                    address_space: *address_space,
+                    base_offset: field_offset,
+                    aggregate_ty: next_ty,
+                },
+                MirType::Ptr {
+                    pointee,
+                    address_space: next_space,
+                } if matches!(
+                    pointee.as_ref(),
+                    MirType::Array { .. } | MirType::Struct { .. }
+                ) =>
+                {
+                    let ptr_vreg = self.func.alloc_vreg();
+                    let ptr_ty = MirType::Ptr {
+                        pointee: pointee.clone(),
+                        address_space: next_space,
+                    };
+                    self.vreg_type_hints.insert(ptr_vreg, ptr_ty.clone());
+                    match address_space {
+                        AddressSpace::Stack | AddressSpace::Map => {
+                            self.emit(MirInst::Load {
+                                dst: ptr_vreg,
+                                ptr: *base_vreg,
+                                offset: Self::trampoline_projection_offset_i32(
+                                    field_offset,
+                                    path_desc,
+                                )?,
+                                ty: ptr_ty,
+                            });
+                        }
+                        AddressSpace::Kernel | AddressSpace::User => {
+                            let pointer_slot =
+                                self.func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+                            self.record_stack_slot_type(pointer_slot, ptr_ty.clone());
+                            self.emit_trampoline_probe_read_to_slot(
+                                *base_vreg,
+                                *address_space,
+                                field_offset,
+                                pointer_slot,
+                                &ptr_ty,
+                                path_desc,
+                            )?;
+                            self.emit(MirInst::LoadSlot {
+                                dst: ptr_vreg,
+                                slot: pointer_slot,
+                                offset: 0,
+                                ty: ptr_ty,
+                            });
+                        }
+                    }
+                    ValueCursor::Pointer {
+                        base_vreg: ptr_vreg,
+                        address_space: next_space,
+                        base_offset: 0,
+                        aggregate_ty: pointee.as_ref().clone(),
+                    }
+                }
+                other => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "typed field path '{}' requires an aggregate or typed pointer before the final segment, got {:?}",
+                        path_desc, other
+                    )));
+                }
+            };
+        }
+
+        Err(CompileError::UnsupportedInstruction(format!(
+            "empty typed field path '{}'",
+            path_desc
+        )))
+    }
+
     /// Lower FollowCellPath instruction (context field access like $ctx.pid)
     pub(super) fn lower_follow_cell_path(
         &mut self,
         src_dst: RegId,
         path_reg: RegId,
     ) -> Result<(), CompileError> {
-        if !self.is_context_reg(src_dst) {
-            return Err(CompileError::UnsupportedInstruction(
-                "FollowCellPath only supported on context parameter".into(),
-            ));
-        }
-
         let path = self
             .get_metadata(path_reg)
             .and_then(|m| m.cell_path.clone())
@@ -1060,13 +1370,43 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
+        let dst_vreg = self.get_vreg(src_dst);
+
+        if !self.is_context_reg(src_dst) {
+            let path_desc = Self::typed_value_path_desc(&path.members);
+            let base_runtime_ty = self
+                .vreg_type_hints
+                .get(&dst_vreg)
+                .cloned()
+                .or_else(|| self.current_type_hints.get(&src_dst.get()).cloned())
+                .or_else(|| {
+                    self.get_metadata(src_dst)
+                        .and_then(|m| m.field_type.clone())
+                })
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "typed field path '{}' requires type information for the base value",
+                        path_desc
+                    ))
+                })?;
+            let projected_ty = self.lower_typed_value_projection(
+                dst_vreg,
+                dst_vreg,
+                &base_runtime_ty,
+                &path.members,
+                &path_desc,
+            )?;
+            let meta = self.get_or_create_metadata(src_dst);
+            meta.is_context = false;
+            meta.field_type = Some(projected_ty);
+            return Ok(());
+        }
+
         let field_name = Self::ctx_path_member_name(&path.members[0])?;
         let ctx_field = Self::ctx_field_from_name(field_name)?;
         if let Some(ctx) = self.probe_ctx {
             ctx.validate_ctx_field_access(&ctx_field)?;
         }
-
-        let dst_vreg = self.get_vreg(src_dst);
         let trampoline_value_spec = self.trampoline_value_spec(&ctx_field)?;
 
         if path.members.len() > 1 {
