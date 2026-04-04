@@ -1,27 +1,149 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
-use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
+use crate::kernel_btf::{KernelBtf, TypeInfo};
 
 impl<'a> TypeInference<'a> {
-    fn hm_type_from_trampoline_value(kind: TrampolineValueKind) -> HMType {
-        match kind {
-            TrampolineValueKind::Scalar => HMType::I64,
-            TrampolineValueKind::Pointer { user_space } => HMType::Ptr {
-                pointee: Box::new(HMType::U8),
-                address_space: if user_space {
+    fn byte_array_mir_type(size: usize) -> Option<MirType> {
+        if size == 0 {
+            return None;
+        }
+        Some(MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: size,
+        })
+    }
+
+    fn opaque_struct_mir_type(
+        name: &str,
+        size: usize,
+        kernel_btf_type_id: Option<u32>,
+    ) -> Option<MirType> {
+        Some(MirType::Struct {
+            name: Some(name.to_string()),
+            kernel_btf_type_id,
+            fields: vec![crate::compiler::mir::StructField {
+                name: "__opaque".to_string(),
+                ty: Self::byte_array_mir_type(size)?,
+                offset: 0,
+                synthetic: false,
+            }],
+        })
+    }
+
+    fn synthetic_padding_field(
+        offset: usize,
+        size: usize,
+        pad_index: usize,
+    ) -> Option<crate::compiler::mir::StructField> {
+        Some(crate::compiler::mir::StructField {
+            name: format!("__layout_pad{}", pad_index),
+            ty: Self::byte_array_mir_type(size)?,
+            offset,
+            synthetic: true,
+        })
+    }
+
+    fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
+        match type_info {
+            TypeInfo::Int { size, signed } => Some(
+                match (*size, *signed) {
+                    (1, false) => HMType::U8,
+                    (1, true) => HMType::I8,
+                    (2, false) => HMType::U16,
+                    (2, true) => HMType::I16,
+                    (4, false) => HMType::U32,
+                    (4, true) => HMType::I32,
+                    (8, false) => HMType::U64,
+                    (8, true) => HMType::I64,
+                    _ => return None,
+                }
+                .to_mir_type()?,
+            ),
+            TypeInfo::Ptr { target, is_user } => Some(MirType::Ptr {
+                pointee: Box::new(Self::mir_type_from_type_info(target).unwrap_or(MirType::U8)),
+                address_space: if *is_user {
                     AddressSpace::User
                 } else {
                     AddressSpace::Kernel
                 },
-            },
-            TrampolineValueKind::Aggregate { size_bytes } => HMType::Ptr {
-                pointee: Box::new(HMType::Array {
-                    elem: Box::new(HMType::U8),
-                    len: size_bytes,
-                }),
-                address_space: AddressSpace::Stack,
-            },
+            }),
+            TypeInfo::Array { element, len } => Some(MirType::Array {
+                elem: Box::new(Self::mir_type_from_type_info(element)?),
+                len: *len,
+            }),
+            TypeInfo::Struct {
+                name,
+                btf_type_id,
+                fields,
+                size,
+            } => {
+                if *size == 0 {
+                    return None;
+                }
+                if fields.is_empty() {
+                    return Self::opaque_struct_mir_type(name, *size, *btf_type_id);
+                }
+
+                let mut mir_fields = Vec::with_capacity(fields.len() + 1);
+                let mut cursor = 0usize;
+                let mut pad_index = 0usize;
+                for field in fields {
+                    if field.size == 0 || field.offset >= *size {
+                        continue;
+                    }
+                    if field.offset < cursor {
+                        continue;
+                    }
+                    if field.offset > cursor {
+                        mir_fields.push(Self::synthetic_padding_field(
+                            cursor,
+                            field.offset - cursor,
+                            pad_index,
+                        )?);
+                        pad_index += 1;
+                    }
+
+                    let field_ty = Self::mir_type_from_type_info(&field.type_info)
+                        .or_else(|| Self::byte_array_mir_type(field.size))
+                        .filter(|ty| ty.size() == field.size)
+                        .or_else(|| Self::byte_array_mir_type(field.size))?;
+                    let field_end = field.offset.checked_add(field.size)?;
+                    if field_end > *size {
+                        continue;
+                    }
+                    mir_fields.push(crate::compiler::mir::StructField {
+                        name: field.name.clone(),
+                        ty: field_ty,
+                        offset: field.offset,
+                        synthetic: false,
+                    });
+                    cursor = field_end;
+                }
+                if mir_fields.is_empty() {
+                    return Self::opaque_struct_mir_type(name, *size, *btf_type_id);
+                }
+                if cursor < *size {
+                    mir_fields.push(Self::synthetic_padding_field(
+                        cursor,
+                        *size - cursor,
+                        pad_index,
+                    )?);
+                }
+
+                Some(MirType::Struct {
+                    name: Some(name.clone()),
+                    kernel_btf_type_id: *btf_type_id,
+                    fields: mir_fields,
+                })
+            }
+            _ => None,
         }
+    }
+
+    fn hm_type_from_type_info(type_info: &TypeInfo) -> Option<HMType> {
+        Some(HMType::from_mir_type(&Self::mir_type_from_type_info(
+            type_info,
+        )?))
     }
 
     fn trampoline_arg_type(&self, idx: u8) -> Result<Option<HMType>, TypeError> {
@@ -35,8 +157,8 @@ impl<'a> TypeInference<'a> {
             return Ok(None);
         }
 
-        let spec = KernelBtf::get()
-            .function_trampoline_arg(&ctx.target, idx as usize)
+        let type_info = KernelBtf::get()
+            .function_trampoline_arg_type_info(&ctx.target, idx as usize)
             .map_err(|e| {
                 TypeError::new(format!(
                     "failed to resolve ctx.arg{} for {}:{}: {}",
@@ -46,7 +168,7 @@ impl<'a> TypeInference<'a> {
                     e
                 ))
             })?;
-        spec.map(|spec| Self::hm_type_from_trampoline_value(spec.kind))
+        type_info
             .ok_or_else(|| {
                 TypeError::new(format!(
                     "ctx.arg{} is not available on {}:{}",
@@ -55,7 +177,20 @@ impl<'a> TypeInference<'a> {
                     ctx.target
                 ))
             })
-            .map(Some)
+            .map(|type_info| {
+                Some(match type_info {
+                    TypeInfo::Struct { .. } | TypeInfo::Array { .. } => HMType::Ptr {
+                        pointee: Box::new(Self::hm_type_from_type_info(&type_info).unwrap_or(
+                            HMType::Array {
+                                elem: Box::new(HMType::U8),
+                                len: type_info.size(),
+                            },
+                        )),
+                        address_space: AddressSpace::Stack,
+                    },
+                    _ => Self::hm_type_from_type_info(&type_info).unwrap_or(HMType::I64),
+                })
+            })
     }
 
     fn trampoline_ret_type(&self) -> Result<Option<HMType>, TypeError> {
@@ -66,22 +201,35 @@ impl<'a> TypeInference<'a> {
             return Ok(None);
         }
 
-        let spec = KernelBtf::get()
-            .function_trampoline_ret(&ctx.target)
+        let type_info = KernelBtf::get()
+            .function_trampoline_ret_type_info(&ctx.target)
             .map_err(|e| {
                 TypeError::new(format!(
                     "failed to resolve ctx.retval for fexit:{}: {}",
                     ctx.target, e
                 ))
             })?;
-        spec.map(|spec| Self::hm_type_from_trampoline_value(spec.kind))
+        type_info
             .ok_or_else(|| {
                 TypeError::new(format!(
                     "ctx.retval is not available on fexit:{} because the target returns void",
                     ctx.target
                 ))
             })
-            .map(Some)
+            .map(|type_info| {
+                Some(match type_info {
+                    TypeInfo::Struct { .. } | TypeInfo::Array { .. } => HMType::Ptr {
+                        pointee: Box::new(Self::hm_type_from_type_info(&type_info).unwrap_or(
+                            HMType::Array {
+                                elem: Box::new(HMType::U8),
+                                len: type_info.size(),
+                            },
+                        )),
+                        address_space: AddressSpace::Stack,
+                    },
+                    _ => Self::hm_type_from_type_info(&type_info).unwrap_or(HMType::I64),
+                })
+            })
     }
 
     pub(super) fn validate_ctx_field_access(&self, field: &CtxField) -> Result<(), TypeError> {
@@ -367,7 +515,11 @@ impl<'a> TypeInference<'a> {
                 elem: Box::new(self.hm_to_mir(&elem)),
                 len,
             },
-            HMType::Struct { name, fields } => {
+            HMType::Struct {
+                name,
+                kernel_btf_type_id,
+                fields,
+            } => {
                 let mut mir_fields = Vec::new();
                 let mut offset = 0;
                 for (field_name, field_ty) in fields {
@@ -383,7 +535,7 @@ impl<'a> TypeInference<'a> {
                 }
                 MirType::Struct {
                     name,
-                    kernel_btf_type_id: None,
+                    kernel_btf_type_id,
                     fields: mir_fields,
                 }
             }

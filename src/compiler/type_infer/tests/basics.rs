@@ -1,6 +1,6 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
-use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
+use crate::kernel_btf::{KernelBtf, TrampolineValueKind, TypeInfo};
 
 fn find_aggregate_fentry_arg_candidate() -> (String, u8, usize) {
     for (func_name, arg_idx) in [
@@ -35,6 +35,135 @@ fn find_aggregate_fexit_ret_candidate() -> (String, usize) {
         "expected an aggregate fexit candidate on this kernel; tried: {}",
         attempts.join(", ")
     );
+}
+
+fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
+    match type_info {
+        TypeInfo::Int { size, signed } => Some(match (*size, *signed) {
+            (1, false) => MirType::U8,
+            (1, true) => MirType::I8,
+            (2, false) => MirType::U16,
+            (2, true) => MirType::I16,
+            (4, false) => MirType::U32,
+            (4, true) => MirType::I32,
+            (8, false) => MirType::U64,
+            (8, true) => MirType::I64,
+            _ => return None,
+        }),
+        TypeInfo::Ptr { target, is_user } => Some(MirType::Ptr {
+            pointee: Box::new(mir_type_from_type_info(target).unwrap_or(MirType::U8)),
+            address_space: if *is_user {
+                AddressSpace::User
+            } else {
+                AddressSpace::Kernel
+            },
+        }),
+        TypeInfo::Array { element, len } => Some(MirType::Array {
+            elem: Box::new(mir_type_from_type_info(element)?),
+            len: *len,
+        }),
+        TypeInfo::Struct {
+            name,
+            btf_type_id,
+            fields,
+            size,
+        } => {
+            if *size == 0 {
+                return None;
+            }
+            let byte_array = |len| {
+                Some(MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len,
+                })
+            };
+            if fields.is_empty() {
+                return Some(MirType::Struct {
+                    name: Some(name.clone()),
+                    kernel_btf_type_id: *btf_type_id,
+                    fields: vec![crate::compiler::mir::StructField {
+                        name: "__opaque".to_string(),
+                        ty: byte_array(*size)?,
+                        offset: 0,
+                        synthetic: false,
+                    }],
+                });
+            }
+            let mut out = Vec::new();
+            let mut cursor = 0usize;
+            let mut pad_index = 0usize;
+            for field in fields {
+                if field.size == 0 || field.offset >= *size || field.offset < cursor {
+                    continue;
+                }
+                if field.offset > cursor {
+                    out.push(crate::compiler::mir::StructField {
+                        name: format!("__layout_pad{}", pad_index),
+                        ty: byte_array(field.offset - cursor)?,
+                        offset: cursor,
+                        synthetic: false,
+                    });
+                    pad_index += 1;
+                }
+                let ty = mir_type_from_type_info(&field.type_info)
+                    .or_else(|| byte_array(field.size))
+                    .filter(|ty| ty.size() == field.size)
+                    .or_else(|| byte_array(field.size))?;
+                let field_end = field.offset.checked_add(field.size)?;
+                if field_end > *size {
+                    continue;
+                }
+                out.push(crate::compiler::mir::StructField {
+                    name: field.name.clone(),
+                    ty: ty.clone(),
+                    offset: field.offset,
+                    synthetic: false,
+                });
+                cursor = field_end;
+            }
+            if out.is_empty() {
+                return Some(MirType::Struct {
+                    name: Some(name.clone()),
+                    kernel_btf_type_id: *btf_type_id,
+                    fields: vec![crate::compiler::mir::StructField {
+                        name: "__opaque".to_string(),
+                        ty: byte_array(*size)?,
+                        offset: 0,
+                        synthetic: false,
+                    }],
+                });
+            }
+            if cursor < *size {
+                out.push(crate::compiler::mir::StructField {
+                    name: format!("__layout_pad{}", pad_index),
+                    ty: byte_array(*size - cursor)?,
+                    offset: cursor,
+                    synthetic: false,
+                });
+            }
+            Some(MirType::Struct {
+                name: Some(name.clone()),
+                kernel_btf_type_id: *btf_type_id,
+                fields: out,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn expected_runtime_trampoline_type(type_info: &TypeInfo) -> MirType {
+    match type_info {
+        TypeInfo::Struct { .. } | TypeInfo::Array { .. } => MirType::Ptr {
+            pointee: Box::new(
+                mir_type_from_type_info(type_info).unwrap_or(MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: type_info.size(),
+                }),
+            ),
+            address_space: AddressSpace::Stack,
+        },
+        _ => mir_type_from_type_info(type_info).unwrap_or(MirType::I64),
+    }
 }
 
 #[test]
@@ -299,8 +428,14 @@ fn test_infer_fentry_arg_is_int() {
     let ctx = ProbeContext::new(EbpfProgramType::Fentry, "ksys_read");
     let mut ti = TypeInference::new(Some(ctx));
     let types = ti.infer(&func).unwrap();
+    let expected = expected_runtime_trampoline_type(
+        &KernelBtf::get()
+            .function_trampoline_arg_type_info("ksys_read", 0)
+            .unwrap()
+            .expect("expected ksys_read arg0 type info"),
+    );
 
-    assert_eq!(types.get(&v0), Some(&MirType::I64));
+    assert_eq!(types.get(&v0), Some(&expected));
 }
 
 #[test]
@@ -353,7 +488,7 @@ fn test_infer_fentry_pointer_arg_matches_kernel_btf_address_space() {
 
 #[test]
 fn test_infer_fentry_aggregate_arg_is_stack_backed_byte_array() {
-    let (func_name, arg_idx, size_bytes) = find_aggregate_fentry_arg_candidate();
+    let (func_name, arg_idx, _size_bytes) = find_aggregate_fentry_arg_candidate();
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();
 
@@ -369,17 +504,16 @@ fn test_infer_fentry_aggregate_arg_is_stack_backed_byte_array() {
     let ctx = ProbeContext::new(EbpfProgramType::Fentry, &func_name);
     let mut ti = TypeInference::new(Some(ctx));
     let types = ti.infer(&func).unwrap();
-
-    assert_eq!(
-        types.get(&v0),
-        Some(&MirType::Ptr {
-            pointee: Box::new(MirType::Array {
-                elem: Box::new(MirType::U8),
-                len: size_bytes,
-            }),
-            address_space: AddressSpace::Stack,
-        })
+    let expected = expected_runtime_trampoline_type(
+        &KernelBtf::get()
+            .function_trampoline_arg_type_info(&func_name, arg_idx as usize)
+            .unwrap()
+            .expect("expected aggregate arg type info"),
     );
+
+    assert_eq!(types.get(&v0), Some(&expected));
+    assert_eq!(expected.size(), 8);
+    assert!(matches!(expected, MirType::Ptr { .. }));
 }
 
 #[test]
@@ -399,13 +533,19 @@ fn test_infer_fexit_retval_is_int() {
     let ctx = ProbeContext::new(EbpfProgramType::Fexit, "do_sys_openat2");
     let mut ti = TypeInference::new(Some(ctx));
     let types = ti.infer(&func).unwrap();
+    let expected = expected_runtime_trampoline_type(
+        &KernelBtf::get()
+            .function_trampoline_ret_type_info("do_sys_openat2")
+            .unwrap()
+            .expect("expected do_sys_openat2 retval type info"),
+    );
 
-    assert_eq!(types.get(&v0), Some(&MirType::I64));
+    assert_eq!(types.get(&v0), Some(&expected));
 }
 
 #[test]
 fn test_infer_fexit_aggregate_retval_is_stack_backed_byte_array() {
-    let (func_name, size_bytes) = find_aggregate_fexit_ret_candidate();
+    let (func_name, _size_bytes) = find_aggregate_fexit_ret_candidate();
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();
 
@@ -421,17 +561,49 @@ fn test_infer_fexit_aggregate_retval_is_stack_backed_byte_array() {
     let ctx = ProbeContext::new(EbpfProgramType::Fexit, &func_name);
     let mut ti = TypeInference::new(Some(ctx));
     let types = ti.infer(&func).unwrap();
-
-    assert_eq!(
-        types.get(&v0),
-        Some(&MirType::Ptr {
-            pointee: Box::new(MirType::Array {
-                elem: Box::new(MirType::U8),
-                len: size_bytes,
-            }),
-            address_space: AddressSpace::Stack,
-        })
+    let expected = expected_runtime_trampoline_type(
+        &KernelBtf::get()
+            .function_trampoline_ret_type_info(&func_name)
+            .unwrap()
+            .expect("expected aggregate retval type info"),
     );
+
+    assert_eq!(types.get(&v0), Some(&expected));
+    assert_eq!(expected.size(), 8);
+    assert!(matches!(expected, MirType::Ptr { .. }));
+}
+
+#[test]
+fn test_infer_fentry_root_pointer_arg_preserves_typed_pointee() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::Arg(0),
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::Fentry, "do_close_on_exec");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    let Some(MirType::Ptr { pointee, .. }) = types.get(&v0) else {
+        panic!("expected typed pointer for do_close_on_exec ctx.arg0");
+    };
+    let MirType::Struct {
+        kernel_btf_type_id,
+        fields,
+        ..
+    } = pointee.as_ref()
+    else {
+        panic!("expected typed struct pointee for do_close_on_exec ctx.arg0");
+    };
+    assert!(kernel_btf_type_id.is_some());
+    assert!(fields.iter().any(|field| field.name == "fdt"));
 }
 
 #[test]

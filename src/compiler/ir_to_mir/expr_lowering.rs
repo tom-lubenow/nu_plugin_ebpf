@@ -823,7 +823,11 @@ impl<'a> HirToMirLowering<'a> {
         let src_ptr_vreg = if read_offset_bytes == 0 {
             ptr_vreg
         } else {
-            let ptr_ty = Self::trampoline_pointer_type(address_space);
+            let ptr_ty = self
+                .vreg_type_hints
+                .get(&ptr_vreg)
+                .cloned()
+                .unwrap_or_else(|| Self::trampoline_pointer_type(address_space));
             let field_ptr_vreg = self.func.alloc_vreg();
             self.vreg_type_hints.insert(field_ptr_vreg, ptr_ty.clone());
             let field_offset = i64::from(Self::trampoline_projection_offset_i32(
@@ -861,6 +865,7 @@ impl<'a> HirToMirLowering<'a> {
         ctx_field: &CtxField,
         spec: TrampolineValueSpec,
         projection: &TrampolineFieldProjection,
+        root_runtime_ty: &MirType,
         projected_ty: &MirType,
         path_desc: &str,
     ) -> Result<(), CompileError> {
@@ -884,23 +889,33 @@ impl<'a> HirToMirLowering<'a> {
                 let backing_slot =
                     self.func
                         .alloc_stack_slot(align_to_eight(size_bytes), 8, StackSlotKind::Local);
-                self.record_stack_slot_type(
-                    backing_slot,
-                    MirType::Struct {
-                        name: None,
-                        kernel_btf_type_id: None,
-                        fields: vec![crate::compiler::mir::StructField {
-                            name: "__opaque".to_string(),
-                            ty: MirType::Array {
-                                elem: Box::new(MirType::U8),
-                                len: size_bytes,
-                            },
-                            offset: 0,
-                            synthetic: false,
-                        }],
-                    },
-                );
+                if let MirType::Ptr {
+                    pointee,
+                    address_space: AddressSpace::Stack,
+                } = root_runtime_ty
+                {
+                    self.record_stack_slot_type(backing_slot, pointee.as_ref().clone());
+                } else {
+                    self.record_stack_slot_type(
+                        backing_slot,
+                        MirType::Struct {
+                            name: None,
+                            kernel_btf_type_id: None,
+                            fields: vec![crate::compiler::mir::StructField {
+                                name: "__opaque".to_string(),
+                                ty: MirType::Array {
+                                    elem: Box::new(MirType::U8),
+                                    len: size_bytes,
+                                },
+                                offset: 0,
+                                synthetic: false,
+                            }],
+                        },
+                    );
+                }
                 let aggregate_vreg = self.func.alloc_vreg();
+                self.vreg_type_hints
+                    .insert(aggregate_vreg, root_runtime_ty.clone());
                 self.emit(MirInst::LoadCtxField {
                     dst: aggregate_vreg,
                     field: ctx_field.clone(),
@@ -917,7 +932,10 @@ impl<'a> HirToMirLowering<'a> {
                 } else {
                     AddressSpace::Kernel
                 };
-                let root_ptr_ty = Self::trampoline_pointer_type(address_space);
+                let root_ptr_ty = match root_runtime_ty {
+                    MirType::Ptr { .. } => root_runtime_ty.clone(),
+                    _ => Self::trampoline_pointer_type(address_space),
+                };
                 let root_ptr_vreg = self.func.alloc_vreg();
                 self.vreg_type_hints.insert(root_ptr_vreg, root_ptr_ty);
                 self.emit(MirInst::LoadCtxField {
@@ -1610,11 +1628,33 @@ impl<'a> HirToMirLowering<'a> {
                         projection.type_info
                     ))
                 })?;
+            let root_runtime_ty = self
+                .trampoline_root_type_info(&ctx_field)?
+                .and_then(|type_info| Self::root_trampoline_value_types(&type_info, spec.kind))
+                .map(|(_, runtime_ty)| runtime_ty)
+                .unwrap_or_else(|| match spec.kind {
+                    TrampolineValueKind::Aggregate { size_bytes } => MirType::Ptr {
+                        pointee: Box::new(MirType::Array {
+                            elem: Box::new(MirType::U8),
+                            len: size_bytes,
+                        }),
+                        address_space: AddressSpace::Stack,
+                    },
+                    TrampolineValueKind::Pointer { user_space } => {
+                        Self::trampoline_pointer_type(if user_space {
+                            AddressSpace::User
+                        } else {
+                            AddressSpace::Kernel
+                        })
+                    }
+                    TrampolineValueKind::Scalar => MirType::I64,
+                });
             self.lower_trampoline_field_projection(
                 dst_vreg,
                 &ctx_field,
                 spec,
                 &projection,
+                &root_runtime_ty,
                 &projected_ty,
                 &path_desc,
             )?;

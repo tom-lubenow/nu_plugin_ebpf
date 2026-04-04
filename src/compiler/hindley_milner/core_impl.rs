@@ -108,7 +108,11 @@ impl HMType {
                 elem: Box::new(elem.to_mir_type()?),
                 len: *len,
             }),
-            HMType::Struct { name, fields } => {
+            HMType::Struct {
+                name,
+                kernel_btf_type_id,
+                fields,
+            } => {
                 let mut mir_fields = Vec::new();
                 let mut offset = 0;
                 for (field_name, ty) in fields {
@@ -124,7 +128,7 @@ impl HMType {
                 }
                 Some(MirType::Struct {
                     name: name.clone(),
-                    kernel_btf_type_id: None,
+                    kernel_btf_type_id: *kernel_btf_type_id,
                     fields: mir_fields,
                 })
             }
@@ -160,8 +164,13 @@ impl HMType {
                 elem: Box::new(HMType::from_mir_type(elem)),
                 len: *len,
             },
-            MirType::Struct { name, fields, .. } => HMType::Struct {
+            MirType::Struct {
+                name,
+                kernel_btf_type_id,
+                fields,
+            } => HMType::Struct {
                 name: name.clone(),
+                kernel_btf_type_id: *kernel_btf_type_id,
                 fields: fields
                     .iter()
                     .map(|f| (f.name.clone(), HMType::from_mir_type(&f.ty)))
@@ -251,8 +260,13 @@ impl Substitution {
                 elem: Box::new(self.apply(elem)),
                 len: *len,
             },
-            HMType::Struct { name, fields } => HMType::Struct {
+            HMType::Struct {
+                name,
+                kernel_btf_type_id,
+                fields,
+            } => HMType::Struct {
                 name: name.clone(),
+                kernel_btf_type_id: *kernel_btf_type_id,
                 fields: fields
                     .iter()
                     .map(|(n, ty)| (n.clone(), self.apply(ty)))
@@ -409,10 +423,12 @@ pub fn unify(t1: &HMType, t2: &HMType) -> Result<Substitution, UnifyError> {
         (
             HMType::Struct {
                 name: n1,
+                kernel_btf_type_id: b1,
                 fields: f1,
             },
             HMType::Struct {
                 name: n2,
+                kernel_btf_type_id: b2,
                 fields: f2,
             },
         ) => {
@@ -421,6 +437,13 @@ pub fn unify(t1: &HMType, t2: &HMType) -> Result<Substitution, UnifyError> {
                     t1.clone(),
                     t2.clone(),
                     format!("struct names don't match: {:?} vs {:?}", n1, n2),
+                ));
+            }
+            if b1 != b2 {
+                return Err(UnifyError::new(
+                    t1.clone(),
+                    t2.clone(),
+                    format!("kernel BTF type ids don't match: {:?} vs {:?}", b1, b2),
                 ));
             }
             if f1.len() != f2.len() {

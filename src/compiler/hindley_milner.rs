@@ -67,6 +67,7 @@ pub enum HMType {
     /// Struct/record type
     Struct {
         name: Option<String>,
+        kernel_btf_type_id: Option<u32>,
         fields: Vec<(String, HMType)>,
     },
 

@@ -22,7 +22,7 @@ use crate::compiler::{
     },
     passes::optimize_with_ssa,
 };
-use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
+use crate::kernel_btf::{KernelBtf, TypeInfo};
 
 /// Known eBPF helper commands that need to be mapped by decl_id
 const EBPF_COMMANDS: &[&str] = &[
@@ -328,6 +328,139 @@ fn pointer_hint(address_space: AddressSpace) -> MirType {
     }
 }
 
+fn byte_array_mir_type(size: usize) -> Option<MirType> {
+    if size == 0 {
+        return None;
+    }
+    Some(MirType::Array {
+        elem: Box::new(MirType::U8),
+        len: size,
+    })
+}
+
+fn opaque_struct_mir_type(
+    name: &str,
+    size: usize,
+    kernel_btf_type_id: Option<u32>,
+) -> Option<MirType> {
+    Some(MirType::Struct {
+        name: Some(name.to_string()),
+        kernel_btf_type_id,
+        fields: vec![crate::compiler::mir::StructField {
+            name: "__opaque".to_string(),
+            ty: byte_array_mir_type(size)?,
+            offset: 0,
+            synthetic: false,
+        }],
+    })
+}
+
+fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
+    match type_info {
+        TypeInfo::Int { size, signed } => Some(match (*size, *signed) {
+            (1, false) => MirType::U8,
+            (1, true) => MirType::I8,
+            (2, false) => MirType::U16,
+            (2, true) => MirType::I16,
+            (4, false) => MirType::U32,
+            (4, true) => MirType::I32,
+            (8, false) => MirType::U64,
+            (8, true) => MirType::I64,
+            _ => return None,
+        }),
+        TypeInfo::Ptr { target, is_user } => Some(MirType::Ptr {
+            pointee: Box::new(mir_type_from_type_info(target).unwrap_or(MirType::U8)),
+            address_space: if *is_user {
+                AddressSpace::User
+            } else {
+                AddressSpace::Kernel
+            },
+        }),
+        TypeInfo::Array { element, len } => Some(MirType::Array {
+            elem: Box::new(mir_type_from_type_info(element)?),
+            len: *len,
+        }),
+        TypeInfo::Struct {
+            name,
+            btf_type_id,
+            fields,
+            size,
+        } => {
+            if *size == 0 {
+                return None;
+            }
+            if fields.is_empty() {
+                return opaque_struct_mir_type(name, *size, *btf_type_id);
+            }
+
+            let mut out = Vec::with_capacity(fields.len() + 1);
+            let mut cursor = 0usize;
+            let mut pad_index = 0usize;
+            for field in fields {
+                if field.size == 0 || field.offset >= *size || field.offset < cursor {
+                    continue;
+                }
+                if field.offset > cursor {
+                    out.push(crate::compiler::mir::StructField {
+                        name: format!("__layout_pad{}", pad_index),
+                        ty: byte_array_mir_type(field.offset - cursor)?,
+                        offset: cursor,
+                        synthetic: false,
+                    });
+                    pad_index += 1;
+                }
+                let ty = mir_type_from_type_info(&field.type_info)
+                    .or_else(|| byte_array_mir_type(field.size))
+                    .filter(|ty| ty.size() == field.size)
+                    .or_else(|| byte_array_mir_type(field.size))?;
+                let field_end = field.offset.checked_add(field.size)?;
+                if field_end > *size {
+                    continue;
+                }
+                out.push(crate::compiler::mir::StructField {
+                    name: field.name.clone(),
+                    ty,
+                    offset: field.offset,
+                    synthetic: false,
+                });
+                cursor = field_end;
+            }
+            if out.is_empty() {
+                return opaque_struct_mir_type(name, *size, *btf_type_id);
+            }
+            if cursor < *size {
+                out.push(crate::compiler::mir::StructField {
+                    name: format!("__layout_pad{}", pad_index),
+                    ty: byte_array_mir_type(*size - cursor)?,
+                    offset: cursor,
+                    synthetic: false,
+                });
+            }
+            Some(MirType::Struct {
+                name: Some(name.clone()),
+                kernel_btf_type_id: *btf_type_id,
+                fields: out,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn runtime_trampoline_root_type(type_info: &TypeInfo) -> Option<MirType> {
+    match type_info {
+        TypeInfo::Struct { .. } | TypeInfo::Array { .. } => Some(MirType::Ptr {
+            pointee: Box::new(
+                mir_type_from_type_info(type_info).unwrap_or(MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: type_info.size(),
+                }),
+            ),
+            address_space: AddressSpace::Stack,
+        }),
+        _ => mir_type_from_type_info(type_info),
+    }
+}
+
 fn recover_ctx_field_hint(
     probe_ctx: Option<&ProbeContext>,
     field: &CtxField,
@@ -351,20 +484,11 @@ fn recover_ctx_field_hint(
                 ctx.probe_type,
                 crate::compiler::EbpfProgramType::Fentry | crate::compiler::EbpfProgramType::Fexit
             ) {
-                let spec = KernelBtf::get()
-                    .function_trampoline_arg(&ctx.target, *idx as usize)
+                let type_info = KernelBtf::get()
+                    .function_trampoline_arg_type_info(&ctx.target, *idx as usize)
                     .ok()
                     .flatten()?;
-                match spec.kind {
-                    TrampolineValueKind::Pointer { user_space } => {
-                        Some(pointer_hint(if user_space {
-                            AddressSpace::User
-                        } else {
-                            AddressSpace::Kernel
-                        }))
-                    }
-                    _ => None,
-                }
+                runtime_trampoline_root_type(&type_info)
             } else if ctx.is_userspace() {
                 Some(pointer_hint(AddressSpace::User))
             } else {
@@ -376,18 +500,11 @@ fn recover_ctx_field_hint(
             if !matches!(ctx.probe_type, crate::compiler::EbpfProgramType::Fexit) {
                 return None;
             }
-            let spec = KernelBtf::get()
-                .function_trampoline_ret(&ctx.target)
+            let type_info = KernelBtf::get()
+                .function_trampoline_ret_type_info(&ctx.target)
                 .ok()
                 .flatten()?;
-            match spec.kind {
-                TrampolineValueKind::Pointer { user_space } => Some(pointer_hint(if user_space {
-                    AddressSpace::User
-                } else {
-                    AddressSpace::Kernel
-                })),
-                _ => None,
-            }
+            runtime_trampoline_root_type(&type_info)
         }
         _ => None,
     }
