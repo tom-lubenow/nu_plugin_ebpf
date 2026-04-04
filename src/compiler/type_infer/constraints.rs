@@ -47,6 +47,56 @@ impl<'a> TypeInference<'a> {
                 let lhs_ty = self.value_type(lhs);
                 let rhs_ty = self.value_type(rhs);
 
+                if matches!(op, BinOpKind::Add | BinOpKind::Sub)
+                    && let Some(hints) = self.type_hints
+                    && let Some(MirType::Ptr { .. }) = hints.get(dst)
+                {
+                    let ptr_ty = HMType::from_mir_type(
+                        hints
+                            .get(dst)
+                            .expect("destination hint must exist for pointer binop"),
+                    );
+                    self.constrain(dst_ty.clone(), ptr_ty.clone(), format!("binop {:?}", op));
+                    match op {
+                        BinOpKind::Add => match (lhs, rhs) {
+                            (MirValue::VReg(lhs_vreg), _) => {
+                                self.constrain(
+                                    self.vreg_type(*lhs_vreg),
+                                    ptr_ty.clone(),
+                                    "pointer_binop_lhs",
+                                );
+                                self.constrain(rhs_ty, HMType::I64, "pointer_binop_rhs");
+                            }
+                            (_, MirValue::VReg(rhs_vreg)) => {
+                                self.constrain(
+                                    self.vreg_type(*rhs_vreg),
+                                    ptr_ty.clone(),
+                                    "pointer_binop_rhs_ptr",
+                                );
+                                self.constrain(lhs_ty, HMType::I64, "pointer_binop_lhs");
+                            }
+                            _ => {
+                                self.constrain(lhs_ty, HMType::I64, "pointer_binop_lhs");
+                                self.constrain(rhs_ty, HMType::I64, "pointer_binop_rhs");
+                            }
+                        },
+                        BinOpKind::Sub => {
+                            if let MirValue::VReg(lhs_vreg) = lhs {
+                                self.constrain(
+                                    self.vreg_type(*lhs_vreg),
+                                    ptr_ty,
+                                    "pointer_binop_lhs",
+                                );
+                            } else {
+                                self.constrain(lhs_ty, ptr_ty, "pointer_binop_lhs");
+                            }
+                            self.constrain(rhs_ty, HMType::I64, "pointer_binop_rhs");
+                        }
+                        _ => unreachable!("pointer binop hint only applies to add/sub"),
+                    }
+                    return Ok(());
+                }
+
                 // Generate constraints based on operator
                 let result_ty = self.binop_result_type(*op, &lhs_ty, &rhs_ty)?;
                 self.constrain(dst_ty, result_ty, format!("binop {:?}", op));
@@ -168,6 +218,7 @@ impl<'a> TypeInference<'a> {
             }
 
             MirInst::LoadCtxField { dst, field, .. } => {
+                self.validate_ctx_field_access(field)?;
                 let dst_ty = self.vreg_type(*dst);
                 let field_ty = self.ctx_field_type(field);
                 self.constrain(dst_ty, field_ty, format!("ctx.{:?}", field));
@@ -319,10 +370,18 @@ impl<'a> TypeInference<'a> {
         match value {
             MirValue::VReg(vreg) => self.vreg_type(*vreg),
             MirValue::Const(_) => HMType::I64,
-            MirValue::StackSlot(_) => HMType::Ptr {
-                pointee: Box::new(HMType::U8),
-                address_space: AddressSpace::Stack,
-            },
+            MirValue::StackSlot(slot) => self
+                .stack_slot_hints
+                .and_then(|hints| hints.get(slot))
+                .map(HMType::from_mir_type)
+                .map(|pointee| HMType::Ptr {
+                    pointee: Box::new(pointee),
+                    address_space: AddressSpace::Stack,
+                })
+                .unwrap_or(HMType::Ptr {
+                    pointee: Box::new(HMType::U8),
+                    address_space: AddressSpace::Stack,
+                }),
         }
     }
 

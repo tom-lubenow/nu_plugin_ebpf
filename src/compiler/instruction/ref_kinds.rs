@@ -447,7 +447,7 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         },
         "bpf_dynptr_slice" | "bpf_dynptr_slice_rdwr" => KfuncSemantics {
             ptr_arg_rules: DYNPTR_SLICE_RULES,
-            positive_size_args: &[],
+            positive_size_args: &[3],
         },
         "bpf_crypto_ctx_create" => KfuncSemantics {
             ptr_arg_rules: CRYPTO_CTX_CREATE_RULES,

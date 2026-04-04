@@ -40,10 +40,10 @@ use crate::compiler::instruction::{
     kfunc_unknown_stack_object_lifecycle as kfunc_unknown_stack_object_lifecycle_shared,
 };
 use crate::compiler::mir::{
-    AddressSpace, BinOpKind, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME,
-    MapKind, MirFunction, MirInst, MirType, MirValue, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME,
-    StackSlotId, StackSlotKind, StringAppendType, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, UnaryOpKind,
-    VReg,
+    AddressSpace, BYTES_COUNTER_MAP_NAME, BinOpKind, COUNTER_MAP_NAME, CtxField,
+    HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, MapKind, MirFunction, MirInst, MirType, MirValue,
+    RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME, StackSlotId, StackSlotKind, StringAppendType,
+    TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, UnaryOpKind, VReg,
 };
 use crate::compiler::passes::{ListLowering, MirPass};
 
@@ -609,8 +609,13 @@ fn record_field_size(ty: &MirType) -> usize {
         MirType::I32 | MirType::U32 => 8,
         MirType::I16 | MirType::U16 => 8,
         MirType::I8 | MirType::U8 | MirType::Bool => 8,
-        MirType::Array { elem, len } if matches!(elem.as_ref(), MirType::U8) && *len == 16 => 16,
-        MirType::Array { elem, len } if matches!(elem.as_ref(), MirType::U8) => (len + 7) & !7,
+        ty if ty.byte_array_len() == Some(16) => 16,
+        ty if ty.byte_array_len().is_some() => {
+            let len = ty
+                .byte_array_len()
+                .expect("byte-array length must exist after guard");
+            (len + 7) & !7
+        }
         _ => 8,
     }
 }

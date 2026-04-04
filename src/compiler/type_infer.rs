@@ -19,7 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::elf::{EbpfProgramType, ProbeContext};
+use super::elf::ProbeContext;
 use super::hindley_milner::{
     Constraint, HMType, Substitution, TypeScheme, TypeVar, TypeVarGenerator, UnifyError, unify,
 };
@@ -41,9 +41,9 @@ use super::instruction::{
     kfunc_unknown_stack_object_copy as kfunc_unknown_stack_object_copy_shared,
 };
 use super::mir::{
-    AddressSpace, BasicBlock, BinOpKind, CtxField, MapKind, MirFunction, MirInst, MirType,
-    MirValue, STRING_COUNTER_MAP_NAME, StackSlotId, StackSlotKind, StringAppendType, SubfunctionId,
-    UnaryOpKind, VReg,
+    AddressSpace, BYTES_COUNTER_MAP_NAME, BasicBlock, BinOpKind, CtxField, MapKind, MirFunction,
+    MirInst, MirType, MirValue, STRING_COUNTER_MAP_NAME, StackSlotId, StackSlotKind,
+    StringAppendType, SubfunctionId, UnaryOpKind, VReg,
 };
 
 mod constraints;
@@ -162,12 +162,14 @@ pub struct TypeInference<'a> {
     expected_return: Option<HMType>,
     /// Optional type hints for MIR registers
     type_hints: Option<&'a HashMap<VReg, MirType>>,
+    /// Optional stack-slot pointee type hints
+    stack_slot_hints: Option<&'a HashMap<StackSlotId, MirType>>,
 }
 
 impl<'a> TypeInference<'a> {
     /// Create a new type inference pass
     pub fn new(probe_ctx: Option<ProbeContext>) -> Self {
-        Self::new_with_env(probe_ctx, None, None, None)
+        Self::new_with_env(probe_ctx, None, None, None, None)
     }
 
     /// Create a new type inference pass with subfunction schemes and optional return type
@@ -176,6 +178,7 @@ impl<'a> TypeInference<'a> {
         subfn_schemes: Option<&'a SubfnSchemeMap>,
         expected_return: Option<HMType>,
         type_hints: Option<&'a HashMap<VReg, MirType>>,
+        stack_slot_hints: Option<&'a HashMap<StackSlotId, MirType>>,
     ) -> Self {
         Self {
             tvar_gen: TypeVarGenerator::new(),
@@ -189,6 +192,7 @@ impl<'a> TypeInference<'a> {
             return_var: None,
             expected_return,
             type_hints,
+            stack_slot_hints,
         }
     }
 

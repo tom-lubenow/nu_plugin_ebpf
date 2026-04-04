@@ -258,6 +258,9 @@ impl PluginCommand for Count {
 
     fn extra_description(&self) -> &str {
         r#"Increments a counter for the input key. Use ebpf counters to read results.
+Scalar keys display as integers, byte-array/string keys display as strings,
+typed aggregate keys can decode as lists/records, and opaque aggregate keys
+display as binary values.
 
 Example:
   let id = ebpf attach 'kprobe:sys_read' {|ctx| $ctx.pid | count }
@@ -267,7 +270,7 @@ Example:
 
     fn signature(&self) -> Signature {
         Signature::build("count")
-            .input_output_types(vec![(Type::Int, Type::Int)])
+            .input_output_types(vec![(Type::Any, Type::Any)])
             .category(Category::Experimental)
     }
 

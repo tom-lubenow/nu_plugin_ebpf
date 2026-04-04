@@ -60,6 +60,10 @@ impl<'a> HirToMirLowering<'a> {
             .map(|s| s.size)
     }
 
+    pub(super) fn record_stack_slot_type(&mut self, slot: StackSlotId, ty: MirType) {
+        self.stack_slot_type_hints.entry(slot).or_insert(ty);
+    }
+
     pub(super) fn ensure_string_slot_capacity(
         &mut self,
         slot: StackSlotId,
@@ -86,6 +90,13 @@ impl<'a> HirToMirLowering<'a> {
         if needed > slot_entry.size {
             let old_size = slot_entry.size;
             slot_entry.size = needed;
+            self.stack_slot_type_hints.insert(
+                slot,
+                MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: needed,
+                },
+            );
 
             let mut offset = old_size;
             while offset < needed {

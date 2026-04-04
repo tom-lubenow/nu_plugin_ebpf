@@ -59,6 +59,7 @@ impl<'a> HirToMirLowering<'a> {
                 .unwrap_or_default(),
         );
         let old_vreg_hints = std::mem::take(&mut self.vreg_type_hints);
+        let old_stack_slot_hints = std::mem::take(&mut self.stack_slot_type_hints);
         let old_ctx_param = self.ctx_param;
 
         self.ctx_param = None;
@@ -95,6 +96,8 @@ impl<'a> HirToMirLowering<'a> {
 
         let subfn = std::mem::replace(&mut self.func, old_func);
         let subfn_hints = std::mem::replace(&mut self.vreg_type_hints, old_vreg_hints);
+        let subfn_stack_slot_hints =
+            std::mem::replace(&mut self.stack_slot_type_hints, old_stack_slot_hints);
 
         self.reg_map = old_reg_map;
         self.reg_metadata = old_reg_metadata;
@@ -120,6 +123,8 @@ impl<'a> HirToMirLowering<'a> {
         let subfn_id = SubfunctionId(self.subfunctions.len() as u32);
         self.subfunctions.push(subfn);
         self.subfunction_hints.push(subfn_hints);
+        self.subfunction_stack_slot_hints
+            .push(subfn_stack_slot_hints);
         self.subfunction_registry.insert(decl_id, subfn_id);
 
         Ok(subfn_id)

@@ -1,4 +1,6 @@
 use super::*;
+use crate::compiler::{CounterKeySchema, CounterKeySchemaField};
+use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 
 #[test]
 fn test_uprobe_target_basic() {
@@ -72,6 +74,66 @@ fn test_parse_probe_spec_uretprobe() {
 }
 
 #[test]
+fn test_parse_probe_spec_fentry() {
+    let result = parse_probe_spec("fentry:do_sys_openat2");
+
+    match result {
+        Ok((prog_type, target)) => {
+            assert!(matches!(prog_type, EbpfProgramType::Fentry));
+            assert_eq!(target, "do_sys_openat2");
+        }
+        Err(LoadError::NeedsSudo) => {}
+        Err(LoadError::FunctionNotFound { .. }) => {}
+        Err(e) => panic!("Unexpected error: {:?}", e),
+    }
+}
+
+#[test]
+fn test_parse_probe_spec_fexit() {
+    let result = parse_probe_spec("fexit:do_sys_openat2");
+
+    match result {
+        Ok((prog_type, target)) => {
+            assert!(matches!(prog_type, EbpfProgramType::Fexit));
+            assert_eq!(target, "do_sys_openat2");
+        }
+        Err(LoadError::NeedsSudo) => {}
+        Err(LoadError::FunctionNotFound { .. }) => {}
+        Err(e) => panic!("Unexpected error: {:?}", e),
+    }
+}
+
+#[test]
+fn test_parse_probe_spec_rejects_unsupported_fexit_aggregate_return_target() {
+    let candidate = ["__jump_label_patch", "__ioapic_read_entry"]
+        .into_iter()
+        .find(|func_name| {
+            matches!(
+                KernelBtf::get().function_trampoline_ret(func_name),
+                Ok(Some(spec)) if matches!(spec.kind, TrampolineValueKind::Aggregate { .. })
+            )
+        });
+
+    let Some(func_name) = candidate else {
+        return;
+    };
+
+    match parse_probe_spec(&format!("fexit:{func_name}")) {
+        Err(LoadError::UnsupportedTrampolineTarget {
+            probe_type,
+            target,
+            reason,
+        }) => {
+            assert_eq!(probe_type, "fexit");
+            assert_eq!(target, func_name);
+            assert!(reason.contains("aggregate return"));
+        }
+        Err(LoadError::NeedsSudo) | Err(LoadError::FunctionNotFound { .. }) => {}
+        other => panic!("Unexpected result: {:?}", other),
+    }
+}
+
+#[test]
 fn test_parse_probe_spec_kprobe_unchanged() {
     // This test may fail with NeedsSudo if running without root
     // That's expected - we're testing the parsing, not the permissions
@@ -133,4 +195,89 @@ fn test_structured_event_string_respects_field_size() {
         }
         _ => panic!("expected structured record"),
     }
+}
+
+#[test]
+fn test_structured_event_bytes_field_preserved() {
+    let schema = EventSchema {
+        fields: vec![crate::compiler::SchemaField {
+            name: "raw".to_string(),
+            field_type: BpfFieldType::Bytes(12),
+            offset: 0,
+        }],
+        total_size: 12,
+    };
+
+    let buf: Vec<u8> = (0..12).map(|i| i as u8).collect();
+    let data =
+        EbpfState::deserialize_structured_event(&buf, &schema).expect("expected structured event");
+
+    match data {
+        BpfEventData::Record(fields) => {
+            assert_eq!(fields.len(), 1);
+            match &fields[0] {
+                (name, BpfFieldValue::Bytes(bytes)) => {
+                    assert_eq!(name, "raw");
+                    assert_eq!(bytes, &buf);
+                }
+                other => panic!("expected bytes field, got {:?}", other),
+            }
+        }
+        _ => panic!("expected structured record"),
+    }
+}
+
+#[test]
+fn test_bytes_counter_key_string_schema_decodes_string() {
+    let schema = CounterKeySchema::String { size: 8 };
+    let decoded = EbpfState::deserialize_bytes_counter_key(b"nu\x00shell", Some(&schema));
+
+    assert_eq!(decoded, CounterKeyValue::String("nu".to_string()));
+}
+
+#[test]
+fn test_bytes_counter_key_record_schema_decodes_record() {
+    let schema = CounterKeySchema::Record {
+        name: Some("task".to_string()),
+        fields: vec![
+            CounterKeySchemaField {
+                name: "pid".to_string(),
+                schema: CounterKeySchema::Int {
+                    size: 8,
+                    signed: true,
+                },
+                offset: 0,
+            },
+            CounterKeySchemaField {
+                name: "comm".to_string(),
+                schema: CounterKeySchema::String { size: 8 },
+                offset: 8,
+            },
+        ],
+        total_size: 16,
+    };
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&42i64.to_le_bytes());
+    buf.extend_from_slice(b"nu\x00\x00\x00\x00\x00\x00");
+
+    let decoded = EbpfState::deserialize_bytes_counter_key(&buf, Some(&schema));
+
+    assert_eq!(
+        decoded,
+        CounterKeyValue::Record(vec![
+            ("pid".to_string(), CounterKeyValue::Int(42)),
+            (
+                "comm".to_string(),
+                CounterKeyValue::String("nu".to_string())
+            ),
+        ])
+    );
+}
+
+#[test]
+fn test_bytes_counter_key_opaque_schema_preserves_binary() {
+    let schema = CounterKeySchema::Bytes { size: 4 };
+    let decoded = EbpfState::deserialize_bytes_counter_key(&[1, 2, 3, 4], Some(&schema));
+
+    assert_eq!(decoded, CounterKeyValue::Bytes(vec![1, 2, 3, 4]));
 }

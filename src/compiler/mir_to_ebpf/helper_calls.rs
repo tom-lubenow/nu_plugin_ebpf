@@ -1,6 +1,68 @@
 use super::*;
+use crate::compiler::mir::AddressSpace;
 
 impl<'a> MirToEbpfCompiler<'a> {
+    pub(super) fn register_single_emit_schema(
+        &mut self,
+        data: VReg,
+        size: usize,
+    ) -> Result<(), CompileError> {
+        let event_size = if size > 0 { size } else { 8 };
+        let (mut field_type, _) = self
+            .current_types
+            .get(&data)
+            .map(|ty| self.mir_type_to_bpf_field(ty))
+            .unwrap_or_else(|| {
+                if event_size == 8 {
+                    (BpfFieldType::Int, 8)
+                } else {
+                    (BpfFieldType::Bytes(event_size), event_size)
+                }
+            });
+
+        if matches!(field_type, BpfFieldType::Int) && event_size != 8 {
+            field_type = BpfFieldType::Bytes(event_size);
+        }
+
+        let new_schema = EventSchema {
+            fields: vec![SchemaField {
+                name: "value".to_string(),
+                field_type,
+                offset: 0,
+            }],
+            total_size: event_size,
+        };
+
+        if let Some(existing) = &self.event_schema {
+            if existing != &new_schema {
+                return Err(CompileError::UnsupportedInstruction(
+                    "emit schema mismatch: multiple event payload shapes in one program".into(),
+                ));
+            }
+        } else {
+            self.event_schema = Some(new_schema);
+        }
+
+        Ok(())
+    }
+
+    pub(super) fn vreg_stack_or_map_copy_size(
+        &self,
+        vreg: VReg,
+        requested_size: usize,
+    ) -> Option<usize> {
+        match self.current_types.get(&vreg) {
+            Some(MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Stack | AddressSpace::Map,
+            }) => Some(match pointee.as_ref() {
+                MirType::Array { .. } | MirType::Struct { .. } => pointee.size().max(1),
+                _ => requested_size.max(1),
+            }),
+            _ => None,
+        }
+    }
+
     /// Compile bpf_get_stackid() call to get kernel or user stack trace ID
     pub(super) fn compile_get_stackid(
         &mut self,
@@ -77,34 +139,43 @@ impl<'a> MirToEbpfCompiler<'a> {
         &mut self,
         data_reg: EbpfReg,
         size: usize,
+        data_copy_size: Option<usize>,
     ) -> Result<(), CompileError> {
         let event_size = if size > 0 { size } else { 8 };
-        self.check_stack_space(event_size as i16)?;
+        let aligned_event_size = event_size.div_ceil(8) * 8;
+        self.check_stack_space(aligned_event_size as i16)?;
         // Stack grows downward - decrement first, then use offset
-        self.stack_offset -= event_size as i16;
+        self.stack_offset -= aligned_event_size as i16;
         let event_offset = self.stack_offset;
 
-        if event_size <= 8 {
-            // Store scalar data to stack
-            self.instructions
-                .push(EbpfInsn::stxdw(EbpfReg::R10, event_offset, data_reg));
-        } else {
-            if event_size % 8 != 0 {
-                return Err(CompileError::UnsupportedInstruction(
-                    "emit size must be 8-byte aligned for buffer output".into(),
-                ));
-            }
-            // Copy buffer from pointer into stack
-            for chunk in 0..(event_size / 8) {
-                let offset = (chunk * 8) as i16;
-                self.instructions
-                    .push(EbpfInsn::ldxdw(EbpfReg::R0, data_reg, offset));
-                self.instructions.push(EbpfInsn::stxdw(
+        if let Some(data_copy_size) = data_copy_size {
+            let copy_size = event_size.min(data_copy_size);
+            if copy_size > 0 {
+                self.emit_copy_bytes(
+                    data_reg,
+                    0,
                     EbpfReg::R10,
-                    event_offset + offset,
+                    event_offset,
+                    copy_size,
                     EbpfReg::R0,
-                ));
+                )?;
             }
+            if copy_size < event_size {
+                let pad_offset = self.add_i16_offset(event_offset, copy_size)?;
+                self.emit_zero_bytes(
+                    EbpfReg::R10,
+                    pad_offset,
+                    event_size - copy_size,
+                    EbpfReg::R0,
+                )?;
+            }
+        } else if event_size <= 8 {
+            // Store scalar data to stack
+            self.emit_store(EbpfReg::R10, event_offset, data_reg, event_size)?;
+        } else {
+            return Err(CompileError::UnsupportedInstruction(
+                "emit size larger than 8 bytes expects stack/map pointer input".into(),
+            ));
         }
 
         // bpf_ringbuf_output(map, data, size, flags)
@@ -188,30 +259,26 @@ impl<'a> MirToEbpfCompiler<'a> {
 
             // Get the field value into a register
             let field_reg = self.ensure_reg(field.value)?;
+            let field_copy_size = self.vreg_stack_or_map_copy_size(field.value, size);
 
-            // Store to the buffer
-            // For 8-byte values, use stxdw
-            if size == 8 {
-                self.instructions
-                    .push(EbpfInsn::stxdw(EbpfReg::R10, dest_offset, field_reg));
-            } else if size == 4 {
-                self.instructions
-                    .push(EbpfInsn::stxw(EbpfReg::R10, dest_offset, field_reg));
-            } else {
-                // For larger types (like comm=16), copy in 8-byte chunks
-                // The field_reg should be a pointer to the data
-                for chunk in 0..(size / 8) {
-                    self.instructions.push(EbpfInsn::ldxdw(
-                        EbpfReg::R0,
+            if let Some(field_copy_size) = field_copy_size {
+                let copy_size = size.min(field_copy_size);
+                if copy_size > 0 {
+                    self.emit_copy_bytes(
                         field_reg,
-                        (chunk * 8) as i16,
-                    ));
-                    self.instructions.push(EbpfInsn::stxdw(
+                        0,
                         EbpfReg::R10,
-                        dest_offset + (chunk * 8) as i16,
+                        dest_offset,
+                        copy_size,
                         EbpfReg::R0,
-                    ));
+                    )?;
                 }
+                if copy_size < size {
+                    let pad_offset = self.add_i16_offset(dest_offset, copy_size)?;
+                    self.emit_zero_bytes(EbpfReg::R10, pad_offset, size - copy_size, EbpfReg::R0)?;
+                }
+            } else {
+                self.emit_store(EbpfReg::R10, dest_offset, field_reg, size)?;
             }
 
             dest_offset += size as i16;
@@ -256,13 +323,17 @@ impl<'a> MirToEbpfCompiler<'a> {
             MirType::I32 | MirType::U32 => (BpfFieldType::Int, 8),
             MirType::I16 | MirType::U16 => (BpfFieldType::Int, 8),
             MirType::I8 | MirType::U8 | MirType::Bool => (BpfFieldType::Int, 8),
-            MirType::Array { elem, len } if matches!(elem.as_ref(), MirType::U8) && *len == 16 => {
-                (BpfFieldType::Comm, 16)
-            }
-            MirType::Array { elem, len } if matches!(elem.as_ref(), MirType::U8) => {
+            ty if ty.byte_array_len() == Some(16) => (BpfFieldType::Comm, 16),
+            ty if ty.byte_array_len().is_some() => {
+                let len = ty
+                    .byte_array_len()
+                    .expect("byte-array length must exist after guard");
                 // Round up to 8-byte alignment
-                let aligned_len = (*len + 7) & !7;
+                let aligned_len = (len + 7) & !7;
                 (BpfFieldType::String, aligned_len)
+            }
+            MirType::Array { .. } | MirType::Struct { .. } => {
+                (BpfFieldType::Bytes(ty.size().max(1)), ty.size().max(1))
             }
             _ => (BpfFieldType::Int, 8), // Default to 64-bit int
         }

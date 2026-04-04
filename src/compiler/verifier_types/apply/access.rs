@@ -180,10 +180,17 @@ pub(super) fn apply_read_str_inst(
 pub(super) fn apply_emit_event_inst(
     data: VReg,
     size: usize,
+    types: &HashMap<VReg, MirType>,
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
-    if size <= 8 {
+    let needs_ptr = types.get(&data).is_some_and(|ty| {
+        matches!(
+            ty,
+            MirType::Ptr { .. } | MirType::Array { .. } | MirType::Struct { .. }
+        )
+    });
+    if size <= 8 && !needs_ptr {
         return;
     }
     require_ptr_with_space(

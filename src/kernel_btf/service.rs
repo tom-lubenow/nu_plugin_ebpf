@@ -107,6 +107,56 @@ pub struct KfuncSignatureHint {
     pub ret_shape: KfuncRetShape,
 }
 
+/// Coarse kind for a value carried in a trampoline context slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrampolineValueKind {
+    Scalar,
+    Pointer { user_space: bool },
+    Aggregate { size_bytes: usize },
+}
+
+/// BTF-resolved slot information for a trampoline argument or return value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TrampolineValueSpec {
+    pub slot_index: usize,
+    pub kind: TrampolineValueKind,
+}
+
+/// Resolved field projection within a by-value trampoline aggregate.
+#[derive(Debug, Clone)]
+pub struct TrampolineFieldProjection {
+    pub path: Vec<TrampolineFieldPathSegment>,
+    pub type_info: TypeInfo,
+}
+
+/// One requested selector in a trampoline field path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TrampolineFieldSelector {
+    Field(String),
+    Index(usize),
+}
+
+/// One resolved segment in a trampoline field projection path.
+#[derive(Debug, Clone)]
+pub struct TrampolineFieldPathSegment {
+    pub offset_bytes: usize,
+    pub type_info: TypeInfo,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TrampolineFieldLayout {
+    slot_index: usize,
+    slot_count: usize,
+    value: Option<TrampolineValueSpec>,
+    unsupported_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TrampolineFunctionLayout {
+    args: Vec<TrampolineFieldLayout>,
+    retval: Option<TrampolineFieldLayout>,
+}
+
 /// Result of reading the function list (internal use)
 #[derive(Clone)]
 enum FunctionListResult {
@@ -135,6 +185,10 @@ pub struct KernelBtf {
     function_cache: RwLock<Option<FunctionListResult>>,
     /// Cached pt_regs offsets (lazy loaded)
     pt_regs_cache: RwLock<Option<Result<PtRegsOffsets, PtRegsError>>>,
+    /// Cached raw BTF declared sizes for aggregate type IDs.
+    raw_type_size_cache: RwLock<Option<Result<HashMap<u32, u32>, BtfError>>>,
+    /// Cached per-function trampoline layouts for fentry/fexit/tp_btf style programs.
+    trampoline_layout_cache: RwLock<HashMap<String, Result<TrampolineFunctionLayout, BtfError>>>,
     /// Cached mapping of kfunc names to nullable pointer argument indices.
     kfunc_nullable_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to const-qualified pointer argument indices.
@@ -193,6 +247,8 @@ impl KernelBtf {
                 tracepoint_cache: RwLock::new(HashMap::new()),
                 function_cache: RwLock::new(None),
                 pt_regs_cache: RwLock::new(None),
+                raw_type_size_cache: RwLock::new(None),
+                trampoline_layout_cache: RwLock::new(HashMap::new()),
                 kfunc_nullable_arg_cache: RwLock::new(None),
                 kfunc_const_pointer_arg_cache: RwLock::new(None),
                 kfunc_user_pointer_arg_cache: RwLock::new(None),
@@ -316,6 +372,26 @@ impl KernelBtf {
         })
     }
 
+    fn load_raw_type_size_map(&self) -> Result<HashMap<u32, u32>, BtfError> {
+        {
+            let cache = self.raw_type_size_cache.read().unwrap();
+            if let Some(map) = cache.as_ref() {
+                return map.clone();
+            }
+        }
+
+        let raw = fs::read(Self::KERNEL_BTF_PATH).map_err(|e| {
+            BtfError::KernelBtfError(format!("failed to read {}: {e}", Self::KERNEL_BTF_PATH))
+        })?;
+        let map = parse_declared_type_sizes_from_raw_btf(&raw).ok_or_else(|| {
+            BtfError::KernelBtfError("failed to parse raw kernel BTF type sizes".into())
+        });
+
+        let mut cache = self.raw_type_size_cache.write().unwrap();
+        *cache = Some(map.clone());
+        map
+    }
+
     /// Resolve a kfunc name to its kernel BTF function ID.
     pub fn resolve_kfunc_btf_id(&self, kfunc_name: &str) -> Result<u32, BtfError> {
         let btf = self.load_kernel_btf_for_query()?;
@@ -325,6 +401,262 @@ impl KernelBtf {
             }
         }
         Err(BtfError::TypeNotFound(kfunc_name.to_string()))
+    }
+
+    /// Resolve a typed trampoline argument slot for an attached function.
+    ///
+    /// Returns `Ok(None)` when the function exists but does not have that argument.
+    /// Returns an error if the argument exists but has an unsupported by-value type.
+    pub fn function_trampoline_arg(
+        &self,
+        function_name: &str,
+        arg_idx: usize,
+    ) -> Result<Option<TrampolineValueSpec>, BtfError> {
+        let layout = self.function_trampoline_layout(function_name)?;
+        let Some(field) = layout.args.get(arg_idx) else {
+            return Ok(None);
+        };
+        if let Some(value) = field.value {
+            return Ok(Some(value));
+        }
+        Err(BtfError::KernelBtfError(format!(
+            "argument {} for '{}' uses an unsupported trampoline type: {}",
+            arg_idx,
+            function_name,
+            field
+                .unsupported_reason
+                .as_deref()
+                .unwrap_or("unknown layout")
+        )))
+    }
+
+    /// Resolve a typed trampoline return-value slot for an attached function.
+    ///
+    /// Returns `Ok(None)` when the function returns `void`.
+    /// Returns an error if the return value exists but has an unsupported by-value type.
+    pub fn function_trampoline_ret(
+        &self,
+        function_name: &str,
+    ) -> Result<Option<TrampolineValueSpec>, BtfError> {
+        let layout = self.function_trampoline_layout(function_name)?;
+        let Some(field) = layout.retval.as_ref() else {
+            return Ok(None);
+        };
+        if let Some(value) = field.value {
+            return Ok(Some(value));
+        }
+        Err(BtfError::KernelBtfError(format!(
+            "return value for '{}' uses an unsupported trampoline type: {}",
+            function_name,
+            field
+                .unsupported_reason
+                .as_deref()
+                .unwrap_or("unknown layout")
+        )))
+    }
+
+    /// Validate that a function target is attachable via an fentry trampoline.
+    pub fn validate_fentry_target(&self, function_name: &str) -> Result<(), BtfError> {
+        let layout = self.function_trampoline_layout(function_name)?;
+        for (idx, arg) in layout.args.iter().enumerate() {
+            if arg.value.is_none() {
+                return Err(BtfError::KernelBtfError(format!(
+                    "fentry target '{}' uses unsupported trampoline argument {}: {}",
+                    function_name,
+                    idx,
+                    arg.unsupported_reason
+                        .as_deref()
+                        .unwrap_or("unknown layout")
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Validate that a function target is attachable via an fexit trampoline.
+    pub fn validate_fexit_target(&self, function_name: &str) -> Result<(), BtfError> {
+        let layout = self.function_trampoline_layout(function_name)?;
+        for (idx, arg) in layout.args.iter().enumerate() {
+            if arg.value.is_none() {
+                return Err(BtfError::KernelBtfError(format!(
+                    "fexit target '{}' uses unsupported trampoline argument {}: {}",
+                    function_name,
+                    idx,
+                    arg.unsupported_reason
+                        .as_deref()
+                        .unwrap_or("unknown layout")
+                )));
+            }
+        }
+
+        if let Some(retval) = layout.retval.as_ref() {
+            match retval.value {
+                Some(TrampolineValueSpec {
+                    kind: TrampolineValueKind::Aggregate { .. },
+                    ..
+                }) => {
+                    return Err(BtfError::KernelBtfError(format!(
+                        "fexit target '{}' has a by-value aggregate return, which kernel trampolines on this system do not support",
+                        function_name
+                    )));
+                }
+                None => {
+                    return Err(BtfError::KernelBtfError(format!(
+                        "fexit target '{}' uses unsupported return trampoline type: {}",
+                        function_name,
+                        retval
+                            .unsupported_reason
+                            .as_deref()
+                            .unwrap_or("unknown layout")
+                    )));
+                }
+                Some(_) => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Resolve a named field path within a by-value trampoline argument.
+    ///
+    /// Returns `Ok(None)` when the function exists but does not have that argument.
+    pub fn function_trampoline_arg_field(
+        &self,
+        function_name: &str,
+        arg_idx: usize,
+        field_path: &[TrampolineFieldSelector],
+    ) -> Result<Option<TrampolineFieldProjection>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let ty = btf
+            .get_types()
+            .iter()
+            .find(|ty| ty.is_function && ty.name.as_deref() == Some(function_name))
+            .ok_or_else(|| BtfError::TypeNotFound(function_name.to_string()))?;
+        let Type::FunctionProto(proto) = &ty.base_type else {
+            return Err(BtfError::KernelBtfError(format!(
+                "function '{}' is missing a function prototype in kernel BTF",
+                function_name
+            )));
+        };
+
+        let Some(param) = proto
+            .params
+            .iter()
+            .take_while(|param| param.type_id != 0)
+            .nth(arg_idx)
+        else {
+            return Ok(None);
+        };
+
+        let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
+        self.resolve_trampoline_field_projection(&btf, param.type_id, field_path, &raw_type_sizes)
+            .map(Some)
+    }
+
+    /// Resolve a named field path within a by-value trampoline return value.
+    ///
+    /// Returns `Ok(None)` when the function returns `void`.
+    pub fn function_trampoline_ret_field(
+        &self,
+        function_name: &str,
+        field_path: &[TrampolineFieldSelector],
+    ) -> Result<Option<TrampolineFieldProjection>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let function_ret_type_ids = self.load_kfunc_return_type_id_map().unwrap_or_default();
+        let ty = btf
+            .get_types()
+            .iter()
+            .find(|ty| ty.is_function && ty.name.as_deref() == Some(function_name))
+            .ok_or_else(|| BtfError::TypeNotFound(function_name.to_string()))?;
+        let Some(ret_type_id) = function_ret_type_ids.get(&ty.type_id).copied() else {
+            return Ok(None);
+        };
+        if ret_type_id == 0 {
+            return Ok(None);
+        }
+
+        let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
+        self.resolve_trampoline_field_projection(&btf, ret_type_id, field_path, &raw_type_sizes)
+            .map(Some)
+    }
+
+    fn function_trampoline_layout(
+        &self,
+        function_name: &str,
+    ) -> Result<TrampolineFunctionLayout, BtfError> {
+        {
+            let cache = self.trampoline_layout_cache.read().unwrap();
+            if let Some(layout) = cache.get(function_name) {
+                return layout.clone();
+            }
+        }
+
+        let layout = self.compute_function_trampoline_layout(function_name);
+
+        let mut cache = self.trampoline_layout_cache.write().unwrap();
+        cache.insert(function_name.to_string(), layout.clone());
+        layout
+    }
+
+    fn compute_function_trampoline_layout(
+        &self,
+        function_name: &str,
+    ) -> Result<TrampolineFunctionLayout, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let function_ret_type_ids = self.load_kfunc_return_type_id_map().unwrap_or_default();
+        let ty = btf
+            .get_types()
+            .iter()
+            .find(|ty| ty.is_function && ty.name.as_deref() == Some(function_name))
+            .ok_or_else(|| BtfError::TypeNotFound(function_name.to_string()))?;
+        let Type::FunctionProto(proto) = &ty.base_type else {
+            return Err(BtfError::KernelBtfError(format!(
+                "function '{}' is missing a function prototype in kernel BTF",
+                function_name
+            )));
+        };
+
+        let mut next_slot = 0usize;
+        let mut args = Vec::with_capacity(proto.params.len());
+        for param in &proto.params {
+            // BTF varargs are represented by a terminal unnamed param with type_id=0.
+            if param.type_id == 0 {
+                break;
+            }
+            let raw_size_bytes = self
+                .load_raw_type_size_map()
+                .ok()
+                .and_then(|sizes| sizes.get(&param.type_id).copied())
+                .map(|size| size as usize);
+            let layout =
+                Self::trampoline_field_layout(&btf, param.type_id, next_slot, raw_size_bytes)?;
+            next_slot = next_slot.checked_add(layout.slot_count).ok_or_else(|| {
+                BtfError::KernelBtfError(format!(
+                    "trampoline layout for '{}' overflowed slot accounting",
+                    function_name
+                ))
+            })?;
+            args.push(layout);
+        }
+
+        let retval = match function_ret_type_ids.get(&ty.type_id).copied() {
+            Some(0) | None => None,
+            Some(ret_type_id) => {
+                let raw_size_bytes = self
+                    .load_raw_type_size_map()
+                    .ok()
+                    .and_then(|sizes| sizes.get(&ret_type_id).copied())
+                    .map(|size| size as usize);
+                Some(Self::trampoline_field_layout(
+                    &btf,
+                    ret_type_id,
+                    next_slot,
+                    raw_size_bytes,
+                )?)
+            }
+        };
+
+        Ok(TrampolineFunctionLayout { args, retval })
     }
 
     fn load_kfunc_nullable_arg_map(&self) -> Result<HashMap<String, Vec<usize>>, BtfError> {
@@ -1372,6 +1704,332 @@ impl KernelBtf {
         }
     }
 
+    fn trampoline_field_layout(
+        btf: &Btf,
+        type_id: u32,
+        slot_index: usize,
+        raw_size_bytes: Option<usize>,
+    ) -> Result<TrampolineFieldLayout, BtfError> {
+        let ty = btf.get_type_by_id(type_id).map_err(|e| {
+            BtfError::KernelBtfError(format!("failed to resolve kernel BTF type {type_id}: {e}"))
+        })?;
+        let slot_count = Self::trampoline_slot_count(btf, &ty, raw_size_bytes)?;
+        let value = Self::trampoline_value_kind(btf, &ty, raw_size_bytes)
+            .map(|kind| TrampolineValueSpec { slot_index, kind });
+        let unsupported_reason = value
+            .is_none()
+            .then(|| Self::trampoline_unsupported_reason(&ty));
+        Ok(TrampolineFieldLayout {
+            slot_index,
+            slot_count,
+            value,
+            unsupported_reason,
+        })
+    }
+
+    fn trampoline_size_bytes(
+        btf: &Btf,
+        ty: &FlattenedType,
+        raw_size_bytes: Option<usize>,
+    ) -> Result<usize, BtfError> {
+        if ty.num_refs > 0 {
+            return Ok(8);
+        }
+        if matches!(ty.base_type, Type::Struct(_) | Type::Union(_))
+            && let Some(size) = raw_size_bytes
+        {
+            return Ok(size);
+        }
+        let bits = Self::flattened_base_type_bits(btf, &ty.base_type)
+            .or_else(|| (ty.bits > 0).then_some(ty.bits))
+            .ok_or_else(|| {
+                BtfError::KernelBtfError(format!(
+                    "missing size information for trampoline type '{}'",
+                    ty.name.as_deref().unwrap_or("<anonymous>")
+                ))
+            })?;
+        usize::try_from(bits.div_ceil(8)).map_err(|_| {
+            BtfError::KernelBtfError(format!(
+                "size overflow for trampoline type '{}'",
+                ty.name.as_deref().unwrap_or("<anonymous>")
+            ))
+        })
+    }
+
+    fn trampoline_slot_count(
+        btf: &Btf,
+        ty: &FlattenedType,
+        raw_size_bytes: Option<usize>,
+    ) -> Result<usize, BtfError> {
+        let size_bytes = Self::trampoline_size_bytes(btf, ty, raw_size_bytes)?;
+        match size_bytes {
+            1 | 2 | 4 | 8 => Ok(1),
+            16 => Ok(2),
+            _ => Err(BtfError::KernelBtfError(format!(
+                "trampoline type '{}' uses unsupported {}-byte by-value layout",
+                ty.name.as_deref().unwrap_or("<anonymous>"),
+                size_bytes
+            ))),
+        }
+    }
+
+    fn trampoline_value_kind(
+        btf: &Btf,
+        ty: &FlattenedType,
+        raw_size_bytes: Option<usize>,
+    ) -> Option<TrampolineValueKind> {
+        if ty.num_refs > 0 {
+            return Some(TrampolineValueKind::Pointer {
+                user_space: Self::has_user_type_tag(&ty.type_tags),
+            });
+        }
+
+        match &ty.base_type {
+            Type::Integer(_) | Type::Float(_) | Type::Enum32(_) | Type::Enum64(_) => {
+                Some(TrampolineValueKind::Scalar)
+            }
+            Type::Array(_) | Type::Struct(_) | Type::Union(_) => {
+                let size_bytes = Self::trampoline_size_bytes(btf, ty, raw_size_bytes).ok()?;
+                Some(TrampolineValueKind::Aggregate { size_bytes })
+            }
+            Type::Void
+            | Type::Fwd(_)
+            | Type::Function(_)
+            | Type::FunctionProto(_)
+            | Type::Variable(_)
+            | Type::DataSection(_) => None,
+            Type::Pointer(_)
+            | Type::Typedef(_)
+            | Type::Volatile(_)
+            | Type::Const(_)
+            | Type::Restrict(_)
+            | Type::DeclTag(_)
+            | Type::TypeTag(_) => Some(TrampolineValueKind::Scalar),
+        }
+    }
+
+    fn trampoline_unsupported_reason(ty: &FlattenedType) -> String {
+        let type_name = ty.name.as_deref().unwrap_or("<anonymous>");
+        match &ty.base_type {
+            Type::Array(_) => format!("by-value array type '{type_name}'"),
+            Type::Struct(_) | Type::Union(_) => format!("by-value aggregate type '{type_name}'"),
+            Type::Void => "void type".to_string(),
+            _ => format!("type '{type_name}'"),
+        }
+    }
+
+    fn resolve_trampoline_field_projection(
+        &self,
+        btf: &Btf,
+        root_type_id: u32,
+        field_path: &[TrampolineFieldSelector],
+        raw_type_sizes: &HashMap<u32, u32>,
+    ) -> Result<TrampolineFieldProjection, BtfError> {
+        if field_path.is_empty() {
+            return Err(BtfError::KernelBtfError(
+                "empty trampoline field path".to_string(),
+            ));
+        }
+
+        let mut current_type_id = root_type_id;
+        let mut path = Vec::with_capacity(field_path.len());
+
+        let path_desc = Self::format_trampoline_field_path(field_path);
+        for segment in field_path {
+            let ty = btf.get_type_by_id(current_type_id).map_err(|e| {
+                BtfError::KernelBtfError(format!(
+                    "failed to resolve kernel BTF type {}: {}",
+                    current_type_id, e
+                ))
+            })?;
+            let ty_name = ty.name.as_deref().unwrap_or("<anonymous>");
+            if ty.num_refs > 1 {
+                return Err(BtfError::KernelBtfError(format!(
+                    "trampoline field path '{}' crosses a multi-level pointer type '{}', which is not supported yet",
+                    path_desc, ty_name
+                )));
+            }
+            let (next_type_id, offset_bytes) = match (segment, &ty.base_type) {
+                (TrampolineFieldSelector::Field(segment), Type::Struct(struct_ty))
+                | (TrampolineFieldSelector::Field(segment), Type::Union(struct_ty)) => {
+                    let member = struct_ty
+                        .members
+                        .iter()
+                        .find(|member| member.name.as_deref() == Some(segment.as_str()))
+                        .ok_or_else(|| {
+                            BtfError::KernelBtfError(format!(
+                                "trampoline aggregate type '{}' has no field '{}'",
+                                ty_name, segment
+                            ))
+                        })?;
+
+                    if member.bits.is_some_and(|bits| bits != 0) {
+                        return Err(BtfError::KernelBtfError(format!(
+                            "bitfield projection is not supported for trampoline field '{}.{}'",
+                            ty_name, segment
+                        )));
+                    }
+                    if member.offset % 8 != 0 {
+                        return Err(BtfError::KernelBtfError(format!(
+                            "trampoline field '{}.{}' is not byte-aligned",
+                            ty_name, segment
+                        )));
+                    }
+
+                    (member.type_id, (member.offset / 8) as usize)
+                }
+                (TrampolineFieldSelector::Field(segment), Type::Array(_)) => {
+                    return Err(BtfError::KernelBtfError(format!(
+                        "trampoline array type '{}' does not have a field '{}'; use a numeric index",
+                        ty_name, segment
+                    )));
+                }
+                (TrampolineFieldSelector::Field(_), _) => {
+                    return Err(BtfError::KernelBtfError(format!(
+                        "trampoline field path '{}' requires a struct/union or array, got '{}'",
+                        path_desc, ty_name
+                    )));
+                }
+                (TrampolineFieldSelector::Index(index), Type::Array(array_ty)) => {
+                    let num_elements = array_ty.num_elements as usize;
+                    if *index >= num_elements {
+                        return Err(BtfError::KernelBtfError(format!(
+                            "trampoline array type '{}' index {} is out of bounds (len {})",
+                            ty_name, index, num_elements
+                        )));
+                    }
+                    let elem_ty = btf.get_type_by_id(array_ty.elem_type_id).map_err(|e| {
+                        BtfError::KernelBtfError(format!(
+                            "failed to resolve kernel BTF type {}: {}",
+                            array_ty.elem_type_id, e
+                        ))
+                    })?;
+                    let raw_size_bytes = raw_type_sizes
+                        .get(&array_ty.elem_type_id)
+                        .copied()
+                        .map(|size| size as usize);
+                    let elem_size_bytes =
+                        Self::trampoline_size_bytes(btf, &elem_ty, raw_size_bytes)?;
+                    let offset_bytes = index.checked_mul(elem_size_bytes).ok_or_else(|| {
+                        BtfError::KernelBtfError(format!(
+                            "offset overflow while resolving trampoline field '{}'",
+                            path_desc
+                        ))
+                    })?;
+                    (array_ty.elem_type_id, offset_bytes)
+                }
+                (TrampolineFieldSelector::Index(index), _) => {
+                    return Err(BtfError::KernelBtfError(format!(
+                        "trampoline field path '{}' cannot index {} on non-array type '{}'",
+                        path_desc, index, ty_name
+                    )));
+                }
+            };
+
+            current_type_id = next_type_id;
+            let member_ty = btf.get_type_by_id(current_type_id).map_err(|e| {
+                BtfError::KernelBtfError(format!(
+                    "failed to resolve kernel BTF type {}: {}",
+                    current_type_id, e
+                ))
+            })?;
+            let raw_size_bytes = raw_type_sizes
+                .get(&current_type_id)
+                .copied()
+                .map(|size| size as usize);
+            path.push(TrampolineFieldPathSegment {
+                offset_bytes,
+                type_info: Self::type_info_from_btf_type(btf, &member_ty, raw_size_bytes)?,
+            });
+        }
+
+        let type_info = path
+            .last()
+            .map(|segment| segment.type_info.clone())
+            .ok_or_else(|| {
+                BtfError::KernelBtfError("empty trampoline field projection".to_string())
+            })?;
+
+        Ok(TrampolineFieldProjection { path, type_info })
+    }
+
+    fn format_trampoline_field_path(field_path: &[TrampolineFieldSelector]) -> String {
+        let mut out = String::new();
+        for (idx, segment) in field_path.iter().enumerate() {
+            if idx > 0 {
+                out.push('.');
+            }
+            match segment {
+                TrampolineFieldSelector::Field(name) => out.push_str(name),
+                TrampolineFieldSelector::Index(index) => out.push_str(&index.to_string()),
+            }
+        }
+        out
+    }
+
+    fn type_info_from_btf_type(
+        btf: &Btf,
+        ty: &FlattenedType,
+        raw_size_bytes: Option<usize>,
+    ) -> Result<TypeInfo, BtfError> {
+        if ty.num_refs > 0 {
+            return Ok(TypeInfo::Ptr {
+                target: Box::new(TypeInfo::Unknown),
+                is_user: Self::has_user_type_tag(&ty.type_tags),
+            });
+        }
+
+        match &ty.base_type {
+            Type::Integer(int_ty) => Ok(TypeInfo::Int {
+                size: usize::try_from(int_ty.bits.div_ceil(8)).map_err(|_| {
+                    BtfError::KernelBtfError(format!(
+                        "size overflow for integer trampoline field '{}'",
+                        ty.name.as_deref().unwrap_or("<anonymous>")
+                    ))
+                })?,
+                signed: int_ty.is_signed,
+            }),
+            Type::Enum32(_) => Ok(TypeInfo::Int {
+                size: 4,
+                signed: false,
+            }),
+            Type::Enum64(_) => Ok(TypeInfo::Int {
+                size: 8,
+                signed: false,
+            }),
+            Type::Array(array_ty) => {
+                let elem_ty = btf.get_type_by_id(array_ty.elem_type_id).map_err(|e| {
+                    BtfError::KernelBtfError(format!(
+                        "failed to resolve array element type {}: {}",
+                        array_ty.elem_type_id, e
+                    ))
+                })?;
+                Ok(TypeInfo::Array {
+                    element: Box::new(Self::type_info_from_btf_type(btf, &elem_ty, None)?),
+                    len: array_ty.num_elements as usize,
+                })
+            }
+            Type::Struct(_) | Type::Union(_) => Ok(TypeInfo::Struct {
+                name: ty.name.clone().unwrap_or_else(|| "<anonymous>".to_string()),
+                size: Self::trampoline_size_bytes(btf, ty, raw_size_bytes)?,
+            }),
+            Type::Void => Ok(TypeInfo::Void),
+            Type::Float(_)
+            | Type::Fwd(_)
+            | Type::FunctionProto(_)
+            | Type::DataSection(_)
+            | Type::Pointer(_)
+            | Type::Typedef(_)
+            | Type::Volatile(_)
+            | Type::Const(_)
+            | Type::Restrict(_)
+            | Type::Function(_)
+            | Type::Variable(_)
+            | Type::DeclTag(_)
+            | Type::TypeTag(_) => Ok(TypeInfo::Unknown),
+        }
+    }
+
     fn pointer_pointee_size_bytes(btf: &Btf, param_type_id: u32) -> Option<usize> {
         let param_ty = btf.get_type_by_id(param_type_id).ok()?;
         if param_ty.num_refs == 0 {
@@ -2227,6 +2885,51 @@ fn parse_function_return_type_ids_from_raw_btf(raw: &[u8]) -> Option<HashMap<u32
     Some(out)
 }
 
+fn parse_declared_type_sizes_from_raw_btf(raw: &[u8]) -> Option<HashMap<u32, u32>> {
+    let endianness = detect_btf_endianness(raw)?;
+    let hdr_len = read_u32(raw, 4, endianness)?;
+    let type_off = read_u32(raw, 8, endianness)?;
+    let type_len = read_u32(raw, 12, endianness)?;
+
+    let type_start = hdr_len.checked_add(type_off)?;
+    let type_end = type_start.checked_add(type_len)?;
+    if type_end as usize > raw.len() {
+        return None;
+    }
+
+    let mut out = HashMap::new();
+    let mut type_id: u32 = 1;
+    let mut cursor: u32 = type_start;
+
+    while cursor < type_end {
+        let header_end = cursor.checked_add(12)?;
+        if header_end > type_end {
+            return None;
+        }
+        let info = read_u32(raw, cursor as usize + 4, endianness)?;
+        let size_type = read_u32(raw, cursor as usize + 8, endianness)?;
+        let kind = (info >> 24) & 0x1f;
+        let vlen = info & 0xffff;
+
+        if matches!(kind, 4 | 5) {
+            out.insert(type_id, size_type);
+        }
+
+        let payload_len = btf_kind_payload_len(kind, vlen)?;
+        cursor = header_end.checked_add(payload_len)?;
+        if cursor > type_end {
+            return None;
+        }
+        type_id = type_id.checked_add(1)?;
+    }
+
+    if cursor != type_end {
+        return None;
+    }
+
+    Some(out)
+}
+
 fn detect_btf_endianness(raw: &[u8]) -> Option<BtfEndianness> {
     if raw.len() < 2 {
         return None;
@@ -2264,7 +2967,7 @@ fn btf_kind_payload_len(kind: u32, vlen: u32) -> Option<u32> {
         14 => Some(4),                   // BTF_KIND_VAR
         15 => vlen.checked_mul(12),      // BTF_KIND_DATASEC
         16 => Some(0),                   // BTF_KIND_FLOAT
-        17 => Some(8),                   // BTF_KIND_DECL_TAG
+        17 => Some(4),                   // BTF_KIND_DECL_TAG
         18 => Some(0),                   // BTF_KIND_TYPE_TAG
         19 => vlen.checked_mul(12),      // BTF_KIND_ENUM64
         _ => None,
@@ -2282,6 +2985,8 @@ mod tests {
             tracepoint_cache: RwLock::new(HashMap::new()),
             function_cache: RwLock::new(None),
             pt_regs_cache: RwLock::new(None),
+            raw_type_size_cache: RwLock::new(None),
+            trampoline_layout_cache: RwLock::new(HashMap::new()),
             kfunc_nullable_arg_cache: RwLock::new(None),
             kfunc_const_pointer_arg_cache: RwLock::new(None),
             kfunc_user_pointer_arg_cache: RwLock::new(None),
@@ -2769,6 +3474,79 @@ format:
         }
     }
 
+    #[test]
+    fn test_validate_fexit_target_rejects_aggregate_return_candidate() {
+        let candidate = ["__jump_label_patch", "__ioapic_read_entry"]
+            .into_iter()
+            .find(|func_name| {
+                matches!(
+                    KernelBtf::get().function_trampoline_ret(func_name),
+                    Ok(Some(TrampolineValueSpec {
+                        kind: TrampolineValueKind::Aggregate { .. },
+                        ..
+                    }))
+                )
+            });
+
+        let Some(func_name) = candidate else {
+            return;
+        };
+
+        let err = KernelBtf::get()
+            .validate_fexit_target(func_name)
+            .expect_err("aggregate-return fexit target should be rejected early");
+        assert!(
+            matches!(err, BtfError::KernelBtfError(message) if message.contains("aggregate return"))
+        );
+    }
+
+    #[test]
+    fn test_function_trampoline_arg_field_resolves_pointer_hop() {
+        let projection = KernelBtf::get()
+            .function_trampoline_arg_field(
+                "security_file_open",
+                0,
+                &[
+                    TrampolineFieldSelector::Field("f_inode".to_string()),
+                    TrampolineFieldSelector::Field("i_ino".to_string()),
+                ],
+            )
+            .expect("security_file_open pointer-hop field path should resolve")
+            .expect("security_file_open arg0 should exist");
+
+        assert_eq!(projection.path.len(), 2);
+        assert!(matches!(
+            projection.path[0].type_info,
+            TypeInfo::Ptr { is_user: false, .. }
+        ));
+        assert!(matches!(projection.type_info, TypeInfo::Int { .. }));
+    }
+
+    #[test]
+    fn test_function_trampoline_arg_field_resolves_array_index() {
+        let projection = KernelBtf::get()
+            .function_trampoline_arg_field(
+                "wake_up_new_task",
+                0,
+                &[
+                    TrampolineFieldSelector::Field("comm".to_string()),
+                    TrampolineFieldSelector::Index(0),
+                ],
+            )
+            .expect("wake_up_new_task array field path should resolve")
+            .expect("wake_up_new_task arg0 should exist");
+
+        assert_eq!(projection.path.len(), 2);
+        assert!(matches!(
+            projection.path[0].type_info,
+            TypeInfo::Array { len: 16, .. }
+        ));
+        assert!(matches!(
+            projection.type_info,
+            TypeInfo::Int { size: 1, .. }
+        ));
+    }
+
     fn push_u32(buf: &mut Vec<u8>, value: u32, endianness: BtfEndianness) {
         match endianness {
             BtfEndianness::Little => buf.extend_from_slice(&value.to_le_bytes()),
@@ -2828,6 +3606,48 @@ format:
         let parsed = parse_function_return_type_ids_from_raw_btf(&raw)
             .expect("expected return-type map from raw BTF");
         assert_eq!(parsed.get(&1).copied(), Some(3));
+    }
+
+    #[test]
+    fn test_parse_raw_btf_function_return_type_ids_with_decl_tag() {
+        let hdr_len = 24u32;
+        let type_len = 12u32 + 20u32 + 16u32;
+        let str_off = type_len;
+        let str_len = 1u32;
+
+        let mut raw = Vec::new();
+        push_u16(&mut raw, 0xeb9f, BtfEndianness::Little);
+        raw.push(1); // version
+        raw.push(0); // flags
+        push_u32(&mut raw, hdr_len, BtfEndianness::Little);
+        push_u32(&mut raw, 0, BtfEndianness::Little); // type_off
+        push_u32(&mut raw, type_len, BtfEndianness::Little);
+        push_u32(&mut raw, str_off, BtfEndianness::Little);
+        push_u32(&mut raw, str_len, BtfEndianness::Little);
+
+        // [1] BTF_KIND_DECL_TAG -> type_id 0, payload component_idx=0
+        push_u32(&mut raw, 0, BtfEndianness::Little); // name_off
+        push_u32(&mut raw, 17u32 << 24, BtfEndianness::Little);
+        push_u32(&mut raw, 0, BtfEndianness::Little); // type
+        push_u32(&mut raw, 0, BtfEndianness::Little); // component_idx
+
+        // [2] BTF_KIND_FUNC -> proto id 3
+        push_u32(&mut raw, 0, BtfEndianness::Little); // name_off
+        push_u32(&mut raw, (12u32 << 24) | 1, BtfEndianness::Little);
+        push_u32(&mut raw, 3, BtfEndianness::Little);
+
+        // [3] BTF_KIND_FUNC_PROTO -> int return, one int arg
+        push_u32(&mut raw, 0, BtfEndianness::Little); // name_off
+        push_u32(&mut raw, (13u32 << 24) | 1, BtfEndianness::Little);
+        push_u32(&mut raw, 4, BtfEndianness::Little); // ret_type_id
+        push_u32(&mut raw, 0, BtfEndianness::Little); // param name_off
+        push_u32(&mut raw, 4, BtfEndianness::Little); // param type_id
+
+        raw.push(0); // string section null terminator
+
+        let parsed = parse_function_return_type_ids_from_raw_btf(&raw)
+            .expect("expected return-type map from raw BTF with decl tag");
+        assert_eq!(parsed.get(&2).copied(), Some(4));
     }
 
     #[test]

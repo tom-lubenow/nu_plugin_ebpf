@@ -342,6 +342,16 @@ fn test_list_literal_compilation() {
     let pass = ListLowering;
     assert!(pass.run(&mut func, &cfg));
 
+    let emit_data = func
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .find_map(|inst| match inst {
+            MirInst::EmitEvent { data, .. } => Some(*data),
+            _ => None,
+        })
+        .expect("list lowering should preserve emit event");
+
     let program = MirProgram {
         main: func,
         subfunctions: vec![],
@@ -349,7 +359,19 @@ fn test_list_literal_compilation() {
 
     // Compile and verify
     let lir = lower_mir_to_lir(&program);
-    let mut compiler = MirToEbpfCompiler::new(&lir, None);
+    let mut program_types = ProgramVregTypes::default();
+    program_types.main.insert(
+        emit_data,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 32,
+            }),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    let mut compiler = MirToEbpfCompiler::new_with_types(&lir, None, program_types.clone());
+    compiler.current_types = program_types.main.clone();
     compiler
         .prepare_function_state(
             &lir.main,

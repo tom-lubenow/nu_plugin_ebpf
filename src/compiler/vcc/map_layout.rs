@@ -1,6 +1,10 @@
 fn map_value_limit(map_name: &str) -> Option<i64> {
     match map_name {
-        COUNTER_MAP_NAME | STRING_COUNTER_MAP_NAME | HISTOGRAM_MAP_NAME | TIMESTAMP_MAP_NAME => {
+        COUNTER_MAP_NAME
+        | STRING_COUNTER_MAP_NAME
+        | BYTES_COUNTER_MAP_NAME
+        | HISTOGRAM_MAP_NAME
+        | TIMESTAMP_MAP_NAME => {
             Some(8 - 1)
         }
         KSTACK_MAP_NAME | USTACK_MAP_NAME => Some((127 * 8) - 1),
@@ -29,6 +33,7 @@ fn is_builtin_map_name(name: &str) -> bool {
         RINGBUF_MAP_NAME
             | COUNTER_MAP_NAME
             | STRING_COUNTER_MAP_NAME
+            | BYTES_COUNTER_MAP_NAME
             | HISTOGRAM_MAP_NAME
             | TIMESTAMP_MAP_NAME
             | KSTACK_MAP_NAME
@@ -37,7 +42,10 @@ fn is_builtin_map_name(name: &str) -> bool {
 }
 
 fn is_counter_map_name(name: &str) -> bool {
-    matches!(name, COUNTER_MAP_NAME | STRING_COUNTER_MAP_NAME)
+    matches!(
+        name,
+        COUNTER_MAP_NAME | STRING_COUNTER_MAP_NAME | BYTES_COUNTER_MAP_NAME
+    )
 }
 
 fn check_counter_map_kind(
@@ -272,4 +280,3 @@ fn map_value_limit_from_dst_type(dst_ty: Option<&MirType>) -> Option<i64> {
     }
     Some(size.saturating_sub(1) as i64)
 }
-

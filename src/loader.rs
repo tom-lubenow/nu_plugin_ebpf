@@ -9,11 +9,13 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use aya::maps::{HashMap as AyaHashMap, PerCpuHashMap, RingBuf};
-use aya::programs::{KProbe, RawTracePoint, TracePoint, UProbe};
-use aya::{Ebpf, EbpfLoader};
+use aya::programs::{FEntry, FExit, KProbe, RawTracePoint, TracePoint, UProbe};
+use aya::{Btf, Ebpf, EbpfLoader};
 use thiserror::Error;
 
-use crate::compiler::{BpfFieldType, CompileError, EbpfProgram, EbpfProgramType, EventSchema};
+use crate::compiler::{
+    BpfFieldType, CompileError, CounterKeySchema, EbpfProgram, EbpfProgramType, EventSchema,
+};
 
 /// Maximum entries per eBPF hash map
 const MAX_MAP_ENTRIES: usize = 10240;
@@ -57,6 +59,13 @@ pub enum LoadError {
     #[error("Tracepoint not found: {category}/{name}")]
     TracepointNotFound { category: String, name: String },
 
+    #[error("Unsupported {probe_type} target '{target}': {reason}")]
+    UnsupportedTrampolineTarget {
+        probe_type: String,
+        target: String,
+        reason: String,
+    },
+
     #[error("Elevated privileges required")]
     NeedsSudo,
 
@@ -93,6 +102,8 @@ pub struct ActiveProbe {
     has_counter_map: bool,
     /// Whether this probe has a string counter map (hash or per-CPU hash)
     has_string_counter_map: bool,
+    /// Whether this probe has a bytes counter map (hash or per-CPU hash)
+    has_bytes_counter_map: bool,
     /// Whether this probe has a histogram hash map
     has_histogram_map: bool,
     /// Whether this probe has a kernel stack trace map
@@ -103,6 +114,8 @@ pub struct ActiveProbe {
     ringbuf: Option<RingBuf<aya::maps::MapData>>,
     /// Optional schema for structured events
     event_schema: Option<EventSchema>,
+    /// Optional schema for decoding `bytes_counters` keys
+    bytes_counter_key_schema: Option<CounterKeySchema>,
     /// Pin group name (if maps are pinned for sharing)
     pin_group: Option<String>,
 }
@@ -116,10 +129,15 @@ impl std::fmt::Debug for ActiveProbe {
             .field("has_ringbuf", &self.has_ringbuf)
             .field("has_counter_map", &self.has_counter_map)
             .field("has_string_counter_map", &self.has_string_counter_map)
+            .field("has_bytes_counter_map", &self.has_bytes_counter_map)
             .field("has_histogram_map", &self.has_histogram_map)
             .field("has_kstack_map", &self.has_kstack_map)
             .field("has_ustack_map", &self.has_ustack_map)
             .field("event_schema", &self.event_schema.is_some())
+            .field(
+                "bytes_counter_key_schema",
+                &self.bytes_counter_key_schema.is_some(),
+            )
             .finish()
     }
 }
@@ -131,6 +149,23 @@ pub enum BpfFieldValue {
     Int(i64),
     /// A string value
     String(String),
+    /// Raw bytes
+    Bytes(Vec<u8>),
+}
+
+/// A decoded value used for schema-aware `bytes_counters` keys.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CounterKeyValue {
+    /// Integer-like scalar
+    Int(i64),
+    /// Null-terminated string stored in a byte array
+    String(String),
+    /// Opaque bytes
+    Bytes(Vec<u8>),
+    /// Fixed-size array/list
+    Array(Vec<CounterKeyValue>),
+    /// Struct/record
+    Record(Vec<(String, CounterKeyValue)>),
 }
 
 /// The data payload of an eBPF event
@@ -169,6 +204,15 @@ pub struct CounterEntry {
 pub struct StringCounterEntry {
     /// The key (e.g., process name from $ctx.comm)
     pub key: String,
+    /// The count value
+    pub count: i64,
+}
+
+/// A counter entry from the bytes-key bpf-count hash map
+#[derive(Debug, Clone)]
+pub struct BytesCounterEntry {
+    /// The decoded key value
+    pub key: CounterKeyValue,
     /// The count value
     pub count: i64,
 }

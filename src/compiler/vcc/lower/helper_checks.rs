@@ -731,6 +731,13 @@ impl<'a> VccLowerer<'a> {
     ) -> Result<(), VccError> {
         if map_name == STRING_COUNTER_MAP_NAME {
             self.check_ptr_range(key, 16, out)
+        } else if map_name == BYTES_COUNTER_MAP_NAME {
+            let size = match self.types.get(&key) {
+                Some(MirType::Ptr { pointee, .. }) => pointee.size().max(1),
+                Some(ty) => ty.size().max(1),
+                None => 1,
+            };
+            self.check_ptr_range(key, size, out)
         } else {
             self.verify_map_operand(key, "map key", out)
         }

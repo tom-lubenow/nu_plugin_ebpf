@@ -85,6 +85,34 @@ impl EbpfState {
                     .attach(&program.target, 0)
                     .map_err(|e| LoadError::Attach(format!("Failed to attach kretprobe: {e}")))?;
             }
+            EbpfProgramType::Fentry => {
+                let btf = Btf::from_sys_fs().map_err(|e| {
+                    LoadError::Load(format!("Failed to load kernel BTF for fentry: {e}"))
+                })?;
+                let fentry: &mut FEntry = prog
+                    .try_into()
+                    .map_err(|e| LoadError::Load(format!("Failed to convert to FEntry: {e}")))?;
+                fentry
+                    .load(&program.target, &btf)
+                    .map_err(|e| LoadError::Load(format!("Failed to load fentry: {e}")))?;
+                fentry
+                    .attach()
+                    .map_err(|e| LoadError::Attach(format!("Failed to attach fentry: {e}")))?;
+            }
+            EbpfProgramType::Fexit => {
+                let btf = Btf::from_sys_fs().map_err(|e| {
+                    LoadError::Load(format!("Failed to load kernel BTF for fexit: {e}"))
+                })?;
+                let fexit: &mut FExit = prog
+                    .try_into()
+                    .map_err(|e| LoadError::Load(format!("Failed to convert to FExit: {e}")))?;
+                fexit
+                    .load(&program.target, &btf)
+                    .map_err(|e| LoadError::Load(format!("Failed to load fexit: {e}")))?;
+                fexit
+                    .attach()
+                    .map_err(|e| LoadError::Attach(format!("Failed to attach fexit: {e}")))?;
+            }
             EbpfProgramType::Tracepoint => {
                 // Tracepoint target format: "category/name" (e.g., "syscalls/sys_enter_openat")
                 let parts: Vec<&str> = program.target.splitn(2, '/').collect();
@@ -160,6 +188,7 @@ impl EbpfState {
         let has_ringbuf = ebpf.map("events").is_some();
         let has_counter_map = ebpf.map("counters").is_some();
         let has_string_counter_map = ebpf.map("str_counters").is_some();
+        let has_bytes_counter_map = ebpf.map("bytes_counters").is_some();
         let has_histogram_map = ebpf.map("histogram").is_some();
         let has_kstack_map = ebpf.map("kstacks").is_some();
         let has_ustack_map = ebpf.map("ustacks").is_some();
@@ -201,11 +230,13 @@ impl EbpfState {
             has_ringbuf,
             has_counter_map,
             has_string_counter_map,
+            has_bytes_counter_map,
             has_histogram_map,
             has_kstack_map,
             has_ustack_map,
             ringbuf,
             event_schema: program.event_schema.clone(),
+            bytes_counter_key_schema: program.bytes_counter_key_schema.clone(),
             pin_group: pin_group_owned,
         };
 

@@ -70,7 +70,19 @@ fn test_emit_event_copies_buffer() {
     };
 
     let lir = lower_mir_to_lir(&program);
-    let mut compiler = MirToEbpfCompiler::new(&lir, None);
+    let mut program_types = ProgramVregTypes::default();
+    program_types.main.insert(
+        v0,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 16,
+            }),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    let mut compiler = MirToEbpfCompiler::new_with_types(&lir, None, program_types.clone());
+    compiler.current_types = program_types.main.clone();
     compiler
         .prepare_function_state(
             &lir.main,
@@ -94,6 +106,140 @@ fn test_emit_event_copies_buffer() {
     });
 
     assert!(saw_copy, "Expected buffer copy from pointer for emit");
+}
+
+#[test]
+fn test_emit_event_copies_small_stack_backed_buffer() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: v0,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::EmitEvent { data: v0, size: 4 });
+    func.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let lir = lower_mir_to_lir(&program);
+    let mut program_types = ProgramVregTypes::default();
+    program_types.main.insert(
+        v0,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 4,
+            }),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    let mut compiler = MirToEbpfCompiler::new_with_types(&lir, None, program_types.clone());
+    compiler.current_types = program_types.main.clone();
+    compiler
+        .prepare_function_state(
+            &lir.main,
+            compiler.available_regs.clone(),
+            lir.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&lir.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    let data_reg = compiler
+        .vreg_to_phys
+        .get(&VReg(0))
+        .copied()
+        .expect("VReg(0) should be assigned a physical register");
+    let saw_copy = compiler.instructions.iter().any(|insn| {
+        insn.opcode == (opcode::BPF_LDX | opcode::BPF_W | opcode::BPF_MEM)
+            && insn.dst_reg == EbpfReg::R0.as_u8()
+            && insn.src_reg == data_reg.as_u8()
+    });
+    let scalar_store_from_pointer = compiler.instructions.iter().any(|insn| {
+        (insn.opcode == (opcode::BPF_STX | opcode::BPF_W | opcode::BPF_MEM)
+            || insn.opcode == (opcode::BPF_STX | opcode::BPF_DW | opcode::BPF_MEM))
+            && insn.dst_reg == EbpfReg::R10.as_u8()
+            && insn.src_reg == data_reg.as_u8()
+    });
+
+    assert!(saw_copy, "Expected 4-byte emit to copy from pointer input");
+    assert!(
+        !scalar_store_from_pointer,
+        "Small pointer-backed emit should not store the pointer value itself"
+    );
+}
+
+#[test]
+fn test_emit_event_registers_bytes_schema_for_struct_payload() {
+    use crate::compiler::elf::BpfFieldType;
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(24, 8, StackSlotKind::Local);
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: v0,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::EmitEvent { data: v0, size: 24 });
+    func.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let mut program_types = ProgramVregTypes::default();
+    program_types.main.insert(
+        v0,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Struct {
+                name: Some("opaque_path".to_string()),
+                fields: vec![StructField {
+                    name: "__opaque".to_string(),
+                    ty: MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len: 24,
+                    },
+                    offset: 0,
+                }],
+            }),
+            address_space: AddressSpace::Stack,
+        },
+    );
+
+    let lir = lower_mir_to_lir(&program);
+    let compiler = MirToEbpfCompiler::new_with_types(&lir, None, program_types);
+    let result = compiler.compile().expect("struct emit should compile");
+    let schema = result.event_schema.expect("expected emit schema");
+
+    assert_eq!(schema.total_size, 24);
+    assert_eq!(schema.fields.len(), 1);
+    assert_eq!(schema.fields[0].name, "value");
+    assert_eq!(schema.fields[0].field_type, BpfFieldType::Bytes(24));
+    assert_eq!(schema.fields[0].offset, 0);
 }
 
 #[test]
@@ -289,6 +435,224 @@ fn test_counter_map_kind_conflict_rejected() {
             let msg = err.to_string();
             assert!(
                 msg.contains("conflicting kinds"),
+                "unexpected error message: {msg}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_bytes_counter_map_emits_struct_key_size() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(24, 8, StackSlotKind::Local);
+    let key = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+        map: MapRef {
+            name: BYTES_COUNTER_MAP_NAME.to_string(),
+            kind: MapKind::Hash,
+        },
+        key,
+        val: key,
+        flags: 0,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let lir = lower_mir_to_lir(&program);
+    let mut program_types = ProgramVregTypes::default();
+    program_types.main.insert(
+        key,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Struct {
+                name: Some("opaque_path".to_string()),
+                fields: vec![StructField {
+                    name: "__opaque".to_string(),
+                    ty: MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len: 24,
+                    },
+                    offset: 0,
+                }],
+            }),
+            address_space: AddressSpace::Stack,
+        },
+    );
+
+    let compiler = MirToEbpfCompiler::new_with_types(&lir, None, program_types);
+    let result = compiler
+        .compile()
+        .expect("bytes counter map with struct key should compile");
+    let map = result
+        .maps
+        .iter()
+        .find(|m| m.name == BYTES_COUNTER_MAP_NAME)
+        .expect("expected bytes counter map");
+    assert_eq!(map.def.key_size, 24);
+    assert_eq!(map.def.value_size, 8);
+    assert_eq!(
+        result.bytes_counter_key_schema,
+        Some(crate::compiler::CounterKeySchema::Bytes { size: 24 })
+    );
+}
+
+#[test]
+fn test_bytes_counter_map_rejects_mixed_key_schemas() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let bytes_slot = func.alloc_stack_slot(8, 1, StackSlotKind::Local);
+    let struct_slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let bytes_key = func.alloc_vreg();
+    let struct_key = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: bytes_key,
+        src: MirValue::StackSlot(bytes_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+        map: MapRef {
+            name: BYTES_COUNTER_MAP_NAME.to_string(),
+            kind: MapKind::Hash,
+        },
+        key: bytes_key,
+        val: bytes_key,
+        flags: 0,
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: struct_key,
+        src: MirValue::StackSlot(struct_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+        map: MapRef {
+            name: BYTES_COUNTER_MAP_NAME.to_string(),
+            kind: MapKind::Hash,
+        },
+        key: struct_key,
+        val: struct_key,
+        flags: 0,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let lir = lower_mir_to_lir(&program);
+    let mut program_types = ProgramVregTypes::default();
+    program_types.main.insert(
+        bytes_key,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 8,
+            }),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    program_types.main.insert(
+        struct_key,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Struct {
+                name: Some("pair".to_string()),
+                fields: vec![StructField {
+                    name: "value".to_string(),
+                    ty: MirType::U64,
+                    offset: 0,
+                }],
+            }),
+            address_space: AddressSpace::Stack,
+        },
+    );
+
+    let compiler = MirToEbpfCompiler::new_with_types(&lir, None, program_types);
+    match compiler.compile() {
+        Ok(_) => panic!("expected bytes counter key schema mismatch"),
+        Err(err) => {
+            let msg = err.to_string();
+            assert!(
+                msg.contains("bytes_counters key schema mismatch"),
+                "unexpected error message: {msg}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_counter_map_rejects_stack_struct_pointer_key() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(24, 8, StackSlotKind::Local);
+    let key = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+        map: MapRef {
+            name: COUNTER_MAP_NAME.to_string(),
+            kind: MapKind::Hash,
+        },
+        key,
+        val: key,
+        flags: 0,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let lir = lower_mir_to_lir(&program);
+    let mut program_types = ProgramVregTypes::default();
+    program_types.main.insert(
+        key,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Struct {
+                name: Some("opaque_path".to_string()),
+                fields: vec![StructField {
+                    name: "__opaque".to_string(),
+                    ty: MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len: 24,
+                    },
+                    offset: 0,
+                }],
+            }),
+            address_space: AddressSpace::Stack,
+        },
+    );
+
+    let compiler = MirToEbpfCompiler::new_with_types(&lir, None, program_types);
+    match compiler.compile() {
+        Ok(_) => panic!("expected aggregate counter key rejection"),
+        Err(err) => {
+            let msg = err.to_string();
+            assert!(
+                msg.contains("aggregate byte-buffer keys must use bytes_counters"),
                 "unexpected error message: {msg}"
             );
         }

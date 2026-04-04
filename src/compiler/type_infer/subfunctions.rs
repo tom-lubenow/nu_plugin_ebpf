@@ -114,7 +114,8 @@ pub fn infer_subfunction_schemes(
     for idx in order {
         let subfn_id = SubfunctionId(idx as u32);
         let func = &subfunctions[idx];
-        let mut ti = TypeInference::new_with_env(probe_ctx.clone(), Some(&schemes), None, None);
+        let mut ti =
+            TypeInference::new_with_env(probe_ctx.clone(), Some(&schemes), None, None, None);
         match ti.infer(func) {
             Ok(_) => {
                 let scheme = ti.scheme_for_function(func, Some(&schemes));

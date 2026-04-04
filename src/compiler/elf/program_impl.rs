@@ -20,6 +20,7 @@ impl EbpfProgram {
             relocations: Vec::new(),
             subfunctions: Vec::new(),
             event_schema: None,
+            bytes_counter_key_schema: None,
         }
     }
 
@@ -42,6 +43,7 @@ impl EbpfProgram {
             relocations: Vec::new(),
             subfunctions: Vec::new(),
             event_schema: None,
+            bytes_counter_key_schema: None,
         }
     }
 
@@ -56,6 +58,7 @@ impl EbpfProgram {
         relocations: Vec<MapRelocation>,
         subfunctions: Vec<SubfunctionSymbol>,
         event_schema: Option<EventSchema>,
+        bytes_counter_key_schema: Option<CounterKeySchema>,
     ) -> Self {
         Self {
             prog_type,
@@ -68,6 +71,7 @@ impl EbpfProgram {
             relocations,
             subfunctions,
             event_schema,
+            bytes_counter_key_schema,
         }
     }
 

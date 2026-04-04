@@ -234,7 +234,7 @@ impl<'a> VccLowerer<'a> {
                         slot: *slot,
                         size,
                     });
-                    if size > 0 {
+                    if size > 0 && matches!(field, CtxField::Comm) {
                         out.push(VccInst::Store {
                             ptr: VccReg(dst.0),
                             offset: size.saturating_sub(1),
@@ -393,7 +393,13 @@ impl<'a> VccLowerer<'a> {
                 self.verify_map_key(&map.name, *key, out)?;
             }
             MirInst::EmitEvent { data, size } => {
-                if *size <= 8 {
+                if let Some(MirType::Ptr { pointee, .. }) = self.types.get(data) {
+                    let access_size = match pointee.as_ref() {
+                        MirType::Array { .. } | MirType::Struct { .. } => pointee.size().max(1),
+                        _ => (*size).max(1),
+                    };
+                    self.check_ptr_range(*data, access_size, out)?;
+                } else if *size <= 8 {
                     self.assert_scalar_reg(*data, out);
                 } else {
                     self.check_ptr_range(*data, *size, out)?;
@@ -401,11 +407,16 @@ impl<'a> VccLowerer<'a> {
             }
             MirInst::EmitRecord { fields } => {
                 for field in fields {
-                    let size = record_field_size(&field.ty);
-                    if size <= 8 {
-                        self.assert_scalar_reg(field.value, out);
-                    } else {
+                    if let Some(MirType::Ptr { pointee, .. }) = self.types.get(&field.value) {
+                        let size = match pointee.as_ref() {
+                            MirType::Array { .. } | MirType::Struct { .. } => {
+                                pointee.size().max(1)
+                            }
+                            _ => record_field_size(&field.ty),
+                        };
                         self.check_ptr_range(field.value, size, out)?;
+                    } else {
+                        self.assert_scalar_reg(field.value, out);
                     }
                 }
             }

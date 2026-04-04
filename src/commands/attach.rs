@@ -14,9 +14,15 @@ use nu_protocol::{
 use crate::EbpfPlugin;
 use crate::compiler::{
     EbpfProgram, ProbeContext, UserFunctionSig, UserParam, UserParamKind,
-    compile_mir_to_ebpf_with_hints, hir::HirFunction, hir_type_infer, infer_ctx_param,
-    lower_hir_to_mir_with_hints, lower_ir_to_hir, passes::optimize_with_ssa,
+    compile_mir_to_ebpf_with_hints,
+    hir::HirFunction,
+    hir_type_infer, infer_ctx_param, lower_hir_to_mir_with_hints, lower_ir_to_hir,
+    mir::{
+        AddressSpace, BinOpKind, CtxField, MirFunction, MirInst, MirType, MirTypeHints, MirValue,
+    },
+    passes::optimize_with_ssa,
 };
+use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 
 /// Known eBPF helper commands that need to be mapped by decl_id
 const EBPF_COMMANDS: &[&str] = &[
@@ -315,6 +321,201 @@ fn fetch_user_function_signatures(
     Ok(sigs)
 }
 
+fn pointer_hint(address_space: AddressSpace) -> MirType {
+    MirType::Ptr {
+        pointee: Box::new(MirType::U8),
+        address_space,
+    }
+}
+
+fn recover_ctx_field_hint(
+    probe_ctx: Option<&ProbeContext>,
+    field: &CtxField,
+    has_backing_slot: bool,
+) -> Option<MirType> {
+    if has_backing_slot {
+        return Some(pointer_hint(AddressSpace::Stack));
+    }
+
+    match field {
+        CtxField::Comm => Some(MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 16,
+            }),
+            address_space: AddressSpace::Stack,
+        }),
+        CtxField::Arg(idx) => {
+            let ctx = probe_ctx?;
+            if matches!(
+                ctx.probe_type,
+                crate::compiler::EbpfProgramType::Fentry | crate::compiler::EbpfProgramType::Fexit
+            ) {
+                let spec = KernelBtf::get()
+                    .function_trampoline_arg(&ctx.target, *idx as usize)
+                    .ok()
+                    .flatten()?;
+                match spec.kind {
+                    TrampolineValueKind::Pointer { user_space } => {
+                        Some(pointer_hint(if user_space {
+                            AddressSpace::User
+                        } else {
+                            AddressSpace::Kernel
+                        }))
+                    }
+                    _ => None,
+                }
+            } else if ctx.is_userspace() {
+                Some(pointer_hint(AddressSpace::User))
+            } else {
+                None
+            }
+        }
+        CtxField::RetVal => {
+            let ctx = probe_ctx?;
+            if !matches!(ctx.probe_type, crate::compiler::EbpfProgramType::Fexit) {
+                return None;
+            }
+            let spec = KernelBtf::get()
+                .function_trampoline_ret(&ctx.target)
+                .ok()
+                .flatten()?;
+            match spec.kind {
+                TrampolineValueKind::Pointer { user_space } => Some(pointer_hint(if user_space {
+                    AddressSpace::User
+                } else {
+                    AddressSpace::Kernel
+                })),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn recover_function_type_hints(
+    func: &MirFunction,
+    probe_ctx: Option<&ProbeContext>,
+    hints: &mut HashMap<crate::compiler::mir::VReg, MirType>,
+    stack_slot_hints: &HashMap<crate::compiler::mir::StackSlotId, MirType>,
+) {
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for block in &func.blocks {
+            for inst in block
+                .instructions
+                .iter()
+                .chain(std::iter::once(&block.terminator))
+            {
+                let recovered = match inst {
+                    MirInst::Copy { dst, src } => match src {
+                        MirValue::VReg(src_vreg) => {
+                            hints.get(src_vreg).cloned().map(|ty| (*dst, ty))
+                        }
+                        MirValue::StackSlot(slot) => Some((
+                            *dst,
+                            stack_slot_hints
+                                .get(slot)
+                                .cloned()
+                                .map(|ty| MirType::Ptr {
+                                    pointee: Box::new(ty),
+                                    address_space: AddressSpace::Stack,
+                                })
+                                .unwrap_or_else(|| pointer_hint(AddressSpace::Stack)),
+                        )),
+                        MirValue::Const(_) => None,
+                    },
+                    MirInst::Load { dst, ty, .. } | MirInst::LoadSlot { dst, ty, .. } => {
+                        (!matches!(ty, MirType::Unknown)).then(|| (*dst, ty.clone()))
+                    }
+                    MirInst::LoadCtxField { dst, field, slot } => slot
+                        .and_then(|slot| {
+                            stack_slot_hints.get(&slot).cloned().map(|ty| {
+                                (
+                                    *dst,
+                                    MirType::Ptr {
+                                        pointee: Box::new(ty),
+                                        address_space: AddressSpace::Stack,
+                                    },
+                                )
+                            })
+                        })
+                        .or_else(|| {
+                            recover_ctx_field_hint(probe_ctx, field, slot.is_some())
+                                .map(|ty| (*dst, ty))
+                        }),
+                    MirInst::MapLookup { dst, .. } => Some((*dst, pointer_hint(AddressSpace::Map))),
+                    MirInst::BinOp { dst, op, lhs, rhs }
+                        if matches!(op, BinOpKind::Add | BinOpKind::Sub) =>
+                    {
+                        let lhs_ptr = match lhs {
+                            MirValue::VReg(vreg) => hints.get(vreg),
+                            _ => None,
+                        };
+                        let rhs_ptr = match rhs {
+                            MirValue::VReg(vreg) => hints.get(vreg),
+                            _ => None,
+                        };
+                        lhs_ptr
+                            .filter(|ty| matches!(ty, MirType::Ptr { .. }))
+                            .cloned()
+                            .or_else(|| {
+                                if matches!(op, BinOpKind::Add) {
+                                    rhs_ptr
+                                        .filter(|ty| matches!(ty, MirType::Ptr { .. }))
+                                        .cloned()
+                                } else {
+                                    None
+                                }
+                            })
+                            .map(|ty| (*dst, ty))
+                    }
+                    _ => None,
+                };
+
+                if let Some((dst, ty)) = recovered
+                    && hints.get(&dst).is_none()
+                {
+                    hints.insert(dst, ty);
+                    changed = true;
+                }
+            }
+        }
+    }
+}
+
+fn recover_optimized_type_hints(
+    program: &crate::compiler::mir::MirProgram,
+    probe_ctx: Option<&ProbeContext>,
+    hints: &mut MirTypeHints,
+) {
+    recover_function_type_hints(
+        &program.main,
+        probe_ctx,
+        &mut hints.main,
+        &hints.main_stack_slots,
+    );
+    if hints.subfunctions.len() < program.subfunctions.len() {
+        hints
+            .subfunctions
+            .resize_with(program.subfunctions.len(), HashMap::new);
+    }
+    if hints.subfunction_stack_slots.len() < program.subfunctions.len() {
+        hints
+            .subfunction_stack_slots
+            .resize_with(program.subfunctions.len(), HashMap::new);
+    }
+    for ((subfn, subfn_hints), subfn_stack_slot_hints) in program
+        .subfunctions
+        .iter()
+        .zip(hints.subfunctions.iter_mut())
+        .zip(hints.subfunction_stack_slots.iter())
+    {
+        recover_function_type_hints(subfn, None, subfn_hints, subfn_stack_slot_hints);
+    }
+}
+
 #[derive(Clone)]
 pub struct EbpfAttach;
 
@@ -326,13 +527,19 @@ impl PluginCommand for EbpfAttach {
     }
 
     fn description(&self) -> &str {
-        "Attach an eBPF probe to a kernel function, tracepoint, or userspace function."
+        "Attach an eBPF program to a kernel function, tracepoint, or userspace function."
     }
 
     fn extra_description(&self) -> &str {
         r#"This command compiles a Nushell closure to eBPF bytecode and attaches
 it to the specified probe point. The closure runs in the kernel whenever
 the probe point is hit.
+
+Supported attach types:
+  - kprobe, kretprobe
+  - fentry, fexit
+  - tracepoint, raw_tracepoint
+  - uprobe, uretprobe
 
 Context parameter syntax (recommended):
   The closure can take a context parameter to access probe information:
@@ -345,10 +552,28 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.comm }    - Get process command name (first 16 bytes)
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
 
-  Kprobe/uprobe fields:
+  Function fields:
     {|ctx| $ctx.arg0 }    - Get function argument 0
-    {|ctx| $ctx.arg1-5 }  - Get function arguments 1-5
-    {|ctx| $ctx.retval }  - Get return value (kretprobe/uretprobe only)
+    {|ctx| $ctx.arg1 }    - Get function argument 1
+    {|ctx| $ctx.retval }  - Get return value (kretprobe/uretprobe/fexit)
+
+    Note: kprobe/uprobe expose pt_regs-style ctx.arg0-5. fentry/fexit use
+    kernel BTF. Scalar/pointer trampoline args and returns work directly.
+    By-value trampoline args and pointer-backed trampoline args/returns
+    support scalar/pointer field projection like ctx.arg0.some_field.
+    Pointer-backed projections use null-guarded bpf_probe_read_{kernel,user}
+    and can cross intermediate pointer fields like ctx.arg0.foo.bar.
+    Fixed-size arrays can be indexed with numeric path segments like
+    ctx.arg0.comm.0, and terminal array/aggregate leaves like ctx.arg0.comm
+    are exposed as opaque stack-backed byte buffers. emit preserves those
+    leaves as binary payloads, and count can use them as byte-buffer keys.
+    ebpf counters decodes those keys using any schema the compiler still has:
+    arrays/typed structs can surface as strings, lists, or records; opaque
+    aggregate layouts still display as binary. 16-byte byte-array/string
+    keys such as ctx.arg0.comm continue to display as strings.
+    Multi-level pointer fields like foo ** are not supported yet.
+    Aggregate fexit returns still depend on kernel trampoline support;
+    some kernels reject struct returns entirely.
 
   Tracepoint fields:
     Access fields specific to each tracepoint. Fields are read from tracefs.
@@ -410,7 +635,8 @@ Discovering tracepoints:
   cat /sys/kernel/tracing/events/syscalls/sys_enter_openat/format  # View fields
 
 Requirements:
-  - Linux kernel 4.18+ (for ring buffers and CO-RE)
+  - Linux kernel 4.18+ for the basic tracing paths
+  - Linux kernel 5.5+ with /sys/kernel/btf/vmlinux for fentry/fexit
   - CAP_BPF + CAP_PERFMON capabilities, or root access
   - Run `ebpf setup` to configure capabilities"#
     }
@@ -425,7 +651,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone').",
+                "The probe point (e.g., 'kprobe:sys_clone' or 'fentry:ksys_read').",
             )
             .required(
                 "closure",
@@ -458,6 +684,8 @@ Requirements:
             "trace",
             "probe",
             "kprobe",
+            "fentry",
+            "fexit",
             "tracepoint",
             "uprobe",
             "uretprobe",
@@ -480,6 +708,16 @@ Requirements:
             Example {
                 example: "ebpf attach -s 'tracepoint:syscalls/sys_enter_openat' {|ctx| $ctx.filename | emit }",
                 description: "Stream filenames from openat syscalls using tracepoint",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach -s 'fentry:do_sys_openat2' {|ctx| if $ctx.arg1 != 0 { $ctx.arg1 | read-str --max-len 64 | emit } } | first 5",
+                description: "Capture the first 5 fentry filenames using BTF-backed trampoline args",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach -s 'fexit:ksys_read' {|ctx| $ctx.retval | emit } | first 5",
+                description: "Capture the first 5 fexit return values using BTF-backed trampolines",
                 result: None,
             },
         ]
@@ -536,6 +774,24 @@ fn run_attach(
                     "Use 'sudo ls /sys/kernel/tracing/events/{}' to see available tracepoints",
                     category
                 ))
+        }
+        crate::loader::LoadError::UnsupportedTrampolineTarget {
+            probe_type,
+            target,
+            reason,
+        } => {
+            let mut err =
+                LabeledError::new(format!("Unsupported {} target '{}'", probe_type, target))
+                    .with_label(reason.clone(), call.head);
+            if let Some(help) = match probe_type.as_str() {
+                "fentry" | "fexit" => Some(
+                    "fentry/fexit require kernel BTF and a trampoline-compatible target signature. Try a scalar/pointer-return target or use kprobe/kretprobe for broader coverage",
+                ),
+                _ => None,
+            } {
+                err = err.with_help(help);
+            }
+            err
         }
         crate::loader::LoadError::NeedsSudo => {
             LabeledError::new("Elevated privileges required")
@@ -633,13 +889,14 @@ fn run_attach(
             .with_help("The closure may use unsupported operations")
     })?;
     let mut mir_program = lower_result.program;
-    let type_hints = lower_result.type_hints;
+    let mut type_hints = lower_result.type_hints;
 
     // Run SSA-based optimizations
     optimize_with_ssa(&mut mir_program.main);
     for subfn in &mut mir_program.subfunctions {
         optimize_with_ssa(subfn);
     }
+    recover_optimized_type_hints(&mir_program, Some(&probe_context), &mut type_hints);
 
     // Compile MIR to eBPF
     let compile_result =
@@ -660,6 +917,7 @@ fn run_attach(
         compile_result.relocations,
         compile_result.subfunction_symbols,
         compile_result.event_schema,
+        compile_result.bytes_counter_key_schema,
     );
 
     if pin_group.is_some() {
@@ -741,6 +999,7 @@ impl EventStreamIterator {
                             let val = match value {
                                 BpfFieldValue::Int(v) => Value::int(v, self.span),
                                 BpfFieldValue::String(s) => Value::string(s, self.span),
+                                BpfFieldValue::Bytes(b) => Value::binary(b, self.span),
                             };
                             rec.push(name, val);
                         }
@@ -797,5 +1056,174 @@ impl Drop for EventStreamIterator {
     fn drop(&mut self) {
         use crate::loader::get_state;
         let _ = get_state().detach(self.probe_id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::recover_optimized_type_hints;
+    use crate::compiler::hir::{
+        HirBlock, HirBlockId, HirCallArgs, HirFunction, HirLiteral, HirProgram, HirStmt,
+        HirTerminator,
+    };
+    use crate::compiler::hir_to_mir::lower_hir_to_mir_with_hints;
+    use crate::compiler::passes::optimize_with_ssa;
+    use crate::compiler::{
+        CounterKeySchema, EbpfProgramType, ProbeContext, compile_mir_to_ebpf_with_hints,
+    };
+    use nu_protocol::DeclId;
+    use nu_protocol::ast::{CellPath, PathMember};
+    use nu_protocol::casing::Casing;
+    use nu_protocol::{RegId, Span, VarId};
+
+    fn make_ctx_path_program(cell_path: CellPath) -> HirProgram {
+        let ctx_var = VarId::new(0);
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(cell_path)),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 4],
+            ast: vec![None; 4],
+            comments: vec![],
+            register_count: 2,
+            file_count: 0,
+        };
+        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+    }
+
+    fn string_member(name: &str) -> PathMember {
+        PathMember::test_string(name.to_string(), false, Casing::Sensitive)
+    }
+
+    fn make_ctx_path_call_program(cell_path: CellPath, decl_id: DeclId) -> HirProgram {
+        let ctx_var = VarId::new(0);
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(cell_path)),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::Call {
+                        decl_id,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 4],
+            ast: vec![None; 4],
+            comments: vec![],
+            register_count: 2,
+            file_count: 0,
+        };
+        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+    }
+
+    #[test]
+    fn test_recover_optimized_type_hints_for_pointer_hop_trampoline_projection() {
+        let hir = make_ctx_path_program(CellPath {
+            members: vec![
+                string_member("arg0"),
+                string_member("f_inode"),
+                string_member("i_ino"),
+            ],
+        });
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+
+        let mut lowering = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("pointer-hop field projection should lower");
+
+        optimize_with_ssa(&mut lowering.program.main);
+        recover_optimized_type_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            &mut lowering.type_hints,
+        );
+
+        let result = compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .expect("optimized pointer-hop field projection should compile");
+        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+    }
+
+    #[test]
+    fn test_recover_optimized_type_hints_for_struct_leaf_counter_schema() {
+        let hir = make_ctx_path_call_program(
+            CellPath {
+                members: vec![string_member("arg0"), string_member("f_path")],
+            },
+            DeclId::new(42),
+        );
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+        let mut decl_names = HashMap::new();
+        decl_names.insert(DeclId::new(42), "count".to_string());
+
+        let mut lowering = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("struct-leaf count should lower");
+
+        optimize_with_ssa(&mut lowering.program.main);
+        recover_optimized_type_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            &mut lowering.type_hints,
+        );
+
+        let result = compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .expect("optimized struct-leaf count should compile");
+        assert!(matches!(
+            result.bytes_counter_key_schema,
+            Some(CounterKeySchema::Bytes { .. })
+        ));
     }
 }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::mir::CtxField;
 
 #[test]
 fn test_hello_world_creation() {
@@ -15,6 +16,12 @@ fn test_section_name() {
 }
 
 #[test]
+fn test_fentry_section_name() {
+    let prog = EbpfProgram::from_bytecode(EbpfProgramType::Fentry, "ksys_read", "test", vec![]);
+    assert_eq!(prog.section_name(), "fentry/ksys_read");
+}
+
+#[test]
 fn test_elf_generation() {
     let prog = EbpfProgram::hello_world("sys_clone");
     let elf = prog.to_elf().expect("Failed to generate ELF");
@@ -27,4 +34,43 @@ fn test_elf_generation() {
 
     // Should be BPF architecture
     // (This is in the e_machine field at offset 18-19)
+}
+
+#[test]
+fn test_probe_context_rejects_arg_on_tracepoint() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "syscalls/sys_enter_openat");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::Arg(0))
+        .expect("expected tracepoint arg access error");
+    assert!(err.contains("ctx.arg0 is only available on function probes with argument access"));
+}
+
+#[test]
+fn test_probe_context_rejects_tracepoint_field_on_kprobe() {
+    let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_openat2");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::TracepointField("filename".to_string()))
+        .expect("expected kprobe tracepoint-field access error");
+    assert!(err.contains("ctx.filename is only available on typed tracepoints"));
+}
+
+#[test]
+fn test_probe_context_rejects_tracepoint_field_on_raw_tracepoint() {
+    let ctx = ProbeContext::new(EbpfProgramType::RawTracepoint, "sys_enter");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::TracepointField("filename".to_string()))
+        .expect("expected raw tracepoint field access error");
+    assert!(err.contains("ctx.filename is only available on typed tracepoints"));
+}
+
+#[test]
+fn test_probe_context_allows_arg_on_fentry() {
+    let ctx = ProbeContext::new(EbpfProgramType::Fentry, "ksys_read");
+    assert!(ctx.ctx_field_access_error(&CtxField::Arg(0)).is_none());
+}
+
+#[test]
+fn test_probe_context_allows_retval_on_fexit() {
+    let ctx = ProbeContext::new(EbpfProgramType::Fexit, "ksys_read");
+    assert!(ctx.ctx_field_access_error(&CtxField::RetVal).is_none());
 }

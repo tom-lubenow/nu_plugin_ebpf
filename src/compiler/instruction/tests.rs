@@ -2123,7 +2123,7 @@ fn test_kfunc_semantics_dynptr_core_rules() {
     assert_eq!(size.ptr_arg_rules[0].fixed_size, Some(16));
 
     let slice = kfunc_semantics("bpf_dynptr_slice");
-    assert!(slice.positive_size_args.is_empty());
+    assert_eq!(slice.positive_size_args, &[3]);
     assert_eq!(slice.ptr_arg_rules.len(), 2);
     assert_eq!(slice.ptr_arg_rules[0].arg_idx, 0);
     assert_eq!(slice.ptr_arg_rules[0].fixed_size, Some(16));

@@ -37,8 +37,8 @@ pub mod vcc;
 pub mod verifier_types;
 
 pub use elf::{
-    BpfFieldType, BpfMapDef, EbpfMap, EbpfProgram, EbpfProgramType, EventSchema, MapRelocation,
-    ProbeContext, SchemaField,
+    BpfFieldType, BpfMapDef, CounterKeySchema, CounterKeySchemaField, EbpfMap, EbpfProgram,
+    EbpfProgramType, EventSchema, MapRelocation, ProbeContext, SchemaField,
 };
 pub use hir::{
     HirProgram, extract_call_decl_ids, extract_closure_block_ids, infer_ctx_param, lower_ir_to_hir,
@@ -75,7 +75,9 @@ pub enum CompileError {
     #[error("Invalid probe specification: {0}")]
     InvalidProbeSpec(String),
 
-    #[error("'retval' is only available on return probes (kretprobe, uretprobe)")]
+    #[error(
+        "ctx.retval is only available on return probes with return-value access (kretprobe, uretprobe, fexit)"
+    )]
     RetvalOnNonReturnProbe,
 
     #[error("Tracepoint field '{field}' not found. Available: {available}")]

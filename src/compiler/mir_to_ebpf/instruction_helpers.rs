@@ -1,6 +1,58 @@
 use super::*;
+use crate::compiler::mir::AddressSpace;
 
 impl<'a> MirToEbpfCompiler<'a> {
+    fn validate_counter_key_operand(&self, map_name: &str, key: VReg) -> Result<(), CompileError> {
+        if map_name == COUNTER_MAP_NAME {
+            if let Some(MirType::Ptr {
+                pointee,
+                address_space,
+            }) = self.current_types.get(&key)
+                && matches!(address_space, AddressSpace::Stack | AddressSpace::Map)
+                && matches!(
+                    pointee.as_ref(),
+                    MirType::Array { .. } | MirType::Struct { .. }
+                )
+            {
+                return Err(CompileError::UnsupportedInstruction(
+                    "counters only supports scalar keys; aggregate byte-buffer keys must use bytes_counters".into(),
+                ));
+            }
+            return Ok(());
+        }
+
+        if map_name != STRING_COUNTER_MAP_NAME && map_name != BYTES_COUNTER_MAP_NAME {
+            return Ok(());
+        }
+
+        let Some(MirType::Ptr {
+            pointee,
+            address_space,
+        }) = self.current_types.get(&key)
+        else {
+            return Ok(());
+        };
+
+        if !matches!(address_space, AddressSpace::Stack | AddressSpace::Map) {
+            return Ok(());
+        }
+
+        match pointee.as_ref() {
+            MirType::Array { .. } if pointee.byte_array_len() == Some(16) => Ok(()),
+            MirType::Array { .. } | MirType::Struct { .. }
+                if map_name == BYTES_COUNTER_MAP_NAME =>
+            {
+                Ok(())
+            }
+            MirType::Array { .. } | MirType::Struct { .. } => {
+                Err(CompileError::UnsupportedInstruction(
+                    "str_counters only supports 16-byte string keys (e.g. $ctx.comm)".into(),
+                ))
+            }
+            _ => Ok(()),
+        }
+    }
+
     pub(super) fn compile_load_ctx_field_inst(
         &mut self,
         dst: VReg,
@@ -17,8 +69,9 @@ impl<'a> MirToEbpfCompiler<'a> {
         size: usize,
     ) -> Result<(), CompileError> {
         self.needs_ringbuf = true;
+        self.register_single_emit_schema(data, size)?;
         let data_reg = self.ensure_reg(data)?;
-        self.compile_emit_event(data_reg, size)
+        self.compile_emit_event(data_reg, size, self.vreg_stack_or_map_copy_size(data, size))
     }
 
     pub(super) fn compile_emit_record_inst(
@@ -48,13 +101,30 @@ impl<'a> MirToEbpfCompiler<'a> {
         flags: u64,
     ) -> Result<(), CompileError> {
         if map.name == COUNTER_MAP_NAME {
-            self.register_counter_map_kind(COUNTER_MAP_NAME, map.kind)?;
+            self.register_counter_map_kind(COUNTER_MAP_NAME, map.kind, None)?;
+            self.validate_counter_key_operand(&map.name, key)?;
             let key_reg = self.ensure_reg(key)?;
-            self.compile_counter_map_update(&map.name, key_reg)?;
+            self.compile_counter_map_update(&map.name, key, key_reg)?;
         } else if map.name == STRING_COUNTER_MAP_NAME {
-            self.register_counter_map_kind(STRING_COUNTER_MAP_NAME, map.kind)?;
+            self.register_counter_map_kind(STRING_COUNTER_MAP_NAME, map.kind, None)?;
             let key_reg = self.ensure_reg(key)?;
-            self.compile_counter_map_update(&map.name, key_reg)?;
+            self.validate_counter_key_operand(&map.name, key)?;
+            self.compile_counter_map_update(&map.name, key, key_reg)?;
+        } else if map.name == BYTES_COUNTER_MAP_NAME {
+            let key_size = match self.current_types.get(&key) {
+                Some(MirType::Ptr { pointee, .. }) => pointee.size().max(1) as u32,
+                Some(ty) => ty.size().max(1) as u32,
+                None => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes_counters key size could not be inferred".into(),
+                    ));
+                }
+            };
+            self.register_counter_map_kind(BYTES_COUNTER_MAP_NAME, map.kind, Some(key_size))?;
+            self.register_bytes_counter_key_schema(key)?;
+            self.validate_counter_key_operand(&map.name, key)?;
+            let key_reg = self.ensure_reg(key)?;
+            self.compile_counter_map_update(&map.name, key, key_reg)?;
         } else {
             let key_reg = self.ensure_reg(key)?;
             let val_reg = self.ensure_reg(val)?;

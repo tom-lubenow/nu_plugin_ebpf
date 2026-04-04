@@ -15,7 +15,7 @@ pub(super) fn apply_map_lookup_inst(
         )));
     }
     check_map_operand_scalar_size(key, "map key", types, errors);
-    check_map_key_access(map, key, state, errors);
+    check_map_key_access(map, key, types, state, errors);
 
     let bounds = map_value_limit(map)
         .or_else(|| map_value_limit_from_dst_type(types.get(&dst)))
@@ -55,7 +55,7 @@ pub(super) fn apply_map_update_inst(
     }
     check_map_operand_scalar_size(key, "map key", types, errors);
     check_map_operand_scalar_size(val, "map value", types, errors);
-    check_map_key_access(map, key, state, errors);
+    check_map_key_access(map, key, types, state, errors);
 }
 
 pub(super) fn apply_map_delete_inst(
@@ -77,12 +77,13 @@ pub(super) fn apply_map_delete_inst(
         )));
     }
     check_map_operand_scalar_size(key, "map key", types, errors);
-    check_map_key_access(map, key, state, errors);
+    check_map_key_access(map, key, types, state, errors);
 }
 
 fn check_map_key_access(
     map: &MapRef,
     key: VReg,
+    types: &HashMap<VReg, MirType>,
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
@@ -93,6 +94,24 @@ fn check_map_key_access(
             &[AddressSpace::Stack, AddressSpace::Map],
             0,
             16,
+            state,
+            errors,
+        );
+        return;
+    }
+
+    if map.name == BYTES_COUNTER_MAP_NAME {
+        let access_size = match types.get(&key) {
+            Some(MirType::Ptr { pointee, .. }) => pointee.size().max(1),
+            Some(ty) => ty.size().max(1),
+            None => 1,
+        };
+        check_ptr_access(
+            key,
+            "map key",
+            &[AddressSpace::Stack, AddressSpace::Map],
+            0,
+            access_size,
             state,
             errors,
         );

@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::instruction::KfuncSignature;
+use crate::compiler::mir::{BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, STRING_COUNTER_MAP_NAME};
 
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn set_call_args(&mut self, args: &HirCallArgs) -> Result<(), CompileError> {
@@ -118,11 +119,8 @@ impl<'a> HirToMirLowering<'a> {
                                 .and_then(|m| m.field_type.clone())
                         });
                     let size = match field_type {
-                        Some(MirType::Array { elem, len })
-                            if matches!(elem.as_ref(), MirType::U8) =>
-                        {
-                            len
-                        }
+                        Some(ty) if ty.byte_array_len().is_some() => ty.byte_array_len().unwrap(),
+                        Some(ty @ (MirType::Array { .. } | MirType::Struct { .. })) => ty.size(),
                         _ => 8,
                     };
                     // Emit a single value
@@ -155,21 +153,21 @@ impl<'a> HirToMirLowering<'a> {
                 let per_cpu = self.named_flags.contains(&"per-cpu".to_string());
 
                 let (map_name, map_kind) = match key_type {
-                    Some(MirType::Array { ref elem, len })
-                        if matches!(elem.as_ref(), MirType::U8) =>
-                    {
-                        if len == 16 {
-                            let kind = if per_cpu {
-                                MapKind::PerCpuHash
-                            } else {
-                                MapKind::Hash
-                            };
-                            ("str_counters", kind)
+                    Some(ref ty) if ty.byte_array_len() == Some(16) => {
+                        let kind = if per_cpu {
+                            MapKind::PerCpuHash
                         } else {
-                            return Err(CompileError::UnsupportedInstruction(
-                                "count only supports 16-byte strings (e.g., $ctx.comm)".into(),
-                            ));
-                        }
+                            MapKind::Hash
+                        };
+                        (STRING_COUNTER_MAP_NAME, kind)
+                    }
+                    Some(MirType::Array { .. } | MirType::Struct { .. }) => {
+                        let kind = if per_cpu {
+                            MapKind::PerCpuHash
+                        } else {
+                            MapKind::Hash
+                        };
+                        (BYTES_COUNTER_MAP_NAME, kind)
                     }
                     _ => {
                         let kind = if per_cpu {
@@ -177,7 +175,7 @@ impl<'a> HirToMirLowering<'a> {
                         } else {
                             MapKind::Hash
                         };
-                        ("counters", kind)
+                        (COUNTER_MAP_NAME, kind)
                     }
                 };
 
@@ -256,6 +254,13 @@ impl<'a> HirToMirLowering<'a> {
                 let slot = self
                     .func
                     .alloc_stack_slot(aligned_len, 8, StackSlotKind::StringBuffer);
+                self.record_stack_slot_type(
+                    slot,
+                    MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len: aligned_len,
+                    },
+                );
                 self.emit(MirInst::ReadStr {
                     dst: slot,
                     ptr: ptr_vreg,
@@ -302,6 +307,13 @@ impl<'a> HirToMirLowering<'a> {
                 let slot = self
                     .func
                     .alloc_stack_slot(aligned_len, 8, StackSlotKind::StringBuffer);
+                self.record_stack_slot_type(
+                    slot,
+                    MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len: aligned_len,
+                    },
+                );
                 self.emit(MirInst::ReadStr {
                     dst: slot,
                     ptr: ptr_vreg,

@@ -1,6 +1,144 @@
 use super::*;
+use crate::compiler::EbpfProgramType;
+use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 
 impl<'a> TypeInference<'a> {
+    fn hm_type_from_trampoline_value(kind: TrampolineValueKind) -> HMType {
+        match kind {
+            TrampolineValueKind::Scalar => HMType::I64,
+            TrampolineValueKind::Pointer { user_space } => HMType::Ptr {
+                pointee: Box::new(HMType::U8),
+                address_space: if user_space {
+                    AddressSpace::User
+                } else {
+                    AddressSpace::Kernel
+                },
+            },
+            TrampolineValueKind::Aggregate { size_bytes } => HMType::Ptr {
+                pointee: Box::new(HMType::Array {
+                    elem: Box::new(HMType::U8),
+                    len: size_bytes,
+                }),
+                address_space: AddressSpace::Stack,
+            },
+        }
+    }
+
+    fn trampoline_arg_type(&self, idx: u8) -> Result<Option<HMType>, TypeError> {
+        let Some(ctx) = self.probe_ctx.as_ref() else {
+            return Ok(None);
+        };
+        if !matches!(
+            ctx.probe_type,
+            EbpfProgramType::Fentry | EbpfProgramType::Fexit
+        ) {
+            return Ok(None);
+        }
+
+        let spec = KernelBtf::get()
+            .function_trampoline_arg(&ctx.target, idx as usize)
+            .map_err(|e| {
+                TypeError::new(format!(
+                    "failed to resolve ctx.arg{} for {}:{}: {}",
+                    idx,
+                    ctx.probe_type.section_prefix(),
+                    ctx.target,
+                    e
+                ))
+            })?;
+        spec.map(|spec| Self::hm_type_from_trampoline_value(spec.kind))
+            .ok_or_else(|| {
+                TypeError::new(format!(
+                    "ctx.arg{} is not available on {}:{}",
+                    idx,
+                    ctx.probe_type.section_prefix(),
+                    ctx.target
+                ))
+            })
+            .map(Some)
+    }
+
+    fn trampoline_ret_type(&self) -> Result<Option<HMType>, TypeError> {
+        let Some(ctx) = self.probe_ctx.as_ref() else {
+            return Ok(None);
+        };
+        if !matches!(ctx.probe_type, EbpfProgramType::Fexit) {
+            return Ok(None);
+        }
+
+        let spec = KernelBtf::get()
+            .function_trampoline_ret(&ctx.target)
+            .map_err(|e| {
+                TypeError::new(format!(
+                    "failed to resolve ctx.retval for fexit:{}: {}",
+                    ctx.target, e
+                ))
+            })?;
+        spec.map(|spec| Self::hm_type_from_trampoline_value(spec.kind))
+            .ok_or_else(|| {
+                TypeError::new(format!(
+                    "ctx.retval is not available on fexit:{} because the target returns void",
+                    ctx.target
+                ))
+            })
+            .map(Some)
+    }
+
+    pub(super) fn validate_ctx_field_access(&self, field: &CtxField) -> Result<(), TypeError> {
+        if let Some(ctx) = self.probe_ctx.as_ref() {
+            if let Some(message) = ctx.ctx_field_access_error(field) {
+                return Err(TypeError::new(message));
+            }
+
+            match field {
+                CtxField::Arg(idx)
+                    if matches!(
+                        ctx.probe_type,
+                        EbpfProgramType::Fentry | EbpfProgramType::Fexit
+                    ) =>
+                {
+                    let spec = KernelBtf::get()
+                        .function_trampoline_arg(&ctx.target, *idx as usize)
+                        .map_err(|e| {
+                            TypeError::new(format!(
+                                "failed to resolve ctx.arg{} for {}:{}: {}",
+                                idx,
+                                ctx.probe_type.section_prefix(),
+                                ctx.target,
+                                e
+                            ))
+                        })?;
+                    if spec.is_none() {
+                        return Err(TypeError::new(format!(
+                            "ctx.arg{} is not available on {}:{}",
+                            idx,
+                            ctx.probe_type.section_prefix(),
+                            ctx.target
+                        )));
+                    }
+                }
+                CtxField::RetVal if matches!(ctx.probe_type, EbpfProgramType::Fexit) => {
+                    let spec = KernelBtf::get()
+                        .function_trampoline_ret(&ctx.target)
+                        .map_err(|e| {
+                            TypeError::new(format!(
+                                "failed to resolve ctx.retval for fexit:{}: {}",
+                                ctx.target, e
+                            ))
+                        })?;
+                    if spec.is_none() {
+                        return Err(TypeError::new(format!(
+                            "ctx.retval is not available on fexit:{} because the target returns void",
+                            ctx.target
+                        )));
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn ctx_field_type(&mut self, field: &CtxField) -> HMType {
         match field {
             CtxField::Pid | CtxField::Tid | CtxField::Uid | CtxField::Gid | CtxField::Cpu => {
@@ -10,6 +148,9 @@ impl<'a> TypeInference<'a> {
             CtxField::Timestamp => HMType::U64,
 
             CtxField::Arg(idx) => {
+                if let Some(ty) = self.trampoline_arg_type(*idx).ok().flatten() {
+                    return ty;
+                }
                 if self.is_userspace_probe() {
                     HMType::Ptr {
                         pointee: Box::new(HMType::U8),
@@ -24,7 +165,12 @@ impl<'a> TypeInference<'a> {
                 }
             }
 
-            CtxField::RetVal => HMType::I64,
+            CtxField::RetVal => {
+                if let Some(ty) = self.trampoline_ret_type().ok().flatten() {
+                    return ty;
+                }
+                HMType::I64
+            }
             CtxField::KStack | CtxField::UStack => HMType::I64,
 
             CtxField::Comm => HMType::Ptr {
@@ -49,12 +195,7 @@ impl<'a> TypeInference<'a> {
     pub(super) fn is_userspace_probe(&self) -> bool {
         self.probe_ctx
             .as_ref()
-            .map(|ctx| {
-                matches!(
-                    ctx.probe_type,
-                    EbpfProgramType::Uprobe | EbpfProgramType::Uretprobe
-                )
-            })
+            .map(|ctx| ctx.is_userspace())
             .unwrap_or(false)
     }
 

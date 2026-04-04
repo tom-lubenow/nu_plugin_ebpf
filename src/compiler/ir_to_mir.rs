@@ -241,6 +241,8 @@ pub struct HirToMirLowering<'a> {
     decl_type_hints: HashMap<DeclId, HashMap<u32, MirType>>,
     /// Collected MIR type hints (VReg -> MirType)
     vreg_type_hints: HashMap<VReg, MirType>,
+    /// Collected stack-slot pointee type hints for stack-address values
+    stack_slot_type_hints: HashMap<StackSlotId, MirType>,
     /// User-defined functions by DeclId
     user_functions: &'a HashMap<DeclId, HirFunction>,
     /// User-defined function signatures by DeclId
@@ -249,6 +251,8 @@ pub struct HirToMirLowering<'a> {
     subfunction_params: HashMap<DeclId, Vec<VarId>>,
     /// Subfunction vreg type hints (aligned with subfunctions vec)
     subfunction_hints: Vec<HashMap<VReg, MirType>>,
+    /// Subfunction stack-slot pointee type hints (aligned with subfunctions vec)
+    subfunction_stack_slot_hints: Vec<HashMap<StackSlotId, MirType>>,
     /// Subfunctions currently being lowered (recursion guard)
     subfunction_in_progress: HashSet<DeclId>,
     /// Generated subfunctions
@@ -310,10 +314,12 @@ impl<'a> HirToMirLowering<'a> {
             closure_type_hints,
             decl_type_hints,
             vreg_type_hints: HashMap::new(),
+            stack_slot_type_hints: HashMap::new(),
             user_functions,
             decl_signatures,
             subfunction_params: HashMap::new(),
             subfunction_hints: Vec::new(),
+            subfunction_stack_slot_hints: Vec::new(),
             subfunction_in_progress: HashSet::new(),
             subfunctions: Vec::new(),
             subfunction_registry: HashMap::new(),
@@ -333,10 +339,17 @@ impl<'a> HirToMirLowering<'a> {
         let mut hints = MirTypeHints {
             main: self.vreg_type_hints,
             subfunctions: self.subfunction_hints,
+            main_stack_slots: self.stack_slot_type_hints,
+            subfunction_stack_slots: self.subfunction_stack_slot_hints,
         };
         if hints.subfunctions.len() < program.subfunctions.len() {
             hints
                 .subfunctions
+                .resize_with(program.subfunctions.len(), HashMap::new);
+        }
+        if hints.subfunction_stack_slots.len() < program.subfunctions.len() {
+            hints
+                .subfunction_stack_slots
                 .resize_with(program.subfunctions.len(), HashMap::new);
         }
         (program, hints)

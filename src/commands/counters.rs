@@ -2,7 +2,8 @@
 
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
 use nu_protocol::{
-    Category, Example, LabeledError, PipelineData, Signature, SyntaxShape, Type, Value, record,
+    Category, Example, LabeledError, PipelineData, Record, Signature, SyntaxShape, Type, Value,
+    record,
 };
 
 use crate::EbpfPlugin;
@@ -24,6 +25,7 @@ impl PluginCommand for EbpfCounters {
     fn extra_description(&self) -> &str {
         r#"Reads the counter map from an attached probe that uses the `count` command.
 Each row shows a key and the number of times that key was counted.
+Keys may be integers, strings, lists, records, or raw binary values for opaque byte-buffer keys.
 
 Example workflow:
   let id = ebpf attach 'kprobe:sys_read' {|ctx| $ctx.pid | count }
@@ -74,7 +76,29 @@ Example workflow:
 
 #[cfg(target_os = "linux")]
 fn run_counters(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
-    use crate::loader::get_state;
+    use crate::loader::{CounterKeyValue, get_state};
+
+    fn counter_key_to_value(key: CounterKeyValue, span: nu_protocol::Span) -> Value {
+        match key {
+            CounterKeyValue::Int(v) => Value::int(v, span),
+            CounterKeyValue::String(s) => Value::string(s, span),
+            CounterKeyValue::Bytes(b) => Value::binary(b, span),
+            CounterKeyValue::Array(values) => Value::list(
+                values
+                    .into_iter()
+                    .map(|value| counter_key_to_value(value, span))
+                    .collect(),
+                span,
+            ),
+            CounterKeyValue::Record(fields) => {
+                let mut rec = Record::new();
+                for (name, value) in fields {
+                    rec.push(name, counter_key_to_value(value, span));
+                }
+                Value::record(rec, span)
+            }
+        }
+    }
 
     let id: i64 = call.req(0)?;
     let id = super::validate_probe_id(id, call.head)?;
@@ -105,6 +129,20 @@ fn run_counters(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
         records.push(Value::record(
             record! {
                 "key" => Value::string(entry.key, span),
+                "count" => Value::int(entry.count, span),
+            },
+            span,
+        ));
+    }
+
+    let bytes_entries = state.get_bytes_counters(id).map_err(|e| {
+        LabeledError::new("Failed to get bytes counters").with_label(e.to_string(), span)
+    })?;
+
+    for entry in bytes_entries {
+        records.push(Value::record(
+            record! {
+                "key" => counter_key_to_value(entry.key, span),
                 "count" => Value::int(entry.count, span),
             },
             span,

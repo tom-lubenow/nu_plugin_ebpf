@@ -5,14 +5,15 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: Write tracing logic in familiar Nushell syntax
-- **Multiple probe types**: kprobe, kretprobe, tracepoint, uprobe, uretprobe
+- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe
 - **Aggregations**: Count by key, histograms, timing measurements
 - **Event streaming**: Real-time event output via ring buffers
 - **Map sharing**: Share data between probes with `--pin`
 
 ## Requirements
 
-- Linux kernel 4.18+ (for BPF ring buffers and CO-RE)
+- Linux kernel 4.18+ for the basic tracing paths
+- Linux kernel 5.5+ with `/sys/kernel/btf/vmlinux` for `fentry` and `fexit`
 - Rust 2024 edition
 - Root access or CAP_BPF capability
 
@@ -57,6 +58,20 @@ ebpf attach --stream 'kprobe:sys_clone' {|ctx| $ctx.pid | emit }
 
 # Capture first 10 sys_read calls
 ebpf attach -s 'kprobe:sys_read' {|ctx| $ctx.tgid | emit } | first 10
+
+# Capture first 10 fentry hits on ksys_read
+ebpf attach -s 'fentry:ksys_read' {|ctx| $ctx.pid | emit } | first 10
+
+# Capture the first filename seen by do_sys_openat2
+ebpf attach -s 'fentry:do_sys_openat2' {|ctx|
+    if $ctx.arg1 != 0 { $ctx.arg1 | read-str --max-len 64 | emit }
+} | first 1
+
+# Capture openat2 flags from a pointer-backed trampoline arg
+ebpf attach -s 'fentry:do_sys_openat2' {|ctx| $ctx.arg2.flags | emit } | first 1
+
+# Capture the first ksys_read return value
+ebpf attach -s 'fexit:ksys_read' {|ctx| $ctx.retval | emit } | first 1
 ```
 
 ### Count syscalls by process
@@ -123,10 +138,29 @@ The closure receives a context parameter with these fields:
 | `gid` | Group ID | All |
 | `comm` | Process name (16 bytes) | All |
 | `ktime` | Kernel timestamp (ns) | All |
-| `arg0`-`arg5` | Function arguments | kprobe, uprobe |
-| `retval` | Return value | kretprobe, uretprobe |
+| `arg0`-`argN` | Function arguments | kprobe, uprobe, fentry, fexit |
+| `retval` | Return value | kretprobe, uretprobe, fexit |
 
 Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/format`.
+
+`kprobe` and `uprobe` expose `ctx.arg0`-`ctx.arg5` through `pt_regs`. `fentry` and
+`fexit` resolve `ctx.argN` and `ctx.retval` through kernel BTF. Scalar and pointer
+trampoline values work directly. By-value trampoline args and pointer-backed
+trampoline args/returns can project scalar/pointer fields such as
+`ctx.arg0.some_field`; pointer-backed projections are lowered through
+null-guarded `bpf_probe_read_{kernel,user}` and can cross intermediate pointer
+fields such as `ctx.arg0.foo.bar`. Fixed-size arrays can also be indexed with
+numeric path segments like `ctx.arg0.comm.0`. Terminal array and aggregate
+leaves such as `ctx.arg0.comm` are currently exposed as opaque stack-backed byte
+buffers. `emit` preserves those leaves as binary payloads, and `count` now
+supports them as byte-buffer keys. `ebpf counters` decodes those keys using any
+schema the compiler still has: arrays and typed structs can surface as strings,
+lists, or records, while opaque aggregate layouts still display as `binary`.
+16-byte byte-array/string keys such as `ctx.arg0.comm` continue to display as
+strings.
+Multi-level pointer fields like `foo **` are still unsupported.
+Aggregate `fexit` returns still depend on kernel trampoline support; some
+kernels reject struct returns entirely.
 
 ## Commands
 

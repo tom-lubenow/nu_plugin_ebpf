@@ -126,6 +126,7 @@ impl EbpfState {
                     let s = String::from_utf8_lossy(&field_buf[..null_pos]).to_string();
                     BpfFieldValue::String(s)
                 }
+                BpfFieldType::Bytes(_) => BpfFieldValue::Bytes(field_buf.to_vec()),
             };
             fields.push((field.name.clone(), value));
         }

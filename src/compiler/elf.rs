@@ -15,6 +15,7 @@ use object::{
 use super::CompileError;
 use super::btf::BtfBuilder;
 use super::instruction::EbpfBuilder;
+use super::mir::{CtxField, MirType};
 
 mod program_impl;
 
@@ -234,6 +235,8 @@ pub enum BpfFieldType {
     Comm,
     /// Long string from bpf-read-str (128 bytes max)
     String,
+    /// Opaque bytes with an explicit size
+    Bytes(usize),
 }
 
 impl BpfFieldType {
@@ -243,6 +246,7 @@ impl BpfFieldType {
             BpfFieldType::Int => 8,
             BpfFieldType::Comm => 16,
             BpfFieldType::String => 128,
+            BpfFieldType::Bytes(size) => *size,
         }
     }
 }
@@ -267,6 +271,132 @@ pub struct EventSchema {
     pub total_size: usize,
 }
 
+/// One field in a structured `bytes_counters` key schema.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CounterKeySchemaField {
+    /// Field name
+    pub name: String,
+    /// Recursive field schema
+    pub schema: CounterKeySchema,
+    /// Byte offset within the enclosing record
+    pub offset: usize,
+}
+
+/// Recursive schema describing a `bytes_counters` key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CounterKeySchema {
+    /// Integer-like scalar (including pointer-sized scalars)
+    Int { size: usize, signed: bool },
+    /// Null-terminated byte string stored in a fixed-size array
+    String { size: usize },
+    /// Opaque bytes when we only know the layout size, not the field shape
+    Bytes { size: usize },
+    /// Fixed-size homogeneous array
+    Array {
+        elem: Box<CounterKeySchema>,
+        len: usize,
+    },
+    /// Struct/record with explicit field offsets
+    Record {
+        name: Option<String>,
+        fields: Vec<CounterKeySchemaField>,
+        total_size: usize,
+    },
+}
+
+impl CounterKeySchema {
+    /// Size in bytes of the encoded key.
+    pub fn size(&self) -> usize {
+        match self {
+            CounterKeySchema::Int { size, .. }
+            | CounterKeySchema::String { size }
+            | CounterKeySchema::Bytes { size } => *size,
+            CounterKeySchema::Array { elem, len } => elem.size() * len,
+            CounterKeySchema::Record { total_size, .. } => *total_size,
+        }
+    }
+
+    /// Derive a counter-key schema from a MIR type.
+    pub fn from_mir_type(ty: &MirType) -> Self {
+        match ty {
+            MirType::I8 => CounterKeySchema::Int {
+                size: 1,
+                signed: true,
+            },
+            MirType::I16 => CounterKeySchema::Int {
+                size: 2,
+                signed: true,
+            },
+            MirType::I32 => CounterKeySchema::Int {
+                size: 4,
+                signed: true,
+            },
+            MirType::I64 => CounterKeySchema::Int {
+                size: 8,
+                signed: true,
+            },
+            MirType::U8 | MirType::Bool => CounterKeySchema::Int {
+                size: 1,
+                signed: false,
+            },
+            MirType::U16 => CounterKeySchema::Int {
+                size: 2,
+                signed: false,
+            },
+            MirType::U32 => CounterKeySchema::Int {
+                size: 4,
+                signed: false,
+            },
+            MirType::U64 | MirType::Ptr { .. } | MirType::MapRef { .. } | MirType::Unknown => {
+                CounterKeySchema::Int {
+                    size: ty.size().max(1),
+                    signed: false,
+                }
+            }
+            ty if ty.byte_array_len().is_some() => CounterKeySchema::String {
+                size: ty
+                    .byte_array_len()
+                    .expect("byte-array length must exist after guard"),
+            },
+            MirType::Array { elem, len } => CounterKeySchema::Array {
+                elem: Box::new(Self::from_mir_type(elem)),
+                len: *len,
+            },
+            MirType::Struct { name, fields } => {
+                if fields.len() == 1
+                    && fields[0].name == "__opaque"
+                    && fields[0].offset == 0
+                    && fields[0].ty.byte_array_len().is_some()
+                {
+                    return CounterKeySchema::Bytes {
+                        size: fields[0].ty.size().max(1),
+                    };
+                }
+
+                let schema_fields: Vec<CounterKeySchemaField> = fields
+                    .iter()
+                    .map(|field| CounterKeySchemaField {
+                        name: field.name.clone(),
+                        schema: Self::from_mir_type(&field.ty),
+                        offset: field.offset,
+                    })
+                    .collect();
+                let total_size = schema_fields
+                    .iter()
+                    .map(|field| field.offset + field.schema.size())
+                    .max()
+                    .unwrap_or(0);
+
+                CounterKeySchema::Record {
+                    name: name.clone(),
+                    fields: schema_fields,
+                    total_size,
+                }
+            }
+        }
+    }
+}
+
 /// eBPF program type
 #[derive(Debug, Clone, Copy)]
 pub enum EbpfProgramType {
@@ -274,6 +404,10 @@ pub enum EbpfProgramType {
     Kprobe,
     /// Kernel return probe (kretprobe)
     Kretprobe,
+    /// BTF function entry probe (fentry)
+    Fentry,
+    /// BTF function exit probe (fexit)
+    Fexit,
     /// Tracepoint
     Tracepoint,
     /// Raw tracepoint
@@ -290,6 +424,8 @@ impl EbpfProgramType {
         match self {
             EbpfProgramType::Kprobe => "kprobe",
             EbpfProgramType::Kretprobe => "kretprobe",
+            EbpfProgramType::Fentry => "fentry",
+            EbpfProgramType::Fexit => "fexit",
             EbpfProgramType::Tracepoint => "tracepoint",
             EbpfProgramType::RawTracepoint => "raw_tracepoint",
             EbpfProgramType::Uprobe => "uprobe",
@@ -297,17 +433,41 @@ impl EbpfProgramType {
         }
     }
 
-    /// Returns true if this is a return probe (kretprobe or uretprobe)
+    /// Returns true if this runs at function return time.
     pub fn is_return_probe(&self) -> bool {
         matches!(
             self,
-            EbpfProgramType::Kretprobe | EbpfProgramType::Uretprobe
+            EbpfProgramType::Kretprobe | EbpfProgramType::Fexit | EbpfProgramType::Uretprobe
         )
     }
 
     /// Returns true if this is a userspace probe (uprobe or uretprobe)
     pub fn is_userspace(&self) -> bool {
         matches!(self, EbpfProgramType::Uprobe | EbpfProgramType::Uretprobe)
+    }
+
+    /// Returns true if this program type exposes function arguments via ctx.argN.
+    pub fn supports_ctx_args(&self) -> bool {
+        matches!(
+            self,
+            EbpfProgramType::Kprobe
+                | EbpfProgramType::Fentry
+                | EbpfProgramType::Fexit
+                | EbpfProgramType::Uprobe
+        )
+    }
+
+    /// Returns true if this program type exposes ctx.retval.
+    pub fn supports_ctx_retval(&self) -> bool {
+        matches!(
+            self,
+            EbpfProgramType::Kretprobe | EbpfProgramType::Fexit | EbpfProgramType::Uretprobe
+        )
+    }
+
+    /// Returns true if this program type exposes named tracepoint fields.
+    pub fn supports_tracepoint_fields(&self) -> bool {
+        matches!(self, EbpfProgramType::Tracepoint)
     }
 }
 
@@ -371,10 +531,7 @@ impl ProbeContext {
 
     /// Returns true if this is a tracepoint
     pub fn is_tracepoint(&self) -> bool {
-        matches!(
-            self.probe_type,
-            EbpfProgramType::Tracepoint | EbpfProgramType::RawTracepoint
-        )
+        matches!(self.probe_type, EbpfProgramType::Tracepoint)
     }
 
     /// Get tracepoint category and name
@@ -390,6 +547,34 @@ impl ProbeContext {
             (Some(category), Some(name)) => Some((category, name)),
             _ => None,
         }
+    }
+
+    /// Returns a user-facing error message when a context field is not valid
+    /// for this program type.
+    pub fn ctx_field_access_error(&self, field: &CtxField) -> Option<String> {
+        match field {
+            CtxField::Arg(_) if !self.probe_type.supports_ctx_args() => Some(format!(
+                "ctx.{} is only available on function probes with argument access (kprobe, uprobe, fentry, fexit)",
+                field.display_name()
+            )),
+            CtxField::RetVal if !self.probe_type.supports_ctx_retval() => Some(
+                "ctx.retval is only available on return probes with return-value access (kretprobe, uretprobe, fexit)".to_string(),
+            ),
+            CtxField::TracepointField(name) if !self.probe_type.supports_tracepoint_fields() => {
+                Some(format!(
+                    "ctx.{} is only available on typed tracepoints (`tracepoint:category/name`)",
+                    name
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    pub fn validate_ctx_field_access(&self, field: &CtxField) -> Result<(), CompileError> {
+        if let Some(message) = self.ctx_field_access_error(field) {
+            return Err(CompileError::UnsupportedInstruction(message));
+        }
+        Ok(())
     }
 }
 
@@ -416,6 +601,8 @@ pub struct EbpfProgram {
     pub subfunctions: Vec<SubfunctionSymbol>,
     /// Optional schema for structured events
     pub event_schema: Option<EventSchema>,
+    /// Optional schema for runtime decoding of `bytes_counters` keys
+    pub bytes_counter_key_schema: Option<CounterKeySchema>,
 }
 
 #[cfg(test)]

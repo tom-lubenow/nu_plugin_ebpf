@@ -100,7 +100,7 @@ pub(super) fn apply_inst(
             apply_read_str_inst(*ptr, *user_space, state, errors);
         }
         MirInst::EmitEvent { data, size } => {
-            apply_emit_event_inst(*data, *size, state, errors);
+            apply_emit_event_inst(*data, *size, types, state, errors);
         }
         MirInst::EmitRecord { fields } => {
             apply_emit_record_inst(fields, types, state, errors);

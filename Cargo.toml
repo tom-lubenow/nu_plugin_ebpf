@@ -33,6 +33,7 @@ serde_json = "1"
 [target.'cfg(target_os = "linux")'.dependencies]
 btf = "0.5.1"
 libc = "0.2"
+aya-obj = "0.2"
 
 [dev-dependencies]
 nu-plugin-test-support = "0.110"

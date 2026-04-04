@@ -23,8 +23,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::compiler::CompileError;
 use crate::compiler::cfg::CFG;
 use crate::compiler::elf::{
-    BpfFieldType, BpfMapDef, EbpfMap, EventSchema, MapRelocation, ProbeContext, SchemaField,
-    SubfunctionSymbol,
+    BpfFieldType, BpfMapDef, CounterKeySchema, EbpfMap, EventSchema, MapRelocation, ProbeContext,
+    SchemaField, SubfunctionSymbol,
 };
 use crate::compiler::graph_coloring::{
     ColoringResult, GraphColoringAllocator, compute_loop_depths,
@@ -35,10 +35,10 @@ use crate::compiler::instruction::{
 };
 use crate::compiler::lir::{LirBlock, LirFunction, LirInst, LirProgram};
 use crate::compiler::mir::{
-    BinOpKind, BlockId, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, MapKind,
-    MirProgram, MirType, MirTypeHints, MirValue, RINGBUF_MAP_NAME, RecordFieldDef,
-    STRING_COUNTER_MAP_NAME, StackSlot, StackSlotId, StackSlotKind, StringAppendType,
-    SubfunctionId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, UnaryOpKind, VReg,
+    BYTES_COUNTER_MAP_NAME, BinOpKind, BlockId, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME,
+    KSTACK_MAP_NAME, MapKind, MirProgram, MirType, MirTypeHints, MirValue, RINGBUF_MAP_NAME,
+    RecordFieldDef, STRING_COUNTER_MAP_NAME, StackSlot, StackSlotId, StackSlotKind,
+    StringAppendType, SubfunctionId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, UnaryOpKind, VReg,
 };
 use crate::compiler::mir_to_lir::lower_mir_to_lir_checked;
 use crate::compiler::passes::{ListLowering, MirPass, SsaDestruction};
@@ -76,6 +76,8 @@ pub struct MirCompileResult {
     pub subfunction_symbols: Vec<SubfunctionSymbol>,
     /// Optional schema for structured events
     pub event_schema: Option<EventSchema>,
+    /// Optional schema for runtime decoding of `bytes_counters` keys
+    pub bytes_counter_key_schema: Option<CounterKeySchema>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -90,6 +92,12 @@ struct MapLayoutSpec {
     key_size: u32,
     value_size: u32,
     value_size_defaulted: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CounterMapSpec {
+    kind: MapKind,
+    key_size: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -138,6 +146,8 @@ pub struct MirToEbpfCompiler<'a> {
     counter_map_kind: Option<MapKind>,
     /// String counter map kind
     string_counter_map_kind: Option<MapKind>,
+    /// Bytes counter map kind and key size
+    bytes_counter_map_spec: Option<CounterMapSpec>,
     /// Needs histogram map
     needs_histogram_map: bool,
     /// Needs timestamp map
@@ -156,6 +166,8 @@ pub struct MirToEbpfCompiler<'a> {
     program_types: ProgramVregTypes,
     /// Event schema for structured output
     event_schema: Option<EventSchema>,
+    /// Optional schema for runtime decoding of `bytes_counters` keys
+    bytes_counter_key_schema: Option<CounterKeySchema>,
     /// Available physical registers for allocation
     available_regs: Vec<EbpfReg>,
     /// Subfunction calls (instruction index, subfunction ID)
@@ -194,6 +206,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             needs_ringbuf: false,
             counter_map_kind: None,
             string_counter_map_kind: None,
+            bytes_counter_map_spec: None,
             needs_histogram_map: false,
             needs_timestamp_map: false,
             needs_kstack_map: false,
@@ -203,6 +216,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             current_types: HashMap::new(),
             program_types,
             event_schema: None,
+            bytes_counter_key_schema: None,
             // Allow use of caller-saved regs; R9 remains reserved for the context pointer.
             available_regs: vec![
                 EbpfReg::R1,
@@ -303,6 +317,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                 def: self.build_counter_map_def(STRING_COUNTER_MAP_NAME, kind)?,
             });
         }
+        if let Some(spec) = self.bytes_counter_map_spec {
+            maps.push(EbpfMap {
+                name: BYTES_COUNTER_MAP_NAME.to_string(),
+                def: self.build_counter_map_def(BYTES_COUNTER_MAP_NAME, spec.kind)?,
+            });
+        }
         if self.needs_histogram_map {
             maps.push(EbpfMap {
                 name: HISTOGRAM_MAP_NAME.to_string(),
@@ -359,6 +379,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             relocations: self.relocations,
             subfunction_symbols,
             event_schema: self.event_schema,
+            bytes_counter_key_schema: self.bytes_counter_key_schema,
         })
     }
 }
@@ -413,20 +434,26 @@ fn verify_mir_program(
     };
 
     let mut all_funcs = Vec::with_capacity(1 + program.subfunctions.len());
-    all_funcs.push((&program.main, type_hints.map(|h| &h.main)));
+    all_funcs.push((
+        &program.main,
+        type_hints.map(|h| &h.main),
+        type_hints.map(|h| &h.main_stack_slots),
+    ));
     for (idx, subfn) in program.subfunctions.iter().enumerate() {
         let hints = type_hints.and_then(|h| h.subfunctions.get(idx));
-        all_funcs.push((subfn, hints));
+        let slot_hints = type_hints.and_then(|h| h.subfunction_stack_slots.get(idx));
+        all_funcs.push((subfn, hints, slot_hints));
     }
 
     let mut program_types = ProgramVregTypes::default();
 
-    for (idx, (func, hints)) in all_funcs.into_iter().enumerate() {
+    for (idx, (func, hints, slot_hints)) in all_funcs.into_iter().enumerate() {
         let mut type_infer = TypeInference::new_with_env(
             probe_ctx.cloned(),
             Some(&subfn_schemes),
             Some(HMType::I64),
             hints,
+            slot_hints,
         );
         let types = match type_infer.infer(func) {
             Ok(types) => types,

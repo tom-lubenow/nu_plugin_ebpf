@@ -68,6 +68,7 @@ pub enum MapKind {
 pub const RINGBUF_MAP_NAME: &str = "events";
 pub const COUNTER_MAP_NAME: &str = "counters";
 pub const STRING_COUNTER_MAP_NAME: &str = "str_counters";
+pub const BYTES_COUNTER_MAP_NAME: &str = "bytes_counters";
 pub const HISTOGRAM_MAP_NAME: &str = "histogram";
 pub const TIMESTAMP_MAP_NAME: &str = "timestamps";
 pub const KSTACK_MAP_NAME: &str = "kstacks";
@@ -139,6 +140,16 @@ impl MirType {
             MirType::Struct { fields, .. } => fields.iter().map(|f| f.ty.size()).sum(),
             MirType::MapRef { .. } => 8, // Map FD
             MirType::Unknown => 8,       // Default to 64-bit
+        }
+    }
+
+    /// Length for a fixed-size byte array (`[i8; N]` or `[u8; N]`).
+    pub fn byte_array_len(&self) -> Option<usize> {
+        match self {
+            MirType::Array { elem, len } if matches!(elem.as_ref(), MirType::I8 | MirType::U8) => {
+                Some(*len)
+            }
+            _ => None,
         }
     }
 
@@ -352,6 +363,25 @@ pub enum CtxField {
     UStack,
     /// Tracepoint field by name
     TracepointField(String),
+}
+
+impl CtxField {
+    pub fn display_name(&self) -> String {
+        match self {
+            CtxField::Pid => "pid".to_string(),
+            CtxField::Tid => "tid".to_string(),
+            CtxField::Uid => "uid".to_string(),
+            CtxField::Gid => "gid".to_string(),
+            CtxField::Comm => "comm".to_string(),
+            CtxField::Cpu => "cpu".to_string(),
+            CtxField::Timestamp => "timestamp".to_string(),
+            CtxField::Arg(idx) => format!("arg{}", idx),
+            CtxField::RetVal => "retval".to_string(),
+            CtxField::KStack => "kstack".to_string(),
+            CtxField::UStack => "ustack".to_string(),
+            CtxField::TracepointField(name) => name.clone(),
+        }
+    }
 }
 
 /// MIR instruction
@@ -638,6 +668,8 @@ pub struct MirProgram {
 pub struct MirTypeHints {
     pub main: HashMap<VReg, MirType>,
     pub subfunctions: Vec<HashMap<VReg, MirType>>,
+    pub main_stack_slots: HashMap<StackSlotId, MirType>,
+    pub subfunction_stack_slots: Vec<HashMap<StackSlotId, MirType>>,
 }
 
 #[cfg(test)]

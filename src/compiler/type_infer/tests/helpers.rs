@@ -45,7 +45,8 @@ fn test_subfn_polymorphic_id() {
     };
 
     let subfn_schemes = infer_subfunction_schemes(&[subfn], None).unwrap();
-    let mut ti = TypeInference::new_with_env(None, Some(&subfn_schemes), Some(HMType::I64), None);
+    let mut ti =
+        TypeInference::new_with_env(None, Some(&subfn_schemes), Some(HMType::I64), None, None);
     let types = ti.infer(&main_func).unwrap();
 
     assert_eq!(types.get(&out_int), Some(&MirType::I64));

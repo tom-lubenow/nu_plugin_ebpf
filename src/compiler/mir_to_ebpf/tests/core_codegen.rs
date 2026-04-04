@@ -1,4 +1,73 @@
 use super::*;
+use crate::compiler::EbpfProgramType;
+use crate::compiler::hir::{
+    HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
+};
+use crate::compiler::ir_to_mir::lower_hir_to_mir_with_hints;
+use crate::compiler::mir::MirInst;
+use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
+use nu_protocol::ast::{CellPath, PathMember};
+use nu_protocol::casing::Casing;
+use nu_protocol::{Span, VarId};
+use std::collections::HashMap;
+
+fn find_aggregate_fentry_arg_candidate() -> (String, u8, usize) {
+    for (func_name, arg_idx) in [
+        ("__copy_xstate_to_uabi_buf", 0usize),
+        ("__audit_tk_injoffset", 0),
+    ] {
+        let Ok(Some(spec)) = KernelBtf::get().function_trampoline_arg(func_name, arg_idx) else {
+            continue;
+        };
+        if let TrampolineValueKind::Aggregate { size_bytes } = spec.kind {
+            return (func_name.to_string(), arg_idx as u8, size_bytes);
+        }
+    }
+    panic!("expected an aggregate fentry candidate on this kernel");
+}
+
+fn string_member(name: &str) -> PathMember {
+    PathMember::test_string(name.to_string(), false, Casing::Sensitive)
+}
+
+fn int_member(index: usize) -> PathMember {
+    PathMember::Int {
+        val: index,
+        span: Span::test_data(),
+        optional: false,
+    }
+}
+
+fn make_ctx_path_program(path: CellPath) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(path)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 3],
+        ast: vec![None; 3],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
 
 #[test]
 fn test_return_zero() {
@@ -199,6 +268,277 @@ fn test_compute_rematerializable_spill_stack_expression() {
         remat.get(&ptr),
         Some(&RematExpr::StackAddr { slot, addend: 8 })
     );
+}
+
+#[test]
+fn test_compile_fentry_aggregate_arg_copies_into_backing_slot() {
+    let (func_name, arg_idx, size_bytes) = find_aggregate_fentry_arg_candidate();
+    let ctx = ProbeContext::new(EbpfProgramType::Fentry, &func_name);
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(size_bytes.div_ceil(8) * 8, 8, StackSlotKind::Local);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::LoadCtxField {
+            dst,
+            field: CtxField::Arg(arg_idx),
+            slot: Some(slot),
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    let dst_reg = compiler
+        .vreg_to_phys
+        .get(&dst)
+        .copied()
+        .expect("destination vreg should be assigned a physical register");
+    let slot_offset = *compiler
+        .slot_offsets
+        .get(&slot)
+        .expect("stack slot should have an assigned offset");
+    let expected_chunks = if size_bytes >= 8 {
+        size_bytes / 8
+    } else if size_bytes >= 4 {
+        1
+    } else if size_bytes >= 2 {
+        1
+    } else {
+        1
+    };
+
+    let load_count = compiler
+        .instructions
+        .iter()
+        .filter(|insn| {
+            insn.src_reg == EbpfReg::R9.as_u8()
+                && [
+                    opcode::BPF_LDX | opcode::BPF_B | opcode::BPF_MEM,
+                    opcode::BPF_LDX | opcode::BPF_H | opcode::BPF_MEM,
+                    opcode::BPF_LDX | opcode::BPF_W | opcode::BPF_MEM,
+                    opcode::BPF_LDX | opcode::BPF_DW | opcode::BPF_MEM,
+                ]
+                .contains(&insn.opcode)
+        })
+        .count();
+    let store_count = compiler
+        .instructions
+        .iter()
+        .filter(|insn| {
+            insn.dst_reg == EbpfReg::R10.as_u8()
+                && [
+                    opcode::BPF_STX | opcode::BPF_B | opcode::BPF_MEM,
+                    opcode::BPF_STX | opcode::BPF_H | opcode::BPF_MEM,
+                    opcode::BPF_STX | opcode::BPF_W | opcode::BPF_MEM,
+                    opcode::BPF_STX | opcode::BPF_DW | opcode::BPF_MEM,
+                ]
+                .contains(&insn.opcode)
+        })
+        .count();
+    let saw_stack_addr = compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::MOV64_REG
+            && insn.dst_reg == dst_reg.as_u8()
+            && insn.src_reg == EbpfReg::R10.as_u8()
+    }) && compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::ADD64_IMM
+            && insn.dst_reg == dst_reg.as_u8()
+            && insn.imm == slot_offset as i32
+    });
+
+    assert_eq!(load_count, expected_chunks);
+    assert!(
+        store_count >= expected_chunks,
+        "expected at least {expected_chunks} stores into the backing slot"
+    );
+    assert!(saw_stack_addr, "expected load to return a stack pointer");
+}
+
+#[test]
+fn test_compile_fentry_aggregate_scalar_field_projection() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("arg0"), string_member("tv_nsec")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "__audit_tk_injoffset");
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("field projection should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("field projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_fexit_aggregate_ret_field_projection() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("retval"), string_member("size")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fexit, "__jump_label_patch");
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("retval field projection should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("retval field projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_fentry_pointer_root_scalar_field_projection() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("arg0"), string_member("f_flags")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("pointer-root field projection should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("pointer-root field projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_fentry_pointer_hop_scalar_field_projection() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("arg0"),
+            string_member("f_inode"),
+            string_member("i_ino"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("pointer-hop field projection should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("pointer-hop field projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_fentry_array_element_projection() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("arg0"), string_member("comm"), int_member(0)],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "wake_up_new_task");
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("array element projection should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("array element projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_fentry_array_leaf_projection() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("arg0"), string_member("comm")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "wake_up_new_task");
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("array leaf projection should lower");
+
+    let mut program = lowering.program.clone();
+    let status = program.main.alloc_vreg();
+    let return_block = program
+        .main
+        .blocks
+        .iter_mut()
+        .find(|block| matches!(block.terminator, MirInst::Return { .. }))
+        .expect("expected return block");
+    return_block.instructions.push(MirInst::EmitEvent {
+        data: crate::compiler::mir::VReg(0),
+        size: 16,
+    });
+    return_block.instructions.push(MirInst::Copy {
+        dst: status,
+        src: MirValue::Const(0),
+    });
+    return_block.terminator = MirInst::Return {
+        val: Some(MirValue::VReg(status)),
+    };
+
+    let result =
+        compile_mir_to_ebpf_with_hints(&program, Some(&probe_ctx), Some(&lowering.type_hints))
+            .expect("array leaf projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
 /// Test that old compiler handles branching (MIR branch test is separate)

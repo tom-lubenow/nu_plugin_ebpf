@@ -33,9 +33,10 @@ use super::instruction::{
     kfunc_unknown_stack_object_lifecycle as kfunc_unknown_stack_object_lifecycle_shared,
 };
 use super::mir::{
-    AddressSpace, BinOpKind, BlockId, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME,
-    KSTACK_MAP_NAME, MapKind, MapRef, MirFunction, MirInst, MirType, MirValue, RINGBUF_MAP_NAME,
-    STRING_COUNTER_MAP_NAME, StackSlotId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, VReg,
+    AddressSpace, BYTES_COUNTER_MAP_NAME, BinOpKind, BlockId, COUNTER_MAP_NAME, CtxField,
+    HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, MapKind, MapRef, MirFunction, MirInst, MirType, MirValue,
+    RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME, StackSlotId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
+    VReg,
 };
 
 mod state;

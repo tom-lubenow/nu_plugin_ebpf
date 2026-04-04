@@ -224,12 +224,13 @@ impl<'a> TypeInference<'a> {
             }
 
             MirInst::EmitEvent { data, size } => {
-                if *size > 8 {
-                    let data_ty = self.mir_type_for_vreg(*data, types);
+                let data_ty = self.mir_type_for_vreg(*data, types);
+                if !Self::mir_is_stack_or_map_ptr(&data_ty) && *size > 8 {
                     match data_ty {
-                        MirType::Ptr { address_space, .. }
-                            if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {
-                        }
+                        MirType::Ptr { .. } => errors.push(TypeError::new(format!(
+                            "emit event of size {} expects stack/map pointer, got {:?}",
+                            size, data_ty
+                        ))),
                         _ => errors.push(TypeError::new(format!(
                             "emit event of size {} expects stack/map pointer, got {:?}",
                             size, data_ty
@@ -240,19 +241,13 @@ impl<'a> TypeInference<'a> {
 
             MirInst::EmitRecord { fields } => {
                 for field in fields {
-                    let size = Self::record_field_size(&field.ty);
                     let value_ty = self.mir_type_for_vreg(field.value, types);
-                    if size > 8 {
-                        match value_ty {
-                            MirType::Ptr { address_space, .. }
-                                if matches!(
-                                    address_space,
-                                    AddressSpace::Stack | AddressSpace::Map
-                                ) => {}
-                            _ => errors.push(TypeError::new(format!(
+                    if Self::mir_requires_pointer_value(&field.ty) {
+                        if !Self::mir_is_stack_or_map_ptr(&value_ty) {
+                            errors.push(TypeError::new(format!(
                                 "record field '{}' expects pointer value, got {:?}",
                                 field.name, value_ty
-                            ))),
+                            )));
                         }
                     } else if !Self::mir_is_numeric(&value_ty) {
                         errors.push(TypeError::new(format!(
@@ -264,17 +259,13 @@ impl<'a> TypeInference<'a> {
             }
 
             MirInst::RecordStore { val, ty, .. } => {
-                let size = ty.size();
                 let value_ty = self.mir_type_for_value(val, types);
-                if size > 8 {
-                    match value_ty {
-                        MirType::Ptr { address_space, .. }
-                            if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {
-                        }
-                        _ => errors.push(TypeError::new(format!(
+                if Self::mir_requires_pointer_value(ty) {
+                    if !Self::mir_is_stack_or_map_ptr(&value_ty) {
+                        errors.push(TypeError::new(format!(
                             "record store expects pointer for {:?}, got {:?}",
                             ty, value_ty
-                        ))),
+                        )));
                     }
                 } else if !Self::mir_is_numeric(&value_ty) {
                     errors.push(TypeError::new(format!(
@@ -286,13 +277,13 @@ impl<'a> TypeInference<'a> {
 
             MirInst::MapUpdate { map, key, val, .. } => {
                 let key_ty = self.mir_type_for_vreg(*key, types);
-                if map.name == STRING_COUNTER_MAP_NAME {
+                if map.name == STRING_COUNTER_MAP_NAME || map.name == BYTES_COUNTER_MAP_NAME {
                     match key_ty {
                         MirType::Ptr { address_space, .. }
                             if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {
                         }
                         _ => errors.push(TypeError::new(format!(
-                            "map '{}' expects string pointer key, got {:?}",
+                            "map '{}' expects stack/map byte-buffer pointer key, got {:?}",
                             map.name, key_ty
                         ))),
                     }
@@ -323,13 +314,13 @@ impl<'a> TypeInference<'a> {
 
             MirInst::MapDelete { map, key } => {
                 let key_ty = self.mir_type_for_vreg(*key, types);
-                if map.name == STRING_COUNTER_MAP_NAME {
+                if map.name == STRING_COUNTER_MAP_NAME || map.name == BYTES_COUNTER_MAP_NAME {
                     match key_ty {
                         MirType::Ptr { address_space, .. }
                             if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {
                         }
                         _ => errors.push(TypeError::new(format!(
-                            "map '{}' expects string pointer key, got {:?}",
+                            "map '{}' expects stack/map byte-buffer pointer key, got {:?}",
                             map.name, key_ty
                         ))),
                     }
@@ -710,10 +701,17 @@ impl<'a> TypeInference<'a> {
                 }
             }
             AddressSpace::Map => Ok(()),
-            _ => Err(format!(
-                "pointer arithmetic not supported for {:?} pointers",
-                space
-            )),
+            AddressSpace::Kernel | AddressSpace::User => match Self::const_value(offset) {
+                Some(value) if value >= 0 => Ok(()),
+                Some(_) => Err(format!(
+                    "{:?} pointer arithmetic requires non-negative constant offsets",
+                    space
+                )),
+                None => Err(format!(
+                    "{:?} pointer arithmetic requires constant offsets",
+                    space
+                )),
+            },
         }
     }
 }

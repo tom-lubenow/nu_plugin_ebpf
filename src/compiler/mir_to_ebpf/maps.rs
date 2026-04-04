@@ -5,37 +5,25 @@ impl<'a> MirToEbpfCompiler<'a> {
     pub(super) fn compile_counter_map_update(
         &mut self,
         map_name: &str,
+        key: VReg,
         key_reg: EbpfReg,
     ) -> Result<(), CompileError> {
         // For count: lookup key, increment, update
-        let key_size = if map_name == STRING_COUNTER_MAP_NAME {
-            16
-        } else {
-            8
-        };
-        let total_size = key_size + 8; // key + value
+        let key_size = self.counter_map_key_size(map_name, key)?;
+        let aligned_key_size = key_size.div_ceil(8) * 8;
+        let total_size = aligned_key_size + 8; // key + value
         self.check_stack_space(total_size as i16)?;
         // Stack grows downward - decrement first
         self.stack_offset -= total_size as i16;
         let val_offset = self.stack_offset; // value at lower address
         let key_offset = self.stack_offset + 8; // key at higher address
 
-        if key_size == 8 {
+        if map_name == COUNTER_MAP_NAME {
             // Store key to stack
             self.instructions
                 .push(EbpfInsn::stxdw(EbpfReg::R10, key_offset, key_reg));
         } else {
-            // Copy 16-byte key from pointer
-            for chunk in 0..2 {
-                let offset = (chunk * 8) as i16;
-                self.instructions
-                    .push(EbpfInsn::ldxdw(EbpfReg::R0, key_reg, offset));
-                self.instructions.push(EbpfInsn::stxdw(
-                    EbpfReg::R10,
-                    key_offset + offset,
-                    EbpfReg::R0,
-                ));
-            }
+            self.emit_copy_bytes(key_reg, 0, EbpfReg::R10, key_offset, key_size, EbpfReg::R0)?;
         }
 
         // bpf_map_lookup_elem(map, key) -> value ptr or null
@@ -109,6 +97,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         &mut self,
         map_name: &str,
         kind: MapKind,
+        key_size: Option<u32>,
     ) -> Result<(), CompileError> {
         if !matches!(kind, MapKind::Hash | MapKind::PerCpuHash) {
             return Err(CompileError::UnsupportedInstruction(format!(
@@ -117,29 +106,116 @@ impl<'a> MirToEbpfCompiler<'a> {
             )));
         }
 
-        let slot = if map_name == COUNTER_MAP_NAME {
-            &mut self.counter_map_kind
-        } else if map_name == STRING_COUNTER_MAP_NAME {
-            &mut self.string_counter_map_kind
-        } else {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "internal error: '{}' is not a counter map",
-                map_name
-            )));
+        if map_name == COUNTER_MAP_NAME {
+            let slot = &mut self.counter_map_kind;
+            if let Some(existing) = *slot {
+                if existing != kind {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "map '{}' used with conflicting kinds: {:?} vs {:?}",
+                        map_name, existing, kind
+                    )));
+                }
+            } else {
+                *slot = Some(kind);
+            }
+            return Ok(());
+        }
+
+        if map_name == STRING_COUNTER_MAP_NAME {
+            let slot = &mut self.string_counter_map_kind;
+            if let Some(existing) = *slot {
+                if existing != kind {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "map '{}' used with conflicting kinds: {:?} vs {:?}",
+                        map_name, existing, kind
+                    )));
+                }
+            } else {
+                *slot = Some(kind);
+            }
+            return Ok(());
+        }
+
+        if map_name == BYTES_COUNTER_MAP_NAME {
+            let key_size = key_size.ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "internal error: bytes_counters requires a key size".into(),
+                )
+            })?;
+            if key_size == 0 {
+                return Err(CompileError::UnsupportedInstruction(
+                    "bytes_counters key size must be at least 1 byte".into(),
+                ));
+            }
+            if let Some(existing) = self.bytes_counter_map_spec {
+                if existing.kind != kind {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "map '{}' used with conflicting kinds: {:?} vs {:?}",
+                        map_name, existing.kind, kind
+                    )));
+                }
+                if existing.key_size != key_size {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "map '{}' used with conflicting key sizes: {} vs {}",
+                        map_name, existing.key_size, key_size
+                    )));
+                }
+            } else {
+                self.bytes_counter_map_spec = Some(CounterMapSpec { kind, key_size });
+            }
+            return Ok(());
+        }
+
+        Err(CompileError::UnsupportedInstruction(format!(
+            "internal error: '{}' is not a counter map",
+            map_name
+        )))
+    }
+
+    pub(super) fn register_bytes_counter_key_schema(
+        &mut self,
+        key: VReg,
+    ) -> Result<(), CompileError> {
+        let key_ty = match self.current_types.get(&key) {
+            Some(MirType::Ptr { pointee, .. }) => pointee.as_ref(),
+            Some(ty) => ty,
+            None => {
+                return Err(CompileError::UnsupportedInstruction(
+                    "bytes_counters key schema could not be inferred".into(),
+                ));
+            }
         };
 
-        if let Some(existing) = *slot {
-            if existing != kind {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "map '{}' used with conflicting kinds: {:?} vs {:?}",
-                    map_name, existing, kind
-                )));
+        let schema = CounterKeySchema::from_mir_type(key_ty);
+        if let Some(existing) = &self.bytes_counter_key_schema {
+            if existing != &schema {
+                return Err(CompileError::UnsupportedInstruction(
+                    "bytes_counters key schema mismatch: multiple key shapes in one program".into(),
+                ));
             }
         } else {
-            *slot = Some(kind);
+            self.bytes_counter_key_schema = Some(schema);
         }
 
         Ok(())
+    }
+
+    fn counter_map_key_size(&self, map_name: &str, key: VReg) -> Result<usize, CompileError> {
+        match map_name {
+            COUNTER_MAP_NAME => Ok(8),
+            STRING_COUNTER_MAP_NAME => Ok(16),
+            BYTES_COUNTER_MAP_NAME => match self.current_types.get(&key) {
+                Some(MirType::Ptr { pointee, .. }) => Ok(pointee.size().max(1)),
+                Some(ty) => Ok(ty.size().max(1)),
+                None => Err(CompileError::UnsupportedInstruction(
+                    "bytes_counters key size could not be inferred".into(),
+                )),
+            },
+            _ => Err(CompileError::UnsupportedInstruction(format!(
+                "internal error: '{}' is not a counter map",
+                map_name
+            ))),
+        }
     }
 
     pub(super) fn build_counter_map_def(
@@ -149,8 +225,21 @@ impl<'a> MirToEbpfCompiler<'a> {
     ) -> Result<BpfMapDef, CompileError> {
         let key_size = if map_name == STRING_COUNTER_MAP_NAME {
             16
-        } else {
+        } else if map_name == COUNTER_MAP_NAME {
             8
+        } else if map_name == BYTES_COUNTER_MAP_NAME {
+            self.bytes_counter_map_spec
+                .map(|spec| spec.key_size)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "bytes_counters map definition missing key size".into(),
+                    )
+                })?
+        } else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "internal error: '{}' is not a counter map",
+                map_name
+            )));
         };
         let value_size = 8;
         let max_entries = 10240;
@@ -171,6 +260,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             RINGBUF_MAP_NAME
                 | COUNTER_MAP_NAME
                 | STRING_COUNTER_MAP_NAME
+                | BYTES_COUNTER_MAP_NAME
                 | HISTOGRAM_MAP_NAME
                 | TIMESTAMP_MAP_NAME
                 | KSTACK_MAP_NAME

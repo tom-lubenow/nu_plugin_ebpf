@@ -142,11 +142,31 @@ fn validate_tracepoint_target(target: &str) -> Result<(), LoadError> {
     })
 }
 
+fn validate_trampoline_target(
+    prog_type: EbpfProgramType,
+    func_name: &str,
+) -> Result<(), LoadError> {
+    let btf = KernelBtf::get();
+    let result = match prog_type {
+        EbpfProgramType::Fentry => btf.validate_fentry_target(func_name),
+        EbpfProgramType::Fexit => btf.validate_fexit_target(func_name),
+        _ => return Ok(()),
+    };
+
+    result.map_err(|e| LoadError::UnsupportedTrampolineTarget {
+        probe_type: prog_type.section_prefix().to_string(),
+        target: func_name.to_string(),
+        reason: e.to_string(),
+    })
+}
+
 /// Parse a probe specification like "kprobe:sys_clone" or "tracepoint:syscalls/sys_enter_read"
 ///
 /// Supported formats:
 /// - `kprobe:function_name`
 /// - `kretprobe:function_name`
+/// - `fentry:function_name`
+/// - `fexit:function_name`
 /// - `tracepoint:category/name`
 /// - `raw_tracepoint:name` or `raw_tp:name`
 /// - `uprobe:/path/to/binary:function_name`
@@ -187,6 +207,16 @@ pub fn parse_probe_spec(spec: &str) -> Result<(EbpfProgramType, String), LoadErr
             validate_kprobe_target(target)?;
             EbpfProgramType::Kretprobe
         }
+        "fentry" => {
+            validate_kprobe_target(target)?;
+            validate_trampoline_target(EbpfProgramType::Fentry, target)?;
+            EbpfProgramType::Fentry
+        }
+        "fexit" => {
+            validate_kprobe_target(target)?;
+            validate_trampoline_target(EbpfProgramType::Fexit, target)?;
+            EbpfProgramType::Fexit
+        }
         "tracepoint" => {
             // Validate tracepoint exists
             validate_tracepoint_target(target)?;
@@ -195,7 +225,7 @@ pub fn parse_probe_spec(spec: &str) -> Result<(EbpfProgramType, String), LoadErr
         "raw_tracepoint" | "raw_tp" => EbpfProgramType::RawTracepoint,
         other => {
             return Err(LoadError::Load(format!(
-                "Unknown probe type: {other}. Supported: kprobe, kretprobe, tracepoint, raw_tracepoint, uprobe, uretprobe"
+                "Unknown probe type: {other}. Supported: kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe"
             )));
         }
     };

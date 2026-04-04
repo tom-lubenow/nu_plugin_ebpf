@@ -2,9 +2,11 @@ use super::*;
 
 pub(super) fn map_value_limit(map: &MapRef) -> Option<i64> {
     match map.name.as_str() {
-        COUNTER_MAP_NAME | STRING_COUNTER_MAP_NAME | HISTOGRAM_MAP_NAME | TIMESTAMP_MAP_NAME => {
-            Some(8 - 1)
-        }
+        COUNTER_MAP_NAME
+        | STRING_COUNTER_MAP_NAME
+        | BYTES_COUNTER_MAP_NAME
+        | HISTOGRAM_MAP_NAME
+        | TIMESTAMP_MAP_NAME => Some(8 - 1),
         KSTACK_MAP_NAME | USTACK_MAP_NAME => Some((127 * 8) - 1),
         _ => None,
     }
@@ -31,6 +33,7 @@ pub(super) fn is_builtin_map_name(name: &str) -> bool {
         RINGBUF_MAP_NAME
             | COUNTER_MAP_NAME
             | STRING_COUNTER_MAP_NAME
+            | BYTES_COUNTER_MAP_NAME
             | HISTOGRAM_MAP_NAME
             | TIMESTAMP_MAP_NAME
             | KSTACK_MAP_NAME
@@ -39,7 +42,10 @@ pub(super) fn is_builtin_map_name(name: &str) -> bool {
 }
 
 pub(super) fn is_counter_map_name(name: &str) -> bool {
-    matches!(name, COUNTER_MAP_NAME | STRING_COUNTER_MAP_NAME)
+    matches!(
+        name,
+        COUNTER_MAP_NAME | STRING_COUNTER_MAP_NAME | BYTES_COUNTER_MAP_NAME
+    )
 }
 
 pub(super) fn check_counter_map_kind(

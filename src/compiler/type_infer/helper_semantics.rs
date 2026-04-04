@@ -13,10 +13,18 @@ impl<'a> TypeInference<'a> {
         match value {
             MirValue::VReg(vreg) => self.mir_type_for_vreg(*vreg, types),
             MirValue::Const(_) => MirType::I64,
-            MirValue::StackSlot(_) => MirType::Ptr {
-                pointee: Box::new(MirType::U8),
-                address_space: AddressSpace::Stack,
-            },
+            MirValue::StackSlot(slot) => self
+                .stack_slot_hints
+                .and_then(|hints| hints.get(slot))
+                .cloned()
+                .map(|ty| MirType::Ptr {
+                    pointee: Box::new(ty),
+                    address_space: AddressSpace::Stack,
+                })
+                .unwrap_or(MirType::Ptr {
+                    pointee: Box::new(MirType::U8),
+                    address_space: AddressSpace::Stack,
+                }),
         }
     }
 
@@ -40,6 +48,20 @@ impl<'a> TypeInference<'a> {
             MirType::Ptr { address_space, .. } => Some(*address_space),
             _ => None,
         }
+    }
+
+    pub(super) fn mir_is_stack_or_map_ptr(ty: &MirType) -> bool {
+        matches!(
+            ty,
+            MirType::Ptr {
+                address_space: AddressSpace::Stack | AddressSpace::Map,
+                ..
+            }
+        )
+    }
+
+    pub(super) fn mir_requires_pointer_value(ty: &MirType) -> bool {
+        matches!(ty, MirType::Array { .. } | MirType::Struct { .. }) || ty.size() > 8
     }
 
     pub(super) fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
@@ -596,19 +618,6 @@ impl<'a> TypeInference<'a> {
         match value {
             MirValue::Const(c) => Some(*c),
             _ => None,
-        }
-    }
-
-    pub(super) fn record_field_size(ty: &MirType) -> usize {
-        match ty {
-            MirType::Array { elem, len } if matches!(elem.as_ref(), MirType::U8) => {
-                if *len == 16 {
-                    16
-                } else {
-                    (*len + 7) & !7
-                }
-            }
-            _ => 8,
         }
     }
 }

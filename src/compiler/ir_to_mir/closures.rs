@@ -230,11 +230,6 @@ impl<'a> HirToMirLowering<'a> {
             // Mark this register as holding the context
             let meta = self.get_or_create_metadata(dst);
             meta.is_context = true;
-            // Emit a placeholder - actual context access happens in FollowCellPath
-            self.emit(MirInst::Copy {
-                dst: dst_vreg,
-                src: MirValue::Const(0), // Placeholder
-            });
             return Ok(());
         }
 

@@ -1,4 +1,6 @@
 use super::*;
+use crate::compiler::EbpfProgramType;
+use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec};
 
 impl<'a> MirToEbpfCompiler<'a> {
     /// Emit binary operation with register operand
@@ -146,6 +148,16 @@ impl<'a> MirToEbpfCompiler<'a> {
         })
     }
 
+    pub(super) fn add_i16_offset(&self, base: i16, add: usize) -> Result<i16, CompileError> {
+        let total = i32::from(base)
+            + i32::try_from(add).map_err(|_| {
+                CompileError::UnsupportedInstruction(format!("offset {} out of range", add))
+            })?;
+        i16::try_from(total).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!("offset {} out of range", total))
+        })
+    }
+
     pub(super) fn value_to_reg(&mut self, value: &MirValue) -> Result<EbpfReg, CompileError> {
         match value {
             MirValue::VReg(v) => self.ensure_reg(*v),
@@ -216,6 +228,114 @@ impl<'a> MirToEbpfCompiler<'a> {
         Ok(())
     }
 
+    pub(super) fn emit_copy_bytes(
+        &mut self,
+        src_base: EbpfReg,
+        src_offset: i16,
+        dst_base: EbpfReg,
+        dst_offset: i16,
+        size: usize,
+        scratch: EbpfReg,
+    ) -> Result<(), CompileError> {
+        let mut copied = 0usize;
+        while copied < size {
+            let cur_src = self.add_i16_offset(src_offset, copied)?;
+            let cur_dst = self.add_i16_offset(dst_offset, copied)?;
+            let remaining = size - copied;
+            let chunk = Self::largest_aligned_chunk(remaining, &[cur_src, cur_dst]);
+            self.emit_load(scratch, src_base, cur_src, chunk)?;
+            self.emit_store(dst_base, cur_dst, scratch, chunk)?;
+            copied += chunk;
+        }
+        Ok(())
+    }
+
+    pub(super) fn emit_zero_bytes(
+        &mut self,
+        base: EbpfReg,
+        offset: i16,
+        size: usize,
+        scratch: EbpfReg,
+    ) -> Result<(), CompileError> {
+        self.instructions.push(EbpfInsn::mov64_imm(scratch, 0));
+        let mut written = 0usize;
+        while written < size {
+            let cur_offset = self.add_i16_offset(offset, written)?;
+            let remaining = size - written;
+            let chunk = Self::largest_aligned_chunk(remaining, &[cur_offset]);
+            self.emit_store(base, cur_offset, scratch, chunk)?;
+            written += chunk;
+        }
+        Ok(())
+    }
+
+    fn largest_aligned_chunk(remaining: usize, offsets: &[i16]) -> usize {
+        for chunk in [8usize, 4, 2, 1] {
+            if remaining >= chunk
+                && offsets
+                    .iter()
+                    .all(|offset| i32::from(*offset).rem_euclid(chunk as i32) == 0)
+            {
+                return chunk;
+            }
+        }
+        1
+    }
+
+    fn trampoline_slot_offset(field_name: &str, slot_index: usize) -> Result<i16, CompileError> {
+        let byte_offset = slot_index.checked_mul(8).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!("{field_name} slot offset overflowed"))
+        })?;
+        i16::try_from(byte_offset).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "{field_name} slot offset {} is too large",
+                byte_offset
+            ))
+        })
+    }
+
+    fn compile_trampoline_value_load(
+        &mut self,
+        dst: EbpfReg,
+        slot: Option<StackSlotId>,
+        spec: TrampolineValueSpec,
+        field_name: &str,
+    ) -> Result<(), CompileError> {
+        match spec.kind {
+            TrampolineValueKind::Scalar | TrampolineValueKind::Pointer { .. } => {
+                let offset = Self::trampoline_slot_offset(field_name, spec.slot_index)?;
+                self.instructions
+                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+            }
+            TrampolineValueKind::Aggregate { size_bytes } => {
+                let slot = slot.ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{field_name} requires a stack backing slot"
+                    ))
+                })?;
+                let dst_offset = self.slot_offset_i16(slot, 0)?;
+                let src_offset = Self::trampoline_slot_offset(field_name, spec.slot_index)?;
+                let aligned_size = size_bytes.div_ceil(8) * 8;
+                if aligned_size > size_bytes {
+                    self.emit_zero_bytes(EbpfReg::R10, dst_offset, aligned_size, EbpfReg::R0)?;
+                }
+                self.emit_copy_bytes(
+                    EbpfReg::R9,
+                    src_offset,
+                    EbpfReg::R10,
+                    dst_offset,
+                    size_bytes,
+                    EbpfReg::R0,
+                )?;
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R10));
+                self.instructions
+                    .push(EbpfInsn::add64_imm(dst, dst_offset as i32));
+            }
+        }
+        Ok(())
+    }
+
     /// Compile context field load
     pub(super) fn compile_load_ctx_field(
         &mut self,
@@ -223,6 +343,10 @@ impl<'a> MirToEbpfCompiler<'a> {
         field: &CtxField,
         slot: Option<StackSlotId>,
     ) -> Result<(), CompileError> {
+        if let Some(ctx) = self.probe_ctx {
+            ctx.validate_ctx_field_access(field)?;
+        }
+
         match field {
             CtxField::Pid => {
                 // bpf_get_current_pid_tgid() returns (tgid << 32) | pid
@@ -297,39 +421,93 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
             CtxField::Arg(n) => {
                 let n = *n as usize;
-                if n >= 6 {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "Argument index {} out of range",
-                        n
-                    )));
+                match self.probe_ctx.map(|ctx| ctx.probe_type) {
+                    Some(EbpfProgramType::Fentry | EbpfProgramType::Fexit) => {
+                        let ctx = self
+                            .probe_ctx
+                            .expect("probe_ctx must exist for trampoline arg");
+                        let spec = KernelBtf::get()
+                            .function_trampoline_arg(&ctx.target, n)
+                            .map_err(|e| {
+                                CompileError::UnsupportedInstruction(format!(
+                                    "failed to resolve ctx.arg{} for {}:{}: {}",
+                                    n,
+                                    ctx.probe_type.section_prefix(),
+                                    ctx.target,
+                                    e
+                                ))
+                            })?
+                            .ok_or_else(|| {
+                                CompileError::UnsupportedInstruction(format!(
+                                    "ctx.arg{} is not available on {}:{}",
+                                    n,
+                                    ctx.probe_type.section_prefix(),
+                                    ctx.target
+                                ))
+                            })?;
+                        self.compile_trampoline_value_load(
+                            dst,
+                            slot,
+                            spec,
+                            &format!("ctx.arg{n}"),
+                        )?;
+                    }
+                    _ => {
+                        if n >= 6 {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "Argument index {} out of range",
+                                n
+                            )));
+                        }
+                        let offsets = KernelBtf::get().pt_regs_offsets().map_err(|e| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "pt_regs argument access unavailable: {e}"
+                            ))
+                        })?;
+                        let offset = offsets.arg_offsets[n];
+                        // R9 contains the saved pt_regs context pointer for kprobe/uprobe paths.
+                        self.instructions
+                            .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+                    }
                 }
-                let offsets = KernelBtf::get().pt_regs_offsets().map_err(|e| {
-                    CompileError::UnsupportedInstruction(format!(
-                        "pt_regs argument access unavailable: {e}"
-                    ))
-                })?;
-                let offset = offsets.arg_offsets[n];
-                // R1 contains pointer to pt_regs on entry
-                // We need to save it in R9 at start of function for later use
-                // For now, assume R9 has the context pointer
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
             }
-            CtxField::RetVal => {
-                if let Some(ctx) = self.probe_ctx
-                    && !ctx.is_return_probe()
-                {
-                    return Err(CompileError::RetvalOnNonReturnProbe);
+            CtxField::RetVal => match self.probe_ctx.map(|ctx| ctx.probe_type) {
+                Some(EbpfProgramType::Fexit) => {
+                    let ctx = self
+                        .probe_ctx
+                        .expect("probe_ctx must exist for trampoline ret");
+                    let spec = KernelBtf::get()
+                            .function_trampoline_ret(&ctx.target)
+                            .map_err(|e| {
+                                CompileError::UnsupportedInstruction(format!(
+                                    "failed to resolve ctx.retval for fexit:{}: {}",
+                                    ctx.target, e
+                                ))
+                            })?
+                            .ok_or_else(|| {
+                                CompileError::UnsupportedInstruction(format!(
+                                    "ctx.retval is not available on fexit:{} because the target returns void",
+                                    ctx.target
+                                ))
+                            })?;
+                    self.compile_trampoline_value_load(dst, slot, spec, "ctx.retval")?;
                 }
-                let offsets = KernelBtf::get().pt_regs_offsets().map_err(|e| {
-                    CompileError::UnsupportedInstruction(format!(
-                        "pt_regs return value access unavailable: {e}"
-                    ))
-                })?;
-                let offset = offsets.retval_offset;
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
-            }
+                _ => {
+                    if let Some(ctx) = self.probe_ctx
+                        && !ctx.probe_type.supports_ctx_retval()
+                    {
+                        return Err(CompileError::RetvalOnNonReturnProbe);
+                    }
+                    let offsets = KernelBtf::get().pt_regs_offsets().map_err(|e| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "pt_regs return value access unavailable: {e}"
+                        ))
+                    })?;
+                    let offset = offsets.retval_offset;
+                    self.instructions
+                        .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+                }
+            },
             CtxField::KStack => {
                 self.needs_kstack_map = true;
                 self.compile_get_stackid(dst, KSTACK_MAP_NAME, false)?;

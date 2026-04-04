@@ -52,6 +52,44 @@ mod linux_tests {
         }
     }
 
+    /// Test parsing valid fentry specification
+    #[test]
+    fn test_parse_fentry_spec() {
+        let result = parse_probe_spec("fentry:do_sys_openat2");
+
+        match result {
+            Ok((prog_type, target)) => {
+                assert!(
+                    format!("{:?}", prog_type).contains("Fentry"),
+                    "Expected Fentry type"
+                );
+                assert_eq!(target, "do_sys_openat2");
+            }
+            Err(LoadError::NeedsSudo) => {}
+            Err(LoadError::FunctionNotFound { .. }) => {}
+            Err(e) => panic!("Unexpected error: {:?}", e),
+        }
+    }
+
+    /// Test parsing valid fexit specification
+    #[test]
+    fn test_parse_fexit_spec() {
+        let result = parse_probe_spec("fexit:do_sys_openat2");
+
+        match result {
+            Ok((prog_type, target)) => {
+                assert!(
+                    format!("{:?}", prog_type).contains("Fexit"),
+                    "Expected Fexit type"
+                );
+                assert_eq!(target, "do_sys_openat2");
+            }
+            Err(LoadError::NeedsSudo) => {}
+            Err(LoadError::FunctionNotFound { .. }) => {}
+            Err(e) => panic!("Unexpected error: {:?}", e),
+        }
+    }
+
     /// Test parsing uprobe specification
     #[test]
     fn test_parse_uprobe_spec() {
