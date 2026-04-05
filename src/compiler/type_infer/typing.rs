@@ -1,5 +1,5 @@
 use super::*;
-use crate::compiler::EbpfProgramType;
+use crate::compiler::ProgramValueAccess;
 use crate::kernel_btf::{KernelBtf, TypeInfo};
 
 impl<'a> TypeInference<'a> {
@@ -158,10 +158,7 @@ impl<'a> TypeInference<'a> {
         let Some(ctx) = self.probe_ctx.as_ref() else {
             return Ok(None);
         };
-        if !matches!(
-            ctx.probe_type,
-            EbpfProgramType::Fentry | EbpfProgramType::Fexit
-        ) {
+        if !ctx.probe_type.uses_btf_trampoline() {
             return Ok(None);
         }
 
@@ -205,7 +202,10 @@ impl<'a> TypeInference<'a> {
         let Some(ctx) = self.probe_ctx.as_ref() else {
             return Ok(None);
         };
-        if !matches!(ctx.probe_type, EbpfProgramType::Fexit) {
+        if !matches!(
+            ctx.probe_type.retval_access(),
+            ProgramValueAccess::Trampoline
+        ) {
             return Ok(None);
         }
 
@@ -247,12 +247,7 @@ impl<'a> TypeInference<'a> {
             }
 
             match field {
-                CtxField::Arg(idx)
-                    if matches!(
-                        ctx.probe_type,
-                        EbpfProgramType::Fentry | EbpfProgramType::Fexit
-                    ) =>
-                {
+                CtxField::Arg(idx) if ctx.probe_type.uses_btf_trampoline() => {
                     let spec = KernelBtf::get()
                         .function_trampoline_arg(&ctx.target, *idx as usize)
                         .map_err(|e| {
@@ -273,7 +268,12 @@ impl<'a> TypeInference<'a> {
                         )));
                     }
                 }
-                CtxField::RetVal if matches!(ctx.probe_type, EbpfProgramType::Fexit) => {
+                CtxField::RetVal
+                    if matches!(
+                        ctx.probe_type.retval_access(),
+                        ProgramValueAccess::Trampoline
+                    ) =>
+                {
                     let spec = KernelBtf::get()
                         .function_trampoline_ret(&ctx.target)
                         .map_err(|e| {

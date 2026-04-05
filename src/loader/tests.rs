@@ -1,6 +1,6 @@
 use super::*;
 use crate::compiler::mir::MapKind;
-use crate::compiler::{CounterKeySchema, CounterKeySchemaField, MapRef, MirType};
+use crate::compiler::{CounterKeySchema, CounterKeySchemaField, EbpfProgramType, MapRef, MirType};
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use std::collections::HashMap;
 
@@ -103,6 +103,13 @@ fn test_parse_probe_spec_fexit() {
         Err(LoadError::FunctionNotFound { .. }) => {}
         Err(e) => panic!("Unexpected error: {:?}", e),
     }
+}
+
+#[test]
+fn test_parse_probe_spec_raw_tracepoint_alias() {
+    let (prog_type, target) = parse_probe_spec("raw_tp:sys_enter").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::RawTracepoint);
+    assert_eq!(target, "sys_enter");
 }
 
 #[test]

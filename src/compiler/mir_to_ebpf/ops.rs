@@ -1,5 +1,5 @@
 use super::*;
-use crate::compiler::EbpfProgramType;
+use crate::compiler::ProgramValueAccess;
 use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec};
 
 impl<'a> MirToEbpfCompiler<'a> {
@@ -467,11 +467,8 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
             CtxField::Arg(n) => {
                 let n = *n as usize;
-                match self.probe_ctx.map(|ctx| ctx.probe_type) {
-                    Some(EbpfProgramType::Fentry | EbpfProgramType::Fexit) => {
-                        let ctx = self
-                            .probe_ctx
-                            .expect("probe_ctx must exist for trampoline arg");
+                match self.probe_ctx {
+                    Some(ctx) if ctx.probe_type.uses_btf_trampoline() => {
                         let spec = KernelBtf::get()
                             .function_trampoline_arg(&ctx.target, n)
                             .map_err(|e| {
@@ -517,11 +514,13 @@ impl<'a> MirToEbpfCompiler<'a> {
                     }
                 }
             }
-            CtxField::RetVal => match self.probe_ctx.map(|ctx| ctx.probe_type) {
-                Some(EbpfProgramType::Fexit) => {
-                    let ctx = self
-                        .probe_ctx
-                        .expect("probe_ctx must exist for trampoline ret");
+            CtxField::RetVal => match self.probe_ctx {
+                Some(ctx)
+                    if matches!(
+                        ctx.probe_type.retval_access(),
+                        ProgramValueAccess::Trampoline
+                    ) =>
+                {
                     let spec = KernelBtf::get()
                             .function_trampoline_ret(&ctx.target)
                             .map_err(|e| {

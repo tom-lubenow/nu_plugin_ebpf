@@ -61,31 +61,28 @@ impl EbpfState {
             .ok_or_else(|| LoadError::ProgramNotFound(program.name.clone()))?;
 
         // Attach based on program type
-        match program.prog_type {
-            EbpfProgramType::Kprobe => {
-                let kprobe: &mut KProbe = prog
-                    .try_into()
-                    .map_err(|e| LoadError::Load(format!("Failed to convert to KProbe: {e}")))?;
-                kprobe
-                    .load()
-                    .map_err(|e| LoadError::Load(format!("Failed to load kprobe: {e}")))?;
-                kprobe
-                    .attach(&program.target, 0)
-                    .map_err(|e| LoadError::Attach(format!("Failed to attach kprobe: {e}")))?;
+        match program.prog_type.attach_kind() {
+            ProgramAttachKind::Kprobe | ProgramAttachKind::Kretprobe => {
+                let kprobe: &mut KProbe = prog.try_into().map_err(|e| {
+                    LoadError::Load(format!(
+                        "Failed to convert to {}: {e}",
+                        program.prog_type.canonical_prefix()
+                    ))
+                })?;
+                kprobe.load().map_err(|e| {
+                    LoadError::Load(format!(
+                        "Failed to load {}: {e}",
+                        program.prog_type.canonical_prefix()
+                    ))
+                })?;
+                kprobe.attach(&program.target, 0).map_err(|e| {
+                    LoadError::Attach(format!(
+                        "Failed to attach {}: {e}",
+                        program.prog_type.canonical_prefix()
+                    ))
+                })?;
             }
-            EbpfProgramType::Kretprobe => {
-                // Kretprobe uses the same KProbe type - Aya detects it from the section name
-                let kretprobe: &mut KProbe = prog
-                    .try_into()
-                    .map_err(|e| LoadError::Load(format!("Failed to convert to KRetProbe: {e}")))?;
-                kretprobe
-                    .load()
-                    .map_err(|e| LoadError::Load(format!("Failed to load kretprobe: {e}")))?;
-                kretprobe
-                    .attach(&program.target, 0)
-                    .map_err(|e| LoadError::Attach(format!("Failed to attach kretprobe: {e}")))?;
-            }
-            EbpfProgramType::Fentry => {
+            ProgramAttachKind::Fentry => {
                 let btf = Btf::from_sys_fs().map_err(|e| {
                     LoadError::Load(format!("Failed to load kernel BTF for fentry: {e}"))
                 })?;
@@ -99,7 +96,7 @@ impl EbpfState {
                     .attach()
                     .map_err(|e| LoadError::Attach(format!("Failed to attach fentry: {e}")))?;
             }
-            EbpfProgramType::Fexit => {
+            ProgramAttachKind::Fexit => {
                 let btf = Btf::from_sys_fs().map_err(|e| {
                     LoadError::Load(format!("Failed to load kernel BTF for fexit: {e}"))
                 })?;
@@ -113,7 +110,7 @@ impl EbpfState {
                     .attach()
                     .map_err(|e| LoadError::Attach(format!("Failed to attach fexit: {e}")))?;
             }
-            EbpfProgramType::Tracepoint => {
+            ProgramAttachKind::Tracepoint => {
                 // Tracepoint target format: "category/name" (e.g., "syscalls/sys_enter_openat")
                 let parts: Vec<&str> = program.target.splitn(2, '/').collect();
                 if parts.len() != 2 {
@@ -134,7 +131,7 @@ impl EbpfState {
                     .attach(category, name)
                     .map_err(|e| LoadError::Attach(format!("Failed to attach tracepoint: {e}")))?;
             }
-            EbpfProgramType::RawTracepoint => {
+            ProgramAttachKind::RawTracepoint => {
                 // Raw tracepoint target is just the name (e.g., "sys_enter")
                 let raw_tp: &mut RawTracePoint = prog.try_into().map_err(|e| {
                     LoadError::Load(format!("Failed to convert to RawTracePoint: {e}"))
@@ -146,15 +143,21 @@ impl EbpfState {
                     LoadError::Attach(format!("Failed to attach raw_tracepoint: {e}"))
                 })?;
             }
-            EbpfProgramType::Uprobe => {
+            ProgramAttachKind::Uprobe | ProgramAttachKind::Uretprobe => {
                 // Uprobe target format: /path/to/binary:function_name or /path/to/binary:0x1234
                 let target = UprobeTarget::parse(&program.target)?;
-                let uprobe: &mut UProbe = prog
-                    .try_into()
-                    .map_err(|e| LoadError::Load(format!("Failed to convert to UProbe: {e}")))?;
-                uprobe
-                    .load()
-                    .map_err(|e| LoadError::Load(format!("Failed to load uprobe: {e}")))?;
+                let uprobe: &mut UProbe = prog.try_into().map_err(|e| {
+                    LoadError::Load(format!(
+                        "Failed to convert to {}: {e}",
+                        program.prog_type.canonical_prefix()
+                    ))
+                })?;
+                uprobe.load().map_err(|e| {
+                    LoadError::Load(format!(
+                        "Failed to load {}: {e}",
+                        program.prog_type.canonical_prefix()
+                    ))
+                })?;
                 uprobe
                     .attach(
                         target.function_name.as_deref(),
@@ -162,25 +165,12 @@ impl EbpfState {
                         &target.binary_path,
                         target.pid,
                     )
-                    .map_err(|e| LoadError::Attach(format!("Failed to attach uprobe: {e}")))?;
-            }
-            EbpfProgramType::Uretprobe => {
-                // Uretprobe uses the same UProbe type - Aya detects it from the section name
-                let target = UprobeTarget::parse(&program.target)?;
-                let uretprobe: &mut UProbe = prog
-                    .try_into()
-                    .map_err(|e| LoadError::Load(format!("Failed to convert to URetProbe: {e}")))?;
-                uretprobe
-                    .load()
-                    .map_err(|e| LoadError::Load(format!("Failed to load uretprobe: {e}")))?;
-                uretprobe
-                    .attach(
-                        target.function_name.as_deref(),
-                        target.offset,
-                        &target.binary_path,
-                        target.pid,
-                    )
-                    .map_err(|e| LoadError::Attach(format!("Failed to attach uretprobe: {e}")))?;
+                    .map_err(|e| {
+                        LoadError::Attach(format!(
+                            "Failed to attach {}: {e}",
+                            program.prog_type.canonical_prefix()
+                        ))
+                    })?;
             }
         }
 
@@ -210,7 +200,11 @@ impl EbpfState {
 
         // Store the active probe
         let id = self.next_probe_id();
-        let probe_spec = format!("{}:{}", program.prog_type.section_prefix(), program.target);
+        let probe_spec = format!(
+            "{}:{}",
+            program.prog_type.canonical_prefix(),
+            program.target
+        );
 
         // Track pin group reference count for cleanup
         let pin_group_owned = pin_group.map(|s| s.to_string());

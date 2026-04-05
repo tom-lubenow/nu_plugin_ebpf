@@ -403,7 +403,7 @@ impl CounterKeySchema {
 }
 
 /// eBPF program type
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EbpfProgramType {
     /// Kernel probe (kprobe)
     Kprobe,
@@ -424,55 +424,93 @@ pub enum EbpfProgramType {
 }
 
 impl EbpfProgramType {
+    pub fn info(&self) -> &'static ProgramTypeInfo {
+        match self {
+            EbpfProgramType::Kprobe => &KPROBE_INFO,
+            EbpfProgramType::Kretprobe => &KRETPROBE_INFO,
+            EbpfProgramType::Fentry => &FENTRY_INFO,
+            EbpfProgramType::Fexit => &FEXIT_INFO,
+            EbpfProgramType::Tracepoint => &TRACEPOINT_INFO,
+            EbpfProgramType::RawTracepoint => &RAW_TRACEPOINT_INFO,
+            EbpfProgramType::Uprobe => &UPROBE_INFO,
+            EbpfProgramType::Uretprobe => &URETPROBE_INFO,
+        }
+    }
+
+    pub fn supported_spec_prefixes() -> &'static [&'static str] {
+        PROGRAM_SPEC_PREFIXES
+    }
+
+    pub fn from_spec_prefix(prefix: &str) -> Option<Self> {
+        [
+            EbpfProgramType::Kprobe,
+            EbpfProgramType::Kretprobe,
+            EbpfProgramType::Fentry,
+            EbpfProgramType::Fexit,
+            EbpfProgramType::Tracepoint,
+            EbpfProgramType::RawTracepoint,
+            EbpfProgramType::Uprobe,
+            EbpfProgramType::Uretprobe,
+        ]
+        .into_iter()
+        .find(|program_type| program_type.info().spec_aliases.contains(&prefix))
+    }
+
+    pub fn canonical_prefix(&self) -> &'static str {
+        self.info().canonical_prefix
+    }
+
     /// Get the ELF section name prefix for this program type
     pub fn section_prefix(&self) -> &'static str {
-        match self {
-            EbpfProgramType::Kprobe => "kprobe",
-            EbpfProgramType::Kretprobe => "kretprobe",
-            EbpfProgramType::Fentry => "fentry",
-            EbpfProgramType::Fexit => "fexit",
-            EbpfProgramType::Tracepoint => "tracepoint",
-            EbpfProgramType::RawTracepoint => "raw_tracepoint",
-            EbpfProgramType::Uprobe => "uprobe",
-            EbpfProgramType::Uretprobe => "uretprobe",
-        }
+        self.info().section_prefix
+    }
+
+    pub fn attach_kind(&self) -> ProgramAttachKind {
+        self.info().attach_kind
+    }
+
+    pub fn target_kind(&self) -> ProgramTargetKind {
+        self.info().target_kind
+    }
+
+    pub fn arg_access(&self) -> ProgramValueAccess {
+        self.info().arg_access
+    }
+
+    pub fn retval_access(&self) -> ProgramValueAccess {
+        self.info().retval_access
+    }
+
+    pub fn uses_btf_trampoline(&self) -> bool {
+        matches!(
+            (self.arg_access(), self.retval_access()),
+            (ProgramValueAccess::Trampoline, _) | (_, ProgramValueAccess::Trampoline)
+        )
     }
 
     /// Returns true if this runs at function return time.
     pub fn is_return_probe(&self) -> bool {
-        matches!(
-            self,
-            EbpfProgramType::Kretprobe | EbpfProgramType::Fexit | EbpfProgramType::Uretprobe
-        )
+        !matches!(self.retval_access(), ProgramValueAccess::None)
     }
 
     /// Returns true if this is a userspace probe (uprobe or uretprobe)
     pub fn is_userspace(&self) -> bool {
-        matches!(self, EbpfProgramType::Uprobe | EbpfProgramType::Uretprobe)
+        self.info().is_userspace
     }
 
     /// Returns true if this program type exposes function arguments via ctx.argN.
     pub fn supports_ctx_args(&self) -> bool {
-        matches!(
-            self,
-            EbpfProgramType::Kprobe
-                | EbpfProgramType::Fentry
-                | EbpfProgramType::Fexit
-                | EbpfProgramType::Uprobe
-        )
+        !matches!(self.arg_access(), ProgramValueAccess::None)
     }
 
     /// Returns true if this program type exposes ctx.retval.
     pub fn supports_ctx_retval(&self) -> bool {
-        matches!(
-            self,
-            EbpfProgramType::Kretprobe | EbpfProgramType::Fexit | EbpfProgramType::Uretprobe
-        )
+        !matches!(self.retval_access(), ProgramValueAccess::None)
     }
 
     /// Returns true if this program type exposes named tracepoint fields.
     pub fn supports_tracepoint_fields(&self) -> bool {
-        matches!(self, EbpfProgramType::Tracepoint)
+        self.info().supports_tracepoint_fields
     }
 }
 
@@ -536,7 +574,7 @@ impl ProbeContext {
 
     /// Returns true if this is a tracepoint
     pub fn is_tracepoint(&self) -> bool {
-        matches!(self.probe_type, EbpfProgramType::Tracepoint)
+        matches!(self.probe_type.target_kind(), ProgramTargetKind::Tracepoint)
     }
 
     /// Get tracepoint category and name
@@ -582,6 +620,172 @@ impl ProbeContext {
         Ok(())
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ProgramAttachKind {
+    Kprobe,
+    Kretprobe,
+    Fentry,
+    Fexit,
+    Tracepoint,
+    RawTracepoint,
+    Uprobe,
+    Uretprobe,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ProgramTargetKind {
+    KernelFunction,
+    Tracepoint,
+    RawTracepoint,
+    UserFunction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ProgramValueAccess {
+    None,
+    PtRegs,
+    Trampoline,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProgramTypeInfo {
+    pub program_type: EbpfProgramType,
+    pub canonical_prefix: &'static str,
+    pub spec_aliases: &'static [&'static str],
+    pub section_prefix: &'static str,
+    pub attach_kind: ProgramAttachKind,
+    pub target_kind: ProgramTargetKind,
+    pub arg_access: ProgramValueAccess,
+    pub retval_access: ProgramValueAccess,
+    pub supports_tracepoint_fields: bool,
+    pub is_userspace: bool,
+}
+
+const KPROBE_SPEC_ALIASES: &[&str] = &["kprobe"];
+const KRETPROBE_SPEC_ALIASES: &[&str] = &["kretprobe"];
+const FENTRY_SPEC_ALIASES: &[&str] = &["fentry"];
+const FEXIT_SPEC_ALIASES: &[&str] = &["fexit"];
+const TRACEPOINT_SPEC_ALIASES: &[&str] = &["tracepoint"];
+const RAW_TRACEPOINT_SPEC_ALIASES: &[&str] = &["raw_tracepoint", "raw_tp"];
+const UPROBE_SPEC_ALIASES: &[&str] = &["uprobe"];
+const URETPROBE_SPEC_ALIASES: &[&str] = &["uretprobe"];
+
+const KPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::Kprobe,
+    canonical_prefix: "kprobe",
+    spec_aliases: KPROBE_SPEC_ALIASES,
+    section_prefix: "kprobe",
+    attach_kind: ProgramAttachKind::Kprobe,
+    target_kind: ProgramTargetKind::KernelFunction,
+    arg_access: ProgramValueAccess::PtRegs,
+    retval_access: ProgramValueAccess::None,
+    supports_tracepoint_fields: false,
+    is_userspace: false,
+};
+
+const KRETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::Kretprobe,
+    canonical_prefix: "kretprobe",
+    spec_aliases: KRETPROBE_SPEC_ALIASES,
+    section_prefix: "kretprobe",
+    attach_kind: ProgramAttachKind::Kretprobe,
+    target_kind: ProgramTargetKind::KernelFunction,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::PtRegs,
+    supports_tracepoint_fields: false,
+    is_userspace: false,
+};
+
+const FENTRY_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::Fentry,
+    canonical_prefix: "fentry",
+    spec_aliases: FENTRY_SPEC_ALIASES,
+    section_prefix: "fentry",
+    attach_kind: ProgramAttachKind::Fentry,
+    target_kind: ProgramTargetKind::KernelFunction,
+    arg_access: ProgramValueAccess::Trampoline,
+    retval_access: ProgramValueAccess::None,
+    supports_tracepoint_fields: false,
+    is_userspace: false,
+};
+
+const FEXIT_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::Fexit,
+    canonical_prefix: "fexit",
+    spec_aliases: FEXIT_SPEC_ALIASES,
+    section_prefix: "fexit",
+    attach_kind: ProgramAttachKind::Fexit,
+    target_kind: ProgramTargetKind::KernelFunction,
+    arg_access: ProgramValueAccess::Trampoline,
+    retval_access: ProgramValueAccess::Trampoline,
+    supports_tracepoint_fields: false,
+    is_userspace: false,
+};
+
+const TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::Tracepoint,
+    canonical_prefix: "tracepoint",
+    spec_aliases: TRACEPOINT_SPEC_ALIASES,
+    section_prefix: "tracepoint",
+    attach_kind: ProgramAttachKind::Tracepoint,
+    target_kind: ProgramTargetKind::Tracepoint,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+    supports_tracepoint_fields: true,
+    is_userspace: false,
+};
+
+const RAW_TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::RawTracepoint,
+    canonical_prefix: "raw_tracepoint",
+    spec_aliases: RAW_TRACEPOINT_SPEC_ALIASES,
+    section_prefix: "raw_tracepoint",
+    attach_kind: ProgramAttachKind::RawTracepoint,
+    target_kind: ProgramTargetKind::RawTracepoint,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+    supports_tracepoint_fields: false,
+    is_userspace: false,
+};
+
+const UPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::Uprobe,
+    canonical_prefix: "uprobe",
+    spec_aliases: UPROBE_SPEC_ALIASES,
+    section_prefix: "uprobe",
+    attach_kind: ProgramAttachKind::Uprobe,
+    target_kind: ProgramTargetKind::UserFunction,
+    arg_access: ProgramValueAccess::PtRegs,
+    retval_access: ProgramValueAccess::None,
+    supports_tracepoint_fields: false,
+    is_userspace: true,
+};
+
+const URETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::Uretprobe,
+    canonical_prefix: "uretprobe",
+    spec_aliases: URETPROBE_SPEC_ALIASES,
+    section_prefix: "uretprobe",
+    attach_kind: ProgramAttachKind::Uretprobe,
+    target_kind: ProgramTargetKind::UserFunction,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::PtRegs,
+    supports_tracepoint_fields: false,
+    is_userspace: true,
+};
+
+const PROGRAM_SPEC_PREFIXES: &[&str] = &[
+    "kprobe",
+    "kretprobe",
+    "fentry",
+    "fexit",
+    "tracepoint",
+    "raw_tracepoint",
+    "raw_tp",
+    "uprobe",
+    "uretprobe",
+];
 
 /// A complete eBPF program ready for loading
 #[derive(Debug)]

@@ -14,8 +14,8 @@ use aya::{Btf, Ebpf, EbpfLoader};
 use thiserror::Error;
 
 use crate::compiler::{
-    BpfFieldType, CompileError, CounterKeySchema, EbpfProgram, EbpfProgramType, EventSchema,
-    MapRef, MirType,
+    BpfFieldType, CompileError, CounterKeySchema, EbpfProgram, EventSchema, MapRef, MirType,
+    ProgramAttachKind,
 };
 
 /// Maximum entries per eBPF hash map

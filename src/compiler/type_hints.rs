@@ -178,10 +178,7 @@ fn recover_ctx_field_hint(
         }),
         CtxField::Arg(idx) => {
             let ctx = probe_ctx?;
-            if matches!(
-                ctx.probe_type,
-                crate::compiler::EbpfProgramType::Fentry | crate::compiler::EbpfProgramType::Fexit
-            ) {
+            if ctx.probe_type.uses_btf_trampoline() {
                 let type_info = KernelBtf::get()
                     .function_trampoline_arg_type_info(&ctx.target, *idx as usize)
                     .ok()
@@ -195,7 +192,10 @@ fn recover_ctx_field_hint(
         }
         CtxField::RetVal => {
             let ctx = probe_ctx?;
-            if !matches!(ctx.probe_type, crate::compiler::EbpfProgramType::Fexit) {
+            if !matches!(
+                ctx.probe_type.retval_access(),
+                crate::compiler::ProgramValueAccess::Trampoline
+            ) {
                 return None;
             }
             let type_info = KernelBtf::get()

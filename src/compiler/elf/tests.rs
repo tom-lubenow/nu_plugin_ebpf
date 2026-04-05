@@ -22,6 +22,25 @@ fn test_fentry_section_name() {
 }
 
 #[test]
+fn test_program_type_metadata_for_fexit() {
+    let info = EbpfProgramType::Fexit.info();
+    assert_eq!(info.canonical_prefix, "fexit");
+    assert_eq!(info.attach_kind, ProgramAttachKind::Fexit);
+    assert_eq!(info.target_kind, ProgramTargetKind::KernelFunction);
+    assert_eq!(info.arg_access, ProgramValueAccess::Trampoline);
+    assert_eq!(info.retval_access, ProgramValueAccess::Trampoline);
+    assert!(!info.is_userspace);
+}
+
+#[test]
+fn test_program_type_supports_raw_tracepoint_alias() {
+    assert_eq!(
+        EbpfProgramType::from_spec_prefix("raw_tp"),
+        Some(EbpfProgramType::RawTracepoint)
+    );
+}
+
+#[test]
 fn test_elf_generation() {
     let prog = EbpfProgram::hello_world("sys_clone");
     let elf = prog.to_elf().expect("Failed to generate ELF");

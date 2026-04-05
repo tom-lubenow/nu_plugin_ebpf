@@ -1,5 +1,5 @@
 use super::LoadError;
-use crate::compiler::EbpfProgramType;
+use crate::compiler::{EbpfProgramType, ProgramTargetKind};
 use crate::kernel_btf::{FunctionCheckResult, KernelBtf};
 
 /// Parsed uprobe/uretprobe target information
@@ -154,10 +154,31 @@ fn validate_trampoline_target(
     };
 
     result.map_err(|e| LoadError::UnsupportedTrampolineTarget {
-        probe_type: prog_type.section_prefix().to_string(),
+        probe_type: prog_type.canonical_prefix().to_string(),
         target: func_name.to_string(),
         reason: e.to_string(),
     })
+}
+
+fn validate_target_for_program_type(
+    prog_type: EbpfProgramType,
+    target: &str,
+) -> Result<(), LoadError> {
+    match prog_type.target_kind() {
+        ProgramTargetKind::KernelFunction => {
+            validate_kprobe_target(target)?;
+            if prog_type.uses_btf_trampoline() {
+                validate_trampoline_target(prog_type, target)?;
+            }
+            Ok(())
+        }
+        ProgramTargetKind::Tracepoint => validate_tracepoint_target(target),
+        ProgramTargetKind::RawTracepoint => Ok(()),
+        ProgramTargetKind::UserFunction => {
+            UprobeTarget::parse(target)?;
+            Ok(())
+        }
+    }
 }
 
 /// Parse a probe specification like "kprobe:sys_clone" or "tracepoint:syscalls/sys_enter_read"
@@ -174,61 +195,20 @@ fn validate_trampoline_target(
 /// - `uprobe:/path/to/binary:0x1234` (offset-based)
 /// - `uprobe:/path/to/binary:function@PID` (PID-filtered)
 pub fn parse_probe_spec(spec: &str) -> Result<(EbpfProgramType, String), LoadError> {
-    // Handle uprobe/uretprobe specially since their targets contain colons
-    if let Some(target) = spec.strip_prefix("uprobe:") {
-        // Validate the uprobe target format
-        UprobeTarget::parse(target)?;
-        return Ok((EbpfProgramType::Uprobe, target.to_string()));
-    }
-    if let Some(target) = spec.strip_prefix("uretprobe:") {
-        // Validate the uprobe target format
-        UprobeTarget::parse(target)?;
-        return Ok((EbpfProgramType::Uretprobe, target.to_string()));
-    }
-
-    // For other probe types, use simple colon split
-    let parts: Vec<&str> = spec.splitn(2, ':').collect();
-    if parts.len() != 2 {
+    let Some((prefix, target)) = spec.split_once(':') else {
         return Err(LoadError::Load(format!(
             "Invalid probe spec: {spec}. Expected format: type:target (e.g., kprobe:sys_clone)"
         )));
-    }
-
-    let target = parts[1];
-
-    let prog_type = match parts[0] {
-        "kprobe" => {
-            // Validate function exists
-            validate_kprobe_target(target)?;
-            EbpfProgramType::Kprobe
-        }
-        "kretprobe" => {
-            // Validate function exists
-            validate_kprobe_target(target)?;
-            EbpfProgramType::Kretprobe
-        }
-        "fentry" => {
-            validate_kprobe_target(target)?;
-            validate_trampoline_target(EbpfProgramType::Fentry, target)?;
-            EbpfProgramType::Fentry
-        }
-        "fexit" => {
-            validate_kprobe_target(target)?;
-            validate_trampoline_target(EbpfProgramType::Fexit, target)?;
-            EbpfProgramType::Fexit
-        }
-        "tracepoint" => {
-            // Validate tracepoint exists
-            validate_tracepoint_target(target)?;
-            EbpfProgramType::Tracepoint
-        }
-        "raw_tracepoint" | "raw_tp" => EbpfProgramType::RawTracepoint,
-        other => {
-            return Err(LoadError::Load(format!(
-                "Unknown probe type: {other}. Supported: kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe"
-            )));
-        }
     };
+
+    let Some(prog_type) = EbpfProgramType::from_spec_prefix(prefix) else {
+        return Err(LoadError::Load(format!(
+            "Unknown probe type: {prefix}. Supported: {}",
+            EbpfProgramType::supported_spec_prefixes().join(", ")
+        )));
+    };
+
+    validate_target_for_program_type(prog_type, target)?;
 
     Ok((prog_type, target.to_string()))
 }

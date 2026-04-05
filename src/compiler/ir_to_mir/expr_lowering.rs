@@ -1,5 +1,5 @@
 use super::*;
-use crate::compiler::EbpfProgramType;
+use crate::compiler::ProgramValueAccess;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
 use crate::kernel_btf::{
@@ -470,12 +470,7 @@ impl<'a> HirToMirLowering<'a> {
         field: &CtxField,
     ) -> Result<Option<TrampolineValueSpec>, CompileError> {
         match (self.probe_ctx, field) {
-            (Some(ctx), CtxField::Arg(idx))
-                if matches!(
-                    ctx.probe_type,
-                    EbpfProgramType::Fentry | EbpfProgramType::Fexit
-                ) =>
-            {
+            (Some(ctx), CtxField::Arg(idx)) if ctx.probe_type.uses_btf_trampoline() => {
                 let spec = KernelBtf::get()
                     .function_trampoline_arg(&ctx.target, *idx as usize)
                     .map_err(|e| {
@@ -497,7 +492,12 @@ impl<'a> HirToMirLowering<'a> {
                     })?;
                 Ok(Some(spec))
             }
-            (Some(ctx), CtxField::RetVal) if matches!(ctx.probe_type, EbpfProgramType::Fexit) => {
+            (Some(ctx), CtxField::RetVal)
+                if matches!(
+                    ctx.probe_type.retval_access(),
+                    ProgramValueAccess::Trampoline
+                ) =>
+            {
                 let spec = KernelBtf::get()
                     .function_trampoline_ret(&ctx.target)
                     .map_err(|e| {
@@ -756,12 +756,7 @@ impl<'a> HirToMirLowering<'a> {
         field: &CtxField,
     ) -> Result<Option<TypeInfo>, CompileError> {
         match (self.probe_ctx, field) {
-            (Some(ctx), CtxField::Arg(idx))
-                if matches!(
-                    ctx.probe_type,
-                    EbpfProgramType::Fentry | EbpfProgramType::Fexit
-                ) =>
-            {
+            (Some(ctx), CtxField::Arg(idx)) if ctx.probe_type.uses_btf_trampoline() => {
                 KernelBtf::get()
                     .function_trampoline_arg_type_info(&ctx.target, *idx as usize)
                     .map_err(|e| {
@@ -774,7 +769,12 @@ impl<'a> HirToMirLowering<'a> {
                         ))
                     })
             }
-            (Some(ctx), CtxField::RetVal) if matches!(ctx.probe_type, EbpfProgramType::Fexit) => {
+            (Some(ctx), CtxField::RetVal)
+                if matches!(
+                    ctx.probe_type.retval_access(),
+                    ProgramValueAccess::Trampoline
+                ) =>
+            {
                 KernelBtf::get()
                     .function_trampoline_ret_type_info(&ctx.target)
                     .map_err(|e| {
