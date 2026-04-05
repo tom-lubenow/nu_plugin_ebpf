@@ -26,6 +26,39 @@ enum PacketPayloadStepKind {
 }
 
 impl<'a> HirToMirLowering<'a> {
+    fn lower_constant_list_value(
+        &mut self,
+        dst: RegId,
+        values: &[Value],
+    ) -> Result<(), CompileError> {
+        self.lower_load_literal(
+            dst,
+            &HirLiteral::List {
+                capacity: values.len(),
+            },
+        )?;
+
+        let list_vreg = self.get_vreg(dst);
+        for value in values {
+            if !crate::compiler::hir::is_numeric_constant_value(value) {
+                return Err(CompileError::UnsupportedInstruction(
+                    "constant lists currently only support numeric scalar elements in eBPF lowering"
+                        .into(),
+                ));
+            }
+
+            let item_reg = self.alloc_synthetic_reg();
+            self.lower_constant_value_with_lists(item_reg, value, false)?;
+            let item_vreg = self.get_vreg(item_reg);
+            self.emit(MirInst::ListPush {
+                list: list_vreg,
+                item: item_vreg,
+            });
+        }
+
+        Ok(())
+    }
+
     fn constant_record_type(fields: &[RecordField]) -> MirType {
         let mut offset = 0usize;
         let struct_fields = fields
@@ -66,7 +99,7 @@ impl<'a> HirToMirLowering<'a> {
             self.lower_load_literal(key_reg, &HirLiteral::String(field_name.as_bytes().to_vec()))?;
 
             let val_reg = self.alloc_synthetic_reg();
-            self.lower_constant_value(val_reg, field_value)?;
+            self.lower_constant_value_with_lists(val_reg, field_value, false)?;
             self.lower_record_insert(dst, key_reg, val_reg)?;
         }
 
@@ -88,14 +121,27 @@ impl<'a> HirToMirLowering<'a> {
         dst: RegId,
         value: &Value,
     ) -> Result<(), CompileError> {
+        self.lower_constant_value_with_lists(dst, value, true)
+    }
+
+    fn lower_constant_value_with_lists(
+        &mut self,
+        dst: RegId,
+        value: &Value,
+        allow_top_level_list: bool,
+    ) -> Result<(), CompileError> {
         if let Some(lit) = HirLiteral::from_constant_value(value) {
             return self.lower_load_literal(dst, &lit);
         }
 
         match value {
             Value::Record { val, .. } => self.lower_constant_record_value(dst, val.as_ref()),
+            Value::List { vals, .. } if allow_top_level_list => {
+                self.lower_constant_list_value(dst, vals)
+            }
             Value::List { .. } => Err(CompileError::UnsupportedInstruction(
-                "constant list values are not yet supported in eBPF lowering".into(),
+                "constant lists nested inside records are not yet supported in eBPF lowering"
+                    .into(),
             )),
             _ => Err(CompileError::UnsupportedInstruction(format!(
                 "LoadValue of type {} is not supported in eBPF lowering",

@@ -13,7 +13,10 @@ use nu_protocol::{BlockId as NuBlockId, DeclId, RegId, Value, VarId};
 use super::hindley_milner::{
     HMType, Substitution, TypeScheme, TypeVar, TypeVarGenerator, UnifyError, unify,
 };
-use super::hir::{HirBlock, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator};
+use super::hir::{
+    HirBlock, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
+    supports_numeric_constant_list,
+};
 use super::mir::AddressSpace;
 use super::type_infer::TypeError;
 
@@ -415,6 +418,7 @@ fn hm_type_for_value(val: &Value) -> HMType {
         | Value::Date { .. } => HMType::I64,
         Value::String { .. } | Value::Glob { .. } => stack_string_ptr_type(),
         Value::Record { .. } => stack_record_ptr_type(),
+        value if supports_numeric_constant_list(value) => stack_list_ptr_type(),
         _ => HMType::Unknown,
     }
 }

@@ -312,15 +312,36 @@ impl HirLiteral {
     }
 }
 
+pub fn is_numeric_constant_value(value: &Value) -> bool {
+    matches!(
+        value,
+        Value::Bool { .. }
+            | Value::Int { .. }
+            | Value::Filesize { .. }
+            | Value::Duration { .. }
+            | Value::Nothing { .. }
+    )
+}
+
+pub fn supports_numeric_constant_list(value: &Value) -> bool {
+    matches!(value, Value::List { vals, .. } if vals.iter().all(is_numeric_constant_value))
+}
+
 pub fn supports_constant_value(value: &Value) -> bool {
-    if HirLiteral::from_constant_value(value).is_some() {
-        return true;
+    fn supports_nested_constant_value(value: &Value) -> bool {
+        if HirLiteral::from_constant_value(value).is_some() {
+            return true;
+        }
+
+        match value {
+            Value::Record { val, .. } => val
+                .iter()
+                .all(|(_, field)| supports_nested_constant_value(field)),
+            _ => false,
+        }
     }
 
-    match value {
-        Value::Record { val, .. } => val.iter().all(|(_, field)| supports_constant_value(field)),
-        _ => false,
-    }
+    supports_nested_constant_value(value) || supports_numeric_constant_list(value)
 }
 
 /// Infer the context parameter VarId from IR instructions.

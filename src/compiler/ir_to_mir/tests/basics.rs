@@ -4082,7 +4082,7 @@ fn test_lower_load_value_record_emit_preserves_nested_struct_field_type() {
 }
 
 #[test]
-fn test_lower_load_value_list_is_rejected() {
+fn test_lower_load_value_numeric_list_builds_list_pushes() {
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -4091,7 +4091,70 @@ fn test_lower_load_value_list_is_rejected() {
                 val: Box::new(Value::list(
                     vec![
                         Value::int(1, Span::test_data()),
-                        Value::int(2, Span::test_data()),
+                        Value::duration(2, Span::test_data()),
+                        Value::bool(true, Span::test_data()),
+                    ],
+                    Span::test_data(),
+                )),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("numeric constant list load values should lower");
+
+    let has_list_new = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .any(|inst| matches!(inst, MirInst::ListNew { max_len, .. } if *max_len == 3));
+    let list_push_count = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| matches!(inst, MirInst::ListPush { .. }))
+        .count();
+
+    assert!(
+        has_list_new,
+        "expected numeric constant list to allocate a list buffer"
+    );
+    assert_eq!(
+        list_push_count, 3,
+        "expected one ListPush per constant list element"
+    );
+}
+
+#[test]
+fn test_lower_load_value_non_numeric_list_is_rejected() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadValue {
+                dst: RegId::new(0),
+                val: Box::new(Value::list(
+                    vec![
+                        Value::int(1, Span::test_data()),
+                        Value::string("bad", Span::test_data()),
                     ],
                     Span::test_data(),
                 )),
@@ -4115,11 +4178,59 @@ fn test_lower_load_value_list_is_rejected() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("constant list load values should remain unsupported");
+    .expect_err("non-numeric constant list values should remain unsupported");
 
     assert!(
         err.to_string()
-            .contains("constant list values are not yet supported in eBPF lowering")
+            .contains("constant lists currently only support numeric scalar elements")
+    );
+}
+
+#[test]
+fn test_lower_load_value_record_with_nested_list_is_rejected() {
+    let mut rec = Record::new();
+    rec.push(
+        "numbers",
+        Value::list(
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadValue {
+                dst: RegId::new(0),
+                val: Box::new(Value::record(rec, Span::test_data())),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("records with nested lists should remain unsupported");
+
+    assert!(
+        err.to_string()
+            .contains("constant lists nested inside records are not yet supported")
     );
 }
 
@@ -4199,6 +4310,67 @@ fn test_lower_captured_record_emit_preserves_nested_struct_field_type() {
                         && fields[1].name == "pid"
                         && fields[1].ty == MirType::I64
             ))
+    );
+}
+
+#[test]
+fn test_lower_captured_numeric_list_builds_list_pushes() {
+    let capture_var = VarId::new(15);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: capture_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(
+            capture_var,
+            Value::list(
+                vec![
+                    Value::int(1, Span::test_data()),
+                    Value::duration(2, Span::test_data()),
+                    Value::bool(true, Span::test_data()),
+                ],
+                Span::test_data(),
+            ),
+        )],
+        None,
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("captured numeric list should lower");
+
+    let list_push_count = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| matches!(inst, MirInst::ListPush { .. }))
+        .count();
+
+    assert_eq!(
+        list_push_count, 3,
+        "expected one ListPush per captured list element"
     );
 }
 

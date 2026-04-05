@@ -349,6 +349,43 @@ fn test_load_value_record_infers_stack_record_ptr() {
 }
 
 #[test]
+fn test_load_value_numeric_list_infers_stack_list_ptr() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadValue {
+                dst: RegId::new(0),
+                val: Box::new(Value::list(
+                    vec![
+                        Value::int(1, Span::test_data()),
+                        Value::duration(2, Span::test_data()),
+                        Value::bool(true, Span::test_data()),
+                    ],
+                    Span::test_data(),
+                )),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    let decl_names = HashMap::new();
+    let inferred =
+        infer_hir_types(&program, &decl_names).expect("numeric list load value should infer");
+
+    assert_eq!(
+        inferred.main.get(&RegId::new(0)),
+        Some(&stack_list_ptr_type())
+    );
+}
+
+#[test]
 fn test_capture_record_seeded_into_hm_environment() {
     let capture_var = VarId::new(12);
     let mut rec = Record::new();
@@ -383,5 +420,51 @@ fn test_capture_record_seeded_into_hm_environment() {
     assert_eq!(
         inferred.main.get(&RegId::new(0)),
         Some(&stack_record_ptr_type())
+    );
+}
+
+#[test]
+fn test_capture_numeric_list_seeded_into_hm_environment() {
+    let capture_var = VarId::new(14);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: capture_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let program = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(
+            capture_var,
+            Value::list(
+                vec![
+                    Value::int(1, Span::test_data()),
+                    Value::filesize(2, Span::test_data()),
+                ],
+                Span::test_data(),
+            ),
+        )],
+        None,
+    );
+    let decl_names = HashMap::new();
+    let inferred =
+        infer_hir_types(&program, &decl_names).expect("captured numeric list should infer");
+
+    assert_eq!(
+        inferred.main.get(&RegId::new(0)),
+        Some(&stack_list_ptr_type())
     );
 }
