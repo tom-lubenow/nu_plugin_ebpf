@@ -26,6 +26,53 @@ enum PacketPayloadStepKind {
 }
 
 impl<'a> HirToMirLowering<'a> {
+    fn mutable_capture_global_repr(value: &Value) -> Option<(MirType, Vec<u8>)> {
+        match value {
+            Value::Bool { val, .. } => Some((MirType::Bool, vec![u8::from(*val)])),
+            Value::Int { val, .. } => Some((MirType::I64, val.to_le_bytes().to_vec())),
+            Value::Filesize { val, .. } => Some((MirType::I64, val.get().to_le_bytes().to_vec())),
+            Value::Duration { val, .. } => Some((MirType::I64, val.to_le_bytes().to_vec())),
+            Value::Nothing { .. } => Some((MirType::I64, 0i64.to_le_bytes().to_vec())),
+            _ => None,
+        }
+    }
+
+    pub(super) fn init_mutable_capture_globals(
+        &mut self,
+        mutable_capture_vars: &HashSet<VarId>,
+    ) -> Result<(), CompileError> {
+        for (var_id, value) in self.captures {
+            if !mutable_capture_vars.contains(var_id) {
+                continue;
+            }
+
+            let Some((ty, data)) = Self::mutable_capture_global_repr(value) else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "mutating captured variable {} of type {} is not yet supported; mutable captured globals currently only support numeric scalar values",
+                    var_id.get(),
+                    value.get_type()
+                )));
+            };
+
+            let symbol = format!("__nu_capture_global_{}", var_id.get());
+            if data.iter().all(|byte| *byte == 0) {
+                self.bss_globals.push(BssGlobal {
+                    name: symbol.clone(),
+                    size: data.len(),
+                });
+            } else {
+                self.data_globals.push(DataGlobal {
+                    name: symbol.clone(),
+                    data,
+                });
+            }
+            self.mutable_capture_globals
+                .insert(*var_id, MutableCaptureGlobal { symbol, ty });
+        }
+
+        Ok(())
+    }
+
     fn lower_constant_list_value(
         &mut self,
         dst: RegId,

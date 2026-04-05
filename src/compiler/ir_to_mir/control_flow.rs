@@ -330,6 +330,32 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             HirStmt::StoreVariable { var_id, src } => {
+                if let Some(global) = self.mutable_capture_globals.get(var_id).cloned() {
+                    let src_vreg = self.get_vreg(*src);
+                    let global_ptr = self.func.alloc_vreg();
+                    self.emit(MirInst::LoadReadonlyGlobal {
+                        dst: global_ptr,
+                        symbol: global.symbol,
+                        ty: global.ty.clone(),
+                    });
+                    self.vreg_type_hints.insert(
+                        global_ptr,
+                        MirType::Ptr {
+                            pointee: Box::new(global.ty.clone()),
+                            address_space: crate::compiler::mir::AddressSpace::Map,
+                        },
+                    );
+                    self.emit(MirInst::Store {
+                        ptr: global_ptr,
+                        offset: 0,
+                        val: MirValue::VReg(src_vreg),
+                        ty: global.ty,
+                    });
+                    self.var_mappings.remove(var_id);
+                    self.var_metadata.remove(var_id);
+                    return Ok(());
+                }
+
                 let src_vreg = self.get_vreg(*src);
                 let preserved = self.func.alloc_vreg();
                 self.emit(MirInst::Copy {
@@ -348,6 +374,9 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             HirStmt::DropVariable { var_id } => {
+                if self.mutable_capture_globals.contains_key(var_id) {
+                    return Ok(());
+                }
                 self.var_mappings.remove(var_id);
                 self.var_metadata.remove(var_id);
             }

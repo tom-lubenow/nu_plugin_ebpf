@@ -245,6 +245,32 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        if let Some(global) = self.mutable_capture_globals.get(&var_id).cloned() {
+            let global_ptr = self.func.alloc_vreg();
+            self.emit(MirInst::LoadReadonlyGlobal {
+                dst: global_ptr,
+                symbol: global.symbol,
+                ty: global.ty.clone(),
+            });
+            self.vreg_type_hints.insert(
+                global_ptr,
+                MirType::Ptr {
+                    pointee: Box::new(global.ty.clone()),
+                    address_space: crate::compiler::mir::AddressSpace::Map,
+                },
+            );
+            self.emit(MirInst::Load {
+                dst: dst_vreg,
+                ptr: global_ptr,
+                offset: 0,
+                ty: global.ty.clone(),
+            });
+            self.vreg_type_hints.insert(dst_vreg, global.ty.clone());
+            let meta = self.get_or_create_metadata(dst);
+            meta.field_type = Some(global.ty);
+            return Ok(());
+        }
+
         // Check if this is a captured variable
         if let Some(value) = self.captured_value(var_id).cloned() {
             self.lower_constant_value(dst, &value)?;

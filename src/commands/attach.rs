@@ -767,8 +767,14 @@ fn run_attach(
             .with_label(e.to_string(), call.head)
             .with_help("The closure may use unsupported operations")
     })?;
-    let mut mir_program = lower_result.program;
-    let mut type_hints = lower_result.type_hints;
+    let crate::compiler::MirLoweringResult {
+        program: mut mir_program,
+        mut type_hints,
+        generic_map_value_types,
+        readonly_globals,
+        data_globals,
+        bss_globals,
+    } = lower_result;
 
     // Run SSA-based optimizations
     optimize_with_ssa_hints(
@@ -809,7 +815,7 @@ fn run_attach(
         &mir_program,
         Some(&probe_context),
         Some(&type_hints),
-        lower_result.readonly_globals,
+        readonly_globals,
     )
     .map_err(|e| {
         LabeledError::new("eBPF compilation failed")
@@ -828,9 +834,11 @@ fn run_attach(
         compile_result.subfunction_symbols,
         compile_result.event_schema,
         compile_result.bytes_counter_key_schema,
-        lower_result.generic_map_value_types,
+        generic_map_value_types,
     )
-    .with_readonly_globals(compile_result.readonly_globals);
+    .with_readonly_globals(compile_result.readonly_globals)
+    .with_data_globals(data_globals)
+    .with_bss_globals(bss_globals);
 
     if pin_group.is_some() {
         program = program.with_pinning();

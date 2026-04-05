@@ -11,7 +11,7 @@ use nu_protocol::ir::IrBlock;
 use nu_protocol::{BlockId as NuBlockId, DeclId, IN_VARIABLE_ID, RegId, Span, Value, VarId};
 
 use super::CompileError;
-use super::elf::{ProbeContext, ReadonlyGlobal};
+use super::elf::{BssGlobal, DataGlobal, ProbeContext, ReadonlyGlobal};
 use super::hindley_milner::HMType;
 use super::hir::{
     HirBlockId, HirCallArgs, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
@@ -200,6 +200,12 @@ struct SubfunctionSpecializationKey {
     arg_types: Vec<Option<MirType>>,
 }
 
+#[derive(Debug, Clone)]
+struct MutableCaptureGlobal {
+    symbol: String,
+    ty: MirType,
+}
+
 /// Lowering context for HIR to MIR conversion
 pub struct HirToMirLowering<'a> {
     /// The MIR function being built
@@ -281,6 +287,12 @@ pub struct HirToMirLowering<'a> {
     subfunctions: Vec<MirFunction>,
     /// Compiler-generated readonly globals for `.rodata`
     readonly_globals: Vec<ReadonlyGlobal>,
+    /// Compiler-generated initialized writable globals for `.data`
+    data_globals: Vec<DataGlobal>,
+    /// Compiler-generated zero-initialized writable globals for `.bss`
+    bss_globals: Vec<BssGlobal>,
+    /// Captured variables that are backed by mutable globals instead of constants
+    mutable_capture_globals: HashMap<VarId, MutableCaptureGlobal>,
     /// Monotonic counter for unique readonly-global symbol names
     readonly_global_counter: u32,
     /// Registry of generated subfunctions by DeclId plus call-site type seeds
@@ -356,6 +368,9 @@ impl<'a> HirToMirLowering<'a> {
             subfunction_in_progress: HashSet::new(),
             subfunctions: Vec::new(),
             readonly_globals: Vec::new(),
+            data_globals: Vec::new(),
+            bss_globals: Vec::new(),
+            mutable_capture_globals: HashMap::new(),
             readonly_global_counter: 0,
             subfunction_registry: HashMap::new(),
             call_counts: HashMap::new(),
@@ -364,7 +379,7 @@ impl<'a> HirToMirLowering<'a> {
 
     /// Lower an entire HIR function to MIR
     pub fn finish(self) -> MirProgram {
-        let (program, _, _, _) = self.finish_with_hints();
+        let (program, _, _, _, _, _) = self.finish_with_hints();
         program
     }
 
@@ -375,6 +390,8 @@ impl<'a> HirToMirLowering<'a> {
         MirTypeHints,
         HashMap<MapRef, MirType>,
         Vec<ReadonlyGlobal>,
+        Vec<DataGlobal>,
+        Vec<BssGlobal>,
     ) {
         let mut program = MirProgram::new(self.func);
         program.subfunctions = self.subfunctions;
@@ -401,7 +418,14 @@ impl<'a> HirToMirLowering<'a> {
                 .resize_with(program.subfunctions.len(), HashMap::new);
         }
         let map_value_types = hints.generic_map_value_types.clone();
-        (program, hints, map_value_types, self.readonly_globals)
+        (
+            program,
+            hints,
+            map_value_types,
+            self.readonly_globals,
+            self.data_globals,
+            self.bss_globals,
+        )
     }
 }
 
