@@ -740,13 +740,14 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "global-define" => {
+                let has_type_spec = self.named_args.contains_key("type");
                 let zero_init = self.named_flags.iter().any(|flag| flag == "zero");
                 if self.named_flags.iter().any(|flag| flag != "zero") {
                     return Err(CompileError::UnsupportedInstruction(
                         "global-define only accepts the --zero flag".into(),
                     ));
                 }
-                self.require_only_named_args("global-define", &[])?;
+                self.require_only_named_args("global-define", &["type"])?;
                 if self.positional_args.len() != 1 {
                     return Err(CompileError::UnsupportedInstruction(
                         "global-define requires exactly one positional global name".into(),
@@ -756,6 +757,34 @@ impl<'a> HirToMirLowering<'a> {
                 let (_, name_reg) = self.positional_args[0];
                 let global_name = self.literal_string_arg(name_reg, "global-define")?;
                 self.validate_generic_map_name(&global_name, "global-define")?;
+                if has_type_spec {
+                    if zero_init {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "global-define --type already implies zero initialization; do not combine it with --zero".into(),
+                        ));
+                    }
+                    if self.pipeline_input.is_some() || src_dst_had_value {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "global-define --type does not accept pipeline input; it declares layout directly".into(),
+                        ));
+                    }
+                    let (type_vreg, type_reg) =
+                        self.named_args.get("type").copied().ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "global-define --type requires a compile-time type string".into(),
+                            )
+                        })?;
+                    let _ = type_vreg;
+                    let type_spec = self.literal_string_arg(type_reg, "global-define --type")?;
+                    self.define_named_program_global_from_type_spec(&global_name, &type_spec)?;
+
+                    self.emit(MirInst::Copy {
+                        dst: dst_vreg,
+                        src: MirValue::Const(0),
+                    });
+                    self.reset_call_result_metadata(src_dst);
+                    return Ok(());
+                }
                 let value_vreg = self
                     .pipeline_input
                     .or_else(|| src_dst_had_value.then_some(dst_vreg))

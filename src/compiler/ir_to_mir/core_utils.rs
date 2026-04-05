@@ -212,6 +212,69 @@ impl<'a> HirToMirLowering<'a> {
         self.named_program_globals.get(name)
     }
 
+    fn typed_named_program_global_layout(
+        symbol: String,
+        spec: &str,
+    ) -> Result<MutableCaptureGlobal, CompileError> {
+        let scalar_ty = match spec {
+            "i8" => Some(MirType::I8),
+            "i16" => Some(MirType::I16),
+            "i32" => Some(MirType::I32),
+            "i64" => Some(MirType::I64),
+            "u8" => Some(MirType::U8),
+            "u16" => Some(MirType::U16),
+            "u32" => Some(MirType::U32),
+            "u64" => Some(MirType::U64),
+            "bool" => Some(MirType::Bool),
+            _ => None,
+        };
+
+        if let Some(ty) = scalar_ty {
+            return Ok(MutableCaptureGlobal {
+                symbol,
+                ty,
+                list_max_len: None,
+                string_slot_len: None,
+            });
+        }
+
+        let byte_len = spec
+            .strip_prefix("bytes:")
+            .or_else(|| spec.strip_prefix("binary:"))
+            .map(|len| {
+                len.parse::<usize>().map_err(|_| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "global type spec '{}' has an invalid byte length",
+                        spec
+                    ))
+                })
+            })
+            .transpose()?;
+
+        if let Some(len) = byte_len {
+            if len == 0 {
+                return Err(CompileError::UnsupportedInstruction(
+                    "global byte-array declarations require a positive length".into(),
+                ));
+            }
+
+            return Ok(MutableCaptureGlobal {
+                symbol,
+                ty: MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len,
+                },
+                list_max_len: None,
+                string_slot_len: None,
+            });
+        }
+
+        Err(CompileError::UnsupportedInstruction(format!(
+            "unsupported global type spec '{}'; expected one of i8, i16, i32, i64, u8, u16, u32, u64, bool, bytes:N, or binary:N",
+            spec
+        )))
+    }
+
     fn infer_mutable_global_layout(
         &self,
         symbol: String,
@@ -442,6 +505,38 @@ impl<'a> HirToMirLowering<'a> {
             // so the compile-time global must remain zero-initialized.
             self.bss_globals.push(BssGlobal { name: symbol, size });
         }
+        self.named_program_globals
+            .insert(name.to_string(), inferred.clone());
+        Ok(inferred)
+    }
+
+    pub(super) fn define_named_program_global_from_type_spec(
+        &mut self,
+        name: &str,
+        spec: &str,
+    ) -> Result<MutableCaptureGlobal, CompileError> {
+        let symbol = Self::named_program_global_symbol(name);
+        let inferred = Self::typed_named_program_global_layout(symbol.clone(), spec)?;
+
+        if let Some(existing) = self.named_program_globals.get(name) {
+            if existing != &inferred {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "global '{}' is used with incompatible layouts",
+                    name
+                )));
+            }
+            return Ok(existing.clone());
+        }
+
+        let size = inferred.ty.size();
+        if size == 0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "global '{}' inferred an empty layout, which is not yet supported",
+                name
+            )));
+        }
+
+        self.bss_globals.push(BssGlobal { name: symbol, size });
         self.named_program_globals
             .insert(name.to_string(), inferred.clone());
         Ok(inferred)

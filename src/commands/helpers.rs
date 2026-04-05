@@ -335,7 +335,8 @@ impl PluginCommand for GlobalDefine {
 compile-time constant, which establishes both the fixed layout and the initial
 contents in `.data`/`.bss` without performing a runtime store on each event.
 With `--zero`, the input is used only for layout inference and the resulting
-global is zero-initialized in `.bss`.
+global is zero-initialized in `.bss`. With `--type`, no input is needed at all:
+the type string declares a zero-initialized global directly.
 
 Because this is declarative, later constant `global-define` calls can establish
 globals used by earlier `global-get`s.
@@ -343,12 +344,19 @@ globals used by earlier `global-get`s.
 Examples:
   7 | global-define seen_pid
   $ctx.pid | global-define --zero seen_pid
+  global-define --type i64 seen_pid
   let state = (global-get seen_pid)"#
     }
 
     fn signature(&self) -> Signature {
         Signature::build("global-define")
             .input_output_types(vec![(Type::Any, Type::Int), (Type::Nothing, Type::Int)])
+            .named(
+                "type",
+                SyntaxShape::String,
+                "Declare a zero-initialized global directly from a type spec (i8/i16/i32/i64/u8/u16/u32/u64/bool/bytes:N)",
+                None,
+            )
             .switch(
                 "zero",
                 "Use the input only for layout inference and zero-initialize the global",
@@ -368,6 +376,11 @@ Examples:
             Example {
                 example: "ebpf attach 'kprobe:sys_read' {|ctx| $ctx.pid | global-define --zero seen_pid; global-get seen_pid }",
                 description: "Declare a zero-initialized named per-program global from a runtime layout exemplar",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'kprobe:sys_read' {|ctx| global-define --type i64 seen_pid; global-get seen_pid }",
+                description: "Declare a zero-initialized named per-program global directly from a type spec",
                 result: None,
             },
         ]

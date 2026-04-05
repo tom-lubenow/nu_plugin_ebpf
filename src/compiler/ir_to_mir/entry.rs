@@ -66,8 +66,13 @@ fn record_reg_constant(
 
 #[derive(Debug, Clone)]
 struct NamedGlobalPredeclaration {
-    value: Value,
-    initialize: bool,
+    kind: NamedGlobalPredeclarationKind,
+}
+
+#[derive(Debug, Clone)]
+enum NamedGlobalPredeclarationKind {
+    Value { value: Value, initialize: bool },
+    TypeSpec(String),
 }
 
 fn collect_named_global_predeclarations_for_function(
@@ -117,19 +122,56 @@ fn collect_named_global_predeclarations_for_function(
                             "global-define" => {
                                 let zero_init =
                                     args.flags.iter().any(|flag| flag.as_slice() == b"zero");
+                                let type_spec = args.named.iter().find_map(|(name, reg)| {
+                                    (name.as_slice() == b"type")
+                                        .then(|| {
+                                            reg_constants.get(reg).and_then(constant_string_value)
+                                        })
+                                        .flatten()
+                                });
                                 if let Some(name_reg) = args.positional.first()
                                     && let Some(name) =
                                         reg_constants.get(name_reg).and_then(constant_string_value)
-                                    && let Some(value) = reg_constants.get(src_dst).cloned()
                                 {
-                                    let candidate = NamedGlobalPredeclaration {
-                                        value,
-                                        initialize: !zero_init,
+                                    let candidate = if let Some(type_spec) = type_spec {
+                                        NamedGlobalPredeclaration {
+                                            kind: NamedGlobalPredeclarationKind::TypeSpec(
+                                                type_spec,
+                                            ),
+                                        }
+                                    } else if let Some(value) = reg_constants.get(src_dst).cloned()
+                                    {
+                                        NamedGlobalPredeclaration {
+                                            kind: NamedGlobalPredeclarationKind::Value {
+                                                value,
+                                                initialize: !zero_init,
+                                            },
+                                        }
+                                    } else {
+                                        continue;
                                     };
                                     candidates
                                         .entry(name)
                                         .and_modify(|existing: &mut NamedGlobalPredeclaration| {
-                                            if !existing.initialize {
+                                            if matches!(
+                                                (&existing.kind, &candidate.kind),
+                                                (
+                                                    NamedGlobalPredeclarationKind::Value {
+                                                        initialize: false,
+                                                        ..
+                                                    },
+                                                    NamedGlobalPredeclarationKind::Value {
+                                                        initialize: true,
+                                                        ..
+                                                    }
+                                                ) | (
+                                                    NamedGlobalPredeclarationKind::TypeSpec(_),
+                                                    NamedGlobalPredeclarationKind::Value {
+                                                        initialize: true,
+                                                        ..
+                                                    }
+                                                )
+                                            ) {
                                                 *existing = candidate.clone();
                                             }
                                         })
@@ -155,8 +197,10 @@ fn collect_named_global_predeclarations_for_function(
                                     {
                                         candidates.entry(name.clone()).or_insert(
                                             NamedGlobalPredeclaration {
-                                                value,
-                                                initialize: false,
+                                                kind: NamedGlobalPredeclarationKind::Value {
+                                                    value,
+                                                    initialize: false,
+                                                },
                                             },
                                         );
                                     }
@@ -235,7 +279,25 @@ fn collect_named_global_predeclarations(
         merged
             .entry(name)
             .and_modify(|existing| {
-                if !existing.initialize && value.initialize {
+                if matches!(
+                    (&existing.kind, &value.kind),
+                    (
+                        NamedGlobalPredeclarationKind::Value {
+                            initialize: false,
+                            ..
+                        },
+                        NamedGlobalPredeclarationKind::Value {
+                            initialize: true,
+                            ..
+                        }
+                    ) | (
+                        NamedGlobalPredeclarationKind::TypeSpec(_),
+                        NamedGlobalPredeclarationKind::Value {
+                            initialize: true,
+                            ..
+                        }
+                    )
+                ) {
                     *existing = value.clone();
                 }
             })
@@ -247,7 +309,25 @@ fn collect_named_global_predeclarations(
             merged
                 .entry(name)
                 .and_modify(|existing| {
-                    if !existing.initialize && value.initialize {
+                    if matches!(
+                        (&existing.kind, &value.kind),
+                        (
+                            NamedGlobalPredeclarationKind::Value {
+                                initialize: false,
+                                ..
+                            },
+                            NamedGlobalPredeclarationKind::Value {
+                                initialize: true,
+                                ..
+                            }
+                        ) | (
+                            NamedGlobalPredeclarationKind::TypeSpec(_),
+                            NamedGlobalPredeclarationKind::Value {
+                                initialize: true,
+                                ..
+                            }
+                        )
+                    ) {
                         *existing = value.clone();
                     }
                 })
@@ -259,7 +339,25 @@ fn collect_named_global_predeclarations(
             merged
                 .entry(name)
                 .and_modify(|existing| {
-                    if !existing.initialize && value.initialize {
+                    if matches!(
+                        (&existing.kind, &value.kind),
+                        (
+                            NamedGlobalPredeclarationKind::Value {
+                                initialize: false,
+                                ..
+                            },
+                            NamedGlobalPredeclarationKind::Value {
+                                initialize: true,
+                                ..
+                            }
+                        ) | (
+                            NamedGlobalPredeclarationKind::TypeSpec(_),
+                            NamedGlobalPredeclarationKind::Value {
+                                initialize: true,
+                                ..
+                            }
+                        )
+                    ) {
                         *existing = value.clone();
                     }
                 })
@@ -296,11 +394,14 @@ pub fn lower_hir_to_mir_with_hints_and_maps(
     );
     lowering.init_mutable_capture_globals(&mutated_capture_vars)?;
     for (name, predecl) in forward_named_globals {
-        lowering.predeclare_named_program_global_from_value(
-            &name,
-            &predecl.value,
-            predecl.initialize,
-        )?;
+        match predecl.kind {
+            NamedGlobalPredeclarationKind::Value { value, initialize } => {
+                lowering.predeclare_named_program_global_from_value(&name, &value, initialize)?;
+            }
+            NamedGlobalPredeclarationKind::TypeSpec(type_spec) => {
+                lowering.define_named_program_global_from_type_spec(&name, &type_spec)?;
+            }
+        }
     }
     lowering.lower_block(&hir.main)?;
     let (program, type_hints, generic_map_value_types, readonly_globals, data_globals, bss_globals) =
