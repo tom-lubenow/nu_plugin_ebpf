@@ -347,6 +347,10 @@ Context parameter syntax (recommended):
   XDP fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.packet_len } - Get packet length from xdp_md
+    {|ctx| $ctx.ifindex } - Get ingress interface index
+    {|ctx| $ctx.rx_queue_index } - Get RX queue index
+    {|ctx| $ctx.egress_ifindex } - Get egress interface index
     Note: XDP context packet fields are not modeled yet. XDP closures currently
     need to return an explicit numeric action code such as `2` (XDP_PASS).
 

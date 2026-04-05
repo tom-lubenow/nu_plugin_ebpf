@@ -73,8 +73,8 @@ ebpf attach -s 'fentry:do_sys_openat2' {|ctx| $ctx.arg2.flags | emit } | first 1
 # Capture the first ksys_read return value
 ebpf attach -s 'fexit:ksys_read' {|ctx| $ctx.retval | emit } | first 1
 
-# Count packets seen on loopback via XDP, then pass them through
-let id = ebpf attach 'xdp:lo' {|ctx| $ctx.cpu | count; 2 }
+# Count loopback packets by packet length via XDP, then pass them through
+let id = ebpf attach 'xdp:lo' {|ctx| $ctx.packet_len | count; 2 }
 ```
 
 ### Count syscalls by process
@@ -164,14 +164,20 @@ The closure receives a context parameter with these fields:
 | `comm` | Process name (16 bytes) | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
 | `cpu` | CPU ID | All |
 | `ktime` | Kernel timestamp (ns) | All |
+| `packet_len` | XDP packet length (`data_end - data`) | xdp |
+| `ingress_ifindex` / `ifindex` | XDP ingress interface index | xdp |
+| `rx_queue_index` | XDP receive queue index | xdp |
+| `egress_ifindex` | XDP egress interface index | xdp |
 | `arg0`-`argN` | Function arguments | kprobe, uprobe, fentry, fexit |
 | `retval` | Return value | kretprobe, uretprobe, fexit |
 
 Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/format`.
 
-`xdp` currently exposes only `ctx.cpu` and `ctx.ktime`. Packet-context fields
-and named XDP return helpers are not modeled yet, so XDP closures currently
-need to return an explicit numeric action code such as `2` (`XDP_PASS`).
+`xdp` currently exposes `ctx.cpu`, `ctx.ktime`, and scalar `xdp_md` fields such
+as `ctx.packet_len`, `ctx.ifindex`, `ctx.ingress_ifindex`, `ctx.rx_queue_index`,
+and `ctx.egress_ifindex`. Raw packet pointers (`data`, `data_end`, etc.) and
+named XDP return helpers are not modeled yet, so XDP closures currently need to
+return an explicit numeric action code such as `2` (`XDP_PASS`).
 
 `kprobe` and `uprobe` expose `ctx.arg0`-`ctx.arg5` through `pt_regs`. `fentry` and
 `fexit` resolve `ctx.argN` and `ctx.retval` through kernel BTF. Scalar and pointer

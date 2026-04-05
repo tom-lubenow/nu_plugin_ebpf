@@ -297,9 +297,15 @@ impl<'a> TypeInference<'a> {
 
     pub(super) fn ctx_field_type(&mut self, field: &CtxField) -> HMType {
         match field {
-            CtxField::Pid | CtxField::Tid | CtxField::Uid | CtxField::Gid | CtxField::Cpu => {
-                HMType::U32
-            }
+            CtxField::Pid
+            | CtxField::Tid
+            | CtxField::Uid
+            | CtxField::Gid
+            | CtxField::Cpu
+            | CtxField::PacketLen
+            | CtxField::IngressIfindex
+            | CtxField::RxQueueIndex
+            | CtxField::EgressIfindex => HMType::U32,
 
             CtxField::Timestamp => HMType::U64,
 

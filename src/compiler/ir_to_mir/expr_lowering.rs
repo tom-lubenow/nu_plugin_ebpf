@@ -401,6 +401,10 @@ impl<'a> HirToMirLowering<'a> {
             "comm" => CtxField::Comm,
             "cpu" => CtxField::Cpu,
             "ktime" | "timestamp" => CtxField::Timestamp,
+            "packet_len" | "len" => CtxField::PacketLen,
+            "ifindex" | "ingress_ifindex" => CtxField::IngressIfindex,
+            "rx_queue_index" => CtxField::RxQueueIndex,
+            "egress_ifindex" => CtxField::EgressIfindex,
             "retval" => CtxField::RetVal,
             "kstack" => CtxField::KStack,
             "ustack" => CtxField::UStack,
@@ -2184,6 +2188,12 @@ impl<'a> HirToMirLowering<'a> {
             CtxField::Pid | CtxField::Tid | CtxField::Uid | CtxField::Gid => {
                 (MirType::I32, Some(MirType::I32))
             }
+            CtxField::Cpu
+            | CtxField::PacketLen
+            | CtxField::IngressIfindex
+            | CtxField::RxQueueIndex
+            | CtxField::EgressIfindex => (MirType::U32, Some(MirType::U32)),
+            CtxField::Timestamp => (MirType::U64, Some(MirType::U64)),
             _ => precise_trampoline_types
                 .map(|(semantic_ty, runtime_ty)| (semantic_ty, Some(runtime_ty)))
                 .unwrap_or_else(|| match trampoline_value_spec.map(|spec| spec.kind) {

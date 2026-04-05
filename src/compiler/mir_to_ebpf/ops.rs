@@ -3,6 +3,18 @@ use crate::compiler::ProgramValueAccess;
 use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec};
 
 impl<'a> MirToEbpfCompiler<'a> {
+    fn xdp_md_offsets() -> (i16, i16, i16, i16, i16, i16) {
+        // struct xdp_md {
+        //     __u32 data;
+        //     __u32 data_end;
+        //     __u32 data_meta;
+        //     __u32 ingress_ifindex;
+        //     __u32 rx_queue_index;
+        //     __u32 egress_ifindex;
+        // };
+        (0, 4, 8, 12, 16, 20)
+    }
+
     /// Emit binary operation with register operand
     pub(super) fn emit_binop_reg(
         &mut self,
@@ -437,6 +449,30 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::call(BpfHelper::GetSmpProcessorId));
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
+            }
+            CtxField::PacketLen => {
+                let (data_offset, data_end_offset, _, _, _, _) = Self::xdp_md_offsets();
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_end_offset));
+                self.instructions
+                    .push(EbpfInsn::ldxw(EbpfReg::R0, EbpfReg::R9, data_offset));
+                self.instructions
+                    .push(EbpfInsn::sub64_reg(dst, EbpfReg::R0));
+            }
+            CtxField::IngressIfindex => {
+                let (_, _, _, ingress_ifindex_offset, _, _) = Self::xdp_md_offsets();
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, ingress_ifindex_offset));
+            }
+            CtxField::RxQueueIndex => {
+                let (_, _, _, _, rx_queue_index_offset, _) = Self::xdp_md_offsets();
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, rx_queue_index_offset));
+            }
+            CtxField::EgressIfindex => {
+                let (_, _, _, _, _, egress_ifindex_offset) = Self::xdp_md_offsets();
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, egress_ifindex_offset));
             }
             CtxField::Comm => {
                 let comm_offset = if let Some(slot) = slot {

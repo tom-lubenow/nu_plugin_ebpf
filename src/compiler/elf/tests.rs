@@ -153,6 +153,33 @@ fn test_probe_context_allows_cpu_and_timestamp_on_xdp() {
 }
 
 #[test]
+fn test_probe_context_allows_xdp_md_scalar_fields_on_xdp() {
+    let ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::IngressIfindex)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::RxQueueIndex)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::EgressIfindex)
+            .is_none()
+    );
+}
+
+#[test]
+fn test_probe_context_rejects_xdp_md_fields_on_probe_programs() {
+    let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_openat2");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::PacketLen)
+        .expect("expected non-xdp packet_len access error");
+    assert!(err.contains("ctx.packet_len is only available on xdp programs"));
+}
+
+#[test]
 fn test_counter_key_schema_filters_synthetic_padding_fields() {
     let ty = MirType::Struct {
         name: Some("padded".to_string()),

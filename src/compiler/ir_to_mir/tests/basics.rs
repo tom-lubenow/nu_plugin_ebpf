@@ -1568,6 +1568,33 @@ fn test_lower_fentry_aggregate_pointer_field_projection() {
 }
 
 #[test]
+fn test_lower_xdp_ifindex_alias_to_ingress_ifindex() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("ifindex")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp ifindex alias should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::IngressIfindex,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_fexit_aggregate_ret_field_projection() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("retval"), string_member("size")],

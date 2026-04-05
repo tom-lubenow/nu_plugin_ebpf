@@ -513,11 +513,11 @@ step 35 "typed generic map schema persists across pinned programs" {
     }
 }
 
-step 36 "xdp loopback cpu counter" {
+step 36 "xdp loopback packet length counter" {
     count-at-least-one "xdp:lo" {|ctx|
-        $ctx.cpu | count
+        $ctx.packet_len | count
         2
-    } { trigger-ping-loopback } "xdp counter"
+    } { trigger-ping-loopback } "xdp packet length counter"
 }
 
 step 37 "verify no leaked probes" {

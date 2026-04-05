@@ -169,6 +169,16 @@ fn recover_ctx_field_hint(
     }
 
     match field {
+        CtxField::Pid
+        | CtxField::Tid
+        | CtxField::Uid
+        | CtxField::Gid
+        | CtxField::Cpu
+        | CtxField::PacketLen
+        | CtxField::IngressIfindex
+        | CtxField::RxQueueIndex
+        | CtxField::EgressIfindex => Some(MirType::U32),
+        CtxField::Timestamp => Some(MirType::U64),
         CtxField::Comm => Some(MirType::Ptr {
             pointee: Box::new(MirType::Array {
                 elem: Box::new(MirType::U8),

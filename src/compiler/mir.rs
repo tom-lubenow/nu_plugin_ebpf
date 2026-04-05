@@ -393,6 +393,14 @@ pub enum CtxField {
     Cpu,
     /// Timestamp (nanoseconds)
     Timestamp,
+    /// XDP packet length (`data_end - data`)
+    PacketLen,
+    /// XDP ingress interface index
+    IngressIfindex,
+    /// XDP receive queue index
+    RxQueueIndex,
+    /// XDP egress interface index
+    EgressIfindex,
     /// Function argument (kprobe/uprobe)
     Arg(u8),
     /// Return value (kretprobe/uretprobe)
@@ -415,6 +423,10 @@ impl CtxField {
             CtxField::Comm => "comm".to_string(),
             CtxField::Cpu => "cpu".to_string(),
             CtxField::Timestamp => "timestamp".to_string(),
+            CtxField::PacketLen => "packet_len".to_string(),
+            CtxField::IngressIfindex => "ingress_ifindex".to_string(),
+            CtxField::RxQueueIndex => "rx_queue_index".to_string(),
+            CtxField::EgressIfindex => "egress_ifindex".to_string(),
             CtxField::Arg(idx) => format!("arg{}", idx),
             CtxField::RetVal => "retval".to_string(),
             CtxField::KStack => "kstack".to_string(),

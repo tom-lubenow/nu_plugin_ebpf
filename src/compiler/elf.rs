@@ -552,6 +552,10 @@ impl EbpfProgramType {
     pub fn supports_stack_ctx_fields(&self) -> bool {
         self.info().supports_stack_ctx_fields
     }
+
+    pub fn supports_xdp_md_ctx_fields(&self) -> bool {
+        self.info().supports_xdp_md_ctx_fields
+    }
 }
 
 /// Context about the probe being compiled
@@ -645,6 +649,17 @@ impl ProbeContext {
                     self.probe_type.canonical_prefix()
                 ),
             ),
+            CtxField::PacketLen
+            | CtxField::IngressIfindex
+            | CtxField::RxQueueIndex
+            | CtxField::EgressIfindex
+                if !self.probe_type.supports_xdp_md_ctx_fields() =>
+            {
+                Some(format!(
+                    "ctx.{} is only available on xdp programs",
+                    field.display_name()
+                ))
+            }
             CtxField::Arg(_) if !self.probe_type.supports_ctx_args() => Some(format!(
                 "ctx.{} is only available on function probes with argument access (kprobe, uprobe, fentry, fexit)",
                 field.display_name()
@@ -836,6 +851,7 @@ pub struct ProgramTypeInfo {
     pub supports_task_ctx_fields: bool,
     pub supports_cpu_ctx_field: bool,
     pub supports_timestamp_ctx_field: bool,
+    pub supports_xdp_md_ctx_fields: bool,
     pub supports_stack_ctx_fields: bool,
     pub supports_tracepoint_fields: bool,
     pub is_userspace: bool,
@@ -886,6 +902,7 @@ const KPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: true,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    supports_xdp_md_ctx_fields: false,
     supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
     is_userspace: false,
@@ -906,6 +923,7 @@ const KRETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: true,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    supports_xdp_md_ctx_fields: false,
     supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
     is_userspace: false,
@@ -926,6 +944,7 @@ const FENTRY_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: true,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    supports_xdp_md_ctx_fields: false,
     supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
     is_userspace: false,
@@ -946,6 +965,7 @@ const FEXIT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: true,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    supports_xdp_md_ctx_fields: false,
     supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
     is_userspace: false,
@@ -966,6 +986,7 @@ const TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: true,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    supports_xdp_md_ctx_fields: false,
     supports_stack_ctx_fields: true,
     supports_tracepoint_fields: true,
     is_userspace: false,
@@ -986,6 +1007,7 @@ const RAW_TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: true,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    supports_xdp_md_ctx_fields: false,
     supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
     is_userspace: false,
@@ -1006,6 +1028,7 @@ const UPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: true,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    supports_xdp_md_ctx_fields: false,
     supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
     is_userspace: true,
@@ -1026,6 +1049,7 @@ const URETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: true,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    supports_xdp_md_ctx_fields: false,
     supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
     is_userspace: true,
@@ -1046,6 +1070,7 @@ const XDP_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: false,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    supports_xdp_md_ctx_fields: true,
     supports_stack_ctx_fields: false,
     supports_tracepoint_fields: false,
     is_userspace: false,
