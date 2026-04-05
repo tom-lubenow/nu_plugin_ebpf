@@ -1079,7 +1079,10 @@ fn make_captured_map_delete_program(
     HirProgram::new(
         func,
         HashMap::new(),
-        vec![(map_name_var, HirLiteral::String(b"captured_path".to_vec()))],
+        vec![(
+            map_name_var,
+            Value::string("captured_path", Span::test_data()),
+        )],
         Some(ctx_var),
     )
 }
@@ -3808,7 +3811,7 @@ fn test_lower_captured_int_variable() {
     let hir = HirProgram::new(
         func,
         HashMap::new(),
-        vec![(capture_var, HirLiteral::Int(7))],
+        vec![(capture_var, Value::int(7, Span::test_data()))],
         None,
     );
 
@@ -4121,6 +4124,85 @@ fn test_lower_load_value_list_is_rejected() {
 }
 
 #[test]
+fn test_lower_captured_record_emit_preserves_nested_struct_field_type() {
+    let capture_var = VarId::new(13);
+    let emit_decl = DeclId::new(80);
+
+    let mut path = Record::new();
+    path.push("mnt", Value::int(1, Span::test_data()));
+    path.push("dentry", Value::int(2, Span::test_data()));
+
+    let mut outer = Record::new();
+    outer.push("path", Value::record(path, Span::test_data()));
+    outer.push("pid", Value::int(7, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: capture_var,
+                },
+                HirStmt::Call {
+                    decl_id: emit_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(capture_var, Value::record(outer, Span::test_data()))],
+        None,
+    );
+    let decl_names = HashMap::from([(emit_decl, "emit".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("captured constant record should emit as a typed record");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::EmitRecord { fields }
+                    if fields.len() == 2
+                        && fields[0].name == "path"
+                        && matches!(
+                            fields[0].ty,
+                            MirType::Struct { ref fields, .. }
+                                if fields.len() == 2
+                                    && fields[0].name == "mnt"
+                                    && fields[1].name == "dentry"
+                        )
+                        && fields[1].name == "pid"
+                        && fields[1].ty == MirType::I64
+            ))
+    );
+}
+
+#[test]
 fn test_inline_where_closure_preserves_captured_bool() {
     let capture_var = VarId::new(9);
     let closure_block_id = nu_protocol::BlockId::new(1);
@@ -4177,7 +4259,7 @@ fn test_inline_where_closure_preserves_captured_bool() {
     let hir = HirProgram::new(
         main,
         HashMap::from([(closure_block_id, closure)]),
-        vec![(capture_var, HirLiteral::Bool(true))],
+        vec![(capture_var, Value::bool(true, Span::test_data()))],
         None,
     );
     let decl_names = HashMap::from([(where_decl, "where".to_string())]);

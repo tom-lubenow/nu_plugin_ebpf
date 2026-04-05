@@ -89,7 +89,7 @@ pub fn lower_ir_to_mir(
     probe_ctx: Option<&ProbeContext>,
     decl_names: &HashMap<DeclId, String>,
     closure_irs: &HashMap<nu_protocol::BlockId, IrBlock>,
-    captures: &[(VarId, HirLiteral)],
+    captures: &[(VarId, Value)],
     ctx_param: Option<VarId>,
 ) -> Result<MirProgram, CompileError> {
     let hir_program = lower_ir_to_hir(

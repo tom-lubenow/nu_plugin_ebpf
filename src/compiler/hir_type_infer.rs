@@ -140,10 +140,10 @@ struct HirTypeInference<'a> {
 }
 
 impl<'a> HirTypeInference<'a> {
-    fn new(decl_names: &'a HashMap<DeclId, String>, captures: &[(VarId, HirLiteral)]) -> Self {
+    fn new(decl_names: &'a HashMap<DeclId, String>, captures: &[(VarId, Value)]) -> Self {
         let mut env = VarEnv::default();
-        for (var_id, lit) in captures {
-            env.insert(*var_id, TypeScheme::mono(hm_type_for_literal(lit)));
+        for (var_id, value) in captures {
+            env.insert(*var_id, TypeScheme::mono(hm_type_for_value(value)));
         }
         Self {
             tvar_gen: TypeVarGenerator::new(),
@@ -377,7 +377,7 @@ impl<'a> HirTypeInference<'a> {
 fn infer_function(
     func: &HirFunction,
     decl_names: &HashMap<DeclId, String>,
-    captures: &[(VarId, HirLiteral)],
+    captures: &[(VarId, Value)],
 ) -> Result<HashMap<RegId, HMType>, Vec<TypeError>> {
     let mut infer = HirTypeInference::new(decl_names, captures);
     infer.infer_function(func)?;

@@ -21,7 +21,7 @@ pub use lowering::lower_ir_to_hir;
 pub struct HirProgram {
     pub main: HirFunction,
     pub closures: HashMap<NuBlockId, HirFunction>,
-    pub captures: Vec<(VarId, HirLiteral)>,
+    pub captures: Vec<(VarId, Value)>,
     pub ctx_param: Option<VarId>,
 }
 
@@ -29,7 +29,7 @@ impl HirProgram {
     pub fn new(
         main: HirFunction,
         closures: HashMap<NuBlockId, HirFunction>,
-        captures: Vec<(VarId, HirLiteral)>,
+        captures: Vec<(VarId, Value)>,
         ctx_param: Option<VarId>,
     ) -> Self {
         Self {
@@ -309,6 +309,17 @@ impl HirLiteral {
             Value::Nothing { .. } => Some(Self::Nothing),
             _ => None,
         }
+    }
+}
+
+pub fn supports_constant_value(value: &Value) -> bool {
+    if HirLiteral::from_constant_value(value).is_some() {
+        return true;
+    }
+
+    match value {
+        Value::Record { val, .. } => val.iter().all(|(_, field)| supports_constant_value(field)),
+        _ => false,
     }
 }
 

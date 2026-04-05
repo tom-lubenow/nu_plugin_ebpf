@@ -14,7 +14,7 @@ use nu_protocol::{
 use crate::EbpfPlugin;
 use crate::compiler::{
     EbpfProgram, ProbeContext, ProgramIntrinsic, UserFunctionSig, UserParam, UserParamKind,
-    compile_mir_to_ebpf_with_hints, hir::HirFunction, hir::HirLiteral, hir_type_infer,
+    compile_mir_to_ebpf_with_hints, hir::HirFunction, hir::supports_constant_value, hir_type_infer,
     infer_ctx_param, lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir,
     passes::optimize_with_ssa_hints,
 };
@@ -85,14 +85,14 @@ fn fetch_closure_irs(
 
 fn lower_capture_literals(
     closure: &Spanned<Closure>,
-) -> Result<Vec<(nu_protocol::VarId, HirLiteral)>, LabeledError> {
+) -> Result<Vec<(nu_protocol::VarId, Value)>, LabeledError> {
     let mut captures = Vec::with_capacity(closure.item.captures.len());
     for (var_id, value) in &closure.item.captures {
-        let Some(lit) = HirLiteral::from_constant_value(value) else {
+        if !supports_constant_value(value) {
             return Err(LabeledError::new("Unsupported captured value in eBPF closure")
                 .with_label(
                     format!(
-                        "captured variable {} has unsupported type {}; supported captured constants are int, bool, string, glob, filesize, duration, and nothing",
+                        "captured variable {} has unsupported type {}; supported captured constants are int, bool, string, glob, filesize, duration, nothing, and recursively constant records",
                         var_id.get(),
                         value.get_type()
                     ),
@@ -101,8 +101,8 @@ fn lower_capture_literals(
                 .with_help(
                     "Bind the value to a supported scalar/string constant before attaching, or inline it directly in the closure",
                 ));
-        };
-        captures.push((*var_id, lit));
+        }
+        captures.push((*var_id, value.clone()));
     }
     Ok(captures)
 }

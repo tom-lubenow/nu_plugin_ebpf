@@ -1,10 +1,10 @@
 use super::*;
 
 impl<'a> HirToMirLowering<'a> {
-    fn captured_literal(&self, var_id: nu_protocol::VarId) -> Option<&HirLiteral> {
+    fn captured_value(&self, var_id: nu_protocol::VarId) -> Option<&Value> {
         self.captures
             .iter()
-            .find_map(|(captured_var_id, lit)| (*captured_var_id == var_id).then_some(lit))
+            .find_map(|(captured_var_id, value)| (*captured_var_id == var_id).then_some(value))
     }
 
     #[allow(dead_code)]
@@ -104,7 +104,7 @@ impl<'a> HirToMirLowering<'a> {
         let mut param_var_ids: Vec<VarId> = Vec::new();
         for var_id in loaded_var_ids {
             // Don't override existing mappings (like captures from outer scope)
-            if !self.var_mappings.contains_key(&var_id) && self.captured_literal(var_id).is_none() {
+            if !self.var_mappings.contains_key(&var_id) && self.captured_value(var_id).is_none() {
                 param_var_ids.push(var_id);
                 self.var_mappings.insert(var_id, in_vreg);
             }
@@ -246,8 +246,8 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         // Check if this is a captured variable
-        if let Some(lit) = self.captured_literal(var_id).cloned() {
-            self.lower_load_literal(dst, &lit)?;
+        if let Some(value) = self.captured_value(var_id).cloned() {
+            self.lower_constant_value(dst, &value)?;
             return Ok(());
         }
 

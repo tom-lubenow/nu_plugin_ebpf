@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
-use nu_protocol::{BlockId as NuBlockId, VarId};
+use nu_protocol::{BlockId as NuBlockId, Value, VarId};
 
 use super::{
     CompileError, HirBlock, HirBlockId, HirCallArgs, HirFunction, HirLiteral, HirProgram, HirStmt,
@@ -493,7 +493,7 @@ fn assign_block_ids(starts: &HashSet<usize>) -> HashMap<usize, HirBlockId> {
 pub fn lower_ir_to_hir(
     main: IrBlock,
     closures: HashMap<NuBlockId, IrBlock>,
-    captures: Vec<(VarId, HirLiteral)>,
+    captures: Vec<(VarId, Value)>,
     ctx_param: Option<VarId>,
 ) -> Result<HirProgram, CompileError> {
     let main = HirFunction::from_ir_block(main)?;
