@@ -318,7 +318,7 @@ impl PluginCommand for EbpfAttach {
     }
 
     fn description(&self) -> &str {
-        "Attach an eBPF program to a kernel function, tracepoint, or userspace function."
+        "Attach an eBPF program to a kernel hook such as a probe, tracepoint, userspace function, or XDP interface."
     }
 
     fn extra_description(&self) -> &str {
@@ -331,17 +331,24 @@ Supported attach types:
   - fentry, fexit
   - tracepoint, raw_tracepoint
   - uprobe, uretprobe
+  - xdp
 
 Context parameter syntax (recommended):
-  The closure can take a context parameter to access probe information:
+  The closure can take a context parameter to access program context information:
 
-  Universal fields (all probe types):
+  Universal tracing fields (all tracing attach types):
     {|ctx| $ctx.pid }     - Get process ID (thread ID)
     {|ctx| $ctx.tgid }    - Get thread group ID (process ID)
     {|ctx| $ctx.uid }     - Get user ID
     {|ctx| $ctx.gid }     - Get group ID
     {|ctx| $ctx.comm }    - Get process command name (first 16 bytes)
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+
+  XDP fields:
+    {|ctx| $ctx.cpu }     - Get current CPU ID
+    {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    Note: XDP context packet fields are not modeled yet. XDP closures currently
+    need to return an explicit numeric action code such as `2` (XDP_PASS).
 
   Function fields:
     {|ctx| $ctx.arg0 }    - Get function argument 0

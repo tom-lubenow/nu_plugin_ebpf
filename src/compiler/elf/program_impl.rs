@@ -112,7 +112,11 @@ impl EbpfProgram {
 
     /// Get the ELF section name for this program
     pub fn section_name(&self) -> String {
-        format!("{}/{}", self.prog_type.section_prefix(), self.target)
+        if self.prog_type.info().section_uses_target {
+            format!("{}/{}", self.prog_type.section_prefix(), self.target)
+        } else {
+            self.prog_type.section_prefix().to_string()
+        }
     }
 
     pub fn validate_runtime_artifacts(&self) -> Result<(), CompileError> {

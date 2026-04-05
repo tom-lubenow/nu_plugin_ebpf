@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 36
+const TOTAL_STEPS = 37
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -82,6 +82,10 @@ def trigger-sh-true [] {
 
 def trigger-true [] {
     ^true | ignore
+}
+
+def trigger-ping-loopback [] {
+    ^ping -c 1 -W 1 127.0.0.1 | ignore
 }
 
 def wait-for-counter-rows [id, label: string] {
@@ -509,7 +513,14 @@ step 35 "typed generic map schema persists across pinned programs" {
     }
 }
 
-step 36 "verify no leaked probes" {
+step 36 "xdp loopback cpu counter" {
+    count-at-least-one "xdp:lo" {|ctx|
+        $ctx.cpu | count
+        2
+    } { trigger-ping-loopback } "xdp counter"
+}
+
+step 37 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

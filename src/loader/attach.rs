@@ -172,6 +172,15 @@ impl EbpfState {
                         ))
                     })?;
             }
+            ProgramAttachKind::Xdp => {
+                let xdp: &mut Xdp = prog
+                    .try_into()
+                    .map_err(|e| LoadError::Load(format!("Failed to convert to Xdp: {e}")))?;
+                xdp.load()
+                    .map_err(|e| LoadError::Load(format!("Failed to load xdp: {e}")))?;
+                xdp.attach(&program.target, XdpFlags::SKB_MODE)
+                    .map_err(|e| LoadError::Attach(format!("Failed to attach xdp: {e}")))?;
+            }
         }
 
         // Check for maps

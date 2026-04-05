@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use aya::maps::{HashMap as AyaHashMap, PerCpuHashMap, RingBuf};
-use aya::programs::{FEntry, FExit, KProbe, RawTracePoint, TracePoint, UProbe};
+use aya::programs::{FEntry, FExit, KProbe, RawTracePoint, TracePoint, UProbe, Xdp, XdpFlags};
 use aya::{Btf, Ebpf, EbpfLoader};
 use thiserror::Error;
 

@@ -113,6 +113,20 @@ fn test_parse_probe_spec_raw_tracepoint_alias() {
 }
 
 #[test]
+fn test_parse_probe_spec_xdp() {
+    let (prog_type, target) = parse_probe_spec("xdp:lo").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::Xdp);
+    assert_eq!(target, "lo");
+}
+
+#[test]
+fn test_parse_probe_spec_rejects_unknown_xdp_interface() {
+    let err = parse_probe_spec("xdp:__nu_plugin_ebpf_no_such_iface__")
+        .expect_err("expected unknown interface error");
+    assert!(matches!(err, LoadError::Load(msg) if msg.contains("Unknown network interface")));
+}
+
+#[test]
 fn test_parse_probe_spec_rejects_unsupported_fexit_aggregate_return_target() {
     let candidate = ["__jump_label_patch", "__ioapic_read_entry"]
         .into_iter()

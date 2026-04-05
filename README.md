@@ -5,7 +5,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: Write tracing logic in familiar Nushell syntax
-- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe
+- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, xdp
 - **Aggregations**: Count by key, histograms, timing measurements
 - **Event streaming**: Real-time event output via ring buffers
 - **Map sharing**: Share data between probes with `--pin`
@@ -72,6 +72,9 @@ ebpf attach -s 'fentry:do_sys_openat2' {|ctx| $ctx.arg2.flags | emit } | first 1
 
 # Capture the first ksys_read return value
 ebpf attach -s 'fexit:ksys_read' {|ctx| $ctx.retval | emit } | first 1
+
+# Count packets seen on loopback via XDP, then pass them through
+let id = ebpf attach 'xdp:lo' {|ctx| $ctx.cpu | count; 2 }
 ```
 
 ### Count syscalls by process
@@ -154,16 +157,21 @@ The closure receives a context parameter with these fields:
 
 | Field | Description | Probe Types |
 |-------|-------------|-------------|
-| `pid` | Thread ID | All |
-| `tgid` | Process ID (thread group) | All |
-| `uid` | User ID | All |
-| `gid` | Group ID | All |
-| `comm` | Process name (16 bytes) | All |
+| `pid` | Thread ID | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
+| `tgid` | Process ID (thread group) | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
+| `uid` | User ID | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
+| `gid` | Group ID | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
+| `comm` | Process name (16 bytes) | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
+| `cpu` | CPU ID | All |
 | `ktime` | Kernel timestamp (ns) | All |
 | `arg0`-`argN` | Function arguments | kprobe, uprobe, fentry, fexit |
 | `retval` | Return value | kretprobe, uretprobe, fexit |
 
 Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/format`.
+
+`xdp` currently exposes only `ctx.cpu` and `ctx.ktime`. Packet-context fields
+and named XDP return helpers are not modeled yet, so XDP closures currently
+need to return an explicit numeric action code such as `2` (`XDP_PASS`).
 
 `kprobe` and `uprobe` expose `ctx.arg0`-`ctx.arg5` through `pt_regs`. `fentry` and
 `fexit` resolve `ctx.argN` and `ctx.retval` through kernel BTF. Scalar and pointer

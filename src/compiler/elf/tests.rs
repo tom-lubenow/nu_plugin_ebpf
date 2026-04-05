@@ -23,6 +23,12 @@ fn test_fentry_section_name() {
 }
 
 #[test]
+fn test_xdp_section_name() {
+    let prog = EbpfProgram::from_bytecode(EbpfProgramType::Xdp, "lo", "test", vec![]);
+    assert_eq!(prog.section_name(), "xdp");
+}
+
+#[test]
 fn test_program_type_metadata_for_fexit() {
     let info = EbpfProgramType::Fexit.info();
     assert_eq!(info.canonical_prefix, "fexit");
@@ -42,6 +48,10 @@ fn test_program_type_supports_raw_tracepoint_alias() {
     assert_eq!(
         EbpfProgramType::from_spec_prefix("raw_tp"),
         Some(EbpfProgramType::RawTracepoint)
+    );
+    assert_eq!(
+        EbpfProgramType::from_spec_prefix("xdp"),
+        Some(EbpfProgramType::Xdp)
     );
 }
 
@@ -69,6 +79,7 @@ fn test_program_type_supports_probe_capabilities() {
     assert!(EbpfProgramType::Tracepoint.supports_capability(ProgramCapability::Emit));
     assert!(EbpfProgramType::Fentry.supports_capability(ProgramCapability::KfuncCalls));
     assert!(EbpfProgramType::Kprobe.supports_capability(ProgramCapability::StackTraces));
+    assert!(!EbpfProgramType::Xdp.supports_capability(ProgramCapability::ReadUserString));
 }
 
 #[test]
@@ -123,6 +134,22 @@ fn test_probe_context_allows_arg_on_fentry() {
 fn test_probe_context_allows_retval_on_fexit() {
     let ctx = ProbeContext::new(EbpfProgramType::Fexit, "ksys_read");
     assert!(ctx.ctx_field_access_error(&CtxField::RetVal).is_none());
+}
+
+#[test]
+fn test_probe_context_rejects_pid_on_xdp() {
+    let ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::Pid)
+        .expect("expected xdp pid access error");
+    assert!(err.contains("ctx.pid is not available on xdp programs"));
+}
+
+#[test]
+fn test_probe_context_allows_cpu_and_timestamp_on_xdp() {
+    let ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    assert!(ctx.ctx_field_access_error(&CtxField::Cpu).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Timestamp).is_none());
 }
 
 #[test]

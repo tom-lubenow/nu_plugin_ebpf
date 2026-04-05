@@ -1,6 +1,7 @@
 use super::LoadError;
 use crate::compiler::{EbpfProgramType, KernelTargetValidationKind, ProgramTargetKind};
 use crate::kernel_btf::{FunctionCheckResult, KernelBtf};
+use std::path::Path;
 
 /// Parsed uprobe/uretprobe target information
 #[derive(Debug, Clone)]
@@ -161,6 +162,23 @@ fn validate_trampoline_target(
     })
 }
 
+fn validate_network_interface_target(target: &str) -> Result<(), LoadError> {
+    if target.is_empty() {
+        return Err(LoadError::Load(
+            "Network interface target cannot be empty".to_string(),
+        ));
+    }
+
+    let iface_path = Path::new("/sys/class/net").join(target);
+    if iface_path.exists() {
+        Ok(())
+    } else {
+        Err(LoadError::Load(format!(
+            "Unknown network interface: {target}"
+        )))
+    }
+}
+
 fn validate_target_for_program_type(
     prog_type: EbpfProgramType,
     target: &str,
@@ -185,6 +203,7 @@ fn validate_target_for_program_type(
             UprobeTarget::parse(target)?;
             Ok(())
         }
+        ProgramTargetKind::NetworkInterface => validate_network_interface_target(target),
     }
 }
 
@@ -199,6 +218,7 @@ fn validate_target_for_program_type(
 /// - `raw_tracepoint:name` or `raw_tp:name`
 /// - `uprobe:/path/to/binary:function_name`
 /// - `uretprobe:/path/to/binary:function_name`
+/// - `xdp:interface`
 /// - `uprobe:/path/to/binary:0x1234` (offset-based)
 /// - `uprobe:/path/to/binary:function@PID` (PID-filtered)
 pub fn parse_probe_spec(spec: &str) -> Result<(EbpfProgramType, String), LoadError> {

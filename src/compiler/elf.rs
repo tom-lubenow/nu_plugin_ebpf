@@ -425,6 +425,8 @@ pub enum EbpfProgramType {
     Uprobe,
     /// User-space return probe (uretprobe)
     Uretprobe,
+    /// XDP program attached to a network interface
+    Xdp,
 }
 
 impl EbpfProgramType {
@@ -438,6 +440,7 @@ impl EbpfProgramType {
             EbpfProgramType::RawTracepoint => &RAW_TRACEPOINT_INFO,
             EbpfProgramType::Uprobe => &UPROBE_INFO,
             EbpfProgramType::Uretprobe => &URETPROBE_INFO,
+            EbpfProgramType::Xdp => &XDP_INFO,
         }
     }
 
@@ -455,6 +458,7 @@ impl EbpfProgramType {
             EbpfProgramType::RawTracepoint,
             EbpfProgramType::Uprobe,
             EbpfProgramType::Uretprobe,
+            EbpfProgramType::Xdp,
         ]
         .into_iter()
         .find(|program_type| program_type.info().spec_aliases.contains(&prefix))
@@ -532,6 +536,22 @@ impl EbpfProgramType {
     pub fn supports_tracepoint_fields(&self) -> bool {
         self.info().supports_tracepoint_fields
     }
+
+    pub fn supports_task_ctx_fields(&self) -> bool {
+        self.info().supports_task_ctx_fields
+    }
+
+    pub fn supports_cpu_ctx_field(&self) -> bool {
+        self.info().supports_cpu_ctx_field
+    }
+
+    pub fn supports_timestamp_ctx_field(&self) -> bool {
+        self.info().supports_timestamp_ctx_field
+    }
+
+    pub fn supports_stack_ctx_fields(&self) -> bool {
+        self.info().supports_stack_ctx_fields
+    }
 }
 
 /// Context about the probe being compiled
@@ -604,6 +624,27 @@ impl ProbeContext {
     /// for this program type.
     pub fn ctx_field_access_error(&self, field: &CtxField) -> Option<String> {
         match field {
+            CtxField::Pid | CtxField::Tid | CtxField::Uid | CtxField::Gid | CtxField::Comm
+                if !self.probe_type.supports_task_ctx_fields() =>
+            {
+                Some(format!(
+                    "ctx.{} is not available on {} programs",
+                    field.display_name(),
+                    self.probe_type.canonical_prefix()
+                ))
+            }
+            CtxField::Cpu if !self.probe_type.supports_cpu_ctx_field() => Some(format!(
+                "ctx.{} is not available on {} programs",
+                field.display_name(),
+                self.probe_type.canonical_prefix()
+            )),
+            CtxField::Timestamp if !self.probe_type.supports_timestamp_ctx_field() => Some(
+                format!(
+                    "ctx.{} is not available on {} programs",
+                    field.display_name(),
+                    self.probe_type.canonical_prefix()
+                ),
+            ),
             CtxField::Arg(_) if !self.probe_type.supports_ctx_args() => Some(format!(
                 "ctx.{} is only available on function probes with argument access (kprobe, uprobe, fentry, fexit)",
                 field.display_name()
@@ -611,6 +652,13 @@ impl ProbeContext {
             CtxField::RetVal if !self.probe_type.supports_ctx_retval() => Some(
                 "ctx.retval is only available on return probes with return-value access (kretprobe, uretprobe, fexit)".to_string(),
             ),
+            CtxField::KStack | CtxField::UStack if !self.probe_type.supports_stack_ctx_fields() => {
+                Some(format!(
+                    "ctx.{} is not available on {} programs",
+                    field.display_name(),
+                    self.probe_type.canonical_prefix()
+                ))
+            }
             CtxField::TracepointField(name) if !self.probe_type.supports_tracepoint_fields() => {
                 Some(format!(
                     "ctx.{} is only available on typed tracepoints (`tracepoint:category/name`)",
@@ -639,6 +687,7 @@ pub enum ProgramAttachKind {
     RawTracepoint,
     Uprobe,
     Uretprobe,
+    Xdp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -647,6 +696,7 @@ pub enum ProgramTargetKind {
     Tracepoint,
     RawTracepoint,
     UserFunction,
+    NetworkInterface,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -776,12 +826,17 @@ pub struct ProgramTypeInfo {
     pub canonical_prefix: &'static str,
     pub spec_aliases: &'static [&'static str],
     pub section_prefix: &'static str,
+    pub section_uses_target: bool,
     pub attach_kind: ProgramAttachKind,
     pub target_kind: ProgramTargetKind,
     pub kernel_target_validation: Option<KernelTargetValidationKind>,
     pub supported_capabilities: &'static [ProgramCapability],
     pub arg_access: ProgramValueAccess,
     pub retval_access: ProgramValueAccess,
+    pub supports_task_ctx_fields: bool,
+    pub supports_cpu_ctx_field: bool,
+    pub supports_timestamp_ctx_field: bool,
+    pub supports_stack_ctx_fields: bool,
     pub supports_tracepoint_fields: bool,
     pub is_userspace: bool,
 }
@@ -794,6 +849,7 @@ const TRACEPOINT_SPEC_ALIASES: &[&str] = &["tracepoint"];
 const RAW_TRACEPOINT_SPEC_ALIASES: &[&str] = &["raw_tracepoint", "raw_tp"];
 const UPROBE_SPEC_ALIASES: &[&str] = &["uprobe"];
 const URETPROBE_SPEC_ALIASES: &[&str] = &["uretprobe"];
+const XDP_SPEC_ALIASES: &[&str] = &["xdp"];
 const DEFAULT_PROBE_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::Emit,
     ProgramCapability::Counters,
@@ -806,18 +862,31 @@ const DEFAULT_PROBE_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::GenericMaps,
     ProgramCapability::TailCalls,
 ];
+const DEFAULT_XDP_CAPABILITIES: &[ProgramCapability] = &[
+    ProgramCapability::Emit,
+    ProgramCapability::Counters,
+    ProgramCapability::Histograms,
+    ProgramCapability::Timers,
+    ProgramCapability::GenericMaps,
+    ProgramCapability::TailCalls,
+];
 
 const KPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Kprobe,
     canonical_prefix: "kprobe",
     spec_aliases: KPROBE_SPEC_ALIASES,
     section_prefix: "kprobe",
+    section_uses_target: true,
     attach_kind: ProgramAttachKind::Kprobe,
     target_kind: ProgramTargetKind::KernelFunction,
     kernel_target_validation: Some(KernelTargetValidationKind::SymbolOnly),
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::PtRegs,
     retval_access: ProgramValueAccess::None,
+    supports_task_ctx_fields: true,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
     is_userspace: false,
 };
@@ -827,12 +896,17 @@ const KRETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     canonical_prefix: "kretprobe",
     spec_aliases: KRETPROBE_SPEC_ALIASES,
     section_prefix: "kretprobe",
+    section_uses_target: true,
     attach_kind: ProgramAttachKind::Kretprobe,
     target_kind: ProgramTargetKind::KernelFunction,
     kernel_target_validation: Some(KernelTargetValidationKind::SymbolOnly),
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::PtRegs,
+    supports_task_ctx_fields: true,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
     is_userspace: false,
 };
@@ -842,12 +916,17 @@ const FENTRY_INFO: ProgramTypeInfo = ProgramTypeInfo {
     canonical_prefix: "fentry",
     spec_aliases: FENTRY_SPEC_ALIASES,
     section_prefix: "fentry",
+    section_uses_target: true,
     attach_kind: ProgramAttachKind::Fentry,
     target_kind: ProgramTargetKind::KernelFunction,
     kernel_target_validation: Some(KernelTargetValidationKind::FentryTrampoline),
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::None,
+    supports_task_ctx_fields: true,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
     is_userspace: false,
 };
@@ -857,12 +936,17 @@ const FEXIT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     canonical_prefix: "fexit",
     spec_aliases: FEXIT_SPEC_ALIASES,
     section_prefix: "fexit",
+    section_uses_target: true,
     attach_kind: ProgramAttachKind::Fexit,
     target_kind: ProgramTargetKind::KernelFunction,
     kernel_target_validation: Some(KernelTargetValidationKind::FexitTrampoline),
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::Trampoline,
+    supports_task_ctx_fields: true,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
     is_userspace: false,
 };
@@ -872,12 +956,17 @@ const TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     canonical_prefix: "tracepoint",
     spec_aliases: TRACEPOINT_SPEC_ALIASES,
     section_prefix: "tracepoint",
+    section_uses_target: true,
     attach_kind: ProgramAttachKind::Tracepoint,
     target_kind: ProgramTargetKind::Tracepoint,
     kernel_target_validation: None,
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
+    supports_task_ctx_fields: true,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    supports_stack_ctx_fields: true,
     supports_tracepoint_fields: true,
     is_userspace: false,
 };
@@ -887,12 +976,17 @@ const RAW_TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     canonical_prefix: "raw_tracepoint",
     spec_aliases: RAW_TRACEPOINT_SPEC_ALIASES,
     section_prefix: "raw_tracepoint",
+    section_uses_target: true,
     attach_kind: ProgramAttachKind::RawTracepoint,
     target_kind: ProgramTargetKind::RawTracepoint,
     kernel_target_validation: None,
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
+    supports_task_ctx_fields: true,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
     is_userspace: false,
 };
@@ -902,12 +996,17 @@ const UPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     canonical_prefix: "uprobe",
     spec_aliases: UPROBE_SPEC_ALIASES,
     section_prefix: "uprobe",
+    section_uses_target: true,
     attach_kind: ProgramAttachKind::Uprobe,
     target_kind: ProgramTargetKind::UserFunction,
     kernel_target_validation: None,
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::PtRegs,
     retval_access: ProgramValueAccess::None,
+    supports_task_ctx_fields: true,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
     is_userspace: true,
 };
@@ -917,14 +1016,39 @@ const URETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     canonical_prefix: "uretprobe",
     spec_aliases: URETPROBE_SPEC_ALIASES,
     section_prefix: "uretprobe",
+    section_uses_target: true,
     attach_kind: ProgramAttachKind::Uretprobe,
     target_kind: ProgramTargetKind::UserFunction,
     kernel_target_validation: None,
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::PtRegs,
+    supports_task_ctx_fields: true,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
     is_userspace: true,
+};
+
+const XDP_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::Xdp,
+    canonical_prefix: "xdp",
+    spec_aliases: XDP_SPEC_ALIASES,
+    section_prefix: "xdp",
+    section_uses_target: false,
+    attach_kind: ProgramAttachKind::Xdp,
+    target_kind: ProgramTargetKind::NetworkInterface,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+    supports_task_ctx_fields: false,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    supports_stack_ctx_fields: false,
+    supports_tracepoint_fields: false,
+    is_userspace: false,
 };
 
 const PROGRAM_SPEC_PREFIXES: &[&str] = &[
@@ -937,6 +1061,7 @@ const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "raw_tp",
     "uprobe",
     "uretprobe",
+    "xdp",
 ];
 
 const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[
