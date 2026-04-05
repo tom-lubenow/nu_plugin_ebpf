@@ -106,7 +106,7 @@ fn has_side_effects(inst: &MirInst) -> bool {
         | MirInst::UnaryOp { .. }
         | MirInst::Load { .. }
         | MirInst::LoadSlot { .. }
-        | MirInst::LoadReadonlyGlobal { .. }
+        | MirInst::LoadGlobal { .. }
         | MirInst::LoadCtxField { .. }
         | MirInst::ListLen { .. }
         | MirInst::ListGet { .. }

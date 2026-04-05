@@ -93,7 +93,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         self.compile_generic_map_lookup(dst, dst_reg, map, key, key_reg)
     }
 
-    pub(super) fn compile_load_readonly_global_inst(
+    pub(super) fn compile_load_global_inst(
         &mut self,
         dst: VReg,
         symbol: &str,

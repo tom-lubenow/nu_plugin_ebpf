@@ -3894,7 +3894,7 @@ fn test_lower_mutated_captured_int_variable_uses_data_global() {
         .filter(|inst| {
             matches!(
                 inst,
-                MirInst::LoadReadonlyGlobal { symbol: inst_symbol, .. }
+                MirInst::LoadGlobal { symbol: inst_symbol, .. }
                     if inst_symbol == symbol
             )
         })
@@ -4086,7 +4086,7 @@ fn test_lower_mutated_captured_numeric_list_variable_uses_data_global() {
         .filter(|inst| {
             matches!(
                 inst,
-                MirInst::LoadReadonlyGlobal { symbol: inst_symbol, .. }
+                MirInst::LoadGlobal { symbol: inst_symbol, .. }
                     if inst_symbol == symbol
             )
         })
@@ -4278,7 +4278,7 @@ fn test_lower_mutated_captured_record_variable_uses_data_global() {
         .filter(|inst| {
             matches!(
                 inst,
-                MirInst::LoadReadonlyGlobal { symbol: inst_symbol, .. }
+                MirInst::LoadGlobal { symbol: inst_symbol, .. }
                     if inst_symbol == symbol
             )
         })
@@ -4651,7 +4651,7 @@ fn test_lower_load_value_record_emit_preserves_nested_struct_field_type() {
             .flat_map(|block| block.instructions.iter())
             .any(|inst| matches!(
                 inst,
-                MirInst::LoadReadonlyGlobal { symbol, .. }
+                MirInst::LoadGlobal { symbol, .. }
                     if symbol == &result.readonly_globals[0].name
             )),
         "expected constant record lowering to load from the emitted readonly global"
@@ -4731,7 +4731,7 @@ fn test_lower_load_value_numeric_list_uses_readonly_global_payload() {
         .blocks
         .iter()
         .flat_map(|block| block.instructions.iter())
-        .filter(|inst| matches!(inst, MirInst::LoadReadonlyGlobal { .. }))
+        .filter(|inst| matches!(inst, MirInst::LoadGlobal { .. }))
         .count();
     let list_push_count = result
         .program
@@ -4859,7 +4859,7 @@ fn test_lower_load_value_record_with_nested_numeric_list_uses_readonly_global() 
             .flat_map(|block| block.instructions.iter())
             .any(|inst| matches!(
                 inst,
-                MirInst::LoadReadonlyGlobal { symbol, .. }
+                MirInst::LoadGlobal { symbol, .. }
                     if symbol == &result.readonly_globals[0].name
             )),
         "expected nested numeric record list lowering to load from the emitted readonly global"
@@ -4934,7 +4934,7 @@ fn test_lower_captured_record_emit_preserves_nested_struct_field_type() {
             .flat_map(|block| block.instructions.iter())
             .any(|inst| matches!(
                 inst,
-                MirInst::LoadReadonlyGlobal { symbol, .. }
+                MirInst::LoadGlobal { symbol, .. }
                     if symbol == &result.readonly_globals[0].name
             )),
         "expected captured constant record lowering to load from the emitted readonly global"
@@ -5028,7 +5028,7 @@ fn test_lower_captured_record_with_nested_numeric_list_uses_readonly_global() {
             .flat_map(|block| block.instructions.iter())
             .any(|inst| matches!(
                 inst,
-                MirInst::LoadReadonlyGlobal { symbol, .. }
+                MirInst::LoadGlobal { symbol, .. }
                     if symbol == &result.readonly_globals[0].name
             )),
         "expected captured nested numeric record list lowering to load from the emitted readonly global"
@@ -5087,7 +5087,7 @@ fn test_lower_captured_numeric_list_uses_readonly_global_payload() {
         .blocks
         .iter()
         .flat_map(|block| block.instructions.iter())
-        .filter(|inst| matches!(inst, MirInst::LoadReadonlyGlobal { .. }))
+        .filter(|inst| matches!(inst, MirInst::LoadGlobal { .. }))
         .count();
     let list_push_count = result
         .program

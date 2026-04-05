@@ -351,7 +351,7 @@ pub(crate) fn infer_instruction_def_type(
             },
             true,
         )),
-        MirInst::LoadReadonlyGlobal { dst, ty, .. } => Some((
+        MirInst::LoadGlobal { dst, ty, .. } => Some((
             *dst,
             MirType::Ptr {
                 pointee: Box::new(ty.clone()),

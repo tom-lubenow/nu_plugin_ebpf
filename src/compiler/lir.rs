@@ -237,7 +237,7 @@ pub enum LirInst {
         map: MapRef,
         key: VReg,
     },
-    LoadReadonlyGlobal {
+    LoadGlobal {
         dst: VReg,
         symbol: String,
     },
@@ -379,7 +379,7 @@ impl LirInst {
             | LirInst::CallKfunc { ret: dst, .. }
             | LirInst::CallSubfn { ret: dst, .. }
             | LirInst::MapLookup { dst, .. }
-            | LirInst::LoadReadonlyGlobal { dst, .. }
+            | LirInst::LoadGlobal { dst, .. }
             | LirInst::LoadCtxField { dst, .. }
             | LirInst::StrCmp { dst, .. }
             | LirInst::StopTimer { dst, .. }
@@ -429,7 +429,7 @@ impl LirInst {
                 uses.extend(args.iter().copied());
             }
             LirInst::MapLookup { key, .. } => uses.push(*key),
-            LirInst::LoadReadonlyGlobal { .. } => {}
+            LirInst::LoadGlobal { .. } => {}
             LirInst::MapUpdate { key, val, .. } => {
                 uses.push(*key);
                 uses.push(*val);

@@ -247,7 +247,7 @@ impl<'a> HirToMirLowering<'a> {
 
         if let Some(global) = self.mutable_capture_globals.get(&var_id).cloned() {
             let global_ptr = self.func.alloc_vreg();
-            self.emit(MirInst::LoadReadonlyGlobal {
+            self.emit(MirInst::LoadGlobal {
                 dst: global_ptr,
                 symbol: global.symbol,
                 ty: global.ty.clone(),

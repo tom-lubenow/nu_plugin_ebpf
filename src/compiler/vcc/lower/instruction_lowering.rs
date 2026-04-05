@@ -383,7 +383,7 @@ impl<'a> VccLowerer<'a> {
                     self.ptr_regs.insert(VccReg(dst.0), info);
                 }
             }
-            MirInst::LoadReadonlyGlobal { dst, ty, .. } => {
+            MirInst::LoadGlobal { dst, ty, .. } => {
                 let bounds = if ty.size() == 0 {
                     None
                 } else {

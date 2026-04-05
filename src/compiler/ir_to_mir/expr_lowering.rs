@@ -153,7 +153,7 @@ impl<'a> HirToMirLowering<'a> {
             });
 
             let rodata_vreg = self.func.alloc_vreg();
-            self.emit(MirInst::LoadReadonlyGlobal {
+            self.emit(MirInst::LoadGlobal {
                 dst: rodata_vreg,
                 symbol,
                 ty: MirType::Array {
@@ -339,7 +339,7 @@ impl<'a> HirToMirLowering<'a> {
         });
 
         let global_vreg = self.func.alloc_vreg();
-        self.emit(MirInst::LoadReadonlyGlobal {
+        self.emit(MirInst::LoadGlobal {
             dst: global_vreg,
             symbol,
             ty: record_ty.clone(),

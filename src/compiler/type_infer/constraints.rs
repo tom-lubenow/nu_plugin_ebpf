@@ -235,13 +235,13 @@ impl<'a> TypeInference<'a> {
                 self.constrain(dst_ty, ptr_ty, "map_lookup");
             }
 
-            MirInst::LoadReadonlyGlobal { dst, ty, .. } => {
+            MirInst::LoadGlobal { dst, ty, .. } => {
                 let dst_ty = self.vreg_type(*dst);
                 let ptr_ty = HMType::Ptr {
                     pointee: Box::new(HMType::from_mir_type(ty)),
                     address_space: AddressSpace::Map,
                 };
-                self.constrain(dst_ty, ptr_ty, "readonly_global");
+                self.constrain(dst_ty, ptr_ty, "global_load");
             }
 
             MirInst::LoadCtxField { dst, field, .. } => {

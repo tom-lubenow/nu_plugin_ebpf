@@ -154,7 +154,7 @@ fn test_constant_record_rodata_survives_projection_codegen_and_elf() {
     let rodata_vreg = func.alloc_vreg();
     func.block_mut(entry)
         .instructions
-        .push(MirInst::LoadReadonlyGlobal {
+        .push(MirInst::LoadGlobal {
             dst: rodata_vreg,
             symbol: symbol.clone(),
             ty: record_ty,

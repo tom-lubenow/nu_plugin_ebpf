@@ -338,8 +338,8 @@ fn lower_inst(
                 key: *key,
             });
         }
-        MirInst::LoadReadonlyGlobal { dst, symbol, .. } => {
-            out.push(LirInst::LoadReadonlyGlobal {
+        MirInst::LoadGlobal { dst, symbol, .. } => {
+            out.push(LirInst::LoadGlobal {
                 dst: *dst,
                 symbol: symbol.clone(),
             });

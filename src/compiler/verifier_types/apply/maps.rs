@@ -32,7 +32,7 @@ pub(super) fn apply_map_lookup_inst(
     );
 }
 
-pub(super) fn apply_readonly_global_inst(dst: VReg, ty: &MirType, state: &mut VerifierState) {
+pub(super) fn apply_global_load_inst(dst: VReg, ty: &MirType, state: &mut VerifierState) {
     let bounds = if ty.size() == 0 {
         None
     } else {
