@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::compiler::elf::ProbeContext;
 use crate::compiler::mir::{
@@ -229,10 +229,10 @@ pub(crate) fn infer_instruction_def_type(
     probe_ctx: Option<&ProbeContext>,
     hints: &HashMap<VReg, MirType>,
     stack_slot_hints: &HashMap<StackSlotId, MirType>,
-) -> Option<(VReg, MirType)> {
+) -> Option<(VReg, MirType, bool)> {
     match inst {
         MirInst::Copy { dst, src } => match src {
-            MirValue::VReg(src_vreg) => hints.get(src_vreg).cloned().map(|ty| (*dst, ty)),
+            MirValue::VReg(src_vreg) => hints.get(src_vreg).cloned().map(|ty| (*dst, ty, false)),
             MirValue::StackSlot(slot) => Some((
                 *dst,
                 stack_slot_hints
@@ -243,11 +243,12 @@ pub(crate) fn infer_instruction_def_type(
                         address_space: AddressSpace::Stack,
                     })
                     .unwrap_or_else(|| pointer_hint(AddressSpace::Stack)),
+                true,
             )),
             MirValue::Const(_) => None,
         },
         MirInst::Load { dst, ty, .. } | MirInst::LoadSlot { dst, ty, .. } => {
-            (!matches!(ty, MirType::Unknown)).then(|| (*dst, ty.clone()))
+            (!matches!(ty, MirType::Unknown)).then(|| (*dst, ty.clone(), true))
         }
         MirInst::LoadCtxField { dst, field, slot } => slot
             .and_then(|slot| {
@@ -258,13 +259,14 @@ pub(crate) fn infer_instruction_def_type(
                             pointee: Box::new(ty),
                             address_space: AddressSpace::Stack,
                         },
+                        true,
                     )
                 })
             })
             .or_else(|| {
-                recover_ctx_field_hint(probe_ctx, field, slot.is_some()).map(|ty| (*dst, ty))
+                recover_ctx_field_hint(probe_ctx, field, slot.is_some()).map(|ty| (*dst, ty, true))
             }),
-        MirInst::MapLookup { dst, .. } => Some((*dst, pointer_hint(AddressSpace::Map))),
+        MirInst::MapLookup { dst, .. } => Some((*dst, pointer_hint(AddressSpace::Map), true)),
         MirInst::BinOp { dst, op, lhs, rhs } if matches!(op, BinOpKind::Add | BinOpKind::Sub) => {
             let lhs_ptr = match lhs {
                 MirValue::VReg(vreg) => hints.get(vreg),
@@ -286,12 +288,14 @@ pub(crate) fn infer_instruction_def_type(
                         None
                     }
                 })
-                .map(|ty| (*dst, ty))
+                .map(|ty| (*dst, ty, false))
         }
         MirInst::Phi { dst, args } => {
             let mut arg_types = args.iter().filter_map(|(_, vreg)| hints.get(vreg).cloned());
             let first = arg_types.next()?;
-            arg_types.all(|ty| ty == first).then_some((*dst, first))
+            arg_types
+                .all(|ty| ty == first)
+                .then_some((*dst, first, false))
         }
         _ => None,
     }
@@ -303,6 +307,7 @@ pub(crate) fn recover_optimized_function_type_hints(
     hints: &mut HashMap<VReg, MirType>,
     stack_slot_hints: &HashMap<StackSlotId, MirType>,
 ) {
+    let mut trusted_hints: HashSet<VReg> = HashSet::new();
     let mut changed = true;
     while changed {
         changed = false;
@@ -312,13 +317,54 @@ pub(crate) fn recover_optimized_function_type_hints(
                 .iter()
                 .chain(std::iter::once(&block.terminator))
         }) {
-            let recovered = infer_instruction_def_type(inst, probe_ctx, hints, stack_slot_hints);
+            let recovered = infer_instruction_def_type(inst, probe_ctx, hints, stack_slot_hints)
+                .map(|(dst, ty, trustworthy)| {
+                    let propagated = if trustworthy {
+                        true
+                    } else {
+                        match inst {
+                            MirInst::Copy {
+                                src: MirValue::VReg(src_vreg),
+                                ..
+                            } => trusted_hints.contains(src_vreg),
+                            MirInst::BinOp { op, lhs, rhs, .. }
+                                if matches!(op, BinOpKind::Add | BinOpKind::Sub) =>
+                            {
+                                let lhs_trusted = match lhs {
+                                    MirValue::VReg(vreg) => trusted_hints.contains(vreg),
+                                    _ => false,
+                                };
+                                let rhs_trusted = match rhs {
+                                    MirValue::VReg(vreg) => trusted_hints.contains(vreg),
+                                    _ => false,
+                                };
+                                lhs_trusted || (matches!(op, BinOpKind::Add) && rhs_trusted)
+                            }
+                            MirInst::Phi { args, .. } => {
+                                args.iter().all(|(_, vreg)| trusted_hints.contains(vreg))
+                            }
+                            _ => false,
+                        }
+                    };
+                    (dst, ty, propagated)
+                });
 
-            if let Some((dst, ty)) = recovered
-                && hints.get(&dst).is_none()
-            {
-                hints.insert(dst, ty);
-                changed = true;
+            if let Some((dst, ty, trustworthy)) = recovered {
+                let existing = hints.get(&dst).cloned();
+                let should_update = match existing.as_ref() {
+                    None => true,
+                    Some(existing_ty) if existing_ty == &ty => {
+                        trustworthy && !trusted_hints.contains(&dst)
+                    }
+                    Some(_) => trustworthy,
+                };
+                if should_update {
+                    hints.insert(dst, ty);
+                    changed = true;
+                }
+                if trustworthy {
+                    trusted_hints.insert(dst);
+                }
             }
         }
     }
@@ -352,5 +398,74 @@ pub(crate) fn recover_optimized_mir_type_hints(
         .zip(hints.subfunction_stack_slots.iter())
     {
         recover_optimized_function_type_hints(subfn, None, subfn_hints, subfn_stack_slot_hints);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compiler::mir::StackSlotKind;
+
+    #[test]
+    fn test_recover_optimized_function_type_hints_overrides_stale_hint_chain() {
+        let mut func = MirFunction::new();
+        let bb0 = func.alloc_block();
+        func.entry = bb0;
+
+        let slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+        let v0 = func.alloc_vreg();
+        let v1 = func.alloc_vreg();
+
+        func.block_mut(bb0).instructions.push(MirInst::Copy {
+            dst: v0,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(bb0).instructions.push(MirInst::Copy {
+            dst: v1,
+            src: MirValue::VReg(v0),
+        });
+        func.block_mut(bb0).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(v1)),
+        };
+
+        let mut hints = HashMap::from([(v0, MirType::U32), (v1, MirType::U32)]);
+        let stack_slot_hints = HashMap::from([(slot, MirType::U64)]);
+
+        recover_optimized_function_type_hints(&func, None, &mut hints, &stack_slot_hints);
+
+        let expected = MirType::Ptr {
+            pointee: Box::new(MirType::U64),
+            address_space: AddressSpace::Stack,
+        };
+        assert_eq!(hints.get(&v0), Some(&expected));
+        assert_eq!(hints.get(&v1), Some(&expected));
+    }
+
+    #[test]
+    fn test_recover_optimized_function_type_hints_keeps_untrusted_conflict() {
+        let mut func = MirFunction::new();
+        let bb0 = func.alloc_block();
+        func.entry = bb0;
+
+        let v0 = func.alloc_vreg();
+        let v1 = func.alloc_vreg();
+
+        func.block_mut(bb0).instructions.push(MirInst::Copy {
+            dst: v0,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(bb0).instructions.push(MirInst::Copy {
+            dst: v1,
+            src: MirValue::VReg(v0),
+        });
+        func.block_mut(bb0).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(v1)),
+        };
+
+        let mut hints = HashMap::from([(v0, MirType::U32), (v1, MirType::Bool)]);
+        recover_optimized_function_type_hints(&func, None, &mut hints, &HashMap::new());
+
+        assert_eq!(hints.get(&v0), Some(&MirType::U32));
+        assert_eq!(hints.get(&v1), Some(&MirType::Bool));
     }
 }

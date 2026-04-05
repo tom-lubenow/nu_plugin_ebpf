@@ -481,6 +481,7 @@ impl<'a> SsaBuilder<'a> {
         ssa_hints: &mut HashMap<VReg, MirType>,
     ) {
         let inferred = infer_instruction_def_type(inst, probe_ctx, ssa_hints, stack_slot_hints)
+            .map(|(dst, ty, _)| (dst, ty))
             .or_else(|| {
                 (self.def_counts.get(&orig_vreg).copied() == Some(1))
                     .then(|| original_hints.get(&orig_vreg).cloned())
@@ -504,7 +505,8 @@ impl<'a> SsaBuilder<'a> {
             for block in &self.func.blocks {
                 for inst in &block.instructions {
                     let recovered =
-                        infer_instruction_def_type(inst, probe_ctx, ssa_hints, stack_slot_hints);
+                        infer_instruction_def_type(inst, probe_ctx, ssa_hints, stack_slot_hints)
+                            .map(|(dst, ty, _)| (dst, ty));
                     if let Some((dst, ty)) = recovered
                         && ssa_hints.get(&dst).is_none()
                     {
