@@ -473,6 +473,10 @@ impl EbpfProgramType {
         self.info().target_kind
     }
 
+    pub fn kernel_target_validation(&self) -> Option<KernelTargetValidationKind> {
+        self.info().kernel_target_validation
+    }
+
     pub fn arg_access(&self) -> ProgramValueAccess {
         self.info().arg_access
     }
@@ -527,25 +531,14 @@ pub struct ProbeContext {
     pub probe_type: EbpfProgramType,
     /// The target function or tracepoint name
     pub target: String,
-    /// For tracepoints: the category (e.g., "syscalls")
-    pub tracepoint_category: Option<String>,
 }
 
 impl ProbeContext {
     /// Create a new probe context
     pub fn new(probe_type: EbpfProgramType, target: impl Into<String>) -> Self {
-        let target = target.into();
-        let tracepoint_category = if matches!(probe_type, EbpfProgramType::Tracepoint) {
-            // Parse "category/name" format
-            target.split('/').next().map(|s| s.to_string())
-        } else {
-            None
-        };
-
         Self {
             probe_type,
-            target,
-            tracepoint_category,
+            target: target.into(),
         }
     }
 
@@ -558,7 +551,6 @@ impl ProbeContext {
         Self {
             probe_type: EbpfProgramType::Kprobe,
             target: String::new(),
-            tracepoint_category: None,
         }
     }
 
@@ -642,6 +634,13 @@ pub enum ProgramTargetKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum KernelTargetValidationKind {
+    SymbolOnly,
+    FentryTrampoline,
+    FexitTrampoline,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProgramValueAccess {
     None,
     PtRegs,
@@ -656,6 +655,7 @@ pub struct ProgramTypeInfo {
     pub section_prefix: &'static str,
     pub attach_kind: ProgramAttachKind,
     pub target_kind: ProgramTargetKind,
+    pub kernel_target_validation: Option<KernelTargetValidationKind>,
     pub arg_access: ProgramValueAccess,
     pub retval_access: ProgramValueAccess,
     pub supports_tracepoint_fields: bool,
@@ -678,6 +678,7 @@ const KPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     section_prefix: "kprobe",
     attach_kind: ProgramAttachKind::Kprobe,
     target_kind: ProgramTargetKind::KernelFunction,
+    kernel_target_validation: Some(KernelTargetValidationKind::SymbolOnly),
     arg_access: ProgramValueAccess::PtRegs,
     retval_access: ProgramValueAccess::None,
     supports_tracepoint_fields: false,
@@ -691,6 +692,7 @@ const KRETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     section_prefix: "kretprobe",
     attach_kind: ProgramAttachKind::Kretprobe,
     target_kind: ProgramTargetKind::KernelFunction,
+    kernel_target_validation: Some(KernelTargetValidationKind::SymbolOnly),
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::PtRegs,
     supports_tracepoint_fields: false,
@@ -704,6 +706,7 @@ const FENTRY_INFO: ProgramTypeInfo = ProgramTypeInfo {
     section_prefix: "fentry",
     attach_kind: ProgramAttachKind::Fentry,
     target_kind: ProgramTargetKind::KernelFunction,
+    kernel_target_validation: Some(KernelTargetValidationKind::FentryTrampoline),
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::None,
     supports_tracepoint_fields: false,
@@ -717,6 +720,7 @@ const FEXIT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     section_prefix: "fexit",
     attach_kind: ProgramAttachKind::Fexit,
     target_kind: ProgramTargetKind::KernelFunction,
+    kernel_target_validation: Some(KernelTargetValidationKind::FexitTrampoline),
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::Trampoline,
     supports_tracepoint_fields: false,
@@ -730,6 +734,7 @@ const TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     section_prefix: "tracepoint",
     attach_kind: ProgramAttachKind::Tracepoint,
     target_kind: ProgramTargetKind::Tracepoint,
+    kernel_target_validation: None,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     supports_tracepoint_fields: true,
@@ -743,6 +748,7 @@ const RAW_TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     section_prefix: "raw_tracepoint",
     attach_kind: ProgramAttachKind::RawTracepoint,
     target_kind: ProgramTargetKind::RawTracepoint,
+    kernel_target_validation: None,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     supports_tracepoint_fields: false,
@@ -756,6 +762,7 @@ const UPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     section_prefix: "uprobe",
     attach_kind: ProgramAttachKind::Uprobe,
     target_kind: ProgramTargetKind::UserFunction,
+    kernel_target_validation: None,
     arg_access: ProgramValueAccess::PtRegs,
     retval_access: ProgramValueAccess::None,
     supports_tracepoint_fields: false,
@@ -769,6 +776,7 @@ const URETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     section_prefix: "uretprobe",
     attach_kind: ProgramAttachKind::Uretprobe,
     target_kind: ProgramTargetKind::UserFunction,
+    kernel_target_validation: None,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::PtRegs,
     supports_tracepoint_fields: false,

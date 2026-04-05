@@ -1,5 +1,5 @@
 use super::LoadError;
-use crate::compiler::{EbpfProgramType, ProgramTargetKind};
+use crate::compiler::{EbpfProgramType, KernelTargetValidationKind, ProgramTargetKind};
 use crate::kernel_btf::{FunctionCheckResult, KernelBtf};
 
 /// Parsed uprobe/uretprobe target information
@@ -143,18 +143,19 @@ fn validate_tracepoint_target(target: &str) -> Result<(), LoadError> {
 }
 
 fn validate_trampoline_target(
-    prog_type: EbpfProgramType,
+    validation: KernelTargetValidationKind,
+    probe_type: &str,
     func_name: &str,
 ) -> Result<(), LoadError> {
     let btf = KernelBtf::get();
-    let result = match prog_type {
-        EbpfProgramType::Fentry => btf.validate_fentry_target(func_name),
-        EbpfProgramType::Fexit => btf.validate_fexit_target(func_name),
-        _ => return Ok(()),
+    let result = match validation {
+        KernelTargetValidationKind::FentryTrampoline => btf.validate_fentry_target(func_name),
+        KernelTargetValidationKind::FexitTrampoline => btf.validate_fexit_target(func_name),
+        KernelTargetValidationKind::SymbolOnly => return Ok(()),
     };
 
     result.map_err(|e| LoadError::UnsupportedTrampolineTarget {
-        probe_type: prog_type.canonical_prefix().to_string(),
+        probe_type: probe_type.to_string(),
         target: func_name.to_string(),
         reason: e.to_string(),
     })
@@ -166,9 +167,15 @@ fn validate_target_for_program_type(
 ) -> Result<(), LoadError> {
     match prog_type.target_kind() {
         ProgramTargetKind::KernelFunction => {
+            let validation = prog_type.kernel_target_validation().ok_or_else(|| {
+                LoadError::Load(format!(
+                    "Program type '{}' is missing kernel target validation metadata",
+                    prog_type.canonical_prefix()
+                ))
+            })?;
             validate_kprobe_target(target)?;
-            if prog_type.uses_btf_trampoline() {
-                validate_trampoline_target(prog_type, target)?;
+            if !matches!(validation, KernelTargetValidationKind::SymbolOnly) {
+                validate_trampoline_target(validation, prog_type.canonical_prefix(), target)?;
             }
             Ok(())
         }

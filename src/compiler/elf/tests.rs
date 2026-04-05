@@ -27,6 +27,10 @@ fn test_program_type_metadata_for_fexit() {
     assert_eq!(info.canonical_prefix, "fexit");
     assert_eq!(info.attach_kind, ProgramAttachKind::Fexit);
     assert_eq!(info.target_kind, ProgramTargetKind::KernelFunction);
+    assert_eq!(
+        info.kernel_target_validation,
+        Some(KernelTargetValidationKind::FexitTrampoline)
+    );
     assert_eq!(info.arg_access, ProgramValueAccess::Trampoline);
     assert_eq!(info.retval_access, ProgramValueAccess::Trampoline);
     assert!(!info.is_userspace);
