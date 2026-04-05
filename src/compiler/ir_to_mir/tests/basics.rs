@@ -390,7 +390,10 @@ fn make_map_put_get_projection_program(
             },
             HirBlock {
                 id: HirBlockId(2),
-                stmts: vec![],
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(0),
+                }],
                 terminator: HirTerminator::Return { src: RegId::new(0) },
             },
         ],
@@ -587,6 +590,112 @@ fn make_map_get_whole_value_program(map_get_decl: DeclId, terminal_decl: DeclId)
         entry: HirBlockId(0),
         spans: vec![Span::test_data(); 10],
         ast: vec![None; 10],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_map_get_record_emit_program(map_get_decl: DeclId, emit_decl: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let lookup_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("pid")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String(b"cached_path".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::String(b"hash".to_vec()),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_get_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(2)],
+                            named: vec![(b"kind".to_vec(), RegId::new(3))],
+                            ..Default::default()
+                        },
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: lookup_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Comparison(Comparison::NotEqual),
+                        rhs: RegId::new(4),
+                    },
+                ],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(0),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Record { capacity: 1 },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String(b"path".to_vec()),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(2),
+                        var_id: lookup_var,
+                    },
+                    HirStmt::RecordInsert {
+                        src_dst: RegId::new(0),
+                        key: RegId::new(1),
+                        val: RegId::new(2),
+                    },
+                    HirStmt::Call {
+                        decl_id: emit_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(0),
+                }],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 16],
+        ast: vec![None; 16],
         comments: vec![],
         register_count: 5,
         file_count: 0,
@@ -2982,6 +3091,89 @@ fn test_lower_map_get_whole_struct_emit_uses_full_struct_size() {
             .iter()
             .flat_map(|block| block.instructions.iter())
             .any(|inst| matches!(inst, MirInst::EmitEvent { size, .. } if *size == 16))
+    );
+}
+
+#[test]
+fn test_lower_map_get_record_emit_preserves_nested_struct_field_type() {
+    let hir = make_map_get_record_emit_program(DeclId::new(43), DeclId::new(44));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(43), "map-get".to_string());
+    decl_names.insert(DeclId::new(44), "emit".to_string());
+
+    let external_schema = HashMap::from([(
+        MapRef {
+            name: "cached_path".to_string(),
+            kind: MapKind::Hash,
+        },
+        MirType::Struct {
+            name: Some("path".to_string()),
+            kernel_btf_type_id: None,
+            fields: vec![
+                StructField {
+                    name: "mnt".to_string(),
+                    ty: MirType::U64,
+                    offset: 0,
+                    synthetic: false,
+                    bitfield: None,
+                },
+                StructField {
+                    name: "dentry".to_string(),
+                    ty: MirType::Ptr {
+                        pointee: Box::new(MirType::Struct {
+                            name: Some("dentry".to_string()),
+                            kernel_btf_type_id: None,
+                            fields: vec![StructField {
+                                name: "d_flags".to_string(),
+                                ty: MirType::U32,
+                                offset: 0,
+                                synthetic: false,
+                                bitfield: None,
+                            }],
+                        }),
+                        address_space: AddressSpace::Kernel,
+                    },
+                    offset: 8,
+                    synthetic: false,
+                    bitfield: None,
+                },
+            ],
+        },
+    )]);
+
+    let result = lower_hir_to_mir_with_hints_and_maps(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        Some(&external_schema),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("record emit around typed map-get should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::EmitRecord { fields }
+                    if fields.len() == 1
+                        && fields[0].name == "path"
+                        && matches!(
+                            fields[0].ty,
+                            MirType::Struct { ref name, ref fields, .. }
+                                if name.as_deref() == Some("path")
+                                    && fields.len() == 2
+                                    && fields[0].name == "mnt"
+                                    && fields[1].name == "dentry"
+                        )
+            ))
     );
 }
 

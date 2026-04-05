@@ -30,10 +30,13 @@ impl<'a> HirToMirLowering<'a> {
 
         let val_vreg = self.get_vreg(val);
 
-        // Get the type from the value register's metadata, defaulting to I64
+        // Preserve aggregate-pointer field layout as the underlying aggregate
+        // so `{ path: $entry } | emit` serializes nested data instead of a raw pointer.
         let field_type = self
             .get_metadata(val)
             .and_then(|m| m.field_type.clone())
+            .or_else(|| self.vreg_type_hints.get(&val_vreg).cloned())
+            .map(|ty| self.stored_generic_map_value_type(&ty))
             .unwrap_or(MirType::I64);
 
         // IMPORTANT: Create a fresh VReg and copy the value to preserve it.

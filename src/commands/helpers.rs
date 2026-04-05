@@ -41,7 +41,8 @@ impl PluginCommand for Emit {
 When given a record, all fields are emitted as a single structured event.
 Representable typed struct values from trampoline projections can also stream
 as structured events, including preserved bitfield members and nested
-arrays/records when the compiler can preserve their layouts.
+arrays/records when the compiler can preserve their layouts. Typed `map-get`
+values keep that same nested layout when inserted into emitted records.
 
 Examples:
   {|ctx| $ctx.pid | emit }
@@ -261,9 +262,11 @@ impl PluginCommand for MapGet {
 Use pipeline input as the key, or pass an explicit key as the second positional
 argument. Aggregate values established by an earlier typed `map-put` in the same
 closure can be projected by field after lookup, or used directly with `emit`
-and `count` as whole typed values. The same typed schema also carries across
-active programs that share a pinned map group. The result is a maybe-null
-pointer, so guard it before dereferencing.
+and `count` as whole typed values. That typed layout also survives record
+construction, so `if $entry != 0 { { path: $entry } | emit }` preserves `path`
+as a nested record. The same typed schema also carries across active programs
+that share a pinned map group. The result is a maybe-null pointer, so guard it
+before dereferencing.
 
 Example:
   let entry = ($ctx.pid | map-get seen_paths --kind hash)
