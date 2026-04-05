@@ -1991,7 +1991,9 @@ fn test_infer_helper_kptr_xchg_allows_zero_vreg_arg1() {
     block.terminator = MirInst::Return { val: None };
 
     let mut ti = TypeInference::new(None);
-    let types = ti.infer(&func).expect("expected known-zero vreg to satisfy nullable helper arg");
+    let types = ti
+        .infer(&func)
+        .expect("expected known-zero vreg to satisfy nullable helper arg");
     match types.get(&dst) {
         Some(MirType::Ptr { address_space, .. }) => {
             assert_eq!(*address_space, AddressSpace::Kernel);
@@ -2043,9 +2045,10 @@ fn test_type_error_helper_kptr_xchg_rejects_non_zero_vreg_arg1() {
     let errs = ti
         .infer(&func)
         .expect_err("expected non-zero vreg to be rejected for nullable helper arg");
-    assert!(errs.iter().any(|e| {
-        e.message.contains("helper 194 arg1 expects pointer value")
-    }));
+    assert!(
+        errs.iter()
+            .any(|e| { e.message.contains("helper 194 arg1 expects pointer value") })
+    );
 }
 
 #[test]

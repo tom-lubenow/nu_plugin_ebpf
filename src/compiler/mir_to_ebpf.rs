@@ -24,8 +24,7 @@ use crate::compiler::CompileError;
 use crate::compiler::cfg::CFG;
 use crate::compiler::elf::{
     BpfFieldType, BpfMapDef, BssGlobal, CounterKeySchema, DataGlobal, EbpfMap, EventSchema,
-    MapRelocation, PacketContextKind, ProbeContext, ReadonlyGlobal, SchemaField,
-    SubfunctionSymbol,
+    MapRelocation, PacketContextKind, ProbeContext, ReadonlyGlobal, SchemaField, SubfunctionSymbol,
 };
 use crate::compiler::graph_coloring::{
     ColoringResult, GraphColoringAllocator, compute_loop_depths,

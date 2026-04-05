@@ -155,12 +155,11 @@ fn test_elf_generation_with_bss_globals_creates_bss_data_map() {
 
 #[test]
 fn test_runtime_artifacts_reject_duplicate_map_and_global_names() {
-    let mut prog = EbpfProgram::hello_world("sys_clone").with_readonly_globals(vec![
-        ReadonlyGlobal {
+    let mut prog =
+        EbpfProgram::hello_world("sys_clone").with_readonly_globals(vec![ReadonlyGlobal {
             name: "events".to_string(),
             data: vec![1],
-        },
-    ]);
+        }]);
     prog.maps.push(EbpfMap {
         name: "events".to_string(),
         def: BpfMapDef::ring_buffer(4096),
@@ -171,7 +170,8 @@ fn test_runtime_artifacts_reject_duplicate_map_and_global_names() {
         .expect_err("duplicate map/global names should be rejected");
 
     assert!(
-        err.to_string().contains("duplicate global or map name 'events'"),
+        err.to_string()
+            .contains("duplicate global or map name 'events'"),
         "unexpected error: {err}"
     );
 }

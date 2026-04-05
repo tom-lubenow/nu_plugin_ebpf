@@ -21,11 +21,7 @@ fn collect_mutated_capture_vars(
     hir: &HirProgram,
     user_functions: &HashMap<DeclId, HirFunction>,
 ) -> HashSet<VarId> {
-    fn scan_function(
-        func: &HirFunction,
-        capture_ids: &HashSet<VarId>,
-        out: &mut HashSet<VarId>,
-    ) {
+    fn scan_function(func: &HirFunction, capture_ids: &HashSet<VarId>, out: &mut HashSet<VarId>) {
         for block in &func.blocks {
             for stmt in &block.stmts {
                 if let HirStmt::StoreVariable { var_id, .. } = stmt
@@ -73,14 +69,7 @@ pub fn lower_hir_to_mir_with_hints_and_maps(
     );
     lowering.init_mutable_capture_globals(&mutated_capture_vars)?;
     lowering.lower_block(&hir.main)?;
-    let (
-        program,
-        type_hints,
-        generic_map_value_types,
-        readonly_globals,
-        data_globals,
-        bss_globals,
-    ) =
+    let (program, type_hints, generic_map_value_types, readonly_globals, data_globals, bss_globals) =
         lowering.finish_with_hints();
     Ok(MirLoweringResult {
         program,

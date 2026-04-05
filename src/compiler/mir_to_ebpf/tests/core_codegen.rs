@@ -4,8 +4,8 @@ use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
 use crate::compiler::ir_to_mir::lower_hir_to_mir_with_hints;
-use crate::compiler::{EbpfProgram, compile_mir_to_ebpf_with_hints_and_readonly_globals};
 use crate::compiler::mir::MirInst;
+use crate::compiler::{EbpfProgram, compile_mir_to_ebpf_with_hints_and_readonly_globals};
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use nu_protocol::ast::{CellPath, PathMember};
 use nu_protocol::casing::Casing;
@@ -145,11 +145,7 @@ fn test_constant_record_rodata_survives_projection_codegen_and_elf() {
     let symbol = "__nu_rodata_test".to_string();
     let readonly_globals = vec![ReadonlyGlobal {
         name: symbol.clone(),
-        data: [
-            1i64.to_le_bytes().as_slice(),
-            2i64.to_le_bytes().as_slice(),
-        ]
-        .concat(),
+        data: [1i64.to_le_bytes().as_slice(), 2i64.to_le_bytes().as_slice()].concat(),
     }];
 
     let mut func = MirFunction::new();

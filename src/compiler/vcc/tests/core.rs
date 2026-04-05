@@ -2146,22 +2146,26 @@ fn test_verify_mir_packet_load_with_data_end_guard_passes() {
     let cond = func.alloc_vreg();
     let dst = func.alloc_vreg();
 
-    func.block_mut(entry).instructions.push(MirInst::LoadCtxField {
-        dst: data,
-        field: CtxField::Data,
-        slot: None,
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: data,
+            field: CtxField::Data,
+            slot: None,
+        });
     func.block_mut(entry).instructions.push(MirInst::BinOp {
         dst: access_end,
         op: BinOpKind::Add,
         lhs: MirValue::VReg(data),
         rhs: MirValue::Const(1),
     });
-    func.block_mut(entry).instructions.push(MirInst::LoadCtxField {
-        dst: data_end,
-        field: CtxField::DataEnd,
-        slot: None,
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: data_end,
+            field: CtxField::DataEnd,
+            slot: None,
+        });
     func.block_mut(entry).instructions.push(MirInst::BinOp {
         dst: cond,
         op: BinOpKind::Le,
@@ -2206,11 +2210,13 @@ fn test_verify_mir_packet_load_without_data_end_guard_fails() {
     let data = func.alloc_vreg();
     let dst = func.alloc_vreg();
 
-    func.block_mut(entry).instructions.push(MirInst::LoadCtxField {
-        dst: data,
-        field: CtxField::Data,
-        slot: None,
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: data,
+            field: CtxField::Data,
+            slot: None,
+        });
     func.block_mut(entry).instructions.push(MirInst::Load {
         dst,
         ptr: data,
@@ -2251,22 +2257,26 @@ fn test_verify_mir_packet_load_rejects_guard_that_is_too_small() {
     let cond = func.alloc_vreg();
     let dst = func.alloc_vreg();
 
-    func.block_mut(entry).instructions.push(MirInst::LoadCtxField {
-        dst: data,
-        field: CtxField::Data,
-        slot: None,
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: data,
+            field: CtxField::Data,
+            slot: None,
+        });
     func.block_mut(entry).instructions.push(MirInst::BinOp {
         dst: access_end,
         op: BinOpKind::Add,
         lhs: MirValue::VReg(data),
         rhs: MirValue::Const(1),
     });
-    func.block_mut(entry).instructions.push(MirInst::LoadCtxField {
-        dst: data_end,
-        field: CtxField::DataEnd,
-        slot: None,
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: data_end,
+            field: CtxField::DataEnd,
+            slot: None,
+        });
     func.block_mut(entry).instructions.push(MirInst::BinOp {
         dst: cond,
         op: BinOpKind::Le,

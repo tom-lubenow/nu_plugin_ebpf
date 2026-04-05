@@ -53,5 +53,8 @@ fn test_supports_constant_value_for_record_with_nested_numeric_list() {
         ),
     );
 
-    assert!(supports_constant_value(&Value::record(record, Span::test_data())));
+    assert!(supports_constant_value(&Value::record(
+        record,
+        Span::test_data()
+    )));
 }

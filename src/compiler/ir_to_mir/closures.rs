@@ -252,22 +252,32 @@ impl<'a> HirToMirLowering<'a> {
                 symbol: global.symbol,
                 ty: global.ty.clone(),
             });
-            self.vreg_type_hints.insert(
-                global_ptr,
-                MirType::Ptr {
-                    pointee: Box::new(global.ty.clone()),
-                    address_space: crate::compiler::mir::AddressSpace::Map,
-                },
-            );
-            self.emit(MirInst::Load {
-                dst: dst_vreg,
-                ptr: global_ptr,
-                offset: 0,
-                ty: global.ty.clone(),
-            });
-            self.vreg_type_hints.insert(dst_vreg, global.ty.clone());
+            let global_ptr_ty = MirType::Ptr {
+                pointee: Box::new(global.ty.clone()),
+                address_space: crate::compiler::mir::AddressSpace::Map,
+            };
+            self.vreg_type_hints
+                .insert(global_ptr, global_ptr_ty.clone());
+
+            self.reg_metadata.insert(dst.get(), RegMetadata::default());
             let meta = self.get_or_create_metadata(dst);
-            meta.field_type = Some(global.ty);
+            meta.field_type = Some(global.ty.clone());
+
+            if matches!(global.ty, MirType::Array { .. } | MirType::Struct { .. }) {
+                self.emit(MirInst::Copy {
+                    dst: dst_vreg,
+                    src: MirValue::VReg(global_ptr),
+                });
+                self.vreg_type_hints.insert(dst_vreg, global_ptr_ty);
+            } else {
+                self.emit(MirInst::Load {
+                    dst: dst_vreg,
+                    ptr: global_ptr,
+                    offset: 0,
+                    ty: global.ty.clone(),
+                });
+                self.vreg_type_hints.insert(dst_vreg, global.ty);
+            }
             return Ok(());
         }
 

@@ -46,7 +46,10 @@ pub(in crate::compiler::verifier_types) fn helper_pointer_arg_allows_const_zero(
             | (Some(BpfHelper::SkStorageGet), 2)
             | (Some(BpfHelper::InodeStorageGet), 2)
             | (Some(BpfHelper::TaskStorageGet), 2)
-    ) && matches!(value_range(arg, state), ValueRange::Known { min: 0, max: 0 })
+    ) && matches!(
+        value_range(arg, state),
+        ValueRange::Known { min: 0, max: 0 }
+    )
 }
 
 pub(in crate::compiler::verifier_types) fn helper_positive_size_upper_bound(

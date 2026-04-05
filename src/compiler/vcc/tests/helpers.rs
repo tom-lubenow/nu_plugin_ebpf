@@ -2883,8 +2883,9 @@ fn test_verify_mir_helper_kptr_xchg_rejects_non_zero_vreg_arg1() {
     let err =
         verify_mir(&func, &types).expect_err("expected non-zero kptr_xchg vreg arg rejection");
     assert!(
-        err.iter()
-            .any(|e| e.message.contains("helper 194 arg1 expects null (0) or pointer value")),
+        err.iter().any(|e| e
+            .message
+            .contains("helper 194 arg1 expects null (0) or pointer value")),
         "unexpected error messages: {:?}",
         err
     );

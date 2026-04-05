@@ -12136,9 +12136,10 @@ fn test_verify_mir_kfunc_crypto_encrypt_siv_rejects_non_zero_vreg() {
 
     let err = verify_mir(&func, &types)
         .expect_err("expected non-zero vreg crypto_encrypt siv verifier error");
-    assert!(err.iter().any(|e| e
-        .message
-        .contains("kfunc 'bpf_crypto_encrypt' arg3 expects null (0) or pointer value")));
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("kfunc 'bpf_crypto_encrypt' arg3 expects null (0) or pointer value")
+    }));
 }
 
 #[test]
@@ -12706,9 +12707,10 @@ fn test_verify_mir_kfunc_dynptr_slice_buffer_rejects_non_zero_vreg() {
 
     let err = verify_mir(&func, &types)
         .expect_err("expected non-zero vreg dynptr_slice buffer verifier error");
-    assert!(err.iter().any(|e| e
-        .message
-        .contains("kfunc 'bpf_dynptr_slice' arg2 expects null (0) or pointer value")));
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("kfunc 'bpf_dynptr_slice' arg2 expects null (0) or pointer value")
+    }));
 }
 
 #[test]

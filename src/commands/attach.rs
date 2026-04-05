@@ -15,9 +15,8 @@ use crate::EbpfPlugin;
 use crate::compiler::{
     EbpfProgram, ProbeContext, ProgramIntrinsic, UserFunctionSig, UserParam, UserParamKind,
     compile_mir_to_ebpf_with_hints_and_readonly_globals, hir::HirFunction,
-    hir::supports_constant_value, hir_type_infer,
-    infer_ctx_param, lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir,
-    passes::optimize_with_ssa_hints,
+    hir::supports_constant_value, hir_type_infer, infer_ctx_param,
+    lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir, passes::optimize_with_ssa_hints,
 };
 
 /// Common Nushell commands used in eBPF closures.

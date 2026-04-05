@@ -75,12 +75,7 @@ pub(in crate::compiler::verifier_types) fn guard_from_compare_reg_const(
     Some(Guard::Range { reg, op, value })
 }
 
-fn packet_end_guard(
-    op: BinOpKind,
-    lhs: VReg,
-    rhs: VReg,
-    state: &VerifierState,
-) -> Option<Guard> {
+fn packet_end_guard(op: BinOpKind, lhs: VReg, rhs: VReg, state: &VerifierState) -> Option<Guard> {
     let lhs_ty = state.get(lhs);
     let rhs_ty = state.get(rhs);
 

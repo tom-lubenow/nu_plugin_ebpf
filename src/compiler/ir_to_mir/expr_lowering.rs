@@ -26,15 +26,19 @@ enum PacketPayloadStepKind {
 }
 
 impl<'a> HirToMirLowering<'a> {
-    fn mutable_capture_global_repr(value: &Value) -> Option<(MirType, Vec<u8>)> {
-        match value {
+    fn mutable_capture_global_repr(
+        value: &Value,
+    ) -> Result<Option<(MirType, Vec<u8>)>, CompileError> {
+        let repr = match value {
             Value::Bool { val, .. } => Some((MirType::Bool, vec![u8::from(*val)])),
             Value::Int { val, .. } => Some((MirType::I64, val.to_le_bytes().to_vec())),
             Value::Filesize { val, .. } => Some((MirType::I64, val.get().to_le_bytes().to_vec())),
             Value::Duration { val, .. } => Some((MirType::I64, val.to_le_bytes().to_vec())),
             Value::Nothing { .. } => Some((MirType::I64, 0i64.to_le_bytes().to_vec())),
+            Value::Record { val, .. } => Some(Self::constant_record_rodata_repr(val.as_ref())?),
             _ => None,
-        }
+        };
+        Ok(repr)
     }
 
     pub(super) fn init_mutable_capture_globals(
@@ -46,9 +50,9 @@ impl<'a> HirToMirLowering<'a> {
                 continue;
             }
 
-            let Some((ty, data)) = Self::mutable_capture_global_repr(value) else {
+            let Some((ty, data)) = Self::mutable_capture_global_repr(value)? else {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "mutating captured variable {} of type {} is not yet supported; mutable captured globals currently only support numeric scalar values",
+                    "mutating captured variable {} of type {} is not yet supported; mutable captured globals currently only support numeric scalar values and representable constant records",
                     var_id.get(),
                     value.get_type()
                 )));
@@ -209,7 +213,9 @@ impl<'a> HirToMirLowering<'a> {
         ))
     }
 
-    fn constant_numeric_list_rodata_repr(values: &[Value]) -> Result<(MirType, Vec<u8>), CompileError> {
+    fn constant_numeric_list_rodata_repr(
+        values: &[Value],
+    ) -> Result<(MirType, Vec<u8>), CompileError> {
         let mut data = Vec::with_capacity(values.len() * std::mem::size_of::<i64>());
         for value in values {
             let Some((_item_ty, item_data)) = Self::scalar_constant_rodata_repr(value) else {

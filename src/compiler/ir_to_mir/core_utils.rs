@@ -1,6 +1,48 @@
 use super::*;
 
 impl<'a> HirToMirLowering<'a> {
+    pub(super) fn fixed_copy_chunk(remaining: usize, offset: usize) -> (MirType, usize) {
+        for (size, ty) in [
+            (8usize, MirType::U64),
+            (4usize, MirType::U32),
+            (2usize, MirType::U16),
+            (1usize, MirType::U8),
+        ] {
+            if remaining >= size && offset % size == 0 {
+                return (ty, size);
+            }
+        }
+        (MirType::U8, 1)
+    }
+
+    pub(super) fn emit_ptr_copy(
+        &mut self,
+        dst_ptr: VReg,
+        src_ptr: VReg,
+        size: usize,
+    ) -> Result<(), CompileError> {
+        let mut offset = 0usize;
+        while offset < size {
+            let (chunk_ty, chunk_size) = Self::fixed_copy_chunk(size - offset, offset);
+            let tmp = self.func.alloc_vreg();
+            self.emit(MirInst::Load {
+                dst: tmp,
+                ptr: src_ptr,
+                offset: offset as i32,
+                ty: chunk_ty.clone(),
+            });
+            self.vreg_type_hints.insert(tmp, chunk_ty.clone());
+            self.emit(MirInst::Store {
+                ptr: dst_ptr,
+                offset: offset as i32,
+                val: MirValue::VReg(tmp),
+                ty: chunk_ty,
+            });
+            offset += chunk_size;
+        }
+        Ok(())
+    }
+
     /// Get metadata for a register
     pub(super) fn get_metadata(&self, reg: RegId) -> Option<&RegMetadata> {
         self.reg_metadata.get(&reg.get())

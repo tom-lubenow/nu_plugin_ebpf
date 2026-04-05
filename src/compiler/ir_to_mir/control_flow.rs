@@ -345,12 +345,49 @@ impl<'a> HirToMirLowering<'a> {
                             address_space: crate::compiler::mir::AddressSpace::Map,
                         },
                     );
-                    self.emit(MirInst::Store {
-                        ptr: global_ptr,
-                        offset: 0,
-                        val: MirValue::VReg(src_vreg),
-                        ty: global.ty,
-                    });
+                    match &global.ty {
+                        MirType::Array { .. } | MirType::Struct { .. } => {
+                            let Some(src_runtime_ty) = self.vreg_type_hints.get(&src_vreg).cloned()
+                            else {
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "storing into mutable captured variable {} requires a materialized aggregate pointer value",
+                                    var_id.get()
+                                )));
+                            };
+
+                            let Some(MirType::Ptr {
+                                pointee,
+                                address_space:
+                                    crate::compiler::mir::AddressSpace::Stack
+                                    | crate::compiler::mir::AddressSpace::Map,
+                            }) = Some(src_runtime_ty)
+                            else {
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "storing into mutable captured variable {} requires a stack/map aggregate pointer value",
+                                    var_id.get()
+                                )));
+                            };
+
+                            if pointee.as_ref() != &global.ty {
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "storing type {:?} into mutable captured variable {} of type {:?} is not supported",
+                                    pointee,
+                                    var_id.get(),
+                                    global.ty
+                                )));
+                            }
+
+                            self.emit_ptr_copy(global_ptr, src_vreg, global.ty.size())?;
+                        }
+                        _ => {
+                            self.emit(MirInst::Store {
+                                ptr: global_ptr,
+                                offset: 0,
+                                val: MirValue::VReg(src_vreg),
+                                ty: global.ty,
+                            });
+                        }
+                    }
                     self.var_mappings.remove(var_id);
                     self.var_metadata.remove(var_id);
                     return Ok(());

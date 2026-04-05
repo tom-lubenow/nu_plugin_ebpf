@@ -245,7 +245,10 @@ impl EbpfProgram {
 
         for map in &self.maps {
             if !seen_names.insert(map.name.as_str()) {
-                return Err(invalid(format!("duplicate global or map name '{}'", map.name)));
+                return Err(invalid(format!(
+                    "duplicate global or map name '{}'",
+                    map.name
+                )));
             }
 
             match map.name.as_str() {

@@ -3908,7 +3908,13 @@ fn test_lower_mutated_captured_int_variable_uses_data_global() {
             .blocks
             .iter()
             .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(inst, MirInst::Store { ty: MirType::I64, .. })),
+            .any(|inst| matches!(
+                inst,
+                MirInst::Store {
+                    ty: MirType::I64,
+                    ..
+                }
+            )),
         "expected mutable captured integer lowering to emit a store to the writable global"
     );
 }
@@ -4004,7 +4010,210 @@ fn test_lower_mutated_captured_string_variable_is_rejected() {
 
     assert!(
         err.to_string()
-            .contains("mutable captured globals currently only support numeric scalar values")
+            .contains(
+                "mutable captured globals currently only support numeric scalar values and representable constant records"
+            )
+    );
+}
+
+#[test]
+fn test_lower_mutated_captured_record_variable_uses_data_global() {
+    let capture_var = VarId::new(20);
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("ok", Value::bool(true, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: capture_var,
+                },
+                HirStmt::StoreVariable {
+                    var_id: capture_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(1),
+                    var_id: capture_var,
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(capture_var, Value::record(record, Span::test_data()))],
+        None,
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("mutated captured record should lower through a writable global");
+
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+
+    let symbol = &result.data_globals[0].name;
+    let global_load_count = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::LoadReadonlyGlobal { symbol: inst_symbol, .. }
+                    if inst_symbol == symbol
+            )
+        })
+        .count();
+
+    assert_eq!(global_load_count, 3);
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::Store { .. })),
+        "expected mutable captured record lowering to emit stores into the writable global"
+    );
+}
+
+#[test]
+fn test_lower_mutated_zero_captured_record_variable_uses_bss_global() {
+    let capture_var = VarId::new(21);
+    let mut record = Record::new();
+    record.push("pid", Value::int(0, Span::test_data()));
+    record.push("ok", Value::bool(false, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: capture_var,
+                },
+                HirStmt::StoreVariable {
+                    var_id: capture_var,
+                    src: RegId::new(0),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(capture_var, Value::record(record, Span::test_data()))],
+        None,
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("mutated zero captured record should lower through bss");
+
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 0);
+    assert_eq!(result.bss_globals.len(), 1);
+}
+
+#[test]
+fn test_lower_mutated_captured_record_variable_rejects_metadata_only_record_store() {
+    let capture_var = VarId::new(22);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Record { capacity: 1 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("pid".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(9),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(0),
+                    key: RegId::new(1),
+                    val: RegId::new(2),
+                },
+                HirStmt::StoreVariable {
+                    var_id: capture_var,
+                    src: RegId::new(0),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let mut capture_record = Record::new();
+    capture_record.push("pid", Value::int(1, Span::test_data()));
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(
+            capture_var,
+            Value::record(capture_record, Span::test_data()),
+        )],
+        None,
+    );
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("metadata-only record builders should not silently store into mutable globals");
+
+    assert!(
+        err.to_string()
+            .contains("requires a materialized aggregate pointer value")
     );
 }
 
