@@ -25,6 +25,91 @@ enum PacketPayloadStepKind {
 }
 
 impl<'a> HirToMirLowering<'a> {
+    fn lower_const_i64_literal(&mut self, dst: RegId, dst_vreg: VReg, value: i64) {
+        self.emit(MirInst::Copy {
+            dst: dst_vreg,
+            src: MirValue::Const(value),
+        });
+        let meta = self.get_or_create_metadata(dst);
+        meta.literal_int = Some(value);
+    }
+
+    fn lower_string_like_literal(
+        &mut self,
+        dst: RegId,
+        dst_vreg: VReg,
+        bytes: &[u8],
+    ) -> Result<(), CompileError> {
+        // Warn if string exceeds eBPF limits
+        let string_len = bytes.len();
+        let max_content_len = MAX_STRING_SIZE.saturating_sub(1);
+        if string_len > max_content_len {
+            eprintln!(
+                "Warning: string literal ({} bytes) exceeds eBPF limit of {} bytes and will be truncated",
+                string_len, max_content_len
+            );
+        }
+        let content_len = bytes.len().min(max_content_len);
+        let aligned_len = align_to_eight(content_len + 1).min(MAX_STRING_SIZE).max(16);
+
+        // Allocate stack slot for string buffer (aligned for emit)
+        let slot = self
+            .func
+            .alloc_stack_slot(aligned_len, 8, StackSlotKind::StringBuffer);
+        self.record_stack_slot_type(
+            slot,
+            MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: aligned_len,
+            },
+        );
+
+        // Build literal bytes with null terminator and zero padding
+        let mut literal_bytes = vec![0u8; aligned_len];
+        literal_bytes[..content_len].copy_from_slice(&bytes[..content_len]);
+        // literal_bytes is zero-initialized, so null + padding are already zeroed.
+
+        // Write literal bytes into the buffer at runtime
+        let len_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: len_vreg,
+            src: MirValue::Const(0),
+        });
+        self.emit(MirInst::StringAppend {
+            dst_buffer: slot,
+            dst_len: len_vreg,
+            val: MirValue::Const(0),
+            val_type: StringAppendType::Literal {
+                bytes: literal_bytes,
+            },
+        });
+
+        let string_value = std::str::from_utf8(&bytes[..content_len])
+            .ok()
+            .map(|s| s.to_string());
+
+        // Record slot pointer in a vreg
+        self.emit(MirInst::Copy {
+            dst: dst_vreg,
+            src: MirValue::StackSlot(slot),
+        });
+        // Track the string slot and value
+        let meta = self.get_or_create_metadata(dst);
+        meta.string_slot = Some(slot);
+        meta.string_len_vreg = Some(len_vreg);
+        meta.string_len_bound = Some(content_len);
+        meta.field_type = Some(MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: aligned_len,
+        });
+        // Also track the literal string value for record field names
+        if let Some(s) = string_value {
+            meta.literal_string = Some(s);
+        }
+
+        Ok(())
+    }
+
     pub(super) fn lower_load_literal(
         &mut self,
         dst: RegId,
@@ -39,13 +124,7 @@ impl<'a> HirToMirLowering<'a> {
 
         match lit {
             HirLiteral::Int(val) => {
-                self.emit(MirInst::Copy {
-                    dst: dst_vreg,
-                    src: MirValue::Const(*val),
-                });
-                // Track literal value for constant propagation
-                let meta = self.get_or_create_metadata(dst);
-                meta.literal_int = Some(*val);
+                self.lower_const_i64_literal(dst, dst_vreg, *val);
             }
 
             HirLiteral::Bool(val) => {
@@ -53,6 +132,14 @@ impl<'a> HirToMirLowering<'a> {
                     dst: dst_vreg,
                     src: MirValue::Const(if *val { 1 } else { 0 }),
                 });
+            }
+
+            HirLiteral::Filesize(val) => {
+                self.lower_const_i64_literal(dst, dst_vreg, val.get());
+            }
+
+            HirLiteral::Duration(val) => {
+                self.lower_const_i64_literal(dst, dst_vreg, *val);
             }
 
             HirLiteral::Nothing => {
@@ -64,73 +151,12 @@ impl<'a> HirToMirLowering<'a> {
                 });
             }
 
-            HirLiteral::String(bytes) => {
-                // Warn if string exceeds eBPF limits
-                let string_len = bytes.len();
-                let max_content_len = MAX_STRING_SIZE.saturating_sub(1);
-                if string_len > max_content_len {
-                    eprintln!(
-                        "Warning: string literal ({} bytes) exceeds eBPF limit of {} bytes and will be truncated",
-                        string_len, max_content_len
-                    );
-                }
-                let content_len = bytes.len().min(max_content_len);
-                let aligned_len = align_to_eight(content_len + 1).min(MAX_STRING_SIZE).max(16);
-
-                // Allocate stack slot for string buffer (aligned for emit)
-                let slot = self
-                    .func
-                    .alloc_stack_slot(aligned_len, 8, StackSlotKind::StringBuffer);
-                self.record_stack_slot_type(
-                    slot,
-                    MirType::Array {
-                        elem: Box::new(MirType::U8),
-                        len: aligned_len,
-                    },
-                );
-
-                // Build literal bytes with null terminator and zero padding
-                let mut literal_bytes = vec![0u8; aligned_len];
-                literal_bytes[..content_len].copy_from_slice(&bytes[..content_len]);
-                // literal_bytes is zero-initialized, so null + padding are already zeroed.
-
-                // Write literal bytes into the buffer at runtime
-                let len_vreg = self.func.alloc_vreg();
-                self.emit(MirInst::Copy {
-                    dst: len_vreg,
-                    src: MirValue::Const(0),
-                });
-                self.emit(MirInst::StringAppend {
-                    dst_buffer: slot,
-                    dst_len: len_vreg,
-                    val: MirValue::Const(0),
-                    val_type: StringAppendType::Literal {
-                        bytes: literal_bytes,
-                    },
-                });
-
-                let string_value = std::str::from_utf8(&bytes[..content_len])
-                    .ok()
-                    .map(|s| s.to_string());
-
-                // Record slot pointer in a vreg
-                self.emit(MirInst::Copy {
-                    dst: dst_vreg,
-                    src: MirValue::StackSlot(slot),
-                });
-                // Track the string slot and value
-                let meta = self.get_or_create_metadata(dst);
-                meta.string_slot = Some(slot);
-                meta.string_len_vreg = Some(len_vreg);
-                meta.string_len_bound = Some(content_len);
-                meta.field_type = Some(MirType::Array {
-                    elem: Box::new(MirType::U8),
-                    len: aligned_len,
-                });
-                // Also track the literal string value for record field names
-                if let Some(s) = string_value {
-                    meta.literal_string = Some(s);
-                }
+            HirLiteral::String(bytes)
+            | HirLiteral::RawString(bytes)
+            | HirLiteral::Filepath { val: bytes, .. }
+            | HirLiteral::Directory { val: bytes, .. }
+            | HirLiteral::GlobPattern { val: bytes, .. } => {
+                self.lower_string_like_literal(dst, dst_vreg, bytes)?;
             }
 
             HirLiteral::CellPath(cell_path) => {

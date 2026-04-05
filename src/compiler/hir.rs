@@ -294,6 +294,24 @@ pub enum HirLiteral {
     Nothing,
 }
 
+impl HirLiteral {
+    pub fn from_constant_value(value: &Value) -> Option<Self> {
+        match value {
+            Value::Bool { val, .. } => Some(Self::Bool(*val)),
+            Value::Int { val, .. } => Some(Self::Int(*val)),
+            Value::String { val, .. } => Some(Self::String(val.as_bytes().to_vec())),
+            Value::Glob { val, no_expand, .. } => Some(Self::GlobPattern {
+                val: val.as_bytes().to_vec(),
+                no_expand: *no_expand,
+            }),
+            Value::Filesize { val, .. } => Some(Self::Filesize(*val)),
+            Value::Duration { val, .. } => Some(Self::Duration(*val)),
+            Value::Nothing { .. } => Some(Self::Nothing),
+            _ => None,
+        }
+    }
+}
+
 /// Infer the context parameter VarId from IR instructions.
 ///
 /// Closure parameters are variables that are loaded but never stored to within the closure.

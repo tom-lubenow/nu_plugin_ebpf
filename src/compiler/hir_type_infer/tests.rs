@@ -2,8 +2,9 @@ use super::*;
 use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
-use nu_protocol::{RegId, VarId};
 use nu_protocol::ast::{Comparison, Operator};
+use nu_protocol::{RegId, VarId};
+use nu_protocol::{Span, Value};
 
 #[test]
 fn test_let_generalization_allows_distinct_instantiations() {
@@ -280,5 +281,37 @@ fn test_capture_seeded_into_hm_environment() {
     let decl_names = HashMap::new();
     let inferred = infer_hir_types(&program, &decl_names).expect("captured string should infer");
 
-    assert_eq!(inferred.main.get(&RegId::new(0)), Some(&stack_string_ptr_type()));
+    assert_eq!(
+        inferred.main.get(&RegId::new(0)),
+        Some(&stack_string_ptr_type())
+    );
+}
+
+#[test]
+fn test_load_value_string_infers_stack_string_ptr() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadValue {
+                dst: RegId::new(0),
+                val: Box::new(Value::string("pinned_map", Span::test_data())),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    let decl_names = HashMap::new();
+    let inferred = infer_hir_types(&program, &decl_names).expect("string load value should infer");
+
+    assert_eq!(
+        inferred.main.get(&RegId::new(0)),
+        Some(&stack_string_ptr_type())
+    );
 }

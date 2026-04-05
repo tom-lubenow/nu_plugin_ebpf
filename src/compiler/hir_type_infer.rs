@@ -140,10 +140,7 @@ struct HirTypeInference<'a> {
 }
 
 impl<'a> HirTypeInference<'a> {
-    fn new(
-        decl_names: &'a HashMap<DeclId, String>,
-        captures: &[(VarId, HirLiteral)],
-    ) -> Self {
+    fn new(decl_names: &'a HashMap<DeclId, String>, captures: &[(VarId, HirLiteral)]) -> Self {
         let mut env = VarEnv::default();
         for (var_id, lit) in captures {
             env.insert(*var_id, TypeScheme::mono(hm_type_for_literal(lit)));
@@ -416,6 +413,7 @@ fn hm_type_for_value(val: &Value) -> HMType {
         | Value::Filesize { .. }
         | Value::Duration { .. }
         | Value::Date { .. } => HMType::I64,
+        Value::String { .. } | Value::Glob { .. } => stack_string_ptr_type(),
         _ => HMType::Unknown,
     }
 }

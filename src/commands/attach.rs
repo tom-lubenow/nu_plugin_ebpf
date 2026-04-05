@@ -83,26 +83,16 @@ fn fetch_closure_irs(
     Ok(())
 }
 
-fn capture_to_hir_literal(value: &Value) -> Option<HirLiteral> {
-    match value {
-        Value::Int { val, .. } => Some(HirLiteral::Int(*val)),
-        Value::Bool { val, .. } => Some(HirLiteral::Bool(*val)),
-        Value::String { val, .. } => Some(HirLiteral::String(val.as_bytes().to_vec())),
-        Value::Nothing { .. } => Some(HirLiteral::Nothing),
-        _ => None,
-    }
-}
-
 fn lower_capture_literals(
     closure: &Spanned<Closure>,
 ) -> Result<Vec<(nu_protocol::VarId, HirLiteral)>, LabeledError> {
     let mut captures = Vec::with_capacity(closure.item.captures.len());
     for (var_id, value) in &closure.item.captures {
-        let Some(lit) = capture_to_hir_literal(value) else {
+        let Some(lit) = HirLiteral::from_constant_value(value) else {
             return Err(LabeledError::new("Unsupported captured value in eBPF closure")
                 .with_label(
                     format!(
-                        "captured variable {} has unsupported type {}; supported captured constants are int, bool, string, and nothing",
+                        "captured variable {} has unsupported type {}; supported captured constants are int, bool, string, glob, filesize, duration, and nothing",
                         var_id.get(),
                         value.get_type()
                     ),

@@ -8,7 +8,7 @@ use crate::compiler::mir::{AddressSpace, BYTES_COUNTER_MAP_NAME, StructField};
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 use nu_protocol::ast::{CellPath, Comparison, Math, Operator, PathMember, RangeInclusion};
 use nu_protocol::casing::Casing;
-use nu_protocol::{DeclId, RegId, Span, VarId};
+use nu_protocol::{DeclId, RegId, Span, Value, VarId};
 use std::collections::HashMap;
 
 #[test]
@@ -3829,6 +3829,180 @@ fn test_lower_captured_int_variable() {
             ..
         }]
     ));
+}
+
+#[test]
+fn test_lower_load_value_duration_as_const() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadValue {
+                dst: RegId::new(0),
+                val: Box::new(Value::duration(1234, Span::test_data())),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("duration load value should lower");
+
+    assert!(matches!(
+        result.program.main.blocks[0].instructions.as_slice(),
+        [MirInst::Copy {
+            src: MirValue::Const(1234),
+            ..
+        }]
+    ));
+}
+
+#[test]
+fn test_lower_load_value_string_can_drive_map_get_name() {
+    let map_get_decl = DeclId::new(77);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::string("demo_map", Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::Call {
+                    decl_id: map_get_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0), RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([(map_get_decl, "map-get".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("string load value should satisfy map-get literal name");
+
+    let has_lookup = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .any(|inst| {
+            matches!(
+                inst,
+                MirInst::MapLookup { map, .. }
+                    if map.name == "demo_map" && map.kind == MapKind::Hash
+            )
+        });
+
+    assert!(
+        has_lookup,
+        "expected map-get to use the loaded string value as its map name"
+    );
+}
+
+#[test]
+fn test_lower_glob_pattern_literal_can_drive_map_get_name() {
+    let map_get_decl = DeclId::new(78);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::GlobPattern {
+                        val: b"demo_glob_map".to_vec(),
+                        no_expand: true,
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::Call {
+                    decl_id: map_get_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0), RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([(map_get_decl, "map-get".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("glob pattern literal should satisfy map-get literal name");
+
+    let has_lookup = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .any(|inst| {
+            matches!(
+                inst,
+                MirInst::MapLookup { map, .. }
+                    if map.name == "demo_glob_map" && map.kind == MapKind::Hash
+            )
+        });
+
+    assert!(
+        has_lookup,
+        "expected map-get to use the glob-pattern literal as its map name"
+    );
 }
 
 #[test]
