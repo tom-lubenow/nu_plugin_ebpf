@@ -1955,6 +1955,100 @@ fn test_type_error_helper_kptr_xchg_rejects_non_map_dst_arg0() {
 }
 
 #[test]
+fn test_infer_helper_kptr_xchg_allows_zero_vreg_arg1() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let map = func.alloc_vreg();
+    let key = func.alloc_vreg();
+    let dst_ptr = func.alloc_vreg();
+    let zero = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: map,
+        src: MirValue::StackSlot(map_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::StackSlot(key_slot),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: dst_ptr,
+        helper: BpfHelper::MapLookupElem as u32,
+        args: vec![MirValue::VReg(map), MirValue::VReg(key)],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: zero,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::KptrXchg as u32,
+        args: vec![MirValue::VReg(dst_ptr), MirValue::VReg(zero)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti.infer(&func).expect("expected known-zero vreg to satisfy nullable helper arg");
+    match types.get(&dst) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(*address_space, AddressSpace::Kernel);
+        }
+        other => panic!(
+            "Expected helper kptr_xchg kernel pointer return, got {:?}",
+            other
+        ),
+    }
+}
+
+#[test]
+fn test_type_error_helper_kptr_xchg_rejects_non_zero_vreg_arg1() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let map = func.alloc_vreg();
+    let key = func.alloc_vreg();
+    let dst_ptr = func.alloc_vreg();
+    let one = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: map,
+        src: MirValue::StackSlot(map_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::StackSlot(key_slot),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: dst_ptr,
+        helper: BpfHelper::MapLookupElem as u32,
+        args: vec![MirValue::VReg(map), MirValue::VReg(key)],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: one,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::KptrXchg as u32,
+        args: vec![MirValue::VReg(dst_ptr), MirValue::VReg(one)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected non-zero vreg to be rejected for nullable helper arg");
+    assert!(errs.iter().any(|e| {
+        e.message.contains("helper 194 arg1 expects pointer value")
+    }));
+}
+
+#[test]
 fn test_type_error_helper_probe_read_user_rejects_stack_src() {
     let mut func = make_test_function();
     let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);

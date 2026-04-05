@@ -2774,6 +2774,123 @@ fn test_verify_mir_helper_kptr_xchg_rejects_non_null_scalar_arg1() {
 }
 
 #[test]
+fn test_verify_mir_helper_kptr_xchg_allows_zero_vreg_arg1() {
+    let (mut func, entry) = new_mir_function();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let dst_ptr = func.alloc_vreg();
+    let dst_non_null = func.alloc_vreg();
+    let zero = func.alloc_vreg();
+    let swapped = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: zero,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: dst_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(dst_ptr),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: dst_non_null,
+        if_true: call,
+        if_false: done,
+    };
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: swapped,
+        helper: BpfHelper::KptrXchg as u32,
+        args: vec![MirValue::VReg(dst_ptr), MirValue::VReg(zero)],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        dst_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(dst_non_null, MirType::Bool);
+    types.insert(zero, MirType::I64);
+    types.insert(
+        swapped,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    verify_mir(&func, &types).expect("expected kptr_xchg known-zero vreg arg acceptance");
+}
+
+#[test]
+fn test_verify_mir_helper_kptr_xchg_rejects_non_zero_vreg_arg1() {
+    let (mut func, entry) = new_mir_function();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let dst_ptr = func.alloc_vreg();
+    let dst_non_null = func.alloc_vreg();
+    let one = func.alloc_vreg();
+    let swapped = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: one,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: dst_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(dst_ptr),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: dst_non_null,
+        if_true: call,
+        if_false: done,
+    };
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: swapped,
+        helper: BpfHelper::KptrXchg as u32,
+        args: vec![MirValue::VReg(dst_ptr), MirValue::VReg(one)],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        dst_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(dst_non_null, MirType::Bool);
+    types.insert(one, MirType::I64);
+    types.insert(
+        swapped,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected non-zero kptr_xchg vreg arg rejection");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 194 arg1 expects null (0) or pointer value")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_helper_kptr_xchg_rejects_non_map_dst_arg0() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;

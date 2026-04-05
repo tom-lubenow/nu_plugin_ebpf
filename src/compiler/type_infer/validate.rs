@@ -559,9 +559,12 @@ impl<'a> TypeInference<'a> {
                                 }
                             }
                             HelperArgKind::Pointer => {
-                                let is_const_zero = matches!(arg, MirValue::Const(0));
+                                let is_known_zero = matches!(
+                                    self.value_range_for(arg, value_ranges),
+                                    ValueRange::Known { min: 0, max: 0 }
+                                );
                                 if !matches!(arg_ty, MirType::Ptr { .. })
-                                    && !(is_const_zero
+                                    && !(is_known_zero
                                         && Self::helper_pointer_arg_allows_const_zero(*helper, idx))
                                 {
                                     errors.push(TypeError::new(format!(

@@ -244,8 +244,11 @@ impl<'a> TypeInference<'a> {
                 (None, Some(size_arg)) => positive_size_bounds[size_arg],
                 (None, None) => None,
             };
-            if matches!(arg, MirValue::Const(0))
-                && Self::helper_pointer_arg_allows_const_zero(helper_id, rule.arg_idx)
+            if Self::helper_pointer_arg_allows_const_zero(helper_id, rule.arg_idx)
+                && matches!(
+                    self.value_range_for(arg, value_ranges),
+                    ValueRange::Known { min: 0, max: 0 }
+                )
             {
                 continue;
             }

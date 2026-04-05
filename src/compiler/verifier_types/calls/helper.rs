@@ -20,7 +20,7 @@ pub(in crate::compiler::verifier_types) fn check_helper_arg(
             }
         }
         HelperArgKind::Pointer => {
-            if helper_pointer_arg_allows_const_zero(helper_id, arg_idx, arg) {
+            if helper_pointer_arg_allows_const_zero(helper_id, arg_idx, arg, state) {
                 return;
             }
             if !matches!(ty, VerifierType::Ptr { .. }) {
@@ -37,6 +37,7 @@ pub(in crate::compiler::verifier_types) fn helper_pointer_arg_allows_const_zero(
     helper_id: u32,
     arg_idx: usize,
     arg: &MirValue,
+    state: &VerifierState,
 ) -> bool {
     matches!(
         (BpfHelper::from_u32(helper_id), arg_idx),
@@ -45,7 +46,7 @@ pub(in crate::compiler::verifier_types) fn helper_pointer_arg_allows_const_zero(
             | (Some(BpfHelper::SkStorageGet), 2)
             | (Some(BpfHelper::InodeStorageGet), 2)
             | (Some(BpfHelper::TaskStorageGet), 2)
-    ) && matches!(arg, MirValue::Const(0))
+    ) && matches!(value_range(arg, state), ValueRange::Known { min: 0, max: 0 })
 }
 
 pub(in crate::compiler::verifier_types) fn helper_positive_size_upper_bound(
@@ -84,7 +85,7 @@ pub(in crate::compiler::verifier_types) fn check_helper_ptr_arg_value(
     slot_sizes: &HashMap<StackSlotId, i64>,
     errors: &mut Vec<VerifierTypeError>,
 ) {
-    if helper_pointer_arg_allows_const_zero(helper_id, arg_idx, arg) {
+    if helper_pointer_arg_allows_const_zero(helper_id, arg_idx, arg, state) {
         return;
     }
     let allowed = helper_allowed_spaces(allow_stack, allow_map, allow_kernel, allow_user);

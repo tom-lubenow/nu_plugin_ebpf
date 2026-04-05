@@ -336,7 +336,6 @@ impl<'a> VccLowerer<'a> {
     pub(super) fn helper_pointer_arg_allows_const_zero(
         helper_id: u32,
         arg_idx: usize,
-        arg: &MirValue,
     ) -> bool {
         matches!(
             (BpfHelper::from_u32(helper_id), arg_idx),
@@ -346,7 +345,6 @@ impl<'a> VccLowerer<'a> {
                 | (Some(BpfHelper::InodeStorageGet), 2)
                 | (Some(BpfHelper::TaskStorageGet), 2)
         )
-            && matches!(arg, MirValue::Const(0))
     }
 
     pub(super) fn verify_helper_arg_value(
@@ -374,7 +372,9 @@ impl<'a> VccLowerer<'a> {
             },
             HelperArgKind::Pointer => match arg {
                 MirValue::Const(_) => {
-                    if Self::helper_pointer_arg_allows_const_zero(helper_id, arg_idx, arg) {
+                    if matches!(arg, MirValue::Const(0))
+                        && Self::helper_pointer_arg_allows_const_zero(helper_id, arg_idx)
+                    {
                         Ok(())
                     } else {
                         Err(VccError::new(
@@ -386,7 +386,23 @@ impl<'a> VccLowerer<'a> {
                         ))
                     }
                 }
-                MirValue::VReg(vreg) => self.check_ptr_range(*vreg, 1, out),
+                MirValue::VReg(vreg) => {
+                    if !self.is_pointer_reg(*vreg)
+                        && Self::helper_pointer_arg_allows_const_zero(helper_id, arg_idx)
+                    {
+                        out.push(VccInst::AssertConstEq {
+                            value: VccValue::Reg(VccReg(vreg.0)),
+                            expected: 0,
+                            message: format!(
+                                "helper {} arg{} expects null (0) or pointer value",
+                                helper_id, arg_idx
+                            ),
+                        });
+                        Ok(())
+                    } else {
+                        self.check_ptr_range(*vreg, 1, out)
+                    }
+                }
                 MirValue::StackSlot(_) => Ok(()),
             },
         }
@@ -486,8 +502,22 @@ impl<'a> VccLowerer<'a> {
         dynamic_size: Option<&MirValue>,
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
-        if Self::helper_pointer_arg_allows_const_zero(helper_id, arg_idx, arg) {
-            return Ok(());
+        if Self::helper_pointer_arg_allows_const_zero(helper_id, arg_idx) {
+            match arg {
+                MirValue::Const(0) => return Ok(()),
+                MirValue::VReg(vreg) if self.value_ptr_info(arg).is_none() => {
+                    out.push(VccInst::AssertConstEq {
+                        value: VccValue::Reg(VccReg(vreg.0)),
+                        expected: 0,
+                        message: format!(
+                            "helper {} arg{} expects null (0) or pointer value",
+                            helper_id, arg_idx
+                        ),
+                    });
+                    return Ok(());
+                }
+                _ => {}
+            }
         }
         let ptr = self.value_ptr_info(arg).ok_or_else(|| {
             VccError::new(
