@@ -91,7 +91,7 @@ ebpf counters $id | sort-by count --reverse
 let id = ebpf attach 'fentry:security_file_open' {|ctx|
     $ctx.arg0.f_path | map-put seen_paths $ctx.pid --kind hash
     let entry = ($ctx.pid | map-get seen_paths --kind hash)
-    if $entry != 0 { $entry.dentry.d_flags | count }
+    if $entry != 0 { $entry | count }
 }
 
 sleep 5sec
@@ -206,7 +206,9 @@ Generic named maps are also available through `map-get`, `map-put`, and
 `map-delete`. `map-get` returns a maybe-null map-value pointer. When a prior
 typed `map-put` established the value layout in the same closure, projections
 like `let entry = ($ctx.pid | map-get seen_paths --kind hash); if $entry != 0
-{ $entry.dentry.d_flags }` lower through that preserved map-value schema. When
+{ $entry.dentry.d_flags }` lower through that preserved map-value schema, and
+whole-value uses like `{ $entry | emit }` or `{ $entry | count }` preserve the
+same typed aggregate layout instead of collapsing to a raw pointer scalar. When
 those maps are attached with the same `--pin` group, active pinned programs now
 reuse that typed schema across program boundaries too.
 

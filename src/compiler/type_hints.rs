@@ -229,7 +229,11 @@ fn stored_generic_map_value_type(ty: &MirType) -> MirType {
         MirType::Ptr {
             pointee,
             address_space: AddressSpace::Stack | AddressSpace::Map,
-        } if matches!(pointee.as_ref(), MirType::Array { .. } | MirType::Struct { .. }) => {
+        } if matches!(
+            pointee.as_ref(),
+            MirType::Array { .. } | MirType::Struct { .. }
+        ) =>
+        {
             pointee.as_ref().clone()
         }
         _ => ty.clone(),
@@ -244,7 +248,11 @@ pub(crate) fn infer_generic_map_value_types(
     let mut value_types = seed.cloned().unwrap_or_default();
     let mut conflicts = HashSet::new();
 
-    for inst in func.blocks.iter().flat_map(|block| block.instructions.iter()) {
+    for inst in func
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+    {
         let MirInst::MapUpdate { map, val, .. } = inst else {
             continue;
         };
@@ -374,7 +382,8 @@ pub(crate) fn recover_optimized_function_type_hints(
     let mut changed = true;
     while changed {
         changed = false;
-        let map_value_types = infer_generic_map_value_types(func, hints, Some(generic_map_value_types));
+        let map_value_types =
+            infer_generic_map_value_types(func, hints, Some(generic_map_value_types));
         for inst in func.blocks.iter().flat_map(|block| {
             block
                 .instructions
@@ -389,35 +398,35 @@ pub(crate) fn recover_optimized_function_type_hints(
                 &map_value_types,
             )
             .map(|(dst, ty, trustworthy)| {
-                    let propagated = if trustworthy {
-                        true
-                    } else {
-                        match inst {
-                            MirInst::Copy {
-                                src: MirValue::VReg(src_vreg),
-                                ..
-                            } => trusted_hints.contains(src_vreg),
-                            MirInst::BinOp { op, lhs, rhs, .. }
-                                if matches!(op, BinOpKind::Add | BinOpKind::Sub) =>
-                            {
-                                let lhs_trusted = match lhs {
-                                    MirValue::VReg(vreg) => trusted_hints.contains(vreg),
-                                    _ => false,
-                                };
-                                let rhs_trusted = match rhs {
-                                    MirValue::VReg(vreg) => trusted_hints.contains(vreg),
-                                    _ => false,
-                                };
-                                lhs_trusted || (matches!(op, BinOpKind::Add) && rhs_trusted)
-                            }
-                            MirInst::Phi { args, .. } => {
-                                args.iter().all(|(_, vreg)| trusted_hints.contains(vreg))
-                            }
-                            _ => false,
+                let propagated = if trustworthy {
+                    true
+                } else {
+                    match inst {
+                        MirInst::Copy {
+                            src: MirValue::VReg(src_vreg),
+                            ..
+                        } => trusted_hints.contains(src_vreg),
+                        MirInst::BinOp { op, lhs, rhs, .. }
+                            if matches!(op, BinOpKind::Add | BinOpKind::Sub) =>
+                        {
+                            let lhs_trusted = match lhs {
+                                MirValue::VReg(vreg) => trusted_hints.contains(vreg),
+                                _ => false,
+                            };
+                            let rhs_trusted = match rhs {
+                                MirValue::VReg(vreg) => trusted_hints.contains(vreg),
+                                _ => false,
+                            };
+                            lhs_trusted || (matches!(op, BinOpKind::Add) && rhs_trusted)
                         }
-                    };
-                    (dst, ty, propagated)
-                });
+                        MirInst::Phi { args, .. } => {
+                            args.iter().all(|(_, vreg)| trusted_hints.contains(vreg))
+                        }
+                        _ => false,
+                    }
+                };
+                (dst, ty, propagated)
+            });
 
             if let Some((dst, ty, trustworthy)) = recovered {
                 let existing = hints.get(&dst).cloned();
@@ -559,7 +568,8 @@ mod tests {
     }
 
     #[test]
-    fn test_recover_optimized_function_type_hints_preserves_typed_map_lookup_without_local_update() {
+    fn test_recover_optimized_function_type_hints_preserves_typed_map_lookup_without_local_update()
+    {
         let mut func = MirFunction::new();
         let bb0 = func.alloc_block();
         func.entry = bb0;

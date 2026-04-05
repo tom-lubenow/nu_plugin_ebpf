@@ -959,10 +959,13 @@ mod tests {
         HirBlock, HirBlockId, HirCallArgs, HirFunction, HirLiteral, HirProgram, HirStmt,
         HirTerminator,
     };
-    use crate::compiler::hir_to_mir::lower_hir_to_mir_with_hints;
+    use crate::compiler::hir_to_mir::{
+        lower_hir_to_mir_with_hints, lower_hir_to_mir_with_hints_and_maps,
+    };
+    use crate::compiler::mir::{AddressSpace, MapKind, MapRef, StructField};
     use crate::compiler::passes::optimize_with_ssa_hints;
     use crate::compiler::{
-        CounterKeySchema, CounterKeySchemaField, EbpfProgramType, ProbeContext,
+        CounterKeySchema, CounterKeySchemaField, EbpfProgramType, MirType, ProbeContext,
         compile_mir_to_ebpf_with_hints,
     };
     use nu_protocol::DeclId;
@@ -1174,6 +1177,138 @@ mod tests {
             file_count: 0,
         };
         HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+    }
+
+    fn make_map_get_whole_value_program(map_get_decl: DeclId, terminal_decl: DeclId) -> HirProgram {
+        let ctx_var = VarId::new(0);
+        let lookup_var = VarId::new(1);
+        let func = HirFunction {
+            blocks: vec![
+                HirBlock {
+                    id: HirBlockId(0),
+                    stmts: vec![
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(0),
+                            var_id: ctx_var,
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(1),
+                            lit: HirLiteral::CellPath(Box::new(CellPath {
+                                members: vec![string_member("pid")],
+                            })),
+                        },
+                        HirStmt::FollowCellPath {
+                            src_dst: RegId::new(0),
+                            path: RegId::new(1),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(2),
+                            lit: HirLiteral::String(b"cached_path".to_vec()),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(3),
+                            lit: HirLiteral::String(b"hash".to_vec()),
+                        },
+                        HirStmt::Call {
+                            decl_id: map_get_decl,
+                            src_dst: RegId::new(0),
+                            args: HirCallArgs {
+                                positional: vec![RegId::new(2)],
+                                named: vec![(b"kind".to_vec(), RegId::new(3))],
+                                ..Default::default()
+                            },
+                        },
+                        HirStmt::StoreVariable {
+                            var_id: lookup_var,
+                            src: RegId::new(0),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(4),
+                            lit: HirLiteral::Int(0),
+                        },
+                        HirStmt::BinaryOp {
+                            lhs_dst: RegId::new(0),
+                            op: Operator::Comparison(Comparison::NotEqual),
+                            rhs: RegId::new(4),
+                        },
+                    ],
+                    terminator: HirTerminator::BranchIf {
+                        cond: RegId::new(0),
+                        if_true: HirBlockId(1),
+                        if_false: HirBlockId(2),
+                    },
+                },
+                HirBlock {
+                    id: HirBlockId(1),
+                    stmts: vec![
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(0),
+                            var_id: lookup_var,
+                        },
+                        HirStmt::Call {
+                            decl_id: terminal_decl,
+                            src_dst: RegId::new(0),
+                            args: HirCallArgs::default(),
+                        },
+                    ],
+                    terminator: HirTerminator::Return { src: RegId::new(0) },
+                },
+                HirBlock {
+                    id: HirBlockId(2),
+                    stmts: vec![],
+                    terminator: HirTerminator::Return { src: RegId::new(0) },
+                },
+            ],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 10],
+            ast: vec![None; 10],
+            comments: vec![],
+            register_count: 5,
+            file_count: 0,
+        };
+        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+    }
+
+    fn cached_path_struct_schema() -> HashMap<MapRef, MirType> {
+        HashMap::from([(
+            MapRef {
+                name: "cached_path".to_string(),
+                kind: MapKind::Hash,
+            },
+            MirType::Struct {
+                name: Some("path".to_string()),
+                kernel_btf_type_id: None,
+                fields: vec![
+                    StructField {
+                        name: "mnt".to_string(),
+                        ty: MirType::U64,
+                        offset: 0,
+                        synthetic: false,
+                        bitfield: None,
+                    },
+                    StructField {
+                        name: "dentry".to_string(),
+                        ty: MirType::Ptr {
+                            pointee: Box::new(MirType::Struct {
+                                name: Some("dentry".to_string()),
+                                kernel_btf_type_id: None,
+                                fields: vec![StructField {
+                                    name: "d_flags".to_string(),
+                                    ty: MirType::U32,
+                                    offset: 0,
+                                    synthetic: false,
+                                    bitfield: None,
+                                }],
+                            }),
+                            address_space: AddressSpace::Kernel,
+                        },
+                        offset: 8,
+                        synthetic: false,
+                        bitfield: None,
+                    },
+                ],
+            },
+        )])
     }
 
     fn make_bound_ctx_path_program(binding: CellPath, access: CellPath) -> HirProgram {
@@ -1780,11 +1915,8 @@ mod tests {
 
     #[test]
     fn test_compile_optimized_typed_map_get_projection() {
-        let hir = make_map_put_get_projection_program(
-            DeclId::new(42),
-            DeclId::new(43),
-            DeclId::new(44),
-        );
+        let hir =
+            make_map_put_get_projection_program(DeclId::new(42), DeclId::new(43), DeclId::new(44));
         let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
         let mut decl_names = HashMap::new();
         decl_names.insert(DeclId::new(42), "map-put".to_string());
@@ -1820,6 +1952,99 @@ mod tests {
         assert!(
             result.maps.iter().any(|map| map.name == "cached_path"),
             "expected generic map definition for cached_path"
+        );
+    }
+
+    #[test]
+    fn test_compile_optimized_external_typed_map_get_whole_struct_count() {
+        let hir = make_map_get_whole_value_program(DeclId::new(43), DeclId::new(44));
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+        let mut decl_names = HashMap::new();
+        decl_names.insert(DeclId::new(43), "map-get".to_string());
+        decl_names.insert(DeclId::new(44), "count".to_string());
+        let external_schema = cached_path_struct_schema();
+
+        let mut lowering = lower_hir_to_mir_with_hints_and_maps(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            Some(&external_schema),
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("whole-value typed map-get count should lower");
+
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
+        );
+
+        let result = compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .expect("optimized whole-value typed map-get count should compile");
+        let schema = result
+            .bytes_counter_key_schema
+            .expect("whole-value count should preserve a record key schema");
+        assert!(matches!(
+            schema,
+            CounterKeySchema::Record { ref fields, .. }
+                if fields.len() == 2
+                    && fields[0].name == "mnt"
+                    && fields[1].name == "dentry"
+        ));
+    }
+
+    #[test]
+    fn test_compile_optimized_external_typed_map_get_whole_struct_emit() {
+        let hir = make_map_get_whole_value_program(DeclId::new(43), DeclId::new(44));
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+        let mut decl_names = HashMap::new();
+        decl_names.insert(DeclId::new(43), "map-get".to_string());
+        decl_names.insert(DeclId::new(44), "emit".to_string());
+        let external_schema = cached_path_struct_schema();
+
+        let mut lowering = lower_hir_to_mir_with_hints_and_maps(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            Some(&external_schema),
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("whole-value typed map-get emit should lower");
+
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
+        );
+
+        let result = compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .expect("optimized whole-value typed map-get emit should compile");
+        let schema = result
+            .event_schema
+            .expect("whole-value emit should preserve a structured event schema");
+        assert!(
+            schema
+                .fields
+                .iter()
+                .map(|field| field.name.as_str())
+                .eq(["mnt", "dentry"].into_iter()),
+            "whole-value emit should preserve top-level record fields"
         );
     }
 

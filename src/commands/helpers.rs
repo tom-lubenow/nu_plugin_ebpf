@@ -260,13 +260,14 @@ impl PluginCommand for MapGet {
         r#"Looks up a key in a named generic map and returns the map-value pointer.
 Use pipeline input as the key, or pass an explicit key as the second positional
 argument. Aggregate values established by an earlier typed `map-put` in the same
-closure can be projected by field after lookup. The same typed schema also
-carries across active programs that share a pinned map group. The result is a
-maybe-null pointer, so guard it before dereferencing.
+closure can be projected by field after lookup, or used directly with `emit`
+and `count` as whole typed values. The same typed schema also carries across
+active programs that share a pinned map group. The result is a maybe-null
+pointer, so guard it before dereferencing.
 
 Example:
   let entry = ($ctx.pid | map-get seen_paths --kind hash)
-  if $entry != 0 { $entry.dentry | emit }"#
+  if $entry != 0 { $entry | emit }"#
     }
 
     fn signature(&self) -> Signature {

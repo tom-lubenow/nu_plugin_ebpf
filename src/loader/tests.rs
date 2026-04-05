@@ -1,6 +1,6 @@
 use super::*;
-use crate::compiler::{CounterKeySchema, CounterKeySchemaField, MapRef, MirType};
 use crate::compiler::mir::MapKind;
+use crate::compiler::{CounterKeySchema, CounterKeySchemaField, MapRef, MirType};
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use std::collections::HashMap;
 

@@ -2,8 +2,8 @@ use super::*;
 use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
-use nu_protocol::ast::{Comparison, Operator};
 use nu_protocol::RegId;
+use nu_protocol::ast::{Comparison, Operator};
 
 #[test]
 fn test_let_generalization_allows_distinct_instantiations() {

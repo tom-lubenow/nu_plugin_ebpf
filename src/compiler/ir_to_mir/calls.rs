@@ -5,6 +5,34 @@ use crate::compiler::mir::{
 };
 
 impl<'a> HirToMirLowering<'a> {
+    fn aggregate_call_value_type<'b>(ty: &'b MirType) -> Option<&'b MirType> {
+        match ty {
+            MirType::Array { .. } | MirType::Struct { .. } => Some(ty),
+            MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Stack | AddressSpace::Map,
+            } if matches!(
+                pointee.as_ref(),
+                MirType::Array { .. } | MirType::Struct { .. }
+            ) =>
+            {
+                Some(pointee.as_ref())
+            }
+            _ => None,
+        }
+    }
+
+    fn aggregate_call_value_byte_array_len(ty: &MirType) -> Option<usize> {
+        match ty {
+            ty if ty.byte_array_len().is_some() => ty.byte_array_len(),
+            MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Stack | AddressSpace::Map,
+            } => pointee.byte_array_len(),
+            _ => None,
+        }
+    }
+
     fn literal_string_arg(&self, reg: RegId, context: &str) -> Result<String, CompileError> {
         self.get_metadata(reg)
             .and_then(|m| m.literal_string.clone())
@@ -37,11 +65,7 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
-    fn validate_generic_map_name(
-        &self,
-        map_name: &str,
-        context: &str,
-    ) -> Result<(), CompileError> {
+    fn validate_generic_map_name(&self, map_name: &str, context: &str) -> Result<(), CompileError> {
         let mut chars = map_name.chars();
         let Some(first) = chars.next() else {
             return Err(CompileError::UnsupportedInstruction(format!(
@@ -58,11 +82,7 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
-    fn require_only_named_args(
-        &self,
-        context: &str,
-        allowed: &[&str],
-    ) -> Result<(), CompileError> {
+    fn require_only_named_args(&self, context: &str, allowed: &[&str]) -> Result<(), CompileError> {
         for key in self.named_args.keys() {
             if !allowed.iter().any(|allowed_key| allowed_key == key) {
                 return Err(CompileError::UnsupportedInstruction(format!(
@@ -193,9 +213,13 @@ impl<'a> HirToMirLowering<'a> {
                             self.get_metadata(src_dst)
                                 .and_then(|m| m.field_type.clone())
                         });
-                    let size = match field_type {
-                        Some(ty) if ty.byte_array_len().is_some() => ty.byte_array_len().unwrap(),
-                        Some(ty @ (MirType::Array { .. } | MirType::Struct { .. })) => ty.size(),
+                    let size = match field_type.as_ref() {
+                        Some(ty) if Self::aggregate_call_value_byte_array_len(ty).is_some() => {
+                            Self::aggregate_call_value_byte_array_len(ty).unwrap()
+                        }
+                        Some(ty) if Self::aggregate_call_value_type(ty).is_some() => {
+                            Self::aggregate_call_value_type(ty).unwrap().size()
+                        }
                         _ => 8,
                     };
                     // Emit a single value
@@ -227,8 +251,8 @@ impl<'a> HirToMirLowering<'a> {
                 // Check for --per-cpu flag
                 let per_cpu = self.named_flags.contains(&"per-cpu".to_string());
 
-                let (map_name, map_kind) = match key_type {
-                    Some(ref ty) if ty.byte_array_len() == Some(16) => {
+                let (map_name, map_kind) = match key_type.as_ref() {
+                    Some(ty) if Self::aggregate_call_value_byte_array_len(ty) == Some(16) => {
                         let kind = if per_cpu {
                             MapKind::PerCpuHash
                         } else {
@@ -236,7 +260,7 @@ impl<'a> HirToMirLowering<'a> {
                         };
                         (STRING_COUNTER_MAP_NAME, kind)
                     }
-                    Some(MirType::Array { .. } | MirType::Struct { .. }) => {
+                    Some(ty) if Self::aggregate_call_value_type(ty).is_some() => {
                         let kind = if per_cpu {
                             MapKind::PerCpuHash
                         } else {
@@ -542,13 +566,11 @@ impl<'a> HirToMirLowering<'a> {
                     pointee: Box::new(stored_ty.clone().unwrap_or(MirType::U8)),
                     address_space: AddressSpace::Map,
                 };
-                self.vreg_type_hints
-                    .insert(lookup_vreg, runtime_ty.clone());
+                self.vreg_type_hints.insert(lookup_vreg, runtime_ty.clone());
                 self.vreg_type_hints.insert(result_vreg, runtime_ty);
 
                 self.reset_call_result_metadata(src_dst);
-                if let Some(value_ty @ (MirType::Array { .. } | MirType::Struct { .. })) =
-                    stored_ty
+                if let Some(value_ty @ (MirType::Array { .. } | MirType::Struct { .. })) = stored_ty
                 {
                     let meta = self.get_or_create_metadata(src_dst);
                     meta.field_type = Some(MirType::Ptr {
@@ -598,9 +620,7 @@ impl<'a> HirToMirLowering<'a> {
                             )
                         })?;
                     u64::try_from(raw).map_err(|_| {
-                        CompileError::UnsupportedInstruction(
-                            "map-put --flags must be >= 0".into(),
-                        )
+                        CompileError::UnsupportedInstruction("map-put --flags must be >= 0".into())
                     })?
                 } else {
                     0

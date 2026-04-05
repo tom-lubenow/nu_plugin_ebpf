@@ -46,9 +46,7 @@ impl<'a> HirToMirLowering<'a> {
         let reg_id = reg.get();
         let vreg = self.func.alloc_vreg();
         let had_mapping = self.reg_map.insert(reg_id, vreg).is_some();
-        if !had_mapping
-            && let Some(hint) = self.current_type_hints.get(&reg_id)
-        {
+        if !had_mapping && let Some(hint) = self.current_type_hints.get(&reg_id) {
             self.vreg_type_hints
                 .entry(vreg)
                 .or_insert_with(|| hint.clone());

@@ -22,52 +22,52 @@ run_nu() {
     "$SUDO_BIN" "$NU_BIN" -c "plugin add $PLUGIN_BIN; plugin use ebpf; $script"
 }
 
-echo "[1/30] stream attach (kprobe:ksys_read)"
+echo "[1/32] stream attach (kprobe:ksys_read)"
 run_nu 'ebpf attach -s "kprobe:ksys_read" {|ctx| $ctx.pid | emit } | first 1'
 
-echo "[2/30] attach -> counters -> detach"
+echo "[2/32] attach -> counters -> detach"
 run_nu 'let id = (ebpf attach "kprobe:ksys_read" {|ctx| $ctx.pid | count }); sleep 1sec; let rows = ((ebpf counters $id) | length); ebpf detach $id; if $rows < 1 { error make { msg: "expected at least one counter row" } }; { id: $id, rows: $rows }'
 
-echo "[3/30] tracepoint + read-str with null guard"
+echo "[3/32] tracepoint + read-str with null guard"
 run_nu 'ebpf attach -s "tracepoint:syscalls/sys_enter_openat" {|ctx| if $ctx.filename != 0 { { pid: $ctx.pid, file: ($ctx.filename | read-str --max-len 32) } | emit } } | first 1'
 
-echo "[4/30] fentry trampoline arg"
+echo "[4/32] fentry trampoline arg"
 run_nu "let path = '$REPO_ROOT/Cargo.toml'; let id = (ebpf attach 'fentry:do_sys_openat2' {|ctx| if \$ctx.arg1 != 0 { 1 | count }}); let _ = (open --raw \$path | str length); sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one fentry trampoline counter row' } }; { id: \$id, rows: \$rows }"
 
-echo "[5/30] fentry pointer-backed trampoline field"
+echo "[5/32] fentry pointer-backed trampoline field"
 run_nu "let path = '$REPO_ROOT/Cargo.toml'; let id = (ebpf attach 'fentry:do_sys_openat2' {|ctx| \$ctx.arg2.flags | count }); let _ = (open --raw \$path | str length); sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one pointer-backed trampoline field row' } }; { id: \$id, rows: \$rows }"
 
-echo "[6/30] fentry intermediate trampoline pointer hop"
+echo "[6/32] fentry intermediate trampoline pointer hop"
 run_nu "let path = '$REPO_ROOT/Cargo.toml'; let id = (ebpf attach 'fentry:security_file_open' {|ctx| \$ctx.arg0.f_inode.i_ino | count }); let _ = (open --raw \$path | str length); sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one intermediate trampoline pointer-hop row' } }; { id: \$id, rows: \$rows }"
 
-echo "[7/30] fentry post-binding pointer field projection"
+echo "[7/32] fentry post-binding pointer field projection"
 run_nu "let path = '$REPO_ROOT/Cargo.toml'; let id = (ebpf attach 'fentry:security_file_open' {|ctx| let inode = \$ctx.arg0.f_inode; \$inode.i_ino | count }); let _ = (open --raw \$path | str length); sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one post-binding pointer field row' } }; { id: \$id, rows: \$rows }"
 
-echo "[8/30] fentry deeper post-binding pointer field projection"
+echo "[8/32] fentry deeper post-binding pointer field projection"
 run_nu "let path = '$REPO_ROOT/Cargo.toml'; let id = (ebpf attach 'fentry:security_file_open' {|ctx| let inode = \$ctx.arg0.f_inode; \$inode.i_sb.s_flags | count }); let _ = (open --raw \$path | str length); sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one deeper post-binding pointer field row' } }; { id: \$id, rows: \$rows }"
 
-echo "[9/30] fentry multi-level trampoline pointer hop"
+echo "[9/32] fentry multi-level trampoline pointer hop"
 run_nu "let id = (ebpf attach 'fentry:do_close_on_exec' {|ctx| \$ctx.arg0.fdt.fd.f_inode.i_ino | count }); ^sh -lc 'true'; sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one multi-level trampoline pointer row' } }; { id: \$id, rows: \$rows }"
 
-echo "[10/30] fentry direct pointer index"
+echo "[10/32] fentry direct pointer index"
 run_nu "let id = (ebpf attach 'fentry:do_close_on_exec' {|ctx| \$ctx.arg0.fdt.fd.0.f_inode.i_ino | count }); ^sh -lc 'true'; sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one direct pointer-index row' } }; { id: \$id, rows: \$rows }"
 
-echo "[11/30] fentry bound root trampoline arg"
+echo "[11/32] fentry bound root trampoline arg"
 run_nu "let id = (ebpf attach 'fentry:do_close_on_exec' {|ctx| let files = \$ctx.arg0; \$files.fdt.fd.f_inode.i_ino | count }); ^sh -lc 'true'; sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one bound root trampoline arg row' } }; { id: \$id, rows: \$rows }"
 
-echo "[12/30] fentry bound pointer index"
+echo "[12/32] fentry bound pointer index"
 run_nu "let id = (ebpf attach 'fentry:do_close_on_exec' {|ctx| let fd = \$ctx.arg0.fdt.fd; \$fd.0.f_inode.i_ino | count }); ^sh -lc 'true'; sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one bound pointer-index row' } }; { id: \$id, rows: \$rows }"
 
-echo "[13/30] fentry bound numeric get"
+echo "[13/32] fentry bound numeric get"
 run_nu "let id = (ebpf attach 'fentry:do_close_on_exec' {|ctx| let idx = 0; let fd = (\$ctx.arg0.fdt.fd | get \$idx); \$fd.f_inode.i_ino | count }); ^sh -lc 'true'; sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one bound numeric-get row' } }; { id: \$id, rows: \$rows }"
 
-echo "[14/30] fentry trampoline array element"
+echo "[14/32] fentry trampoline array element"
 run_nu "let id = (ebpf attach 'fentry:wake_up_new_task' {|ctx| \$ctx.arg0.comm.0 | count }); ^true; sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one trampoline array-element row' } }; { id: \$id, rows: \$rows }"
 
-echo "[15/30] fentry trampoline array leaf"
+echo "[15/32] fentry trampoline array leaf"
 run_nu "let id = (ebpf attach 'fentry:wake_up_new_task' {|ctx| \$ctx.arg0.comm | count }); ^true; sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one trampoline array-leaf row' } }; { id: \$id, rows: \$rows }"
 
-echo "[16/30] fentry trampoline struct leaf emit decodes record"
+echo "[16/32] fentry trampoline struct leaf emit decodes record"
 struct_emit_out="$(mktemp)"
 trap 'rm -f "$struct_emit_out"' EXIT
 run_nu "ebpf attach -s 'fentry:security_file_open' {|ctx| \$ctx.arg0.f_path | emit } | first 1 | columns | sort | to nuon" >"$struct_emit_out" &
@@ -83,31 +83,31 @@ fi
 rm -f "$struct_emit_out"
 trap - EXIT
 
-echo "[17/30] fentry trampoline struct leaf count decodes record key"
+echo "[17/32] fentry trampoline struct leaf count decodes record key"
 run_nu "let path = '$REPO_ROOT/Cargo.toml'; let id = (ebpf attach 'fentry:security_file_open' {|ctx| \$ctx.arg0.f_path | count }); let _ = (open --raw \$path | str length); sleep 1sec; let rows = (ebpf counters \$id); let row_count = (\$rows | length); let key_fields = (\$rows | get 0.key | columns | sort); ebpf detach \$id; if \$row_count < 1 { error make { msg: 'expected at least one struct-leaf counter row' } }; if \$key_fields != [dentry mnt] { error make { msg: \$\"expected record counter key fields [dentry mnt], got (\$key_fields)\" } }; { id: \$id, rows: \$row_count, key_fields: \$key_fields }"
 
-echo "[18/30] fexit trampoline retval"
+echo "[18/32] fexit trampoline retval"
 run_nu "let path = '$REPO_ROOT/Cargo.toml'; let id = (ebpf attach 'fexit:do_sys_openat2' {|ctx| \$ctx.retval | count }); let _ = (open --raw \$path | str length); sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one fexit retval counter row' } }; { id: \$id, rows: \$rows }"
 
-echo "[19/30] bounded loop-driven numeric get"
+echo "[19/32] bounded loop-driven numeric get"
 run_nu "let id = (ebpf attach 'fentry:do_close_on_exec' {|ctx| for i in 0..0 { let fd = (\$ctx.arg0.fdt.fd | get \$i); \$fd.f_inode.i_ino | count }}); ^sh -lc 'true'; sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one bounded loop numeric-get row' } }; { id: \$id, rows: \$rows }"
 
-echo "[20/30] bounded arithmetic-derived numeric get"
+echo "[20/32] bounded arithmetic-derived numeric get"
 run_nu "let id = (ebpf attach 'fentry:do_close_on_exec' {|ctx| for i in 0..1 { let j = ((\$i + 1) mod 2); let fd = (\$ctx.arg0.fdt.fd | get \$j); \$fd.f_inode.i_ino | count }}); ^sh -lc 'true'; sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one bounded arithmetic numeric-get row' } }; { id: \$id, rows: \$rows }"
 
-echo "[21/30] typed runtime-field numeric get"
+echo "[21/32] typed runtime-field numeric get"
 run_nu "let id = (ebpf attach 'fentry:do_close_on_exec' {|ctx| let idx = (\$ctx.arg0.fdt.max_fds mod 2); let fd = (\$ctx.arg0.fdt.fd | get \$idx); \$fd.f_inode.i_ino | count }); ^sh -lc 'true'; sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one typed runtime-field numeric-get row' } }; { id: \$id, rows: \$rows }"
 
-echo "[22/30] runtime get on stack-backed array leaf"
+echo "[22/32] runtime get on stack-backed array leaf"
 run_nu "let id = (ebpf attach 'fentry:wake_up_new_task' {|ctx| let idx = (\$ctx.pid mod 2); (\$ctx.arg0.comm | get \$idx) | count }); ^sh -lc 'true'; sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one stack-backed array numeric-get row' } }; { id: \$id, rows: \$rows }"
 
-echo "[23/30] runtime get on stack-backed aggregate bitfield"
+echo "[23/32] runtime get on stack-backed aggregate bitfield"
 run_nu "let id = (ebpf attach 'fentry:wake_up_new_task' {|ctx| let idx = (\$ctx.pid mod 2); let clamp = (\$ctx.arg0.uclamp_req | get \$idx); \$clamp.value | count }); ^sh -lc 'true'; sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one stack-backed aggregate bitfield row' } }; { id: \$id, rows: \$rows }"
 
-echo "[24/30] runtime get on stack-backed aggregate bitfield struct count decodes record key"
+echo "[24/32] runtime get on stack-backed aggregate bitfield struct count decodes record key"
 run_nu "let id = (ebpf attach 'fentry:wake_up_new_task' {|ctx| let idx = (\$ctx.pid mod 2); let clamp = (\$ctx.arg0.uclamp_req | get \$idx); \$clamp | count }); ^sh -lc 'true'; sleep 1sec; let rows = (ebpf counters \$id); let row_count = (\$rows | length); let key_fields = (\$rows | get 0.key | columns | sort); ebpf detach \$id; if \$row_count < 1 { error make { msg: 'expected at least one stack-backed aggregate bitfield struct row' } }; if \$key_fields != [active bucket_id user_defined value] { error make { msg: \$\"expected bitfield struct key fields [active bucket_id user_defined value], got (\$key_fields)\" } }; { id: \$id, rows: \$row_count, key_fields: \$key_fields }"
 
-echo "[25/30] runtime get on stack-backed aggregate bitfield struct emit decodes record"
+echo "[25/32] runtime get on stack-backed aggregate bitfield struct emit decodes record"
 bitfield_emit_out="$(mktemp)"
 trap 'rm -f "$bitfield_emit_out"' EXIT
 run_nu "ebpf attach -s 'fentry:wake_up_new_task' {|ctx| let idx = (\$ctx.pid mod 2); let clamp = (\$ctx.arg0.uclamp_req | get \$idx); \$clamp | emit } | first 1 | columns | sort | to nuon" >"$bitfield_emit_out" &
@@ -123,19 +123,38 @@ fi
 rm -f "$bitfield_emit_out"
 trap - EXIT
 
-echo "[26/30] branch-refined bound numeric get"
+echo "[26/32] branch-refined bound numeric get"
 run_nu "let id = (ebpf attach 'fentry:do_close_on_exec' {|ctx| let max = \$ctx.arg0.fdt.max_fds; if \$max > 0 { let idx = (\$max - 1); let fd = (\$ctx.arg0.fdt.fd | get \$idx); \$fd.f_inode.i_ino | count } }); ^sh -lc 'true'; sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one branch-refined numeric-get row' } }; { id: \$id, rows: \$rows }"
 
-echo "[27/30] branch-refined direct numeric get"
+echo "[27/32] branch-refined direct numeric get"
 run_nu "let id = (ebpf attach 'fentry:do_close_on_exec' {|ctx| if \$ctx.arg0.fdt.max_fds > 0 { let idx = (\$ctx.arg0.fdt.max_fds - 1); let fd = (\$ctx.arg0.fdt.fd | get \$idx); \$fd.f_inode.i_ino | count } }); ^sh -lc 'true'; sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one direct branch-refined numeric-get row' } }; { id: \$id, rows: \$rows }"
 
-echo "[28/30] typed generic map put/get projection"
+echo "[28/32] typed generic map put/get projection"
 run_nu "let path = '$REPO_ROOT/Cargo.toml'; let id = (ebpf attach 'fentry:security_file_open' {|ctx| \$ctx.arg0.f_path | map-put cached_path \$ctx.pid --kind hash; let entry = (\$ctx.pid | map-get cached_path --kind hash); if \$entry != 0 { \$entry.dentry.d_flags | count }}); let _ = (open --raw \$path | str length); sleep 1sec; let rows = ((ebpf counters \$id) | length); ebpf detach \$id; if \$rows < 1 { error make { msg: 'expected at least one typed map put/get row' } }; { id: \$id, rows: \$rows }"
 
-echo "[29/30] typed generic map schema persists across pinned programs"
+echo "[29/32] typed generic map whole-value count decodes record key"
+run_nu "let path = '$REPO_ROOT/Cargo.toml'; let id = (ebpf attach 'fentry:security_file_open' {|ctx| \$ctx.arg0.f_path | map-put cached_path \$ctx.pid --kind hash; let entry = (\$ctx.pid | map-get cached_path --kind hash); if \$entry != 0 { \$entry | count }}); let _ = (open --raw \$path | str length); sleep 1sec; let rows = (ebpf counters \$id); let row_count = (\$rows | length); let key_fields = (\$rows | get 0.key | columns | sort); ebpf detach \$id; if \$row_count < 1 { error make { msg: 'expected at least one whole-value typed map row' } }; if \$key_fields != [dentry mnt] { error make { msg: \$\"expected whole-value map key fields [dentry mnt], got (\$key_fields)\" } }; { id: \$id, rows: \$row_count, key_fields: \$key_fields }"
+
+echo "[30/32] typed generic map whole-value emit decodes record"
+map_emit_out="$(mktemp)"
+trap 'rm -f "$map_emit_out"' EXIT
+run_nu "ebpf attach -s 'fentry:security_file_open' {|ctx| \$ctx.arg0.f_path | map-put cached_path \$ctx.pid --kind hash; let entry = (\$ctx.pid | map-get cached_path --kind hash); if \$entry != 0 { \$entry | emit } } | first 1 | columns | sort | to nuon" >"$map_emit_out" &
+map_emit_pid=$!
+sleep 1
+cat "$REPO_ROOT/Cargo.toml" >/dev/null
+wait "$map_emit_pid"
+if ! grep -qx '\[cpu, dentry, mnt\]' "$map_emit_out"; then
+    echo "expected whole-value map emit to produce record fields cpu/dentry/mnt, got:" >&2
+    cat "$map_emit_out" >&2
+    exit 1
+fi
+rm -f "$map_emit_out"
+trap - EXIT
+
+echo "[31/32] typed generic map schema persists across pinned programs"
 run_nu "let path = '$REPO_ROOT/Cargo.toml'; let group = 'typed_map_schema'; let writer = (ebpf attach 'fentry:security_file_open' {|ctx| \$ctx.arg0.f_path | map-put cached_path \$ctx.pid --kind hash } --pin \$group); let _ = (open --raw \$path | str length); let reader = (ebpf attach 'fentry:security_file_open' {|ctx| let entry = (\$ctx.pid | map-get cached_path --kind hash); if \$entry != 0 { \$entry.dentry.d_flags | count }} --pin \$group); let _ = (open --raw \$path | str length); sleep 1sec; let rows = ((ebpf counters \$reader) | length); ebpf detach \$reader; ebpf detach \$writer; if \$rows < 1 { error make { msg: 'expected at least one pinned typed map schema row' } }; { writer: \$writer, reader: \$reader, rows: \$rows }"
 
-echo "[30/30] verify no leaked probes"
+echo "[32/32] verify no leaked probes"
 run_nu 'let remaining = (ebpf list | length); if $remaining != 0 { error make { msg: $"expected empty probe list, got ($remaining)" } }; "ok"'
 
 echo "Manual integration suite passed."
