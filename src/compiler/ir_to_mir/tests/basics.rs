@@ -8,7 +8,7 @@ use crate::compiler::mir::{AddressSpace, BYTES_COUNTER_MAP_NAME, StructField};
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 use nu_protocol::ast::{CellPath, Comparison, Math, Operator, PathMember, RangeInclusion};
 use nu_protocol::casing::Casing;
-use nu_protocol::{DeclId, RegId, Span, Value, VarId};
+use nu_protocol::{DeclId, Record, RegId, Span, Value, VarId};
 use std::collections::HashMap;
 
 #[test]
@@ -4002,6 +4002,121 @@ fn test_lower_glob_pattern_literal_can_drive_map_get_name() {
     assert!(
         has_lookup,
         "expected map-get to use the glob-pattern literal as its map name"
+    );
+}
+
+#[test]
+fn test_lower_load_value_record_emit_preserves_nested_struct_field_type() {
+    let emit_decl = DeclId::new(79);
+
+    let mut path = Record::new();
+    path.push("mnt", Value::int(1, Span::test_data()));
+    path.push("dentry", Value::int(2, Span::test_data()));
+
+    let mut outer = Record::new();
+    outer.push("path", Value::record(path, Span::test_data()));
+    outer.push("pid", Value::int(7, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::record(outer, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: emit_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([(emit_decl, "emit".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("constant record load value should emit as a typed record");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::EmitRecord { fields }
+                    if fields.len() == 2
+                        && fields[0].name == "path"
+                        && matches!(
+                            fields[0].ty,
+                            MirType::Struct { ref fields, .. }
+                                if fields.len() == 2
+                                    && fields[0].name == "mnt"
+                                    && fields[1].name == "dentry"
+                        )
+                        && fields[1].name == "pid"
+                        && fields[1].ty == MirType::I64
+            ))
+    );
+}
+
+#[test]
+fn test_lower_load_value_list_is_rejected() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadValue {
+                dst: RegId::new(0),
+                val: Box::new(Value::list(
+                    vec![
+                        Value::int(1, Span::test_data()),
+                        Value::int(2, Span::test_data()),
+                    ],
+                    Span::test_data(),
+                )),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("constant list load values should remain unsupported");
+
+    assert!(
+        err.to_string()
+            .contains("constant list values are not yet supported in eBPF lowering")
     );
 }
 

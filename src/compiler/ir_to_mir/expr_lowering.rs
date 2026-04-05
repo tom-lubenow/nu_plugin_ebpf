@@ -2,6 +2,7 @@ use super::*;
 use crate::compiler::ProgramValueAccess;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
+use crate::compiler::mir::StructField;
 use crate::compiler::mir::UnaryOpKind;
 use crate::kernel_btf::{
     KernelBtf, TrampolineBitfieldInfo, TrampolineFieldProjection, TrampolineFieldSelector,
@@ -25,6 +26,84 @@ enum PacketPayloadStepKind {
 }
 
 impl<'a> HirToMirLowering<'a> {
+    fn constant_record_type(fields: &[RecordField]) -> MirType {
+        let mut offset = 0usize;
+        let struct_fields = fields
+            .iter()
+            .map(|field| {
+                let struct_field = StructField {
+                    name: field.name.clone(),
+                    ty: field.ty.clone(),
+                    offset,
+                    synthetic: false,
+                    bitfield: None,
+                };
+                offset = offset.saturating_add(field.ty.size());
+                struct_field
+            })
+            .collect();
+        MirType::Struct {
+            name: None,
+            kernel_btf_type_id: None,
+            fields: struct_fields,
+        }
+    }
+
+    fn lower_constant_record_value(
+        &mut self,
+        dst: RegId,
+        record: &nu_protocol::Record,
+    ) -> Result<(), CompileError> {
+        self.lower_load_literal(
+            dst,
+            &HirLiteral::Record {
+                capacity: record.len(),
+            },
+        )?;
+
+        for (field_name, field_value) in record.iter() {
+            let key_reg = self.alloc_synthetic_reg();
+            self.lower_load_literal(key_reg, &HirLiteral::String(field_name.as_bytes().to_vec()))?;
+
+            let val_reg = self.alloc_synthetic_reg();
+            self.lower_constant_value(val_reg, field_value)?;
+            self.lower_record_insert(dst, key_reg, val_reg)?;
+        }
+
+        let record_ty = self
+            .get_metadata(dst)
+            .map(|m| Self::constant_record_type(&m.record_fields))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "record metadata missing after constant record lowering".into(),
+                )
+            })?;
+        self.get_or_create_metadata(dst).field_type = Some(record_ty);
+
+        Ok(())
+    }
+
+    pub(super) fn lower_constant_value(
+        &mut self,
+        dst: RegId,
+        value: &Value,
+    ) -> Result<(), CompileError> {
+        if let Some(lit) = HirLiteral::from_constant_value(value) {
+            return self.lower_load_literal(dst, &lit);
+        }
+
+        match value {
+            Value::Record { val, .. } => self.lower_constant_record_value(dst, val.as_ref()),
+            Value::List { .. } => Err(CompileError::UnsupportedInstruction(
+                "constant list values are not yet supported in eBPF lowering".into(),
+            )),
+            _ => Err(CompileError::UnsupportedInstruction(format!(
+                "LoadValue of type {} is not supported in eBPF lowering",
+                value.get_type()
+            ))),
+        }
+    }
+
     fn lower_const_i64_literal(&mut self, dst: RegId, dst_vreg: VReg, value: i64) {
         self.emit(MirInst::Copy {
             dst: dst_vreg,

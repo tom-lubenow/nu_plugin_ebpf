@@ -41,13 +41,7 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             HirStmt::LoadValue { dst, val } => {
-                let lit = HirLiteral::from_constant_value(val).ok_or_else(|| {
-                    CompileError::UnsupportedInstruction(format!(
-                        "LoadValue of type {} is not supported in eBPF lowering",
-                        val.get_type()
-                    ))
-                })?;
-                self.lower_load_literal(*dst, &lit)?;
+                self.lower_constant_value(*dst, val)?;
             }
 
             HirStmt::Move { dst, src } => {

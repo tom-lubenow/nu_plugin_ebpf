@@ -205,6 +205,8 @@ pub struct HirToMirLowering<'a> {
     func: MirFunction,
     /// Mapping from Nushell RegId to MIR VReg
     reg_map: HashMap<u32, VReg>,
+    /// Synthetic RegIds used during recursive lowering of constant values
+    synthetic_reg_counter: u32,
     /// Metadata for each register
     reg_metadata: HashMap<u32, RegMetadata>,
     /// Current basic block being built
@@ -314,6 +316,7 @@ impl<'a> HirToMirLowering<'a> {
         Self {
             func: MirFunction::new(),
             reg_map: HashMap::new(),
+            synthetic_reg_counter: 1_000_000_000,
             reg_metadata: HashMap::new(),
             current_block: BlockId(0),
             probe_ctx,

@@ -414,6 +414,7 @@ fn hm_type_for_value(val: &Value) -> HMType {
         | Value::Duration { .. }
         | Value::Date { .. } => HMType::I64,
         Value::String { .. } | Value::Glob { .. } => stack_string_ptr_type(),
+        Value::Record { .. } => stack_record_ptr_type(),
         _ => HMType::Unknown,
     }
 }
