@@ -513,6 +513,7 @@ impl<'a> HirToMirLowering<'a> {
                                 8,
                                 StackSlotKind::ListBuffer,
                             );
+                            self.record_list_buffer_slot_type(out_slot, max_len);
                             self.emit(MirInst::ListNew {
                                 dst: dst_vreg,
                                 buffer: out_slot,

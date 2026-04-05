@@ -468,4 +468,57 @@ mod tests {
         assert_eq!(hints.get(&v0), Some(&MirType::U32));
         assert_eq!(hints.get(&v1), Some(&MirType::Bool));
     }
+
+    #[test]
+    fn test_recover_optimized_function_type_hints_for_list_buffer_pointer_math() {
+        let mut func = MirFunction::new();
+        let bb0 = func.alloc_block();
+        func.entry = bb0;
+
+        let slot = func.alloc_stack_slot(24, 8, StackSlotKind::ListBuffer);
+        let base_ptr = func.alloc_vreg();
+        let elem_ptr = func.alloc_vreg();
+
+        func.block_mut(bb0).instructions.push(MirInst::Copy {
+            dst: base_ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        func.block_mut(bb0).instructions.push(MirInst::BinOp {
+            dst: elem_ptr,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(base_ptr),
+            rhs: MirValue::Const(8),
+        });
+        func.block_mut(bb0).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(elem_ptr)),
+        };
+
+        let mut hints = HashMap::new();
+        let stack_slot_hints = HashMap::from([(
+            slot,
+            MirType::Array {
+                elem: Box::new(MirType::I64),
+                len: 3,
+            },
+        )]);
+        recover_optimized_function_type_hints(&func, None, &mut hints, &stack_slot_hints);
+
+        assert_eq!(
+            hints.get(&base_ptr),
+            Some(&MirType::Ptr {
+                pointee: Box::new(MirType::Array {
+                    elem: Box::new(MirType::I64),
+                    len: 3,
+                }),
+                address_space: AddressSpace::Stack,
+            })
+        );
+        assert_eq!(
+            hints.get(&elem_ptr),
+            Some(&MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Stack,
+            })
+        );
+    }
 }

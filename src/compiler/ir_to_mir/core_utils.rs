@@ -64,6 +64,16 @@ impl<'a> HirToMirLowering<'a> {
         self.stack_slot_type_hints.entry(slot).or_insert(ty);
     }
 
+    pub(super) fn record_list_buffer_slot_type(&mut self, slot: StackSlotId, max_len: usize) {
+        self.record_stack_slot_type(
+            slot,
+            MirType::Array {
+                elem: Box::new(MirType::I64),
+                len: max_len.saturating_add(1),
+            },
+        );
+    }
+
     pub(super) fn ensure_string_slot_capacity(
         &mut self,
         slot: StackSlotId,

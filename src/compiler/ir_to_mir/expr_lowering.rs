@@ -203,6 +203,7 @@ impl<'a> HirToMirLowering<'a> {
                 let slot = self
                     .func
                     .alloc_stack_slot(buffer_size, 8, StackSlotKind::ListBuffer);
+                self.record_list_buffer_slot_type(slot, max_len);
 
                 // Emit ListNew to initialize the list buffer
                 self.emit(MirInst::ListNew {
