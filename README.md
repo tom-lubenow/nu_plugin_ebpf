@@ -273,13 +273,13 @@ lists`) instead of only working when inlined manually. That means existing
 Nushell structure can keep driving compile-time
 positions such as generic map names, for example `let map_name = "seen_paths";
 $ctx.arg0.f_path | map-put $map_name $ctx.pid --kind hash`. Reassigned captured
-numeric scalars, numeric constant lists, and representable constant records now
-take the next step and lower as compiler-managed mutable globals backed by
-`.data` or `.bss`, so ordinary Nushell variable flow can express per-program
-state without dropping down to explicit maps for the smallest cases. That
-mutable path is still intentionally honest: it works for values with a real
-byte layout, not for metadata-only record builders that have never been
-materialized.
+numeric scalars, strings, numeric constant lists, and representable constant
+records now take the next step and lower as compiler-managed mutable globals
+backed by `.data` or `.bss`, so ordinary Nushell variable flow can express
+per-program state without dropping down to explicit maps for the smallest
+cases. That mutable path is still intentionally honest: it works for values
+with a real byte layout and tracked runtime metadata, not for metadata-only
+record builders that have never been materialized.
 
 ## Commands
 

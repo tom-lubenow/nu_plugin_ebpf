@@ -56,26 +56,54 @@ impl<'a> HirToMirLowering<'a> {
         )))
     }
 
+    fn mutable_string_global_repr(value: &Value) -> Option<(MirType, Vec<u8>, usize)> {
+        let bytes = match value {
+            Value::String { val, .. } => Some(val.as_bytes()),
+            Value::Glob { val, .. } => Some(val.as_bytes()),
+            _ => None,
+        }?;
+
+        let content_len = bytes.len().min(MAX_STRING_SIZE.saturating_sub(1));
+        let aligned_len = align_to_eight(content_len + 1).min(MAX_STRING_SIZE).max(16);
+        let mut data = vec![0u8; 8 + aligned_len];
+        data[..8].copy_from_slice(&(content_len as u64).to_le_bytes());
+        data[8..8 + content_len].copy_from_slice(&bytes[..content_len]);
+        Some((
+            MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 8 + aligned_len,
+            },
+            data,
+            aligned_len,
+        ))
+    }
+
     fn mutable_capture_global_repr(
         value: &Value,
-    ) -> Result<Option<(MirType, Vec<u8>, Option<usize>)>, CompileError> {
+    ) -> Result<Option<(MirType, Vec<u8>, Option<usize>, Option<usize>)>, CompileError> {
         let repr = match value {
-            Value::Bool { val, .. } => Some((MirType::Bool, vec![u8::from(*val)], None)),
-            Value::Int { val, .. } => Some((MirType::I64, val.to_le_bytes().to_vec(), None)),
+            Value::Bool { val, .. } => Some((MirType::Bool, vec![u8::from(*val)], None, None)),
+            Value::Int { val, .. } => Some((MirType::I64, val.to_le_bytes().to_vec(), None, None)),
             Value::Filesize { val, .. } => {
-                Some((MirType::I64, val.get().to_le_bytes().to_vec(), None))
+                Some((MirType::I64, val.get().to_le_bytes().to_vec(), None, None))
             }
-            Value::Duration { val, .. } => Some((MirType::I64, val.to_le_bytes().to_vec(), None)),
-            Value::Nothing { .. } => Some((MirType::I64, 0i64.to_le_bytes().to_vec(), None)),
+            Value::Duration { val, .. } => {
+                Some((MirType::I64, val.to_le_bytes().to_vec(), None, None))
+            }
+            Value::Nothing { .. } => Some((MirType::I64, 0i64.to_le_bytes().to_vec(), None, None)),
             Value::Record { val, .. } => {
                 let (ty, data) = Self::constant_record_rodata_repr(val.as_ref())?;
-                Some((ty, data, None))
+                Some((ty, data, None, None))
+            }
+            value if Self::mutable_string_global_repr(value).is_some() => {
+                let (ty, data, slot_len) = Self::mutable_string_global_repr(value).unwrap();
+                Some((ty, data, None, Some(slot_len)))
             }
             Value::List { vals, .. }
                 if crate::compiler::hir::supports_numeric_constant_list(value) =>
             {
                 Self::mutable_numeric_list_global_repr(vals)?
-                    .map(|(ty, data, max_len)| (ty, data, Some(max_len)))
+                    .map(|(ty, data, max_len)| (ty, data, Some(max_len), None))
             }
             _ => None,
         };
@@ -91,9 +119,11 @@ impl<'a> HirToMirLowering<'a> {
                 continue;
             }
 
-            let Some((ty, data, list_max_len)) = Self::mutable_capture_global_repr(value)? else {
+            let Some((ty, data, list_max_len, string_slot_len)) =
+                Self::mutable_capture_global_repr(value)?
+            else {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "mutating captured variable {} of type {} is not yet supported; mutable captured globals currently only support numeric scalar values, numeric constant lists, and representable constant records",
+                    "mutating captured variable {} of type {} is not yet supported; mutable captured globals currently only support numeric scalar values, strings, numeric constant lists, and representable constant records",
                     var_id.get(),
                     value.get_type()
                 )));
@@ -117,6 +147,7 @@ impl<'a> HirToMirLowering<'a> {
                     symbol,
                     ty,
                     list_max_len,
+                    string_slot_len,
                 },
             );
         }

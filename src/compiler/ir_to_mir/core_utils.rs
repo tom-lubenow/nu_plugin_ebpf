@@ -1,14 +1,14 @@
 use super::*;
 
 impl<'a> HirToMirLowering<'a> {
-    pub(super) fn fixed_copy_chunk(remaining: usize, offset: usize) -> (MirType, usize) {
+    pub(super) fn fixed_copy_chunk(remaining: usize, offsets: &[usize]) -> (MirType, usize) {
         for (size, ty) in [
             (8usize, MirType::U64),
             (4usize, MirType::U32),
             (2usize, MirType::U16),
             (1usize, MirType::U8),
         ] {
-            if remaining >= size && offset % size == 0 {
+            if remaining >= size && offsets.iter().all(|offset| offset % size == 0) {
                 return (ty, size);
             }
         }
@@ -21,21 +21,54 @@ impl<'a> HirToMirLowering<'a> {
         src_ptr: VReg,
         size: usize,
     ) -> Result<(), CompileError> {
+        self.emit_ptr_copy_with_offsets(dst_ptr, 0, src_ptr, 0, size)
+    }
+
+    pub(super) fn emit_ptr_copy_with_offsets(
+        &mut self,
+        dst_ptr: VReg,
+        dst_offset: usize,
+        src_ptr: VReg,
+        src_offset: usize,
+        size: usize,
+    ) -> Result<(), CompileError> {
         let mut offset = 0usize;
         while offset < size {
-            let (chunk_ty, chunk_size) = Self::fixed_copy_chunk(size - offset, offset);
+            let (chunk_ty, chunk_size) =
+                Self::fixed_copy_chunk(size - offset, &[dst_offset + offset, src_offset + offset]);
             let tmp = self.func.alloc_vreg();
             self.emit(MirInst::Load {
                 dst: tmp,
                 ptr: src_ptr,
-                offset: offset as i32,
+                offset: (src_offset + offset) as i32,
                 ty: chunk_ty.clone(),
             });
             self.vreg_type_hints.insert(tmp, chunk_ty.clone());
             self.emit(MirInst::Store {
                 ptr: dst_ptr,
-                offset: offset as i32,
+                offset: (dst_offset + offset) as i32,
                 val: MirValue::VReg(tmp),
+                ty: chunk_ty,
+            });
+            offset += chunk_size;
+        }
+        Ok(())
+    }
+
+    pub(super) fn emit_ptr_zero(
+        &mut self,
+        dst_ptr: VReg,
+        dst_offset: usize,
+        size: usize,
+    ) -> Result<(), CompileError> {
+        let mut offset = 0usize;
+        while offset < size {
+            let (chunk_ty, chunk_size) =
+                Self::fixed_copy_chunk(size - offset, &[dst_offset + offset]);
+            self.emit(MirInst::Store {
+                ptr: dst_ptr,
+                offset: (dst_offset + offset) as i32,
+                val: MirValue::Const(0),
                 ty: chunk_ty,
             });
             offset += chunk_size;

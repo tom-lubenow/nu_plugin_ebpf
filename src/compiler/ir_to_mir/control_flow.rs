@@ -376,6 +376,70 @@ impl<'a> HirToMirLowering<'a> {
                             },
                         );
                         self.emit_ptr_copy(global_ptr, src_ptr, global.ty.size())?;
+                    } else if let Some(slot_len) = global.string_slot_len {
+                        let src_meta = self.get_metadata(*src).cloned();
+                        let Some(meta) = src_meta else {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "storing into mutable captured variable {} requires a materialized string value with tracked length",
+                                var_id.get()
+                            )));
+                        };
+                        let Some(slot) = meta.string_slot else {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "storing into mutable captured variable {} requires a materialized string value with tracked length",
+                                var_id.get()
+                            )));
+                        };
+                        let Some(len_vreg) = meta.string_len_vreg else {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "storing into mutable captured variable {} requires a tracked string length",
+                                var_id.get()
+                            )));
+                        };
+                        let src_slot_size = self.stack_slot_size(slot).ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "string slot not found during mutable global store".into(),
+                            )
+                        })?;
+                        if src_slot_size > slot_len {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "storing string buffer of size {} into mutable captured variable {} with capacity {} is not supported",
+                                src_slot_size,
+                                var_id.get(),
+                                slot_len
+                            )));
+                        }
+
+                        self.emit(MirInst::Store {
+                            ptr: global_ptr,
+                            offset: 0,
+                            val: MirValue::VReg(len_vreg),
+                            ty: MirType::U64,
+                        });
+
+                        let src_ptr = self.func.alloc_vreg();
+                        self.emit(MirInst::Copy {
+                            dst: src_ptr,
+                            src: MirValue::StackSlot(slot),
+                        });
+                        self.vreg_type_hints.insert(
+                            src_ptr,
+                            MirType::Ptr {
+                                pointee: Box::new(MirType::Array {
+                                    elem: Box::new(MirType::U8),
+                                    len: src_slot_size,
+                                }),
+                                address_space: crate::compiler::mir::AddressSpace::Stack,
+                            },
+                        );
+                        self.emit_ptr_copy_with_offsets(global_ptr, 8, src_ptr, 0, src_slot_size)?;
+                        if src_slot_size < slot_len {
+                            self.emit_ptr_zero(
+                                global_ptr,
+                                8 + src_slot_size,
+                                slot_len - src_slot_size,
+                            )?;
+                        }
                     } else {
                         let src_vreg = self.get_vreg(*src);
                         match &global.ty {

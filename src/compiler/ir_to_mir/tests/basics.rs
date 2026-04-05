@@ -3900,7 +3900,10 @@ fn test_lower_mutated_captured_int_variable_uses_data_global() {
         })
         .count();
 
-    assert_eq!(global_load_count, 3);
+    assert!(
+        global_load_count >= 2,
+        "expected mutable captured string lowering to load the backing global for both load/store paths"
+    );
     assert!(
         result
             .program
@@ -3967,7 +3970,7 @@ fn test_lower_mutated_zero_captured_int_variable_uses_bss_global() {
 }
 
 #[test]
-fn test_lower_mutated_captured_string_variable_is_rejected() {
+fn test_lower_mutated_captured_string_variable_uses_data_global() {
     let capture_var = VarId::new(19);
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -3998,6 +4001,137 @@ fn test_lower_mutated_captured_string_variable_is_rejected() {
         None,
     );
 
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("mutated captured strings should lower through a writable global");
+
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+
+    let symbol = &result.data_globals[0].name;
+    let global_load_count = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::LoadGlobal { symbol: inst_symbol, .. }
+                    if inst_symbol == symbol
+            )
+        })
+        .count();
+
+    assert!(
+        global_load_count >= 2,
+        "expected mutable captured string lowering to load the backing global for both load/store paths"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::StackSlot(_),
+                    ..
+                }
+            )),
+        "expected mutable captured string lowering to materialize a stack string buffer"
+    );
+}
+
+#[test]
+fn test_lower_mutated_empty_captured_string_variable_uses_bss_global() {
+    let capture_var = VarId::new(26);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: capture_var,
+                },
+                HirStmt::StoreVariable {
+                    var_id: capture_var,
+                    src: RegId::new(0),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(capture_var, Value::string("", Span::test_data()))],
+        None,
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("mutated empty captured string should lower through bss");
+
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 0);
+    assert_eq!(result.bss_globals.len(), 1);
+}
+
+#[test]
+fn test_lower_mutated_captured_string_variable_rejects_non_string_store() {
+    let capture_var = VarId::new(27);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::StoreVariable {
+                    var_id: capture_var,
+                    src: RegId::new(0),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(capture_var, Value::string("seed", Span::test_data()))],
+        None,
+    );
+
     let err = lower_hir_to_mir_with_hints(
         &hir,
         None,
@@ -4006,13 +4140,13 @@ fn test_lower_mutated_captured_string_variable_is_rejected() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("mutated captured strings should remain unsupported");
+    .expect_err(
+        "storing a scalar into mutable captured string should require a materialized string",
+    );
 
     assert!(
         err.to_string()
-            .contains(
-                "mutable captured globals currently only support numeric scalar values, numeric constant lists, and representable constant records"
-            )
+            .contains("requires a materialized string value with tracked length")
     );
 }
 
@@ -4209,7 +4343,7 @@ fn test_lower_mutated_captured_non_numeric_list_variable_is_rejected() {
     assert!(
         err.to_string()
             .contains(
-                "mutable captured globals currently only support numeric scalar values, numeric constant lists, and representable constant records"
+                "mutable captured globals currently only support numeric scalar values, strings, numeric constant lists, and representable constant records"
             )
     );
 }

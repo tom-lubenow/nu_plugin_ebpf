@@ -270,8 +270,8 @@ Last updated: 2026-02-15.
   - Ensure symbol/relocation handling is deterministic and test-covered.
   - Recent progress: constant records and numeric lists now lower through compiler-generated `.rodata` symbols instead of purely stack-time materialization.
   - Recent progress: the backend/ELF layer now emits explicit `.data` and `.bss` global sections with named symbols and Aya-parseable data maps.
-  - Recent progress: reassigned captured numeric scalars, numeric constant lists, and representable constant records now lower as compiler-managed mutable globals backed by `.data`/`.bss`.
-  - Remaining: broaden mutable globals beyond current scalar/list/record capture cases and carry that through more types/layouts.
+  - Recent progress: reassigned captured numeric scalars, strings, numeric constant lists, and representable constant records now lower as compiler-managed mutable globals backed by `.data`/`.bss`.
+  - Remaining: broaden mutable globals beyond current scalar/string/list/record capture cases and carry that through more types/layouts.
 
 ## Ergonomics and quality
 

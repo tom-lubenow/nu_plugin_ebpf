@@ -280,6 +280,46 @@ impl<'a> HirToMirLowering<'a> {
                 let meta = self.get_or_create_metadata(dst);
                 meta.field_type = Some(global.ty.clone());
                 meta.list_buffer = Some((slot, max_len));
+            } else if let Some(slot_len) = global.string_slot_len {
+                let slot = self
+                    .func
+                    .alloc_stack_slot(slot_len, 8, StackSlotKind::StringBuffer);
+                self.record_stack_slot_type(
+                    slot,
+                    MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len: slot_len,
+                    },
+                );
+                self.emit(MirInst::Copy {
+                    dst: dst_vreg,
+                    src: MirValue::StackSlot(slot),
+                });
+                let stack_string_ptr_ty = MirType::Ptr {
+                    pointee: Box::new(MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len: slot_len,
+                    }),
+                    address_space: crate::compiler::mir::AddressSpace::Stack,
+                };
+                self.vreg_type_hints.insert(dst_vreg, stack_string_ptr_ty);
+                let len_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::Load {
+                    dst: len_vreg,
+                    ptr: global_ptr,
+                    offset: 0,
+                    ty: MirType::U64,
+                });
+                self.vreg_type_hints.insert(len_vreg, MirType::U64);
+                self.emit_ptr_copy_with_offsets(dst_vreg, 0, global_ptr, 8, slot_len)?;
+                let meta = self.get_or_create_metadata(dst);
+                meta.string_slot = Some(slot);
+                meta.string_len_vreg = Some(len_vreg);
+                meta.string_len_bound = Some(slot_len.saturating_sub(1));
+                meta.field_type = Some(MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: slot_len,
+                });
             } else if matches!(global.ty, MirType::Array { .. } | MirType::Struct { .. }) {
                 self.emit(MirInst::Copy {
                     dst: dst_vreg,
