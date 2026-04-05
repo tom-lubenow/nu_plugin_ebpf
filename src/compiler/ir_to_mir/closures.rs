@@ -1,6 +1,12 @@
 use super::*;
 
 impl<'a> HirToMirLowering<'a> {
+    fn captured_literal(&self, var_id: nu_protocol::VarId) -> Option<&HirLiteral> {
+        self.captures
+            .iter()
+            .find_map(|(captured_var_id, lit)| (*captured_var_id == var_id).then_some(lit))
+    }
+
     #[allow(dead_code)]
     pub(super) fn inline_user_function(
         &mut self,
@@ -98,7 +104,7 @@ impl<'a> HirToMirLowering<'a> {
         let mut param_var_ids: Vec<VarId> = Vec::new();
         for var_id in loaded_var_ids {
             // Don't override existing mappings (like captures from outer scope)
-            if !self.var_mappings.contains_key(&var_id) {
+            if !self.var_mappings.contains_key(&var_id) && self.captured_literal(var_id).is_none() {
                 param_var_ids.push(var_id);
                 self.var_mappings.insert(var_id, in_vreg);
             }
@@ -240,10 +246,9 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         // Check if this is a captured variable
-        for (name, value) in self.captures {
-            // We'd need the variable name to match, but we only have var_id
-            // For now, check if any capture matches by trying them all
-            let _ = (name, value);
+        if let Some(lit) = self.captured_literal(var_id).cloned() {
+            self.lower_load_literal(dst, &lit)?;
+            return Ok(());
         }
 
         Err(CompileError::UnsupportedInstruction(format!(

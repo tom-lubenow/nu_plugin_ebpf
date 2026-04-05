@@ -101,13 +101,13 @@ pub fn infer_hir_types_with_decls(
     let mut errors = Vec::new();
     let mut type_info = HirTypeInfo::default();
 
-    match infer_function(&program.main, decl_names) {
+    match infer_function(&program.main, decl_names, &program.captures) {
         Ok(types) => type_info.main = types,
         Err(mut errs) => errors.append(&mut errs),
     }
 
     for (block_id, func) in &program.closures {
-        match infer_function(func, decl_names) {
+        match infer_function(func, decl_names, &program.captures) {
             Ok(types) => {
                 type_info.closures.insert(*block_id, types);
             }
@@ -116,7 +116,7 @@ pub fn infer_hir_types_with_decls(
     }
 
     for (decl_id, func) in decls {
-        match infer_function(func, decl_names) {
+        match infer_function(func, decl_names, &program.captures) {
             Ok(types) => {
                 type_info.decls.insert(*decl_id, types);
             }
@@ -140,12 +140,19 @@ struct HirTypeInference<'a> {
 }
 
 impl<'a> HirTypeInference<'a> {
-    fn new(decl_names: &'a HashMap<DeclId, String>) -> Self {
+    fn new(
+        decl_names: &'a HashMap<DeclId, String>,
+        captures: &[(VarId, HirLiteral)],
+    ) -> Self {
+        let mut env = VarEnv::default();
+        for (var_id, lit) in captures {
+            env.insert(*var_id, TypeScheme::mono(hm_type_for_literal(lit)));
+        }
         Self {
             tvar_gen: TypeVarGenerator::new(),
             reg_vars: HashMap::new(),
             substitution: Substitution::new(),
-            env: VarEnv::default(),
+            env,
             decl_names,
         }
     }
@@ -373,8 +380,9 @@ impl<'a> HirTypeInference<'a> {
 fn infer_function(
     func: &HirFunction,
     decl_names: &HashMap<DeclId, String>,
+    captures: &[(VarId, HirLiteral)],
 ) -> Result<HashMap<RegId, HMType>, Vec<TypeError>> {
-    let mut infer = HirTypeInference::new(decl_names);
+    let mut infer = HirTypeInference::new(decl_names, captures);
     infer.infer_function(func)?;
     Ok(infer.type_map())
 }

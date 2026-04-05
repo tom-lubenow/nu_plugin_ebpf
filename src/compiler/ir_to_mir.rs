@@ -217,7 +217,7 @@ pub struct HirToMirLowering<'a> {
     /// Mapping from BlockId to HirFunction for nested closures (where, each, etc.)
     closure_irs: &'a HashMap<nu_protocol::BlockId, HirFunction>,
     /// Captured closure values to inline
-    captures: &'a [(String, i64)],
+    captures: &'a [(VarId, HirLiteral)],
     /// Context parameter variable ID (if any)
     ctx_param: Option<VarId>,
     /// Pipeline input register (for commands)
@@ -294,7 +294,7 @@ impl<'a> HirToMirLowering<'a> {
         probe_ctx: Option<&'a ProbeContext>,
         decl_names: &'a HashMap<DeclId, String>,
         closure_irs: &'a HashMap<nu_protocol::BlockId, HirFunction>,
-        captures: &'a [(String, i64)],
+        captures: &'a [(VarId, HirLiteral)],
         ctx_param: Option<VarId>,
         type_hints: Option<&'a HirMirTypeHints>,
         external_map_value_types: Option<&'a HashMap<MapRef, MirType>>,

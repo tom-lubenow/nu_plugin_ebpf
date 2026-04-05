@@ -493,7 +493,7 @@ fn assign_block_ids(starts: &HashSet<usize>) -> HashMap<usize, HirBlockId> {
 pub fn lower_ir_to_hir(
     main: IrBlock,
     closures: HashMap<NuBlockId, IrBlock>,
-    captures: Vec<(String, i64)>,
+    captures: Vec<(VarId, HirLiteral)>,
     ctx_param: Option<VarId>,
 ) -> Result<HirProgram, CompileError> {
     let main = HirFunction::from_ir_block(main)?;

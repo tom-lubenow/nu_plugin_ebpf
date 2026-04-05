@@ -2,7 +2,7 @@ use super::*;
 use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
-use nu_protocol::RegId;
+use nu_protocol::{RegId, VarId};
 use nu_protocol::ast::{Comparison, Operator};
 
 #[test]
@@ -249,4 +249,36 @@ fn test_string_append_requires_string_dst() {
     let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
     let decl_names = HashMap::new();
     assert!(infer_hir(&program, &decl_names).is_err());
+}
+
+#[test]
+fn test_capture_seeded_into_hm_environment() {
+    let capture_var = VarId::new(7);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: capture_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let program = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(capture_var, HirLiteral::String("hi".into()))],
+        None,
+    );
+    let decl_names = HashMap::new();
+    let inferred = infer_hir_types(&program, &decl_names).expect("captured string should infer");
+
+    assert_eq!(inferred.main.get(&RegId::new(0)), Some(&stack_string_ptr_type()));
 }

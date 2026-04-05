@@ -265,6 +265,12 @@ aggregate layout instead of a pointer wrapper. When those maps are attached
 with the same `--pin` group, active pinned programs now reuse that typed schema
 across program boundaries too.
 
+Read-only closure captures now lower as real constants for supported types
+(`int`, `bool`, `string`, and `nothing`) instead of only working when inlined
+manually. That means existing Nushell structure can keep driving compile-time
+positions such as generic map names, for example `let map_name = "seen_paths";
+$ctx.arg0.f_path | map-put $map_name $ctx.pid --kind hash`.
+
 ## Commands
 
 | Command | Description |

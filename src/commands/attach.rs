@@ -14,8 +14,9 @@ use nu_protocol::{
 use crate::EbpfPlugin;
 use crate::compiler::{
     EbpfProgram, ProbeContext, ProgramIntrinsic, UserFunctionSig, UserParam, UserParamKind,
-    compile_mir_to_ebpf_with_hints, hir::HirFunction, hir_type_infer, infer_ctx_param,
-    lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir, passes::optimize_with_ssa_hints,
+    compile_mir_to_ebpf_with_hints, hir::HirFunction, hir::HirLiteral, hir_type_infer,
+    infer_ctx_param, lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir,
+    passes::optimize_with_ssa_hints,
 };
 
 /// Common Nushell commands used in eBPF closures.
@@ -80,6 +81,40 @@ fn fetch_closure_irs(
     }
 
     Ok(())
+}
+
+fn capture_to_hir_literal(value: &Value) -> Option<HirLiteral> {
+    match value {
+        Value::Int { val, .. } => Some(HirLiteral::Int(*val)),
+        Value::Bool { val, .. } => Some(HirLiteral::Bool(*val)),
+        Value::String { val, .. } => Some(HirLiteral::String(val.as_bytes().to_vec())),
+        Value::Nothing { .. } => Some(HirLiteral::Nothing),
+        _ => None,
+    }
+}
+
+fn lower_capture_literals(
+    closure: &Spanned<Closure>,
+) -> Result<Vec<(nu_protocol::VarId, HirLiteral)>, LabeledError> {
+    let mut captures = Vec::with_capacity(closure.item.captures.len());
+    for (var_id, value) in &closure.item.captures {
+        let Some(lit) = capture_to_hir_literal(value) else {
+            return Err(LabeledError::new("Unsupported captured value in eBPF closure")
+                .with_label(
+                    format!(
+                        "captured variable {} has unsupported type {}; supported captured constants are int, bool, string, and nothing",
+                        var_id.get(),
+                        value.get_type()
+                    ),
+                    closure.span,
+                )
+                .with_help(
+                    "Bind the value to a supported scalar/string constant before attaching, or inline it directly in the closure",
+                ));
+        };
+        captures.push((*var_id, lit));
+    }
+    Ok(captures)
 }
 
 fn parse_view_ir_json(json: &str, span: Span) -> Result<IrBlock, LabeledError> {
@@ -671,19 +706,7 @@ fn run_attach(
     let user_ir_blocks =
         collect_user_function_irs(engine, &ir_block, &mut closure_irs, &decl_names, call.head)?;
 
-    // Convert captures to (String, i64) pairs for integer captures
-    let captures: Vec<(String, i64)> = closure
-        .item
-        .captures
-        .iter()
-        .filter_map(|(var_id, value)| {
-            if let Value::Int { val, .. } = value {
-                Some((format!("var_{}", var_id.get()), *val))
-            } else {
-                None
-            }
-        })
-        .collect();
+    let captures = lower_capture_literals(&closure)?;
 
     // Infer the context parameter from IR - it's the first variable that's loaded
     // but never stored (i.e., a parameter rather than a local variable)

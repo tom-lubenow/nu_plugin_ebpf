@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 39
+const TOTAL_STEPS = 40
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -536,7 +536,18 @@ step 38 "xdp loopback ipv4 protocol via variable payload step" {
     } { trigger-ping-loopback } "xdp ipv4 protocol counter"
 }
 
-step 39 "verify no leaked probes" {
+step 39 "captured string constant drives generic map name" {
+    let map_name = "captured_path"
+    count-at-least-one "fentry:security_file_open" {|ctx|
+        $ctx.arg0.f_path | map-put $map_name $ctx.pid --kind hash
+        let entry = ($ctx.pid | map-get $map_name --kind hash)
+        if $entry != 0 {
+            $entry.dentry.d_flags | count
+        }
+    } { trigger-cargo-read $repo_root } "captured string map name"
+}
+
+step 40 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

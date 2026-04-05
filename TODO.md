@@ -265,9 +265,10 @@ Last updated: 2026-02-15.
   - Keep bounded-loop guarantees while supporting more realistic higher-level control patterns.
   - Ensure CFG lowering remains verifier-friendly with predictable complexity limits.
 
-- [ ] Support global/static data sections.
+- [~] Support global/static data sections.
   - Add language and backend support for `.rodata`, `.data`, and `.bss` style globals where valid.
   - Ensure symbol/relocation handling is deterministic and test-covered.
+  - Recent progress: read-only closure captures of `int`/`bool`/`string`/`nothing` now lower as real constants and preserve compile-time string metadata, which is the first narrow step toward `.rodata`-style globals.
 
 ## Ergonomics and quality
 

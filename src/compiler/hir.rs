@@ -21,7 +21,7 @@ pub use lowering::lower_ir_to_hir;
 pub struct HirProgram {
     pub main: HirFunction,
     pub closures: HashMap<NuBlockId, HirFunction>,
-    pub captures: Vec<(String, i64)>,
+    pub captures: Vec<(VarId, HirLiteral)>,
     pub ctx_param: Option<VarId>,
 }
 
@@ -29,7 +29,7 @@ impl HirProgram {
     pub fn new(
         main: HirFunction,
         closures: HashMap<NuBlockId, HirFunction>,
-        captures: Vec<(String, i64)>,
+        captures: Vec<(VarId, HirLiteral)>,
         ctx_param: Option<VarId>,
     ) -> Self {
         Self {

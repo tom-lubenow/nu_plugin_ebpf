@@ -1025,6 +1025,65 @@ fn make_map_delete_program(map_delete_decl: DeclId, kind: &str) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_captured_map_delete_program(
+    map_delete_decl: DeclId,
+    map_name_var: VarId,
+    kind: &str,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("pid")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(2),
+                    var_id: map_name_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(kind.as_bytes().to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: map_delete_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        named: vec![(b"kind".to_vec(), RegId::new(3))],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 7],
+        ast: vec![None; 7],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(map_name_var, HirLiteral::String(b"captured_path".to_vec()))],
+        Some(ctx_var),
+    )
+}
+
 fn make_chained_ctx_path_program(paths: Vec<CellPath>) -> HirProgram {
     let ctx_var = VarId::new(0);
     let mut stmts = vec![HirStmt::LoadVariable {
@@ -3638,6 +3697,38 @@ fn test_lower_map_delete_respects_kind() {
 }
 
 #[test]
+fn test_lower_captured_string_map_name_respects_literal_metadata() {
+    let hir = make_captured_map_delete_program(DeclId::new(42), VarId::new(11), "hash");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "map-delete".to_string());
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("captured string map name should lower");
+
+    let map_name = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::MapDelete { map, .. } => Some(map.name.as_str()),
+            _ => None,
+        })
+        .expect("expected generic map delete");
+
+    assert_eq!(map_name, "captured_path");
+}
+
+#[test]
 fn test_lower_nested_field_access_rejects_nonaggregate_ctx_value() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("arg0"), string_member("tv_nsec")],
@@ -3659,4 +3750,143 @@ fn test_lower_nested_field_access_rejects_nonaggregate_ctx_value() {
     assert!(err.to_string().contains(
         "nested ctx field access requires a struct/union trampoline value or pointer to one"
     ));
+}
+
+#[test]
+fn test_lower_captured_int_variable() {
+    let capture_var = VarId::new(7);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: capture_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(capture_var, HirLiteral::Int(7))],
+        None,
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("captured integer should lower");
+
+    assert!(matches!(
+        result.program.main.blocks[0].instructions.as_slice(),
+        [MirInst::Copy {
+            src: MirValue::Const(7),
+            ..
+        }]
+    ));
+}
+
+#[test]
+fn test_inline_where_closure_preserves_captured_bool() {
+    let capture_var = VarId::new(9);
+    let closure_block_id = nu_protocol::BlockId::new(1);
+    let where_decl = DeclId::new(77);
+
+    let main = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(42),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Closure(closure_block_id),
+                },
+                HirStmt::Call {
+                    decl_id: where_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let closure = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: capture_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let hir = HirProgram::new(
+        main,
+        HashMap::from([(closure_block_id, closure)]),
+        vec![(capture_var, HirLiteral::Bool(true))],
+        None,
+    );
+    let decl_names = HashMap::from([(where_decl, "where".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("where closure capture should lower");
+
+    let has_captured_true = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .any(|inst| {
+            matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(1),
+                    ..
+                }
+            )
+        });
+
+    assert!(
+        has_captured_true,
+        "expected inlined where closure to materialize the captured bool literal"
+    );
 }
