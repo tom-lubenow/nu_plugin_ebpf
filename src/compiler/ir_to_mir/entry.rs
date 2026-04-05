@@ -7,16 +7,19 @@ use super::*;
 /// The `decl_names` parameter maps DeclId to command names for the eBPF helper
 /// commands (emit, count, histogram, etc.). In plugin context, this is built
 /// by querying the engine via `find_decl()`.
+#[derive(Debug)]
 pub struct MirLoweringResult {
     pub program: MirProgram,
     pub type_hints: MirTypeHints,
+    pub generic_map_value_types: HashMap<MapRef, MirType>,
 }
 
-pub fn lower_hir_to_mir_with_hints(
+pub fn lower_hir_to_mir_with_hints_and_maps(
     hir: &HirProgram,
     probe_ctx: Option<&ProbeContext>,
     decl_names: &HashMap<DeclId, String>,
     type_info: Option<&HirTypeInfo>,
+    external_map_value_types: Option<&HashMap<MapRef, MirType>>,
     user_functions: &HashMap<DeclId, HirFunction>,
     decl_signatures: &HashMap<DeclId, UserFunctionSig>,
 ) -> Result<MirLoweringResult, CompileError> {
@@ -28,15 +31,36 @@ pub fn lower_hir_to_mir_with_hints(
         &hir.captures,
         hir.ctx_param,
         hir_type_hints.as_ref(),
+        external_map_value_types,
         user_functions,
         decl_signatures,
     );
     lowering.lower_block(&hir.main)?;
-    let (program, type_hints) = lowering.finish_with_hints();
+    let (program, type_hints, generic_map_value_types) = lowering.finish_with_hints();
     Ok(MirLoweringResult {
         program,
         type_hints,
+        generic_map_value_types,
     })
+}
+
+pub fn lower_hir_to_mir_with_hints(
+    hir: &HirProgram,
+    probe_ctx: Option<&ProbeContext>,
+    decl_names: &HashMap<DeclId, String>,
+    type_info: Option<&HirTypeInfo>,
+    user_functions: &HashMap<DeclId, HirFunction>,
+    decl_signatures: &HashMap<DeclId, UserFunctionSig>,
+) -> Result<MirLoweringResult, CompileError> {
+    lower_hir_to_mir_with_hints_and_maps(
+        hir,
+        probe_ctx,
+        decl_names,
+        type_info,
+        None,
+        user_functions,
+        decl_signatures,
+    )
 }
 
 pub fn lower_hir_to_mir(

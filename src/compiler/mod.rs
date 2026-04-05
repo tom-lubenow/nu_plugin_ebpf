@@ -44,10 +44,13 @@ pub use elf::{
 pub use hir::{
     HirProgram, extract_call_decl_ids, extract_closure_block_ids, infer_ctx_param, lower_ir_to_hir,
 };
-pub use hir_to_mir::{MirLoweringResult, lower_hir_to_mir, lower_hir_to_mir_with_hints};
+pub use hir_to_mir::{
+    MirLoweringResult, lower_hir_to_mir, lower_hir_to_mir_with_hints,
+    lower_hir_to_mir_with_hints_and_maps,
+};
 pub use instruction::{BpfHelper, EbpfInsn, EbpfReg};
 pub use ir_to_mir::{UserFunctionSig, UserParam, UserParamKind};
-pub use mir::MirTypeHints;
+pub use mir::{MapRef, MirType, MirTypeHints};
 pub use mir_to_ebpf::{MirCompileResult, compile_mir_to_ebpf, compile_mir_to_ebpf_with_hints};
 pub use mir_to_lir::{lower_mir_to_lir, lower_mir_to_lir_checked};
 pub use type_infer::{TypeError, TypeInference};

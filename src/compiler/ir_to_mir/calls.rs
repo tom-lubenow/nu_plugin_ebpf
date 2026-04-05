@@ -488,6 +488,11 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "map-get" => {
+                let result_vreg = if src_dst_had_value {
+                    self.assign_fresh_vreg(src_dst)
+                } else {
+                    dst_vreg
+                };
                 if !self.named_flags.is_empty() {
                     return Err(CompileError::UnsupportedInstruction(
                         "map-get does not accept flags".into(),
@@ -504,6 +509,10 @@ impl<'a> HirToMirLowering<'a> {
                 let map_name = self.literal_string_arg(map_reg, "map-get")?;
                 self.validate_generic_map_name(&map_name, "map-get")?;
                 let map_kind = self.generic_map_kind_arg("map-get")?;
+                let map_ref = MapRef {
+                    name: map_name.clone(),
+                    kind: map_kind,
+                };
                 let key_vreg = self
                     .positional_args
                     .get(1)
@@ -520,31 +529,32 @@ impl<'a> HirToMirLowering<'a> {
 
                 self.emit(MirInst::MapLookup {
                     dst: lookup_vreg,
-                    map: MapRef {
-                        name: map_name.clone(),
-                        kind: map_kind,
-                    },
+                    map: map_ref.clone(),
                     key: key_vreg,
                 });
                 self.emit(MirInst::Copy {
-                    dst: dst_vreg,
+                    dst: result_vreg,
                     src: MirValue::VReg(lookup_vreg),
                 });
 
-                let stored_ty = self.named_map_value_type(&map_name).cloned();
+                let stored_ty = self.named_map_value_type(&map_ref).cloned();
                 let runtime_ty = MirType::Ptr {
                     pointee: Box::new(stored_ty.clone().unwrap_or(MirType::U8)),
                     address_space: AddressSpace::Map,
                 };
-                self.vreg_type_hints.insert(lookup_vreg, runtime_ty.clone());
-                self.vreg_type_hints.insert(dst_vreg, runtime_ty);
+                self.vreg_type_hints
+                    .insert(lookup_vreg, runtime_ty.clone());
+                self.vreg_type_hints.insert(result_vreg, runtime_ty);
 
                 self.reset_call_result_metadata(src_dst);
                 if let Some(value_ty @ (MirType::Array { .. } | MirType::Struct { .. })) =
                     stored_ty
                 {
                     let meta = self.get_or_create_metadata(src_dst);
-                    meta.field_type = Some(value_ty);
+                    meta.field_type = Some(MirType::Ptr {
+                        pointee: Box::new(value_ty),
+                        address_space: AddressSpace::Map,
+                    });
                 }
             }
 
@@ -565,6 +575,10 @@ impl<'a> HirToMirLowering<'a> {
                 let map_name = self.literal_string_arg(map_reg, "map-put")?;
                 self.validate_generic_map_name(&map_name, "map-put")?;
                 let map_kind = self.generic_map_kind_arg("map-put")?;
+                let map_ref = MapRef {
+                    name: map_name.clone(),
+                    kind: map_kind,
+                };
                 let key_vreg = self
                     .positional_args
                     .get(1)
@@ -601,10 +615,7 @@ impl<'a> HirToMirLowering<'a> {
                     })?;
 
                 self.emit(MirInst::MapUpdate {
-                    map: MapRef {
-                        name: map_name.clone(),
-                        kind: map_kind,
-                    },
+                    map: map_ref.clone(),
                     key: key_vreg,
                     val: value_vreg,
                     flags,
@@ -619,7 +630,17 @@ impl<'a> HirToMirLowering<'a> {
                             .and_then(|m| m.field_type.clone())
                     });
                 if let Some(value_ty) = value_ty {
-                    self.register_named_map_value_type(&map_name, &value_ty);
+                    if self.externally_seeded_map_value_types.contains(&map_ref) {
+                        if let Some(existing) = self.named_map_value_type(&map_ref) {
+                            if existing != &value_ty {
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "map-put value type for '{}' conflicts with pinned map schema",
+                                    map_ref.name
+                                )));
+                            }
+                        }
+                    }
+                    self.register_named_map_value_type(&map_ref, &value_ty);
                 }
 
                 self.emit(MirInst::Copy {
@@ -646,6 +667,10 @@ impl<'a> HirToMirLowering<'a> {
                 let map_name = self.literal_string_arg(map_reg, "map-delete")?;
                 self.validate_generic_map_name(&map_name, "map-delete")?;
                 let map_kind = self.generic_map_kind_arg("map-delete")?;
+                let map_ref = MapRef {
+                    name: map_name,
+                    kind: map_kind,
+                };
                 let key_vreg = self
                     .positional_args
                     .get(1)
@@ -660,10 +685,7 @@ impl<'a> HirToMirLowering<'a> {
                     })?;
 
                 self.emit(MirInst::MapDelete {
-                    map: MapRef {
-                        name: map_name,
-                        kind: map_kind,
-                    },
+                    map: map_ref,
                     key: key_vreg,
                 });
                 self.emit(MirInst::Copy {

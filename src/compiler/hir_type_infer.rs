@@ -189,19 +189,19 @@ impl<'a> HirTypeInference<'a> {
     fn infer_stmt(&mut self, stmt: &HirStmt) -> Result<(), TypeError> {
         match stmt {
             HirStmt::LoadLiteral { dst, lit } => {
-                let dst_ty = self.reg_type(*dst);
+                let dst_ty = self.write_reg_type(*dst);
                 let lit_ty = hm_type_for_literal(lit);
                 self.constrain(dst_ty, lit_ty, "literal")?;
             }
             HirStmt::LoadValue { dst, val } => {
-                let dst_ty = self.reg_type(*dst);
+                let dst_ty = self.write_reg_type(*dst);
                 let lit_ty = hm_type_for_value(val);
                 self.constrain(dst_ty, lit_ty, "value")?;
             }
             HirStmt::Move { dst, src }
             | HirStmt::Clone { dst, src }
             | HirStmt::CloneCellPath { dst, src, .. } => {
-                let dst_ty = self.reg_type(*dst);
+                let dst_ty = self.write_reg_type(*dst);
                 let src_ty = self.reg_type(*src);
                 self.constrain(dst_ty, src_ty, "move")?;
             }
@@ -218,7 +218,7 @@ impl<'a> HirTypeInference<'a> {
                 }
             }
             HirStmt::LoadVariable { dst, var_id } => {
-                let dst_ty = self.reg_type(*dst);
+                let dst_ty = self.write_reg_type(*dst);
                 let scheme = self
                     .env
                     .get(*var_id)
@@ -263,6 +263,8 @@ impl<'a> HirTypeInference<'a> {
                 let lhs_ty = self.reg_type(*lhs_dst);
                 let rhs_ty = self.reg_type(*rhs);
                 match op {
+                    Operator::Comparison(nu_protocol::ast::Comparison::Equal)
+                    | Operator::Comparison(nu_protocol::ast::Comparison::NotEqual) => {}
                     Operator::Comparison(_) => {
                         self.constrain(lhs_ty, HMType::I64, "cmp_lhs")?;
                         self.constrain(rhs_ty, HMType::I64, "cmp_rhs")?;
@@ -283,7 +285,7 @@ impl<'a> HirTypeInference<'a> {
             HirStmt::Call {
                 decl_id, src_dst, ..
             } => {
-                let dst_ty = self.reg_type(*src_dst);
+                let dst_ty = self.write_reg_type(*src_dst);
                 let name = self
                     .decl_names
                     .get(decl_id)
@@ -323,6 +325,17 @@ impl<'a> HirTypeInference<'a> {
             .entry(id)
             .or_insert_with(|| self.tvar_gen.fresh());
         HMType::Var(*entry)
+    }
+
+    fn write_reg_type(&mut self, reg: RegId) -> HMType {
+        let id = reg.get();
+        if self.reg_vars.contains_key(&id) {
+            let fresh = self.tvar_gen.fresh();
+            self.reg_vars.insert(id, fresh);
+            HMType::Var(fresh)
+        } else {
+            self.reg_type(reg)
+        }
     }
 
     fn constrain(

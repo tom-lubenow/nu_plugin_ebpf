@@ -15,7 +15,7 @@ use crate::EbpfPlugin;
 use crate::compiler::{
     EbpfProgram, ProbeContext, UserFunctionSig, UserParam, UserParamKind,
     compile_mir_to_ebpf_with_hints, hir::HirFunction, hir_type_infer, infer_ctx_param,
-    lower_hir_to_mir_with_hints, lower_ir_to_hir, passes::optimize_with_ssa_hints,
+    lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir, passes::optimize_with_ssa_hints,
 };
 
 /// Known eBPF helper commands that need to be mapped by decl_id
@@ -689,6 +689,20 @@ fn run_attach(
 
     let user_decl_ids: HashSet<DeclId> = user_functions.keys().copied().collect();
     let user_signatures = fetch_user_function_signatures(engine, &user_decl_ids, call.head)?;
+    let state = get_state();
+    let external_map_value_types = pin_group
+        .as_deref()
+        .map(|group| {
+            state
+                .pinned_generic_map_value_types(group)
+                .map_err(|e| match e {
+                    LoadError::LockPoisoned => LabeledError::new("Failed to attach eBPF probe")
+                        .with_label("loader state lock poisoned", call.head),
+                    other => LabeledError::new("Failed to attach eBPF probe")
+                        .with_label(other.to_string(), call.head),
+                })
+        })
+        .transpose()?;
 
     let hir_types = match hir_type_infer::infer_hir_types_with_decls(
         &hir_program,
@@ -707,11 +721,12 @@ fn run_attach(
     };
 
     // Lower HIR to MIR
-    let lower_result = lower_hir_to_mir_with_hints(
+    let lower_result = lower_hir_to_mir_with_hints_and_maps(
         &hir_program,
         Some(&probe_context),
         &decl_names,
         Some(&hir_types),
+        external_map_value_types.as_ref(),
         &user_functions,
         &user_signatures,
     )
@@ -729,6 +744,7 @@ fn run_attach(
         Some(&probe_context),
         &mut type_hints.main,
         &type_hints.main_stack_slots,
+        &type_hints.generic_map_value_types,
     );
     if type_hints.subfunctions.len() < mir_program.subfunctions.len() {
         type_hints
@@ -747,7 +763,13 @@ fn run_attach(
         .zip(type_hints.subfunction_stack_slots.iter())
         .map(|((subfn, subfn_hints), subfn_stack_slots)| (subfn, subfn_hints, subfn_stack_slots))
     {
-        optimize_with_ssa_hints(subfn, None, subfn_hints, subfn_stack_slots);
+        optimize_with_ssa_hints(
+            subfn,
+            None,
+            subfn_hints,
+            subfn_stack_slots,
+            &type_hints.generic_map_value_types,
+        );
     }
 
     // Compile MIR to eBPF
@@ -770,6 +792,7 @@ fn run_attach(
         compile_result.subfunction_symbols,
         compile_result.event_schema,
         compile_result.bytes_counter_key_schema,
+        lower_result.generic_map_value_types,
     );
 
     if pin_group.is_some() {
@@ -784,7 +807,6 @@ fn run_attach(
     }
 
     // Load and attach
-    let state = get_state();
     let probe_id = state
         .attach_with_pin(&program, pin_group.as_deref())
         .map_err(|e| {
@@ -1680,6 +1702,7 @@ mod tests {
             Some(&probe_ctx),
             &mut lowering.type_hints.main,
             &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
         );
 
         let result = compile_mir_to_ebpf_with_hints(
@@ -1718,6 +1741,7 @@ mod tests {
             Some(&probe_ctx),
             &mut lowering.type_hints.main,
             &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
         );
         let result = compile_mir_to_ebpf_with_hints(
             &lowering.program,
@@ -1782,6 +1806,7 @@ mod tests {
             Some(&probe_ctx),
             &mut lowering.type_hints.main,
             &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
         );
 
         let result = compile_mir_to_ebpf_with_hints(
@@ -1831,6 +1856,7 @@ mod tests {
             Some(&probe_ctx),
             &mut lowering.type_hints.main,
             &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
         );
 
         let result = compile_mir_to_ebpf_with_hints(
@@ -1881,6 +1907,7 @@ mod tests {
             Some(&probe_ctx),
             &mut lowering.type_hints.main,
             &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
         );
 
         let result = compile_mir_to_ebpf_with_hints(
@@ -1926,6 +1953,7 @@ mod tests {
             Some(&probe_ctx),
             &mut lowering.type_hints.main,
             &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
         );
 
         let result = compile_mir_to_ebpf_with_hints(
@@ -1978,6 +2006,7 @@ mod tests {
             Some(&probe_ctx),
             &mut lowering.type_hints.main,
             &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
         );
 
         let result = compile_mir_to_ebpf_with_hints(
@@ -2020,6 +2049,7 @@ mod tests {
             Some(&probe_ctx),
             &mut lowering.type_hints.main,
             &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
         );
 
         let result = compile_mir_to_ebpf_with_hints(
@@ -2065,6 +2095,7 @@ mod tests {
             Some(&probe_ctx),
             &mut lowering.type_hints.main,
             &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
         );
 
         let result = compile_mir_to_ebpf_with_hints(
@@ -2109,6 +2140,7 @@ mod tests {
             Some(&probe_ctx),
             &mut lowering.type_hints.main,
             &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
         );
 
         let result = compile_mir_to_ebpf_with_hints(
@@ -2158,6 +2190,7 @@ mod tests {
             Some(&probe_ctx),
             &mut lowering.type_hints.main,
             &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
         );
 
         let result = compile_mir_to_ebpf_with_hints(

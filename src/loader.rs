@@ -3,7 +3,7 @@
 //! This module handles loading eBPF programs into the kernel using Aya,
 //! and managing active probes.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -15,6 +15,7 @@ use thiserror::Error;
 
 use crate::compiler::{
     BpfFieldType, CompileError, CounterKeySchema, EbpfProgram, EbpfProgramType, EventSchema,
+    MapRef, MirType,
 };
 
 /// Maximum entries per eBPF hash map
@@ -116,6 +117,8 @@ pub struct ActiveProbe {
     event_schema: Option<EventSchema>,
     /// Optional schema for decoding `bytes_counters` keys
     bytes_counter_key_schema: Option<CounterKeySchema>,
+    /// Typed generic map value schemas established for this pinned program set
+    generic_map_value_types: HashMap<MapRef, MirType>,
     /// Pin group name (if maps are pinned for sharing)
     pin_group: Option<String>,
 }
@@ -137,6 +140,10 @@ impl std::fmt::Debug for ActiveProbe {
             .field(
                 "bytes_counter_key_schema",
                 &self.bytes_counter_key_schema.is_some(),
+            )
+            .field(
+                "generic_map_value_types",
+                &self.generic_map_value_types.len(),
             )
             .finish()
     }
@@ -256,6 +263,33 @@ impl Default for EbpfState {
 }
 
 impl EbpfState {
+    fn merge_generic_map_value_types<'a>(
+        schemas: impl Iterator<Item = &'a HashMap<MapRef, MirType>>,
+    ) -> HashMap<MapRef, MirType> {
+        let mut merged = HashMap::new();
+        let mut conflicts = HashSet::new();
+
+        for schema_set in schemas {
+            for (map, ty) in schema_set {
+                if conflicts.contains(map) {
+                    continue;
+                }
+                match merged.get(map) {
+                    Some(existing) if existing != ty => {
+                        merged.remove(map);
+                        conflicts.insert(map.clone());
+                    }
+                    Some(_) => {}
+                    None => {
+                        merged.insert(map.clone(), ty.clone());
+                    }
+                }
+            }
+        }
+
+        merged
+    }
+
     pub fn new() -> Self {
         Self {
             probes: Mutex::new(HashMap::new()),
@@ -307,6 +341,23 @@ impl EbpfState {
                 uptime_secs: p.attached_at.elapsed().as_secs(),
             })
             .collect())
+    }
+
+    /// Collect typed generic-map value schemas from active probes in a pin group.
+    ///
+    /// Conflicting schemas for the same pinned map are dropped so callers only see
+    /// unambiguous layouts.
+    pub fn pinned_generic_map_value_types(
+        &self,
+        pin_group: &str,
+    ) -> Result<HashMap<MapRef, MirType>, LoadError> {
+        let probes = self.probes.lock().map_err(|_| LoadError::LockPoisoned)?;
+        Ok(Self::merge_generic_map_value_types(
+            probes
+                .values()
+                .filter(|probe| probe.pin_group.as_deref() == Some(pin_group))
+                .map(|probe| &probe.generic_map_value_types),
+        ))
     }
 }
 

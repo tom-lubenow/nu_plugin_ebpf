@@ -2,6 +2,7 @@ use super::*;
 use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
+use nu_protocol::ast::{Comparison, Operator};
 use nu_protocol::RegId;
 
 #[test]
@@ -171,6 +172,45 @@ fn test_record_insert_requires_string_key() {
     let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
     let decl_names = HashMap::new();
     assert!(infer_hir(&program, &decl_names).is_err());
+}
+
+#[test]
+fn test_pointer_null_comparison_is_permissive() {
+    let mut func = HirFunction {
+        blocks: Vec::new(),
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let mut block = HirBlock {
+        id: HirBlockId(0),
+        stmts: Vec::new(),
+        terminator: HirTerminator::Return { src: RegId::new(0) },
+    };
+
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::String("ptr".into()),
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(1),
+        lit: HirLiteral::Int(0),
+    });
+    block.stmts.push(HirStmt::BinaryOp {
+        lhs_dst: RegId::new(0),
+        op: Operator::Comparison(Comparison::NotEqual),
+        rhs: RegId::new(1),
+    });
+
+    func.blocks.push(block);
+
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    let decl_names = HashMap::new();
+    infer_hir(&program, &decl_names).expect("pointer null checks should remain permissive");
 }
 
 #[test]

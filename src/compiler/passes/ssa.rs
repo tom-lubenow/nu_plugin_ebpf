@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use super::MirPass;
 use crate::compiler::cfg::CFG;
 use crate::compiler::elf::ProbeContext;
-use crate::compiler::mir::{BlockId, MirFunction, MirInst, MirType, StackSlotId, VReg};
+use crate::compiler::mir::{BlockId, MapRef, MirFunction, MirInst, MirType, StackSlotId, VReg};
 use crate::compiler::type_hints::{infer_generic_map_value_types, infer_instruction_def_type};
 
 /// SSA construction pass
@@ -91,6 +91,7 @@ impl<'a> SsaBuilder<'a> {
         probe_ctx: Option<&ProbeContext>,
         original_hints: &HashMap<VReg, MirType>,
         stack_slot_hints: &HashMap<StackSlotId, MirType>,
+        generic_map_value_types: &HashMap<MapRef, MirType>,
     ) -> (bool, HashMap<VReg, MirType>) {
         self.collect_def_sites();
 
@@ -104,9 +105,15 @@ impl<'a> SsaBuilder<'a> {
             probe_ctx,
             original_hints,
             stack_slot_hints,
+            generic_map_value_types,
             &mut ssa_hints,
         );
-        self.populate_phi_hints(probe_ctx, stack_slot_hints, &mut ssa_hints);
+        self.populate_phi_hints(
+            probe_ctx,
+            stack_slot_hints,
+            generic_map_value_types,
+            &mut ssa_hints,
+        );
 
         (true, ssa_hints)
     }
@@ -210,6 +217,7 @@ impl<'a> SsaBuilder<'a> {
         probe_ctx: Option<&ProbeContext>,
         original_hints: &HashMap<VReg, MirType>,
         stack_slot_hints: &HashMap<StackSlotId, MirType>,
+        generic_map_value_types: &HashMap<MapRef, MirType>,
         ssa_hints: &mut HashMap<VReg, MirType>,
     ) {
         let dom_children = self.build_dominator_tree_children();
@@ -219,6 +227,7 @@ impl<'a> SsaBuilder<'a> {
             probe_ctx,
             original_hints,
             stack_slot_hints,
+            generic_map_value_types,
             ssa_hints,
         );
     }
@@ -327,6 +336,7 @@ impl<'a> SsaBuilder<'a> {
         probe_ctx: Option<&ProbeContext>,
         original_hints: &HashMap<VReg, MirType>,
         stack_slot_hints: &HashMap<StackSlotId, MirType>,
+        generic_map_value_types: &HashMap<MapRef, MirType>,
         ssa_hints: &mut HashMap<VReg, MirType>,
     ) {
         let mut pushed_counts: HashMap<VReg, usize> = HashMap::new();
@@ -366,6 +376,7 @@ impl<'a> SsaBuilder<'a> {
                         probe_ctx,
                         original_hints,
                         stack_slot_hints,
+                        generic_map_value_types,
                         ssa_hints,
                     );
                 }
@@ -388,6 +399,7 @@ impl<'a> SsaBuilder<'a> {
                     probe_ctx,
                     original_hints,
                     stack_slot_hints,
+                    generic_map_value_types,
                     ssa_hints,
                 );
             }
@@ -478,9 +490,11 @@ impl<'a> SsaBuilder<'a> {
         probe_ctx: Option<&ProbeContext>,
         original_hints: &HashMap<VReg, MirType>,
         stack_slot_hints: &HashMap<StackSlotId, MirType>,
+        generic_map_value_types: &HashMap<MapRef, MirType>,
         ssa_hints: &mut HashMap<VReg, MirType>,
     ) {
-        let map_value_types = infer_generic_map_value_types(self.func, ssa_hints);
+        let map_value_types =
+            infer_generic_map_value_types(self.func, ssa_hints, Some(generic_map_value_types));
         let inferred =
             infer_instruction_def_type(
                 inst,
@@ -505,12 +519,17 @@ impl<'a> SsaBuilder<'a> {
         &self,
         probe_ctx: Option<&ProbeContext>,
         stack_slot_hints: &HashMap<StackSlotId, MirType>,
+        generic_map_value_types: &HashMap<MapRef, MirType>,
         ssa_hints: &mut HashMap<VReg, MirType>,
     ) {
         let mut changed = true;
         while changed {
             changed = false;
-            let map_value_types = infer_generic_map_value_types(self.func, ssa_hints);
+            let map_value_types = infer_generic_map_value_types(
+                self.func,
+                ssa_hints,
+                Some(generic_map_value_types),
+            );
             for block in &self.func.blocks {
                 for inst in &block.instructions {
                     let recovered = infer_instruction_def_type(
@@ -539,9 +558,15 @@ pub(crate) fn construct_ssa_with_type_hints(
     probe_ctx: Option<&ProbeContext>,
     original_hints: &HashMap<VReg, MirType>,
     stack_slot_hints: &HashMap<StackSlotId, MirType>,
+    generic_map_value_types: &HashMap<MapRef, MirType>,
 ) -> (bool, HashMap<VReg, MirType>) {
     let builder = SsaBuilder::new(func, cfg);
-    builder.build_with_type_hints(probe_ctx, original_hints, stack_slot_hints)
+    builder.build_with_type_hints(
+        probe_ctx,
+        original_hints,
+        stack_slot_hints,
+        generic_map_value_types,
+    )
 }
 
 /// Update the destination of an instruction (free function to avoid borrow issues)

@@ -260,8 +260,9 @@ impl PluginCommand for MapGet {
         r#"Looks up a key in a named generic map and returns the map-value pointer.
 Use pipeline input as the key, or pass an explicit key as the second positional
 argument. Aggregate values established by an earlier typed `map-put` in the same
-closure can be projected by field after lookup. The result is a maybe-null
-pointer, so guard it before dereferencing.
+closure can be projected by field after lookup. The same typed schema also
+carries across active programs that share a pinned map group. The result is a
+maybe-null pointer, so guard it before dereferencing.
 
 Example:
   let entry = ($ctx.pid | map-get seen_paths --kind hash)
@@ -323,7 +324,9 @@ impl PluginCommand for MapPut {
     fn extra_description(&self) -> &str {
         r#"Stores the pipeline input as the value for the given key in a named
 generic map. The second positional argument is the key. Use `--flags` to pass
-raw `bpf_map_update_elem` flags when needed.
+raw `bpf_map_update_elem` flags when needed. With `ebpf attach --pin`, the
+value layout becomes available to later pinned `map-get` users in the same
+group.
 
 Example:
   $ctx.arg0.f_path | map-put seen_paths $ctx.pid --kind hash"#

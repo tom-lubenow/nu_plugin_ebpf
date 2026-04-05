@@ -237,6 +237,7 @@ impl EbpfState {
             ringbuf,
             event_schema: program.event_schema.clone(),
             bytes_counter_key_schema: program.bytes_counter_key_schema.clone(),
+            generic_map_value_types: program.generic_map_value_types.clone(),
             pin_group: pin_group_owned,
         };
 

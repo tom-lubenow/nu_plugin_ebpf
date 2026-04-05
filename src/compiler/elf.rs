@@ -6,6 +6,8 @@
 //! - A "license" section containing the license string (required for most helpers)
 //! - Optional ".maps" section for BPF map definitions
 
+use std::collections::HashMap;
+
 use object::write::{Object, Relocation, Symbol, SymbolSection};
 use object::{
     Architecture, BinaryFormat, Endianness, RelocationFlags, SectionFlags, SectionKind,
@@ -15,7 +17,7 @@ use object::{
 use super::CompileError;
 use super::btf::BtfBuilder;
 use super::instruction::EbpfBuilder;
-use super::mir::{BitfieldInfo, CtxField, MirType};
+use super::mir::{BitfieldInfo, CtxField, MapRef, MirType};
 
 mod program_impl;
 
@@ -606,6 +608,8 @@ pub struct EbpfProgram {
     pub event_schema: Option<EventSchema>,
     /// Optional schema for runtime decoding of `bytes_counters` keys
     pub bytes_counter_key_schema: Option<CounterKeySchema>,
+    /// Optional typed generic map value schemas keyed by map identity
+    pub generic_map_value_types: HashMap<MapRef, MirType>,
 }
 
 #[cfg(test)]

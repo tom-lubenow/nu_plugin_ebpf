@@ -4,7 +4,7 @@ use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
 use crate::compiler::instruction::BpfHelper;
-use crate::compiler::mir::AddressSpace;
+use crate::compiler::mir::{AddressSpace, StructField};
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 use nu_protocol::ast::{CellPath, Comparison, Math, Operator, PathMember, RangeInclusion};
 use nu_protocol::casing::Casing;
@@ -399,6 +399,106 @@ fn make_map_put_get_projection_program(
         ast: vec![None; 21],
         comments: vec![],
         register_count: 7,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_map_get_projection_program(map_get_decl: DeclId, count_decl: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let lookup_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("pid")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String(b"cached_path".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::String(b"hash".to_vec()),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_get_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(2)],
+                            named: vec![(b"kind".to_vec(), RegId::new(3))],
+                            ..Default::default()
+                        },
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: lookup_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Comparison(Comparison::NotEqual),
+                        rhs: RegId::new(4),
+                    },
+                ],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(0),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: lookup_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("dentry"), string_member("d_flags")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::Call {
+                        decl_id: count_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 12],
+        ast: vec![None; 12],
+        comments: vec![],
+        register_count: 5,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
@@ -2343,6 +2443,113 @@ fn test_lower_map_get_preserves_prior_typed_struct_schema() {
             .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
         "expected null-check branch around typed map-get result"
     );
+}
+
+#[test]
+fn test_lower_map_get_uses_external_typed_struct_schema() {
+    let hir = make_map_get_projection_program(DeclId::new(43), DeclId::new(44));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(43), "map-get".to_string());
+    decl_names.insert(DeclId::new(44), "count".to_string());
+
+    let external_schema = HashMap::from([(
+        MapRef {
+            name: "cached_path".to_string(),
+            kind: MapKind::Hash,
+        },
+        MirType::Struct {
+            name: Some("path".to_string()),
+            kernel_btf_type_id: None,
+            fields: vec![
+                StructField {
+                    name: "mnt".to_string(),
+                    ty: MirType::U64,
+                    offset: 0,
+                    synthetic: false,
+                    bitfield: None,
+                },
+                StructField {
+                    name: "dentry".to_string(),
+                    ty: MirType::Ptr {
+                        pointee: Box::new(MirType::Struct {
+                            name: Some("dentry".to_string()),
+                            kernel_btf_type_id: None,
+                            fields: vec![StructField {
+                                name: "d_flags".to_string(),
+                                ty: MirType::U32,
+                                offset: 0,
+                                synthetic: false,
+                                bitfield: None,
+                            }],
+                        }),
+                        address_space: AddressSpace::Kernel,
+                    },
+                    offset: 8,
+                    synthetic: false,
+                    bitfield: None,
+                },
+            ],
+        },
+    )]);
+
+    let result = lower_hir_to_mir_with_hints_and_maps(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        Some(&external_schema),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("external typed map schema should lower");
+
+    assert_eq!(result.generic_map_value_types, external_schema);
+    assert!(result.type_hints.main.values().any(|ty| matches!(
+        ty,
+        MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Map,
+        } if matches!(
+            pointee.as_ref(),
+            MirType::Struct { name, fields, .. }
+                if name.as_deref() == Some("path")
+                    && fields.len() == 2
+                    && fields[0].name == "mnt"
+                    && fields[1].name == "dentry"
+        )
+    )));
+}
+
+#[test]
+fn test_lower_map_put_rejects_conflicting_external_schema() {
+    let hir = make_map_put_program(DeclId::new(42), 0, "hash");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "map-put".to_string());
+
+    let external_schema = HashMap::from([(
+        MapRef {
+            name: "cached_path".to_string(),
+            kind: MapKind::Hash,
+        },
+        MirType::I64,
+    )]);
+
+    let err = lower_hir_to_mir_with_hints_and_maps(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        Some(&external_schema),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("conflicting pinned schema should fail");
+
+    assert!(err
+        .to_string()
+        .contains("conflicts with pinned map schema"));
 }
 
 #[test]

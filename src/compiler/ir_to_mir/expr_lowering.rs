@@ -13,7 +13,12 @@ impl<'a> HirToMirLowering<'a> {
         dst: RegId,
         lit: &HirLiteral,
     ) -> Result<(), CompileError> {
-        let dst_vreg = self.get_vreg(dst);
+        let dst_vreg = if self.reg_map.contains_key(&dst.get()) {
+            self.assign_fresh_vreg(dst)
+        } else {
+            self.get_vreg(dst)
+        };
+        self.reg_metadata.insert(dst.get(), RegMetadata::default());
 
         match lit {
             HirLiteral::Int(val) => {

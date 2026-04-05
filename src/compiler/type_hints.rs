@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::compiler::elf::ProbeContext;
 use crate::compiler::mir::{
-    AddressSpace, BinOpKind, CtxField, MirFunction, MirInst, MirProgram, MirType, MirTypeHints,
-    MirValue, StackSlotId, StructField, VReg,
+    AddressSpace, BinOpKind, CtxField, MapRef, MirFunction, MirInst, MirProgram, MirType,
+    MirTypeHints, MirValue, StackSlotId, StructField, VReg,
 };
 use crate::kernel_btf::{KernelBtf, TypeInfo};
 
@@ -239,28 +239,29 @@ fn stored_generic_map_value_type(ty: &MirType) -> MirType {
 pub(crate) fn infer_generic_map_value_types(
     func: &MirFunction,
     hints: &HashMap<VReg, MirType>,
-) -> HashMap<String, MirType> {
-    let mut value_types = HashMap::new();
+    seed: Option<&HashMap<MapRef, MirType>>,
+) -> HashMap<MapRef, MirType> {
+    let mut value_types = seed.cloned().unwrap_or_default();
     let mut conflicts = HashSet::new();
 
     for inst in func.blocks.iter().flat_map(|block| block.instructions.iter()) {
         let MirInst::MapUpdate { map, val, .. } = inst else {
             continue;
         };
-        if conflicts.contains(&map.name) {
+        if conflicts.contains(map) {
             continue;
         }
         let Some(value_ty) = hints.get(val).map(stored_generic_map_value_type) else {
             continue;
         };
-        match value_types.get(&map.name) {
+        match value_types.get(map) {
             Some(existing) if existing != &value_ty => {
-                value_types.remove(&map.name);
-                conflicts.insert(map.name.clone());
+                value_types.remove(map);
+                conflicts.insert(map.clone());
             }
             Some(_) => {}
             None => {
-                value_types.insert(map.name.clone(), value_ty);
+                value_types.insert(map.clone(), value_ty);
             }
         }
     }
@@ -273,7 +274,7 @@ pub(crate) fn infer_instruction_def_type(
     probe_ctx: Option<&ProbeContext>,
     hints: &HashMap<VReg, MirType>,
     stack_slot_hints: &HashMap<StackSlotId, MirType>,
-    map_value_types: &HashMap<String, MirType>,
+    map_value_types: &HashMap<MapRef, MirType>,
 ) -> Option<(VReg, MirType, bool)> {
     match inst {
         MirInst::Copy { dst, src } => match src {
@@ -314,12 +315,16 @@ pub(crate) fn infer_instruction_def_type(
         MirInst::MapLookup { dst, map, .. } => Some((
             *dst,
             MirType::Ptr {
-                pointee: Box::new(
-                    map_value_types
-                        .get(&map.name)
-                        .cloned()
-                        .unwrap_or(MirType::U8),
-                ),
+                pointee: Box::new(match map_value_types.get(map).cloned() {
+                    Some(ty) => ty,
+                    None => match hints.get(dst) {
+                        Some(MirType::Ptr {
+                            pointee,
+                            address_space: AddressSpace::Map,
+                        }) => pointee.as_ref().clone(),
+                        _ => MirType::U8,
+                    },
+                }),
                 address_space: AddressSpace::Map,
             },
             true,
@@ -363,12 +368,13 @@ pub(crate) fn recover_optimized_function_type_hints(
     probe_ctx: Option<&ProbeContext>,
     hints: &mut HashMap<VReg, MirType>,
     stack_slot_hints: &HashMap<StackSlotId, MirType>,
+    generic_map_value_types: &HashMap<MapRef, MirType>,
 ) {
     let mut trusted_hints: HashSet<VReg> = HashSet::new();
     let mut changed = true;
     while changed {
         changed = false;
-        let map_value_types = infer_generic_map_value_types(func, hints);
+        let map_value_types = infer_generic_map_value_types(func, hints, Some(generic_map_value_types));
         for inst in func.blocks.iter().flat_map(|block| {
             block
                 .instructions
@@ -444,6 +450,7 @@ pub(crate) fn recover_optimized_mir_type_hints(
         probe_ctx,
         &mut hints.main,
         &hints.main_stack_slots,
+        &hints.generic_map_value_types,
     );
     if hints.subfunctions.len() < program.subfunctions.len() {
         hints
@@ -461,7 +468,13 @@ pub(crate) fn recover_optimized_mir_type_hints(
         .zip(hints.subfunctions.iter_mut())
         .zip(hints.subfunction_stack_slots.iter())
     {
-        recover_optimized_function_type_hints(subfn, None, subfn_hints, subfn_stack_slot_hints);
+        recover_optimized_function_type_hints(
+            subfn,
+            None,
+            subfn_hints,
+            subfn_stack_slot_hints,
+            &hints.generic_map_value_types,
+        );
     }
 }
 
@@ -495,7 +508,13 @@ mod tests {
         let mut hints = HashMap::from([(v0, MirType::U32), (v1, MirType::U32)]);
         let stack_slot_hints = HashMap::from([(slot, MirType::U64)]);
 
-        recover_optimized_function_type_hints(&func, None, &mut hints, &stack_slot_hints);
+        recover_optimized_function_type_hints(
+            &func,
+            None,
+            &mut hints,
+            &stack_slot_hints,
+            &HashMap::new(),
+        );
 
         let expected = MirType::Ptr {
             pointee: Box::new(MirType::U64),
@@ -527,10 +546,57 @@ mod tests {
         };
 
         let mut hints = HashMap::from([(v0, MirType::U32), (v1, MirType::Bool)]);
-        recover_optimized_function_type_hints(&func, None, &mut hints, &HashMap::new());
+        recover_optimized_function_type_hints(
+            &func,
+            None,
+            &mut hints,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
 
         assert_eq!(hints.get(&v0), Some(&MirType::U32));
         assert_eq!(hints.get(&v1), Some(&MirType::Bool));
+    }
+
+    #[test]
+    fn test_recover_optimized_function_type_hints_preserves_typed_map_lookup_without_local_update() {
+        let mut func = MirFunction::new();
+        let bb0 = func.alloc_block();
+        func.entry = bb0;
+
+        let key = func.alloc_vreg();
+        let lookup = func.alloc_vreg();
+        let looked_up_ty = MirType::Ptr {
+            pointee: Box::new(MirType::Struct {
+                name: Some("path".to_string()),
+                kernel_btf_type_id: None,
+                fields: vec![],
+            }),
+            address_space: AddressSpace::Map,
+        };
+
+        func.block_mut(bb0).instructions.push(MirInst::MapLookup {
+            dst: lookup,
+            map: MapRef {
+                name: "cached_path".to_string(),
+                kind: crate::compiler::mir::MapKind::Hash,
+            },
+            key,
+        });
+        func.block_mut(bb0).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(lookup)),
+        };
+
+        let mut hints = HashMap::from([(lookup, looked_up_ty.clone())]);
+        recover_optimized_function_type_hints(
+            &func,
+            None,
+            &mut hints,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+
+        assert_eq!(hints.get(&lookup), Some(&looked_up_ty));
     }
 
     #[test]
@@ -565,7 +631,13 @@ mod tests {
                 len: 3,
             },
         )]);
-        recover_optimized_function_type_hints(&func, None, &mut hints, &stack_slot_hints);
+        recover_optimized_function_type_hints(
+            &func,
+            None,
+            &mut hints,
+            &stack_slot_hints,
+            &HashMap::new(),
+        );
 
         assert_eq!(
             hints.get(&base_ptr),

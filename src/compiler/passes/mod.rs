@@ -32,7 +32,7 @@ pub use strength::StrengthReduction;
 
 use super::cfg::CFG;
 use super::elf::ProbeContext;
-use super::mir::{MirFunction, MirType, StackSlotId, VReg};
+use super::mir::{MapRef, MirFunction, MirType, StackSlotId, VReg};
 use super::type_hints::recover_optimized_function_type_hints;
 
 /// Trait for MIR optimization passes
@@ -206,12 +206,19 @@ pub fn optimize_with_ssa_hints(
     probe_ctx: Option<&ProbeContext>,
     hints: &mut std::collections::HashMap<VReg, MirType>,
     stack_slot_hints: &std::collections::HashMap<StackSlotId, MirType>,
+    generic_map_value_types: &std::collections::HashMap<MapRef, MirType>,
 ) -> usize {
     let cfg = CFG::build(func);
     let mut total_changes = 0;
 
-    let (ssa_changed, ssa_hints) =
-        ssa::construct_ssa_with_type_hints(func, &cfg, probe_ctx, hints, stack_slot_hints);
+    let (ssa_changed, ssa_hints) = ssa::construct_ssa_with_type_hints(
+        func,
+        &cfg,
+        probe_ctx,
+        hints,
+        stack_slot_hints,
+        generic_map_value_types,
+    );
     if ssa_changed {
         *hints = ssa_hints;
         total_changes += 1;
@@ -231,7 +238,13 @@ pub fn optimize_with_ssa_hints(
         total_changes += 1;
     }
 
-    recover_optimized_function_type_hints(func, probe_ctx, hints, stack_slot_hints);
+    recover_optimized_function_type_hints(
+        func,
+        probe_ctx,
+        hints,
+        stack_slot_hints,
+        generic_map_value_types,
+    );
     total_changes
 }
 

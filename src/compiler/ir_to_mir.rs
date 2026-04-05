@@ -59,7 +59,8 @@ mod expr_lowering;
 mod subfunctions;
 mod user_functions;
 pub use entry::{
-    MirLoweringResult, lower_hir_to_mir, lower_hir_to_mir_with_hints, lower_ir_to_mir,
+    MirLoweringResult, lower_hir_to_mir, lower_hir_to_mir_with_hints,
+    lower_hir_to_mir_with_hints_and_maps, lower_ir_to_mir,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -246,9 +247,11 @@ pub struct HirToMirLowering<'a> {
     /// Collected stack-slot pointee type hints for stack-address values
     stack_slot_type_hints: HashMap<StackSlotId, MirType>,
     /// Source-order generic map value schemas discovered during lowering
-    map_value_types: HashMap<String, MirType>,
+    map_value_types: HashMap<MapRef, MirType>,
     /// Generic maps whose observed value schemas conflict
-    conflicting_map_value_types: HashSet<String>,
+    conflicting_map_value_types: HashSet<MapRef>,
+    /// Map schemas seeded from already-attached pinned programs
+    externally_seeded_map_value_types: HashSet<MapRef>,
     /// User-defined functions by DeclId
     user_functions: &'a HashMap<DeclId, HirFunction>,
     /// User-defined function signatures by DeclId
@@ -282,6 +285,7 @@ impl<'a> HirToMirLowering<'a> {
         captures: &'a [(String, i64)],
         ctx_param: Option<VarId>,
         type_hints: Option<&'a HirMirTypeHints>,
+        external_map_value_types: Option<&'a HashMap<MapRef, MirType>>,
         user_functions: &'a HashMap<DeclId, HirFunction>,
         decl_signatures: &'a HashMap<DeclId, UserFunctionSig>,
     ) -> Self {
@@ -293,6 +297,8 @@ impl<'a> HirToMirLowering<'a> {
             ),
             None => (HashMap::new(), HashMap::new(), HashMap::new()),
         };
+        let map_value_types = external_map_value_types.cloned().unwrap_or_default();
+        let externally_seeded_map_value_types = map_value_types.keys().cloned().collect();
         Self {
             func: MirFunction::new(),
             reg_map: HashMap::new(),
@@ -322,8 +328,9 @@ impl<'a> HirToMirLowering<'a> {
             decl_type_hints,
             vreg_type_hints: HashMap::new(),
             stack_slot_type_hints: HashMap::new(),
-            map_value_types: HashMap::new(),
+            map_value_types,
             conflicting_map_value_types: HashSet::new(),
+            externally_seeded_map_value_types,
             user_functions,
             decl_signatures,
             subfunction_params: HashMap::new(),
@@ -338,11 +345,11 @@ impl<'a> HirToMirLowering<'a> {
 
     /// Lower an entire HIR function to MIR
     pub fn finish(self) -> MirProgram {
-        let (program, _) = self.finish_with_hints();
+        let (program, _, _) = self.finish_with_hints();
         program
     }
 
-    pub fn finish_with_hints(self) -> (MirProgram, MirTypeHints) {
+    pub fn finish_with_hints(self) -> (MirProgram, MirTypeHints, HashMap<MapRef, MirType>) {
         let mut program = MirProgram::new(self.func);
         program.subfunctions = self.subfunctions;
         let mut hints = MirTypeHints {
@@ -350,6 +357,12 @@ impl<'a> HirToMirLowering<'a> {
             subfunctions: self.subfunction_hints,
             main_stack_slots: self.stack_slot_type_hints,
             subfunction_stack_slots: self.subfunction_stack_slot_hints,
+            generic_map_value_types: self
+                .map_value_types
+                .iter()
+                .filter(|(map, _)| !self.conflicting_map_value_types.contains(*map))
+                .map(|(map, ty)| (map.clone(), ty.clone()))
+                .collect(),
         };
         if hints.subfunctions.len() < program.subfunctions.len() {
             hints
@@ -361,7 +374,8 @@ impl<'a> HirToMirLowering<'a> {
                 .subfunction_stack_slots
                 .resize_with(program.subfunctions.len(), HashMap::new);
         }
-        (program, hints)
+        let map_value_types = hints.generic_map_value_types.clone();
+        (program, hints, map_value_types)
     }
 }
 

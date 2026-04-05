@@ -21,6 +21,7 @@ impl EbpfProgram {
             subfunctions: Vec::new(),
             event_schema: None,
             bytes_counter_key_schema: None,
+            generic_map_value_types: HashMap::new(),
         }
     }
 
@@ -44,6 +45,7 @@ impl EbpfProgram {
             subfunctions: Vec::new(),
             event_schema: None,
             bytes_counter_key_schema: None,
+            generic_map_value_types: HashMap::new(),
         }
     }
 
@@ -59,6 +61,7 @@ impl EbpfProgram {
         subfunctions: Vec<SubfunctionSymbol>,
         event_schema: Option<EventSchema>,
         bytes_counter_key_schema: Option<CounterKeySchema>,
+        generic_map_value_types: HashMap<MapRef, MirType>,
     ) -> Self {
         Self {
             prog_type,
@@ -72,6 +75,7 @@ impl EbpfProgram {
             subfunctions,
             event_schema,
             bytes_counter_key_schema,
+            generic_map_value_types,
         }
     }
 

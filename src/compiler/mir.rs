@@ -711,6 +711,7 @@ pub struct MirTypeHints {
     pub subfunctions: Vec<HashMap<VReg, MirType>>,
     pub main_stack_slots: HashMap<StackSlotId, MirType>,
     pub subfunction_stack_slots: Vec<HashMap<StackSlotId, MirType>>,
+    pub generic_map_value_types: HashMap<MapRef, MirType>,
 }
 
 #[cfg(test)]

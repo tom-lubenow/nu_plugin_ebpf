@@ -222,7 +222,14 @@ fn test_construct_ssa_with_type_hints_preserves_per_definition_types() {
     let original_hints = HashMap::from([(v0, MirType::U32), (v1, MirType::U32)]);
     let stack_slot_hints = HashMap::from([(slot0, MirType::U64), (slot1, MirType::U32)]);
     let (changed, ssa_hints) =
-        construct_ssa_with_type_hints(&mut func, &cfg, None, &original_hints, &stack_slot_hints);
+        construct_ssa_with_type_hints(
+            &mut func,
+            &cfg,
+            None,
+            &original_hints,
+            &stack_slot_hints,
+            &HashMap::new(),
+        );
 
     assert!(changed);
 
@@ -308,7 +315,14 @@ fn test_construct_ssa_with_type_hints_recovers_phi_types_from_args() {
         (StackSlotId(1), MirType::U32),
     ]);
     let (changed, ssa_hints) =
-        construct_ssa_with_type_hints(&mut func, &cfg, None, &original_hints, &stack_slot_hints);
+        construct_ssa_with_type_hints(
+            &mut func,
+            &cfg,
+            None,
+            &original_hints,
+            &stack_slot_hints,
+            &HashMap::new(),
+        );
 
     assert!(changed);
 

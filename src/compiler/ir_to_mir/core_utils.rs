@@ -42,6 +42,20 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn assign_fresh_vreg(&mut self, reg: RegId) -> VReg {
+        let reg_id = reg.get();
+        let vreg = self.func.alloc_vreg();
+        let had_mapping = self.reg_map.insert(reg_id, vreg).is_some();
+        if !had_mapping
+            && let Some(hint) = self.current_type_hints.get(&reg_id)
+        {
+            self.vreg_type_hints
+                .entry(vreg)
+                .or_insert_with(|| hint.clone());
+        }
+        vreg
+    }
+
     /// Get the current block being built
     pub(super) fn current_block_mut(&mut self) -> &mut BasicBlock {
         self.func.block_mut(self.current_block)
@@ -74,28 +88,28 @@ impl<'a> HirToMirLowering<'a> {
         );
     }
 
-    pub(super) fn register_named_map_value_type(&mut self, map_name: &str, ty: &MirType) {
-        if self.conflicting_map_value_types.contains(map_name) {
+    pub(super) fn register_named_map_value_type(&mut self, map: &MapRef, ty: &MirType) {
+        if self.conflicting_map_value_types.contains(map) {
             return;
         }
 
-        match self.map_value_types.get(map_name) {
+        match self.map_value_types.get(map) {
             Some(existing) if existing != ty => {
-                self.map_value_types.remove(map_name);
-                self.conflicting_map_value_types.insert(map_name.to_string());
+                self.map_value_types.remove(map);
+                self.conflicting_map_value_types.insert(map.clone());
             }
             Some(_) => {}
             None => {
-                self.map_value_types.insert(map_name.to_string(), ty.clone());
+                self.map_value_types.insert(map.clone(), ty.clone());
             }
         }
     }
 
-    pub(super) fn named_map_value_type(&self, map_name: &str) -> Option<&MirType> {
-        if self.conflicting_map_value_types.contains(map_name) {
+    pub(super) fn named_map_value_type(&self, map: &MapRef) -> Option<&MirType> {
+        if self.conflicting_map_value_types.contains(map) {
             None
         } else {
-            self.map_value_types.get(map_name)
+            self.map_value_types.get(map)
         }
     }
 

@@ -1,6 +1,8 @@
 use super::*;
-use crate::compiler::{CounterKeySchema, CounterKeySchemaField};
+use crate::compiler::{CounterKeySchema, CounterKeySchemaField, MapRef, MirType};
+use crate::compiler::mir::MapKind;
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
+use std::collections::HashMap;
 
 #[test]
 fn test_uprobe_target_basic() {
@@ -150,6 +152,40 @@ fn test_parse_probe_spec_kprobe_unchanged() {
         }
         Err(e) => panic!("Unexpected error: {:?}", e),
     }
+}
+
+#[test]
+fn test_merge_generic_map_value_types_drops_conflicts() {
+    let shared = MapRef {
+        name: "shared_path".to_string(),
+        kind: MapKind::Hash,
+    };
+    let unique = MapRef {
+        name: "other_map".to_string(),
+        kind: MapKind::Hash,
+    };
+    let path_ty = MirType::Struct {
+        name: Some("path".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![],
+    };
+    let other_ty = MirType::I64;
+    let conflicting_ty = MirType::U64;
+
+    let merged = EbpfState::merge_generic_map_value_types(
+        [
+            HashMap::from([
+                (shared.clone(), path_ty.clone()),
+                (unique.clone(), other_ty.clone()),
+            ]),
+            HashMap::from([(shared.clone(), path_ty.clone())]),
+            HashMap::from([(shared.clone(), conflicting_ty)]),
+        ]
+        .iter(),
+    );
+
+    assert_eq!(merged.get(&unique), Some(&other_ty));
+    assert!(!merged.contains_key(&shared));
 }
 
 #[test]
