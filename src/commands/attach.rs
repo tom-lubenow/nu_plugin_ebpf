@@ -92,7 +92,7 @@ fn lower_capture_literals(
             return Err(LabeledError::new("Unsupported captured value in eBPF closure")
                 .with_label(
                     format!(
-                        "captured variable {} has unsupported type {}; supported captured constants are int, bool, string, glob, filesize, duration, nothing, top-level numeric scalar lists, and recursively constant records",
+                        "captured variable {} has unsupported type {}; supported captured constants are int, bool, string, binary, glob, filesize, duration, nothing, top-level numeric scalar lists, and recursively constant records",
                         var_id.get(),
                         value.get_type()
                     ),
@@ -461,6 +461,8 @@ Output commands:
   emit              - Send value to userspace via ring buffer
   read-str          - Read string from userspace memory pointer
   read-kernel-str   - Read string from kernel memory (rare)
+  global-get        - Load a named compiler-managed program global
+  global-set        - Store the pipeline input into a named compiler-managed program global
 
 Aggregation commands:
   count             - Count occurrences by key

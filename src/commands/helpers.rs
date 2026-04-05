@@ -9,6 +9,7 @@
 //! - read-str: Read string from userspace memory pointer
 //! - read-kernel-str: Read string from kernel memory pointer
 //! - kfunc-call: Invoke a typed kernel kfunc by name
+//! - global-get / global-set: Named compiler-managed per-program globals
 //! - map-get / map-put / map-delete: Generic BPF map operations
 
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
@@ -312,6 +313,109 @@ Example:
     ) -> Result<PipelineData, LabeledError> {
         let value = input.into_value(call.head)?;
         Ok(PipelineData::Value(value, None))
+    }
+}
+
+#[derive(Clone)]
+pub struct GlobalGet;
+
+impl PluginCommand for GlobalGet {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "global-get"
+    }
+
+    fn description(&self) -> &str {
+        "Load a value from a named compiler-managed program global."
+    }
+
+    fn extra_description(&self) -> &str {
+        r#"Loads a zero-initialized named per-program global. The global layout is
+established by a prior `global-set` in the same closure, after which later
+`global-get` users can project fields or use the whole value with `emit` and
+`count`.
+
+Example:
+  let state = (global-get seen_path)
+  if $state != 0 { $state | emit }"#
+    }
+
+    fn signature(&self) -> Signature {
+        Signature::build("global-get")
+            .input_output_types(vec![(Type::Nothing, Type::Any), (Type::Any, Type::Any)])
+            .required("name", SyntaxShape::String, "Global name")
+            .category(Category::Experimental)
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "ebpf attach 'kprobe:sys_read' {|ctx| global-get seen_pid }",
+            description: "Load a named per-program global",
+            result: None,
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        match input {
+            PipelineData::Value(value, meta) => Ok(PipelineData::Value(value, meta)),
+            _ => Ok(PipelineData::Value(Value::nothing(call.head), None)),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct GlobalSet;
+
+impl PluginCommand for GlobalSet {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "global-set"
+    }
+
+    fn description(&self) -> &str {
+        "Store the pipeline input into a named compiler-managed program global."
+    }
+
+    fn extra_description(&self) -> &str {
+        r#"Stores the pipeline input into a zero-initialized named per-program
+global. The first `global-set` for a given name establishes the fixed layout
+used by later `global-get` and `global-set` calls in the same closure.
+
+Example:
+  $ctx.pid | global-set seen_pid"#
+    }
+
+    fn signature(&self) -> Signature {
+        Signature::build("global-set")
+            .input_output_types(vec![(Type::Any, Type::Int), (Type::Nothing, Type::Int)])
+            .required("name", SyntaxShape::String, "Global name")
+            .category(Category::Experimental)
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "ebpf attach 'kprobe:sys_read' {|ctx| $ctx.pid | global-set seen_pid }",
+            description: "Store a value in a named per-program global",
+            result: None,
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        _input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        Ok(PipelineData::Value(Value::int(0, call.head), None))
     }
 }
 

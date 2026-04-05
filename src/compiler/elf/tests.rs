@@ -72,10 +72,18 @@ fn test_program_intrinsic_command_registry() {
         ProgramIntrinsic::from_command_name("map-get"),
         Some(ProgramIntrinsic::MapGet)
     );
+    assert_eq!(
+        ProgramIntrinsic::from_command_name("global-set"),
+        Some(ProgramIntrinsic::GlobalSet)
+    );
     assert!(ProgramIntrinsic::command_names().contains(&"emit"));
     assert_eq!(
         ProgramIntrinsic::ReadKernelStr.required_capability(),
         ProgramCapability::ReadKernelString
+    );
+    assert_eq!(
+        ProgramIntrinsic::GlobalGet.required_capability(),
+        ProgramCapability::Globals
     );
 }
 
@@ -90,6 +98,7 @@ fn test_program_type_supports_probe_capabilities() {
     assert!(EbpfProgramType::Tracepoint.supports_capability(ProgramCapability::Emit));
     assert!(EbpfProgramType::Fentry.supports_capability(ProgramCapability::KfuncCalls));
     assert!(EbpfProgramType::Kprobe.supports_capability(ProgramCapability::StackTraces));
+    assert!(EbpfProgramType::Xdp.supports_capability(ProgramCapability::Globals));
     assert!(!EbpfProgramType::Xdp.supports_capability(ProgramCapability::ReadUserString));
 }
 

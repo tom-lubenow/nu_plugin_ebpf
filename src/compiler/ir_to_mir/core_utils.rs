@@ -1,6 +1,10 @@
 use super::*;
 
 impl<'a> HirToMirLowering<'a> {
+    pub(super) fn named_program_global_symbol(name: &str) -> String {
+        format!("__nu_global_{}", name)
+    }
+
     pub(super) fn fixed_copy_chunk(remaining: usize, offsets: &[usize]) -> (MirType, usize) {
         for (size, ty) in [
             (8usize, MirType::U64),
@@ -202,6 +206,400 @@ impl<'a> HirToMirLowering<'a> {
         } else {
             self.map_value_types.get(map)
         }
+    }
+
+    pub(super) fn named_program_global(&self, name: &str) -> Option<&MutableCaptureGlobal> {
+        self.named_program_globals.get(name)
+    }
+
+    fn infer_mutable_global_layout(
+        &self,
+        symbol: String,
+        src: RegId,
+        src_vreg: VReg,
+    ) -> Result<MutableCaptureGlobal, CompileError> {
+        if let Some(meta) = self.get_metadata(src) {
+            if let Some((_, max_len)) = meta.list_buffer {
+                return Ok(MutableCaptureGlobal {
+                    symbol,
+                    ty: MirType::Array {
+                        elem: Box::new(MirType::I64),
+                        len: max_len.saturating_add(1),
+                    },
+                    list_max_len: Some(max_len),
+                    string_slot_len: None,
+                });
+            }
+
+            if let Some(slot) = meta.string_slot {
+                let slot_len = self.stack_slot_size(slot).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "string slot not found during mutable global layout inference".into(),
+                    )
+                })?;
+                return Ok(MutableCaptureGlobal {
+                    symbol,
+                    ty: MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len: 8 + slot_len,
+                    },
+                    list_max_len: None,
+                    string_slot_len: Some(slot_len),
+                });
+            }
+
+            if let Some(field_ty) = meta.field_type.clone() {
+                let stored_ty = self.stored_generic_map_value_type(&field_ty);
+                if matches!(
+                    stored_ty,
+                    MirType::I8
+                        | MirType::I16
+                        | MirType::I32
+                        | MirType::I64
+                        | MirType::U8
+                        | MirType::U16
+                        | MirType::U32
+                        | MirType::U64
+                        | MirType::Bool
+                        | MirType::Array { .. }
+                        | MirType::Struct { .. }
+                ) {
+                    return Ok(MutableCaptureGlobal {
+                        symbol,
+                        ty: stored_ty,
+                        list_max_len: None,
+                        string_slot_len: None,
+                    });
+                }
+            }
+        }
+
+        let fallback_ty = self
+            .vreg_type_hints
+            .get(&src_vreg)
+            .cloned()
+            .map(|ty| self.stored_generic_map_value_type(&ty))
+            .or_else(|| {
+                self.get_metadata(src)
+                    .and_then(|m| m.literal_int.map(|_| MirType::I64))
+            })
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "global-set requires a value with a known fixed layout".into(),
+                )
+            })?;
+
+        match fallback_ty {
+            MirType::I8
+            | MirType::I16
+            | MirType::I32
+            | MirType::I64
+            | MirType::U8
+            | MirType::U16
+            | MirType::U32
+            | MirType::U64
+            | MirType::Bool
+            | MirType::Array { .. }
+            | MirType::Struct { .. } => Ok(MutableCaptureGlobal {
+                symbol,
+                ty: fallback_ty,
+                list_max_len: None,
+                string_slot_len: None,
+            }),
+            _ => Err(CompileError::UnsupportedInstruction(
+                "global-set requires a scalar, string, fixed binary, numeric list, or representable aggregate value".into(),
+            )),
+        }
+    }
+
+    pub(super) fn ensure_named_program_global(
+        &mut self,
+        name: &str,
+        src: RegId,
+        src_vreg: VReg,
+    ) -> Result<MutableCaptureGlobal, CompileError> {
+        let symbol = Self::named_program_global_symbol(name);
+        let inferred = self.infer_mutable_global_layout(symbol.clone(), src, src_vreg)?;
+
+        if let Some(existing) = self.named_program_globals.get(name) {
+            if existing != &inferred {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "global '{}' is used with incompatible layouts",
+                    name
+                )));
+            }
+            return Ok(existing.clone());
+        }
+
+        let size = inferred.ty.size();
+        if size == 0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "global '{}' inferred an empty layout, which is not yet supported",
+                name
+            )));
+        }
+
+        self.bss_globals.push(BssGlobal { name: symbol, size });
+        self.named_program_globals
+            .insert(name.to_string(), inferred.clone());
+        Ok(inferred)
+    }
+
+    pub(super) fn load_mutable_global_value(
+        &mut self,
+        dst: RegId,
+        dst_vreg: VReg,
+        global: &MutableCaptureGlobal,
+    ) -> Result<(), CompileError> {
+        let global_ptr = self.func.alloc_vreg();
+        self.emit(MirInst::LoadGlobal {
+            dst: global_ptr,
+            symbol: global.symbol.clone(),
+            ty: global.ty.clone(),
+        });
+        let global_ptr_ty = MirType::Ptr {
+            pointee: Box::new(global.ty.clone()),
+            address_space: crate::compiler::mir::AddressSpace::Map,
+        };
+        self.vreg_type_hints
+            .insert(global_ptr, global_ptr_ty.clone());
+
+        self.reg_metadata.insert(dst.get(), RegMetadata::default());
+
+        if let Some(max_len) = global.list_max_len {
+            let buffer_size = (max_len.saturating_add(1)) * std::mem::size_of::<i64>();
+            let slot = self
+                .func
+                .alloc_stack_slot(buffer_size, 8, StackSlotKind::ListBuffer);
+            self.record_list_buffer_slot_type(slot, max_len);
+            self.emit(MirInst::Copy {
+                dst: dst_vreg,
+                src: MirValue::StackSlot(slot),
+            });
+            let stack_list_ptr_ty = MirType::Ptr {
+                pointee: Box::new(global.ty.clone()),
+                address_space: crate::compiler::mir::AddressSpace::Stack,
+            };
+            self.vreg_type_hints.insert(dst_vreg, stack_list_ptr_ty);
+            self.emit_ptr_copy(dst_vreg, global_ptr, global.ty.size())?;
+            let meta = self.get_or_create_metadata(dst);
+            meta.field_type = Some(global.ty.clone());
+            meta.list_buffer = Some((slot, max_len));
+        } else if let Some(slot_len) = global.string_slot_len {
+            let slot = self
+                .func
+                .alloc_stack_slot(slot_len, 8, StackSlotKind::StringBuffer);
+            self.record_stack_slot_type(
+                slot,
+                MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: slot_len,
+                },
+            );
+            self.emit(MirInst::Copy {
+                dst: dst_vreg,
+                src: MirValue::StackSlot(slot),
+            });
+            let stack_string_ptr_ty = MirType::Ptr {
+                pointee: Box::new(MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: slot_len,
+                }),
+                address_space: crate::compiler::mir::AddressSpace::Stack,
+            };
+            self.vreg_type_hints.insert(dst_vreg, stack_string_ptr_ty);
+            let len_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::Load {
+                dst: len_vreg,
+                ptr: global_ptr,
+                offset: 0,
+                ty: MirType::U64,
+            });
+            self.vreg_type_hints.insert(len_vreg, MirType::U64);
+            self.emit_ptr_copy_with_offsets(dst_vreg, 0, global_ptr, 8, slot_len)?;
+            let meta = self.get_or_create_metadata(dst);
+            meta.string_slot = Some(slot);
+            meta.string_len_vreg = Some(len_vreg);
+            meta.string_len_bound = Some(slot_len.saturating_sub(1));
+            meta.field_type = Some(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: slot_len,
+            });
+        } else if matches!(global.ty, MirType::Array { .. } | MirType::Struct { .. }) {
+            self.emit(MirInst::Copy {
+                dst: dst_vreg,
+                src: MirValue::VReg(global_ptr),
+            });
+            self.vreg_type_hints.insert(dst_vreg, global_ptr_ty);
+            let meta = self.get_or_create_metadata(dst);
+            meta.field_type = Some(global.ty.clone());
+        } else {
+            self.emit(MirInst::Load {
+                dst: dst_vreg,
+                ptr: global_ptr,
+                offset: 0,
+                ty: global.ty.clone(),
+            });
+            self.vreg_type_hints.insert(dst_vreg, global.ty.clone());
+            let meta = self.get_or_create_metadata(dst);
+            meta.field_type = Some(global.ty.clone());
+        }
+
+        Ok(())
+    }
+
+    pub(super) fn store_into_mutable_global(
+        &mut self,
+        context: &str,
+        global: &MutableCaptureGlobal,
+        src: RegId,
+        src_vreg: VReg,
+    ) -> Result<(), CompileError> {
+        let global_ptr = self.func.alloc_vreg();
+        self.emit(MirInst::LoadGlobal {
+            dst: global_ptr,
+            symbol: global.symbol.clone(),
+            ty: global.ty.clone(),
+        });
+        self.vreg_type_hints.insert(
+            global_ptr,
+            MirType::Ptr {
+                pointee: Box::new(global.ty.clone()),
+                address_space: crate::compiler::mir::AddressSpace::Map,
+            },
+        );
+
+        if let Some(max_len) = global.list_max_len {
+            let Some((slot, src_max_len)) = self.get_metadata(src).and_then(|m| m.list_buffer)
+            else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "storing into {} requires a materialized numeric list value",
+                    context
+                )));
+            };
+
+            if src_max_len != max_len {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "storing numeric list of capacity {} into {} with capacity {} is not supported",
+                    src_max_len, context, max_len
+                )));
+            }
+
+            let src_ptr = self.func.alloc_vreg();
+            self.emit(MirInst::Copy {
+                dst: src_ptr,
+                src: MirValue::StackSlot(slot),
+            });
+            self.vreg_type_hints.insert(
+                src_ptr,
+                MirType::Ptr {
+                    pointee: Box::new(global.ty.clone()),
+                    address_space: crate::compiler::mir::AddressSpace::Stack,
+                },
+            );
+            self.emit_ptr_copy(global_ptr, src_ptr, global.ty.size())?;
+        } else if let Some(slot_len) = global.string_slot_len {
+            let src_meta = self.get_metadata(src).cloned();
+            let Some(meta) = src_meta else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "storing into {} requires a materialized string value with tracked length",
+                    context
+                )));
+            };
+            let Some(slot) = meta.string_slot else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "storing into {} requires a materialized string value with tracked length",
+                    context
+                )));
+            };
+            let Some(len_vreg) = meta.string_len_vreg else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "storing into {} requires a tracked string length",
+                    context
+                )));
+            };
+            let src_slot_size = self.stack_slot_size(slot).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "string slot not found during mutable global store".into(),
+                )
+            })?;
+            if src_slot_size > slot_len {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "storing string buffer of size {} into {} with capacity {} is not supported",
+                    src_slot_size, context, slot_len
+                )));
+            }
+
+            self.emit(MirInst::Store {
+                ptr: global_ptr,
+                offset: 0,
+                val: MirValue::VReg(len_vreg),
+                ty: MirType::U64,
+            });
+
+            let src_ptr = self.func.alloc_vreg();
+            self.emit(MirInst::Copy {
+                dst: src_ptr,
+                src: MirValue::StackSlot(slot),
+            });
+            self.vreg_type_hints.insert(
+                src_ptr,
+                MirType::Ptr {
+                    pointee: Box::new(MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len: src_slot_size,
+                    }),
+                    address_space: crate::compiler::mir::AddressSpace::Stack,
+                },
+            );
+            self.emit_ptr_copy_with_offsets(global_ptr, 8, src_ptr, 0, src_slot_size)?;
+            if src_slot_size < slot_len {
+                self.emit_ptr_zero(global_ptr, 8 + src_slot_size, slot_len - src_slot_size)?;
+            }
+        } else {
+            match &global.ty {
+                MirType::Array { .. } | MirType::Struct { .. } => {
+                    let Some(src_runtime_ty) = self.vreg_type_hints.get(&src_vreg).cloned() else {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "storing into {} requires a materialized aggregate pointer value",
+                            context
+                        )));
+                    };
+
+                    let Some(MirType::Ptr {
+                        pointee,
+                        address_space:
+                            crate::compiler::mir::AddressSpace::Stack
+                            | crate::compiler::mir::AddressSpace::Map,
+                    }) = Some(src_runtime_ty)
+                    else {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "storing into {} requires a stack/map aggregate pointer value",
+                            context
+                        )));
+                    };
+
+                    if pointee.as_ref() != &global.ty {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "storing type {:?} into {} of type {:?} is not supported",
+                            pointee, context, global.ty
+                        )));
+                    }
+
+                    self.emit_ptr_copy(global_ptr, src_vreg, global.ty.size())?;
+                }
+                _ => {
+                    self.emit(MirInst::Store {
+                        ptr: global_ptr,
+                        offset: 0,
+                        val: MirValue::VReg(src_vreg),
+                        ty: global.ty.clone(),
+                    });
+                }
+            }
+        }
+
+        Ok(())
     }
 
     pub(super) fn ensure_string_slot_capacity(

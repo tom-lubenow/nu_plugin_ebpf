@@ -739,6 +739,88 @@ impl<'a> HirToMirLowering<'a> {
                 self.reset_call_result_metadata(src_dst);
             }
 
+            "global-get" => {
+                let result_vreg = if src_dst_had_value {
+                    self.assign_fresh_vreg(src_dst)
+                } else {
+                    dst_vreg
+                };
+                if !self.named_flags.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "global-get does not accept flags".into(),
+                    ));
+                }
+                self.require_only_named_args("global-get", &[])?;
+                if self.positional_args.len() != 1 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "global-get requires exactly one positional global name".into(),
+                    ));
+                }
+
+                let (_, name_reg) = self.positional_args[0];
+                let global_name = self.literal_string_arg(name_reg, "global-get")?;
+                self.validate_generic_map_name(&global_name, "global-get")?;
+                let global = self
+                    .named_program_global(&global_name)
+                    .cloned()
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "global-get for '{}' requires a prior same-program global-set to establish its layout",
+                            global_name
+                        ))
+                    })?;
+
+                self.load_mutable_global_value(src_dst, result_vreg, &global)?;
+            }
+
+            "global-set" => {
+                if !self.named_flags.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "global-set does not accept flags".into(),
+                    ));
+                }
+                self.require_only_named_args("global-set", &[])?;
+                if self.positional_args.len() != 1 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "global-set requires exactly one positional global name".into(),
+                    ));
+                }
+
+                let (_, name_reg) = self.positional_args[0];
+                let global_name = self.literal_string_arg(name_reg, "global-set")?;
+                self.validate_generic_map_name(&global_name, "global-set")?;
+                let value_vreg = self
+                    .pipeline_input
+                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "global-set requires a value from pipeline input".into(),
+                        )
+                    })?;
+                let value_reg = self
+                    .pipeline_input_reg
+                    .or_else(|| src_dst_had_value.then_some(src_dst))
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "global-set requires a source value with tracked metadata".into(),
+                        )
+                    })?;
+                let global =
+                    self.ensure_named_program_global(&global_name, value_reg, value_vreg)?;
+                self.store_into_mutable_global(
+                    &format!("global '{}'", global_name),
+                    &global,
+                    value_reg,
+                    value_vreg,
+                )?;
+
+                self.emit(MirInst::Copy {
+                    dst: dst_vreg,
+                    src: MirValue::Const(0),
+                });
+                self.reset_call_result_metadata(src_dst);
+            }
+
             "where" => {
                 // where { condition } - filter pipeline by condition
                 // Get the pipeline input (value to filter)

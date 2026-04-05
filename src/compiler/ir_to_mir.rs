@@ -200,7 +200,7 @@ struct SubfunctionSpecializationKey {
     arg_types: Vec<Option<MirType>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct MutableCaptureGlobal {
     symbol: String,
     ty: MirType,
@@ -295,6 +295,8 @@ pub struct HirToMirLowering<'a> {
     bss_globals: Vec<BssGlobal>,
     /// Captured variables that are backed by mutable globals instead of constants
     mutable_capture_globals: HashMap<VarId, MutableCaptureGlobal>,
+    /// Explicit named globals created by `global-set`
+    named_program_globals: HashMap<String, MutableCaptureGlobal>,
     /// Monotonic counter for unique readonly-global symbol names
     readonly_global_counter: u32,
     /// Registry of generated subfunctions by DeclId plus call-site type seeds
@@ -373,6 +375,7 @@ impl<'a> HirToMirLowering<'a> {
             data_globals: Vec::new(),
             bss_globals: Vec::new(),
             mutable_capture_globals: HashMap::new(),
+            named_program_globals: HashMap::new(),
             readonly_global_counter: 0,
             subfunction_registry: HashMap::new(),
             call_counts: HashMap::new(),

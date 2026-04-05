@@ -842,6 +842,8 @@ pub enum ProgramIntrinsic {
     ReadStr,
     ReadKernelStr,
     KfuncCall,
+    GlobalGet,
+    GlobalSet,
     MapGet,
     MapPut,
     MapDelete,
@@ -862,6 +864,8 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::ReadStr => "read-str",
             ProgramIntrinsic::ReadKernelStr => "read-kernel-str",
             ProgramIntrinsic::KfuncCall => "kfunc-call",
+            ProgramIntrinsic::GlobalGet => "global-get",
+            ProgramIntrinsic::GlobalSet => "global-set",
             ProgramIntrinsic::MapGet => "map-get",
             ProgramIntrinsic::MapPut => "map-put",
             ProgramIntrinsic::MapDelete => "map-delete",
@@ -878,6 +882,8 @@ impl ProgramIntrinsic {
             "read-str" => Some(ProgramIntrinsic::ReadStr),
             "read-kernel-str" => Some(ProgramIntrinsic::ReadKernelStr),
             "kfunc-call" => Some(ProgramIntrinsic::KfuncCall),
+            "global-get" => Some(ProgramIntrinsic::GlobalGet),
+            "global-set" => Some(ProgramIntrinsic::GlobalSet),
             "map-get" => Some(ProgramIntrinsic::MapGet),
             "map-put" => Some(ProgramIntrinsic::MapPut),
             "map-delete" => Some(ProgramIntrinsic::MapDelete),
@@ -894,6 +900,7 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::ReadStr => ProgramCapability::ReadUserString,
             ProgramIntrinsic::ReadKernelStr => ProgramCapability::ReadKernelString,
             ProgramIntrinsic::KfuncCall => ProgramCapability::KfuncCalls,
+            ProgramIntrinsic::GlobalGet | ProgramIntrinsic::GlobalSet => ProgramCapability::Globals,
             ProgramIntrinsic::MapGet | ProgramIntrinsic::MapPut | ProgramIntrinsic::MapDelete => {
                 ProgramCapability::GenericMaps
             }
@@ -918,6 +925,7 @@ pub enum ProgramCapability {
     ReadUserString,
     ReadKernelString,
     KfuncCalls,
+    Globals,
     GenericMaps,
     TailCalls,
 }
@@ -933,6 +941,7 @@ impl ProgramCapability {
             ProgramCapability::ReadUserString => "userspace string reads",
             ProgramCapability::ReadKernelString => "kernel string reads",
             ProgramCapability::KfuncCalls => "kfunc calls",
+            ProgramCapability::Globals => "program globals",
             ProgramCapability::GenericMaps => "generic map operations",
             ProgramCapability::TailCalls => "tail calls",
         }
@@ -986,6 +995,7 @@ const DEFAULT_PROBE_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::ReadUserString,
     ProgramCapability::ReadKernelString,
     ProgramCapability::KfuncCalls,
+    ProgramCapability::Globals,
     ProgramCapability::GenericMaps,
     ProgramCapability::TailCalls,
 ];
@@ -994,6 +1004,7 @@ const DEFAULT_XDP_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::Counters,
     ProgramCapability::Histograms,
     ProgramCapability::Timers,
+    ProgramCapability::Globals,
     ProgramCapability::GenericMaps,
     ProgramCapability::TailCalls,
 ];
@@ -1291,6 +1302,8 @@ const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[
     ProgramIntrinsic::ReadStr,
     ProgramIntrinsic::ReadKernelStr,
     ProgramIntrinsic::KfuncCall,
+    ProgramIntrinsic::GlobalGet,
+    ProgramIntrinsic::GlobalSet,
     ProgramIntrinsic::MapGet,
     ProgramIntrinsic::MapPut,
     ProgramIntrinsic::MapDelete,

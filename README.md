@@ -264,6 +264,14 @@ value shape stays canonical too, so map-to-map copies preserve the real
 aggregate layout instead of a pointer wrapper. When those maps are attached
 with the same `--pin` group, active pinned programs now reuse that typed schema
 across program boundaries too.
+
+Compiler-managed named globals are also available through `global-get` and
+`global-set`. These are zero-initialized per-program globals backed by `.bss`.
+The first `global-set` for a given name establishes the fixed layout used by
+later `global-get` and `global-set` calls in the same closure, so they are
+best suited for small per-program state without the overhead of an explicit
+map. Like the current mutable-capture path, they only support values with a
+truthful fixed layout.
 Generic map `--kind` now supports `hash`, `array`, `lru-hash`,
 `per-cpu-hash`, `per-cpu-array`, and `lru-per-cpu-hash`.
 
@@ -306,6 +314,8 @@ materialized.
 | `stop-timer` | Calculate elapsed time |
 | `read-str` | Read string from user memory (`--max-len` to cap, default 128) |
 | `read-kernel-str` | Read string from kernel memory (`--max-len` to cap, default 128) |
+| `global-get` | Load a named compiler-managed program global |
+| `global-set` | Store the pipeline input into a named compiler-managed program global |
 | `map-get` | Look up a value pointer in a named generic map |
 | `map-put` | Insert or update a value in a named generic map |
 | `map-delete` | Delete a key from a named generic map |
