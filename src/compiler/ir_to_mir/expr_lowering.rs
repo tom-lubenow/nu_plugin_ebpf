@@ -168,6 +168,7 @@ impl<'a> HirToMirLowering<'a> {
                     ty,
                     list_max_len,
                     string_slot_len,
+                    string_content_cap: string_slot_len.map(|slot_len| slot_len.saturating_sub(1)),
                 },
             );
         }

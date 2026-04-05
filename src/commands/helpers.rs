@@ -354,7 +354,7 @@ Examples:
             .named(
                 "type",
                 SyntaxShape::String,
-                "Declare a zero-initialized global directly from a type spec (i8/i16/i32/i64/u8/u16/u32/u64/bool/bytes:N)",
+                "Declare a zero-initialized global directly from a type spec (i8/i16/i32/i64/u8/u16/u32/u64/bool/bytes:N/string:N/list:i64:N)",
                 None,
             )
             .switch(
@@ -381,6 +381,11 @@ Examples:
             Example {
                 example: "ebpf attach 'kprobe:sys_read' {|ctx| global-define --type i64 seen_pid; global-get seen_pid }",
                 description: "Declare a zero-initialized named per-program global directly from a type spec",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'kprobe:sys_read' {|ctx| global-define --type string:32 seen_name; global-get seen_name | count }",
+                description: "Declare a zero-initialized string global with a 32-byte content cap",
                 result: None,
             },
         ]

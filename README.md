@@ -274,13 +274,15 @@ without doing a runtime store, so source order does not matter. `global-define
 allocating a zero-initialized `.bss` global without a runtime store. If you
 use `global-define --type`, no exemplar is needed at all: currently
 `i8`/`i16`/`i32`/`i64`, `u8`/`u16`/`u32`/`u64`, `bool`, and `bytes:N` are
-supported as direct zero-initialized declarations. If you skip `global-define`,
-the first `global-set` for a given name still establishes the fixed layout used
-by later `global-get` and `global-set` calls in the same closure; when that
-first write is a compile-time constant the global is initialized from it,
-otherwise it starts zeroed. They are best suited for small per-program state
-without the overhead of an explicit map. Like the current mutable-capture path,
-they only support values with a truthful fixed layout.
+supported as direct zero-initialized declarations, and that now also extends to
+`string:N` and `list:i64:N` using the same runtime layouts as ordinary mutable
+string/list globals. If you skip `global-define`, the first `global-set` for a
+given name still establishes the fixed layout used by later `global-get` and
+`global-set` calls in the same closure; when that first write is a compile-time
+constant the global is initialized from it, otherwise it starts zeroed. They
+are best suited for small per-program state without the overhead of an explicit
+map. Like the current mutable-capture path, they only support values with a
+truthful fixed layout.
 Generic map `--kind` now supports `hash`, `array`, `lru-hash`,
 `per-cpu-hash`, `per-cpu-array`, and `lru-per-cpu-hash`.
 
@@ -323,7 +325,7 @@ materialized.
 | `stop-timer` | Calculate elapsed time |
 | `read-str` | Read string from user memory (`--max-len` to cap, default 128) |
 | `read-kernel-str` | Read string from kernel memory (`--max-len` to cap, default 128) |
-| `global-define` | Declare a named compiler-managed program global; `--zero` uses a runtime exemplar, `--type` declares a zero-initialized scalar or `bytes:N` global directly |
+| `global-define` | Declare a named compiler-managed program global; `--zero` uses a runtime exemplar, `--type` declares a zero-initialized scalar, `bytes:N`, `string:N`, or `list:i64:N` global directly |
 | `global-get` | Load a named compiler-managed program global |
 | `global-set` | Store the pipeline input into a named compiler-managed program global |
 | `map-get` | Look up a value pointer in a named generic map |

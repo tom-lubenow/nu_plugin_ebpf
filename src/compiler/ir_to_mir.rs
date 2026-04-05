@@ -208,6 +208,7 @@ struct MutableCaptureGlobal {
     ty: MirType,
     list_max_len: Option<usize>,
     string_slot_len: Option<usize>,
+    string_content_cap: Option<usize>,
 }
 
 /// Lowering context for HIR to MIR conversion

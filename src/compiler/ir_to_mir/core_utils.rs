@@ -216,6 +216,8 @@ impl<'a> HirToMirLowering<'a> {
         symbol: String,
         spec: &str,
     ) -> Result<MutableCaptureGlobal, CompileError> {
+        const MAX_NUMERIC_LIST_CAPACITY: usize = 60;
+
         let scalar_ty = match spec {
             "i8" => Some(MirType::I8),
             "i16" => Some(MirType::I16),
@@ -235,6 +237,7 @@ impl<'a> HirToMirLowering<'a> {
                 ty,
                 list_max_len: None,
                 string_slot_len: None,
+                string_content_cap: None,
             });
         }
 
@@ -266,11 +269,77 @@ impl<'a> HirToMirLowering<'a> {
                 },
                 list_max_len: None,
                 string_slot_len: None,
+                string_content_cap: None,
+            });
+        }
+
+        if let Some(cap) = spec
+            .strip_prefix("string:")
+            .map(|len| {
+                len.parse::<usize>().map_err(|_| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "global type spec '{}' has an invalid string capacity",
+                        spec
+                    ))
+                })
+            })
+            .transpose()?
+        {
+            if cap == 0 || cap >= MAX_STRING_SIZE {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "global string declarations require a capacity between 1 and {}",
+                    MAX_STRING_SIZE - 1
+                )));
+            }
+
+            let slot_len = align_to_eight(cap.saturating_add(1))
+                .min(MAX_STRING_SIZE)
+                .max(16);
+            return Ok(MutableCaptureGlobal {
+                symbol,
+                ty: MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: 8 + slot_len,
+                },
+                list_max_len: None,
+                string_slot_len: Some(slot_len),
+                string_content_cap: Some(cap),
+            });
+        }
+
+        if let Some(cap) = spec
+            .strip_prefix("list:i64:")
+            .map(|len| {
+                len.parse::<usize>().map_err(|_| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "global type spec '{}' has an invalid list capacity",
+                        spec
+                    ))
+                })
+            })
+            .transpose()?
+        {
+            if cap > MAX_NUMERIC_LIST_CAPACITY {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "global numeric list declarations require a capacity of at most {}",
+                    MAX_NUMERIC_LIST_CAPACITY
+                )));
+            }
+
+            return Ok(MutableCaptureGlobal {
+                symbol,
+                ty: MirType::Array {
+                    elem: Box::new(MirType::I64),
+                    len: cap.saturating_add(1),
+                },
+                list_max_len: Some(cap),
+                string_slot_len: None,
+                string_content_cap: None,
             });
         }
 
         Err(CompileError::UnsupportedInstruction(format!(
-            "unsupported global type spec '{}'; expected one of i8, i16, i32, i64, u8, u16, u32, u64, bool, bytes:N, or binary:N",
+            "unsupported global type spec '{}'; expected one of i8, i16, i32, i64, u8, u16, u32, u64, bool, bytes:N, binary:N, string:N, or list:i64:N",
             spec
         )))
     }
@@ -291,6 +360,7 @@ impl<'a> HirToMirLowering<'a> {
                     },
                     list_max_len: Some(max_len),
                     string_slot_len: None,
+                    string_content_cap: None,
                 });
             }
 
@@ -308,6 +378,9 @@ impl<'a> HirToMirLowering<'a> {
                     },
                     list_max_len: None,
                     string_slot_len: Some(slot_len),
+                    string_content_cap: Some(
+                        meta.string_len_bound.unwrap_or(slot_len.saturating_sub(1)),
+                    ),
                 });
             }
 
@@ -332,6 +405,7 @@ impl<'a> HirToMirLowering<'a> {
                         ty: stored_ty,
                         list_max_len: None,
                         string_slot_len: None,
+                        string_content_cap: None,
                     });
                 }
             }
@@ -368,6 +442,7 @@ impl<'a> HirToMirLowering<'a> {
                 ty: fallback_ty,
                 list_max_len: None,
                 string_slot_len: None,
+                string_content_cap: None,
             }),
             _ => Err(CompileError::UnsupportedInstruction(
                 "global-set requires a scalar, string, fixed binary, numeric list, or representable aggregate value".into(),
@@ -401,6 +476,7 @@ impl<'a> HirToMirLowering<'a> {
                     ty: ty.clone(),
                     list_max_len: *list_max_len,
                     string_slot_len: *string_slot_len,
+                    string_content_cap: string_slot_len.map(|slot_len| slot_len.saturating_sub(1)),
                 }
             } else {
                 self.infer_mutable_global_layout(symbol.clone(), src, src_vreg)?
@@ -477,6 +553,7 @@ impl<'a> HirToMirLowering<'a> {
             ty,
             list_max_len,
             string_slot_len,
+            string_content_cap: string_slot_len.map(|slot_len| slot_len.saturating_sub(1)),
         };
 
         if let Some(existing) = self.named_program_globals.get(name) {
@@ -617,7 +694,11 @@ impl<'a> HirToMirLowering<'a> {
             let meta = self.get_or_create_metadata(dst);
             meta.string_slot = Some(slot);
             meta.string_len_vreg = Some(len_vreg);
-            meta.string_len_bound = Some(slot_len.saturating_sub(1));
+            meta.string_len_bound = Some(
+                global
+                    .string_content_cap
+                    .unwrap_or(slot_len.saturating_sub(1)),
+            );
             meta.field_type = Some(MirType::Array {
                 elem: Box::new(MirType::U8),
                 len: slot_len,
@@ -724,6 +805,18 @@ impl<'a> HirToMirLowering<'a> {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "storing string buffer of size {} into {} with capacity {} is not supported",
                     src_slot_size, context, slot_len
+                )));
+            }
+            let src_max_len = meta
+                .string_len_bound
+                .unwrap_or(src_slot_size.saturating_sub(1));
+            let dst_max_len = global
+                .string_content_cap
+                .unwrap_or(slot_len.saturating_sub(1));
+            if src_max_len > dst_max_len {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "storing string value with capacity {} into {} with content capacity {} is not supported",
+                    src_max_len, context, dst_max_len
                 )));
             }
 
