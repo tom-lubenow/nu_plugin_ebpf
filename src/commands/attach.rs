@@ -354,9 +354,11 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.rx_queue_index } - Get RX queue index
     {|ctx| $ctx.egress_ifindex } - Get egress interface index
     {|ctx| ($ctx.data | get 0) } - Read the first packet byte with an auto-generated data_end guard
+    {|ctx| $ctx.data.u16be.6 } - Read a big-endian 16-bit packet scalar (here: bytes 12..13)
     Note: XDP closures currently need to return an explicit numeric action code
     such as `2` (XDP_PASS). Packet reads currently support scalar byte access
-    through `get`/indexing; richer packet struct typing is still in progress.
+    through `get`/indexing and direct `u16be`/`u32be` cell-path scalar loads;
+    richer packet struct typing is still in progress.
 
   Function fields:
     {|ctx| $ctx.arg0 }    - Get function argument 0

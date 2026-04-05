@@ -396,8 +396,10 @@ pub(crate) fn recover_optimized_function_type_hints(
     let mut changed = true;
     while changed {
         changed = false;
+        let mut working_hints = hints.clone();
+        let mut working_trusted = trusted_hints.clone();
         let map_value_types =
-            infer_generic_map_value_types(func, hints, Some(generic_map_value_types));
+            infer_generic_map_value_types(func, &working_hints, Some(generic_map_value_types));
         for inst in func.blocks.iter().flat_map(|block| {
             block
                 .instructions
@@ -407,7 +409,7 @@ pub(crate) fn recover_optimized_function_type_hints(
             let recovered = infer_instruction_def_type(
                 inst,
                 probe_ctx,
-                hints,
+                &working_hints,
                 stack_slot_hints,
                 &map_value_types,
             )
@@ -419,22 +421,22 @@ pub(crate) fn recover_optimized_function_type_hints(
                         MirInst::Copy {
                             src: MirValue::VReg(src_vreg),
                             ..
-                        } => trusted_hints.contains(src_vreg),
+                        } => working_trusted.contains(src_vreg),
                         MirInst::BinOp { op, lhs, rhs, .. }
                             if matches!(op, BinOpKind::Add | BinOpKind::Sub) =>
                         {
                             let lhs_trusted = match lhs {
-                                MirValue::VReg(vreg) => trusted_hints.contains(vreg),
+                                MirValue::VReg(vreg) => working_trusted.contains(vreg),
                                 _ => false,
                             };
                             let rhs_trusted = match rhs {
-                                MirValue::VReg(vreg) => trusted_hints.contains(vreg),
+                                MirValue::VReg(vreg) => working_trusted.contains(vreg),
                                 _ => false,
                             };
                             lhs_trusted || (matches!(op, BinOpKind::Add) && rhs_trusted)
                         }
                         MirInst::Phi { args, .. } => {
-                            args.iter().all(|(_, vreg)| trusted_hints.contains(vreg))
+                            args.iter().all(|(_, vreg)| working_trusted.contains(vreg))
                         }
                         _ => false,
                     }
@@ -443,22 +445,29 @@ pub(crate) fn recover_optimized_function_type_hints(
             });
 
             if let Some((dst, ty, trustworthy)) = recovered {
-                let existing = hints.get(&dst).cloned();
+                let existing = working_hints.get(&dst).cloned();
                 let should_update = match existing.as_ref() {
                     None => true,
                     Some(existing_ty) if existing_ty == &ty => {
-                        trustworthy && !trusted_hints.contains(&dst)
+                        trustworthy && !working_trusted.contains(&dst)
                     }
                     Some(_) => trustworthy,
                 };
                 if should_update {
-                    hints.insert(dst, ty);
-                    changed = true;
+                    working_hints.insert(dst, ty);
                 }
                 if trustworthy {
-                    trusted_hints.insert(dst);
+                    working_trusted.insert(dst);
                 }
             }
+        }
+        if working_hints != *hints {
+            *hints = working_hints;
+            changed = true;
+        }
+        if working_trusted != trusted_hints {
+            trusted_hints = working_trusted;
+            changed = true;
         }
     }
 }
@@ -680,5 +689,88 @@ mod tests {
                 address_space: AddressSpace::Stack,
             })
         );
+    }
+
+    #[test]
+    fn test_recover_optimized_function_type_hints_converges_with_reused_vreg_defs() {
+        let mut func = MirFunction::new();
+        let bb0 = func.alloc_block();
+        let bb1 = func.alloc_block();
+        let bb2 = func.alloc_block();
+        func.entry = bb0;
+
+        let v0 = func.alloc_vreg();
+        let v1 = func.alloc_vreg();
+        let v2 = func.alloc_vreg();
+        let v3 = func.alloc_vreg();
+        let v4 = func.alloc_vreg();
+
+        func.block_mut(bb0)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: v1,
+                field: CtxField::Data,
+                slot: None,
+            });
+        func.block_mut(bb0)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: v2,
+                field: CtxField::DataEnd,
+                slot: None,
+            });
+        func.block_mut(bb0).instructions.push(MirInst::BinOp {
+            dst: v3,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(v1),
+            rhs: MirValue::Const(2),
+        });
+        func.block_mut(bb0).instructions.push(MirInst::BinOp {
+            dst: v4,
+            op: BinOpKind::Le,
+            lhs: MirValue::VReg(v3),
+            rhs: MirValue::VReg(v2),
+        });
+        func.block_mut(bb0).terminator = MirInst::Branch {
+            cond: v4,
+            if_true: bb1,
+            if_false: bb2,
+        };
+
+        func.block_mut(bb1).instructions.push(MirInst::Load {
+            dst: v0,
+            ptr: v1,
+            offset: 0,
+            ty: MirType::U16,
+        });
+        func.block_mut(bb1).terminator = MirInst::Jump { target: bb2 };
+
+        func.block_mut(bb2).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(v0)),
+        };
+
+        let packet_ptr = MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Packet,
+        };
+        let mut hints = HashMap::from([
+            (v0, MirType::U16),
+            (v1, packet_ptr.clone()),
+            (v2, packet_ptr.clone()),
+            (v3, packet_ptr.clone()),
+        ]);
+
+        recover_optimized_function_type_hints(
+            &func,
+            None,
+            &mut hints,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+
+        assert_eq!(hints.get(&v0), Some(&MirType::U16));
+        assert_eq!(hints.get(&v1), Some(&packet_ptr));
+        assert_eq!(hints.get(&v2), Some(&packet_ptr));
+        assert_eq!(hints.get(&v3), Some(&packet_ptr));
     }
 }

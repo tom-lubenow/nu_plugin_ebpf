@@ -1107,6 +1107,26 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn packet_load_ptr_vreg(
+        &mut self,
+        packet_ptr_vreg: VReg,
+        packet_ptr_ty: MirType,
+        dst_vreg: VReg,
+    ) -> VReg {
+        if packet_ptr_vreg != dst_vreg {
+            return packet_ptr_vreg;
+        }
+
+        let preserved_ptr_vreg = self.func.alloc_vreg();
+        self.vreg_type_hints
+            .insert(preserved_ptr_vreg, packet_ptr_ty.clone());
+        self.emit(MirInst::Copy {
+            dst: preserved_ptr_vreg,
+            src: MirValue::VReg(packet_ptr_vreg),
+        });
+        preserved_ptr_vreg
+    }
+
     fn lower_trampoline_field_projection(
         &mut self,
         dst_vreg: VReg,
@@ -1586,6 +1606,178 @@ impl<'a> HirToMirLowering<'a> {
         Ok((offset, current_ty.clone(), None))
     }
 
+    fn packet_scalar_view_spec(member: &PathMember) -> Option<(MirType, usize, bool)> {
+        let PathMember::String { val, .. } = member else {
+            return None;
+        };
+        match val.as_str() {
+            "u16be" => Some((MirType::U16, 2, true)),
+            "u32be" => Some((MirType::U32, 4, true)),
+            _ => None,
+        }
+    }
+
+    fn emit_packet_big_endian_scalar_normalize(
+        &mut self,
+        dst_vreg: VReg,
+        ty: &MirType,
+    ) -> Result<(), CompileError> {
+        let hint = ty.clone();
+        match ty {
+            MirType::U16 => {
+                let mask_ff = self.large_const_operand(ty, 0xff);
+                let shift_8 = self.large_const_operand(ty, 8);
+                let low = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(low, hint.clone());
+                self.emit(MirInst::BinOp {
+                    dst: low,
+                    op: BinOpKind::And,
+                    lhs: MirValue::VReg(dst_vreg),
+                    rhs: mask_ff.clone(),
+                });
+
+                let low_shifted = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(low_shifted, hint.clone());
+                self.emit(MirInst::BinOp {
+                    dst: low_shifted,
+                    op: BinOpKind::Shl,
+                    lhs: MirValue::VReg(low),
+                    rhs: shift_8.clone(),
+                });
+
+                let high = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(high, hint.clone());
+                self.emit(MirInst::BinOp {
+                    dst: high,
+                    op: BinOpKind::Shr,
+                    lhs: MirValue::VReg(dst_vreg),
+                    rhs: shift_8,
+                });
+
+                let high_masked = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(high_masked, hint.clone());
+                self.emit(MirInst::BinOp {
+                    dst: high_masked,
+                    op: BinOpKind::And,
+                    lhs: MirValue::VReg(high),
+                    rhs: mask_ff,
+                });
+
+                self.vreg_type_hints.insert(dst_vreg, hint);
+                self.emit(MirInst::BinOp {
+                    dst: dst_vreg,
+                    op: BinOpKind::Or,
+                    lhs: MirValue::VReg(low_shifted),
+                    rhs: MirValue::VReg(high_masked),
+                });
+                Ok(())
+            }
+            MirType::U32 => {
+                let mask_ff = self.large_const_operand(ty, 0x0000_00ff);
+                let mask_ff00 = self.large_const_operand(ty, 0x0000_ff00);
+                let shift_8 = self.large_const_operand(ty, 8);
+                let shift_24 = self.large_const_operand(ty, 24);
+                let b0 = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(b0, hint.clone());
+                self.emit(MirInst::BinOp {
+                    dst: b0,
+                    op: BinOpKind::And,
+                    lhs: MirValue::VReg(dst_vreg),
+                    rhs: mask_ff.clone(),
+                });
+                let b0_shifted = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(b0_shifted, hint.clone());
+                self.emit(MirInst::BinOp {
+                    dst: b0_shifted,
+                    op: BinOpKind::Shl,
+                    lhs: MirValue::VReg(b0),
+                    rhs: shift_24.clone(),
+                });
+
+                let b1 = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(b1, hint.clone());
+                self.emit(MirInst::BinOp {
+                    dst: b1,
+                    op: BinOpKind::And,
+                    lhs: MirValue::VReg(dst_vreg),
+                    rhs: mask_ff00.clone(),
+                });
+                let b1_shifted = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(b1_shifted, hint.clone());
+                self.emit(MirInst::BinOp {
+                    dst: b1_shifted,
+                    op: BinOpKind::Shl,
+                    lhs: MirValue::VReg(b1),
+                    rhs: shift_8.clone(),
+                });
+
+                let b2_shifted = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(b2_shifted, hint.clone());
+                self.emit(MirInst::BinOp {
+                    dst: b2_shifted,
+                    op: BinOpKind::Shr,
+                    lhs: MirValue::VReg(dst_vreg),
+                    rhs: shift_8.clone(),
+                });
+                let b2 = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(b2, hint.clone());
+                self.emit(MirInst::BinOp {
+                    dst: b2,
+                    op: BinOpKind::And,
+                    lhs: MirValue::VReg(b2_shifted),
+                    rhs: mask_ff00,
+                });
+
+                let b3_shifted = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(b3_shifted, hint.clone());
+                self.emit(MirInst::BinOp {
+                    dst: b3_shifted,
+                    op: BinOpKind::Shr,
+                    lhs: MirValue::VReg(dst_vreg),
+                    rhs: shift_24,
+                });
+                let b3 = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(b3, hint.clone());
+                self.emit(MirInst::BinOp {
+                    dst: b3,
+                    op: BinOpKind::And,
+                    lhs: MirValue::VReg(b3_shifted),
+                    rhs: mask_ff,
+                });
+
+                let hi = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(hi, hint.clone());
+                self.emit(MirInst::BinOp {
+                    dst: hi,
+                    op: BinOpKind::Or,
+                    lhs: MirValue::VReg(b0_shifted),
+                    rhs: MirValue::VReg(b1_shifted),
+                });
+                let lo = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(lo, hint.clone());
+                self.emit(MirInst::BinOp {
+                    dst: lo,
+                    op: BinOpKind::Or,
+                    lhs: MirValue::VReg(b2),
+                    rhs: MirValue::VReg(b3),
+                });
+
+                self.vreg_type_hints.insert(dst_vreg, hint);
+                self.emit(MirInst::BinOp {
+                    dst: dst_vreg,
+                    op: BinOpKind::Or,
+                    lhs: MirValue::VReg(hi),
+                    rhs: MirValue::VReg(lo),
+                });
+                Ok(())
+            }
+            _ => Err(CompileError::UnsupportedInstruction(format!(
+                "big-endian packet scalar normalization is not supported for {:?}",
+                ty
+            ))),
+        }
+    }
+
     fn lower_typed_value_projection(
         &mut self,
         dst_vreg: VReg,
@@ -1604,6 +1796,13 @@ impl<'a> HirToMirLowering<'a> {
                 base_offset: usize,
                 target_ty: MirType,
                 direct: bool,
+            },
+            PacketScalar {
+                base_vreg: VReg,
+                base_offset: usize,
+                element_ty: MirType,
+                element_size: usize,
+                big_endian: bool,
             },
         }
 
@@ -1628,6 +1827,94 @@ impl<'a> HirToMirLowering<'a> {
 
         for (segment_idx, member) in path_members.iter().enumerate() {
             let is_last = segment_idx + 1 == path_members.len();
+            if let ValueCursor::PacketScalar {
+                base_vreg,
+                base_offset,
+                element_ty,
+                element_size,
+                big_endian,
+            } = &cursor
+            {
+                let packet_offset = match member {
+                    PathMember::Int { val, .. } => {
+                        let index = usize::try_from(*val).map_err(|_| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "typed field path '{}' requires a non-negative packet scalar index",
+                                path_desc
+                            ))
+                        })?;
+                        base_offset
+                            .checked_add(index.checked_mul(*element_size).ok_or_else(|| {
+                                CompileError::UnsupportedInstruction(format!(
+                                    "typed field path '{}' packet scalar index overflowed",
+                                    path_desc
+                                ))
+                            })?)
+                            .ok_or_else(|| {
+                                CompileError::UnsupportedInstruction(format!(
+                                    "typed field path '{}' offset overflowed",
+                                    path_desc
+                                ))
+                            })?
+                    }
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "typed field path '{}' expects a numeric index after packet scalar view",
+                            path_desc
+                        )));
+                    }
+                };
+
+                if !is_last {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "typed field path '{}' does not support nested projection after a packet scalar index",
+                        path_desc
+                    )));
+                }
+
+                let packet_ptr_vreg = if packet_offset == 0 {
+                    *base_vreg
+                } else {
+                    let ptr_vreg = self.func.alloc_vreg();
+                    self.vreg_type_hints.insert(
+                        ptr_vreg,
+                        MirType::Ptr {
+                            pointee: Box::new(element_ty.clone()),
+                            address_space: AddressSpace::Packet,
+                        },
+                    );
+                    self.emit(MirInst::BinOp {
+                        dst: ptr_vreg,
+                        op: BinOpKind::Add,
+                        lhs: MirValue::VReg(*base_vreg),
+                        rhs: MirValue::Const(i64::from(Self::trampoline_projection_offset_i32(
+                            packet_offset,
+                            path_desc,
+                        )?)),
+                    });
+                    ptr_vreg
+                };
+                let packet_ptr_vreg = self.packet_load_ptr_vreg(
+                    packet_ptr_vreg,
+                    MirType::Ptr {
+                        pointee: Box::new(MirType::U8),
+                        address_space: AddressSpace::Packet,
+                    },
+                    dst_vreg,
+                );
+
+                self.emit_xdp_packet_guarded_load(
+                    dst_vreg,
+                    packet_ptr_vreg,
+                    element_ty,
+                    path_desc,
+                )?;
+                if *big_endian {
+                    self.emit_packet_big_endian_scalar_normalize(dst_vreg, element_ty)?;
+                }
+                return Ok(element_ty.clone());
+            }
+
             loop {
                 let ValueCursor::Pointer {
                     base_vreg,
@@ -1635,7 +1922,10 @@ impl<'a> HirToMirLowering<'a> {
                     base_offset,
                     target_ty,
                     direct,
-                } = &cursor;
+                } = &cursor
+                else {
+                    break;
+                };
                 let MirType::Ptr {
                     pointee,
                     address_space: next_space,
@@ -1711,7 +2001,47 @@ impl<'a> HirToMirLowering<'a> {
                 base_offset,
                 target_ty,
                 direct,
-            } = &cursor;
+            } = &cursor
+            else {
+                continue;
+            };
+
+            if *address_space == AddressSpace::Packet
+                && matches!(target_ty, MirType::U8)
+                && let Some((element_ty, element_size, big_endian)) =
+                    Self::packet_scalar_view_spec(member)
+            {
+                if is_last {
+                    let packet_ptr_vreg = self.packet_load_ptr_vreg(
+                        *base_vreg,
+                        MirType::Ptr {
+                            pointee: Box::new(target_ty.clone()),
+                            address_space: AddressSpace::Packet,
+                        },
+                        dst_vreg,
+                    );
+                    self.emit_xdp_packet_guarded_load(
+                        dst_vreg,
+                        packet_ptr_vreg,
+                        &element_ty,
+                        path_desc,
+                    )?;
+                    if big_endian {
+                        self.emit_packet_big_endian_scalar_normalize(dst_vreg, &element_ty)?;
+                    }
+                    return Ok(element_ty);
+                }
+
+                cursor = ValueCursor::PacketScalar {
+                    base_vreg: *base_vreg,
+                    base_offset: *base_offset,
+                    element_ty,
+                    element_size,
+                    big_endian,
+                };
+                continue;
+            }
+
             let (segment_offset, next_ty, bitfield) = match (direct, member) {
                 (true, PathMember::Int { val, .. })
                     if !matches!(target_ty, MirType::Array { .. }) =>
@@ -1907,6 +2237,14 @@ impl<'a> HirToMirLowering<'a> {
                                 });
                                 ptr_vreg
                             };
+                            let packet_ptr_vreg = self.packet_load_ptr_vreg(
+                                packet_ptr_vreg,
+                                MirType::Ptr {
+                                    pointee: Box::new(next_ty.clone()),
+                                    address_space: AddressSpace::Packet,
+                                },
+                                dst_vreg,
+                            );
                             self.emit_xdp_packet_guarded_load(
                                 dst_vreg,
                                 packet_ptr_vreg,
@@ -2193,15 +2531,16 @@ impl<'a> HirToMirLowering<'a> {
                     pointee: Box::new(MirType::U8),
                     address_space: AddressSpace::Packet,
                 };
+                let base_vreg = self.func.alloc_vreg();
                 self.emit(MirInst::LoadCtxField {
-                    dst: dst_vreg,
+                    dst: base_vreg,
                     field: ctx_field.clone(),
                     slot: None,
                 });
-                self.vreg_type_hints.insert(dst_vreg, base_ty.clone());
+                self.vreg_type_hints.insert(base_vreg, base_ty.clone());
                 let projected_ty = self.lower_typed_value_projection(
                     dst_vreg,
-                    dst_vreg,
+                    base_vreg,
                     &base_ty,
                     &path.members[1..],
                     &Self::typed_value_path_desc(&path.members),

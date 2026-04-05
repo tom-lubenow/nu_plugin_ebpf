@@ -179,8 +179,10 @@ Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/fo
 `ctx.packet_len`, `ctx.ifindex`, `ctx.ingress_ifindex`, `ctx.rx_queue_index`,
 and `ctx.egress_ifindex`, plus raw packet pointers `ctx.data` and `ctx.data_end`.
 Scalar packet byte reads work through normal Nushell indexing such as
-`($ctx.data | get 0)`, which lowers to a data_end-guarded packet load. Richer
-packet struct typing and named XDP action helpers are still not modeled, so
+`($ctx.data | get 0)`, and fixed-width big-endian scalars can be read directly
+through cell paths such as `$ctx.data.u16be.6` or `$ctx.data.u32be.0`. These
+lower to data_end-guarded packet loads. Richer packet struct typing and named
+XDP action helpers are still not modeled, so
 XDP closures currently need to return an explicit numeric action code such as
 `2` (`XDP_PASS`).
 
