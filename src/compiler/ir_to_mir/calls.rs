@@ -740,9 +740,10 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "global-define" => {
-                if !self.named_flags.is_empty() {
+                let zero_init = self.named_flags.iter().any(|flag| flag == "zero");
+                if self.named_flags.iter().any(|flag| flag != "zero") {
                     return Err(CompileError::UnsupportedInstruction(
-                        "global-define does not accept flags".into(),
+                        "global-define only accepts the --zero flag".into(),
                     ));
                 }
                 self.require_only_named_args("global-define", &[])?;
@@ -760,8 +761,13 @@ impl<'a> HirToMirLowering<'a> {
                     .or_else(|| src_dst_had_value.then_some(dst_vreg))
                     .ok_or_else(|| {
                         CompileError::UnsupportedInstruction(
-                            "global-define requires a compile-time constant value from pipeline input"
-                                .into(),
+                            if zero_init {
+                                "global-define --zero requires a value from pipeline input to establish layout"
+                                    .into()
+                            } else {
+                                "global-define requires a compile-time constant value from pipeline input"
+                                    .into()
+                            },
                         )
                     })?;
                 let value_reg = self
@@ -772,16 +778,21 @@ impl<'a> HirToMirLowering<'a> {
                             "global-define requires a source value with tracked metadata".into(),
                         )
                     })?;
-                if self
-                    .get_metadata(value_reg)
-                    .and_then(|meta| meta.constant_value.as_ref())
-                    .is_none()
+                if !zero_init
+                    && self
+                        .get_metadata(value_reg)
+                        .and_then(|meta| meta.constant_value.as_ref())
+                        .is_none()
                 {
                     return Err(CompileError::UnsupportedInstruction(
                         "global-define requires a compile-time constant value".into(),
                     ));
                 }
-                self.ensure_named_program_global(&global_name, value_reg, value_vreg)?;
+                if zero_init {
+                    self.ensure_zeroed_named_program_global(&global_name, value_reg, value_vreg)?;
+                } else {
+                    self.ensure_named_program_global(&global_name, value_reg, value_vreg)?;
+                }
 
                 self.emit(MirInst::Copy {
                     dst: dst_vreg,

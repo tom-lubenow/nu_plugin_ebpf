@@ -115,6 +115,8 @@ fn collect_named_global_predeclarations_for_function(
                     if let Some(cmd_name) = decl_names.get(decl_id) {
                         match cmd_name.as_str() {
                             "global-define" => {
+                                let zero_init =
+                                    args.flags.iter().any(|flag| flag.as_slice() == b"zero");
                                 if let Some(name_reg) = args.positional.first()
                                     && let Some(name) =
                                         reg_constants.get(name_reg).and_then(constant_string_value)
@@ -122,7 +124,7 @@ fn collect_named_global_predeclarations_for_function(
                                 {
                                     let candidate = NamedGlobalPredeclaration {
                                         value,
-                                        initialize: true,
+                                        initialize: !zero_init,
                                     };
                                     candidates
                                         .entry(name)

@@ -331,30 +331,46 @@ impl PluginCommand for GlobalDefine {
     }
 
     fn extra_description(&self) -> &str {
-        r#"Declares a named per-program global from a compile-time constant value.
-Unlike `global-set`, this is declarative: it establishes the global's fixed
-layout and initial contents in `.data`/`.bss`, but does not perform a runtime
-store on each event. Because of that, source order does not matter: later
-`global-define` calls can establish globals used by earlier `global-get`s.
+        r#"Declares a named per-program global. By default the input must be a
+compile-time constant, which establishes both the fixed layout and the initial
+contents in `.data`/`.bss` without performing a runtime store on each event.
+With `--zero`, the input is used only for layout inference and the resulting
+global is zero-initialized in `.bss`.
 
-Example:
+Because this is declarative, later constant `global-define` calls can establish
+globals used by earlier `global-get`s.
+
+Examples:
   7 | global-define seen_pid
+  $ctx.pid | global-define --zero seen_pid
   let state = (global-get seen_pid)"#
     }
 
     fn signature(&self) -> Signature {
         Signature::build("global-define")
             .input_output_types(vec![(Type::Any, Type::Int), (Type::Nothing, Type::Int)])
+            .switch(
+                "zero",
+                "Use the input only for layout inference and zero-initialize the global",
+                None,
+            )
             .required("name", SyntaxShape::String, "Global name")
             .category(Category::Experimental)
     }
 
     fn examples(&self) -> Vec<Example<'_>> {
-        vec![Example {
-            example: "ebpf attach 'kprobe:sys_read' {|ctx| 7 | global-define seen_pid; global-get seen_pid }",
-            description: "Declare a named per-program global with a compile-time constant initializer",
-            result: None,
-        }]
+        vec![
+            Example {
+                example: "ebpf attach 'kprobe:sys_read' {|ctx| 7 | global-define seen_pid; global-get seen_pid }",
+                description: "Declare a named per-program global with a compile-time constant initializer",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'kprobe:sys_read' {|ctx| $ctx.pid | global-define --zero seen_pid; global-get seen_pid }",
+                description: "Declare a zero-initialized named per-program global from a runtime layout exemplar",
+                result: None,
+            },
+        ]
     }
 
     fn run(

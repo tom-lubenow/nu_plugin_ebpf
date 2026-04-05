@@ -312,16 +312,20 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    pub(super) fn ensure_named_program_global(
+    fn ensure_named_program_global_with_mode(
         &mut self,
         name: &str,
         src: RegId,
         src_vreg: VReg,
+        initialize_from_constant: bool,
     ) -> Result<MutableCaptureGlobal, CompileError> {
         let symbol = Self::named_program_global_symbol(name);
-        let constant_value = self
-            .get_metadata(src)
-            .and_then(|meta| meta.constant_value.clone());
+        let constant_value = if initialize_from_constant {
+            self.get_metadata(src)
+                .and_then(|meta| meta.constant_value.clone())
+        } else {
+            None
+        };
         let initialized_repr = if let Some(value) = constant_value.as_ref() {
             Self::mutable_capture_global_repr(value)?
         } else {
@@ -369,6 +373,24 @@ impl<'a> HirToMirLowering<'a> {
         self.named_program_globals
             .insert(name.to_string(), inferred.clone());
         Ok(inferred)
+    }
+
+    pub(super) fn ensure_named_program_global(
+        &mut self,
+        name: &str,
+        src: RegId,
+        src_vreg: VReg,
+    ) -> Result<MutableCaptureGlobal, CompileError> {
+        self.ensure_named_program_global_with_mode(name, src, src_vreg, true)
+    }
+
+    pub(super) fn ensure_zeroed_named_program_global(
+        &mut self,
+        name: &str,
+        src: RegId,
+        src_vreg: VReg,
+    ) -> Result<MutableCaptureGlobal, CompileError> {
+        self.ensure_named_program_global_with_mode(name, src, src_vreg, false)
     }
 
     pub(super) fn predeclare_named_program_global_from_value(
