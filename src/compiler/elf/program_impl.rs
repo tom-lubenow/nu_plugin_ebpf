@@ -19,6 +19,8 @@ impl EbpfProgram {
             license: "GPL".to_string(),
             maps: Vec::new(),
             readonly_globals: Vec::new(),
+            data_globals: Vec::new(),
+            bss_globals: Vec::new(),
             relocations: Vec::new(),
             subfunctions: Vec::new(),
             event_schema: None,
@@ -44,6 +46,8 @@ impl EbpfProgram {
             license: "GPL".to_string(),
             maps: Vec::new(),
             readonly_globals: Vec::new(),
+            data_globals: Vec::new(),
+            bss_globals: Vec::new(),
             relocations: Vec::new(),
             subfunctions: Vec::new(),
             event_schema: None,
@@ -75,6 +79,8 @@ impl EbpfProgram {
             license: "GPL".to_string(),
             maps,
             readonly_globals: Vec::new(),
+            data_globals: Vec::new(),
+            bss_globals: Vec::new(),
             relocations,
             subfunctions,
             event_schema,
@@ -99,6 +105,18 @@ impl EbpfProgram {
     /// Attach readonly globals to this program's `.rodata` section.
     pub fn with_readonly_globals(mut self, readonly_globals: Vec<ReadonlyGlobal>) -> Self {
         self.readonly_globals = readonly_globals;
+        self
+    }
+
+    /// Attach writable initialized globals to this program's `.data` section.
+    pub fn with_data_globals(mut self, data_globals: Vec<DataGlobal>) -> Self {
+        self.data_globals = data_globals;
+        self
+    }
+
+    /// Attach writable zero-initialized globals to this program's `.bss` section.
+    pub fn with_bss_globals(mut self, bss_globals: Vec<BssGlobal>) -> Self {
+        self.bss_globals = bss_globals;
         self
     }
 
@@ -180,9 +198,54 @@ impl EbpfProgram {
         let mut events_map = None;
         let mut bytes_counter_map = None;
 
+        for global in &self.readonly_globals {
+            if global.data.is_empty() {
+                return Err(invalid(format!(
+                    "readonly global '{}' must have a non-zero size",
+                    global.name
+                )));
+            }
+            if !seen_names.insert(global.name.as_str()) {
+                return Err(invalid(format!(
+                    "duplicate global or map name '{}'",
+                    global.name
+                )));
+            }
+        }
+
+        for global in &self.data_globals {
+            if global.data.is_empty() {
+                return Err(invalid(format!(
+                    "data global '{}' must have a non-zero size",
+                    global.name
+                )));
+            }
+            if !seen_names.insert(global.name.as_str()) {
+                return Err(invalid(format!(
+                    "duplicate global or map name '{}'",
+                    global.name
+                )));
+            }
+        }
+
+        for global in &self.bss_globals {
+            if global.size == 0 {
+                return Err(invalid(format!(
+                    "bss global '{}' must have a non-zero size",
+                    global.name
+                )));
+            }
+            if !seen_names.insert(global.name.as_str()) {
+                return Err(invalid(format!(
+                    "duplicate global or map name '{}'",
+                    global.name
+                )));
+            }
+        }
+
         for map in &self.maps {
             if !seen_names.insert(map.name.as_str()) {
-                return Err(invalid(format!("duplicate map name '{}'", map.name)));
+                return Err(invalid(format!("duplicate global or map name '{}'", map.name)));
             }
 
             match map.name.as_str() {
@@ -382,6 +445,61 @@ impl EbpfProgram {
                     scope: SymbolScope::Linkage,
                     weak: false,
                     section: SymbolSection::Section(rodata_section_id),
+                    flags: SymbolFlags::Elf {
+                        st_info: (object::elf::STB_GLOBAL << 4) | object::elf::STT_OBJECT,
+                        st_other: object::elf::STV_DEFAULT,
+                    },
+                });
+                map_symbols.insert(global.name.clone(), sym_id);
+            }
+        }
+
+        if !self.data_globals.is_empty() {
+            let data_section_id = obj.add_section(vec![], b".data".to_vec(), SectionKind::Data);
+
+            let data_section = obj.section_mut(data_section_id);
+            data_section.flags = SectionFlags::Elf {
+                sh_flags: object::elf::SHF_ALLOC as u64 | object::elf::SHF_WRITE as u64,
+            };
+
+            for global in &self.data_globals {
+                let global_offset = obj.append_section_data(data_section_id, &global.data, 8);
+                let sym_id = obj.add_symbol(Symbol {
+                    name: global.name.as_bytes().to_vec(),
+                    value: global_offset,
+                    size: global.data.len() as u64,
+                    kind: SymbolKind::Data,
+                    scope: SymbolScope::Linkage,
+                    weak: false,
+                    section: SymbolSection::Section(data_section_id),
+                    flags: SymbolFlags::Elf {
+                        st_info: (object::elf::STB_GLOBAL << 4) | object::elf::STT_OBJECT,
+                        st_other: object::elf::STV_DEFAULT,
+                    },
+                });
+                map_symbols.insert(global.name.clone(), sym_id);
+            }
+        }
+
+        if !self.bss_globals.is_empty() {
+            let bss_section_id =
+                obj.add_section(vec![], b".bss".to_vec(), SectionKind::UninitializedData);
+
+            let bss_section = obj.section_mut(bss_section_id);
+            bss_section.flags = SectionFlags::Elf {
+                sh_flags: object::elf::SHF_ALLOC as u64 | object::elf::SHF_WRITE as u64,
+            };
+
+            for global in &self.bss_globals {
+                let global_offset = obj.append_section_bss(bss_section_id, global.size as u64, 8);
+                let sym_id = obj.add_symbol(Symbol {
+                    name: global.name.as_bytes().to_vec(),
+                    value: global_offset,
+                    size: global.size as u64,
+                    kind: SymbolKind::Data,
+                    scope: SymbolScope::Linkage,
+                    weak: false,
+                    section: SymbolSection::Section(bss_section_id),
                     flags: SymbolFlags::Elf {
                         st_info: (object::elf::STB_GLOBAL << 4) | object::elf::STT_OBJECT,
                         st_other: object::elf::STV_DEFAULT,

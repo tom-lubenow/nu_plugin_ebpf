@@ -124,6 +124,77 @@ fn test_elf_generation_with_readonly_globals_creates_rodata_data_map() {
 }
 
 #[test]
+fn test_elf_generation_with_data_globals_creates_data_data_map() {
+    let prog = EbpfProgram::hello_world("sys_clone").with_data_globals(vec![DataGlobal {
+        name: "state".to_string(),
+        data: vec![5, 6, 7, 8],
+    }]);
+
+    let elf = prog.to_elf().expect("Failed to generate ELF");
+    let obj = AyaObject::parse(&elf).expect("Aya should parse data globals");
+    let map = obj.maps.get(".data").expect("expected .data data map");
+
+    assert_eq!(map.section_kind(), EbpfSectionKind::Data);
+    assert_eq!(map.data(), &[5, 6, 7, 8]);
+}
+
+#[test]
+fn test_elf_generation_with_bss_globals_creates_bss_data_map() {
+    let prog = EbpfProgram::hello_world("sys_clone").with_bss_globals(vec![BssGlobal {
+        name: "state".to_string(),
+        size: 4,
+    }]);
+
+    let elf = prog.to_elf().expect("Failed to generate ELF");
+    let obj = AyaObject::parse(&elf).expect("Aya should parse bss globals");
+    let map = obj.maps.get(".bss").expect("expected .bss data map");
+
+    assert_eq!(map.section_kind(), EbpfSectionKind::Bss);
+    assert_eq!(map.data(), &[0, 0, 0, 0]);
+}
+
+#[test]
+fn test_runtime_artifacts_reject_duplicate_map_and_global_names() {
+    let mut prog = EbpfProgram::hello_world("sys_clone").with_readonly_globals(vec![
+        ReadonlyGlobal {
+            name: "events".to_string(),
+            data: vec![1],
+        },
+    ]);
+    prog.maps.push(EbpfMap {
+        name: "events".to_string(),
+        def: BpfMapDef::ring_buffer(4096),
+    });
+
+    let err = prog
+        .validate_runtime_artifacts()
+        .expect_err("duplicate map/global names should be rejected");
+
+    assert!(
+        err.to_string().contains("duplicate global or map name 'events'"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_runtime_artifacts_reject_zero_sized_bss_global() {
+    let prog = EbpfProgram::hello_world("sys_clone").with_bss_globals(vec![BssGlobal {
+        name: "state".to_string(),
+        size: 0,
+    }]);
+
+    let err = prog
+        .validate_runtime_artifacts()
+        .expect_err("zero-sized bss globals should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("bss global 'state' must have a non-zero size"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_probe_context_rejects_arg_on_tracepoint() {
     let ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "syscalls/sys_enter_openat");
     let err = ctx

@@ -39,10 +39,10 @@ pub mod vcc;
 pub mod verifier_types;
 
 pub use elf::{
-    BpfFieldType, BpfMapDef, CounterKeySchema, CounterKeySchemaField, EbpfMap, EbpfProgram,
-    EbpfProgramType, EventSchema, KernelTargetValidationKind, MapRelocation, ProbeContext,
-    ProgramAttachKind, ProgramCapability, ProgramIntrinsic, ProgramTargetKind, ProgramTypeInfo,
-    ProgramValueAccess, ReadonlyGlobal, SchemaField,
+    BpfFieldType, BpfMapDef, BssGlobal, CounterKeySchema, CounterKeySchemaField, DataGlobal,
+    EbpfMap, EbpfProgram, EbpfProgramType, EventSchema, KernelTargetValidationKind,
+    MapRelocation, ProbeContext, ProgramAttachKind, ProgramCapability, ProgramIntrinsic,
+    ProgramTargetKind, ProgramTypeInfo, ProgramValueAccess, ReadonlyGlobal, SchemaField,
 };
 pub use hir::{
     HirProgram, extract_call_decl_ids, extract_closure_block_ids, infer_ctx_param, lower_ir_to_hir,

@@ -23,8 +23,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::compiler::CompileError;
 use crate::compiler::cfg::CFG;
 use crate::compiler::elf::{
-    BpfFieldType, BpfMapDef, CounterKeySchema, EbpfMap, EventSchema, MapRelocation,
-    PacketContextKind, ProbeContext, ReadonlyGlobal, SchemaField, SubfunctionSymbol,
+    BpfFieldType, BpfMapDef, BssGlobal, CounterKeySchema, DataGlobal, EbpfMap, EventSchema,
+    MapRelocation, PacketContextKind, ProbeContext, ReadonlyGlobal, SchemaField,
+    SubfunctionSymbol,
 };
 use crate::compiler::graph_coloring::{
     ColoringResult, GraphColoringAllocator, compute_loop_depths,
@@ -76,6 +77,10 @@ pub struct MirCompileResult {
     pub maps: Vec<EbpfMap>,
     /// Read-only globals emitted into `.rodata`
     pub readonly_globals: Vec<ReadonlyGlobal>,
+    /// Writable initialized globals emitted into `.data`
+    pub data_globals: Vec<DataGlobal>,
+    /// Writable zero-initialized globals emitted into `.bss`
+    pub bss_globals: Vec<BssGlobal>,
     /// Relocations for map references
     pub relocations: Vec<MapRelocation>,
     /// Subfunction symbols for BPF-to-BPF relocation
@@ -383,6 +388,8 @@ impl<'a> MirToEbpfCompiler<'a> {
             main_size,
             maps,
             readonly_globals: Vec::new(),
+            data_globals: Vec::new(),
+            bss_globals: Vec::new(),
             relocations: self.relocations,
             subfunction_symbols,
             event_schema: self.event_schema,

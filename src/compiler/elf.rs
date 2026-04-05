@@ -246,6 +246,20 @@ pub struct ReadonlyGlobal {
     pub data: Vec<u8>,
 }
 
+/// A writable initialized global byte blob emitted into the program's `.data` section.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataGlobal {
+    pub name: String,
+    pub data: Vec<u8>,
+}
+
+/// A writable zero-initialized global emitted into the program's `.bss` section.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BssGlobal {
+    pub name: String,
+    pub size: usize,
+}
+
 /// Location in bytecode that needs a map reference
 #[derive(Debug, Clone)]
 pub struct MapRelocation {
@@ -1301,6 +1315,10 @@ pub struct EbpfProgram {
     pub maps: Vec<EbpfMap>,
     /// Read-only globals emitted into `.rodata`
     pub readonly_globals: Vec<ReadonlyGlobal>,
+    /// Writable initialized globals emitted into `.data`
+    pub data_globals: Vec<DataGlobal>,
+    /// Writable zero-initialized globals emitted into `.bss`
+    pub bss_globals: Vec<BssGlobal>,
     /// Relocations for map references
     pub relocations: Vec<MapRelocation>,
     /// Subfunction symbols for BPF-to-BPF calls
