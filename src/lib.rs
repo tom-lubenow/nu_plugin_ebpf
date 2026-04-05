@@ -46,6 +46,7 @@ impl Plugin for EbpfPlugin {
             Box::new(ReadStr),
             Box::new(ReadKernelStr),
             Box::new(KfuncCall),
+            Box::new(GlobalDefine),
             Box::new(GlobalGet),
             Box::new(GlobalSet),
             Box::new(MapGet),

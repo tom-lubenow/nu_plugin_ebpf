@@ -9,7 +9,7 @@
 //! - read-str: Read string from userspace memory pointer
 //! - read-kernel-str: Read string from kernel memory pointer
 //! - kfunc-call: Invoke a typed kernel kfunc by name
-//! - global-get / global-set: Named compiler-managed per-program globals
+//! - global-define / global-get / global-set: Named compiler-managed per-program globals
 //! - map-get / map-put / map-delete: Generic BPF map operations
 
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
@@ -317,6 +317,58 @@ Example:
 }
 
 #[derive(Clone)]
+pub struct GlobalDefine;
+
+impl PluginCommand for GlobalDefine {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "global-define"
+    }
+
+    fn description(&self) -> &str {
+        "Declare and optionally initialize a named compiler-managed program global."
+    }
+
+    fn extra_description(&self) -> &str {
+        r#"Declares a named per-program global from a compile-time constant value.
+Unlike `global-set`, this is declarative: it establishes the global's fixed
+layout and initial contents in `.data`/`.bss`, but does not perform a runtime
+store on each event. Because of that, source order does not matter: later
+`global-define` calls can establish globals used by earlier `global-get`s.
+
+Example:
+  7 | global-define seen_pid
+  let state = (global-get seen_pid)"#
+    }
+
+    fn signature(&self) -> Signature {
+        Signature::build("global-define")
+            .input_output_types(vec![(Type::Any, Type::Int), (Type::Nothing, Type::Int)])
+            .required("name", SyntaxShape::String, "Global name")
+            .category(Category::Experimental)
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "ebpf attach 'kprobe:sys_read' {|ctx| 7 | global-define seen_pid; global-get seen_pid }",
+            description: "Declare a named per-program global with a compile-time constant initializer",
+            result: None,
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        _input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        Ok(PipelineData::Value(Value::int(0, call.head), None))
+    }
+}
+
+#[derive(Clone)]
 pub struct GlobalGet;
 
 impl PluginCommand for GlobalGet {
@@ -331,11 +383,11 @@ impl PluginCommand for GlobalGet {
     }
 
     fn extra_description(&self) -> &str {
-        r#"Loads a named per-program global. The layout is established by a
-prior `global-set` in the same closure, after which later `global-get` users
-can project fields or use the whole value with `emit` and `count`. If the
-first `global-set` uses a compile-time constant, the global is initialized
-from that value; otherwise it starts zeroed.
+        r#"Loads a named per-program global. The layout comes from a same-closure
+`global-define` or from a layout-establishing `global-set`, after which later
+`global-get` users can project fields or use the whole value with `emit` and
+`count`. `global-define` is declarative and source-order independent; if you
+skip it, `global-set` can still infer the layout on first use.
 
 Example:
   let state = (global-get seen_path)
@@ -386,10 +438,11 @@ impl PluginCommand for GlobalSet {
     }
 
     fn extra_description(&self) -> &str {
-        r#"Stores the pipeline input into a named per-program global. The first
-`global-set` for a given name establishes the fixed layout used by later
-`global-get` and `global-set` calls in the same closure. Compile-time constant
-first writes seed the global's initial value; otherwise it starts zeroed.
+        r#"Stores the pipeline input into a named per-program global. If no
+same-closure `global-define` already exists, the first `global-set` for a given
+name establishes the fixed layout used by later `global-get` and `global-set`
+calls. Compile-time constant first writes seed the global's initial value;
+otherwise it starts zeroed.
 
 Example:
   $ctx.pid | global-set seen_pid"#

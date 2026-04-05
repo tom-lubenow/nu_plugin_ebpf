@@ -64,10 +64,16 @@ fn record_reg_constant(
     }
 }
 
-fn collect_forward_named_global_predeclarations_for_function(
+#[derive(Debug, Clone)]
+struct NamedGlobalPredeclaration {
+    value: Value,
+    initialize: bool,
+}
+
+fn collect_named_global_predeclarations_for_function(
     func: &HirFunction,
     decl_names: &HashMap<DeclId, String>,
-) -> HashMap<String, Value> {
+) -> HashMap<String, NamedGlobalPredeclaration> {
     let mut candidates = HashMap::new();
     let mut reg_constants = HashMap::<RegId, Value>::new();
     let mut var_constants = HashMap::<VarId, Value>::new();
@@ -108,6 +114,26 @@ fn collect_forward_named_global_predeclarations_for_function(
                 } => {
                     if let Some(cmd_name) = decl_names.get(decl_id) {
                         match cmd_name.as_str() {
+                            "global-define" => {
+                                if let Some(name_reg) = args.positional.first()
+                                    && let Some(name) =
+                                        reg_constants.get(name_reg).and_then(constant_string_value)
+                                    && let Some(value) = reg_constants.get(src_dst).cloned()
+                                {
+                                    let candidate = NamedGlobalPredeclaration {
+                                        value,
+                                        initialize: true,
+                                    };
+                                    candidates
+                                        .entry(name)
+                                        .and_modify(|existing: &mut NamedGlobalPredeclaration| {
+                                            if !existing.initialize {
+                                                *existing = candidate.clone();
+                                            }
+                                        })
+                                        .or_insert(candidate);
+                                }
+                            }
                             "global-get" => {
                                 if let Some(name_reg) = args.positional.first()
                                     && let Some(name) =
@@ -125,7 +151,12 @@ fn collect_forward_named_global_predeclarations_for_function(
                                     if pending_forward_gets.contains(&name)
                                         && let Some(value) = reg_constants.get(src_dst).cloned()
                                     {
-                                        candidates.entry(name.clone()).or_insert(value);
+                                        candidates.entry(name.clone()).or_insert(
+                                            NamedGlobalPredeclaration {
+                                                value,
+                                                initialize: false,
+                                            },
+                                        );
                                     }
                                     seen_global_set.insert(name);
                                 }
@@ -191,30 +222,46 @@ fn collect_forward_named_global_predeclarations_for_function(
     candidates
 }
 
-fn collect_forward_named_global_predeclarations(
+fn collect_named_global_predeclarations(
     hir: &HirProgram,
     decl_names: &HashMap<DeclId, String>,
     user_functions: &HashMap<DeclId, HirFunction>,
-) -> Vec<(String, Value)> {
-    let mut merged = HashMap::<String, Value>::new();
+) -> Vec<(String, NamedGlobalPredeclaration)> {
+    let mut merged = HashMap::<String, NamedGlobalPredeclaration>::new();
 
-    for (name, value) in
-        collect_forward_named_global_predeclarations_for_function(&hir.main, decl_names)
-    {
-        merged.entry(name).or_insert(value);
+    for (name, value) in collect_named_global_predeclarations_for_function(&hir.main, decl_names) {
+        merged
+            .entry(name)
+            .and_modify(|existing| {
+                if !existing.initialize && value.initialize {
+                    *existing = value.clone();
+                }
+            })
+            .or_insert(value);
     }
     for closure in hir.closures.values() {
-        for (name, value) in
-            collect_forward_named_global_predeclarations_for_function(closure, decl_names)
+        for (name, value) in collect_named_global_predeclarations_for_function(closure, decl_names)
         {
-            merged.entry(name).or_insert(value);
+            merged
+                .entry(name)
+                .and_modify(|existing| {
+                    if !existing.initialize && value.initialize {
+                        *existing = value.clone();
+                    }
+                })
+                .or_insert(value);
         }
     }
     for func in user_functions.values() {
-        for (name, value) in
-            collect_forward_named_global_predeclarations_for_function(func, decl_names)
-        {
-            merged.entry(name).or_insert(value);
+        for (name, value) in collect_named_global_predeclarations_for_function(func, decl_names) {
+            merged
+                .entry(name)
+                .and_modify(|existing| {
+                    if !existing.initialize && value.initialize {
+                        *existing = value.clone();
+                    }
+                })
+                .or_insert(value);
         }
     }
 
@@ -233,7 +280,7 @@ pub fn lower_hir_to_mir_with_hints_and_maps(
     let hir_type_hints = type_info.map(mir_hints_from_hir);
     let mutated_capture_vars = collect_mutated_capture_vars(hir, user_functions);
     let forward_named_globals =
-        collect_forward_named_global_predeclarations(hir, decl_names, user_functions);
+        collect_named_global_predeclarations(hir, decl_names, user_functions);
     let mut lowering = HirToMirLowering::new(
         probe_ctx,
         decl_names,
@@ -246,8 +293,12 @@ pub fn lower_hir_to_mir_with_hints_and_maps(
         decl_signatures,
     );
     lowering.init_mutable_capture_globals(&mutated_capture_vars)?;
-    for (name, value) in forward_named_globals {
-        lowering.predeclare_named_program_global_from_value(&name, &value)?;
+    for (name, predecl) in forward_named_globals {
+        lowering.predeclare_named_program_global_from_value(
+            &name,
+            &predecl.value,
+            predecl.initialize,
+        )?;
     }
     lowering.lower_block(&hir.main)?;
     let (program, type_hints, generic_map_value_types, readonly_globals, data_globals, bss_globals) =

@@ -4639,6 +4639,153 @@ fn test_lower_global_set_and_get_string_materializes_string_slot() {
 }
 
 #[test]
+fn test_lower_global_define_and_get_nonzero_scalar_uses_named_data_global() {
+    let define_decl = DeclId::new(98);
+    let get_decl = DeclId::new(99);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (get_decl, "global-get".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("seen_pid".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("global-define/global-get scalar flow should lower");
+
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+    assert_eq!(result.data_globals[0].name, "__nu_global_seen_pid");
+    assert_eq!(result.data_globals[0].data, 7i64.to_le_bytes().to_vec());
+
+    let global_load_count = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::LoadGlobal { symbol, .. } if symbol == "__nu_global_seen_pid"
+            )
+        })
+        .count();
+    assert_eq!(global_load_count, 1);
+}
+
+#[test]
+fn test_lower_global_get_before_later_global_define_uses_named_data_global() {
+    let get_decl = DeclId::new(100);
+    let define_decl = DeclId::new(101);
+    let decl_names = HashMap::from([
+        (get_decl, "global-get".to_string()),
+        (define_decl, "global-define".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("state".into()),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("forward global-get/global-define flow should lower");
+
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+    assert_eq!(result.data_globals[0].name, "__nu_global_state");
+    assert_eq!(result.data_globals[0].data, 7i64.to_le_bytes().to_vec());
+}
+
+#[test]
 fn test_lower_global_get_before_later_constant_set_uses_named_bss_global() {
     let get_decl = DeclId::new(94);
     let set_decl = DeclId::new(95);
@@ -4704,7 +4851,7 @@ fn test_lower_global_get_before_later_constant_set_uses_named_bss_global() {
 
 #[test]
 fn test_lower_global_get_without_any_same_program_set_is_rejected() {
-    let get_decl = DeclId::new(95);
+    let get_decl = DeclId::new(102);
     let decl_names = HashMap::from([(get_decl, "global-get".to_string())]);
 
     let func = HirFunction {
@@ -4747,13 +4894,13 @@ fn test_lower_global_get_without_any_same_program_set_is_rejected() {
 
     assert!(
         err.to_string()
-            .contains("requires a prior same-program global-set")
+            .contains("requires a same-program global-define or layout-establishing global-set")
     );
 }
 
 #[test]
 fn test_lower_global_set_rejects_conflicting_layouts() {
-    let set_decl = DeclId::new(96);
+    let set_decl = DeclId::new(103);
     let decl_names = HashMap::from([(set_decl, "global-set".to_string())]);
 
     let func = HirFunction {

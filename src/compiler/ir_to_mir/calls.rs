@@ -739,6 +739,57 @@ impl<'a> HirToMirLowering<'a> {
                 self.reset_call_result_metadata(src_dst);
             }
 
+            "global-define" => {
+                if !self.named_flags.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "global-define does not accept flags".into(),
+                    ));
+                }
+                self.require_only_named_args("global-define", &[])?;
+                if self.positional_args.len() != 1 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "global-define requires exactly one positional global name".into(),
+                    ));
+                }
+
+                let (_, name_reg) = self.positional_args[0];
+                let global_name = self.literal_string_arg(name_reg, "global-define")?;
+                self.validate_generic_map_name(&global_name, "global-define")?;
+                let value_vreg = self
+                    .pipeline_input
+                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "global-define requires a compile-time constant value from pipeline input"
+                                .into(),
+                        )
+                    })?;
+                let value_reg = self
+                    .pipeline_input_reg
+                    .or_else(|| src_dst_had_value.then_some(src_dst))
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "global-define requires a source value with tracked metadata".into(),
+                        )
+                    })?;
+                if self
+                    .get_metadata(value_reg)
+                    .and_then(|meta| meta.constant_value.as_ref())
+                    .is_none()
+                {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "global-define requires a compile-time constant value".into(),
+                    ));
+                }
+                self.ensure_named_program_global(&global_name, value_reg, value_vreg)?;
+
+                self.emit(MirInst::Copy {
+                    dst: dst_vreg,
+                    src: MirValue::Const(0),
+                });
+                self.reset_call_result_metadata(src_dst);
+            }
+
             "global-get" => {
                 let result_vreg = if src_dst_had_value {
                     self.assign_fresh_vreg(src_dst)
@@ -765,7 +816,7 @@ impl<'a> HirToMirLowering<'a> {
                     .cloned()
                     .ok_or_else(|| {
                         CompileError::UnsupportedInstruction(format!(
-                            "global-get for '{}' requires a prior same-program global-set to establish its layout",
+                            "global-get for '{}' requires a same-program global-define or layout-establishing global-set",
                             global_name
                         ))
                     })?;

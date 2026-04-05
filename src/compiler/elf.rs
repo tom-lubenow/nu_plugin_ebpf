@@ -842,6 +842,7 @@ pub enum ProgramIntrinsic {
     ReadStr,
     ReadKernelStr,
     KfuncCall,
+    GlobalDefine,
     GlobalGet,
     GlobalSet,
     MapGet,
@@ -864,6 +865,7 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::ReadStr => "read-str",
             ProgramIntrinsic::ReadKernelStr => "read-kernel-str",
             ProgramIntrinsic::KfuncCall => "kfunc-call",
+            ProgramIntrinsic::GlobalDefine => "global-define",
             ProgramIntrinsic::GlobalGet => "global-get",
             ProgramIntrinsic::GlobalSet => "global-set",
             ProgramIntrinsic::MapGet => "map-get",
@@ -882,6 +884,7 @@ impl ProgramIntrinsic {
             "read-str" => Some(ProgramIntrinsic::ReadStr),
             "read-kernel-str" => Some(ProgramIntrinsic::ReadKernelStr),
             "kfunc-call" => Some(ProgramIntrinsic::KfuncCall),
+            "global-define" => Some(ProgramIntrinsic::GlobalDefine),
             "global-get" => Some(ProgramIntrinsic::GlobalGet),
             "global-set" => Some(ProgramIntrinsic::GlobalSet),
             "map-get" => Some(ProgramIntrinsic::MapGet),
@@ -900,7 +903,9 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::ReadStr => ProgramCapability::ReadUserString,
             ProgramIntrinsic::ReadKernelStr => ProgramCapability::ReadKernelString,
             ProgramIntrinsic::KfuncCall => ProgramCapability::KfuncCalls,
-            ProgramIntrinsic::GlobalGet | ProgramIntrinsic::GlobalSet => ProgramCapability::Globals,
+            ProgramIntrinsic::GlobalDefine
+            | ProgramIntrinsic::GlobalGet
+            | ProgramIntrinsic::GlobalSet => ProgramCapability::Globals,
             ProgramIntrinsic::MapGet | ProgramIntrinsic::MapPut | ProgramIntrinsic::MapDelete => {
                 ProgramCapability::GenericMaps
             }
@@ -1302,6 +1307,7 @@ const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[
     ProgramIntrinsic::ReadStr,
     ProgramIntrinsic::ReadKernelStr,
     ProgramIntrinsic::KfuncCall,
+    ProgramIntrinsic::GlobalDefine,
     ProgramIntrinsic::GlobalGet,
     ProgramIntrinsic::GlobalSet,
     ProgramIntrinsic::MapGet,

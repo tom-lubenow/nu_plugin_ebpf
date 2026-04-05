@@ -265,14 +265,17 @@ aggregate layout instead of a pointer wrapper. When those maps are attached
 with the same `--pin` group, active pinned programs now reuse that typed schema
 across program boundaries too.
 
-Compiler-managed named globals are also available through `global-get` and
-`global-set`. These are compiler-managed per-program globals backed by `.data`
-or `.bss`. The first `global-set` for a given name establishes the fixed
-layout used by later `global-get` and `global-set` calls in the same closure;
-when that first write is a compile-time constant the global is initialized from
-it, otherwise it starts zeroed. They are best suited for small per-program
-state without the overhead of an explicit map. Like the current mutable-capture
-path, they only support values with a truthful fixed layout.
+Compiler-managed named globals are available through `global-define`,
+`global-get`, and `global-set`. These are compiler-managed per-program globals
+backed by `.data` or `.bss`. `global-define` is declarative: a compile-time
+constant input establishes the fixed layout and initial contents without doing
+a runtime store, so source order does not matter. If you skip `global-define`,
+the first `global-set` for a given name still establishes the fixed layout used
+by later `global-get` and `global-set` calls in the same closure; when that
+first write is a compile-time constant the global is initialized from it,
+otherwise it starts zeroed. They are best suited for small per-program state
+without the overhead of an explicit map. Like the current mutable-capture path,
+they only support values with a truthful fixed layout.
 Generic map `--kind` now supports `hash`, `array`, `lru-hash`,
 `per-cpu-hash`, `per-cpu-array`, and `lru-per-cpu-hash`.
 
@@ -315,6 +318,7 @@ materialized.
 | `stop-timer` | Calculate elapsed time |
 | `read-str` | Read string from user memory (`--max-len` to cap, default 128) |
 | `read-kernel-str` | Read string from kernel memory (`--max-len` to cap, default 128) |
+| `global-define` | Declare a named compiler-managed program global from a compile-time constant |
 | `global-get` | Load a named compiler-managed program global |
 | `global-set` | Store the pipeline input into a named compiler-managed program global |
 | `map-get` | Look up a value pointer in a named generic map |

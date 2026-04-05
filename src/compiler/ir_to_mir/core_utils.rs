@@ -375,9 +375,10 @@ impl<'a> HirToMirLowering<'a> {
         &mut self,
         name: &str,
         value: &Value,
+        initialize: bool,
     ) -> Result<MutableCaptureGlobal, CompileError> {
         let symbol = Self::named_program_global_symbol(name);
-        let Some((ty, _data, list_max_len, string_slot_len)) =
+        let Some((ty, data, list_max_len, string_slot_len)) =
             Self::mutable_capture_global_repr(value)?
         else {
             return Err(CompileError::UnsupportedInstruction(format!(
@@ -411,10 +412,14 @@ impl<'a> HirToMirLowering<'a> {
             )));
         }
 
-        // Forward global-get support is layout-only. The later set still performs
-        // the real initialization at runtime, so the compile-time global must
-        // remain zero-initialized.
-        self.bss_globals.push(BssGlobal { name: symbol, size });
+        if initialize && data.iter().any(|byte| *byte != 0) {
+            self.data_globals.push(DataGlobal { name: symbol, data });
+        } else {
+            // Forward global-get support from later global-set is layout-only.
+            // The later set still performs the real initialization at runtime,
+            // so the compile-time global must remain zero-initialized.
+            self.bss_globals.push(BssGlobal { name: symbol, size });
+        }
         self.named_program_globals
             .insert(name.to_string(), inferred.clone());
         Ok(inferred)

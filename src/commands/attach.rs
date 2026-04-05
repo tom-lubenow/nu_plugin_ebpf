@@ -461,6 +461,7 @@ Output commands:
   emit              - Send value to userspace via ring buffer
   read-str          - Read string from userspace memory pointer
   read-kernel-str   - Read string from kernel memory (rare)
+  global-define     - Declare a named compiler-managed program global
   global-get        - Load a named compiler-managed program global
   global-set        - Store the pipeline input into a named compiler-managed program global
 
