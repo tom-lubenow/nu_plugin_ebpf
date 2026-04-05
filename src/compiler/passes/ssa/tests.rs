@@ -1,5 +1,5 @@
 use super::*;
-use crate::compiler::mir::{BinOpKind, MirValue};
+use crate::compiler::mir::{AddressSpace, BinOpKind, MirType, MirValue, StackSlotKind};
 
 fn make_diamond_function() -> MirFunction {
     // bb0: v0 = 1; branch v0 -> bb1, bb2
@@ -187,4 +187,139 @@ fn test_phi_args_from_predecessors() {
     } else {
         panic!("Expected phi in bb3");
     }
+}
+
+#[test]
+fn test_construct_ssa_with_type_hints_preserves_per_definition_types() {
+    let mut func = MirFunction::new();
+    let bb0 = func.alloc_block();
+    func.entry = bb0;
+
+    let slot0 = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let slot1 = func.alloc_stack_slot(4, 4, StackSlotKind::Local);
+    let v0 = func.alloc_vreg();
+    let v1 = func.alloc_vreg();
+
+    func.block_mut(bb0).instructions.push(MirInst::Copy {
+        dst: v0,
+        src: MirValue::StackSlot(slot0),
+    });
+    func.block_mut(bb0).instructions.push(MirInst::Copy {
+        dst: v1,
+        src: MirValue::VReg(v0),
+    });
+    func.block_mut(bb0).instructions.push(MirInst::LoadSlot {
+        dst: v0,
+        slot: slot1,
+        offset: 0,
+        ty: MirType::U32,
+    });
+    func.block_mut(bb0).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(v0)),
+    };
+
+    let cfg = CFG::build(&func);
+    let original_hints = HashMap::from([(v0, MirType::U32), (v1, MirType::U32)]);
+    let stack_slot_hints = HashMap::from([(slot0, MirType::U64), (slot1, MirType::U32)]);
+    let (changed, ssa_hints) =
+        construct_ssa_with_type_hints(&mut func, &cfg, None, &original_hints, &stack_slot_hints);
+
+    assert!(changed);
+
+    let first_copy_dst = match &func.block(bb0).instructions[0] {
+        MirInst::Copy { dst, .. } => *dst,
+        inst => panic!("expected first copy, got {inst:?}"),
+    };
+    let copied_use_dst = match &func.block(bb0).instructions[1] {
+        MirInst::Copy { dst, .. } => *dst,
+        inst => panic!("expected second copy, got {inst:?}"),
+    };
+    let load_slot_dst = match &func.block(bb0).instructions[2] {
+        MirInst::LoadSlot { dst, .. } => *dst,
+        inst => panic!("expected load slot, got {inst:?}"),
+    };
+
+    let expected_ptr = MirType::Ptr {
+        pointee: Box::new(MirType::U64),
+        address_space: AddressSpace::Stack,
+    };
+    assert_eq!(ssa_hints.get(&first_copy_dst), Some(&expected_ptr));
+    assert_eq!(ssa_hints.get(&copied_use_dst), Some(&expected_ptr));
+    assert_eq!(ssa_hints.get(&load_slot_dst), Some(&MirType::U32));
+}
+
+#[test]
+fn test_construct_ssa_with_type_hints_recovers_phi_types_from_args() {
+    let mut func = MirFunction::new();
+    let bb0 = func.alloc_block();
+    let bb1 = func.alloc_block();
+    let bb2 = func.alloc_block();
+    let bb3 = func.alloc_block();
+    func.entry = bb0;
+
+    let cond = func.alloc_vreg();
+    let merged = func.alloc_vreg();
+
+    func.block_mut(bb0).instructions.push(MirInst::Copy {
+        dst: cond,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(bb0).terminator = MirInst::Branch {
+        cond,
+        if_true: bb1,
+        if_false: bb2,
+    };
+    func.block_mut(bb1).instructions.push(MirInst::LoadSlot {
+        dst: merged,
+        slot: StackSlotId(0),
+        offset: 0,
+        ty: MirType::U32,
+    });
+    func.block_mut(bb1).terminator = MirInst::Jump { target: bb3 };
+    func.block_mut(bb2).instructions.push(MirInst::LoadSlot {
+        dst: merged,
+        slot: StackSlotId(1),
+        offset: 0,
+        ty: MirType::U32,
+    });
+    func.block_mut(bb2).terminator = MirInst::Jump { target: bb3 };
+    func.block_mut(bb3).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(merged)),
+    };
+    func.stack_slots.push(crate::compiler::mir::StackSlot {
+        id: StackSlotId(0),
+        size: 4,
+        align: 4,
+        kind: StackSlotKind::Local,
+        offset: None,
+    });
+    func.stack_slots.push(crate::compiler::mir::StackSlot {
+        id: StackSlotId(1),
+        size: 4,
+        align: 4,
+        kind: StackSlotKind::Local,
+        offset: None,
+    });
+
+    let cfg = CFG::build(&func);
+    let original_hints = HashMap::from([(merged, MirType::U64)]);
+    let stack_slot_hints = HashMap::from([
+        (StackSlotId(0), MirType::U32),
+        (StackSlotId(1), MirType::U32),
+    ]);
+    let (changed, ssa_hints) =
+        construct_ssa_with_type_hints(&mut func, &cfg, None, &original_hints, &stack_slot_hints);
+
+    assert!(changed);
+
+    let phi_dst = match func
+        .block(bb3)
+        .instructions
+        .iter()
+        .find(|inst| matches!(inst, MirInst::Phi { .. }))
+    {
+        Some(MirInst::Phi { dst, .. }) => *dst,
+        other => panic!("expected phi in bb3, got {other:?}"),
+    };
+    assert_eq!(ssa_hints.get(&phi_dst), Some(&MirType::U32));
 }

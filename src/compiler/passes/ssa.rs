@@ -17,7 +17,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::MirPass;
 use crate::compiler::cfg::CFG;
-use crate::compiler::mir::{BlockId, MirFunction, MirInst, VReg};
+use crate::compiler::elf::ProbeContext;
+use crate::compiler::mir::{BlockId, MirFunction, MirInst, MirType, StackSlotId, VReg};
+use crate::compiler::type_hints::infer_instruction_def_type;
 
 /// SSA construction pass
 ///
@@ -41,6 +43,8 @@ struct SsaBuilder<'a> {
     cfg: &'a CFG,
     /// Maps original vreg -> set of blocks where it's defined
     def_sites: HashMap<VReg, HashSet<BlockId>>,
+    /// Number of definitions for each original vreg
+    def_counts: HashMap<VReg, usize>,
     /// Current version number for each original vreg
     version_counter: HashMap<VReg, u32>,
     /// Stack of current definitions for each original vreg (for renaming)
@@ -57,6 +61,7 @@ impl<'a> SsaBuilder<'a> {
             func,
             cfg,
             def_sites: HashMap::new(),
+            def_counts: HashMap::new(),
             version_counter: HashMap::new(),
             def_stacks: HashMap::new(),
             vreg_origin: HashMap::new(),
@@ -81,18 +86,45 @@ impl<'a> SsaBuilder<'a> {
         true
     }
 
+    fn build_with_type_hints(
+        mut self,
+        probe_ctx: Option<&ProbeContext>,
+        original_hints: &HashMap<VReg, MirType>,
+        stack_slot_hints: &HashMap<StackSlotId, MirType>,
+    ) -> (bool, HashMap<VReg, MirType>) {
+        self.collect_def_sites();
+
+        if self.original_vregs.is_empty() {
+            return (false, HashMap::new());
+        }
+
+        self.insert_phi_functions();
+        let mut ssa_hints = HashMap::new();
+        self.rename_variables_with_hints(
+            probe_ctx,
+            original_hints,
+            stack_slot_hints,
+            &mut ssa_hints,
+        );
+        self.populate_phi_hints(probe_ctx, stack_slot_hints, &mut ssa_hints);
+
+        (true, ssa_hints)
+    }
+
     /// Collect all definition sites for each vreg
     fn collect_def_sites(&mut self) {
         for block in &self.func.blocks {
             for inst in &block.instructions {
                 if let Some(vreg) = inst.def() {
                     self.def_sites.entry(vreg).or_default().insert(block.id);
+                    *self.def_counts.entry(vreg).or_insert(0) += 1;
                     self.original_vregs.insert(vreg);
                 }
             }
             // Also check terminator (though most don't define values)
             if let Some(vreg) = block.terminator.def() {
                 self.def_sites.entry(vreg).or_default().insert(block.id);
+                *self.def_counts.entry(vreg).or_insert(0) += 1;
                 self.original_vregs.insert(vreg);
             }
         }
@@ -171,6 +203,24 @@ impl<'a> SsaBuilder<'a> {
 
         // Start renaming from entry block
         self.rename_block(self.cfg.entry, &dom_children);
+    }
+
+    fn rename_variables_with_hints(
+        &mut self,
+        probe_ctx: Option<&ProbeContext>,
+        original_hints: &HashMap<VReg, MirType>,
+        stack_slot_hints: &HashMap<StackSlotId, MirType>,
+        ssa_hints: &mut HashMap<VReg, MirType>,
+    ) {
+        let dom_children = self.build_dominator_tree_children();
+        self.rename_block_with_hints(
+            self.cfg.entry,
+            &dom_children,
+            probe_ctx,
+            original_hints,
+            stack_slot_hints,
+            ssa_hints,
+        );
     }
 
     /// Build a map of block -> children in dominator tree
@@ -270,6 +320,88 @@ impl<'a> SsaBuilder<'a> {
         }
     }
 
+    fn rename_block_with_hints(
+        &mut self,
+        block_id: BlockId,
+        dom_children: &HashMap<BlockId, Vec<BlockId>>,
+        probe_ctx: Option<&ProbeContext>,
+        original_hints: &HashMap<VReg, MirType>,
+        stack_slot_hints: &HashMap<StackSlotId, MirType>,
+        ssa_hints: &mut HashMap<VReg, MirType>,
+    ) {
+        let mut pushed_counts: HashMap<VReg, usize> = HashMap::new();
+
+        let Some(block_idx) = self.func.blocks.iter().position(|b| b.id == block_id) else {
+            return;
+        };
+
+        let num_instructions = self.func.blocks[block_idx].instructions.len();
+        for i in 0..num_instructions {
+            let inst = &self.func.blocks[block_idx].instructions[i];
+
+            if let MirInst::Phi { dst, args } = inst {
+                let orig_vreg = *dst;
+                let existing_args = args.clone();
+                let new_vreg = self.new_version(orig_vreg);
+                *pushed_counts.entry(orig_vreg).or_insert(0) += 1;
+                self.func.blocks[block_idx].instructions[i] = MirInst::Phi {
+                    dst: new_vreg,
+                    args: existing_args,
+                };
+                continue;
+            }
+
+            let new_inst = self.rename_uses(&self.func.blocks[block_idx].instructions[i].clone());
+            self.func.blocks[block_idx].instructions[i] = new_inst;
+
+            if let Some(def_vreg) = self.func.blocks[block_idx].instructions[i].def() {
+                if self.original_vregs.contains(&def_vreg) {
+                    let orig_vreg = self.get_original_vreg(def_vreg);
+                    let new_vreg = self.new_version(orig_vreg);
+                    *pushed_counts.entry(orig_vreg).or_insert(0) += 1;
+                    update_def(&mut self.func.blocks[block_idx].instructions[i], new_vreg);
+                    self.record_ssa_hint_for_def(
+                        &self.func.blocks[block_idx].instructions[i],
+                        orig_vreg,
+                        probe_ctx,
+                        original_hints,
+                        stack_slot_hints,
+                        ssa_hints,
+                    );
+                }
+            }
+        }
+
+        let new_term = self.rename_uses(&self.func.blocks[block_idx].terminator.clone());
+        self.func.blocks[block_idx].terminator = new_term;
+
+        let successors = self.func.blocks[block_idx].successors();
+        for succ_id in successors {
+            self.fill_phi_args(succ_id, block_id);
+        }
+
+        if let Some(children) = dom_children.get(&block_id) {
+            for &child in children {
+                self.rename_block_with_hints(
+                    child,
+                    dom_children,
+                    probe_ctx,
+                    original_hints,
+                    stack_slot_hints,
+                    ssa_hints,
+                );
+            }
+        }
+
+        for (vreg, count) in pushed_counts {
+            if let Some(stack) = self.def_stacks.get_mut(&vreg) {
+                for _ in 0..count {
+                    stack.pop();
+                }
+            }
+        }
+    }
+
     /// Create a new version of a vreg
     fn new_version(&mut self, orig_vreg: VReg) -> VReg {
         let counter = self.version_counter.entry(orig_vreg).or_insert(0);
@@ -338,6 +470,62 @@ impl<'a> SsaBuilder<'a> {
             }
         }
     }
+
+    fn record_ssa_hint_for_def(
+        &self,
+        inst: &MirInst,
+        orig_vreg: VReg,
+        probe_ctx: Option<&ProbeContext>,
+        original_hints: &HashMap<VReg, MirType>,
+        stack_slot_hints: &HashMap<StackSlotId, MirType>,
+        ssa_hints: &mut HashMap<VReg, MirType>,
+    ) {
+        let inferred = infer_instruction_def_type(inst, probe_ctx, ssa_hints, stack_slot_hints)
+            .or_else(|| {
+                (self.def_counts.get(&orig_vreg).copied() == Some(1))
+                    .then(|| original_hints.get(&orig_vreg).cloned())
+                    .flatten()
+                    .and_then(|ty| inst.def().map(|dst| (dst, ty)))
+            });
+        if let Some((dst, ty)) = inferred {
+            ssa_hints.insert(dst, ty);
+        }
+    }
+
+    fn populate_phi_hints(
+        &self,
+        probe_ctx: Option<&ProbeContext>,
+        stack_slot_hints: &HashMap<StackSlotId, MirType>,
+        ssa_hints: &mut HashMap<VReg, MirType>,
+    ) {
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for block in &self.func.blocks {
+                for inst in &block.instructions {
+                    let recovered =
+                        infer_instruction_def_type(inst, probe_ctx, ssa_hints, stack_slot_hints);
+                    if let Some((dst, ty)) = recovered
+                        && ssa_hints.get(&dst).is_none()
+                    {
+                        ssa_hints.insert(dst, ty);
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub(crate) fn construct_ssa_with_type_hints(
+    func: &mut MirFunction,
+    cfg: &CFG,
+    probe_ctx: Option<&ProbeContext>,
+    original_hints: &HashMap<VReg, MirType>,
+    stack_slot_hints: &HashMap<StackSlotId, MirType>,
+) -> (bool, HashMap<VReg, MirType>) {
+    let builder = SsaBuilder::new(func, cfg);
+    builder.build_with_type_hints(probe_ctx, original_hints, stack_slot_hints)
 }
 
 /// Update the destination of an instruction (free function to avoid borrow issues)

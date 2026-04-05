@@ -207,7 +207,31 @@ pub fn optimize_with_ssa_hints(
     hints: &mut std::collections::HashMap<VReg, MirType>,
     stack_slot_hints: &std::collections::HashMap<StackSlotId, MirType>,
 ) -> usize {
-    let total_changes = optimize_with_ssa(func);
+    let cfg = CFG::build(func);
+    let mut total_changes = 0;
+
+    let (ssa_changed, ssa_hints) =
+        ssa::construct_ssa_with_type_hints(func, &cfg, probe_ctx, hints, stack_slot_hints);
+    if ssa_changed {
+        *hints = ssa_hints;
+        total_changes += 1;
+    }
+
+    let pm = default_passes();
+    total_changes += pm.run(func);
+
+    let cfg = CFG::build(func);
+    let ssa_destruct = SsaDestruction;
+    if ssa_destruct.run(func, &cfg) {
+        total_changes += 1;
+    }
+
+    let cfg = CFG::build(func);
+    let list_lowering = ListLowering;
+    if list_lowering.run(func, &cfg) {
+        total_changes += 1;
+    }
+
     recover_optimized_function_type_hints(func, probe_ctx, hints, stack_slot_hints);
     total_changes
 }

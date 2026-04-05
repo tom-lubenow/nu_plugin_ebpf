@@ -224,6 +224,79 @@ fn recover_pointer_arith_result_hint(ty: &MirType) -> MirType {
     }
 }
 
+pub(crate) fn infer_instruction_def_type(
+    inst: &MirInst,
+    probe_ctx: Option<&ProbeContext>,
+    hints: &HashMap<VReg, MirType>,
+    stack_slot_hints: &HashMap<StackSlotId, MirType>,
+) -> Option<(VReg, MirType)> {
+    match inst {
+        MirInst::Copy { dst, src } => match src {
+            MirValue::VReg(src_vreg) => hints.get(src_vreg).cloned().map(|ty| (*dst, ty)),
+            MirValue::StackSlot(slot) => Some((
+                *dst,
+                stack_slot_hints
+                    .get(slot)
+                    .cloned()
+                    .map(|ty| MirType::Ptr {
+                        pointee: Box::new(ty),
+                        address_space: AddressSpace::Stack,
+                    })
+                    .unwrap_or_else(|| pointer_hint(AddressSpace::Stack)),
+            )),
+            MirValue::Const(_) => None,
+        },
+        MirInst::Load { dst, ty, .. } | MirInst::LoadSlot { dst, ty, .. } => {
+            (!matches!(ty, MirType::Unknown)).then(|| (*dst, ty.clone()))
+        }
+        MirInst::LoadCtxField { dst, field, slot } => slot
+            .and_then(|slot| {
+                stack_slot_hints.get(&slot).cloned().map(|ty| {
+                    (
+                        *dst,
+                        MirType::Ptr {
+                            pointee: Box::new(ty),
+                            address_space: AddressSpace::Stack,
+                        },
+                    )
+                })
+            })
+            .or_else(|| {
+                recover_ctx_field_hint(probe_ctx, field, slot.is_some()).map(|ty| (*dst, ty))
+            }),
+        MirInst::MapLookup { dst, .. } => Some((*dst, pointer_hint(AddressSpace::Map))),
+        MirInst::BinOp { dst, op, lhs, rhs } if matches!(op, BinOpKind::Add | BinOpKind::Sub) => {
+            let lhs_ptr = match lhs {
+                MirValue::VReg(vreg) => hints.get(vreg),
+                _ => None,
+            };
+            let rhs_ptr = match rhs {
+                MirValue::VReg(vreg) => hints.get(vreg),
+                _ => None,
+            };
+            lhs_ptr
+                .filter(|ty| matches!(ty, MirType::Ptr { .. }))
+                .map(recover_pointer_arith_result_hint)
+                .or_else(|| {
+                    if matches!(op, BinOpKind::Add) {
+                        rhs_ptr
+                            .filter(|ty| matches!(ty, MirType::Ptr { .. }))
+                            .map(recover_pointer_arith_result_hint)
+                    } else {
+                        None
+                    }
+                })
+                .map(|ty| (*dst, ty))
+        }
+        MirInst::Phi { dst, args } => {
+            let mut arg_types = args.iter().filter_map(|(_, vreg)| hints.get(vreg).cloned());
+            let first = arg_types.next()?;
+            arg_types.all(|ty| ty == first).then_some((*dst, first))
+        }
+        _ => None,
+    }
+}
+
 pub(crate) fn recover_optimized_function_type_hints(
     func: &MirFunction,
     probe_ctx: Option<&ProbeContext>,
@@ -239,69 +312,7 @@ pub(crate) fn recover_optimized_function_type_hints(
                 .iter()
                 .chain(std::iter::once(&block.terminator))
         }) {
-            let recovered = match inst {
-                MirInst::Copy { dst, src } => match src {
-                    MirValue::VReg(src_vreg) => hints.get(src_vreg).cloned().map(|ty| (*dst, ty)),
-                    MirValue::StackSlot(slot) => Some((
-                        *dst,
-                        stack_slot_hints
-                            .get(slot)
-                            .cloned()
-                            .map(|ty| MirType::Ptr {
-                                pointee: Box::new(ty),
-                                address_space: AddressSpace::Stack,
-                            })
-                            .unwrap_or_else(|| pointer_hint(AddressSpace::Stack)),
-                    )),
-                    MirValue::Const(_) => None,
-                },
-                MirInst::Load { dst, ty, .. } | MirInst::LoadSlot { dst, ty, .. } => {
-                    (!matches!(ty, MirType::Unknown)).then(|| (*dst, ty.clone()))
-                }
-                MirInst::LoadCtxField { dst, field, slot } => slot
-                    .and_then(|slot| {
-                        stack_slot_hints.get(&slot).cloned().map(|ty| {
-                            (
-                                *dst,
-                                MirType::Ptr {
-                                    pointee: Box::new(ty),
-                                    address_space: AddressSpace::Stack,
-                                },
-                            )
-                        })
-                    })
-                    .or_else(|| {
-                        recover_ctx_field_hint(probe_ctx, field, slot.is_some())
-                            .map(|ty| (*dst, ty))
-                    }),
-                MirInst::MapLookup { dst, .. } => Some((*dst, pointer_hint(AddressSpace::Map))),
-                MirInst::BinOp { dst, op, lhs, rhs }
-                    if matches!(op, BinOpKind::Add | BinOpKind::Sub) =>
-                {
-                    let lhs_ptr = match lhs {
-                        MirValue::VReg(vreg) => hints.get(vreg),
-                        _ => None,
-                    };
-                    let rhs_ptr = match rhs {
-                        MirValue::VReg(vreg) => hints.get(vreg),
-                        _ => None,
-                    };
-                    lhs_ptr
-                        .filter(|ty| matches!(ty, MirType::Ptr { .. }))
-                        .map(recover_pointer_arith_result_hint)
-                        .or_else(|| {
-                            if matches!(op, BinOpKind::Add) {
-                                rhs_ptr
-                                    .filter(|ty| matches!(ty, MirType::Ptr { .. }))
-                                    .map(recover_pointer_arith_result_hint)
-                            } else {
-                                None
-                            }
-                        })
-                        .map(|ty| (*dst, ty))
-                }
-                _ => None,
-            };
+            let recovered = infer_instruction_def_type(inst, probe_ctx, hints, stack_slot_hints);
 
             if let Some((dst, ty)) = recovered
                 && hints.get(&dst).is_none()
