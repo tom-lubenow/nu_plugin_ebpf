@@ -1375,6 +1375,130 @@ mod tests {
         HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
     }
 
+    fn make_identity_user_function() -> HirFunction {
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(10),
+                }],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 2],
+            ast: vec![None; 2],
+            comments: vec![],
+            register_count: 1,
+            file_count: 0,
+        }
+    }
+
+    fn make_map_get_user_function_emit_program(
+        map_get_decl: DeclId,
+        user_decl: DeclId,
+        emit_decl: DeclId,
+    ) -> HirProgram {
+        let ctx_var = VarId::new(0);
+        let lookup_var = VarId::new(1);
+        let func = HirFunction {
+            blocks: vec![
+                HirBlock {
+                    id: HirBlockId(0),
+                    stmts: vec![
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(0),
+                            var_id: ctx_var,
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(1),
+                            lit: HirLiteral::CellPath(Box::new(CellPath {
+                                members: vec![string_member("pid")],
+                            })),
+                        },
+                        HirStmt::FollowCellPath {
+                            src_dst: RegId::new(0),
+                            path: RegId::new(1),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(2),
+                            lit: HirLiteral::String(b"cached_path".to_vec()),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(3),
+                            lit: HirLiteral::String(b"hash".to_vec()),
+                        },
+                        HirStmt::Call {
+                            decl_id: map_get_decl,
+                            src_dst: RegId::new(0),
+                            args: HirCallArgs {
+                                positional: vec![RegId::new(2)],
+                                named: vec![(b"kind".to_vec(), RegId::new(3))],
+                                ..Default::default()
+                            },
+                        },
+                        HirStmt::StoreVariable {
+                            var_id: lookup_var,
+                            src: RegId::new(0),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(4),
+                            lit: HirLiteral::Int(0),
+                        },
+                        HirStmt::BinaryOp {
+                            lhs_dst: RegId::new(0),
+                            op: Operator::Comparison(Comparison::NotEqual),
+                            rhs: RegId::new(4),
+                        },
+                    ],
+                    terminator: HirTerminator::BranchIf {
+                        cond: RegId::new(0),
+                        if_true: HirBlockId(1),
+                        if_false: HirBlockId(2),
+                    },
+                },
+                HirBlock {
+                    id: HirBlockId(1),
+                    stmts: vec![
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(1),
+                            var_id: lookup_var,
+                        },
+                        HirStmt::Call {
+                            decl_id: user_decl,
+                            src_dst: RegId::new(0),
+                            args: HirCallArgs {
+                                positional: vec![RegId::new(1)],
+                                ..Default::default()
+                            },
+                        },
+                        HirStmt::Call {
+                            decl_id: emit_decl,
+                            src_dst: RegId::new(0),
+                            args: HirCallArgs::default(),
+                        },
+                    ],
+                    terminator: HirTerminator::Return { src: RegId::new(0) },
+                },
+                HirBlock {
+                    id: HirBlockId(2),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Int(0),
+                    }],
+                    terminator: HirTerminator::Return { src: RegId::new(0) },
+                },
+            ],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 14],
+            ast: vec![None; 14],
+            comments: vec![],
+            register_count: 5,
+            file_count: 0,
+        };
+        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+    }
+
     fn cached_path_struct_schema() -> HashMap<MapRef, MirType> {
         HashMap::from([(
             MapRef {
@@ -2402,6 +2526,75 @@ mod tests {
                 && fields[0].name == "mnt"
                 && fields[1].name == "dentry"
         ));
+    }
+
+    #[test]
+    fn test_compile_optimized_external_typed_map_get_user_function_emit() {
+        let hir = make_map_get_user_function_emit_program(
+            DeclId::new(43),
+            DeclId::new(90),
+            DeclId::new(44),
+        );
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+        let mut decl_names = HashMap::new();
+        decl_names.insert(DeclId::new(43), "map-get".to_string());
+        decl_names.insert(DeclId::new(44), "emit".to_string());
+        decl_names.insert(DeclId::new(90), "project-entry".to_string());
+        let external_schema = cached_path_struct_schema();
+        let user_functions = HashMap::from([(DeclId::new(90), make_identity_user_function())]);
+
+        let mut lowering = lower_hir_to_mir_with_hints_and_maps(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            Some(&external_schema),
+            &user_functions,
+            &HashMap::new(),
+        )
+        .expect("typed map-get through user function should lower");
+
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
+        );
+        for ((subfn, hints), stack_slots) in lowering
+            .program
+            .subfunctions
+            .iter_mut()
+            .zip(lowering.type_hints.subfunctions.iter_mut())
+            .zip(lowering.type_hints.subfunction_stack_slots.iter())
+        {
+            optimize_with_ssa_hints(
+                subfn,
+                Some(&probe_ctx),
+                hints,
+                stack_slots,
+                &lowering.type_hints.generic_map_value_types,
+            );
+        }
+
+        let result = compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .expect("optimized typed map-get through user function should compile");
+        let schema = result
+            .event_schema
+            .expect("user-function emit should preserve a structured event schema");
+        assert!(
+            schema
+                .fields
+                .iter()
+                .map(|field| field.name.as_str())
+                .eq(["mnt", "dentry"].into_iter()),
+            "user-function emit should preserve top-level record fields, got {:?}",
+            schema
+        );
     }
 
     #[test]

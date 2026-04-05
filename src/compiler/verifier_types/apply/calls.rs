@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::instruction::unknown_kfunc_signature_message;
+use crate::compiler::mir::SubfunctionId;
 
 pub(super) fn apply_call_helper_inst(
     dst: VReg,
@@ -179,8 +180,11 @@ pub(super) fn apply_call_kfunc_inst(
 
 pub(super) fn apply_call_subfn_inst(
     dst: VReg,
+    subfn: SubfunctionId,
     args: &[VReg],
     types: &HashMap<VReg, MirType>,
+    slot_sizes: &HashMap<StackSlotId, i64>,
+    subfn_summaries: &HashMap<SubfunctionId, SubfunctionReturnSummary>,
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
@@ -190,6 +194,13 @@ pub(super) fn apply_call_subfn_inst(
             args.len()
         )));
     }
+    if let Some(SubfunctionReturnSummary::ReturnsArg(idx)) = subfn_summaries.get(&subfn)
+        && let Some(arg) = args.get(*idx)
+    {
+        apply_copy_inst(dst, &MirValue::VReg(*arg), slot_sizes, state);
+        return;
+    }
+
     let ty = types
         .get(&dst)
         .map(verifier_type_from_mir)

@@ -237,6 +237,52 @@ impl<'a> MirToEbpfCompiler<'a> {
         size: usize,
         scratch: EbpfReg,
     ) -> Result<(), CompileError> {
+        if src_base == scratch {
+            let temp_base = [
+                EbpfReg::R9,
+                EbpfReg::R8,
+                EbpfReg::R7,
+                EbpfReg::R6,
+                EbpfReg::R5,
+                EbpfReg::R4,
+                EbpfReg::R3,
+                EbpfReg::R2,
+                EbpfReg::R1,
+            ]
+            .into_iter()
+            .find(|reg| *reg != scratch && *reg != dst_base)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "no temporary register available for byte copy".into(),
+                )
+            })?;
+
+            self.check_stack_space(8)?;
+            self.stack_offset -= 8;
+            let spill_offset = self.stack_offset;
+
+            self.emit_store(EbpfReg::R10, spill_offset, temp_base, 8)?;
+            self.instructions
+                .push(EbpfInsn::mov64_reg(temp_base, src_base));
+            let copy_result = self
+                .emit_copy_bytes_inner(temp_base, src_offset, dst_base, dst_offset, size, scratch);
+            self.emit_load(temp_base, EbpfReg::R10, spill_offset, 8)?;
+            self.stack_offset += 8;
+            return copy_result;
+        }
+
+        self.emit_copy_bytes_inner(src_base, src_offset, dst_base, dst_offset, size, scratch)
+    }
+
+    fn emit_copy_bytes_inner(
+        &mut self,
+        src_base: EbpfReg,
+        src_offset: i16,
+        dst_base: EbpfReg,
+        dst_offset: i16,
+        size: usize,
+        scratch: EbpfReg,
+    ) -> Result<(), CompileError> {
         let mut copied = 0usize;
         while copied < size {
             let cur_src = self.add_i16_offset(src_offset, copied)?;

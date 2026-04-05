@@ -38,6 +38,7 @@ use super::mir::{
     RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME, StackSlotId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
     VReg,
 };
+use super::subfn_summaries::SubfunctionReturnSummary;
 
 mod state;
 use state::*;
@@ -53,6 +54,7 @@ mod refinement;
 use apply::{apply_inst, check_uses_initialized};
 use calls::*;
 pub use driver::verify_mir;
+pub(crate) use driver::verify_mir_with_subfunction_summaries;
 use map_layout::*;
 use ops::*;
 use ranges::*;

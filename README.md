@@ -211,7 +211,10 @@ whole-value uses like `{ $entry | emit }` or `{ $entry | count }` preserve the
 same typed aggregate layout instead of collapsing to a raw pointer scalar.
 That preserved layout also survives record construction, so `if $entry != 0 {
 { path: $entry } | emit }` streams `path` as a nested record instead of a raw
-pointer or opaque bytes. When those looked-up aggregates are written back
+pointer or opaque bytes. The same null-checked layout now also survives simple
+user-defined function boundaries, so `def project-entry [entry] { $entry }`
+can feed `if $entry != 0 { (project-entry $entry) | emit }` without collapsing
+back to an untyped scalar. When those looked-up aggregates are written back
 through `map-put`, the stored value shape stays canonical too, so map-to-map
 copies preserve the real aggregate layout instead of a pointer wrapper. When
 those maps are attached with the same `--pin` group, active pinned programs now

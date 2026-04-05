@@ -1,4 +1,6 @@
 use super::*;
+use crate::compiler::mir::StructField;
+use crate::compiler::subfn_summaries::SubfunctionReturnSummary;
 
 #[test]
 fn test_verify_mir_helper_map_lookup_rejects_out_of_bounds_key_pointer() {
@@ -2563,6 +2565,80 @@ fn test_verify_mir_rejects_subfn_calls_with_more_than_five_args() {
         "unexpected error messages: {:?}",
         err
     );
+}
+
+#[test]
+fn test_verify_mir_subfn_return_arg_summary_preserves_null_checked_pointer() {
+    let (mut func, entry) = new_mir_function();
+    let use_value = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+    func.vreg_count = 3;
+
+    let cond = VReg(1);
+    let ret = VReg(2);
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(VReg(0)),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: use_value,
+        if_false: done,
+    };
+
+    func.block_mut(use_value)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: ret,
+            subfn: crate::compiler::mir::SubfunctionId(0),
+            args: vec![VReg(0)],
+        });
+    func.block_mut(use_value)
+        .instructions
+        .push(MirInst::EmitEvent {
+            data: ret,
+            size: 16,
+        });
+    func.block_mut(use_value).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let path_ty = MirType::Ptr {
+        pointee: Box::new(MirType::Struct {
+            name: Some("path".to_string()),
+            kernel_btf_type_id: None,
+            fields: vec![
+                StructField {
+                    name: "mnt".to_string(),
+                    ty: MirType::U64,
+                    offset: 0,
+                    synthetic: false,
+                    bitfield: None,
+                },
+                StructField {
+                    name: "dentry".to_string(),
+                    ty: MirType::U64,
+                    offset: 8,
+                    synthetic: false,
+                    bitfield: None,
+                },
+            ],
+        }),
+        address_space: AddressSpace::Map,
+    };
+    let mut types = HashMap::new();
+    types.insert(VReg(0), path_ty.clone());
+    types.insert(ret, path_ty);
+
+    let summaries = HashMap::from([(
+        crate::compiler::mir::SubfunctionId(0),
+        SubfunctionReturnSummary::ReturnsArg(0),
+    )]);
+    verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+        .expect("expected null-checked arg-returning subfunction to preserve pointer safety");
 }
 
 #[test]

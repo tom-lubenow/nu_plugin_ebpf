@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::mir::SubfunctionId;
 
 mod access;
 mod calls;
@@ -24,6 +25,7 @@ pub(super) fn apply_inst(
     inst: &MirInst,
     types: &HashMap<VReg, MirType>,
     slot_sizes: &HashMap<StackSlotId, i64>,
+    subfn_summaries: &HashMap<SubfunctionId, SubfunctionReturnSummary>,
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
@@ -68,8 +70,17 @@ pub(super) fn apply_inst(
         } => {
             apply_call_kfunc_inst(*dst, kfunc, args, types, state, errors);
         }
-        MirInst::CallSubfn { dst, args, .. } => {
-            apply_call_subfn_inst(*dst, args, types, state, errors);
+        MirInst::CallSubfn { dst, subfn, args } => {
+            apply_call_subfn_inst(
+                *dst,
+                *subfn,
+                args,
+                types,
+                slot_sizes,
+                subfn_summaries,
+                state,
+                errors,
+            );
         }
         MirInst::StrCmp { dst, .. } | MirInst::StopTimer { dst, .. } => {
             apply_typed_dst_inst(*dst, types, state);

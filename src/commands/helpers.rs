@@ -264,9 +264,11 @@ argument. Aggregate values established by an earlier typed `map-put` in the same
 closure can be projected by field after lookup, or used directly with `emit`
 and `count` as whole typed values. That typed layout also survives record
 construction, so `if $entry != 0 { { path: $entry } | emit }` preserves `path`
-as a nested record. The same typed schema also carries across active programs
-that share a pinned map group. The result is a maybe-null pointer, so guard it
-before dereferencing.
+as a nested record. The same null-checked layout also survives simple
+user-defined function boundaries, so `def project-entry [entry] { $entry }`
+can feed `if $entry != 0 { (project-entry $entry) | emit }`. The same typed
+schema also carries across active programs that share a pinned map group. The
+result is a maybe-null pointer, so guard it before dereferencing.
 
 Example:
   let entry = ($ctx.pid | map-get seen_paths --kind hash)

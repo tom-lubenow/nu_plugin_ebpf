@@ -1,9 +1,18 @@
 use super::*;
+use crate::compiler::mir::SubfunctionId;
 use std::collections::{HashMap, VecDeque};
 
 pub fn verify_mir(
     func: &MirFunction,
     types: &HashMap<VReg, MirType>,
+) -> Result<(), Vec<VerifierTypeError>> {
+    verify_mir_with_subfunction_summaries(func, types, &HashMap::new())
+}
+
+pub(crate) fn verify_mir_with_subfunction_summaries(
+    func: &MirFunction,
+    types: &HashMap<VReg, MirType>,
+    subfn_summaries: &HashMap<SubfunctionId, SubfunctionReturnSummary>,
 ) -> Result<(), Vec<VerifierTypeError>> {
     let total_vregs = func.vreg_count.max(func.param_count as u32) as usize;
     let mut slot_sizes: HashMap<StackSlotId, i64> = HashMap::new();
@@ -52,7 +61,14 @@ pub fn verify_mir(
 
         for inst in &block.instructions {
             check_uses_initialized(inst, &state, &mut errors);
-            apply_inst(inst, types, &slot_sizes, &mut state, &mut errors);
+            apply_inst(
+                inst,
+                types,
+                &slot_sizes,
+                subfn_summaries,
+                &mut state,
+                &mut errors,
+            );
         }
 
         check_uses_initialized(&block.terminator, &state, &mut errors);
@@ -78,6 +94,7 @@ pub fn verify_mir(
                     &block.terminator,
                     types,
                     &slot_sizes,
+                    subfn_summaries,
                     &mut body_state,
                     &mut errors,
                 );

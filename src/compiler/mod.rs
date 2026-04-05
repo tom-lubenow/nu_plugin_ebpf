@@ -32,6 +32,7 @@ pub mod mir_to_ebpf;
 pub mod mir_to_lir;
 pub mod passes;
 pub mod reg_info;
+mod subfn_summaries;
 mod type_hints;
 pub mod type_infer;
 pub mod vcc;

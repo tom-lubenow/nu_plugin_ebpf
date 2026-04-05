@@ -1,4 +1,7 @@
 use super::*;
+use crate::compiler::subfn_summaries::{
+    SubfunctionReturnSummary, infer_subfunction_return_summaries,
+};
 
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn infer_param_vars(hir: &HirFunction) -> Vec<VarId> {
@@ -261,6 +264,18 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let subfn = self.get_or_create_subfunction(decl_id)?;
+        let returned_arg_type = if let Some(SubfunctionReturnSummary::ReturnsArg(idx)) =
+            infer_subfunction_return_summaries(&self.subfunctions)
+                .get(&subfn)
+                .copied()
+            && let Some(arg_vreg) = args.get(idx).copied()
+            && let Some(arg_ty) = self.vreg_type_hints.get(&arg_vreg).cloned()
+        {
+            self.vreg_type_hints.insert(dst_vreg, arg_ty.clone());
+            Some(arg_ty)
+        } else {
+            None
+        };
         self.emit(MirInst::CallSubfn {
             dst: dst_vreg,
             subfn,
@@ -268,6 +283,9 @@ impl<'a> HirToMirLowering<'a> {
         });
 
         self.reg_metadata.remove(&src_dst.get());
+        if let Some(arg_ty) = returned_arg_type {
+            self.get_or_create_metadata(src_dst).field_type = Some(arg_ty);
+        }
         Ok(())
     }
 }

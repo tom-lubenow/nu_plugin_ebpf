@@ -968,6 +968,18 @@ impl<'a> VccLowerer<'a> {
                         ),
                     ));
                 }
+                if let MirInst::CallSubfn { dst, subfn, args } = inst
+                    && let Some(
+                        crate::compiler::subfn_summaries::SubfunctionReturnSummary::ReturnsArg(idx),
+                    ) = self.subfn_summaries.get(subfn)
+                    && let Some(arg) = args.get(*idx)
+                {
+                    out.push(VccInst::Copy {
+                        dst: VccReg(dst.0),
+                        src: VccValue::Reg(VccReg(arg.0)),
+                    });
+                    return Ok(());
+                }
                 let ty = self
                     .types
                     .get(dst)

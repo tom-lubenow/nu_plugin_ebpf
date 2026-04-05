@@ -42,6 +42,7 @@ use crate::compiler::mir::{
 };
 use crate::compiler::mir_to_lir::lower_mir_to_lir_checked;
 use crate::compiler::passes::{ListLowering, MirPass, SsaDestruction};
+use crate::compiler::subfn_summaries::infer_subfunction_return_summaries;
 use crate::compiler::type_hints::recover_optimized_mir_type_hints;
 use crate::compiler::type_infer::{TypeInference, infer_subfunction_schemes};
 use crate::compiler::vcc;
@@ -437,6 +438,7 @@ fn verify_mir_program(
             HashMap::new()
         }
     };
+    let subfn_summaries = infer_subfunction_return_summaries(&program.subfunctions);
 
     let mut all_funcs = Vec::with_capacity(1 + program.subfunctions.len());
     all_funcs.push((
@@ -469,12 +471,16 @@ fn verify_mir_program(
                 HashMap::new()
             }
         };
-        if let Err(errors) = verifier_types::verify_mir(func, &types) {
+        if let Err(errors) =
+            verifier_types::verify_mir_with_subfunction_summaries(func, &types, &subfn_summaries)
+        {
             if let Some(err) = errors.into_iter().next() {
                 return Err(CompileError::VerifierTypeError(err));
             }
         }
-        if let Err(errors) = vcc::verify_mir(func, &types) {
+        if let Err(errors) =
+            vcc::verify_mir_with_subfunction_summaries(func, &types, &subfn_summaries)
+        {
             let message = errors
                 .iter()
                 .map(|err| err.to_string())

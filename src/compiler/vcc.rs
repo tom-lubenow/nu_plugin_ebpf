@@ -43,7 +43,7 @@ use crate::compiler::mir::{
     AddressSpace, BYTES_COUNTER_MAP_NAME, BinOpKind, COUNTER_MAP_NAME, CtxField,
     HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, MapKind, MirFunction, MirInst, MirType, MirValue,
     RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME, StackSlotId, StackSlotKind, StringAppendType,
-    TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, UnaryOpKind, VReg,
+    SubfunctionId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, UnaryOpKind, VReg,
 };
 use crate::compiler::passes::{ListLowering, MirPass};
 
@@ -574,6 +574,17 @@ pub struct VccVerifier {
 include!("vcc/verifier.rs");
 include!("vcc/state.rs");
 pub fn verify_mir(func: &MirFunction, types: &HashMap<VReg, MirType>) -> Result<(), Vec<VccError>> {
+    verify_mir_with_subfunction_summaries(func, types, &HashMap::new())
+}
+
+pub(crate) fn verify_mir_with_subfunction_summaries(
+    func: &MirFunction,
+    types: &HashMap<VReg, MirType>,
+    subfn_summaries: &HashMap<
+        SubfunctionId,
+        crate::compiler::subfn_summaries::SubfunctionReturnSummary,
+    >,
+) -> Result<(), Vec<VccError>> {
     if func.param_count > 5 {
         return Err(vec![VccError::new(
             VccErrorKind::UnsupportedInstruction,
@@ -593,7 +604,7 @@ pub fn verify_mir(func: &MirFunction, types: &HashMap<VReg, MirType>) -> Result<
     let list_lowering = ListLowering;
     let _ = list_lowering.run(&mut verify_func, &cfg);
 
-    let mut lowerer = VccLowerer::new(&verify_func, types, list_max);
+    let mut lowerer = VccLowerer::new(&verify_func, types, list_max, subfn_summaries);
     let vcc_func = match lowerer.lower() {
         Ok(vcc) => vcc,
         Err(err) => return Err(vec![err]),
