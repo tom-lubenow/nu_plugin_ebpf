@@ -371,6 +371,55 @@ impl<'a> HirToMirLowering<'a> {
         Ok(inferred)
     }
 
+    pub(super) fn predeclare_named_program_global_from_value(
+        &mut self,
+        name: &str,
+        value: &Value,
+    ) -> Result<MutableCaptureGlobal, CompileError> {
+        let symbol = Self::named_program_global_symbol(name);
+        let Some((ty, _data, list_max_len, string_slot_len)) =
+            Self::mutable_capture_global_repr(value)?
+        else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "global '{}' requires a compile-time constant with a fixed layout",
+                name
+            )));
+        };
+
+        let inferred = MutableCaptureGlobal {
+            symbol: symbol.clone(),
+            ty,
+            list_max_len,
+            string_slot_len,
+        };
+
+        if let Some(existing) = self.named_program_globals.get(name) {
+            if existing != &inferred {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "global '{}' is used with incompatible layouts",
+                    name
+                )));
+            }
+            return Ok(existing.clone());
+        }
+
+        let size = inferred.ty.size();
+        if size == 0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "global '{}' inferred an empty layout, which is not yet supported",
+                name
+            )));
+        }
+
+        // Forward global-get support is layout-only. The later set still performs
+        // the real initialization at runtime, so the compile-time global must
+        // remain zero-initialized.
+        self.bss_globals.push(BssGlobal { name: symbol, size });
+        self.named_program_globals
+            .insert(name.to_string(), inferred.clone());
+        Ok(inferred)
+    }
+
     pub(super) fn load_mutable_global_value(
         &mut self,
         dst: RegId,

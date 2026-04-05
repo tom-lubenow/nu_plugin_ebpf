@@ -4639,8 +4639,72 @@ fn test_lower_global_set_and_get_string_materializes_string_slot() {
 }
 
 #[test]
-fn test_lower_global_get_without_prior_set_is_rejected() {
+fn test_lower_global_get_before_later_constant_set_uses_named_bss_global() {
     let get_decl = DeclId::new(94);
+    let set_decl = DeclId::new(95);
+    let decl_names = HashMap::from([
+        (get_decl, "global-get".to_string()),
+        (set_decl, "global-set".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("state".into()),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::Call {
+                    decl_id: set_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("forward global-get/global-set flow should lower");
+
+    assert_eq!(result.data_globals.len(), 0);
+    assert_eq!(result.bss_globals.len(), 1);
+    assert_eq!(result.bss_globals[0].name, "__nu_global_state");
+}
+
+#[test]
+fn test_lower_global_get_without_any_same_program_set_is_rejected() {
+    let get_decl = DeclId::new(95);
     let decl_names = HashMap::from([(get_decl, "global-get".to_string())]);
 
     let func = HirFunction {
@@ -4679,7 +4743,7 @@ fn test_lower_global_get_without_prior_set_is_rejected() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("global-get without a prior global-set should be rejected");
+    .expect_err("global-get without any same-program global-set should be rejected");
 
     assert!(
         err.to_string()
@@ -4689,7 +4753,7 @@ fn test_lower_global_get_without_prior_set_is_rejected() {
 
 #[test]
 fn test_lower_global_set_rejects_conflicting_layouts() {
-    let set_decl = DeclId::new(95);
+    let set_decl = DeclId::new(96);
     let decl_names = HashMap::from([(set_decl, "global-set".to_string())]);
 
     let func = HirFunction {

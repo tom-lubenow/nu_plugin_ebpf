@@ -311,6 +311,32 @@ impl HirLiteral {
             _ => None,
         }
     }
+
+    pub fn to_constant_value(&self) -> Option<Value> {
+        let span = Span::unknown();
+        match self {
+            HirLiteral::Bool(val) => Some(Value::bool(*val, span)),
+            HirLiteral::Int(val) => Some(Value::int(*val, span)),
+            HirLiteral::Filesize(val) => Some(Value::filesize(*val, span)),
+            HirLiteral::Duration(val) => Some(Value::duration(*val, span)),
+            HirLiteral::Nothing => Some(Value::nothing(span)),
+            HirLiteral::Binary(bytes) => Some(Value::binary(bytes.clone(), span)),
+            HirLiteral::String(bytes) | HirLiteral::RawString(bytes) => {
+                String::from_utf8(bytes.clone())
+                    .ok()
+                    .map(|s| Value::string(s, span))
+            }
+            HirLiteral::GlobPattern { val, no_expand } => String::from_utf8(val.clone())
+                .ok()
+                .map(|s| Value::glob(s, *no_expand, span)),
+            HirLiteral::Filepath { val, .. } | HirLiteral::Directory { val, .. } => {
+                String::from_utf8(val.clone())
+                    .ok()
+                    .map(|s| Value::string(s, span))
+            }
+            _ => None,
+        }
+    }
 }
 
 pub fn is_numeric_constant_value(value: &Value) -> bool {
