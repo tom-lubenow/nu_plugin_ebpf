@@ -11,6 +11,8 @@ impl<'a> VccLowerer<'a> {
             CtxField::Cpu => "cpu".to_string(),
             CtxField::Timestamp => "timestamp".to_string(),
             CtxField::PacketLen => "packet_len".to_string(),
+            CtxField::Data => "data".to_string(),
+            CtxField::DataEnd => "data_end".to_string(),
             CtxField::IngressIfindex => "ingress_ifindex".to_string(),
             CtxField::RxQueueIndex => "rx_queue_index".to_string(),
             CtxField::EgressIfindex => "egress_ifindex".to_string(),

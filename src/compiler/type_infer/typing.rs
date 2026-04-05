@@ -307,6 +307,11 @@ impl<'a> TypeInference<'a> {
             | CtxField::RxQueueIndex
             | CtxField::EgressIfindex => HMType::U32,
 
+            CtxField::Data | CtxField::DataEnd => HMType::Ptr {
+                pointee: Box::new(HMType::U8),
+                address_space: AddressSpace::Packet,
+            },
+
             CtxField::Timestamp => HMType::U64,
 
             CtxField::Arg(idx) => {

@@ -394,29 +394,53 @@ impl VccVerifier {
                             self.scalar_const_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         let scalar_reg_cmp =
                             self.scalar_reg_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
-                        if lhs_ty.class() != VccTypeClass::Scalar
-                            && lhs_ty.class() != VccTypeClass::Bool
-                        {
-                            self.errors.push(VccError::new(
-                                VccErrorKind::TypeMismatch {
-                                    expected: VccTypeClass::Scalar,
-                                    actual: lhs_ty.class(),
-                                },
-                                "comparison expects scalar operands",
-                            ));
-                            return;
-                        }
-                        if rhs_ty.class() != VccTypeClass::Scalar
-                            && rhs_ty.class() != VccTypeClass::Bool
-                        {
-                            self.errors.push(VccError::new(
-                                VccErrorKind::TypeMismatch {
-                                    expected: VccTypeClass::Scalar,
-                                    actual: rhs_ty.class(),
-                                },
-                                "comparison expects scalar operands",
-                            ));
-                            return;
+                        let lhs_is_ptr = matches!(lhs_ty, VccValueType::Ptr(_));
+                        let rhs_is_ptr = matches!(rhs_ty, VccValueType::Ptr(_));
+                        if lhs_is_ptr || rhs_is_ptr {
+                            match (lhs_ty, rhs_ty) {
+                                (VccValueType::Ptr(lp), VccValueType::Ptr(rp))
+                                    if lp.space == VccAddrSpace::Packet
+                                        && rp.space == VccAddrSpace::Packet => {}
+                                _ => {
+                                    self.errors.push(VccError::new(
+                                        VccErrorKind::TypeMismatch {
+                                            expected: VccTypeClass::Scalar,
+                                            actual: if lhs_is_ptr {
+                                                lhs_ty.class()
+                                            } else {
+                                                rhs_ty.class()
+                                            },
+                                        },
+                                        "comparison expects scalar operands",
+                                    ));
+                                    return;
+                                }
+                            }
+                        } else {
+                            if lhs_ty.class() != VccTypeClass::Scalar
+                                && lhs_ty.class() != VccTypeClass::Bool
+                            {
+                                self.errors.push(VccError::new(
+                                    VccErrorKind::TypeMismatch {
+                                        expected: VccTypeClass::Scalar,
+                                        actual: lhs_ty.class(),
+                                    },
+                                    "comparison expects scalar operands",
+                                ));
+                                return;
+                            }
+                            if rhs_ty.class() != VccTypeClass::Scalar
+                                && rhs_ty.class() != VccTypeClass::Bool
+                            {
+                                self.errors.push(VccError::new(
+                                    VccErrorKind::TypeMismatch {
+                                        expected: VccTypeClass::Scalar,
+                                        actual: rhs_ty.class(),
+                                    },
+                                    "comparison expects scalar operands",
+                                ));
+                                return;
+                            }
                         }
                         state.set_reg(*dst, VccValueType::Bool);
                         if let Some((reg, cmp_op, value)) = scalar_cmp {
@@ -551,11 +575,14 @@ impl VccVerifier {
                             self.errors.push(err);
                             return;
                         }
-                        if !Self::is_mem_space_allowed(ptr_info.space) {
+                        if !matches!(
+                            ptr_info.space,
+                            VccAddrSpace::Stack(_) | VccAddrSpace::MapValue | VccAddrSpace::Packet
+                        ) {
                             self.errors.push(VccError::new(
                                 VccErrorKind::PointerBounds,
                                 format!(
-                                    "load requires pointer in [Stack, Map], got {}",
+                                    "load requires pointer in [Stack, Map, Packet], got {}",
                                     Self::space_name(ptr_info.space)
                                 ),
                             ));

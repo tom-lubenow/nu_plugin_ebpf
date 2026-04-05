@@ -650,6 +650,8 @@ impl ProbeContext {
                 ),
             ),
             CtxField::PacketLen
+            | CtxField::Data
+            | CtxField::DataEnd
             | CtxField::IngressIfindex
             | CtxField::RxQueueIndex
             | CtxField::EgressIfindex

@@ -20,7 +20,7 @@ pub(super) fn apply_load_inst(
     check_ptr_access(
         ptr,
         "load",
-        &[AddressSpace::Stack, AddressSpace::Map],
+        &[AddressSpace::Stack, AddressSpace::Map, AddressSpace::Packet],
         offset,
         access_size,
         state,

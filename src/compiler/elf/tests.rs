@@ -156,6 +156,8 @@ fn test_probe_context_allows_cpu_and_timestamp_on_xdp() {
 fn test_probe_context_allows_xdp_md_scalar_fields_on_xdp() {
     let ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::IngressIfindex)
             .is_none()

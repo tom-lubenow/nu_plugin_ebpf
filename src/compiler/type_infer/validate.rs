@@ -147,9 +147,15 @@ impl<'a> TypeInference<'a> {
                     }
                     BinOpKind::Lt | BinOpKind::Le | BinOpKind::Gt | BinOpKind::Ge => {
                         if lhs_ptr.is_some() || rhs_ptr.is_some() {
-                            errors.push(TypeError::new(
-                                "ordering comparisons on pointers are not supported".to_string(),
-                            ));
+                            match (lhs_ptr, rhs_ptr) {
+                                (Some(lhs_space), Some(rhs_space))
+                                    if lhs_space == AddressSpace::Packet
+                                        && rhs_space == AddressSpace::Packet => {}
+                                _ => errors.push(TypeError::new(
+                                    "ordering comparisons on pointers are not supported"
+                                        .to_string(),
+                                )),
+                            }
                         } else if !Self::mir_is_numeric(&lhs_ty) || !Self::mir_is_numeric(&rhs_ty) {
                             errors.push(TypeError::new(format!(
                                 "comparison expects numeric types, got {:?} and {:?}",
@@ -754,7 +760,7 @@ impl<'a> TypeInference<'a> {
                 }
             }
             AddressSpace::Map => Ok(()),
-            AddressSpace::Kernel | AddressSpace::User => {
+            AddressSpace::Kernel | AddressSpace::User | AddressSpace::Packet => {
                 match self.value_range_for(offset, value_ranges) {
                     ValueRange::Known { min, .. } if min >= 0 => Ok(()),
                     ValueRange::Known { .. } => Err(format!(

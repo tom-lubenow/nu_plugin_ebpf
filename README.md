@@ -165,6 +165,8 @@ The closure receives a context parameter with these fields:
 | `cpu` | CPU ID | All |
 | `ktime` | Kernel timestamp (ns) | All |
 | `packet_len` | XDP packet length (`data_end - data`) | xdp |
+| `data` | XDP packet data pointer | xdp |
+| `data_end` | XDP packet end pointer | xdp |
 | `ingress_ifindex` / `ifindex` | XDP ingress interface index | xdp |
 | `rx_queue_index` | XDP receive queue index | xdp |
 | `egress_ifindex` | XDP egress interface index | xdp |
@@ -173,11 +175,14 @@ The closure receives a context parameter with these fields:
 
 Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/format`.
 
-`xdp` currently exposes `ctx.cpu`, `ctx.ktime`, and scalar `xdp_md` fields such
-as `ctx.packet_len`, `ctx.ifindex`, `ctx.ingress_ifindex`, `ctx.rx_queue_index`,
-and `ctx.egress_ifindex`. Raw packet pointers (`data`, `data_end`, etc.) and
-named XDP return helpers are not modeled yet, so XDP closures currently need to
-return an explicit numeric action code such as `2` (`XDP_PASS`).
+`xdp` currently exposes `ctx.cpu`, `ctx.ktime`, scalar `xdp_md` fields such as
+`ctx.packet_len`, `ctx.ifindex`, `ctx.ingress_ifindex`, `ctx.rx_queue_index`,
+and `ctx.egress_ifindex`, plus raw packet pointers `ctx.data` and `ctx.data_end`.
+Scalar packet byte reads work through normal Nushell indexing such as
+`($ctx.data | get 0)`, which lowers to a data_end-guarded packet load. Richer
+packet struct typing and named XDP action helpers are still not modeled, so
+XDP closures currently need to return an explicit numeric action code such as
+`2` (`XDP_PASS`).
 
 `kprobe` and `uprobe` expose `ctx.arg0`-`ctx.arg5` through `pt_regs`. `fentry` and
 `fexit` resolve `ctx.argN` and `ctx.retval` through kernel BTF. Scalar and pointer

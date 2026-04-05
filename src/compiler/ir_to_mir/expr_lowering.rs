@@ -402,6 +402,8 @@ impl<'a> HirToMirLowering<'a> {
             "cpu" => CtxField::Cpu,
             "ktime" | "timestamp" => CtxField::Timestamp,
             "packet_len" | "len" => CtxField::PacketLen,
+            "data" => CtxField::Data,
+            "data_end" => CtxField::DataEnd,
             "ifindex" | "ingress_ifindex" => CtxField::IngressIfindex,
             "rx_queue_index" => CtxField::RxQueueIndex,
             "egress_ifindex" => CtxField::EgressIfindex,
@@ -1012,6 +1014,99 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn emit_xdp_packet_guarded_load(
+        &mut self,
+        dst_vreg: VReg,
+        packet_ptr_vreg: VReg,
+        load_ty: &MirType,
+        path_desc: &str,
+    ) -> Result<(), CompileError> {
+        if matches!(
+            load_ty,
+            MirType::Array { .. }
+                | MirType::Struct { .. }
+                | MirType::Ptr { .. }
+                | MirType::MapRef { .. }
+                | MirType::Unknown
+        ) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "xdp packet load for '{}' requires a scalar element type, got {:?}",
+                path_desc, load_ty
+            )));
+        }
+
+        let access_size = i64::try_from(load_ty.size()).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "xdp packet load for '{}' has unsupported size {}",
+                path_desc,
+                load_ty.size()
+            ))
+        })?;
+        if access_size <= 0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "xdp packet load for '{}' requires positive size",
+                path_desc
+            )));
+        }
+
+        self.vreg_type_hints.insert(dst_vreg, load_ty.clone());
+        self.emit(MirInst::Copy {
+            dst: dst_vreg,
+            src: MirValue::Const(0),
+        });
+
+        let packet_ptr_ty = MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Packet,
+        };
+        let data_end_vreg = self.func.alloc_vreg();
+        self.vreg_type_hints
+            .insert(data_end_vreg, packet_ptr_ty.clone());
+        self.emit(MirInst::LoadCtxField {
+            dst: data_end_vreg,
+            field: CtxField::DataEnd,
+            slot: None,
+        });
+
+        let access_end_vreg = self.func.alloc_vreg();
+        self.vreg_type_hints
+            .insert(access_end_vreg, packet_ptr_ty.clone());
+        self.emit(MirInst::BinOp {
+            dst: access_end_vreg,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(packet_ptr_vreg),
+            rhs: MirValue::Const(access_size),
+        });
+
+        let cond_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: cond_vreg,
+            op: BinOpKind::Le,
+            lhs: MirValue::VReg(access_end_vreg),
+            rhs: MirValue::VReg(data_end_vreg),
+        });
+
+        let load_block = self.func.alloc_block();
+        let join_block = self.func.alloc_block();
+        self.terminate(MirInst::Branch {
+            cond: cond_vreg,
+            if_true: load_block,
+            if_false: join_block,
+        });
+
+        self.current_block = load_block;
+        self.emit(MirInst::Load {
+            dst: dst_vreg,
+            ptr: packet_ptr_vreg,
+            offset: 0,
+            ty: load_ty.clone(),
+        });
+        self.terminate(MirInst::Jump { target: join_block });
+
+        self.current_block = join_block;
+        Ok(())
+    }
+
     fn lower_trampoline_field_projection(
         &mut self,
         dst_vreg: VReg,
@@ -1594,6 +1689,12 @@ impl<'a> HirToMirLowering<'a> {
                             ty: ptr_ty,
                         });
                     }
+                    AddressSpace::Packet => {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "xdp packet path '{}' does not support nested pointer dereferences",
+                            path_desc
+                        )));
+                    }
                 }
                 cursor = ValueCursor::Pointer {
                     base_vreg: ptr_vreg,
@@ -1683,6 +1784,12 @@ impl<'a> HirToMirLowering<'a> {
                                 src: MirValue::StackSlot(projected_slot),
                             });
                         }
+                        AddressSpace::Packet => {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "xdp packet path '{}' does not support by-reference aggregate projection",
+                                path_desc
+                            )));
+                        }
                     }
                 } else {
                     match address_space {
@@ -1767,6 +1874,45 @@ impl<'a> HirToMirLowering<'a> {
                                     ty: next_ty.clone(),
                                 });
                             }
+                        }
+                        AddressSpace::Packet => {
+                            if bitfield.is_some() {
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "xdp packet path '{}' does not support bitfield extraction",
+                                    path_desc
+                                )));
+                            }
+
+                            let packet_ptr_vreg = if field_offset == 0 {
+                                *base_vreg
+                            } else {
+                                let ptr_vreg = self.func.alloc_vreg();
+                                self.vreg_type_hints.insert(
+                                    ptr_vreg,
+                                    MirType::Ptr {
+                                        pointee: Box::new(next_ty.clone()),
+                                        address_space: AddressSpace::Packet,
+                                    },
+                                );
+                                self.emit(MirInst::BinOp {
+                                    dst: ptr_vreg,
+                                    op: BinOpKind::Add,
+                                    lhs: MirValue::VReg(*base_vreg),
+                                    rhs: MirValue::Const(i64::from(
+                                        Self::trampoline_projection_offset_i32(
+                                            field_offset,
+                                            path_desc,
+                                        )?,
+                                    )),
+                                });
+                                ptr_vreg
+                            };
+                            self.emit_xdp_packet_guarded_load(
+                                dst_vreg,
+                                packet_ptr_vreg,
+                                &next_ty,
+                                path_desc,
+                            )?;
                         }
                     }
                 }
@@ -1933,6 +2079,20 @@ impl<'a> HirToMirLowering<'a> {
                     });
                 }
             }
+            AddressSpace::Packet => {
+                if matches!(element_ty, MirType::Array { .. } | MirType::Struct { .. }) {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "numeric get on xdp packet data currently supports only scalar elements, got {:?}",
+                        element_ty
+                    )));
+                }
+                self.emit_xdp_packet_guarded_load(
+                    dst_vreg,
+                    element_ptr_vreg,
+                    &element_ty,
+                    &path_desc,
+                )?;
+            }
             AddressSpace::Stack | AddressSpace::Map => {
                 if matches!(element_ty, MirType::Array { .. } | MirType::Struct { .. }) {
                     self.vreg_type_hints.insert(
@@ -2028,6 +2188,30 @@ impl<'a> HirToMirLowering<'a> {
         let trampoline_value_spec = self.trampoline_value_spec(&ctx_field)?;
 
         if path.members.len() > 1 {
+            if matches!(ctx_field, CtxField::Data | CtxField::DataEnd) {
+                let base_ty = MirType::Ptr {
+                    pointee: Box::new(MirType::U8),
+                    address_space: AddressSpace::Packet,
+                };
+                self.emit(MirInst::LoadCtxField {
+                    dst: dst_vreg,
+                    field: ctx_field.clone(),
+                    slot: None,
+                });
+                self.vreg_type_hints.insert(dst_vreg, base_ty.clone());
+                let projected_ty = self.lower_typed_value_projection(
+                    dst_vreg,
+                    dst_vreg,
+                    &base_ty,
+                    &path.members[1..],
+                    &Self::typed_value_path_desc(&path.members),
+                )?;
+                let meta = self.get_or_create_metadata(src_dst);
+                meta.is_context = false;
+                meta.field_type = Some(projected_ty);
+                return Ok(());
+            }
+
             let ctx = self.probe_ctx.ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
                     "nested ctx field access requires probe context".into(),
@@ -2193,6 +2377,13 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::IngressIfindex
             | CtxField::RxQueueIndex
             | CtxField::EgressIfindex => (MirType::U32, Some(MirType::U32)),
+            CtxField::Data | CtxField::DataEnd => {
+                let ptr_ty = MirType::Ptr {
+                    pointee: Box::new(MirType::U8),
+                    address_space: AddressSpace::Packet,
+                };
+                (ptr_ty.clone(), Some(ptr_ty))
+            }
             CtxField::Timestamp => (MirType::U64, Some(MirType::U64)),
             _ => precise_trampoline_types
                 .map(|(semantic_ty, runtime_ty)| (semantic_ty, Some(runtime_ty)))

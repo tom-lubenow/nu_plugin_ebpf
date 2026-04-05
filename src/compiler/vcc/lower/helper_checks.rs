@@ -228,6 +228,7 @@ impl<'a> VccLowerer<'a> {
             Some(MirType::Ptr { address_space, .. }) => Some(match address_space {
                 AddressSpace::Stack => VccAddrSpace::Stack(StackSlotId(u32::MAX)),
                 AddressSpace::Map => VccAddrSpace::MapValue,
+                AddressSpace::Packet => VccAddrSpace::Packet,
                 AddressSpace::Kernel => VccAddrSpace::Kernel,
                 AddressSpace::User => VccAddrSpace::User,
             }),
@@ -403,6 +404,7 @@ impl<'a> VccLowerer<'a> {
             VccAddrSpace::Stack(_) => allow_stack,
             VccAddrSpace::MapValue | VccAddrSpace::RingBuf => allow_map,
             VccAddrSpace::Context | VccAddrSpace::Kernel => allow_kernel,
+            VccAddrSpace::Packet => false,
             VccAddrSpace::User => allow_user,
             VccAddrSpace::Unknown => true,
         }
@@ -412,6 +414,7 @@ impl<'a> VccLowerer<'a> {
         match space {
             VccAddrSpace::Stack(_) => "Stack",
             VccAddrSpace::MapValue => "Map",
+            VccAddrSpace::Packet => "Packet",
             VccAddrSpace::RingBuf => "RingBuf",
             VccAddrSpace::Context => "Context",
             VccAddrSpace::Kernel => "Kernel",
@@ -1037,6 +1040,7 @@ impl<'a> VccLowerer<'a> {
                 Some(MirType::Ptr { address_space, .. }) => match address_space {
                     AddressSpace::Stack => VccAddrSpace::Stack(StackSlotId(u32::MAX)),
                     AddressSpace::Map => VccAddrSpace::MapValue,
+                    AddressSpace::Packet => VccAddrSpace::Packet,
                     AddressSpace::Kernel => VccAddrSpace::Kernel,
                     AddressSpace::User => VccAddrSpace::User,
                 },

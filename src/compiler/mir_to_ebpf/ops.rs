@@ -21,6 +21,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         dst: EbpfReg,
         op: BinOpKind,
         rhs: EbpfReg,
+        unsigned_compare: bool,
     ) -> Result<(), CompileError> {
         match op {
             BinOpKind::Add => self.instructions.push(EbpfInsn::add64_reg(dst, rhs)),
@@ -40,7 +41,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             | BinOpKind::Le
             | BinOpKind::Gt
             | BinOpKind::Ge => {
-                self.emit_comparison_reg(dst, op, rhs)?;
+                self.emit_comparison_reg(dst, op, rhs, unsigned_compare)?;
             }
         }
         Ok(())
@@ -52,6 +53,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         dst: EbpfReg,
         op: BinOpKind,
         imm: i32,
+        unsigned_compare: bool,
     ) -> Result<(), CompileError> {
         match op {
             BinOpKind::Add => self.instructions.push(EbpfInsn::add64_imm(dst, imm)),
@@ -71,7 +73,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             | BinOpKind::Le
             | BinOpKind::Gt
             | BinOpKind::Ge => {
-                self.emit_comparison_imm(dst, op, imm)?;
+                self.emit_comparison_imm(dst, op, imm, unsigned_compare)?;
             }
         }
         Ok(())
@@ -83,6 +85,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         dst: EbpfReg,
         op: BinOpKind,
         rhs: EbpfReg,
+        unsigned_compare: bool,
     ) -> Result<(), CompileError> {
         // Pattern: set dst to 1, then conditionally jump over setting to 0
         let tmp = EbpfReg::R0;
@@ -95,6 +98,10 @@ impl<'a> MirToEbpfCompiler<'a> {
         let jmp_opcode = match op {
             BinOpKind::Eq => opcode::BPF_JMP | opcode::BPF_JEQ | opcode::BPF_X,
             BinOpKind::Ne => opcode::BPF_JMP | opcode::BPF_JNE | opcode::BPF_X,
+            BinOpKind::Lt if unsigned_compare => opcode::BPF_JMP | opcode::BPF_JLT | opcode::BPF_X,
+            BinOpKind::Le if unsigned_compare => opcode::BPF_JMP | opcode::BPF_JLE | opcode::BPF_X,
+            BinOpKind::Gt if unsigned_compare => opcode::BPF_JMP | opcode::BPF_JGT | opcode::BPF_X,
+            BinOpKind::Ge if unsigned_compare => opcode::BPF_JMP | opcode::BPF_JGE | opcode::BPF_X,
             BinOpKind::Lt => opcode::BPF_JMP | opcode::BPF_JSLT | opcode::BPF_X,
             BinOpKind::Le => opcode::BPF_JMP | opcode::BPF_JSLE | opcode::BPF_X,
             BinOpKind::Gt => opcode::BPF_JMP | opcode::BPF_JSGT | opcode::BPF_X,
@@ -120,6 +127,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         dst: EbpfReg,
         op: BinOpKind,
         imm: i32,
+        unsigned_compare: bool,
     ) -> Result<(), CompileError> {
         // Save original value
         let tmp = EbpfReg::R0;
@@ -131,6 +139,10 @@ impl<'a> MirToEbpfCompiler<'a> {
         let jmp_opcode = match op {
             BinOpKind::Eq => opcode::BPF_JMP | opcode::BPF_JEQ | opcode::BPF_K,
             BinOpKind::Ne => opcode::BPF_JMP | opcode::BPF_JNE | opcode::BPF_K,
+            BinOpKind::Lt if unsigned_compare => opcode::BPF_JMP | opcode::BPF_JLT | opcode::BPF_K,
+            BinOpKind::Le if unsigned_compare => opcode::BPF_JMP | opcode::BPF_JLE | opcode::BPF_K,
+            BinOpKind::Gt if unsigned_compare => opcode::BPF_JMP | opcode::BPF_JGT | opcode::BPF_K,
+            BinOpKind::Ge if unsigned_compare => opcode::BPF_JMP | opcode::BPF_JGE | opcode::BPF_K,
             BinOpKind::Lt => opcode::BPF_JMP | opcode::BPF_JSLT | opcode::BPF_K,
             BinOpKind::Le => opcode::BPF_JMP | opcode::BPF_JSLE | opcode::BPF_K,
             BinOpKind::Gt => opcode::BPF_JMP | opcode::BPF_JSGT | opcode::BPF_K,
@@ -458,6 +470,16 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::ldxw(EbpfReg::R0, EbpfReg::R9, data_offset));
                 self.instructions
                     .push(EbpfInsn::sub64_reg(dst, EbpfReg::R0));
+            }
+            CtxField::Data => {
+                let (data_offset, _, _, _, _, _) = Self::xdp_md_offsets();
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_offset));
+            }
+            CtxField::DataEnd => {
+                let (_, data_end_offset, _, _, _, _) = Self::xdp_md_offsets();
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_end_offset));
             }
             CtxField::IngressIfindex => {
                 let (_, _, _, ingress_ifindex_offset, _, _) = Self::xdp_md_offsets();

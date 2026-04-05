@@ -171,6 +171,7 @@ impl VccVerifier {
         match space {
             VccAddrSpace::Stack(_) => "Stack",
             VccAddrSpace::MapValue => "Map",
+            VccAddrSpace::Packet => "Packet",
             VccAddrSpace::RingBuf => "RingBuf",
             VccAddrSpace::Context => "Context",
             VccAddrSpace::Kernel => "Kernel",

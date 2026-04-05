@@ -79,6 +79,7 @@ pub enum VccBinOp {
 pub enum VccAddrSpace {
     Stack(StackSlotId),
     MapValue,
+    Packet,
     Context,
     RingBuf,
     Kernel,
@@ -692,10 +693,11 @@ fn vcc_type_from_mir(ty: &MirType) -> VccValueType {
                     AddressSpace::Stack => VccAddrSpace::Unknown,
                     AddressSpace::Kernel => VccAddrSpace::Kernel,
                     AddressSpace::User => VccAddrSpace::User,
+                    AddressSpace::Packet => VccAddrSpace::Packet,
                     AddressSpace::Map => VccAddrSpace::MapValue,
                 },
                 nullability: match address_space {
-                    AddressSpace::Stack => VccNullability::NonNull,
+                    AddressSpace::Stack | AddressSpace::Packet => VccNullability::NonNull,
                     AddressSpace::Map | AddressSpace::Kernel | AddressSpace::User => {
                         VccNullability::MaybeNull
                     }

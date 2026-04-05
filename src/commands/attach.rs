@@ -348,11 +348,15 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.packet_len } - Get packet length from xdp_md
+    {|ctx| $ctx.data }    - Get XDP packet data pointer
+    {|ctx| $ctx.data_end } - Get XDP packet end pointer
     {|ctx| $ctx.ifindex } - Get ingress interface index
     {|ctx| $ctx.rx_queue_index } - Get RX queue index
     {|ctx| $ctx.egress_ifindex } - Get egress interface index
-    Note: XDP context packet fields are not modeled yet. XDP closures currently
-    need to return an explicit numeric action code such as `2` (XDP_PASS).
+    {|ctx| ($ctx.data | get 0) } - Read the first packet byte with an auto-generated data_end guard
+    Note: XDP closures currently need to return an explicit numeric action code
+    such as `2` (XDP_PASS). Packet reads currently support scalar byte access
+    through `get`/indexing; richer packet struct typing is still in progress.
 
   Function fields:
     {|ctx| $ctx.arg0 }    - Get function argument 0

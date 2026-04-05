@@ -1,6 +1,19 @@
 use super::*;
 
 impl<'a> MirToEbpfCompiler<'a> {
+    fn value_is_packet_ptr(&self, value: &MirValue) -> bool {
+        match value {
+            MirValue::VReg(vreg) => matches!(
+                self.current_types.get(vreg),
+                Some(MirType::Ptr {
+                    address_space: crate::compiler::mir::AddressSpace::Packet,
+                    ..
+                })
+            ),
+            _ => false,
+        }
+    }
+
     pub(super) fn compile_copy(&mut self, dst: VReg, src: &MirValue) -> Result<(), CompileError> {
         let dst_reg = self.alloc_dst_reg(dst)?;
         match src {
@@ -110,6 +123,11 @@ impl<'a> MirToEbpfCompiler<'a> {
         rhs: &MirValue,
     ) -> Result<(), CompileError> {
         let dst_reg = self.alloc_dst_reg(dst)?;
+        let unsigned_compare = matches!(
+            op,
+            BinOpKind::Lt | BinOpKind::Le | BinOpKind::Gt | BinOpKind::Ge
+        ) && self.value_is_packet_ptr(lhs)
+            && self.value_is_packet_ptr(rhs);
         let lhs_vreg = match lhs {
             MirValue::VReg(v) => Some(*v),
             _ => None,
@@ -157,10 +175,10 @@ impl<'a> MirToEbpfCompiler<'a> {
         match rhs {
             MirValue::VReg(v) => {
                 let rhs_reg = rhs_reg.unwrap_or(self.ensure_reg(*v)?);
-                self.emit_binop_reg(dst_reg, op, rhs_reg)?;
+                self.emit_binop_reg(dst_reg, op, rhs_reg, unsigned_compare)?;
             }
             MirValue::Const(c) => {
-                self.emit_binop_imm(dst_reg, op, *c as i32)?;
+                self.emit_binop_imm(dst_reg, op, *c as i32, unsigned_compare)?;
             }
             MirValue::StackSlot(_) => {
                 return Err(CompileError::UnsupportedInstruction(
