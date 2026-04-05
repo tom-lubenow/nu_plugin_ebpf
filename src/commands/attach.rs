@@ -27,7 +27,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
 fn build_decl_names(engine: &EngineInterface) -> Result<HashMap<DeclId, String>, LabeledError> {
     let mut decl_names = HashMap::new();
 
-    for &cmd_name in ProgramIntrinsic::command_names() {
+    for cmd_name in ProgramIntrinsic::command_names() {
         if let Some(decl_id) = engine.find_decl(cmd_name).map_err(|e| {
             LabeledError::new("Failed to look up command").with_label(
                 format!("Could not find '{}': {}", cmd_name, e),

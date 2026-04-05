@@ -51,6 +51,10 @@ fn test_program_intrinsic_command_registry() {
         Some(ProgramIntrinsic::MapGet)
     );
     assert!(ProgramIntrinsic::command_names().contains(&"emit"));
+    assert_eq!(
+        ProgramIntrinsic::ReadKernelStr.required_capability(),
+        ProgramCapability::ReadKernelString
+    );
 }
 
 #[test]
