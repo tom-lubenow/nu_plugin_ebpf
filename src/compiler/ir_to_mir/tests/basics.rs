@@ -4414,7 +4414,7 @@ fn test_lower_mutated_captured_binary_variable_uses_data_global() {
 }
 
 #[test]
-fn test_lower_global_set_and_get_scalar_uses_named_bss_global() {
+fn test_lower_global_set_and_get_nonzero_scalar_uses_named_data_global() {
     let get_decl = DeclId::new(90);
     let set_decl = DeclId::new(91);
     let decl_names = HashMap::from([
@@ -4473,9 +4473,10 @@ fn test_lower_global_set_and_get_scalar_uses_named_bss_global() {
     .expect("global-get/global-set scalar flow should lower");
 
     assert_eq!(result.readonly_globals.len(), 0);
-    assert_eq!(result.data_globals.len(), 0);
-    assert_eq!(result.bss_globals.len(), 1);
-    assert_eq!(result.bss_globals[0].name, "__nu_global_seen_pid");
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+    assert_eq!(result.data_globals[0].name, "__nu_global_seen_pid");
+    assert_eq!(result.data_globals[0].data, 7i64.to_le_bytes().to_vec());
 
     let global_load_count = result
         .program
@@ -4491,6 +4492,71 @@ fn test_lower_global_set_and_get_scalar_uses_named_bss_global() {
         })
         .count();
     assert_eq!(global_load_count, 2);
+}
+
+#[test]
+fn test_lower_global_set_and_get_zero_scalar_uses_named_bss_global() {
+    let get_decl = DeclId::new(96);
+    let set_decl = DeclId::new(97);
+    let decl_names = HashMap::from([
+        (get_decl, "global-get".to_string()),
+        (set_decl, "global-set".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("seen_zero".into()),
+                },
+                HirStmt::Call {
+                    decl_id: set_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("zero-valued global-get/global-set scalar flow should lower");
+
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 0);
+    assert_eq!(result.bss_globals.len(), 1);
+    assert_eq!(result.bss_globals[0].name, "__nu_global_seen_zero");
 }
 
 #[test]
@@ -4552,7 +4618,8 @@ fn test_lower_global_set_and_get_string_materializes_string_slot() {
     )
     .expect("global-get/global-set string flow should lower");
 
-    assert_eq!(result.bss_globals.len(), 1);
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
     assert!(
         result
             .program

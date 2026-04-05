@@ -266,12 +266,13 @@ with the same `--pin` group, active pinned programs now reuse that typed schema
 across program boundaries too.
 
 Compiler-managed named globals are also available through `global-get` and
-`global-set`. These are zero-initialized per-program globals backed by `.bss`.
-The first `global-set` for a given name establishes the fixed layout used by
-later `global-get` and `global-set` calls in the same closure, so they are
-best suited for small per-program state without the overhead of an explicit
-map. Like the current mutable-capture path, they only support values with a
-truthful fixed layout.
+`global-set`. These are compiler-managed per-program globals backed by `.data`
+or `.bss`. The first `global-set` for a given name establishes the fixed
+layout used by later `global-get` and `global-set` calls in the same closure;
+when that first write is a compile-time constant the global is initialized from
+it, otherwise it starts zeroed. They are best suited for small per-program
+state without the overhead of an explicit map. Like the current mutable-capture
+path, they only support values with a truthful fixed layout.
 Generic map `--kind` now supports `hash`, `array`, `lru-hash`,
 `per-cpu-hash`, `per-cpu-array`, and `lru-per-cpu-hash`.
 

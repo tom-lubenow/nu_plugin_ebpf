@@ -319,7 +319,25 @@ impl<'a> HirToMirLowering<'a> {
         src_vreg: VReg,
     ) -> Result<MutableCaptureGlobal, CompileError> {
         let symbol = Self::named_program_global_symbol(name);
-        let inferred = self.infer_mutable_global_layout(symbol.clone(), src, src_vreg)?;
+        let constant_value = self
+            .get_metadata(src)
+            .and_then(|meta| meta.constant_value.clone());
+        let initialized_repr = if let Some(value) = constant_value.as_ref() {
+            Self::mutable_capture_global_repr(value)?
+        } else {
+            None
+        };
+        let inferred =
+            if let Some((ty, _data, list_max_len, string_slot_len)) = initialized_repr.as_ref() {
+                MutableCaptureGlobal {
+                    symbol: symbol.clone(),
+                    ty: ty.clone(),
+                    list_max_len: *list_max_len,
+                    string_slot_len: *string_slot_len,
+                }
+            } else {
+                self.infer_mutable_global_layout(symbol.clone(), src, src_vreg)?
+            };
 
         if let Some(existing) = self.named_program_globals.get(name) {
             if existing != &inferred {
@@ -339,7 +357,15 @@ impl<'a> HirToMirLowering<'a> {
             )));
         }
 
-        self.bss_globals.push(BssGlobal { name: symbol, size });
+        if let Some((_ty, data, _list_max_len, _string_slot_len)) = initialized_repr {
+            if data.iter().all(|byte| *byte == 0) {
+                self.bss_globals.push(BssGlobal { name: symbol, size });
+            } else {
+                self.data_globals.push(DataGlobal { name: symbol, data });
+            }
+        } else {
+            self.bss_globals.push(BssGlobal { name: symbol, size });
+        }
         self.named_program_globals
             .insert(name.to_string(), inferred.clone());
         Ok(inferred)

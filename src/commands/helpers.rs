@@ -331,10 +331,11 @@ impl PluginCommand for GlobalGet {
     }
 
     fn extra_description(&self) -> &str {
-        r#"Loads a zero-initialized named per-program global. The global layout is
-established by a prior `global-set` in the same closure, after which later
-`global-get` users can project fields or use the whole value with `emit` and
-`count`.
+        r#"Loads a named per-program global. The layout is established by a
+prior `global-set` in the same closure, after which later `global-get` users
+can project fields or use the whole value with `emit` and `count`. If the
+first `global-set` uses a compile-time constant, the global is initialized
+from that value; otherwise it starts zeroed.
 
 Example:
   let state = (global-get seen_path)
@@ -385,9 +386,10 @@ impl PluginCommand for GlobalSet {
     }
 
     fn extra_description(&self) -> &str {
-        r#"Stores the pipeline input into a zero-initialized named per-program
-global. The first `global-set` for a given name establishes the fixed layout
-used by later `global-get` and `global-set` calls in the same closure.
+        r#"Stores the pipeline input into a named per-program global. The first
+`global-set` for a given name establishes the fixed layout used by later
+`global-get` and `global-set` calls in the same closure. Compile-time constant
+first writes seed the global's initial value; otherwise it starts zeroed.
 
 Example:
   $ctx.pid | global-set seen_pid"#

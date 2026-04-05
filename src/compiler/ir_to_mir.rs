@@ -166,6 +166,8 @@ struct RegMetadata {
     literal_int: Option<i64>,
     /// Compile-time string (for field names)
     literal_string: Option<String>,
+    /// Exact compile-time constant value when this register was lowered from one
+    constant_value: Option<Value>,
     /// Whether this register holds the context parameter
     is_context: bool,
     /// Cell path for field access (like $ctx.pid)

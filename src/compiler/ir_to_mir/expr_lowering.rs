@@ -94,7 +94,7 @@ impl<'a> HirToMirLowering<'a> {
         ))
     }
 
-    fn mutable_capture_global_repr(
+    pub(super) fn mutable_capture_global_repr(
         value: &Value,
     ) -> Result<Option<(MirType, Vec<u8>, Option<usize>, Option<usize>)>, CompileError> {
         let repr = match value {
@@ -467,23 +467,30 @@ impl<'a> HirToMirLowering<'a> {
         allow_top_level_list: bool,
     ) -> Result<(), CompileError> {
         if let Some(lit) = HirLiteral::from_constant_value(value) {
-            return self.lower_load_literal(dst, &lit);
+            self.lower_load_literal(dst, &lit)?;
+        } else {
+            match value {
+                Value::Record { val, .. } => self.lower_constant_record_value(dst, val.as_ref())?,
+                Value::List { vals, .. } if allow_top_level_list => {
+                    self.lower_constant_list_value(dst, vals)?
+                }
+                Value::List { .. } => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "constant lists nested inside records are not yet supported in eBPF lowering"
+                            .into(),
+                    ));
+                }
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "LoadValue of type {} is not supported in eBPF lowering",
+                        value.get_type()
+                    )));
+                }
+            }
         }
 
-        match value {
-            Value::Record { val, .. } => self.lower_constant_record_value(dst, val.as_ref()),
-            Value::List { vals, .. } if allow_top_level_list => {
-                self.lower_constant_list_value(dst, vals)
-            }
-            Value::List { .. } => Err(CompileError::UnsupportedInstruction(
-                "constant lists nested inside records are not yet supported in eBPF lowering"
-                    .into(),
-            )),
-            _ => Err(CompileError::UnsupportedInstruction(format!(
-                "LoadValue of type {} is not supported in eBPF lowering",
-                value.get_type()
-            ))),
-        }
+        self.get_or_create_metadata(dst).constant_value = Some(value.clone());
+        Ok(())
     }
 
     fn lower_const_i64_literal(&mut self, dst: RegId, dst_vreg: VReg, value: i64) {
@@ -569,6 +576,32 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         Ok(())
+    }
+
+    fn constant_value_for_literal(lit: &HirLiteral) -> Option<Value> {
+        let span = Span::unknown();
+        match lit {
+            HirLiteral::Bool(val) => Some(Value::bool(*val, span)),
+            HirLiteral::Int(val) => Some(Value::int(*val, span)),
+            HirLiteral::Filesize(val) => Some(Value::filesize(*val, span)),
+            HirLiteral::Duration(val) => Some(Value::duration(*val, span)),
+            HirLiteral::Nothing => Some(Value::nothing(span)),
+            HirLiteral::Binary(bytes) => Some(Value::binary(bytes.clone(), span)),
+            HirLiteral::String(bytes) | HirLiteral::RawString(bytes) => {
+                String::from_utf8(bytes.clone())
+                    .ok()
+                    .map(|s| Value::string(s, span))
+            }
+            HirLiteral::GlobPattern { val, no_expand } => String::from_utf8(val.clone())
+                .ok()
+                .map(|s| Value::glob(s, *no_expand, span)),
+            HirLiteral::Filepath { val, .. } | HirLiteral::Directory { val, .. } => {
+                String::from_utf8(val.clone())
+                    .ok()
+                    .map(|s| Value::string(s, span))
+            }
+            _ => None,
+        }
     }
 
     pub(super) fn lower_load_literal(
@@ -794,6 +827,9 @@ impl<'a> HirToMirLowering<'a> {
             _ => {
                 return Err(CompileError::UnsupportedLiteral);
             }
+        }
+        if let Some(value) = Self::constant_value_for_literal(lit) {
+            self.get_or_create_metadata(dst).constant_value = Some(value);
         }
         Ok(())
     }
