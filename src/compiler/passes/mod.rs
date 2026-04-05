@@ -31,7 +31,9 @@ pub use ssa_destruct::SsaDestruction;
 pub use strength::StrengthReduction;
 
 use super::cfg::CFG;
-use super::mir::MirFunction;
+use super::elf::ProbeContext;
+use super::mir::{MirFunction, MirType, StackSlotId, VReg};
+use super::type_hints::recover_optimized_function_type_hints;
 
 /// Trait for MIR optimization passes
 pub trait MirPass {
@@ -194,6 +196,19 @@ pub fn optimize_with_ssa(func: &mut MirFunction) -> usize {
         total_changes += 1;
     }
 
+    total_changes
+}
+
+/// Run the SSA-based optimization pipeline while preserving existing vreg
+/// hints onto newly introduced SSA versions.
+pub fn optimize_with_ssa_hints(
+    func: &mut MirFunction,
+    probe_ctx: Option<&ProbeContext>,
+    hints: &mut std::collections::HashMap<VReg, MirType>,
+    stack_slot_hints: &std::collections::HashMap<StackSlotId, MirType>,
+) -> usize {
+    let total_changes = optimize_with_ssa(func);
+    recover_optimized_function_type_hints(func, probe_ctx, hints, stack_slot_hints);
     total_changes
 }
 

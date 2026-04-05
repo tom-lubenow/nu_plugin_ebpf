@@ -224,7 +224,7 @@ fn recover_pointer_arith_result_hint(ty: &MirType) -> MirType {
     }
 }
 
-fn recover_function_type_hints(
+pub(crate) fn recover_optimized_function_type_hints(
     func: &MirFunction,
     probe_ctx: Option<&ProbeContext>,
     hints: &mut HashMap<VReg, MirType>,
@@ -318,7 +318,7 @@ pub(crate) fn recover_optimized_mir_type_hints(
     probe_ctx: Option<&ProbeContext>,
     hints: &mut MirTypeHints,
 ) {
-    recover_function_type_hints(
+    recover_optimized_function_type_hints(
         &program.main,
         probe_ctx,
         &mut hints.main,
@@ -340,6 +340,6 @@ pub(crate) fn recover_optimized_mir_type_hints(
         .zip(hints.subfunctions.iter_mut())
         .zip(hints.subfunction_stack_slots.iter())
     {
-        recover_function_type_hints(subfn, None, subfn_hints, subfn_stack_slot_hints);
+        recover_optimized_function_type_hints(subfn, None, subfn_hints, subfn_stack_slot_hints);
     }
 }

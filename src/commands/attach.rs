@@ -15,7 +15,7 @@ use crate::EbpfPlugin;
 use crate::compiler::{
     EbpfProgram, ProbeContext, UserFunctionSig, UserParam, UserParamKind,
     compile_mir_to_ebpf_with_hints, hir::HirFunction, hir_type_infer, infer_ctx_param,
-    lower_hir_to_mir_with_hints, lower_ir_to_hir, passes::optimize_with_ssa,
+    lower_hir_to_mir_with_hints, lower_ir_to_hir, passes::optimize_with_ssa_hints,
 };
 
 /// Known eBPF helper commands that need to be mapped by decl_id
@@ -718,12 +718,33 @@ fn run_attach(
             .with_help("The closure may use unsupported operations")
     })?;
     let mut mir_program = lower_result.program;
-    let type_hints = lower_result.type_hints;
+    let mut type_hints = lower_result.type_hints;
 
     // Run SSA-based optimizations
-    optimize_with_ssa(&mut mir_program.main);
-    for subfn in &mut mir_program.subfunctions {
-        optimize_with_ssa(subfn);
+    optimize_with_ssa_hints(
+        &mut mir_program.main,
+        Some(&probe_context),
+        &mut type_hints.main,
+        &type_hints.main_stack_slots,
+    );
+    if type_hints.subfunctions.len() < mir_program.subfunctions.len() {
+        type_hints
+            .subfunctions
+            .resize_with(mir_program.subfunctions.len(), HashMap::new);
+    }
+    if type_hints.subfunction_stack_slots.len() < mir_program.subfunctions.len() {
+        type_hints
+            .subfunction_stack_slots
+            .resize_with(mir_program.subfunctions.len(), HashMap::new);
+    }
+    for (subfn, subfn_hints, subfn_stack_slots) in mir_program
+        .subfunctions
+        .iter_mut()
+        .zip(type_hints.subfunctions.iter_mut())
+        .zip(type_hints.subfunction_stack_slots.iter())
+        .map(|((subfn, subfn_hints), subfn_stack_slots)| (subfn, subfn_hints, subfn_stack_slots))
+    {
+        optimize_with_ssa_hints(subfn, None, subfn_hints, subfn_stack_slots);
     }
 
     // Compile MIR to eBPF
@@ -914,7 +935,7 @@ mod tests {
         HirTerminator,
     };
     use crate::compiler::hir_to_mir::lower_hir_to_mir_with_hints;
-    use crate::compiler::passes::optimize_with_ssa;
+    use crate::compiler::passes::optimize_with_ssa_hints;
     use crate::compiler::{
         CounterKeySchema, CounterKeySchemaField, EbpfProgramType, ProbeContext,
         compile_mir_to_ebpf_with_hints,
@@ -1516,7 +1537,12 @@ mod tests {
         )
         .expect("pointer-hop field projection should lower");
 
-        optimize_with_ssa(&mut lowering.program.main);
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+        );
 
         let result = compile_mir_to_ebpf_with_hints(
             &lowering.program,
@@ -1549,7 +1575,12 @@ mod tests {
         )
         .expect("struct-leaf count should lower");
 
-        optimize_with_ssa(&mut lowering.program.main);
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+        );
         let result = compile_mir_to_ebpf_with_hints(
             &lowering.program,
             Some(&probe_ctx),
@@ -1613,7 +1644,12 @@ mod tests {
         )
         .expect("direct pointer-index projection should lower");
 
-        optimize_with_ssa(&mut lowering.program.main);
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+        );
 
         let result = compile_mir_to_ebpf_with_hints(
             &lowering.program,
@@ -1658,7 +1694,12 @@ mod tests {
         )
         .expect("bound pointer-index projection should lower");
 
-        optimize_with_ssa(&mut lowering.program.main);
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+        );
 
         let result = compile_mir_to_ebpf_with_hints(
             &lowering.program,
@@ -1698,7 +1739,12 @@ mod tests {
         )
         .expect("bound numeric get projection should lower");
 
-        optimize_with_ssa(&mut lowering.program.main);
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+        );
 
         let result = compile_mir_to_ebpf_with_hints(
             &lowering.program,
@@ -1745,7 +1791,12 @@ mod tests {
         )
         .expect("branch-refined bound numeric get projection should lower");
 
-        optimize_with_ssa(&mut lowering.program.main);
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+        );
 
         let result = compile_mir_to_ebpf_with_hints(
             &lowering.program,
@@ -1782,7 +1833,12 @@ mod tests {
         )
         .expect("stack-backed array numeric get should lower");
 
-        optimize_with_ssa(&mut lowering.program.main);
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+        );
 
         let result = compile_mir_to_ebpf_with_hints(
             &lowering.program,
@@ -1822,7 +1878,12 @@ mod tests {
         )
         .expect("stack-backed bitfield projection after numeric get should lower");
 
-        optimize_with_ssa(&mut lowering.program.main);
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+        );
 
         let result = compile_mir_to_ebpf_with_hints(
             &lowering.program,
@@ -1861,7 +1922,12 @@ mod tests {
         )
         .expect("stack-backed bitfield struct count after numeric get should lower");
 
-        optimize_with_ssa(&mut lowering.program.main);
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+        );
 
         let result = compile_mir_to_ebpf_with_hints(
             &lowering.program,
@@ -1905,7 +1971,12 @@ mod tests {
         )
         .expect("stack-backed bitfield struct emit after numeric get should lower");
 
-        optimize_with_ssa(&mut lowering.program.main);
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+        );
 
         let result = compile_mir_to_ebpf_with_hints(
             &lowering.program,
