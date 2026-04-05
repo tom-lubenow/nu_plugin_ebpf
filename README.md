@@ -209,8 +209,11 @@ like `let entry = ($ctx.pid | map-get seen_paths --kind hash); if $entry != 0
 { $entry.dentry.d_flags }` lower through that preserved map-value schema, and
 whole-value uses like `{ $entry | emit }` or `{ $entry | count }` preserve the
 same typed aggregate layout instead of collapsing to a raw pointer scalar. When
-those maps are attached with the same `--pin` group, active pinned programs now
-reuse that typed schema across program boundaries too.
+those looked-up aggregates are written back through `map-put`, the stored value
+shape stays canonical too, so map-to-map copies preserve the real aggregate
+layout instead of a pointer wrapper. When those maps are attached with the same
+`--pin` group, active pinned programs now reuse that typed schema across
+program boundaries too.
 
 ## Commands
 

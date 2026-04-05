@@ -327,7 +327,8 @@ impl PluginCommand for MapPut {
 generic map. The second positional argument is the key. Use `--flags` to pass
 raw `bpf_map_update_elem` flags when needed. With `ebpf attach --pin`, the
 value layout becomes available to later pinned `map-get` users in the same
-group.
+group. If the pipeline input is a whole typed `map-get` value, `map-put`
+stores the underlying aggregate bytes rather than the pointer wrapper.
 
 Example:
   $ctx.arg0.f_path | map-put seen_paths $ctx.pid --kind hash"#

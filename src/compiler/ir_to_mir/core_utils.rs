@@ -86,19 +86,37 @@ impl<'a> HirToMirLowering<'a> {
         );
     }
 
+    pub(super) fn stored_generic_map_value_type(&self, ty: &MirType) -> MirType {
+        match ty {
+            MirType::Ptr {
+                pointee,
+                address_space:
+                    crate::compiler::mir::AddressSpace::Stack | crate::compiler::mir::AddressSpace::Map,
+            } if matches!(
+                pointee.as_ref(),
+                MirType::Array { .. } | MirType::Struct { .. }
+            ) =>
+            {
+                pointee.as_ref().clone()
+            }
+            _ => ty.clone(),
+        }
+    }
+
     pub(super) fn register_named_map_value_type(&mut self, map: &MapRef, ty: &MirType) {
+        let ty = self.stored_generic_map_value_type(ty);
         if self.conflicting_map_value_types.contains(map) {
             return;
         }
 
         match self.map_value_types.get(map) {
-            Some(existing) if existing != ty => {
+            Some(existing) if existing != &ty => {
                 self.map_value_types.remove(map);
                 self.conflicting_map_value_types.insert(map.clone());
             }
             Some(_) => {}
             None => {
-                self.map_value_types.insert(map.clone(), ty.clone());
+                self.map_value_types.insert(map.clone(), ty);
             }
         }
     }

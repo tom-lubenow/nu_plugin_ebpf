@@ -1311,6 +1311,207 @@ mod tests {
         )])
     }
 
+    fn make_map_copy_projection_program(
+        map_put_decl: DeclId,
+        map_get_decl: DeclId,
+        count_decl: DeclId,
+    ) -> HirProgram {
+        let ctx_var = VarId::new(0);
+        let lookup_var = VarId::new(1);
+        let copied_var = VarId::new(2);
+        let func = HirFunction {
+            blocks: vec![
+                HirBlock {
+                    id: HirBlockId(0),
+                    stmts: vec![
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(0),
+                            var_id: ctx_var,
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(1),
+                            lit: HirLiteral::CellPath(Box::new(CellPath {
+                                members: vec![string_member("arg0"), string_member("f_path")],
+                            })),
+                        },
+                        HirStmt::FollowCellPath {
+                            src_dst: RegId::new(0),
+                            path: RegId::new(1),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(2),
+                            lit: HirLiteral::String(b"cached_path".to_vec()),
+                        },
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(3),
+                            var_id: ctx_var,
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(4),
+                            lit: HirLiteral::CellPath(Box::new(CellPath {
+                                members: vec![string_member("pid")],
+                            })),
+                        },
+                        HirStmt::FollowCellPath {
+                            src_dst: RegId::new(3),
+                            path: RegId::new(4),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(5),
+                            lit: HirLiteral::String(b"hash".to_vec()),
+                        },
+                        HirStmt::Call {
+                            decl_id: map_put_decl,
+                            src_dst: RegId::new(0),
+                            args: HirCallArgs {
+                                positional: vec![RegId::new(2), RegId::new(3)],
+                                named: vec![(b"kind".to_vec(), RegId::new(5))],
+                                ..Default::default()
+                            },
+                        },
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(0),
+                            var_id: ctx_var,
+                        },
+                        HirStmt::FollowCellPath {
+                            src_dst: RegId::new(0),
+                            path: RegId::new(4),
+                        },
+                        HirStmt::Call {
+                            decl_id: map_get_decl,
+                            src_dst: RegId::new(0),
+                            args: HirCallArgs {
+                                positional: vec![RegId::new(2)],
+                                named: vec![(b"kind".to_vec(), RegId::new(5))],
+                                ..Default::default()
+                            },
+                        },
+                        HirStmt::StoreVariable {
+                            var_id: lookup_var,
+                            src: RegId::new(0),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(6),
+                            lit: HirLiteral::Int(0),
+                        },
+                        HirStmt::BinaryOp {
+                            lhs_dst: RegId::new(0),
+                            op: Operator::Comparison(Comparison::NotEqual),
+                            rhs: RegId::new(6),
+                        },
+                    ],
+                    terminator: HirTerminator::BranchIf {
+                        cond: RegId::new(0),
+                        if_true: HirBlockId(1),
+                        if_false: HirBlockId(3),
+                    },
+                },
+                HirBlock {
+                    id: HirBlockId(1),
+                    stmts: vec![
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(0),
+                            var_id: lookup_var,
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(7),
+                            lit: HirLiteral::String(b"copied_path".to_vec()),
+                        },
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(3),
+                            var_id: ctx_var,
+                        },
+                        HirStmt::FollowCellPath {
+                            src_dst: RegId::new(3),
+                            path: RegId::new(4),
+                        },
+                        HirStmt::Call {
+                            decl_id: map_put_decl,
+                            src_dst: RegId::new(0),
+                            args: HirCallArgs {
+                                positional: vec![RegId::new(7), RegId::new(3)],
+                                named: vec![(b"kind".to_vec(), RegId::new(5))],
+                                ..Default::default()
+                            },
+                        },
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(0),
+                            var_id: ctx_var,
+                        },
+                        HirStmt::FollowCellPath {
+                            src_dst: RegId::new(0),
+                            path: RegId::new(4),
+                        },
+                        HirStmt::Call {
+                            decl_id: map_get_decl,
+                            src_dst: RegId::new(0),
+                            args: HirCallArgs {
+                                positional: vec![RegId::new(7)],
+                                named: vec![(b"kind".to_vec(), RegId::new(5))],
+                                ..Default::default()
+                            },
+                        },
+                        HirStmt::StoreVariable {
+                            var_id: copied_var,
+                            src: RegId::new(0),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(8),
+                            lit: HirLiteral::Int(0),
+                        },
+                        HirStmt::BinaryOp {
+                            lhs_dst: RegId::new(0),
+                            op: Operator::Comparison(Comparison::NotEqual),
+                            rhs: RegId::new(8),
+                        },
+                    ],
+                    terminator: HirTerminator::BranchIf {
+                        cond: RegId::new(0),
+                        if_true: HirBlockId(2),
+                        if_false: HirBlockId(3),
+                    },
+                },
+                HirBlock {
+                    id: HirBlockId(2),
+                    stmts: vec![
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(0),
+                            var_id: copied_var,
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(1),
+                            lit: HirLiteral::CellPath(Box::new(CellPath {
+                                members: vec![string_member("dentry"), string_member("d_flags")],
+                            })),
+                        },
+                        HirStmt::FollowCellPath {
+                            src_dst: RegId::new(0),
+                            path: RegId::new(1),
+                        },
+                        HirStmt::Call {
+                            decl_id: count_decl,
+                            src_dst: RegId::new(0),
+                            args: HirCallArgs::default(),
+                        },
+                    ],
+                    terminator: HirTerminator::Return { src: RegId::new(0) },
+                },
+                HirBlock {
+                    id: HirBlockId(3),
+                    stmts: vec![],
+                    terminator: HirTerminator::Return { src: RegId::new(0) },
+                },
+            ],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 30],
+            ast: vec![None; 30],
+            comments: vec![],
+            register_count: 9,
+            file_count: 0,
+        };
+        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+    }
+
     fn make_bound_ctx_path_program(binding: CellPath, access: CellPath) -> HirProgram {
         let ctx_var = VarId::new(0);
         let bound_var = VarId::new(1);
@@ -2046,6 +2247,48 @@ mod tests {
                 .eq(["mnt", "dentry"].into_iter()),
             "whole-value emit should preserve top-level record fields"
         );
+    }
+
+    #[test]
+    fn test_compile_optimized_map_to_map_copy_projection() {
+        let hir =
+            make_map_copy_projection_program(DeclId::new(42), DeclId::new(43), DeclId::new(44));
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+        let mut decl_names = HashMap::new();
+        decl_names.insert(DeclId::new(42), "map-put".to_string());
+        decl_names.insert(DeclId::new(43), "map-get".to_string());
+        decl_names.insert(DeclId::new(44), "count".to_string());
+
+        let mut lowering = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("map-to-map copy projection should lower");
+
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
+        );
+
+        let result = compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .expect("optimized map-to-map copy projection should compile");
+
+        assert!(
+            result.maps.iter().any(|map| map.name == "copied_path"),
+            "expected generic map definition for copied_path"
+        );
+        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
     }
 
     #[test]

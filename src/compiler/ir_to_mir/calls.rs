@@ -650,9 +650,10 @@ impl<'a> HirToMirLowering<'a> {
                             .and_then(|m| m.field_type.clone())
                     });
                 if let Some(value_ty) = value_ty {
+                    let stored_value_ty = self.stored_generic_map_value_type(&value_ty);
                     if self.externally_seeded_map_value_types.contains(&map_ref) {
                         if let Some(existing) = self.named_map_value_type(&map_ref) {
-                            if existing != &value_ty {
+                            if existing != &stored_value_ty {
                                 return Err(CompileError::UnsupportedInstruction(format!(
                                     "map-put value type for '{}' conflicts with pinned map schema",
                                     map_ref.name
@@ -660,7 +661,7 @@ impl<'a> HirToMirLowering<'a> {
                             }
                         }
                     }
-                    self.register_named_map_value_type(&map_ref, &value_ty);
+                    self.register_named_map_value_type(&map_ref, &stored_value_ty);
                 }
 
                 self.emit(MirInst::Copy {
