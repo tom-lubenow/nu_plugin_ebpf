@@ -9,6 +9,7 @@
 //! - read-str: Read string from userspace memory pointer
 //! - read-kernel-str: Read string from kernel memory pointer
 //! - kfunc-call: Invoke a typed kernel kfunc by name
+//! - map-get / map-put / map-delete: Generic BPF map operations
 
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
 use nu_protocol::{
@@ -237,6 +238,191 @@ If omitted, --btf-id is resolved automatically from kernel BTF."#
         _input: PipelineData,
     ) -> Result<PipelineData, LabeledError> {
         // Stub for non-eBPF execution (e.g., help display).
+        Ok(PipelineData::Value(Value::int(0, call.head), None))
+    }
+}
+
+#[derive(Clone)]
+pub struct MapGet;
+
+impl PluginCommand for MapGet {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "map-get"
+    }
+
+    fn description(&self) -> &str {
+        "Look up a value in a named generic BPF map."
+    }
+
+    fn extra_description(&self) -> &str {
+        r#"Looks up a key in a named generic map and returns the map-value pointer.
+Use pipeline input as the key, or pass an explicit key as the second positional
+argument. Aggregate values established by an earlier typed `map-put` in the same
+closure can be projected by field after lookup. The result is a maybe-null
+pointer, so guard it before dereferencing.
+
+Example:
+  let entry = ($ctx.pid | map-get seen_paths --kind hash)
+  if $entry != 0 { $entry.dentry | emit }"#
+    }
+
+    fn signature(&self) -> Signature {
+        Signature::build("map-get")
+            .input_output_types(vec![(Type::Any, Type::Any), (Type::Nothing, Type::Any)])
+            .required("name", SyntaxShape::String, "Map name")
+            .optional(
+                "key",
+                SyntaxShape::Any,
+                "Optional explicit key; otherwise uses pipeline input",
+            )
+            .named(
+                "kind",
+                SyntaxShape::String,
+                "Map kind: hash, array, per-cpu-hash, or per-cpu-array (default hash)",
+                None,
+            )
+            .category(Category::Experimental)
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "ebpf attach 'fentry:security_file_open' {|ctx| $ctx.pid | map-get seen_paths --kind hash }",
+            description: "Look up the current PID in a named hash map",
+            result: None,
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        let value = input.into_value(call.head)?;
+        Ok(PipelineData::Value(value, None))
+    }
+}
+
+#[derive(Clone)]
+pub struct MapPut;
+
+impl PluginCommand for MapPut {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "map-put"
+    }
+
+    fn description(&self) -> &str {
+        "Insert or update a value in a named generic BPF map."
+    }
+
+    fn extra_description(&self) -> &str {
+        r#"Stores the pipeline input as the value for the given key in a named
+generic map. The second positional argument is the key. Use `--flags` to pass
+raw `bpf_map_update_elem` flags when needed.
+
+Example:
+  $ctx.arg0.f_path | map-put seen_paths $ctx.pid --kind hash"#
+    }
+
+    fn signature(&self) -> Signature {
+        Signature::build("map-put")
+            .input_output_types(vec![(Type::Any, Type::Int), (Type::Nothing, Type::Int)])
+            .required("name", SyntaxShape::String, "Map name")
+            .required("key", SyntaxShape::Any, "Map key")
+            .named(
+                "kind",
+                SyntaxShape::String,
+                "Map kind: hash, array, per-cpu-hash, or per-cpu-array (default hash)",
+                None,
+            )
+            .named(
+                "flags",
+                SyntaxShape::Int,
+                "Raw bpf_map_update_elem flags (default 0 / BPF_ANY)",
+                None,
+            )
+            .category(Category::Experimental)
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "ebpf attach 'fentry:security_file_open' {|ctx| $ctx.arg0.f_path | map-put seen_paths $ctx.pid --kind hash }",
+            description: "Store a typed struct value in a named hash map",
+            result: None,
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        _input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        Ok(PipelineData::Value(Value::int(0, call.head), None))
+    }
+}
+
+#[derive(Clone)]
+pub struct MapDelete;
+
+impl PluginCommand for MapDelete {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "map-delete"
+    }
+
+    fn description(&self) -> &str {
+        "Delete a key from a named generic BPF map."
+    }
+
+    fn extra_description(&self) -> &str {
+        r#"Deletes a key from a named generic map. Use pipeline input as the key,
+or pass an explicit key as the second positional argument.
+
+Example:
+  $ctx.pid | map-delete seen_paths --kind hash"#
+    }
+
+    fn signature(&self) -> Signature {
+        Signature::build("map-delete")
+            .input_output_types(vec![(Type::Any, Type::Int), (Type::Nothing, Type::Int)])
+            .required("name", SyntaxShape::String, "Map name")
+            .optional(
+                "key",
+                SyntaxShape::Any,
+                "Optional explicit key; otherwise uses pipeline input",
+            )
+            .named(
+                "kind",
+                SyntaxShape::String,
+                "Map kind: hash, array, per-cpu-hash, or per-cpu-array (default hash)",
+                None,
+            )
+            .category(Category::Experimental)
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "ebpf attach 'kprobe:sys_read' {|ctx| $ctx.pid | map-delete seen_paths --kind hash }",
+            description: "Delete the current PID from a named hash map",
+            result: None,
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        _input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
         Ok(PipelineData::Value(Value::int(0, call.head), None))
     }
 }

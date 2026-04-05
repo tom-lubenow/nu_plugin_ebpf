@@ -85,6 +85,19 @@ sleep 5sec
 ebpf counters $id | sort-by count --reverse
 ```
 
+### Reuse typed values through a named map
+
+```nushell
+let id = ebpf attach 'fentry:security_file_open' {|ctx|
+    $ctx.arg0.f_path | map-put seen_paths $ctx.pid --kind hash
+    let entry = ($ctx.pid | map-get seen_paths --kind hash)
+    if $entry != 0 { $entry.dentry.d_flags | count }
+}
+
+sleep 5sec
+ebpf counters $id
+```
+
 ### Measure function latency
 
 ```nushell
@@ -189,6 +202,11 @@ continue to type-check and lower as expected. 16-byte byte-array/string keys
 such as `ctx.arg0.comm` continue to display as strings.
 Aggregate `fexit` returns still depend on kernel trampoline support; some
 kernels reject struct returns entirely.
+Generic named maps are also available through `map-get`, `map-put`, and
+`map-delete`. `map-get` returns a maybe-null map-value pointer. When a prior
+typed `map-put` established the value layout in the same closure, projections
+like `let entry = ($ctx.pid | map-get seen_paths --kind hash); if $entry != 0
+{ $entry.dentry.d_flags }` lower through that preserved map-value schema.
 
 ## Commands
 
@@ -214,6 +232,9 @@ kernels reject struct returns entirely.
 | `stop-timer` | Calculate elapsed time |
 | `read-str` | Read string from user memory (`--max-len` to cap, default 128) |
 | `read-kernel-str` | Read string from kernel memory (`--max-len` to cap, default 128) |
+| `map-get` | Look up a value pointer in a named generic map |
+| `map-put` | Insert or update a value in a named generic map |
+| `map-delete` | Delete a key from a named generic map |
 
 ## Discovering Tracepoints
 

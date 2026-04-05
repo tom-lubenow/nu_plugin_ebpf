@@ -19,7 +19,7 @@ use super::MirPass;
 use crate::compiler::cfg::CFG;
 use crate::compiler::elf::ProbeContext;
 use crate::compiler::mir::{BlockId, MirFunction, MirInst, MirType, StackSlotId, VReg};
-use crate::compiler::type_hints::infer_instruction_def_type;
+use crate::compiler::type_hints::{infer_generic_map_value_types, infer_instruction_def_type};
 
 /// SSA construction pass
 ///
@@ -480,7 +480,15 @@ impl<'a> SsaBuilder<'a> {
         stack_slot_hints: &HashMap<StackSlotId, MirType>,
         ssa_hints: &mut HashMap<VReg, MirType>,
     ) {
-        let inferred = infer_instruction_def_type(inst, probe_ctx, ssa_hints, stack_slot_hints)
+        let map_value_types = infer_generic_map_value_types(self.func, ssa_hints);
+        let inferred =
+            infer_instruction_def_type(
+                inst,
+                probe_ctx,
+                ssa_hints,
+                stack_slot_hints,
+                &map_value_types,
+            )
             .map(|(dst, ty, _)| (dst, ty))
             .or_else(|| {
                 (self.def_counts.get(&orig_vreg).copied() == Some(1))
@@ -502,11 +510,17 @@ impl<'a> SsaBuilder<'a> {
         let mut changed = true;
         while changed {
             changed = false;
+            let map_value_types = infer_generic_map_value_types(self.func, ssa_hints);
             for block in &self.func.blocks {
                 for inst in &block.instructions {
-                    let recovered =
-                        infer_instruction_def_type(inst, probe_ctx, ssa_hints, stack_slot_hints)
-                            .map(|(dst, ty, _)| (dst, ty));
+                    let recovered = infer_instruction_def_type(
+                        inst,
+                        probe_ctx,
+                        ssa_hints,
+                        stack_slot_hints,
+                        &map_value_types,
+                    )
+                    .map(|(dst, ty, _)| (dst, ty));
                     if let Some((dst, ty)) = recovered
                         && ssa_hints.get(&dst).is_none()
                     {

@@ -23,6 +23,7 @@
 //! - [`ReadStr`] / [`ReadKernelStr`] - Read strings from pointers
 //! - [`StartTimer`] / [`StopTimer`] - Latency measurement
 //! - [`KfuncCall`] - Invoke typed kernel kfuncs
+//! - [`MapGet`] / [`MapPut`] / [`MapDelete`] - Generic named map operations
 
 mod attach;
 mod counters;
@@ -63,7 +64,8 @@ pub use attach::EbpfAttach;
 pub use counters::EbpfCounters;
 pub use detach::EbpfDetach;
 pub use helpers::{
-    Count, Emit, Histogram, KfuncCall, ReadKernelStr, ReadStr, StartTimer, StopTimer,
+    Count, Emit, Histogram, KfuncCall, MapDelete, MapGet, MapPut, ReadKernelStr, ReadStr,
+    StartTimer, StopTimer,
 };
 pub use histogram::EbpfHistogram;
 pub use list::EbpfList;

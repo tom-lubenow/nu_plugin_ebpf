@@ -245,6 +245,10 @@ pub struct HirToMirLowering<'a> {
     vreg_type_hints: HashMap<VReg, MirType>,
     /// Collected stack-slot pointee type hints for stack-address values
     stack_slot_type_hints: HashMap<StackSlotId, MirType>,
+    /// Source-order generic map value schemas discovered during lowering
+    map_value_types: HashMap<String, MirType>,
+    /// Generic maps whose observed value schemas conflict
+    conflicting_map_value_types: HashSet<String>,
     /// User-defined functions by DeclId
     user_functions: &'a HashMap<DeclId, HirFunction>,
     /// User-defined function signatures by DeclId
@@ -318,6 +322,8 @@ impl<'a> HirToMirLowering<'a> {
             decl_type_hints,
             vreg_type_hints: HashMap::new(),
             stack_slot_type_hints: HashMap::new(),
+            map_value_types: HashMap::new(),
+            conflicting_map_value_types: HashSet::new(),
             user_functions,
             decl_signatures,
             subfunction_params: HashMap::new(),

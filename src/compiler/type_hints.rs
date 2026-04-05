@@ -224,11 +224,56 @@ fn recover_pointer_arith_result_hint(ty: &MirType) -> MirType {
     }
 }
 
+fn stored_generic_map_value_type(ty: &MirType) -> MirType {
+    match ty {
+        MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Stack | AddressSpace::Map,
+        } if matches!(pointee.as_ref(), MirType::Array { .. } | MirType::Struct { .. }) => {
+            pointee.as_ref().clone()
+        }
+        _ => ty.clone(),
+    }
+}
+
+pub(crate) fn infer_generic_map_value_types(
+    func: &MirFunction,
+    hints: &HashMap<VReg, MirType>,
+) -> HashMap<String, MirType> {
+    let mut value_types = HashMap::new();
+    let mut conflicts = HashSet::new();
+
+    for inst in func.blocks.iter().flat_map(|block| block.instructions.iter()) {
+        let MirInst::MapUpdate { map, val, .. } = inst else {
+            continue;
+        };
+        if conflicts.contains(&map.name) {
+            continue;
+        }
+        let Some(value_ty) = hints.get(val).map(stored_generic_map_value_type) else {
+            continue;
+        };
+        match value_types.get(&map.name) {
+            Some(existing) if existing != &value_ty => {
+                value_types.remove(&map.name);
+                conflicts.insert(map.name.clone());
+            }
+            Some(_) => {}
+            None => {
+                value_types.insert(map.name.clone(), value_ty);
+            }
+        }
+    }
+
+    value_types
+}
+
 pub(crate) fn infer_instruction_def_type(
     inst: &MirInst,
     probe_ctx: Option<&ProbeContext>,
     hints: &HashMap<VReg, MirType>,
     stack_slot_hints: &HashMap<StackSlotId, MirType>,
+    map_value_types: &HashMap<String, MirType>,
 ) -> Option<(VReg, MirType, bool)> {
     match inst {
         MirInst::Copy { dst, src } => match src {
@@ -266,7 +311,19 @@ pub(crate) fn infer_instruction_def_type(
             .or_else(|| {
                 recover_ctx_field_hint(probe_ctx, field, slot.is_some()).map(|ty| (*dst, ty, true))
             }),
-        MirInst::MapLookup { dst, .. } => Some((*dst, pointer_hint(AddressSpace::Map), true)),
+        MirInst::MapLookup { dst, map, .. } => Some((
+            *dst,
+            MirType::Ptr {
+                pointee: Box::new(
+                    map_value_types
+                        .get(&map.name)
+                        .cloned()
+                        .unwrap_or(MirType::U8),
+                ),
+                address_space: AddressSpace::Map,
+            },
+            true,
+        )),
         MirInst::BinOp { dst, op, lhs, rhs } if matches!(op, BinOpKind::Add | BinOpKind::Sub) => {
             let lhs_ptr = match lhs {
                 MirValue::VReg(vreg) => hints.get(vreg),
@@ -311,14 +368,21 @@ pub(crate) fn recover_optimized_function_type_hints(
     let mut changed = true;
     while changed {
         changed = false;
+        let map_value_types = infer_generic_map_value_types(func, hints);
         for inst in func.blocks.iter().flat_map(|block| {
             block
                 .instructions
                 .iter()
                 .chain(std::iter::once(&block.terminator))
         }) {
-            let recovered = infer_instruction_def_type(inst, probe_ctx, hints, stack_slot_hints)
-                .map(|(dst, ty, trustworthy)| {
+            let recovered = infer_instruction_def_type(
+                inst,
+                probe_ctx,
+                hints,
+                stack_slot_hints,
+                &map_value_types,
+            )
+            .map(|(dst, ty, trustworthy)| {
                     let propagated = if trustworthy {
                         true
                     } else {

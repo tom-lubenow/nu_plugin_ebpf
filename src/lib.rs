@@ -46,6 +46,9 @@ impl Plugin for EbpfPlugin {
             Box::new(ReadStr),
             Box::new(ReadKernelStr),
             Box::new(KfuncCall),
+            Box::new(MapGet),
+            Box::new(MapPut),
+            Box::new(MapDelete),
         ]
     }
 }

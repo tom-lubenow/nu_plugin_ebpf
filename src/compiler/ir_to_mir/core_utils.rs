@@ -74,6 +74,31 @@ impl<'a> HirToMirLowering<'a> {
         );
     }
 
+    pub(super) fn register_named_map_value_type(&mut self, map_name: &str, ty: &MirType) {
+        if self.conflicting_map_value_types.contains(map_name) {
+            return;
+        }
+
+        match self.map_value_types.get(map_name) {
+            Some(existing) if existing != ty => {
+                self.map_value_types.remove(map_name);
+                self.conflicting_map_value_types.insert(map_name.to_string());
+            }
+            Some(_) => {}
+            None => {
+                self.map_value_types.insert(map_name.to_string(), ty.clone());
+            }
+        }
+    }
+
+    pub(super) fn named_map_value_type(&self, map_name: &str) -> Option<&MirType> {
+        if self.conflicting_map_value_types.contains(map_name) {
+            None
+        } else {
+            self.map_value_types.get(map_name)
+        }
+    }
+
     pub(super) fn ensure_string_slot_capacity(
         &mut self,
         slot: StackSlotId,

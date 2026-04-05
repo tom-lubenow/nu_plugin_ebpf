@@ -1,8 +1,83 @@
 use super::*;
 use crate::compiler::instruction::KfuncSignature;
-use crate::compiler::mir::{BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, STRING_COUNTER_MAP_NAME};
+use crate::compiler::mir::{
+    AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, STRING_COUNTER_MAP_NAME,
+};
 
 impl<'a> HirToMirLowering<'a> {
+    fn literal_string_arg(&self, reg: RegId, context: &str) -> Result<String, CompileError> {
+        self.get_metadata(reg)
+            .and_then(|m| m.literal_string.clone())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{context} requires a compile-time string literal"
+                ))
+            })
+    }
+
+    fn parse_generic_map_kind(kind: &str) -> Option<MapKind> {
+        match kind {
+            "hash" => Some(MapKind::Hash),
+            "array" => Some(MapKind::Array),
+            "per-cpu-hash" | "percpu-hash" | "per_cpu_hash" => Some(MapKind::PerCpuHash),
+            "per-cpu-array" | "percpu-array" | "per_cpu_array" => Some(MapKind::PerCpuArray),
+            _ => None,
+        }
+    }
+
+    fn generic_map_kind_arg(&self, context: &str) -> Result<MapKind, CompileError> {
+        let Some((_, reg)) = self.named_args.get("kind") else {
+            return Ok(MapKind::Hash);
+        };
+        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+        Self::parse_generic_map_kind(&kind).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{context} --kind must be one of: hash, array, per-cpu-hash, per-cpu-array"
+            ))
+        })
+    }
+
+    fn validate_generic_map_name(
+        &self,
+        map_name: &str,
+        context: &str,
+    ) -> Result<(), CompileError> {
+        let mut chars = map_name.chars();
+        let Some(first) = chars.next() else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} map name must not be empty"
+            )));
+        };
+        if !(first == '_' || first.is_ascii_alphabetic())
+            || !chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+        {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} map name '{map_name}' must match [A-Za-z_][A-Za-z0-9_]*"
+            )));
+        }
+        Ok(())
+    }
+
+    fn require_only_named_args(
+        &self,
+        context: &str,
+        allowed: &[&str],
+    ) -> Result<(), CompileError> {
+        for key in self.named_args.keys() {
+            if !allowed.iter().any(|allowed_key| allowed_key == key) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} does not accept named argument '{}'",
+                    key
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn reset_call_result_metadata(&mut self, reg: RegId) {
+        *self.get_or_create_metadata(reg) = RegMetadata::default();
+    }
+
     pub(super) fn set_call_args(&mut self, args: &HirCallArgs) -> Result<(), CompileError> {
         self.positional_args.clear();
         self.named_flags.clear();
@@ -410,6 +485,192 @@ impl<'a> HirToMirLowering<'a> {
                     btf_id,
                     args,
                 });
+            }
+
+            "map-get" => {
+                if !self.named_flags.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "map-get does not accept flags".into(),
+                    ));
+                }
+                self.require_only_named_args("map-get", &["kind"])?;
+
+                let (_, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "map-get requires a literal map name as the first positional argument"
+                            .into(),
+                    )
+                })?;
+                let map_name = self.literal_string_arg(map_reg, "map-get")?;
+                self.validate_generic_map_name(&map_name, "map-get")?;
+                let map_kind = self.generic_map_kind_arg("map-get")?;
+                let key_vreg = self
+                    .positional_args
+                    .get(1)
+                    .map(|(vreg, _)| *vreg)
+                    .or(self.pipeline_input)
+                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "map-get requires a key from pipeline input or a second positional argument"
+                                .into(),
+                        )
+                    })?;
+                let lookup_vreg = self.func.alloc_vreg();
+
+                self.emit(MirInst::MapLookup {
+                    dst: lookup_vreg,
+                    map: MapRef {
+                        name: map_name.clone(),
+                        kind: map_kind,
+                    },
+                    key: key_vreg,
+                });
+                self.emit(MirInst::Copy {
+                    dst: dst_vreg,
+                    src: MirValue::VReg(lookup_vreg),
+                });
+
+                let stored_ty = self.named_map_value_type(&map_name).cloned();
+                let runtime_ty = MirType::Ptr {
+                    pointee: Box::new(stored_ty.clone().unwrap_or(MirType::U8)),
+                    address_space: AddressSpace::Map,
+                };
+                self.vreg_type_hints.insert(lookup_vreg, runtime_ty.clone());
+                self.vreg_type_hints.insert(dst_vreg, runtime_ty);
+
+                self.reset_call_result_metadata(src_dst);
+                if let Some(value_ty @ (MirType::Array { .. } | MirType::Struct { .. })) =
+                    stored_ty
+                {
+                    let meta = self.get_or_create_metadata(src_dst);
+                    meta.field_type = Some(value_ty);
+                }
+            }
+
+            "map-put" => {
+                if !self.named_flags.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "map-put does not accept flags".into(),
+                    ));
+                }
+                self.require_only_named_args("map-put", &["kind", "flags"])?;
+
+                let (_, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "map-put requires a literal map name as the first positional argument"
+                            .into(),
+                    )
+                })?;
+                let map_name = self.literal_string_arg(map_reg, "map-put")?;
+                self.validate_generic_map_name(&map_name, "map-put")?;
+                let map_kind = self.generic_map_kind_arg("map-put")?;
+                let key_vreg = self
+                    .positional_args
+                    .get(1)
+                    .map(|(vreg, _)| *vreg)
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "map-put requires a key as the second positional argument".into(),
+                        )
+                    })?;
+                let flags = if let Some((_, reg)) = self.named_args.get("flags") {
+                    let raw = self
+                        .get_metadata(*reg)
+                        .and_then(|m| m.literal_int)
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "map-put --flags must be a compile-time integer literal".into(),
+                            )
+                        })?;
+                    u64::try_from(raw).map_err(|_| {
+                        CompileError::UnsupportedInstruction(
+                            "map-put --flags must be >= 0".into(),
+                        )
+                    })?
+                } else {
+                    0
+                };
+                let value_vreg = self
+                    .pipeline_input
+                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "map-put requires a value from pipeline input".into(),
+                        )
+                    })?;
+
+                self.emit(MirInst::MapUpdate {
+                    map: MapRef {
+                        name: map_name.clone(),
+                        kind: map_kind,
+                    },
+                    key: key_vreg,
+                    val: value_vreg,
+                    flags,
+                });
+
+                let value_ty = self
+                    .pipeline_input_reg
+                    .and_then(|reg| self.get_metadata(reg))
+                    .and_then(|m| m.field_type.clone())
+                    .or_else(|| {
+                        self.get_metadata(src_dst)
+                            .and_then(|m| m.field_type.clone())
+                    });
+                if let Some(value_ty) = value_ty {
+                    self.register_named_map_value_type(&map_name, &value_ty);
+                }
+
+                self.emit(MirInst::Copy {
+                    dst: dst_vreg,
+                    src: MirValue::Const(0),
+                });
+                self.reset_call_result_metadata(src_dst);
+            }
+
+            "map-delete" => {
+                if !self.named_flags.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "map-delete does not accept flags".into(),
+                    ));
+                }
+                self.require_only_named_args("map-delete", &["kind"])?;
+
+                let (_, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "map-delete requires a literal map name as the first positional argument"
+                            .into(),
+                    )
+                })?;
+                let map_name = self.literal_string_arg(map_reg, "map-delete")?;
+                self.validate_generic_map_name(&map_name, "map-delete")?;
+                let map_kind = self.generic_map_kind_arg("map-delete")?;
+                let key_vreg = self
+                    .positional_args
+                    .get(1)
+                    .map(|(vreg, _)| *vreg)
+                    .or(self.pipeline_input)
+                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "map-delete requires a key from pipeline input or a second positional argument"
+                                .into(),
+                        )
+                    })?;
+
+                self.emit(MirInst::MapDelete {
+                    map: MapRef {
+                        name: map_name,
+                        kind: map_kind,
+                    },
+                    key: key_vreg,
+                });
+                self.emit(MirInst::Copy {
+                    dst: dst_vreg,
+                    src: MirValue::Const(0),
+                });
+                self.reset_call_result_metadata(src_dst);
             }
 
             "where" => {
