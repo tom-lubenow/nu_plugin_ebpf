@@ -38,23 +38,65 @@ impl<'a> HirToMirLowering<'a> {
             },
         )?;
 
-        let list_vreg = self.get_vreg(dst);
-        for value in values {
-            if !crate::compiler::hir::is_numeric_constant_value(value) {
-                return Err(CompileError::UnsupportedInstruction(
-                    "constant lists currently only support numeric scalar elements in eBPF lowering"
-                        .into(),
-                ));
-            }
+        let Some((slot, max_len)) = self.get_metadata(dst).and_then(|m| m.list_buffer) else {
+            return Err(CompileError::UnsupportedInstruction(
+                "constant list lowering did not allocate a list buffer".into(),
+            ));
+        };
 
-            let item_reg = self.alloc_synthetic_reg();
-            self.lower_constant_value_with_lists(item_reg, value, false)?;
-            let item_vreg = self.get_vreg(item_reg);
-            self.emit(MirInst::ListPush {
-                list: list_vreg,
-                item: item_vreg,
+        let truncated_values = &values[..values.len().min(max_len)];
+        let (_array_ty, encoded_items) = Self::constant_numeric_list_rodata_repr(truncated_values)?;
+
+        if !encoded_items.is_empty() {
+            let symbol = self.alloc_readonly_global_name();
+            self.readonly_globals.push(ReadonlyGlobal {
+                name: symbol.clone(),
+                data: encoded_items,
             });
+
+            let rodata_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::LoadReadonlyGlobal {
+                dst: rodata_vreg,
+                symbol,
+                ty: MirType::Array {
+                    elem: Box::new(MirType::I64),
+                    len: truncated_values.len(),
+                },
+            });
+            self.vreg_type_hints.insert(
+                rodata_vreg,
+                MirType::Ptr {
+                    pointee: Box::new(MirType::Array {
+                        elem: Box::new(MirType::I64),
+                        len: truncated_values.len(),
+                    }),
+                    address_space: AddressSpace::Map,
+                },
+            );
+
+            for index in 0..truncated_values.len() {
+                let item_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::Load {
+                    dst: item_vreg,
+                    ptr: rodata_vreg,
+                    offset: (index * std::mem::size_of::<i64>()) as i32,
+                    ty: MirType::I64,
+                });
+                self.emit(MirInst::StoreSlot {
+                    slot,
+                    offset: (8 + index * std::mem::size_of::<i64>()) as i32,
+                    val: MirValue::VReg(item_vreg),
+                    ty: MirType::I64,
+                });
+            }
         }
+
+        self.emit(MirInst::StoreSlot {
+            slot,
+            offset: 0,
+            val: MirValue::Const(truncated_values.len() as i64),
+            ty: MirType::U64,
+        });
 
         Ok(())
     }
@@ -120,6 +162,26 @@ impl<'a> HirToMirLowering<'a> {
         ))
     }
 
+    fn constant_numeric_list_rodata_repr(values: &[Value]) -> Result<(MirType, Vec<u8>), CompileError> {
+        let mut data = Vec::with_capacity(values.len() * std::mem::size_of::<i64>());
+        for value in values {
+            let Some((_item_ty, item_data)) = Self::scalar_constant_rodata_repr(value) else {
+                return Err(CompileError::UnsupportedInstruction(
+                    "constant lists currently only support numeric scalar elements in eBPF lowering"
+                        .into(),
+                ));
+            };
+            data.extend_from_slice(&item_data);
+        }
+        Ok((
+            MirType::Array {
+                elem: Box::new(MirType::I64),
+                len: values.len(),
+            },
+            data,
+        ))
+    }
+
     fn constant_value_rodata_repr(value: &Value) -> Result<(MirType, Vec<u8>), CompileError> {
         if let Some(repr) = Self::scalar_constant_rodata_repr(value) {
             return Ok(repr);
@@ -127,13 +189,14 @@ impl<'a> HirToMirLowering<'a> {
         if let Some(repr) = Self::string_constant_rodata_repr(value) {
             return Ok(repr);
         }
+        if crate::compiler::hir::supports_numeric_constant_list(value)
+            && let Value::List { vals, .. } = value
+        {
+            return Self::constant_numeric_list_rodata_repr(vals);
+        }
 
         match value {
             Value::Record { val, .. } => Self::constant_record_rodata_repr(val.as_ref()),
-            Value::List { .. } => Err(CompileError::UnsupportedInstruction(
-                "constant lists nested inside records are not yet supported in eBPF lowering"
-                    .into(),
-            )),
             _ => Err(CompileError::UnsupportedInstruction(format!(
                 "LoadValue of type {} is not supported in eBPF lowering",
                 value.get_type()

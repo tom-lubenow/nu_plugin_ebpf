@@ -2,6 +2,7 @@ use super::*;
 use nu_protocol::DeclId;
 use nu_protocol::RegId;
 use nu_protocol::ir::{DataSlice, Instruction};
+use nu_protocol::{Record, Span, Value};
 use std::sync::Arc;
 
 #[test]
@@ -35,4 +36,22 @@ fn test_hir_call_args_folded() {
         }
         _ => panic!("Expected Call with folded args"),
     }
+}
+
+#[test]
+fn test_supports_constant_value_for_record_with_nested_numeric_list() {
+    let mut record = Record::new();
+    record.push(
+        "numbers",
+        Value::list(
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::duration(2, Span::test_data()),
+                Value::bool(true, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+
+    assert!(supports_constant_value(&Value::record(record, Span::test_data())));
 }

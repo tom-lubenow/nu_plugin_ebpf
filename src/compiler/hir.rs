@@ -334,6 +334,7 @@ pub fn supports_constant_value(value: &Value) -> bool {
         }
 
         match value {
+            value if supports_numeric_constant_list(value) => true,
             Value::Record { val, .. } => val
                 .iter()
                 .all(|(_, field)| supports_nested_constant_value(field)),

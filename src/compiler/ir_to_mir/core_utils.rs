@@ -42,12 +42,6 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    pub(super) fn alloc_synthetic_reg(&mut self) -> RegId {
-        let reg = RegId::new(self.synthetic_reg_counter);
-        self.synthetic_reg_counter = self.synthetic_reg_counter.saturating_add(1);
-        reg
-    }
-
     pub(super) fn assign_fresh_vreg(&mut self, reg: RegId) -> VReg {
         let reg_id = reg.get();
         let vreg = self.func.alloc_vreg();
