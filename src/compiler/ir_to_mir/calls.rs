@@ -48,8 +48,12 @@ impl<'a> HirToMirLowering<'a> {
         match kind {
             "hash" => Some(MapKind::Hash),
             "array" => Some(MapKind::Array),
+            "lru-hash" | "lru_hash" | "lruhash" => Some(MapKind::LruHash),
             "per-cpu-hash" | "percpu-hash" | "per_cpu_hash" => Some(MapKind::PerCpuHash),
             "per-cpu-array" | "percpu-array" | "per_cpu_array" => Some(MapKind::PerCpuArray),
+            "lru-per-cpu-hash" | "lru-percpu-hash" | "lru_per_cpu_hash" | "lrupercpuhash" => {
+                Some(MapKind::LruPerCpuHash)
+            }
             _ => None,
         }
     }
@@ -61,7 +65,7 @@ impl<'a> HirToMirLowering<'a> {
         let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
         Self::parse_generic_map_kind(&kind).ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must be one of: hash, array, per-cpu-hash, per-cpu-array"
+                "{context} --kind must be one of: hash, array, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash"
             ))
         })
     }

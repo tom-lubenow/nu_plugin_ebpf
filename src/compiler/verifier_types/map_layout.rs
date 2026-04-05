@@ -15,7 +15,12 @@ pub(super) fn map_value_limit(map: &MapRef) -> Option<i64> {
 pub(super) fn supports_generic_map_kind(kind: MapKind) -> bool {
     matches!(
         kind,
-        MapKind::Hash | MapKind::Array | MapKind::PerCpuHash | MapKind::PerCpuArray
+        MapKind::Hash
+            | MapKind::Array
+            | MapKind::LruHash
+            | MapKind::PerCpuHash
+            | MapKind::PerCpuArray
+            | MapKind::LruPerCpuHash
     )
 }
 

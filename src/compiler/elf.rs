@@ -36,6 +36,8 @@ pub enum BpfMapType {
     PerfEventArray = 4,
     PerCpuHash = 5,
     PerCpuArray = 6,
+    LruHash = 9,
+    LruPerCpuHash = 10,
     StackTrace = 7,
     RingBuf = 27,
 }
@@ -105,6 +107,30 @@ impl BpfMapDef {
         Self {
             map_type: BpfMapType::PerCpuArray as u32,
             key_size: 4, // u32 index
+            value_size,
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a generic LRU hash map definition.
+    pub fn lru_hash(key_size: u32, value_size: u32, max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::LruHash as u32,
+            key_size,
+            value_size,
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a generic LRU per-CPU hash map definition.
+    pub fn lru_per_cpu_hash(key_size: u32, value_size: u32, max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::LruPerCpuHash as u32,
+            key_size,
             value_size,
             max_entries,
             map_flags: 0,

@@ -165,6 +165,56 @@ fn test_map_lookup_rejects_unsupported_map_kind() {
 }
 
 #[test]
+fn test_map_lookup_accepts_lru_hash_kind() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let ok = func.alloc_block();
+    let bad = func.alloc_block();
+    func.entry = entry;
+
+    let key = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst,
+        map: MapRef {
+            name: "lru_test".to_string(),
+            kind: MapKind::LruHash,
+        },
+        key,
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(dst),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: ok,
+        if_false: bad,
+    };
+
+    let ok_load = func.alloc_vreg();
+    func.block_mut(ok).instructions.push(MirInst::Load {
+        dst: ok_load,
+        ptr: dst,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    func.block_mut(ok).terminator = MirInst::Return { val: None };
+    func.block_mut(bad).terminator = MirInst::Return { val: None };
+
+    let types = map_lookup_types(&func, dst);
+    verify_mir(&func, &types).expect("expected LRU hash lookup to pass");
+}
+
+#[test]
 fn test_map_delete_rejects_array_map_kind() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

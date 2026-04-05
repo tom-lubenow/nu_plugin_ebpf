@@ -264,6 +264,8 @@ value shape stays canonical too, so map-to-map copies preserve the real
 aggregate layout instead of a pointer wrapper. When those maps are attached
 with the same `--pin` group, active pinned programs now reuse that typed schema
 across program boundaries too.
+Generic map `--kind` now supports `hash`, `array`, `lru-hash`,
+`per-cpu-hash`, `per-cpu-array`, and `lru-per-cpu-hash`.
 
 Read-only closure captures now lower as real constants for supported types
 (`int`, `bool`, `string`, and `nothing`) instead of only working when inlined

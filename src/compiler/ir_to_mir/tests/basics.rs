@@ -3634,6 +3634,40 @@ fn test_lower_map_put_respects_kind_and_flags() {
 }
 
 #[test]
+fn test_lower_map_put_respects_lru_hash_kind() {
+    let hir = make_map_put_program(DeclId::new(42), 1, "lru-hash");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "map-put".to_string());
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("lru map-put should lower");
+
+    let update = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::MapUpdate {
+                map, key, flags, ..
+            } if map.name == "cached_path" => Some((map.kind, *key, *flags)),
+            _ => None,
+        })
+        .expect("expected generic map update");
+    assert_eq!(update.0, MapKind::LruHash);
+    assert_eq!(update.2, 1);
+}
+
+#[test]
 fn test_lower_map_put_of_map_get_root_preserves_copied_map_schema() {
     let hir = make_map_copy_projection_program(DeclId::new(42), DeclId::new(43), DeclId::new(44));
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");

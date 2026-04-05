@@ -289,7 +289,7 @@ Example:
             .named(
                 "kind",
                 SyntaxShape::String,
-                "Map kind: hash, array, per-cpu-hash, or per-cpu-array (default hash)",
+                "Map kind: hash, array, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash)",
                 None,
             )
             .category(Category::Experimental)
@@ -349,7 +349,7 @@ Example:
             .named(
                 "kind",
                 SyntaxShape::String,
-                "Map kind: hash, array, per-cpu-hash, or per-cpu-array (default hash)",
+                "Map kind: hash, array, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash)",
                 None,
             )
             .named(
@@ -414,7 +414,7 @@ Example:
             .named(
                 "kind",
                 SyntaxShape::String,
-                "Map kind: hash, array, per-cpu-hash, or per-cpu-array (default hash)",
+                "Map kind: hash, array, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash)",
                 None,
             )
             .category(Category::Experimental)

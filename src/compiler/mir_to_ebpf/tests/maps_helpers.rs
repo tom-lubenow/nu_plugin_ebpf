@@ -1239,6 +1239,52 @@ fn test_map_lookup_compiles_and_emits_generic_map() {
 }
 
 #[test]
+fn test_lru_hash_lookup_compiles_and_emits_generic_map() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let key = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst,
+        map: MapRef {
+            name: "custom_lru_lookup".to_string(),
+            kind: MapKind::LruHash,
+        },
+        key,
+    });
+    func.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let result = compile_mir_to_ebpf(&program, None).expect("lru map lookup should compile");
+    let map = result
+        .maps
+        .iter()
+        .find(|m| m.name == "custom_lru_lookup")
+        .expect("expected generic map definition");
+    assert_eq!(
+        map.def.map_type,
+        crate::compiler::elf::BpfMapType::LruHash as u32
+    );
+    assert_eq!(map.def.key_size, 8);
+    assert_eq!(map.def.value_size, 8);
+}
+
+#[test]
 fn test_map_update_compiles_and_emits_generic_map() {
     use crate::compiler::mir::*;
 

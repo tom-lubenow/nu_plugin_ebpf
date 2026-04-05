@@ -271,7 +271,12 @@ impl<'a> MirToEbpfCompiler<'a> {
     fn supported_generic_map_kind(kind: MapKind) -> bool {
         matches!(
             kind,
-            MapKind::Hash | MapKind::Array | MapKind::PerCpuHash | MapKind::PerCpuArray
+            MapKind::Hash
+                | MapKind::Array
+                | MapKind::LruHash
+                | MapKind::PerCpuHash
+                | MapKind::PerCpuArray
+                | MapKind::LruPerCpuHash
         )
     }
 
@@ -484,10 +489,14 @@ impl<'a> MirToEbpfCompiler<'a> {
         let map_def = match spec.kind {
             MapKind::Hash => BpfMapDef::hash(spec.key_size, spec.value_size, max_entries),
             MapKind::Array => BpfMapDef::array(spec.value_size, max_entries),
+            MapKind::LruHash => BpfMapDef::lru_hash(spec.key_size, spec.value_size, max_entries),
             MapKind::PerCpuHash => {
                 BpfMapDef::per_cpu_hash(spec.key_size, spec.value_size, max_entries)
             }
             MapKind::PerCpuArray => BpfMapDef::per_cpu_array(spec.value_size, max_entries),
+            MapKind::LruPerCpuHash => {
+                BpfMapDef::lru_per_cpu_hash(spec.key_size, spec.value_size, max_entries)
+            }
             other => {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "map kind {:?} is not supported for generic map operations",
