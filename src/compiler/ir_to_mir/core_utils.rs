@@ -218,6 +218,125 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<MutableCaptureGlobal, CompileError> {
         const MAX_NUMERIC_LIST_CAPACITY: usize = 60;
 
+        fn parse_flat_record_field_type(spec: &str) -> Result<MirType, CompileError> {
+            let scalar_ty = match spec {
+                "i8" => Some(MirType::I8),
+                "i16" => Some(MirType::I16),
+                "i32" => Some(MirType::I32),
+                "i64" => Some(MirType::I64),
+                "u8" => Some(MirType::U8),
+                "u16" => Some(MirType::U16),
+                "u32" => Some(MirType::U32),
+                "u64" => Some(MirType::U64),
+                "bool" => Some(MirType::Bool),
+                _ => None,
+            };
+
+            if let Some(ty) = scalar_ty {
+                return Ok(ty);
+            }
+
+            let byte_len = spec
+                .strip_prefix("bytes:")
+                .or_else(|| spec.strip_prefix("binary:"))
+                .map(|len| {
+                    len.parse::<usize>().map_err(|_| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "record field type spec '{}' has an invalid byte length",
+                            spec
+                        ))
+                    })
+                })
+                .transpose()?;
+
+            if let Some(len) = byte_len {
+                if len == 0 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "record field byte-array declarations require a positive length".into(),
+                    ));
+                }
+
+                return Ok(MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len,
+                });
+            }
+
+            Err(CompileError::UnsupportedInstruction(format!(
+                "unsupported record field type spec '{}'; expected one of i8, i16, i32, i64, u8, u16, u32, u64, bool, bytes:N, or binary:N",
+                spec
+            )))
+        }
+
+        fn parse_flat_record_type(spec: &str) -> Result<Option<MirType>, CompileError> {
+            let Some(body) = spec
+                .strip_prefix("record{")
+                .and_then(|rest| rest.strip_suffix('}'))
+            else {
+                return Ok(None);
+            };
+
+            if body.trim().is_empty() {
+                return Err(CompileError::UnsupportedInstruction(
+                    "record global declarations require at least one field".into(),
+                ));
+            }
+
+            let mut fields = Vec::new();
+            let mut offset = 0usize;
+            for raw_field in body.split(',') {
+                let field = raw_field.trim();
+                if field.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "global record type spec '{}' contains an empty field",
+                        spec
+                    )));
+                }
+
+                let Some((name_raw, field_spec_raw)) = field.split_once(':') else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "record field '{}' must use name:type syntax",
+                        field
+                    )));
+                };
+
+                let name = name_raw.trim();
+                let field_spec = field_spec_raw.trim();
+                if name.is_empty() || field_spec.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "record field '{}' must use name:type syntax",
+                        field
+                    )));
+                }
+
+                if fields
+                    .iter()
+                    .any(|existing: &StructField| existing.name == name)
+                {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "record global declarations do not support duplicate field name '{}'",
+                        name
+                    )));
+                }
+
+                let ty = parse_flat_record_field_type(field_spec)?;
+                fields.push(StructField {
+                    name: name.to_string(),
+                    ty: ty.clone(),
+                    offset,
+                    synthetic: false,
+                    bitfield: None,
+                });
+                offset = offset.saturating_add(ty.size());
+            }
+
+            Ok(Some(MirType::Struct {
+                name: None,
+                kernel_btf_type_id: None,
+                fields,
+            }))
+        }
+
         let scalar_ty = match spec {
             "i8" => Some(MirType::I8),
             "i16" => Some(MirType::I16),
@@ -232,6 +351,16 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         if let Some(ty) = scalar_ty {
+            return Ok(MutableCaptureGlobal {
+                symbol,
+                ty,
+                list_max_len: None,
+                string_slot_len: None,
+                string_content_cap: None,
+            });
+        }
+
+        if let Some(ty) = parse_flat_record_type(spec)? {
             return Ok(MutableCaptureGlobal {
                 symbol,
                 ty,
@@ -339,7 +468,7 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         Err(CompileError::UnsupportedInstruction(format!(
-            "unsupported global type spec '{}'; expected one of i8, i16, i32, i64, u8, u16, u32, u64, bool, bytes:N, binary:N, string:N, or list:i64:N",
+            "unsupported global type spec '{}'; expected one of i8, i16, i32, i64, u8, u16, u32, u64, bool, bytes:N, binary:N, string:N, list:i64:N, or record{{field:type,...}}",
             spec
         )))
     }

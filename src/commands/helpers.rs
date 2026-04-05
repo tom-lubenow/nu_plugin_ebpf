@@ -345,6 +345,7 @@ Examples:
   7 | global-define seen_pid
   $ctx.pid | global-define --zero seen_pid
   global-define --type i64 seen_pid
+  global-define --type 'record{pid:i64,comm:bytes:16}' seen_state
   let state = (global-get seen_pid)"#
     }
 
@@ -354,7 +355,7 @@ Examples:
             .named(
                 "type",
                 SyntaxShape::String,
-                "Declare a zero-initialized global directly from a type spec (i8/i16/i32/i64/u8/u16/u32/u64/bool/bytes:N/string:N/list:i64:N)",
+                "Declare a zero-initialized global directly from a type spec (i8/i16/i32/i64/u8/u16/u32/u64/bool/bytes:N/string:N/list:i64:N/record{field:type,...})",
                 None,
             )
             .switch(
@@ -386,6 +387,11 @@ Examples:
             Example {
                 example: "ebpf attach 'kprobe:sys_read' {|ctx| global-define --type string:32 seen_name; global-get seen_name | count }",
                 description: "Declare a zero-initialized string global with a 32-byte content cap",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'kprobe:sys_read' {|ctx| global-define --type 'record{pid:i64,comm:bytes:16}' seen_state; (global-get seen_state).pid | count }",
+                description: "Declare a zero-initialized flat record global directly from a type spec",
                 result: None,
             },
         ]

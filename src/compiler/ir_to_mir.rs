@@ -21,7 +21,7 @@ use super::hir_type_infer::HirTypeInfo;
 use super::mir::{
     BasicBlock, BinOpKind, BlockId, CtxField, MapKind, MapRef, MirFunction, MirInst, MirProgram,
     MirType, MirTypeHints, MirValue, RecordFieldDef, StackSlotId, StackSlotKind, StringAppendType,
-    SubfunctionId, VReg,
+    StructField, SubfunctionId, VReg,
 };
 
 #[derive(Debug, Clone)]

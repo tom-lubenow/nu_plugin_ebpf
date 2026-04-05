@@ -53,11 +53,54 @@ fn build_decl_names(engine: &EngineInterface) -> Result<HashMap<DeclId, String>,
     Ok(decl_names)
 }
 
+fn is_known_closure_command(name: &str) -> bool {
+    ProgramIntrinsic::from_command_name(name).is_some() || NU_CLOSURE_COMMANDS.contains(&name)
+}
+
+fn extract_decl_names_from_formatted_instructions(
+    formatted_instructions: &[String],
+) -> HashMap<DeclId, String> {
+    let mut decl_names = HashMap::new();
+
+    for line in formatted_instructions {
+        let Some(decl_pos) = line.find("decl ") else {
+            continue;
+        };
+        let after_decl = &line[(decl_pos + 5)..];
+        let digits_len = after_decl
+            .chars()
+            .take_while(|ch| ch.is_ascii_digit())
+            .count();
+        if digits_len == 0 {
+            continue;
+        }
+        let Ok(decl_id) = after_decl[..digits_len].parse::<usize>() else {
+            continue;
+        };
+
+        let after_digits = &after_decl[digits_len..];
+        let Some(name_start) = after_digits.find('"') else {
+            continue;
+        };
+        let after_quote = &after_digits[(name_start + 1)..];
+        let Some(name_end) = after_quote.find('"') else {
+            continue;
+        };
+        let name = &after_quote[..name_end];
+        if is_known_closure_command(name) {
+            decl_names.insert(DeclId::new(decl_id), name.to_string());
+        }
+    }
+
+    decl_names
+}
+
 /// Recursively fetch IR for all closures referenced in an IR block
 fn fetch_closure_irs(
     engine: &EngineInterface,
     ir_block: &IrBlock,
     closure_irs: &mut HashMap<BlockId, IrBlock>,
+    decl_names: &mut HashMap<DeclId, String>,
     span: Span,
 ) -> Result<(), LabeledError> {
     use crate::compiler::extract_closure_block_ids;
@@ -69,13 +112,11 @@ fn fetch_closure_irs(
             continue; // Already fetched
         }
 
-        let nested_ir = engine.get_block_ir(block_id).map_err(|e| {
-            LabeledError::new("Failed to get IR for nested closure")
-                .with_label(format!("Block {}: {}", block_id.get(), e), span)
-        })?;
+        let (nested_ir, nested_decl_names) = fetch_block_ir(engine, block_id, span)?;
+        decl_names.extend(nested_decl_names);
 
         // Recursively fetch any closures referenced by this closure
-        fetch_closure_irs(engine, &nested_ir, closure_irs, span)?;
+        fetch_closure_irs(engine, &nested_ir, closure_irs, decl_names, span)?;
 
         closure_irs.insert(block_id, nested_ir);
     }
@@ -107,7 +148,10 @@ fn lower_capture_literals(
     Ok(captures)
 }
 
-fn parse_view_ir_json(json: &str, span: Span) -> Result<IrBlock, LabeledError> {
+fn parse_view_ir_json(
+    json: &str,
+    span: Span,
+) -> Result<(IrBlock, HashMap<DeclId, String>), LabeledError> {
     let value: serde_json::Value = serde_json::from_str(json).map_err(|e| {
         LabeledError::new("Failed to parse 'view ir --json' output").with_label(e.to_string(), span)
     })?;
@@ -118,14 +162,28 @@ fn parse_view_ir_json(json: &str, span: Span) -> Result<IrBlock, LabeledError> {
     let ir_block: IrBlock = serde_json::from_value(ir_value.clone()).map_err(|e| {
         LabeledError::new("Failed to decode 'view ir --json' block").with_label(e.to_string(), span)
     })?;
-    Ok(ir_block)
+    let formatted_instructions = value
+        .get("formatted_instructions")
+        .and_then(|formatted| formatted.as_array())
+        .map(|lines| {
+            lines
+                .iter()
+                .filter_map(|line| line.as_str().map(str::to_string))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    Ok((
+        ir_block,
+        extract_decl_names_from_formatted_instructions(&formatted_instructions),
+    ))
 }
 
-fn fetch_decl_ir(
+fn fetch_view_ir_json(
     engine: &EngineInterface,
-    decl_id: DeclId,
+    eval: EvaluatedCall,
     span: Span,
-) -> Result<IrBlock, LabeledError> {
+) -> Result<(IrBlock, HashMap<DeclId, String>), LabeledError> {
     let view_ir_decl = engine
         .find_decl("view ir")
         .map_err(|e| {
@@ -135,11 +193,6 @@ fn fetch_decl_ir(
             LabeledError::new("Required command 'view ir' not found")
                 .with_label("User-defined functions require view ir", span)
         })?;
-
-    let mut eval = EvaluatedCall::new(span);
-    eval.add_flag("json".into_spanned(span));
-    eval.add_flag("decl-id".into_spanned(span));
-    eval.add_positional(Value::int(decl_id.get() as i64, span));
 
     let data = engine
         .call_decl(view_ir_decl, eval, PipelineData::empty(), true, false)
@@ -160,19 +213,44 @@ fn fetch_decl_ir(
     parse_view_ir_json(&json, span)
 }
 
+fn fetch_block_ir(
+    engine: &EngineInterface,
+    block_id: BlockId,
+    span: Span,
+) -> Result<(IrBlock, HashMap<DeclId, String>), LabeledError> {
+    let mut eval = EvaluatedCall::new(span);
+    eval.add_flag("json".into_spanned(span));
+    eval.add_positional(Value::int(block_id.get() as i64, span));
+    fetch_view_ir_json(engine, eval, span)
+}
+
+fn fetch_decl_ir(
+    engine: &EngineInterface,
+    decl_id: DeclId,
+    span: Span,
+) -> Result<(IrBlock, HashMap<DeclId, String>), LabeledError> {
+    let mut eval = EvaluatedCall::new(span);
+    eval.add_flag("json".into_spanned(span));
+    eval.add_flag("decl-id".into_spanned(span));
+    eval.add_positional(Value::int(decl_id.get() as i64, span));
+    fetch_view_ir_json(engine, eval, span)
+}
+
 fn collect_user_function_irs(
     engine: &EngineInterface,
     ir_block: &IrBlock,
     closure_irs: &mut HashMap<BlockId, IrBlock>,
-    decl_names: &HashMap<DeclId, String>,
+    decl_names: &mut HashMap<DeclId, String>,
     span: Span,
 ) -> Result<HashMap<DeclId, IrBlock>, LabeledError> {
     use crate::compiler::extract_call_decl_ids;
 
-    let mut pending = Vec::new();
-    let mut seen = HashSet::new();
-
-    let scan_block = |block: &IrBlock, seen: &mut HashSet<DeclId>, pending: &mut Vec<DeclId>| {
+    fn scan_block(
+        block: &IrBlock,
+        decl_names: &HashMap<DeclId, String>,
+        seen: &mut HashSet<DeclId>,
+        pending: &mut Vec<DeclId>,
+    ) {
         for decl_id in extract_call_decl_ids(block) {
             if decl_names.contains_key(&decl_id) {
                 continue;
@@ -181,24 +259,28 @@ fn collect_user_function_irs(
                 pending.push(decl_id);
             }
         }
-    };
+    }
 
-    scan_block(ir_block, &mut seen, &mut pending);
+    let mut pending = Vec::new();
+    let mut seen = HashSet::new();
+
+    scan_block(ir_block, decl_names, &mut seen, &mut pending);
     for ir in closure_irs.values() {
-        scan_block(ir, &mut seen, &mut pending);
+        scan_block(ir, decl_names, &mut seen, &mut pending);
     }
 
     let mut user_irs = HashMap::new();
     let mut scanned_closures: HashSet<BlockId> = closure_irs.keys().copied().collect();
 
     while let Some(decl_id) = pending.pop() {
-        let ir = fetch_decl_ir(engine, decl_id, span)?;
-        scan_block(&ir, &mut seen, &mut pending);
+        let (ir, fetched_decl_names) = fetch_decl_ir(engine, decl_id, span)?;
+        decl_names.extend(fetched_decl_names);
+        scan_block(&ir, decl_names, &mut seen, &mut pending);
 
-        fetch_closure_irs(engine, &ir, closure_irs, span)?;
+        fetch_closure_irs(engine, &ir, closure_irs, decl_names, span)?;
         for (block_id, closure_ir) in closure_irs.iter() {
             if scanned_closures.insert(*block_id) {
-                scan_block(closure_ir, &mut seen, &mut pending);
+                scan_block(closure_ir, decl_names, &mut seen, &mut pending);
             }
         }
 
@@ -684,20 +766,31 @@ fn run_attach(
     let probe_context = ProbeContext::new(prog_type, &target);
 
     // Get IR block from engine via plugin protocol
-    let ir_block = engine.get_block_ir(closure.item.block_id).map_err(|e| {
-        LabeledError::new("Failed to get IR for closure").with_label(e.to_string(), closure.span)
-    })?;
+    let (ir_block, mut ir_decl_names) =
+        fetch_block_ir(engine, closure.item.block_id, closure.span)?;
 
     // Build decl_id -> command name mapping for known commands
-    let decl_names = build_decl_names(engine)?;
+    let mut decl_names = build_decl_names(engine)?;
+    decl_names.extend(ir_decl_names.drain());
 
     // Fetch IR for any nested closures (used by where, each, etc.)
     let mut closure_irs = HashMap::new();
-    fetch_closure_irs(engine, &ir_block, &mut closure_irs, call.head)?;
+    fetch_closure_irs(
+        engine,
+        &ir_block,
+        &mut closure_irs,
+        &mut decl_names,
+        call.head,
+    )?;
 
     // Fetch IR for any user-defined functions referenced by the closure or nested closures.
-    let user_ir_blocks =
-        collect_user_function_irs(engine, &ir_block, &mut closure_irs, &decl_names, call.head)?;
+    let user_ir_blocks = collect_user_function_irs(
+        engine,
+        &ir_block,
+        &mut closure_irs,
+        &mut decl_names,
+        call.head,
+    )?;
 
     let captures = lower_capture_literals(&closure)?;
 
@@ -1019,6 +1112,25 @@ mod tests {
     use nu_protocol::ast::{CellPath, Comparison, Math, Operator, PathMember};
     use nu_protocol::casing::Casing;
     use nu_protocol::{RegId, Span, VarId};
+
+    #[test]
+    fn test_extract_decl_names_from_formatted_instructions_filters_to_known_commands() {
+        let decl_names = super::extract_decl_names_from_formatted_instructions(&[
+            r#"call                   decl 488 "global-define", %0"#.to_string(),
+            r#"call                   decl 489 "project-entry", %1"#.to_string(),
+            r#"call                   decl 490 "count", %2"#.to_string(),
+            r#"call                   decl 491 "get", %3"#.to_string(),
+        ]);
+
+        assert_eq!(
+            decl_names,
+            HashMap::from([
+                (DeclId::new(488), "global-define".to_string()),
+                (DeclId::new(490), "count".to_string()),
+                (DeclId::new(491), "get".to_string()),
+            ])
+        );
+    }
 
     fn make_ctx_path_program(cell_path: CellPath) -> HirProgram {
         let ctx_var = VarId::new(0);
