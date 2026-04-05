@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::mir::{CtxField, MirType, StructField};
+use std::collections::HashMap;
 
 #[test]
 fn test_hello_world_creation() {
@@ -67,6 +68,7 @@ fn test_program_type_supports_probe_intrinsics() {
 fn test_program_type_supports_probe_capabilities() {
     assert!(EbpfProgramType::Tracepoint.supports_capability(ProgramCapability::Emit));
     assert!(EbpfProgramType::Fentry.supports_capability(ProgramCapability::KfuncCalls));
+    assert!(EbpfProgramType::Kprobe.supports_capability(ProgramCapability::StackTraces));
 }
 
 #[test]
@@ -173,4 +175,123 @@ fn test_counter_key_schema_filters_synthetic_padding_fields() {
     assert_eq!(fields[0].offset, 0);
     assert_eq!(fields[1].name, "b");
     assert_eq!(fields[1].offset, 8);
+}
+
+#[test]
+fn test_validate_runtime_artifacts_rejects_event_schema_without_ringbuf_map() {
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Kprobe,
+        "sys_clone",
+        "test",
+        vec![],
+        0,
+        vec![],
+        vec![],
+        vec![],
+        Some(EventSchema {
+            fields: vec![],
+            total_size: 8,
+        }),
+        None,
+        HashMap::new(),
+    );
+
+    let err = program
+        .validate_runtime_artifacts()
+        .expect_err("expected missing ring buffer validation error");
+
+    assert!(
+        matches!(err, CompileError::InvalidProgram(msg) if msg.contains("event schema requires runtime map 'events'"))
+    );
+}
+
+#[test]
+fn test_validate_runtime_artifacts_rejects_bytes_counter_schema_size_mismatch() {
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Kprobe,
+        "sys_clone",
+        "test",
+        vec![],
+        0,
+        vec![EbpfMap {
+            name: BYTES_COUNTER_MAP_NAME.to_string(),
+            def: BpfMapDef::hash(8, 8, 10240),
+        }],
+        vec![],
+        vec![],
+        None,
+        Some(CounterKeySchema::Bytes { size: 16 }),
+        HashMap::new(),
+    );
+
+    let err = program
+        .validate_runtime_artifacts()
+        .expect_err("expected bytes_counters schema mismatch");
+
+    assert!(
+        matches!(err, CompileError::InvalidProgram(msg) if msg.contains("schema size 16") && msg.contains("key size 8"))
+    );
+}
+
+#[test]
+fn test_validate_runtime_artifacts_rejects_unexpected_ringbuf_name() {
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Kprobe,
+        "sys_clone",
+        "test",
+        vec![],
+        0,
+        vec![EbpfMap {
+            name: "custom_events".to_string(),
+            def: BpfMapDef::ring_buffer(4096),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+    );
+
+    let err = program
+        .validate_runtime_artifacts()
+        .expect_err("expected reserved ring buffer naming error");
+
+    assert!(
+        matches!(err, CompileError::InvalidProgram(msg) if msg.contains("ring buffer runtime maps must be named 'events'"))
+    );
+}
+
+#[test]
+fn test_validate_runtime_artifacts_rejects_missing_emit_capability_for_events_map() {
+    const LIMITED_CAPABILITIES: &[ProgramCapability] = &[ProgramCapability::Counters];
+
+    let limited_program = ProgramTypeInfo {
+        canonical_prefix: "limited",
+        supported_capabilities: LIMITED_CAPABILITIES,
+        ..*EbpfProgramType::Kprobe.info()
+    };
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Kprobe,
+        "sys_clone",
+        "test",
+        vec![],
+        0,
+        vec![EbpfMap {
+            name: RINGBUF_MAP_NAME.to_string(),
+            def: BpfMapDef::ring_buffer(4096),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+    );
+
+    let err = program
+        .validate_runtime_artifacts_for_info(&limited_program)
+        .expect_err("expected emit capability error");
+
+    assert!(
+        matches!(err, CompileError::InvalidProgram(msg) if msg.contains("limited programs do not support event emission"))
+    );
 }

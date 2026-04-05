@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashSet;
 
 impl EbpfProgram {
     /// Create a new eBPF program from a builder
@@ -114,9 +115,233 @@ impl EbpfProgram {
         format!("{}/{}", self.prog_type.section_prefix(), self.target)
     }
 
+    pub fn validate_runtime_artifacts(&self) -> Result<(), CompileError> {
+        self.validate_runtime_artifacts_for_info(self.prog_type.info())
+    }
+
+    pub(crate) fn validate_runtime_artifacts_for_info(
+        &self,
+        program: &ProgramTypeInfo,
+    ) -> Result<(), CompileError> {
+        fn invalid(msg: impl Into<String>) -> CompileError {
+            CompileError::InvalidProgram(msg.into())
+        }
+
+        fn require_capability(
+            program: &ProgramTypeInfo,
+            capability: ProgramCapability,
+            artifact: &str,
+        ) -> Result<(), CompileError> {
+            if program.supported_capabilities.contains(&capability) {
+                return Ok(());
+            }
+            Err(invalid(format!(
+                "{} programs do not support {} required by {}",
+                program.canonical_prefix,
+                capability.description(),
+                artifact
+            )))
+        }
+
+        fn map_type_name(map_type: u32) -> &'static str {
+            match map_type {
+                x if x == BpfMapType::Hash as u32 => "Hash",
+                x if x == BpfMapType::Array as u32 => "Array",
+                x if x == BpfMapType::ProgArray as u32 => "ProgArray",
+                x if x == BpfMapType::PerfEventArray as u32 => "PerfEventArray",
+                x if x == BpfMapType::PerCpuHash as u32 => "PerCpuHash",
+                x if x == BpfMapType::PerCpuArray as u32 => "PerCpuArray",
+                x if x == BpfMapType::StackTrace as u32 => "StackTrace",
+                x if x == BpfMapType::RingBuf as u32 => "RingBuf",
+                _ => "Unknown",
+            }
+        }
+
+        fn is_hash_runtime_map(map_type: u32) -> bool {
+            map_type == BpfMapType::Hash as u32 || map_type == BpfMapType::PerCpuHash as u32
+        }
+
+        let mut seen_names = HashSet::new();
+        let mut events_map = None;
+        let mut bytes_counter_map = None;
+
+        for map in &self.maps {
+            if !seen_names.insert(map.name.as_str()) {
+                return Err(invalid(format!("duplicate map name '{}'", map.name)));
+            }
+
+            match map.name.as_str() {
+                RINGBUF_MAP_NAME => {
+                    require_capability(program, ProgramCapability::Emit, "runtime map 'events'")?;
+                    if map.def.map_type != BpfMapType::RingBuf as u32 {
+                        return Err(invalid(format!(
+                            "runtime map '{}' must be a RingBuf, got {}",
+                            map.name,
+                            map_type_name(map.def.map_type)
+                        )));
+                    }
+                    events_map = Some(map);
+                }
+                COUNTER_MAP_NAME => {
+                    require_capability(
+                        program,
+                        ProgramCapability::Counters,
+                        "runtime map 'counters'",
+                    )?;
+                    if !is_hash_runtime_map(map.def.map_type)
+                        || map.def.key_size != 8
+                        || map.def.value_size != 8
+                    {
+                        return Err(invalid(format!(
+                            "runtime map '{}' must be a Hash/PerCpuHash with 8-byte keys and values",
+                            map.name
+                        )));
+                    }
+                }
+                STRING_COUNTER_MAP_NAME => {
+                    require_capability(
+                        program,
+                        ProgramCapability::Counters,
+                        "runtime map 'str_counters'",
+                    )?;
+                    if !is_hash_runtime_map(map.def.map_type)
+                        || map.def.key_size != 16
+                        || map.def.value_size != 8
+                    {
+                        return Err(invalid(format!(
+                            "runtime map '{}' must be a Hash/PerCpuHash with 16-byte keys and 8-byte values",
+                            map.name
+                        )));
+                    }
+                }
+                BYTES_COUNTER_MAP_NAME => {
+                    require_capability(
+                        program,
+                        ProgramCapability::Counters,
+                        "runtime map 'bytes_counters'",
+                    )?;
+                    if !is_hash_runtime_map(map.def.map_type) || map.def.value_size != 8 {
+                        return Err(invalid(format!(
+                            "runtime map '{}' must be a Hash/PerCpuHash with 8-byte values",
+                            map.name
+                        )));
+                    }
+                    if map.def.key_size == 0 {
+                        return Err(invalid(
+                            "runtime map 'bytes_counters' must have a non-zero key size",
+                        ));
+                    }
+                    bytes_counter_map = Some(map);
+                }
+                HISTOGRAM_MAP_NAME => {
+                    require_capability(
+                        program,
+                        ProgramCapability::Histograms,
+                        "runtime map 'histogram'",
+                    )?;
+                    if !is_hash_runtime_map(map.def.map_type)
+                        || map.def.key_size != 8
+                        || map.def.value_size != 8
+                    {
+                        return Err(invalid(format!(
+                            "runtime map '{}' must be a Hash/PerCpuHash with 8-byte keys and values",
+                            map.name
+                        )));
+                    }
+                }
+                TIMESTAMP_MAP_NAME => {
+                    require_capability(
+                        program,
+                        ProgramCapability::Timers,
+                        "runtime map 'timestamps'",
+                    )?;
+                    if !is_hash_runtime_map(map.def.map_type)
+                        || map.def.key_size != 8
+                        || map.def.value_size != 8
+                    {
+                        return Err(invalid(format!(
+                            "runtime map '{}' must be a Hash/PerCpuHash with 8-byte keys and values",
+                            map.name
+                        )));
+                    }
+                }
+                KSTACK_MAP_NAME | USTACK_MAP_NAME => {
+                    require_capability(
+                        program,
+                        ProgramCapability::StackTraces,
+                        &format!("runtime map '{}'", map.name),
+                    )?;
+                    if map.def.map_type != BpfMapType::StackTrace as u32 {
+                        return Err(invalid(format!(
+                            "runtime map '{}' must be a StackTrace map, got {}",
+                            map.name,
+                            map_type_name(map.def.map_type)
+                        )));
+                    }
+                }
+                _ => match map.def.map_type {
+                    x if x == BpfMapType::RingBuf as u32 => {
+                        return Err(invalid(format!(
+                            "ring buffer runtime maps must be named '{}', got '{}'",
+                            RINGBUF_MAP_NAME, map.name
+                        )));
+                    }
+                    x if x == BpfMapType::StackTrace as u32 => {
+                        return Err(invalid(format!(
+                            "stack trace runtime maps must be named '{}' or '{}', got '{}'",
+                            KSTACK_MAP_NAME, USTACK_MAP_NAME, map.name
+                        )));
+                    }
+                    x if x == BpfMapType::ProgArray as u32 => {
+                        require_capability(
+                            program,
+                            ProgramCapability::TailCalls,
+                            &format!("tail-call map '{}'", map.name),
+                        )?;
+                        if map.def.key_size != 4 || map.def.value_size != 4 {
+                            return Err(invalid(format!(
+                                "tail-call map '{}' must use 4-byte keys and values",
+                                map.name
+                            )));
+                        }
+                    }
+                    _ => {}
+                },
+            }
+        }
+
+        if self.event_schema.is_some() && events_map.is_none() {
+            return Err(invalid(format!(
+                "event schema requires runtime map '{}'",
+                RINGBUF_MAP_NAME
+            )));
+        }
+
+        if let Some(schema) = &self.bytes_counter_key_schema {
+            let Some(map) = bytes_counter_map else {
+                return Err(invalid(format!(
+                    "bytes counter key schema requires runtime map '{}'",
+                    BYTES_COUNTER_MAP_NAME
+                )));
+            };
+            if map.def.key_size as usize != schema.size() {
+                return Err(invalid(format!(
+                    "bytes counter key schema size {} does not match map '{}' key size {}",
+                    schema.size(),
+                    BYTES_COUNTER_MAP_NAME,
+                    map.def.key_size
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
     /// Generate an ELF object file containing this program
     pub fn to_elf(&self) -> Result<Vec<u8>, CompileError> {
         use std::collections::HashMap;
+
+        self.validate_runtime_artifacts()?;
 
         let mut obj = Object::new(BinaryFormat::Elf, Architecture::Bpf, Endianness::Little);
 

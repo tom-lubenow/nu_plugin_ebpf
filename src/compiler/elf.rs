@@ -17,7 +17,11 @@ use object::{
 use super::CompileError;
 use super::btf::BtfBuilder;
 use super::instruction::EbpfBuilder;
-use super::mir::{BitfieldInfo, CtxField, MapRef, MirType};
+use super::mir::{
+    BYTES_COUNTER_MAP_NAME, BitfieldInfo, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME,
+    KSTACK_MAP_NAME, MapRef, MirType, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME,
+    TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
+};
 
 mod program_impl;
 
@@ -741,6 +745,7 @@ pub enum ProgramCapability {
     Counters,
     Histograms,
     Timers,
+    StackTraces,
     ReadUserString,
     ReadKernelString,
     KfuncCalls,
@@ -755,6 +760,7 @@ impl ProgramCapability {
             ProgramCapability::Counters => "counter aggregations",
             ProgramCapability::Histograms => "histogram aggregations",
             ProgramCapability::Timers => "timer aggregations",
+            ProgramCapability::StackTraces => "stack trace collection",
             ProgramCapability::ReadUserString => "userspace string reads",
             ProgramCapability::ReadKernelString => "kernel string reads",
             ProgramCapability::KfuncCalls => "kfunc calls",
@@ -793,6 +799,7 @@ const DEFAULT_PROBE_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::Counters,
     ProgramCapability::Histograms,
     ProgramCapability::Timers,
+    ProgramCapability::StackTraces,
     ProgramCapability::ReadUserString,
     ProgramCapability::ReadKernelString,
     ProgramCapability::KfuncCalls,

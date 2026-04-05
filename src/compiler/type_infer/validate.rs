@@ -10,6 +10,10 @@ impl<'a> TypeInference<'a> {
             MirInst::ReadStr {
                 user_space: false, ..
             } => Some(ProgramCapability::ReadKernelString),
+            MirInst::LoadCtxField {
+                field: CtxField::KStack | CtxField::UStack,
+                ..
+            } => Some(ProgramCapability::StackTraces),
             MirInst::EmitEvent { .. } | MirInst::EmitRecord { .. } => Some(ProgramCapability::Emit),
             MirInst::Histogram { .. } => Some(ProgramCapability::Histograms),
             MirInst::StartTimer | MirInst::StopTimer { .. } => Some(ProgramCapability::Timers),

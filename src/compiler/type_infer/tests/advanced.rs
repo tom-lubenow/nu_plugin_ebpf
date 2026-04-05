@@ -1116,6 +1116,20 @@ fn test_required_program_capability_classifies_generic_map_lookup() {
 }
 
 #[test]
+fn test_required_program_capability_classifies_stack_trace_ctx_load() {
+    let inst = MirInst::LoadCtxField {
+        dst: VReg(0),
+        field: CtxField::KStack,
+        slot: None,
+    };
+
+    assert_eq!(
+        TypeInference::required_program_capability(&inst),
+        Some(ProgramCapability::StackTraces)
+    );
+}
+
+#[test]
 fn test_validate_program_capability_rejects_kfuncs_when_capability_missing() {
     const LIMITED_CAPABILITIES: &[ProgramCapability] = &[ProgramCapability::Emit];
 

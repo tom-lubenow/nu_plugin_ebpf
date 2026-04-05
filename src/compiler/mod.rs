@@ -82,6 +82,9 @@ pub enum CompileError {
     #[error("Invalid probe specification: {0}")]
     InvalidProbeSpec(String),
 
+    #[error("Invalid program metadata: {0}")]
+    InvalidProgram(String),
+
     #[error(
         "ctx.retval is only available on return probes with return-value access (kretprobe, uretprobe, fexit)"
     )]
