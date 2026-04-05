@@ -214,11 +214,14 @@ That preserved layout also survives record construction, so `if $entry != 0 {
 pointer or opaque bytes. The same null-checked layout now also survives simple
 user-defined function boundaries, so `def project-entry [entry] { $entry }`
 can feed `if $entry != 0 { (project-entry $entry) | emit }` without collapsing
-back to an untyped scalar. When those looked-up aggregates are written back
-through `map-put`, the stored value shape stays canonical too, so map-to-map
-copies preserve the real aggregate layout instead of a pointer wrapper. When
-those maps are attached with the same `--pin` group, active pinned programs now
-reuse that typed schema across program boundaries too.
+back to an untyped scalar. Call-site typed arguments now also specialize simple
+user-defined functions, so callees can project typed fields directly from their
+parameters, for example `def inode-flags [file] { $file.f_inode.i_flags }`.
+When those looked-up aggregates are written back through `map-put`, the stored
+value shape stays canonical too, so map-to-map copies preserve the real
+aggregate layout instead of a pointer wrapper. When those maps are attached
+with the same `--pin` group, active pinned programs now reuse that typed schema
+across program boundaries too.
 
 ## Commands
 

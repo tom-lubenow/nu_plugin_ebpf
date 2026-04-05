@@ -187,6 +187,18 @@ struct RegMetadata {
     closure_block_id: Option<nu_protocol::BlockId>,
 }
 
+#[derive(Debug, Clone, Default)]
+struct SubfunctionArgSeed {
+    type_hint: Option<MirType>,
+    metadata: Option<RegMetadata>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SubfunctionSpecializationKey {
+    decl_id: DeclId,
+    arg_types: Vec<Option<MirType>>,
+}
+
 /// Lowering context for HIR to MIR conversion
 pub struct HirToMirLowering<'a> {
     /// The MIR function being built
@@ -266,10 +278,10 @@ pub struct HirToMirLowering<'a> {
     subfunction_in_progress: HashSet<DeclId>,
     /// Generated subfunctions
     subfunctions: Vec<MirFunction>,
-    /// Registry of generated subfunctions by DeclId
+    /// Registry of generated subfunctions by DeclId plus call-site type seeds
     /// Reserved for future BPF-to-BPF subfunction support
     #[allow(dead_code)]
-    subfunction_registry: HashMap<DeclId, SubfunctionId>,
+    subfunction_registry: HashMap<SubfunctionSpecializationKey, SubfunctionId>,
     /// Call count for each user function (for inline vs subfunction decision)
     /// Reserved for future BPF-to-BPF subfunction support
     #[allow(dead_code)]

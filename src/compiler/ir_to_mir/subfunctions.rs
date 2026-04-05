@@ -1,11 +1,44 @@
 use super::*;
 
 impl<'a> HirToMirLowering<'a> {
+    fn seed_subfunction_param(
+        &mut self,
+        vreg: VReg,
+        seed: Option<&SubfunctionArgSeed>,
+        reg: Option<RegId>,
+        var: Option<VarId>,
+    ) {
+        let Some(seed) = seed else {
+            return;
+        };
+
+        if let Some(ty) = seed.type_hint.clone() {
+            self.vreg_type_hints.insert(vreg, ty);
+        }
+
+        if let Some(meta) = seed.metadata.clone() {
+            if let Some(reg) = reg {
+                self.reg_metadata.insert(reg.get(), meta.clone());
+            }
+            if let Some(var) = var {
+                self.var_metadata.insert(var, meta);
+            }
+        }
+    }
+
     pub(super) fn get_or_create_subfunction(
         &mut self,
         decl_id: DeclId,
+        arg_seeds: &[SubfunctionArgSeed],
     ) -> Result<SubfunctionId, CompileError> {
-        if let Some(&subfn_id) = self.subfunction_registry.get(&decl_id) {
+        let key = SubfunctionSpecializationKey {
+            decl_id,
+            arg_types: arg_seeds
+                .iter()
+                .map(|seed| seed.type_hint.clone())
+                .collect(),
+        };
+        if let Some(&subfn_id) = self.subfunction_registry.get(&key) {
             return Ok(subfn_id);
         }
 
@@ -63,6 +96,7 @@ impl<'a> HirToMirLowering<'a> {
         let old_ctx_param = self.ctx_param;
 
         self.ctx_param = None;
+        let mut next_arg_seed = 0usize;
 
         let param_base = Self::infer_param_base_var_id(hir);
         if needs_input {
@@ -73,6 +107,9 @@ impl<'a> HirToMirLowering<'a> {
             if uses_in {
                 self.var_mappings.insert(IN_VARIABLE_ID, vreg);
             }
+            let seed = arg_seeds.get(next_arg_seed);
+            self.seed_subfunction_param(vreg, seed, input_reg, uses_in.then_some(IN_VARIABLE_ID));
+            next_arg_seed += 1;
         }
 
         if let Some(base) = param_base {
@@ -81,11 +118,15 @@ impl<'a> HirToMirLowering<'a> {
                 let vreg = self.func.alloc_vreg();
                 let var_id = VarId::new(base + i);
                 self.var_mappings.insert(var_id, vreg);
+                let seed = arg_seeds.get(next_arg_seed + i);
+                self.seed_subfunction_param(vreg, seed, None, Some(var_id));
             }
         } else {
-            for var_id in &param_vars {
+            for (idx, var_id) in param_vars.iter().enumerate() {
                 let vreg = self.func.alloc_vreg();
                 self.var_mappings.insert(*var_id, vreg);
+                let seed = arg_seeds.get(next_arg_seed + idx);
+                self.seed_subfunction_param(vreg, seed, None, Some(*var_id));
             }
             for _ in param_vars.len()..param_count {
                 let _unused = self.func.alloc_vreg();
@@ -125,7 +166,7 @@ impl<'a> HirToMirLowering<'a> {
         self.subfunction_hints.push(subfn_hints);
         self.subfunction_stack_slot_hints
             .push(subfn_stack_slot_hints);
-        self.subfunction_registry.insert(decl_id, subfn_id);
+        self.subfunction_registry.insert(key, subfn_id);
 
         Ok(subfn_id)
     }

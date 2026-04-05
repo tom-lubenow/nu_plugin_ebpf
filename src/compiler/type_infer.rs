@@ -54,7 +54,7 @@ mod typing;
 mod validate;
 
 pub type SubfnSchemeMap = HashMap<SubfunctionId, TypeScheme>;
-pub use subfunctions::infer_subfunction_schemes;
+pub use subfunctions::{infer_subfunction_schemes, infer_subfunction_schemes_with_hints};
 
 /// Type inference error
 #[derive(Debug, Clone)]

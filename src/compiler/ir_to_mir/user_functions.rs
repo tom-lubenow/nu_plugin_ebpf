@@ -3,6 +3,12 @@ use crate::compiler::subfn_summaries::{
     SubfunctionReturnSummary, infer_subfunction_return_summaries,
 };
 
+#[derive(Debug, Clone, Copy)]
+struct UserFunctionCallArg {
+    vreg: VReg,
+    source_reg: Option<RegId>,
+}
+
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn infer_param_vars(hir: &HirFunction) -> Vec<VarId> {
         let mut stored = HashSet::new();
@@ -93,12 +99,12 @@ impl<'a> HirToMirLowering<'a> {
             .count()
     }
 
-    pub(super) fn build_args_from_signature(
+    fn build_args_from_signature(
         &mut self,
         sig: &UserFunctionSig,
         src_dst: RegId,
         needs_input: bool,
-    ) -> Result<Vec<VReg>, CompileError> {
+    ) -> Result<Vec<UserFunctionCallArg>, CompileError> {
         let mut args = Vec::new();
         let mut positional_idx = 0usize;
         let mut used_named = HashSet::new();
@@ -108,15 +114,27 @@ impl<'a> HirToMirLowering<'a> {
             match param.kind {
                 UserParamKind::Input => {
                     if needs_input {
-                        args.push(self.input_vreg_for_call(src_dst));
+                        args.push(UserFunctionCallArg {
+                            vreg: self.input_vreg_for_call(src_dst),
+                            source_reg: self.input_source_reg_for_call(src_dst),
+                        });
                     }
                 }
                 UserParamKind::Positional => {
                     if let Some((vreg, _)) = self.positional_args.get(positional_idx) {
-                        args.push(*vreg);
+                        args.push(UserFunctionCallArg {
+                            vreg: *vreg,
+                            source_reg: self
+                                .positional_args
+                                .get(positional_idx)
+                                .map(|(_, reg)| *reg),
+                        });
                         positional_idx += 1;
                     } else if param.optional {
-                        args.push(self.const_vreg(0));
+                        args.push(UserFunctionCallArg {
+                            vreg: self.const_vreg(0),
+                            source_reg: None,
+                        });
                     } else {
                         return Err(CompileError::UnsupportedInstruction(
                             "User-defined function missing positional arguments".into(),
@@ -134,10 +152,16 @@ impl<'a> HirToMirLowering<'a> {
                         })?
                         .to_string();
                     if let Some((vreg, _)) = self.named_args.get(&name) {
-                        used_named.insert(name);
-                        args.push(*vreg);
+                        used_named.insert(name.clone());
+                        args.push(UserFunctionCallArg {
+                            vreg: *vreg,
+                            source_reg: self.named_args.get(&name).map(|(_, reg)| *reg),
+                        });
                     } else if param.optional {
-                        args.push(self.const_vreg(0));
+                        args.push(UserFunctionCallArg {
+                            vreg: self.const_vreg(0),
+                            source_reg: None,
+                        });
                     } else {
                         return Err(CompileError::UnsupportedInstruction(format!(
                             "User-defined function missing named argument '{}'",
@@ -156,10 +180,16 @@ impl<'a> HirToMirLowering<'a> {
                         })?
                         .to_string();
                     if self.named_flags.contains(&name) {
-                        used_flags.insert(name);
-                        args.push(self.const_vreg(1));
+                        used_flags.insert(name.clone());
+                        args.push(UserFunctionCallArg {
+                            vreg: self.const_vreg(1),
+                            source_reg: None,
+                        });
                     } else {
-                        args.push(self.const_vreg(0));
+                        args.push(UserFunctionCallArg {
+                            vreg: self.const_vreg(0),
+                            source_reg: None,
+                        });
                     }
                 }
                 UserParamKind::Rest => {
@@ -197,6 +227,16 @@ impl<'a> HirToMirLowering<'a> {
         Ok(args)
     }
 
+    fn input_source_reg_for_call(&self, src_dst: RegId) -> Option<RegId> {
+        if self.pipeline_input.is_some() {
+            self.pipeline_input_reg
+        } else if self.reg_map.contains_key(&src_dst.get()) {
+            Some(src_dst)
+        } else {
+            None
+        }
+    }
+
     pub(super) fn subfunction_params(&mut self, decl_id: DeclId, func: &HirFunction) -> Vec<VarId> {
         if let Some(params) = self.subfunction_params.get(&decl_id) {
             return params.clone();
@@ -221,7 +261,7 @@ impl<'a> HirToMirLowering<'a> {
         let input_reg = Self::infer_pipeline_input_reg(hir);
         let uses_in = Self::uses_in_variable(hir);
         let needs_input = input_reg.is_some() || uses_in;
-        let args = if let Some(sig) = self.decl_signatures.get(&decl_id) {
+        let call_args = if let Some(sig) = self.decl_signatures.get(&decl_id) {
             self.build_args_from_signature(sig, src_dst, needs_input)?
         } else {
             if !self.named_flags.is_empty() || !self.named_args.is_empty() {
@@ -234,7 +274,10 @@ impl<'a> HirToMirLowering<'a> {
             let input_vreg = self.input_vreg_for_call(src_dst);
             let mut args = Vec::new();
             if needs_input {
-                args.push(input_vreg);
+                args.push(UserFunctionCallArg {
+                    vreg: input_vreg,
+                    source_reg: self.input_source_reg_for_call(src_dst),
+                });
             }
 
             let mut positional_idx = 0usize;
@@ -244,7 +287,13 @@ impl<'a> HirToMirLowering<'a> {
                         "User-defined function missing positional arguments".into(),
                     )
                 })?;
-                args.push(*arg_vreg);
+                args.push(UserFunctionCallArg {
+                    vreg: *arg_vreg,
+                    source_reg: self
+                        .positional_args
+                        .get(positional_idx)
+                        .map(|(_, reg)| *reg),
+                });
                 positional_idx += 1;
             }
 
@@ -257,22 +306,42 @@ impl<'a> HirToMirLowering<'a> {
             args
         };
 
-        if args.len() > 5 {
+        if call_args.len() > 5 {
             return Err(CompileError::UnsupportedInstruction(
                 "BPF subfunctions support at most 5 arguments".into(),
             ));
         }
 
-        let subfn = self.get_or_create_subfunction(decl_id)?;
-        let returned_arg_type = if let Some(SubfunctionReturnSummary::ReturnsArg(idx)) =
+        let arg_seeds: Vec<SubfunctionArgSeed> = call_args
+            .iter()
+            .map(|arg| {
+                let metadata = arg
+                    .source_reg
+                    .and_then(|reg| self.get_metadata(reg).cloned());
+                let type_hint = self
+                    .vreg_type_hints
+                    .get(&arg.vreg)
+                    .cloned()
+                    .or_else(|| metadata.as_ref().and_then(|meta| meta.field_type.clone()));
+                SubfunctionArgSeed {
+                    type_hint,
+                    metadata,
+                }
+            })
+            .collect();
+        let args: Vec<VReg> = call_args.iter().map(|arg| arg.vreg).collect();
+
+        let subfn = self.get_or_create_subfunction(decl_id, &arg_seeds)?;
+        let returned_arg_seed = if let Some(SubfunctionReturnSummary::ReturnsArg(idx)) =
             infer_subfunction_return_summaries(&self.subfunctions)
                 .get(&subfn)
                 .copied()
-            && let Some(arg_vreg) = args.get(idx).copied()
-            && let Some(arg_ty) = self.vreg_type_hints.get(&arg_vreg).cloned()
         {
-            self.vreg_type_hints.insert(dst_vreg, arg_ty.clone());
-            Some(arg_ty)
+            arg_seeds.get(idx).cloned().inspect(|seed| {
+                if let Some(arg_ty) = seed.type_hint.clone() {
+                    self.vreg_type_hints.insert(dst_vreg, arg_ty);
+                }
+            })
         } else {
             None
         };
@@ -283,8 +352,12 @@ impl<'a> HirToMirLowering<'a> {
         });
 
         self.reg_metadata.remove(&src_dst.get());
-        if let Some(arg_ty) = returned_arg_type {
-            self.get_or_create_metadata(src_dst).field_type = Some(arg_ty);
+        if let Some(seed) = returned_arg_seed {
+            if let Some(meta) = seed.metadata {
+                self.reg_metadata.insert(src_dst.get(), meta);
+            } else if let Some(arg_ty) = seed.type_hint {
+                self.get_or_create_metadata(src_dst).field_type = Some(arg_ty);
+            }
         }
         Ok(())
     }

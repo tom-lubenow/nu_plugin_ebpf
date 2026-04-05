@@ -114,6 +114,11 @@ impl<'a> SsaBuilder<'a> {
             generic_map_value_types,
             &mut ssa_hints,
         );
+        for (vreg, ty) in original_hints {
+            if !self.original_vregs.contains(vreg) {
+                ssa_hints.entry(*vreg).or_insert_with(|| ty.clone());
+            }
+        }
 
         (true, ssa_hints)
     }

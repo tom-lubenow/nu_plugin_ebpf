@@ -335,3 +335,38 @@ fn test_construct_ssa_with_type_hints_recovers_phi_types_from_args() {
     };
     assert_eq!(ssa_hints.get(&phi_dst), Some(&MirType::U32));
 }
+
+#[test]
+fn test_construct_ssa_with_type_hints_keeps_parameter_hints() {
+    let mut func = MirFunction::new();
+    let bb0 = func.alloc_block();
+    func.entry = bb0;
+    func.param_count = 1;
+    let _param = func.alloc_vreg();
+    let copied = func.alloc_vreg();
+
+    func.block_mut(bb0).instructions.push(MirInst::Copy {
+        dst: copied,
+        src: MirValue::VReg(VReg(0)),
+    });
+    func.block_mut(bb0).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(copied)),
+    };
+
+    let cfg = CFG::build(&func);
+    let expected = MirType::Ptr {
+        pointee: Box::new(MirType::U64),
+        address_space: AddressSpace::Kernel,
+    };
+    let (changed, ssa_hints) = construct_ssa_with_type_hints(
+        &mut func,
+        &cfg,
+        None,
+        &HashMap::from([(VReg(0), expected.clone())]),
+        &HashMap::new(),
+        &HashMap::new(),
+    );
+
+    assert!(changed);
+    assert_eq!(ssa_hints.get(&VReg(0)), Some(&expected));
+}

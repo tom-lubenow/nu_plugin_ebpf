@@ -65,6 +65,11 @@ impl ConstantFolding {
         }
 
         result.reachable_blocks.insert(cfg.entry);
+        for i in 0..func.param_count {
+            result
+                .values
+                .insert(VReg(i as u32), LatticeValue::Overdefined);
+        }
 
         let mut changed = true;
         while changed {

@@ -125,6 +125,31 @@ fn make_phi_constant_function() -> MirFunction {
     func
 }
 
+fn make_param_branch_function() -> MirFunction {
+    let mut func = MirFunction::new();
+    let bb0 = func.alloc_block();
+    let bb1 = func.alloc_block();
+    let bb2 = func.alloc_block();
+    func.entry = bb0;
+    func.param_count = 1;
+
+    let v0 = VReg(0);
+
+    func.block_mut(bb0).terminator = MirInst::Branch {
+        cond: v0,
+        if_true: bb1,
+        if_false: bb2,
+    };
+    func.block_mut(bb1).terminator = MirInst::Return {
+        val: Some(MirValue::Const(1)),
+    };
+    func.block_mut(bb2).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    func
+}
+
 #[test]
 fn test_fold_constant_add() {
     let mut func = make_constant_add_function();
@@ -201,6 +226,29 @@ fn test_phi_driven_constant_propagation() {
             val: Some(MirValue::Const(6)),
         } => {}
         other => panic!("Expected return const 6, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_param_driven_branch_stays_reachable() {
+    let mut func = make_param_branch_function();
+    let cfg = CFG::build(&func);
+    let cf = ConstantFolding;
+
+    let changed = cf.run(&mut func, &cfg);
+
+    assert!(!changed);
+    assert_eq!(func.blocks.len(), 3);
+    assert!(func.has_block(BlockId(1)));
+    assert!(func.has_block(BlockId(2)));
+    match &func.block(func.entry).terminator {
+        MirInst::Branch {
+            if_true, if_false, ..
+        } => {
+            assert_eq!(*if_true, BlockId(1));
+            assert_eq!(*if_false, BlockId(2));
+        }
+        other => panic!("Expected branch to remain, got {:?}", other),
     }
 }
 

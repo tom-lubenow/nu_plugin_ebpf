@@ -49,58 +49,70 @@ impl<'a> TypeInference<'a> {
 
                 if matches!(op, BinOpKind::Add | BinOpKind::Sub)
                     && let Some(hints) = self.type_hints
-                    && let Some(MirType::Ptr { .. }) = hints.get(dst)
                 {
-                    let ptr_ty = HMType::from_mir_type(
-                        hints
-                            .get(dst)
-                            .expect("destination hint must exist for pointer binop"),
-                    );
                     let hinted_ptr_ty = |vreg: VReg| {
                         hints
                             .get(&vreg)
                             .filter(|ty| matches!(ty, MirType::Ptr { .. }))
                             .map(HMType::from_mir_type)
                     };
-                    self.constrain(dst_ty.clone(), ptr_ty.clone(), format!("binop {:?}", op));
-                    match op {
+                    let dst_ptr_ty = hints
+                        .get(dst)
+                        .filter(|ty| matches!(ty, MirType::Ptr { .. }))
+                        .map(HMType::from_mir_type);
+                    let ptr_ty = dst_ptr_ty.or_else(|| match op {
                         BinOpKind::Add => match (lhs, rhs) {
-                            (MirValue::VReg(lhs_vreg), _) => {
-                                self.constrain(
-                                    self.vreg_type(*lhs_vreg),
-                                    hinted_ptr_ty(*lhs_vreg).unwrap_or_else(|| ptr_ty.clone()),
-                                    "pointer_binop_lhs",
-                                );
-                                self.constrain(rhs_ty, HMType::I64, "pointer_binop_rhs");
-                            }
-                            (_, MirValue::VReg(rhs_vreg)) => {
-                                self.constrain(
-                                    self.vreg_type(*rhs_vreg),
-                                    hinted_ptr_ty(*rhs_vreg).unwrap_or_else(|| ptr_ty.clone()),
-                                    "pointer_binop_rhs_ptr",
-                                );
-                                self.constrain(lhs_ty, HMType::I64, "pointer_binop_lhs");
-                            }
-                            _ => {
-                                self.constrain(lhs_ty, HMType::I64, "pointer_binop_lhs");
-                                self.constrain(rhs_ty, HMType::I64, "pointer_binop_rhs");
-                            }
+                            (MirValue::VReg(lhs_vreg), _) => hinted_ptr_ty(*lhs_vreg),
+                            (_, MirValue::VReg(rhs_vreg)) => hinted_ptr_ty(*rhs_vreg),
+                            _ => None,
                         },
-                        BinOpKind::Sub => {
-                            if let MirValue::VReg(lhs_vreg) = lhs {
-                                self.constrain(
-                                    self.vreg_type(*lhs_vreg),
-                                    hinted_ptr_ty(*lhs_vreg).unwrap_or_else(|| ptr_ty.clone()),
-                                    "pointer_binop_lhs",
-                                );
-                            } else {
-                                self.constrain(lhs_ty, ptr_ty.clone(), "pointer_binop_lhs");
+                        BinOpKind::Sub => match lhs {
+                            MirValue::VReg(lhs_vreg) => hinted_ptr_ty(*lhs_vreg),
+                            _ => None,
+                        },
+                        _ => None,
+                    });
+                    if let Some(ptr_ty) = ptr_ty {
+                        self.constrain(dst_ty.clone(), ptr_ty.clone(), format!("binop {:?}", op));
+                        match op {
+                            BinOpKind::Add => match (lhs, rhs) {
+                                (MirValue::VReg(lhs_vreg), _) => {
+                                    self.constrain(
+                                        self.vreg_type(*lhs_vreg),
+                                        hinted_ptr_ty(*lhs_vreg).unwrap_or_else(|| ptr_ty.clone()),
+                                        "pointer_binop_lhs",
+                                    );
+                                    self.constrain(rhs_ty, HMType::I64, "pointer_binop_rhs");
+                                }
+                                (_, MirValue::VReg(rhs_vreg)) => {
+                                    self.constrain(
+                                        self.vreg_type(*rhs_vreg),
+                                        hinted_ptr_ty(*rhs_vreg).unwrap_or_else(|| ptr_ty.clone()),
+                                        "pointer_binop_rhs_ptr",
+                                    );
+                                    self.constrain(lhs_ty, HMType::I64, "pointer_binop_lhs");
+                                }
+                                _ => {
+                                    self.constrain(lhs_ty, HMType::I64, "pointer_binop_lhs");
+                                    self.constrain(rhs_ty, HMType::I64, "pointer_binop_rhs");
+                                }
+                            },
+                            BinOpKind::Sub => {
+                                if let MirValue::VReg(lhs_vreg) = lhs {
+                                    self.constrain(
+                                        self.vreg_type(*lhs_vreg),
+                                        hinted_ptr_ty(*lhs_vreg).unwrap_or_else(|| ptr_ty.clone()),
+                                        "pointer_binop_lhs",
+                                    );
+                                } else {
+                                    self.constrain(lhs_ty, ptr_ty.clone(), "pointer_binop_lhs");
+                                }
+                                self.constrain(rhs_ty, HMType::I64, "pointer_binop_rhs");
                             }
-                            self.constrain(rhs_ty, HMType::I64, "pointer_binop_rhs");
+                            _ => unreachable!("pointer binop hint only applies to add/sub"),
                         }
-                        _ => unreachable!("pointer binop hint only applies to add/sub"),
+                        return Ok(());
                     }
-                    return Ok(());
                 }
 
                 // Generate constraints based on operator

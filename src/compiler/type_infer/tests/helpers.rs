@@ -59,6 +59,46 @@ fn test_subfn_polymorphic_id() {
 }
 
 #[test]
+fn test_subfn_scheme_inference_uses_parameter_hints() {
+    let mut subfn = MirFunction::with_name("read_param");
+    subfn.param_count = 1;
+    let entry = subfn.alloc_block();
+    subfn.entry = entry;
+    let _param = subfn.alloc_vreg();
+    let out = subfn.alloc_vreg();
+    let scratch = subfn.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    subfn
+        .block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: out,
+            helper: BpfHelper::ProbeReadKernel as u32,
+            args: vec![
+                MirValue::StackSlot(scratch),
+                MirValue::Const(8),
+                MirValue::VReg(VReg(0)),
+            ],
+        });
+    subfn.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let hints = vec![HashMap::from([(
+        VReg(0),
+        MirType::Ptr {
+            pointee: Box::new(MirType::U64),
+            address_space: AddressSpace::Kernel,
+        },
+    )])];
+    let stack_hints = vec![HashMap::new()];
+    let subfn_schemes =
+        infer_subfunction_schemes_with_hints(&[subfn], None, Some(&hints), Some(&stack_hints))
+            .expect("expected subfunction scheme inference to accept parameter pointer hints");
+
+    assert!(subfn_schemes.contains_key(&SubfunctionId(0)));
+}
+
+#[test]
 fn test_type_error_helper_arg_limit() {
     let mut func = make_test_function();
     let mut args = Vec::new();

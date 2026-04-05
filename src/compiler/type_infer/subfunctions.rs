@@ -77,6 +77,15 @@ pub fn infer_subfunction_schemes(
     subfunctions: &[MirFunction],
     probe_ctx: Option<ProbeContext>,
 ) -> Result<SubfnSchemeMap, Vec<TypeError>> {
+    infer_subfunction_schemes_with_hints(subfunctions, probe_ctx, None, None)
+}
+
+pub fn infer_subfunction_schemes_with_hints(
+    subfunctions: &[MirFunction],
+    probe_ctx: Option<ProbeContext>,
+    type_hints: Option<&[HashMap<VReg, MirType>]>,
+    stack_slot_hints: Option<&[HashMap<StackSlotId, MirType>]>,
+) -> Result<SubfnSchemeMap, Vec<TypeError>> {
     let mut errors = Vec::new();
     let mut graph = vec![Vec::new(); subfunctions.len()];
 
@@ -114,8 +123,10 @@ pub fn infer_subfunction_schemes(
     for idx in order {
         let subfn_id = SubfunctionId(idx as u32);
         let func = &subfunctions[idx];
+        let hints = type_hints.and_then(|all| all.get(idx));
+        let slot_hints = stack_slot_hints.and_then(|all| all.get(idx));
         let mut ti =
-            TypeInference::new_with_env(probe_ctx.clone(), Some(&schemes), None, None, None);
+            TypeInference::new_with_env(probe_ctx.clone(), Some(&schemes), None, hints, slot_hints);
         match ti.infer(func) {
             Ok(_) => {
                 let scheme = ti.scheme_for_function(func, Some(&schemes));

@@ -1394,6 +1394,37 @@ mod tests {
         }
     }
 
+    fn make_project_inode_flags_user_function() -> HirFunction {
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: VarId::new(10),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("f_inode"), string_member("i_flags")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 4],
+            ast: vec![None; 4],
+            comments: vec![],
+            register_count: 2,
+            file_count: 0,
+        }
+    }
+
     fn make_map_get_user_function_emit_program(
         map_get_decl: DeclId,
         user_decl: DeclId,
@@ -1494,6 +1525,55 @@ mod tests {
             ast: vec![None; 14],
             comments: vec![],
             register_count: 5,
+            file_count: 0,
+        };
+        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+    }
+
+    fn make_trampoline_user_function_count_program(
+        user_decl: DeclId,
+        count_decl: DeclId,
+    ) -> HirProgram {
+        let ctx_var = VarId::new(0);
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("arg0")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::Call {
+                        decl_id: user_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            ..Default::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: count_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 6],
+            ast: vec![None; 6],
+            comments: vec![],
+            register_count: 2,
             file_count: 0,
         };
         HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
@@ -2595,6 +2675,58 @@ mod tests {
             "user-function emit should preserve top-level record fields, got {:?}",
             schema
         );
+    }
+
+    #[test]
+    fn test_compile_optimized_typed_trampoline_user_function_projection() {
+        let hir = make_trampoline_user_function_count_program(DeclId::new(90), DeclId::new(44));
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+        let mut decl_names = HashMap::new();
+        decl_names.insert(DeclId::new(44), "count".to_string());
+        decl_names.insert(DeclId::new(90), "project-inode-flags".to_string());
+        let user_functions =
+            HashMap::from([(DeclId::new(90), make_project_inode_flags_user_function())]);
+
+        let mut lowering = lower_hir_to_mir_with_hints_and_maps(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            None,
+            &user_functions,
+            &HashMap::new(),
+        )
+        .expect("typed trampoline arg through user function should lower");
+
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
+        );
+        for ((subfn, hints), stack_slots) in lowering
+            .program
+            .subfunctions
+            .iter_mut()
+            .zip(lowering.type_hints.subfunctions.iter_mut())
+            .zip(lowering.type_hints.subfunction_stack_slots.iter())
+        {
+            optimize_with_ssa_hints(
+                subfn,
+                Some(&probe_ctx),
+                hints,
+                stack_slots,
+                &lowering.type_hints.generic_map_value_types,
+            );
+        }
+
+        compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .expect("optimized typed trampoline projection through user function should compile");
     }
 
     #[test]

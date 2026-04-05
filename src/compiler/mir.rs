@@ -75,7 +75,7 @@ pub const KSTACK_MAP_NAME: &str = "kstacks";
 pub const USTACK_MAP_NAME: &str = "ustacks";
 
 /// Bitfield extraction metadata for a logical struct field.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BitfieldInfo {
     pub bit_offset: u32,
     pub bit_size: u32,
@@ -93,7 +93,7 @@ pub enum StringAppendType {
 }
 
 /// MIR type system - internal, inferred from context
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MirType {
     // Primitives
     I8,
@@ -222,7 +222,7 @@ pub enum AddressSpace {
 }
 
 /// Field in a struct type
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructField {
     pub name: String,
     pub ty: MirType,
