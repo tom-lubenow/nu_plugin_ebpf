@@ -13,43 +13,32 @@ use nu_protocol::{
 
 use crate::EbpfPlugin;
 use crate::compiler::{
-    EbpfProgram, ProbeContext, UserFunctionSig, UserParam, UserParamKind,
+    EbpfProgram, ProbeContext, ProgramIntrinsic, UserFunctionSig, UserParam, UserParamKind,
     compile_mir_to_ebpf_with_hints, hir::HirFunction, hir_type_infer, infer_ctx_param,
     lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir, passes::optimize_with_ssa_hints,
 };
 
-/// Known eBPF helper commands that need to be mapped by decl_id
-const EBPF_COMMANDS: &[&str] = &[
-    "emit",
-    "count",
-    "histogram",
-    "start-timer",
-    "stop-timer",
-    "read-str",
-    "read-kernel-str",
-    "kfunc-call",
-    "map-get",
-    "map-put",
-    "map-delete",
-    // Also include common nushell commands used in closures
-    "where",
-    "each",
-    "skip",
-    "first",
-    "last",
-    "get",
-    "select",
-    "reject",
-    "default",
-    "if",
-    "match",
+/// Common Nushell commands used in eBPF closures.
+const NU_CLOSURE_COMMANDS: &[&str] = &[
+    "where", "each", "skip", "first", "last", "get", "select", "reject", "default", "if", "match",
 ];
 
 /// Build a mapping from DeclId to command name for known commands
 fn build_decl_names(engine: &EngineInterface) -> Result<HashMap<DeclId, String>, LabeledError> {
     let mut decl_names = HashMap::new();
 
-    for &cmd_name in EBPF_COMMANDS {
+    for &cmd_name in ProgramIntrinsic::command_names() {
+        if let Some(decl_id) = engine.find_decl(cmd_name).map_err(|e| {
+            LabeledError::new("Failed to look up command").with_label(
+                format!("Could not find '{}': {}", cmd_name, e),
+                Span::unknown(),
+            )
+        })? {
+            decl_names.insert(decl_id, cmd_name.to_string());
+        }
+    }
+
+    for &cmd_name in NU_CLOSURE_COMMANDS {
         if let Some(decl_id) = engine.find_decl(cmd_name).map_err(|e| {
             LabeledError::new("Failed to look up command").with_label(
                 format!("Could not find '{}': {}", cmd_name, e),

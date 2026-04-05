@@ -45,6 +45,21 @@ fn test_program_type_supports_raw_tracepoint_alias() {
 }
 
 #[test]
+fn test_program_intrinsic_command_registry() {
+    assert_eq!(
+        ProgramIntrinsic::from_command_name("map-get"),
+        Some(ProgramIntrinsic::MapGet)
+    );
+    assert!(ProgramIntrinsic::command_names().contains(&"emit"));
+}
+
+#[test]
+fn test_program_type_supports_probe_intrinsics() {
+    assert!(EbpfProgramType::Tracepoint.supports_intrinsic(ProgramIntrinsic::Emit));
+    assert!(EbpfProgramType::Fentry.supports_intrinsic(ProgramIntrinsic::KfuncCall));
+}
+
+#[test]
 fn test_elf_generation() {
     let prog = EbpfProgram::hello_world("sys_clone");
     let elf = prog.to_elf().expect("Failed to generate ELF");

@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::ProgramIntrinsic;
 use crate::compiler::instruction::KfuncSignature;
 use crate::compiler::mir::{
     AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, STRING_COUNTER_MAP_NAME,
@@ -98,6 +99,20 @@ impl<'a> HirToMirLowering<'a> {
         *self.get_or_create_metadata(reg) = RegMetadata::default();
     }
 
+    fn validate_intrinsic_support(&self, intrinsic: ProgramIntrinsic) -> Result<(), CompileError> {
+        let Some(ctx) = self.probe_ctx else {
+            return Ok(());
+        };
+        if ctx.probe_type.supports_intrinsic(intrinsic) {
+            return Ok(());
+        }
+        Err(CompileError::UnsupportedInstruction(format!(
+            "{} is not supported on {} programs",
+            intrinsic.command_name(),
+            ctx.probe_type.canonical_prefix()
+        )))
+    }
+
     pub(super) fn set_call_args(&mut self, args: &HirCallArgs) -> Result<(), CompileError> {
         self.positional_args.clear();
         self.named_flags.clear();
@@ -175,6 +190,10 @@ impl<'a> HirToMirLowering<'a> {
             .get(&decl_id)
             .cloned()
             .unwrap_or_else(|| format!("decl_{}", decl_id.get()));
+
+        if let Some(intrinsic) = ProgramIntrinsic::from_command_name(&cmd_name) {
+            self.validate_intrinsic_support(intrinsic)?;
+        }
 
         match cmd_name.as_str() {
             "emit" => {
