@@ -64,6 +64,16 @@ fn join_bounds(a: Option<PtrBounds>, b: Option<PtrBounds>) -> Option<PtrBounds> 
                 a.limit(),
             ))
         }
+        (Some(a), Some(b))
+            if matches!(a.origin(), PtrOrigin::Packet(_)) && a.origin() == b.origin() =>
+        {
+            Some(PtrBounds::new(
+                a.origin(),
+                a.min().min(b.min()),
+                a.max().max(b.max()),
+                a.limit().max(b.limit()),
+            ))
+        }
         _ => None,
     }
 }

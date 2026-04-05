@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 38
+const TOTAL_STEPS = 39
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -123,9 +123,11 @@ def assert-field-list [actual: list<string>, expected: list<string>, label: stri
     }
 }
 
-def collect-first-stream [target: string, program: closure, trigger: closure] {
+def collect-first-stream [plugin_bin: string, target: string, program: closure, trigger: closure] {
     let job_id = (
         job spawn {
+            plugin add $plugin_bin
+            plugin use ebpf
             ebpf attach -s $target $program | first 1 | job send 0
         }
     )
@@ -185,7 +187,7 @@ plugin add $plugin_bin
 plugin use ebpf
 
 step 1 "stream attach (kprobe:ksys_read)" {
-    collect-first-stream "kprobe:ksys_read" {|ctx|
+    collect-first-stream $plugin_bin "kprobe:ksys_read" {|ctx|
         $ctx.pid | emit
     } { trigger-cargo-read $repo_root }
 }
@@ -197,7 +199,7 @@ step 2 "attach -> counters -> detach" {
 }
 
 step 3 "tracepoint + read-str with null guard" {
-    collect-first-stream "tracepoint:syscalls/sys_enter_openat" {|ctx|
+    collect-first-stream $plugin_bin "tracepoint:syscalls/sys_enter_openat" {|ctx|
         if $ctx.filename != 0 {
             { pid: $ctx.pid, file: ($ctx.filename | read-str --max-len 32) } | emit
         }
@@ -285,7 +287,7 @@ step 15 "fentry trampoline array leaf" {
 }
 
 step 16 "fentry trampoline struct leaf emit decodes record" {
-    let event = (collect-first-stream "fentry:security_file_open" {|ctx|
+    let event = (collect-first-stream $plugin_bin "fentry:security_file_open" {|ctx|
         $ctx.arg0.f_path | emit
     } { trigger-cargo-read $repo_root })
     let columns = ($event | columns | sort)
@@ -366,7 +368,7 @@ step 24 "runtime get on stack-backed aggregate bitfield struct count decodes rec
 }
 
 step 25 "runtime get on stack-backed aggregate bitfield struct emit decodes record" {
-    let event = (collect-first-stream "fentry:wake_up_new_task" {|ctx|
+    let event = (collect-first-stream $plugin_bin "fentry:wake_up_new_task" {|ctx|
         let idx = ($ctx.pid mod 2)
         let clamp = ($ctx.arg0.uclamp_req | get $idx)
         $clamp | emit
@@ -423,7 +425,7 @@ step 29 "typed generic map whole-value count decodes record key" {
 }
 
 step 30 "typed generic map whole-value emit decodes record" {
-    let event = (collect-first-stream "fentry:security_file_open" {|ctx|
+    let event = (collect-first-stream $plugin_bin "fentry:security_file_open" {|ctx|
         $ctx.arg0.f_path | map-put cached_path $ctx.pid --kind hash
         let entry = ($ctx.pid | map-get cached_path --kind hash)
         if $entry != 0 {
@@ -436,7 +438,7 @@ step 30 "typed generic map whole-value emit decodes record" {
 }
 
 step 31 "typed generic map value wrapped into emitted record" {
-    let event = (collect-first-stream "fentry:security_file_open" {|ctx|
+    let event = (collect-first-stream $plugin_bin "fentry:security_file_open" {|ctx|
         $ctx.arg0.f_path | map-put cached_path $ctx.pid --kind hash
         let entry = ($ctx.pid | map-get cached_path --kind hash)
         if $entry != 0 {
@@ -449,7 +451,7 @@ step 31 "typed generic map value wrapped into emitted record" {
 }
 
 step 32 "typed generic map value through user function emits typed record" {
-    let event = (collect-first-stream "fentry:security_file_open" {|ctx|
+    let event = (collect-first-stream $plugin_bin "fentry:security_file_open" {|ctx|
         $ctx.arg0.f_path | map-put cached_path $ctx.pid --kind hash
         let entry = ($ctx.pid | map-get cached_path --kind hash)
         if $entry != 0 {
@@ -527,7 +529,14 @@ step 37 "tc loopback packet length counter" {
     } { trigger-ping-loopback } "tc packet length counter"
 }
 
-step 38 "verify no leaked probes" {
+step 38 "xdp loopback ipv4 protocol via variable payload step" {
+    count-at-least-one "xdp:lo" {|ctx|
+        $ctx.data.eth.payload.ipv4.protocol | count
+        2
+    } { trigger-ping-loopback } "xdp ipv4 protocol counter"
+}
+
+step 39 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

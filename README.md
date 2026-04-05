@@ -186,9 +186,14 @@ Scalar packet byte reads work through normal Nushell indexing such as
 through cell paths such as `$ctx.data.u16be.6` or `$ctx.data.u32be.0`. These
 lower to data_end-guarded packet loads. Fixed header views `eth`, `ipv4`, `udp`,
 and `tcp` are also available, for example `$ctx.data.eth.ethertype` or
-`$ctx.data.eth.dst.0`. `xdp` additionally exposes `ctx.ifindex`,
+`$ctx.data.eth.dst.0`. Those header views also support `payload` stepping:
+`$ctx.data.eth.payload` skips Ethernet and a single VLAN tag when present,
+`$ctx.data.eth.payload.ipv4.payload` skips a runtime-sized IPv4 header using
+the IHL nibble, and `$ctx.data.eth.payload.ipv4.payload.tcp.payload` skips a
+runtime-sized TCP header using the data offset. `xdp` additionally exposes `ctx.ifindex`,
 `ctx.rx_queue_index`, and `ctx.egress_ifindex`. Variable header lengths, VLAN
-parsing, and named packet-program action helpers are still not modeled, so
+options parsing, deeper TCP option parsing, stacked VLAN tags, and named
+packet-program action helpers are still not modeled, so
 XDP closures currently need to return an explicit numeric action code such as
 `2` (`XDP_PASS`), and TC closures currently need to return an explicit numeric
 classifier action code such as `0` (`TC_ACT_OK`).

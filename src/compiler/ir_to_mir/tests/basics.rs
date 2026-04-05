@@ -1802,6 +1802,135 @@ fn test_lower_xdp_eth_ethertype_projection_adds_guarded_packet_load_and_byteswap
 }
 
 #[test]
+fn test_lower_xdp_eth_payload_ipv4_protocol_projection_adds_vlan_and_ipv4_payload_steps() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("data"),
+            string_member("eth"),
+            string_member("payload"),
+            string_member("ipv4"),
+            string_member("protocol"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp eth payload ipv4 protocol projection should lower");
+
+    let blocks = &result.program.main.blocks;
+    let eq_consts: Vec<i64> = blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter_map(|inst| match inst {
+            MirInst::BinOp {
+                op: BinOpKind::Eq,
+                rhs: MirValue::Const(value),
+                ..
+            } => Some(*value),
+            _ => None,
+        })
+        .collect();
+
+    assert!(eq_consts.contains(&0x8100));
+    assert!(eq_consts.contains(&0x88a8));
+    assert!(eq_consts.contains(&0x9100));
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::U16,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::U8,
+                    ..
+                }
+            )))
+    );
+}
+
+#[test]
+fn test_lower_xdp_eth_ipv4_tcp_payload_byte_projection_adds_dynamic_header_steps() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("data"),
+            string_member("eth"),
+            string_member("payload"),
+            string_member("ipv4"),
+            string_member("payload"),
+            string_member("tcp"),
+            string_member("payload"),
+            int_member(0),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp eth/ipv4/tcp payload projection should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::U16,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::U8,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .filter(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Shl,
+                    ..
+                }
+            ))
+            .count()
+            >= 2
+    );
+}
+
+#[test]
 fn test_lower_fexit_aggregate_ret_field_projection() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("retval"), string_member("size")],

@@ -2,6 +2,7 @@ use super::*;
 use crate::compiler::ProgramValueAccess;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
+use crate::compiler::mir::UnaryOpKind;
 use crate::kernel_btf::{
     KernelBtf, TrampolineBitfieldInfo, TrampolineFieldProjection, TrampolineFieldSelector,
     TrampolineValueKind, TrampolineValueSpec, TypeInfo,
@@ -13,6 +14,14 @@ struct TypedProjectionStep {
     ty: MirType,
     bitfield: Option<TrampolineBitfieldInfo>,
     packet_big_endian: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PacketPayloadStepKind {
+    Ethernet,
+    Ipv4,
+    Udp,
+    Tcp,
 }
 
 impl<'a> HirToMirLowering<'a> {
@@ -1676,6 +1685,31 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn packet_payload_step_kind(
+        current_ty: &MirType,
+        member: &PathMember,
+    ) -> Option<PacketPayloadStepKind> {
+        let PathMember::String { val, .. } = member else {
+            return None;
+        };
+        if val != "payload" {
+            return None;
+        }
+
+        match current_ty {
+            MirType::Struct {
+                name: Some(name), ..
+            } => match name.as_str() {
+                "__packet_eth" => Some(PacketPayloadStepKind::Ethernet),
+                "__packet_ipv4" => Some(PacketPayloadStepKind::Ipv4),
+                "__packet_udp" => Some(PacketPayloadStepKind::Udp),
+                "__packet_tcp" => Some(PacketPayloadStepKind::Tcp),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     fn packet_field_is_big_endian(current_ty: &MirType, member: &PathMember) -> bool {
         let MirType::Struct {
             name: Some(name), ..
@@ -1807,6 +1841,274 @@ impl<'a> HirToMirLowering<'a> {
             "u32be" => Some((MirType::U32, 4, true)),
             _ => None,
         }
+    }
+
+    fn emit_packet_scalar_load_at_offset(
+        &mut self,
+        dst_vreg: VReg,
+        base_vreg: VReg,
+        base_offset: usize,
+        load_ty: &MirType,
+        big_endian: bool,
+        path_desc: &str,
+    ) -> Result<(), CompileError> {
+        let packet_ptr_vreg = if base_offset == 0 {
+            base_vreg
+        } else {
+            let ptr_vreg = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(
+                ptr_vreg,
+                MirType::Ptr {
+                    pointee: Box::new(load_ty.clone()),
+                    address_space: AddressSpace::Packet,
+                },
+            );
+            self.emit(MirInst::BinOp {
+                dst: ptr_vreg,
+                op: BinOpKind::Add,
+                lhs: MirValue::VReg(base_vreg),
+                rhs: MirValue::Const(i64::from(Self::trampoline_projection_offset_i32(
+                    base_offset,
+                    path_desc,
+                )?)),
+            });
+            ptr_vreg
+        };
+        let packet_ptr_vreg = self.packet_load_ptr_vreg(
+            packet_ptr_vreg,
+            MirType::Ptr {
+                pointee: Box::new(load_ty.clone()),
+                address_space: AddressSpace::Packet,
+            },
+            dst_vreg,
+        );
+        self.emit_xdp_packet_guarded_load(dst_vreg, packet_ptr_vreg, load_ty, path_desc)?;
+        if big_endian {
+            self.emit_packet_big_endian_scalar_normalize(dst_vreg, load_ty)?;
+        }
+        Ok(())
+    }
+
+    fn emit_normalize_boolean_vreg(&mut self, dst_vreg: VReg, src_vreg: VReg) {
+        let not_vreg = self.func.alloc_vreg();
+        self.vreg_type_hints.insert(not_vreg, MirType::Bool);
+        self.emit(MirInst::UnaryOp {
+            dst: not_vreg,
+            op: UnaryOpKind::Not,
+            src: MirValue::VReg(src_vreg),
+        });
+
+        self.vreg_type_hints.insert(dst_vreg, MirType::Bool);
+        self.emit(MirInst::UnaryOp {
+            dst: dst_vreg,
+            op: UnaryOpKind::Not,
+            src: MirValue::VReg(not_vreg),
+        });
+    }
+
+    fn emit_packet_payload_ptr_step(
+        &mut self,
+        base_vreg: VReg,
+        base_offset: usize,
+        kind: PacketPayloadStepKind,
+        path_desc: &str,
+    ) -> Result<VReg, CompileError> {
+        let base_ptr_vreg = if base_offset == 0 {
+            base_vreg
+        } else {
+            let ptr_vreg = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(
+                ptr_vreg,
+                MirType::Ptr {
+                    pointee: Box::new(MirType::U8),
+                    address_space: AddressSpace::Packet,
+                },
+            );
+            self.emit(MirInst::BinOp {
+                dst: ptr_vreg,
+                op: BinOpKind::Add,
+                lhs: MirValue::VReg(base_vreg),
+                rhs: MirValue::Const(i64::from(Self::trampoline_projection_offset_i32(
+                    base_offset,
+                    path_desc,
+                )?)),
+            });
+            ptr_vreg
+        };
+
+        let payload_ptr_vreg = self.func.alloc_vreg();
+        self.vreg_type_hints.insert(
+            payload_ptr_vreg,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Packet,
+            },
+        );
+
+        match kind {
+            PacketPayloadStepKind::Ethernet => {
+                let ethertype_vreg = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(ethertype_vreg, MirType::U16);
+                self.emit_packet_scalar_load_at_offset(
+                    ethertype_vreg,
+                    base_ptr_vreg,
+                    12,
+                    &MirType::U16,
+                    true,
+                    path_desc,
+                )?;
+
+                let vlan_8021q = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: vlan_8021q,
+                    op: BinOpKind::Eq,
+                    lhs: MirValue::VReg(ethertype_vreg),
+                    rhs: MirValue::Const(0x8100),
+                });
+                self.emit_normalize_boolean_vreg(vlan_8021q, vlan_8021q);
+                let vlan_8021ad = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: vlan_8021ad,
+                    op: BinOpKind::Eq,
+                    lhs: MirValue::VReg(ethertype_vreg),
+                    rhs: MirValue::Const(0x88a8),
+                });
+                self.emit_normalize_boolean_vreg(vlan_8021ad, vlan_8021ad);
+                let vlan_9100 = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: vlan_9100,
+                    op: BinOpKind::Eq,
+                    lhs: MirValue::VReg(ethertype_vreg),
+                    rhs: MirValue::Const(0x9100),
+                });
+                self.emit_normalize_boolean_vreg(vlan_9100, vlan_9100);
+
+                let vlan_present = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(vlan_present, MirType::Bool);
+                self.emit(MirInst::BinOp {
+                    dst: vlan_present,
+                    op: BinOpKind::Or,
+                    lhs: MirValue::VReg(vlan_8021q),
+                    rhs: MirValue::VReg(vlan_8021ad),
+                });
+                self.emit_normalize_boolean_vreg(vlan_present, vlan_present);
+                self.emit(MirInst::BinOp {
+                    dst: vlan_present,
+                    op: BinOpKind::Or,
+                    lhs: MirValue::VReg(vlan_present),
+                    rhs: MirValue::VReg(vlan_9100),
+                });
+                self.emit_normalize_boolean_vreg(vlan_present, vlan_present);
+
+                let vlan_bytes_vreg = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(vlan_bytes_vreg, MirType::U64);
+                self.emit(MirInst::BinOp {
+                    dst: vlan_bytes_vreg,
+                    op: BinOpKind::Shl,
+                    lhs: MirValue::VReg(vlan_present),
+                    rhs: MirValue::Const(2),
+                });
+
+                let eth_payload_base_vreg = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(
+                    eth_payload_base_vreg,
+                    MirType::Ptr {
+                        pointee: Box::new(MirType::U8),
+                        address_space: AddressSpace::Packet,
+                    },
+                );
+                self.emit(MirInst::BinOp {
+                    dst: eth_payload_base_vreg,
+                    op: BinOpKind::Add,
+                    lhs: MirValue::VReg(base_ptr_vreg),
+                    rhs: MirValue::Const(14),
+                });
+                self.emit(MirInst::BinOp {
+                    dst: payload_ptr_vreg,
+                    op: BinOpKind::Add,
+                    lhs: MirValue::VReg(eth_payload_base_vreg),
+                    rhs: MirValue::VReg(vlan_bytes_vreg),
+                });
+            }
+            PacketPayloadStepKind::Ipv4 => {
+                let version_ihl_vreg = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(version_ihl_vreg, MirType::U8);
+                self.emit_packet_scalar_load_at_offset(
+                    version_ihl_vreg,
+                    base_ptr_vreg,
+                    0,
+                    &MirType::U8,
+                    false,
+                    path_desc,
+                )?;
+
+                let ihl_vreg = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(ihl_vreg, MirType::U64);
+                self.emit(MirInst::BinOp {
+                    dst: ihl_vreg,
+                    op: BinOpKind::And,
+                    lhs: MirValue::VReg(version_ihl_vreg),
+                    rhs: MirValue::Const(0x0f),
+                });
+                self.emit(MirInst::BinOp {
+                    dst: ihl_vreg,
+                    op: BinOpKind::Shl,
+                    lhs: MirValue::VReg(ihl_vreg),
+                    rhs: MirValue::Const(2),
+                });
+                self.emit(MirInst::BinOp {
+                    dst: payload_ptr_vreg,
+                    op: BinOpKind::Add,
+                    lhs: MirValue::VReg(base_ptr_vreg),
+                    rhs: MirValue::VReg(ihl_vreg),
+                });
+            }
+            PacketPayloadStepKind::Udp => {
+                self.emit(MirInst::BinOp {
+                    dst: payload_ptr_vreg,
+                    op: BinOpKind::Add,
+                    lhs: MirValue::VReg(base_ptr_vreg),
+                    rhs: MirValue::Const(8),
+                });
+            }
+            PacketPayloadStepKind::Tcp => {
+                let data_offset_flags_vreg = self.func.alloc_vreg();
+                self.vreg_type_hints
+                    .insert(data_offset_flags_vreg, MirType::U16);
+                self.emit_packet_scalar_load_at_offset(
+                    data_offset_flags_vreg,
+                    base_ptr_vreg,
+                    12,
+                    &MirType::U16,
+                    true,
+                    path_desc,
+                )?;
+
+                let data_offset_words_vreg = self.func.alloc_vreg();
+                self.vreg_type_hints
+                    .insert(data_offset_words_vreg, MirType::U64);
+                self.emit(MirInst::BinOp {
+                    dst: data_offset_words_vreg,
+                    op: BinOpKind::Shr,
+                    lhs: MirValue::VReg(data_offset_flags_vreg),
+                    rhs: MirValue::Const(12),
+                });
+                self.emit(MirInst::BinOp {
+                    dst: data_offset_words_vreg,
+                    op: BinOpKind::Shl,
+                    lhs: MirValue::VReg(data_offset_words_vreg),
+                    rhs: MirValue::Const(2),
+                });
+                self.emit(MirInst::BinOp {
+                    dst: payload_ptr_vreg,
+                    op: BinOpKind::Add,
+                    lhs: MirValue::VReg(base_ptr_vreg),
+                    rhs: MirValue::VReg(data_offset_words_vreg),
+                });
+            }
+        }
+
+        Ok(payload_ptr_vreg)
     }
 
     fn emit_packet_big_endian_scalar_normalize(
@@ -2199,6 +2501,38 @@ impl<'a> HirToMirLowering<'a> {
             };
 
             if *address_space == AddressSpace::Packet {
+                if let Some(kind) = Self::packet_payload_step_kind(target_ty, member) {
+                    let payload_ptr_vreg = self.emit_packet_payload_ptr_step(
+                        *base_vreg,
+                        *base_offset,
+                        kind,
+                        path_desc,
+                    )?;
+                    if is_last {
+                        self.vreg_type_hints.insert(
+                            dst_vreg,
+                            MirType::Ptr {
+                                pointee: Box::new(MirType::U8),
+                                address_space: AddressSpace::Packet,
+                            },
+                        );
+                        self.emit(MirInst::Copy {
+                            dst: dst_vreg,
+                            src: MirValue::VReg(payload_ptr_vreg),
+                        });
+                        return Ok(MirType::U8);
+                    }
+
+                    cursor = ValueCursor::Pointer {
+                        base_vreg: payload_ptr_vreg,
+                        address_space: *address_space,
+                        base_offset: 0,
+                        target_ty: MirType::U8,
+                        direct: true,
+                    };
+                    continue;
+                }
+
                 if let Some(TypedProjectionStep {
                     offset: view_offset,
                     ty: view_ty,

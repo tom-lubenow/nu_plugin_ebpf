@@ -355,6 +355,8 @@ Context parameter syntax (recommended):
     {|ctx| ($ctx.data | get 0) } - Read the first packet byte with an auto-generated data_end guard
     {|ctx| $ctx.data.u16be.6 } - Read a big-endian 16-bit packet scalar (here: bytes 12..13)
     {|ctx| $ctx.data.eth.ethertype } - Read the Ethernet ethertype through a typed packet header view
+    {|ctx| $ctx.data.eth.payload.ipv4.protocol } - Step past Ethernet or a single VLAN tag, then parse IPv4
+    {|ctx| $ctx.data.eth.payload.ipv4.payload.tcp.payload.0 } - Step through variable IPv4/TCP headers and read the first TCP payload byte
     XDP-only extras:
     {|ctx| $ctx.ifindex } - Get ingress interface index
     {|ctx| $ctx.rx_queue_index } - Get RX queue index
@@ -363,8 +365,12 @@ Context parameter syntax (recommended):
     such as `2` (XDP_PASS). TC closures currently need to return an explicit
     numeric classifier action code such as `0` (TC_ACT_OK). Packet reads currently support scalar byte access
     through `get`/indexing, direct `u16be`/`u32be` cell-path scalar loads,
-    and fixed header views `eth`, `ipv4`, `udp`, and `tcp`. Variable header
-    lengths and VLAN/options parsing are still in progress.
+    and typed header views `eth`, `ipv4`, `udp`, and `tcp`. Those views also
+    support `payload` stepping: `eth.payload` skips Ethernet and a single
+    VLAN tag when present, `ipv4.payload` uses the runtime IHL, and
+    `tcp.payload` uses the runtime data offset. IPv4/TCP options are skipped
+    correctly by those payload steps, but deeper option parsing and stacked
+    VLAN tags are still not modeled.
 
   Function fields:
     {|ctx| $ctx.arg0 }    - Get function argument 0

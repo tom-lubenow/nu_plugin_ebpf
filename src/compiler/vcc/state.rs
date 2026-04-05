@@ -1203,6 +1203,15 @@ impl VccState {
                         max: l.max.max(r.max),
                         limit: l.limit,
                     }),
+                    (Some(l), Some(r))
+                        if lp.space == VccAddrSpace::Packet && lp.packet_root == rp.packet_root =>
+                    {
+                        Some(VccBounds {
+                            min: l.min.min(r.min),
+                            max: l.max.max(r.max),
+                            limit: l.limit.max(r.limit),
+                        })
+                    }
                     _ => None,
                 };
                 let ringbuf_ref = match (lp.ringbuf_ref, rp.ringbuf_ref) {
