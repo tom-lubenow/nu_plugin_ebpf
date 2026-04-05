@@ -462,6 +462,7 @@ fn verify_mir_program(
     }
 
     let mut program_types = ProgramVregTypes::default();
+    let program_info = probe_ctx.map(|ctx| ctx.probe_type.info());
 
     for (idx, (func, hints, slot_hints)) in all_funcs.into_iter().enumerate() {
         if let Err(errors) = validate_program_capabilities(func, probe_ctx) {
@@ -486,16 +487,22 @@ fn verify_mir_program(
                 HashMap::new()
             }
         };
-        if let Err(errors) =
-            verifier_types::verify_mir_with_subfunction_summaries(func, &types, &subfn_summaries)
-        {
+        if let Err(errors) = verifier_types::verify_mir_with_subfunction_summaries_for_program(
+            func,
+            &types,
+            &subfn_summaries,
+            program_info,
+        ) {
             if let Some(err) = errors.into_iter().next() {
                 return Err(CompileError::VerifierTypeError(err));
             }
         }
-        if let Err(errors) =
-            vcc::verify_mir_with_subfunction_summaries(func, &types, &subfn_summaries)
-        {
+        if let Err(errors) = vcc::verify_mir_with_subfunction_summaries_for_program(
+            func,
+            &types,
+            &subfn_summaries,
+            program_info,
+        ) {
             let message = errors
                 .iter()
                 .map(|err| err.to_string())

@@ -54,7 +54,10 @@ mod refinement;
 use apply::{apply_inst, check_uses_initialized};
 use calls::*;
 pub use driver::verify_mir;
+pub use driver::verify_mir_for_program;
+#[allow(unused_imports)]
 pub(crate) use driver::verify_mir_with_subfunction_summaries;
+pub(crate) use driver::verify_mir_with_subfunction_summaries_for_program;
 use map_layout::*;
 use ops::*;
 use ranges::*;

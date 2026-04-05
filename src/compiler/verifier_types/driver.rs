@@ -1,19 +1,48 @@
 use super::*;
+use crate::compiler::ProgramTypeInfo;
 use crate::compiler::mir::SubfunctionId;
+use crate::compiler::type_infer::validate_program_capabilities_for_info;
 use std::collections::{HashMap, VecDeque};
 
 pub fn verify_mir(
     func: &MirFunction,
     types: &HashMap<VReg, MirType>,
 ) -> Result<(), Vec<VerifierTypeError>> {
-    verify_mir_with_subfunction_summaries(func, types, &HashMap::new())
+    verify_mir_with_subfunction_summaries_for_program(func, types, &HashMap::new(), None)
 }
 
+pub fn verify_mir_for_program(
+    func: &MirFunction,
+    types: &HashMap<VReg, MirType>,
+    program: &ProgramTypeInfo,
+) -> Result<(), Vec<VerifierTypeError>> {
+    verify_mir_with_subfunction_summaries_for_program(func, types, &HashMap::new(), Some(program))
+}
+
+#[allow(dead_code)]
 pub(crate) fn verify_mir_with_subfunction_summaries(
     func: &MirFunction,
     types: &HashMap<VReg, MirType>,
     subfn_summaries: &HashMap<SubfunctionId, SubfunctionReturnSummary>,
 ) -> Result<(), Vec<VerifierTypeError>> {
+    verify_mir_with_subfunction_summaries_for_program(func, types, subfn_summaries, None)
+}
+
+pub(crate) fn verify_mir_with_subfunction_summaries_for_program(
+    func: &MirFunction,
+    types: &HashMap<VReg, MirType>,
+    subfn_summaries: &HashMap<SubfunctionId, SubfunctionReturnSummary>,
+    program: Option<&ProgramTypeInfo>,
+) -> Result<(), Vec<VerifierTypeError>> {
+    if let Some(program) = program {
+        if let Err(errors) = validate_program_capabilities_for_info(func, program) {
+            return Err(errors
+                .into_iter()
+                .map(|err| VerifierTypeError::new(err.message))
+                .collect());
+        }
+    }
+
     let total_vregs = func.vreg_count.max(func.param_count as u32) as usize;
     let mut slot_sizes: HashMap<StackSlotId, i64> = HashMap::new();
     for slot in &func.stack_slots {

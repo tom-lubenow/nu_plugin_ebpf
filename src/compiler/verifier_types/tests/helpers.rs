@@ -1,6 +1,7 @@
 use super::*;
 use crate::compiler::mir::StructField;
 use crate::compiler::subfn_summaries::SubfunctionReturnSummary;
+use crate::compiler::{EbpfProgramType, MapRef, ProgramCapability, ProgramTypeInfo};
 
 #[test]
 fn test_helper_pointer_arg_required() {
@@ -110,6 +111,34 @@ fn test_verify_mir_rejects_subfn_calls_with_more_than_five_args() {
     assert!(
         err.iter()
             .any(|e| e.message.contains("at most 5 arguments")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_program_rejects_missing_tail_call_capability() {
+    const LIMITED_CAPABILITIES: &[ProgramCapability] = &[ProgramCapability::Emit];
+
+    let limited_program = ProgramTypeInfo {
+        supported_capabilities: LIMITED_CAPABILITIES,
+        ..*EbpfProgramType::Kprobe.info()
+    };
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.block_mut(entry).terminator = MirInst::TailCall {
+        prog_map: MapRef {
+            name: "dispatch".to_string(),
+            kind: MapKind::ProgArray,
+        },
+        index: MirValue::Const(0),
+    };
+
+    let err = verify_mir_for_program(&func, &HashMap::new(), &limited_program)
+        .expect_err("expected tail-call capability rejection");
+    assert!(
+        err.iter().any(|e| e.message.contains("tail calls")),
         "unexpected errors: {:?}",
         err
     );

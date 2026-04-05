@@ -12,6 +12,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use crate::compiler::ProgramTypeInfo;
 use crate::compiler::cfg::CFG;
 use crate::compiler::instruction::{
     BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncIterFamily,
@@ -46,6 +47,7 @@ use crate::compiler::mir::{
     SubfunctionId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, UnaryOpKind, VReg,
 };
 use crate::compiler::passes::{ListLowering, MirPass};
+use crate::compiler::type_infer::validate_program_capabilities_for_info;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VccReg(pub u32);
@@ -574,9 +576,18 @@ pub struct VccVerifier {
 include!("vcc/verifier.rs");
 include!("vcc/state.rs");
 pub fn verify_mir(func: &MirFunction, types: &HashMap<VReg, MirType>) -> Result<(), Vec<VccError>> {
-    verify_mir_with_subfunction_summaries(func, types, &HashMap::new())
+    verify_mir_with_subfunction_summaries_for_program(func, types, &HashMap::new(), None)
 }
 
+pub fn verify_mir_for_program(
+    func: &MirFunction,
+    types: &HashMap<VReg, MirType>,
+    program: &ProgramTypeInfo,
+) -> Result<(), Vec<VccError>> {
+    verify_mir_with_subfunction_summaries_for_program(func, types, &HashMap::new(), Some(program))
+}
+
+#[allow(dead_code)]
 pub(crate) fn verify_mir_with_subfunction_summaries(
     func: &MirFunction,
     types: &HashMap<VReg, MirType>,
@@ -585,6 +596,27 @@ pub(crate) fn verify_mir_with_subfunction_summaries(
         crate::compiler::subfn_summaries::SubfunctionReturnSummary,
     >,
 ) -> Result<(), Vec<VccError>> {
+    verify_mir_with_subfunction_summaries_for_program(func, types, subfn_summaries, None)
+}
+
+pub(crate) fn verify_mir_with_subfunction_summaries_for_program(
+    func: &MirFunction,
+    types: &HashMap<VReg, MirType>,
+    subfn_summaries: &HashMap<
+        SubfunctionId,
+        crate::compiler::subfn_summaries::SubfunctionReturnSummary,
+    >,
+    program: Option<&ProgramTypeInfo>,
+) -> Result<(), Vec<VccError>> {
+    if let Some(program) = program {
+        if let Err(errors) = validate_program_capabilities_for_info(func, program) {
+            return Err(errors
+                .into_iter()
+                .map(|err| VccError::new(VccErrorKind::UnsupportedInstruction, err.message))
+                .collect());
+        }
+    }
+
     if func.param_count > 5 {
         return Err(vec![VccError::new(
             VccErrorKind::UnsupportedInstruction,

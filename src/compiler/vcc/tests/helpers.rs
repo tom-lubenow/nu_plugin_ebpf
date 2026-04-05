@@ -1,6 +1,7 @@
 use super::*;
 use crate::compiler::mir::StructField;
 use crate::compiler::subfn_summaries::SubfunctionReturnSummary;
+use crate::compiler::{EbpfProgramType, MapRef, ProgramCapability, ProgramTypeInfo};
 
 #[test]
 fn test_verify_mir_helper_map_lookup_rejects_out_of_bounds_key_pointer() {
@@ -166,6 +167,33 @@ fn test_verify_mir_helper_ringbuf_reserve_submit_ok() {
     let mut types = HashMap::new();
     types.insert(submit_ret, MirType::I64);
     verify_mir(&func, &types).expect("expected ringbuf submit flow to pass");
+}
+
+#[test]
+fn test_verify_mir_for_program_rejects_missing_tail_call_capability() {
+    const LIMITED_CAPABILITIES: &[ProgramCapability] = &[ProgramCapability::Emit];
+
+    let limited_program = ProgramTypeInfo {
+        supported_capabilities: LIMITED_CAPABILITIES,
+        ..*EbpfProgramType::Kprobe.info()
+    };
+    let (mut func, entry) = new_mir_function();
+
+    func.block_mut(entry).terminator = MirInst::TailCall {
+        prog_map: MapRef {
+            name: "dispatch".to_string(),
+            kind: MapKind::ProgArray,
+        },
+        index: MirValue::Const(0),
+    };
+
+    let err = verify_mir_for_program(&func, &HashMap::new(), &limited_program)
+        .expect_err("expected tail-call capability rejection");
+    assert!(
+        err.iter().any(|e| e.message.contains("tail calls")),
+        "unexpected errors: {:?}",
+        err
+    );
 }
 
 #[test]
