@@ -226,9 +226,8 @@ pub fn optimize_with_ssa_hints(
         total_changes += 1;
     }
 
-    let cfg = CFG::build(func);
     let list_lowering = ListLowering;
-    if list_lowering.run(func, &cfg) {
+    if list_lowering.run_with_type_hints(func, hints) {
         total_changes += 1;
     }
 

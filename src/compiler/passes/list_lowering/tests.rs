@@ -1,6 +1,6 @@
 use super::*;
 use crate::compiler::cfg::CFG;
-use crate::compiler::mir::{MirFunction, MirInst, MirValue, StackSlotKind};
+use crate::compiler::mir::{AddressSpace, MirFunction, MirInst, MirType, MirValue, StackSlotKind};
 
 fn collect_insts(func: &MirFunction) -> Vec<&MirInst> {
     let mut insts = Vec::new();
@@ -154,4 +154,126 @@ fn test_emit_event_list_ptr_is_rematerialized() {
         )),
         "EmitEvent should be preceded by Copy from list stack slot"
     );
+}
+
+#[test]
+fn test_run_with_type_hints_seeds_list_push_temps() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(24, 8, StackSlotKind::ListBuffer);
+    let list = func.alloc_vreg();
+    let item = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::ListNew {
+        dst: list,
+        buffer: slot,
+        max_len: 2,
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: item,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::ListPush { list, item });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut func = func;
+    let pass = ListLowering;
+    let mut hints = HashMap::new();
+    assert!(pass.run_with_type_hints(&mut func, &mut hints));
+
+    let list_ptr_ty = MirType::Ptr {
+        pointee: Box::new(MirType::Array {
+            elem: Box::new(MirType::I64),
+            len: 3,
+        }),
+        address_space: AddressSpace::Stack,
+    };
+    let elem_ptr_ty = MirType::Ptr {
+        pointee: Box::new(MirType::I64),
+        address_space: AddressSpace::Stack,
+    };
+
+    let base_ptr = func
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::Copy {
+                dst,
+                src: MirValue::StackSlot(s),
+            } if *s == slot && *dst != list => Some(*dst),
+            _ => None,
+        })
+        .expect("expected rematerialized base list pointer");
+    let elem_ptr = func
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::BinOp {
+                dst,
+                op: BinOpKind::Add,
+                lhs: MirValue::VReg(lhs),
+                ..
+            } if *lhs == base_ptr => Some(*dst),
+            _ => None,
+        })
+        .expect("expected element pointer add");
+
+    assert_eq!(hints.get(&list), Some(&list_ptr_ty));
+    assert_eq!(hints.get(&base_ptr), Some(&list_ptr_ty));
+    assert_eq!(hints.get(&elem_ptr), Some(&elem_ptr_ty));
+}
+
+#[test]
+fn test_run_with_type_hints_seeds_emit_event_tmp_ptr() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(32, 8, StackSlotKind::ListBuffer);
+    let list = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::ListNew {
+        dst: list,
+        buffer: slot,
+        max_len: 3,
+    });
+    func.block_mut(entry).instructions.push(MirInst::EmitEvent {
+        data: list,
+        size: 24,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut func = func;
+    let pass = ListLowering;
+    let mut hints = HashMap::new();
+    assert!(pass.run_with_type_hints(&mut func, &mut hints));
+
+    let list_ptr_ty = MirType::Ptr {
+        pointee: Box::new(MirType::Array {
+            elem: Box::new(MirType::I64),
+            len: 4,
+        }),
+        address_space: AddressSpace::Stack,
+    };
+
+    let tmp_ptr = func
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::Copy {
+                dst,
+                src: MirValue::StackSlot(s),
+            } if *s == slot && *dst != list => Some(*dst),
+            _ => None,
+        })
+        .expect("expected rematerialized emit pointer");
+
+    assert_eq!(hints.get(&tmp_ptr), Some(&list_ptr_ty));
 }

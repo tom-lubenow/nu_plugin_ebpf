@@ -19,6 +19,27 @@ struct ListInfo {
 pub struct ListLowering;
 
 impl ListLowering {
+    fn list_buffer_type(max_len: usize) -> MirType {
+        MirType::Array {
+            elem: Box::new(MirType::I64),
+            len: max_len.saturating_add(1),
+        }
+    }
+
+    fn list_ptr_type(max_len: usize) -> MirType {
+        MirType::Ptr {
+            pointee: Box::new(Self::list_buffer_type(max_len)),
+            address_space: crate::compiler::mir::AddressSpace::Stack,
+        }
+    }
+
+    fn list_elem_ptr_type() -> MirType {
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: crate::compiler::mir::AddressSpace::Stack,
+        }
+    }
+
     fn list_cap_for_slot(func: &MirFunction, slot: StackSlotId) -> Option<usize> {
         func.stack_slots
             .iter()
@@ -147,5 +168,13 @@ impl ListLowering {
         }
 
         cont_id
+    }
+
+    pub(crate) fn run_with_type_hints(
+        &self,
+        func: &mut MirFunction,
+        hints: &mut HashMap<VReg, MirType>,
+    ) -> bool {
+        self.run_with_optional_hints(func, Some(hints))
     }
 }

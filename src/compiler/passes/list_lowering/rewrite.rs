@@ -5,6 +5,16 @@ impl MirPass for ListLowering {
     }
 
     fn run(&self, func: &mut MirFunction, _cfg: &CFG) -> bool {
+        self.run_with_optional_hints(func, None)
+    }
+}
+
+impl ListLowering {
+    pub(super) fn run_with_optional_hints(
+        &self,
+        func: &mut MirFunction,
+        mut hints: Option<&mut HashMap<VReg, MirType>>,
+    ) -> bool {
         let list_info = Self::compute_list_info(func);
         let mut changed = false;
         let mut worklist: VecDeque<BlockId> = func.blocks.iter().map(|b| b.id).collect();
@@ -19,6 +29,9 @@ impl MirPass for ListLowering {
 
                 match inst {
                     MirInst::ListNew { dst, buffer, .. } => {
+                        if let Some(hints) = hints.as_mut() {
+                            hints.insert(dst, Self::list_ptr_type(list_info[&dst].max_len));
+                        }
                         let replacement = vec![
                             MirInst::Copy {
                                 dst,
@@ -37,6 +50,10 @@ impl MirPass for ListLowering {
                         changed = true;
                     }
                     MirInst::ListLen { dst, list } => {
+                        let _ = list;
+                        if let Some(hints) = hints.as_mut() {
+                            hints.insert(dst, MirType::U64);
+                        }
                         let replacement = vec![MirInst::Load {
                             dst,
                             ptr: list,
@@ -67,6 +84,16 @@ impl MirPass for ListLowering {
                         let offset_add = func.alloc_vreg();
                         let elem_ptr = func.alloc_vreg();
                         let new_len = func.alloc_vreg();
+
+                        if let Some(hints) = hints.as_mut() {
+                            hints.insert(len_vreg, MirType::U64);
+                            hints.insert(cond_vreg, MirType::Bool);
+                            hints.insert(base_ptr, Self::list_ptr_type(meta.max_len));
+                            hints.insert(offset_mul, MirType::U64);
+                            hints.insert(offset_add, MirType::U64);
+                            hints.insert(elem_ptr, Self::list_elem_ptr_type());
+                            hints.insert(new_len, MirType::U64);
+                        }
 
                         let cont_id = Self::split_block_at(func, block_id, idx);
                         let push_id = func.alloc_block();
@@ -163,6 +190,9 @@ impl MirPass for ListLowering {
 
                         match idx_value {
                             MirValue::Const(i) => {
+                                if let Some(hints) = hints.as_mut() {
+                                    hints.insert(dst, MirType::I64);
+                                }
                                 if i < 0 || i >= meta.max_len as i64 {
                                     func.block_mut(block_id).instructions[idx] = MirInst::Copy {
                                         dst,
@@ -175,6 +205,11 @@ impl MirPass for ListLowering {
 
                                 let len_vreg = func.alloc_vreg();
                                 let cond_vreg = func.alloc_vreg();
+
+                                if let Some(hints) = hints.as_mut() {
+                                    hints.insert(len_vreg, MirType::U64);
+                                    hints.insert(cond_vreg, MirType::Bool);
+                                }
 
                                 let cont_id = Self::split_block_at(func, block_id, idx);
                                 let in_bounds = func.alloc_block();
@@ -249,6 +284,21 @@ impl MirPass for ListLowering {
                                 let offset_mul = func.alloc_vreg();
                                 let offset_add = func.alloc_vreg();
                                 let elem_ptr = func.alloc_vreg();
+
+                                if let Some(hints) = hints.as_mut() {
+                                    hints.insert(idx_vreg, MirType::I64);
+                                    hints.insert(len_vreg, MirType::U64);
+                                    hints.insert(idx_ge_zero, MirType::Bool);
+                                    hints.insert(idx_lt_len, MirType::Bool);
+                                    hints.insert(idx_lt_cap, MirType::Bool);
+                                    hints.insert(cond_tmp, MirType::Bool);
+                                    hints.insert(cond, MirType::Bool);
+                                    hints.insert(base_ptr, Self::list_ptr_type(meta.max_len));
+                                    hints.insert(offset_mul, MirType::I64);
+                                    hints.insert(offset_add, MirType::I64);
+                                    hints.insert(elem_ptr, Self::list_elem_ptr_type());
+                                    hints.insert(dst, MirType::I64);
+                                }
 
                                 let cont_id = Self::split_block_at(func, block_id, idx);
                                 let in_bounds = func.alloc_block();
@@ -363,6 +413,20 @@ impl MirPass for ListLowering {
                                 let offset_add = func.alloc_vreg();
                                 let elem_ptr = func.alloc_vreg();
 
+                                if let Some(hints) = hints.as_mut() {
+                                    hints.insert(len_vreg, MirType::U64);
+                                    hints.insert(idx_ge_zero, MirType::Bool);
+                                    hints.insert(idx_lt_len, MirType::Bool);
+                                    hints.insert(idx_lt_cap, MirType::Bool);
+                                    hints.insert(cond_tmp, MirType::Bool);
+                                    hints.insert(cond, MirType::Bool);
+                                    hints.insert(base_ptr, Self::list_ptr_type(meta.max_len));
+                                    hints.insert(offset_mul, MirType::I64);
+                                    hints.insert(offset_add, MirType::I64);
+                                    hints.insert(elem_ptr, Self::list_elem_ptr_type());
+                                    hints.insert(dst, MirType::I64);
+                                }
+
                                 let cont_id = Self::split_block_at(func, block_id, idx);
                                 let in_bounds = func.alloc_block();
                                 let out_bounds = func.alloc_block();
@@ -463,6 +527,9 @@ impl MirPass for ListLowering {
                     MirInst::EmitEvent { data, size } => {
                         if let Some(meta) = list_info.get(&data).copied() {
                             let tmp_ptr = func.alloc_vreg();
+                            if let Some(hints) = hints.as_mut() {
+                                hints.insert(tmp_ptr, Self::list_ptr_type(meta.max_len));
+                            }
                             let replacement = vec![
                                 MirInst::Copy {
                                     dst: tmp_ptr,
