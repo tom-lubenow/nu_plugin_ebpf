@@ -57,6 +57,38 @@ mod validate;
 pub type SubfnSchemeMap = HashMap<SubfunctionId, TypeScheme>;
 pub use subfunctions::{infer_subfunction_schemes, infer_subfunction_schemes_with_hints};
 
+pub(crate) fn validate_program_capabilities(
+    func: &MirFunction,
+    probe_ctx: Option<&ProbeContext>,
+) -> Result<(), Vec<TypeError>> {
+    let Some(ctx) = probe_ctx else {
+        return Ok(());
+    };
+    validate_program_capabilities_for_info(func, ctx.probe_type.info())
+}
+
+pub(crate) fn validate_program_capabilities_for_info(
+    func: &MirFunction,
+    program: &ProgramTypeInfo,
+) -> Result<(), Vec<TypeError>> {
+    let mut errors = Vec::new();
+    for block in &func.blocks {
+        for inst in &block.instructions {
+            TypeInference::validate_program_capability_for_info(inst, program, &mut errors);
+        }
+        TypeInference::validate_program_capability_for_info(
+            &block.terminator,
+            program,
+            &mut errors,
+        );
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
 /// Type inference error
 #[derive(Debug, Clone)]
 pub struct TypeError {

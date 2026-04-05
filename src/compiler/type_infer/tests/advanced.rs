@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::type_infer::validate_program_capabilities_for_info;
 use crate::compiler::{EbpfProgramType, MapRef, ProgramCapability, ProgramTypeInfo};
 use std::collections::HashMap;
 
@@ -1134,5 +1135,31 @@ fn test_validate_program_capability_rejects_kfuncs_when_capability_missing() {
 
     assert_eq!(errors.len(), 1);
     assert!(errors[0].message.contains("kfunc calls"));
+    assert!(errors[0].message.contains("kprobe programs"));
+}
+
+#[test]
+fn test_validate_program_capabilities_for_function_rejects_missing_tail_call_capability() {
+    const LIMITED_CAPABILITIES: &[ProgramCapability] = &[ProgramCapability::Emit];
+
+    let limited_program = ProgramTypeInfo {
+        supported_capabilities: LIMITED_CAPABILITIES,
+        ..*EbpfProgramType::Kprobe.info()
+    };
+    let mut func = make_test_function();
+
+    func.block_mut(BlockId(0)).terminator = MirInst::TailCall {
+        prog_map: MapRef {
+            name: "dispatch".to_string(),
+            kind: MapKind::ProgArray,
+        },
+        index: MirValue::Const(0),
+    };
+
+    let errors = validate_program_capabilities_for_info(&func, &limited_program)
+        .expect_err("expected missing tail-call capability to be rejected");
+
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].message.contains("tail calls"));
     assert!(errors[0].message.contains("kprobe programs"));
 }

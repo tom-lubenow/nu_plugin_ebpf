@@ -44,7 +44,9 @@ use crate::compiler::mir_to_lir::lower_mir_to_lir_checked;
 use crate::compiler::passes::{ListLowering, MirPass, SsaDestruction};
 use crate::compiler::subfn_summaries::infer_subfunction_return_summaries;
 use crate::compiler::type_hints::recover_optimized_mir_type_hints;
-use crate::compiler::type_infer::{TypeInference, infer_subfunction_schemes_with_hints};
+use crate::compiler::type_infer::{
+    TypeInference, infer_subfunction_schemes_with_hints, validate_program_capabilities,
+};
 use crate::compiler::vcc;
 use crate::compiler::verifier_types;
 use crate::kernel_btf::KernelBtf;
@@ -462,6 +464,11 @@ fn verify_mir_program(
     let mut program_types = ProgramVregTypes::default();
 
     for (idx, (func, hints, slot_hints)) in all_funcs.into_iter().enumerate() {
+        if let Err(errors) = validate_program_capabilities(func, probe_ctx) {
+            if let Some(err) = errors.into_iter().next() {
+                return Err(crate::compiler::CompileError::TypeError(err));
+            }
+        }
         let expected_return = (idx == 0).then_some(HMType::I64);
         let mut type_infer = TypeInference::new_with_env(
             probe_ctx.cloned(),
