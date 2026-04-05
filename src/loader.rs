@@ -4,12 +4,15 @@
 //! and managing active probes.
 
 use std::collections::{HashMap, HashSet};
+use std::io::ErrorKind;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use aya::maps::{HashMap as AyaHashMap, PerCpuHashMap, RingBuf};
-use aya::programs::{FEntry, FExit, KProbe, RawTracePoint, TracePoint, UProbe, Xdp, XdpFlags};
+use aya::programs::{
+    FEntry, FExit, KProbe, RawTracePoint, SchedClassifier, TracePoint, UProbe, Xdp, XdpFlags, tc,
+};
 use aya::{Btf, Ebpf, EbpfLoader};
 use thiserror::Error;
 
@@ -85,7 +88,7 @@ mod attach;
 #[path = "loader/maps.rs"]
 mod maps;
 
-pub use targets::{UprobeTarget, parse_probe_spec};
+pub use targets::{TcTarget, UprobeTarget, parse_probe_spec};
 
 /// Information about an active probe
 pub struct ActiveProbe {

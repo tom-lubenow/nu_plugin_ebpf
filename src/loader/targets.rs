@@ -1,6 +1,7 @@
 use super::LoadError;
 use crate::compiler::{EbpfProgramType, KernelTargetValidationKind, ProgramTargetKind};
 use crate::kernel_btf::{FunctionCheckResult, KernelBtf};
+use aya::programs::TcAttachType;
 use std::path::Path;
 
 /// Parsed uprobe/uretprobe target information
@@ -76,6 +77,47 @@ impl UprobeTarget {
             function_name,
             offset,
             pid,
+        })
+    }
+}
+
+/// Parsed tc target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TcTarget {
+    /// Network interface name.
+    pub interface: String,
+    /// Attach direction.
+    pub attach_type: TcAttachType,
+}
+
+impl TcTarget {
+    /// Parse a tc target string of the form `iface:ingress` or `iface:egress`.
+    pub fn parse(target: &str) -> Result<Self, LoadError> {
+        let (interface, direction) = target.split_once(':').ok_or_else(|| {
+            LoadError::Load(format!(
+                "Invalid tc target: {target}. Expected format: interface:ingress or interface:egress"
+            ))
+        })?;
+
+        if interface.is_empty() {
+            return Err(LoadError::Load(
+                "TC interface target cannot be empty".to_string(),
+            ));
+        }
+
+        let attach_type = match direction {
+            "ingress" => TcAttachType::Ingress,
+            "egress" => TcAttachType::Egress,
+            _ => {
+                return Err(LoadError::Load(format!(
+                    "Invalid tc attach direction: {direction}. Expected ingress or egress"
+                )));
+            }
+        };
+
+        Ok(Self {
+            interface: interface.to_string(),
+            attach_type,
         })
     }
 }
@@ -179,6 +221,11 @@ fn validate_network_interface_target(target: &str) -> Result<(), LoadError> {
     }
 }
 
+fn validate_tc_target(target: &str) -> Result<(), LoadError> {
+    let parsed = TcTarget::parse(target)?;
+    validate_network_interface_target(&parsed.interface)
+}
+
 fn validate_target_for_program_type(
     prog_type: EbpfProgramType,
     target: &str,
@@ -204,6 +251,7 @@ fn validate_target_for_program_type(
             Ok(())
         }
         ProgramTargetKind::NetworkInterface => validate_network_interface_target(target),
+        ProgramTargetKind::TrafficControlInterface => validate_tc_target(target),
     }
 }
 
@@ -219,6 +267,8 @@ fn validate_target_for_program_type(
 /// - `uprobe:/path/to/binary:function_name`
 /// - `uretprobe:/path/to/binary:function_name`
 /// - `xdp:interface`
+/// - `tc:interface:ingress`
+/// - `tc:interface:egress`
 /// - `uprobe:/path/to/binary:0x1234` (offset-based)
 /// - `uprobe:/path/to/binary:function@PID` (PID-filtered)
 pub fn parse_probe_spec(spec: &str) -> Result<(EbpfProgramType, String), LoadError> {

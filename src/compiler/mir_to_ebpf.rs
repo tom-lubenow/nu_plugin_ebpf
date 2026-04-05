@@ -23,8 +23,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::compiler::CompileError;
 use crate::compiler::cfg::CFG;
 use crate::compiler::elf::{
-    BpfFieldType, BpfMapDef, CounterKeySchema, EbpfMap, EventSchema, MapRelocation, ProbeContext,
-    SchemaField, SubfunctionSymbol,
+    BpfFieldType, BpfMapDef, CounterKeySchema, EbpfMap, EventSchema, MapRelocation,
+    PacketContextKind, ProbeContext, SchemaField, SubfunctionSymbol,
 };
 use crate::compiler::graph_coloring::{
     ColoringResult, GraphColoringAllocator, compute_loop_depths,

@@ -427,6 +427,8 @@ pub enum EbpfProgramType {
     Uretprobe,
     /// XDP program attached to a network interface
     Xdp,
+    /// Traffic-control classifier attached to an interface ingress/egress hook
+    Tc,
 }
 
 impl EbpfProgramType {
@@ -441,6 +443,7 @@ impl EbpfProgramType {
             EbpfProgramType::Uprobe => &UPROBE_INFO,
             EbpfProgramType::Uretprobe => &URETPROBE_INFO,
             EbpfProgramType::Xdp => &XDP_INFO,
+            EbpfProgramType::Tc => &TC_INFO,
         }
     }
 
@@ -459,6 +462,7 @@ impl EbpfProgramType {
             EbpfProgramType::Uprobe,
             EbpfProgramType::Uretprobe,
             EbpfProgramType::Xdp,
+            EbpfProgramType::Tc,
         ]
         .into_iter()
         .find(|program_type| program_type.info().spec_aliases.contains(&prefix))
@@ -556,6 +560,30 @@ impl EbpfProgramType {
     pub fn supports_xdp_md_ctx_fields(&self) -> bool {
         self.info().supports_xdp_md_ctx_fields
     }
+
+    pub fn packet_context_kind(&self) -> Option<PacketContextKind> {
+        self.info().packet_context_kind
+    }
+
+    pub fn supports_packet_len_ctx_field(&self) -> bool {
+        self.info().supports_packet_len_ctx_field
+    }
+
+    pub fn supports_packet_data_ctx_fields(&self) -> bool {
+        self.info().supports_packet_data_ctx_fields
+    }
+
+    pub fn supports_ingress_ifindex_ctx_field(&self) -> bool {
+        self.info().supports_ingress_ifindex_ctx_field
+    }
+
+    pub fn supports_rx_queue_index_ctx_field(&self) -> bool {
+        self.info().supports_rx_queue_index_ctx_field
+    }
+
+    pub fn supports_egress_ifindex_ctx_field(&self) -> bool {
+        self.info().supports_egress_ifindex_ctx_field
+    }
 }
 
 /// Context about the probe being compiled
@@ -627,6 +655,21 @@ impl ProbeContext {
     /// Returns a user-facing error message when a context field is not valid
     /// for this program type.
     pub fn ctx_field_access_error(&self, field: &CtxField) -> Option<String> {
+        let packet_field_error = |field: &CtxField| {
+            if self.probe_type.packet_context_kind().is_some() {
+                format!(
+                    "ctx.{} is not available on {} programs",
+                    field.display_name(),
+                    self.probe_type.canonical_prefix()
+                )
+            } else {
+                format!(
+                    "ctx.{} is only available on packet-context programs (xdp, tc)",
+                    field.display_name()
+                )
+            }
+        };
+
         match field {
             CtxField::Pid | CtxField::Tid | CtxField::Uid | CtxField::Gid | CtxField::Comm
                 if !self.probe_type.supports_task_ctx_fields() =>
@@ -649,18 +692,22 @@ impl ProbeContext {
                     self.probe_type.canonical_prefix()
                 ),
             ),
-            CtxField::PacketLen
-            | CtxField::Data
-            | CtxField::DataEnd
-            | CtxField::IngressIfindex
-            | CtxField::RxQueueIndex
-            | CtxField::EgressIfindex
-                if !self.probe_type.supports_xdp_md_ctx_fields() =>
+            CtxField::PacketLen if !self.probe_type.supports_packet_len_ctx_field() => {
+                Some(packet_field_error(field))
+            }
+            CtxField::Data | CtxField::DataEnd
+                if !self.probe_type.supports_packet_data_ctx_fields() =>
             {
-                Some(format!(
-                    "ctx.{} is only available on xdp programs",
-                    field.display_name()
-                ))
+                Some(packet_field_error(field))
+            }
+            CtxField::IngressIfindex if !self.probe_type.supports_ingress_ifindex_ctx_field() => {
+                Some(packet_field_error(field))
+            }
+            CtxField::RxQueueIndex if !self.probe_type.supports_rx_queue_index_ctx_field() => {
+                Some(packet_field_error(field))
+            }
+            CtxField::EgressIfindex if !self.probe_type.supports_egress_ifindex_ctx_field() => {
+                Some(packet_field_error(field))
             }
             CtxField::Arg(_) if !self.probe_type.supports_ctx_args() => Some(format!(
                 "ctx.{} is only available on function probes with argument access (kprobe, uprobe, fentry, fexit)",
@@ -705,6 +752,7 @@ pub enum ProgramAttachKind {
     Uprobe,
     Uretprobe,
     Xdp,
+    Tc,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -714,6 +762,13 @@ pub enum ProgramTargetKind {
     RawTracepoint,
     UserFunction,
     NetworkInterface,
+    TrafficControlInterface,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PacketContextKind {
+    XdpMd,
+    SkBuff,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -853,6 +908,12 @@ pub struct ProgramTypeInfo {
     pub supports_task_ctx_fields: bool,
     pub supports_cpu_ctx_field: bool,
     pub supports_timestamp_ctx_field: bool,
+    pub packet_context_kind: Option<PacketContextKind>,
+    pub supports_packet_len_ctx_field: bool,
+    pub supports_packet_data_ctx_fields: bool,
+    pub supports_ingress_ifindex_ctx_field: bool,
+    pub supports_rx_queue_index_ctx_field: bool,
+    pub supports_egress_ifindex_ctx_field: bool,
     pub supports_xdp_md_ctx_fields: bool,
     pub supports_stack_ctx_fields: bool,
     pub supports_tracepoint_fields: bool,
@@ -868,6 +929,7 @@ const RAW_TRACEPOINT_SPEC_ALIASES: &[&str] = &["raw_tracepoint", "raw_tp"];
 const UPROBE_SPEC_ALIASES: &[&str] = &["uprobe"];
 const URETPROBE_SPEC_ALIASES: &[&str] = &["uretprobe"];
 const XDP_SPEC_ALIASES: &[&str] = &["xdp"];
+const TC_SPEC_ALIASES: &[&str] = &["tc"];
 const DEFAULT_PROBE_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::Emit,
     ProgramCapability::Counters,
@@ -904,6 +966,12 @@ const KPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: true,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    packet_context_kind: None,
+    supports_packet_len_ctx_field: false,
+    supports_packet_data_ctx_fields: false,
+    supports_ingress_ifindex_ctx_field: false,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
     supports_xdp_md_ctx_fields: false,
     supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
@@ -925,6 +993,12 @@ const KRETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: true,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    packet_context_kind: None,
+    supports_packet_len_ctx_field: false,
+    supports_packet_data_ctx_fields: false,
+    supports_ingress_ifindex_ctx_field: false,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
     supports_xdp_md_ctx_fields: false,
     supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
@@ -946,6 +1020,12 @@ const FENTRY_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: true,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    packet_context_kind: None,
+    supports_packet_len_ctx_field: false,
+    supports_packet_data_ctx_fields: false,
+    supports_ingress_ifindex_ctx_field: false,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
     supports_xdp_md_ctx_fields: false,
     supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
@@ -967,6 +1047,12 @@ const FEXIT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: true,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    packet_context_kind: None,
+    supports_packet_len_ctx_field: false,
+    supports_packet_data_ctx_fields: false,
+    supports_ingress_ifindex_ctx_field: false,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
     supports_xdp_md_ctx_fields: false,
     supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
@@ -988,6 +1074,12 @@ const TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: true,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    packet_context_kind: None,
+    supports_packet_len_ctx_field: false,
+    supports_packet_data_ctx_fields: false,
+    supports_ingress_ifindex_ctx_field: false,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
     supports_xdp_md_ctx_fields: false,
     supports_stack_ctx_fields: true,
     supports_tracepoint_fields: true,
@@ -1009,6 +1101,12 @@ const RAW_TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: true,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    packet_context_kind: None,
+    supports_packet_len_ctx_field: false,
+    supports_packet_data_ctx_fields: false,
+    supports_ingress_ifindex_ctx_field: false,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
     supports_xdp_md_ctx_fields: false,
     supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
@@ -1030,6 +1128,12 @@ const UPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: true,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    packet_context_kind: None,
+    supports_packet_len_ctx_field: false,
+    supports_packet_data_ctx_fields: false,
+    supports_ingress_ifindex_ctx_field: false,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
     supports_xdp_md_ctx_fields: false,
     supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
@@ -1051,6 +1155,12 @@ const URETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: true,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    packet_context_kind: None,
+    supports_packet_len_ctx_field: false,
+    supports_packet_data_ctx_fields: false,
+    supports_ingress_ifindex_ctx_field: false,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
     supports_xdp_md_ctx_fields: false,
     supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
@@ -1072,7 +1182,40 @@ const XDP_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: false,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    packet_context_kind: Some(PacketContextKind::XdpMd),
+    supports_packet_len_ctx_field: true,
+    supports_packet_data_ctx_fields: true,
+    supports_ingress_ifindex_ctx_field: true,
+    supports_rx_queue_index_ctx_field: true,
+    supports_egress_ifindex_ctx_field: true,
     supports_xdp_md_ctx_fields: true,
+    supports_stack_ctx_fields: false,
+    supports_tracepoint_fields: false,
+    is_userspace: false,
+};
+
+const TC_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::Tc,
+    canonical_prefix: "tc",
+    spec_aliases: TC_SPEC_ALIASES,
+    section_prefix: "classifier",
+    section_uses_target: false,
+    attach_kind: ProgramAttachKind::Tc,
+    target_kind: ProgramTargetKind::TrafficControlInterface,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+    supports_task_ctx_fields: false,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    packet_context_kind: Some(PacketContextKind::SkBuff),
+    supports_packet_len_ctx_field: true,
+    supports_packet_data_ctx_fields: true,
+    supports_ingress_ifindex_ctx_field: true,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
+    supports_xdp_md_ctx_fields: false,
     supports_stack_ctx_fields: false,
     supports_tracepoint_fields: false,
     is_userspace: false,
@@ -1089,6 +1232,7 @@ const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "uprobe",
     "uretprobe",
     "xdp",
+    "tc",
 ];
 
 const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[

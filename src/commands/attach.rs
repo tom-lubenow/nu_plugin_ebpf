@@ -318,7 +318,7 @@ impl PluginCommand for EbpfAttach {
     }
 
     fn description(&self) -> &str {
-        "Attach an eBPF program to a kernel hook such as a probe, tracepoint, userspace function, or XDP interface."
+        "Attach an eBPF program to a kernel hook such as a probe, tracepoint, userspace function, or packet hook."
     }
 
     fn extra_description(&self) -> &str {
@@ -332,6 +332,7 @@ Supported attach types:
   - tracepoint, raw_tracepoint
   - uprobe, uretprobe
   - xdp
+  - tc
 
 Context parameter syntax (recommended):
   The closure can take a context parameter to access program context information:
@@ -344,20 +345,23 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.comm }    - Get process command name (first 16 bytes)
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
 
-  XDP fields:
+  Packet-context fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
-    {|ctx| $ctx.packet_len } - Get packet length from xdp_md
-    {|ctx| $ctx.data }    - Get XDP packet data pointer
-    {|ctx| $ctx.data_end } - Get XDP packet end pointer
-    {|ctx| $ctx.ifindex } - Get ingress interface index
-    {|ctx| $ctx.rx_queue_index } - Get RX queue index
-    {|ctx| $ctx.egress_ifindex } - Get egress interface index
+    {|ctx| $ctx.packet_len } - Get packet length from xdp_md or __sk_buff
+    {|ctx| $ctx.data }    - Get packet data pointer
+    {|ctx| $ctx.data_end } - Get packet end pointer
+    {|ctx| $ctx.ingress_ifindex } - Get ingress interface index
     {|ctx| ($ctx.data | get 0) } - Read the first packet byte with an auto-generated data_end guard
     {|ctx| $ctx.data.u16be.6 } - Read a big-endian 16-bit packet scalar (here: bytes 12..13)
     {|ctx| $ctx.data.eth.ethertype } - Read the Ethernet ethertype through a typed packet header view
+    XDP-only extras:
+    {|ctx| $ctx.ifindex } - Get ingress interface index
+    {|ctx| $ctx.rx_queue_index } - Get RX queue index
+    {|ctx| $ctx.egress_ifindex } - Get egress interface index
     Note: XDP closures currently need to return an explicit numeric action code
-    such as `2` (XDP_PASS). Packet reads currently support scalar byte access
+    such as `2` (XDP_PASS). TC closures currently need to return an explicit
+    numeric classifier action code such as `0` (TC_ACT_OK). Packet reads currently support scalar byte access
     through `get`/indexing, direct `u16be`/`u32be` cell-path scalar loads,
     and fixed header views `eth`, `ipv4`, `udp`, and `tcp`. Variable header
     lengths and VLAN/options parsing are still in progress.

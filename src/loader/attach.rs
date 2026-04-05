@@ -181,6 +181,28 @@ impl EbpfState {
                 xdp.attach(&program.target, XdpFlags::SKB_MODE)
                     .map_err(|e| LoadError::Attach(format!("Failed to attach xdp: {e}")))?;
             }
+            ProgramAttachKind::Tc => {
+                let target = TcTarget::parse(&program.target)?;
+                let classifier: &mut SchedClassifier = prog.try_into().map_err(|e| {
+                    LoadError::Load(format!("Failed to convert to SchedClassifier: {e}"))
+                })?;
+                classifier
+                    .load()
+                    .map_err(|e| LoadError::Load(format!("Failed to load tc classifier: {e}")))?;
+                match tc::qdisc_add_clsact(&target.interface) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
+                    Err(e) => {
+                        return Err(LoadError::Attach(format!(
+                            "Failed to add clsact qdisc on {}: {e}",
+                            target.interface
+                        )));
+                    }
+                }
+                classifier
+                    .attach(&target.interface, target.attach_type)
+                    .map_err(|e| LoadError::Attach(format!("Failed to attach tc: {e}")))?;
+            }
         }
 
         // Check for maps

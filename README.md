@@ -5,7 +5,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: Write tracing logic in familiar Nushell syntax
-- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, xdp
+- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, xdp, tc
 - **Aggregations**: Count by key, histograms, timing measurements
 - **Event streaming**: Real-time event output via ring buffers
 - **Map sharing**: Share data between probes with `--pin`
@@ -75,6 +75,9 @@ ebpf attach -s 'fexit:ksys_read' {|ctx| $ctx.retval | emit } | first 1
 
 # Count loopback packets by packet length via XDP, then pass them through
 let id = ebpf attach 'xdp:lo' {|ctx| $ctx.packet_len | count; 2 }
+
+# Count packets at tc ingress on loopback
+let id = ebpf attach 'tc:lo:ingress' {|ctx| $ctx.packet_len | count; 0 }
 ```
 
 ### Count syscalls by process
@@ -164,10 +167,11 @@ The closure receives a context parameter with these fields:
 | `comm` | Process name (16 bytes) | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
 | `cpu` | CPU ID | All |
 | `ktime` | Kernel timestamp (ns) | All |
-| `packet_len` | XDP packet length (`data_end - data`) | xdp |
-| `data` | XDP packet data pointer | xdp |
-| `data_end` | XDP packet end pointer | xdp |
-| `ingress_ifindex` / `ifindex` | XDP ingress interface index | xdp |
+| `packet_len` | Packet length (`data_end - data` on XDP, `skb->len` on TC) | xdp, tc |
+| `data` | Packet data pointer | xdp, tc |
+| `data_end` | Packet end pointer | xdp, tc |
+| `ingress_ifindex` | Ingress interface index | xdp, tc |
+| `ifindex` | XDP ingress interface index alias | xdp |
 | `rx_queue_index` | XDP receive queue index | xdp |
 | `egress_ifindex` | XDP egress interface index | xdp |
 | `arg0`-`argN` | Function arguments | kprobe, uprobe, fentry, fexit |
@@ -175,18 +179,19 @@ The closure receives a context parameter with these fields:
 
 Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/format`.
 
-`xdp` currently exposes `ctx.cpu`, `ctx.ktime`, scalar `xdp_md` fields such as
-`ctx.packet_len`, `ctx.ifindex`, `ctx.ingress_ifindex`, `ctx.rx_queue_index`,
-and `ctx.egress_ifindex`, plus raw packet pointers `ctx.data` and `ctx.data_end`.
+`xdp` and `tc` both expose `ctx.cpu`, `ctx.ktime`, `ctx.packet_len`,
+`ctx.ingress_ifindex`, and raw packet pointers `ctx.data` and `ctx.data_end`.
 Scalar packet byte reads work through normal Nushell indexing such as
 `($ctx.data | get 0)`, and fixed-width big-endian scalars can be read directly
 through cell paths such as `$ctx.data.u16be.6` or `$ctx.data.u32be.0`. These
 lower to data_end-guarded packet loads. Fixed header views `eth`, `ipv4`, `udp`,
 and `tcp` are also available, for example `$ctx.data.eth.ethertype` or
-`$ctx.data.eth.dst.0`. Variable header lengths, VLAN parsing, and named XDP
-action helpers are still not modeled, so
+`$ctx.data.eth.dst.0`. `xdp` additionally exposes `ctx.ifindex`,
+`ctx.rx_queue_index`, and `ctx.egress_ifindex`. Variable header lengths, VLAN
+parsing, and named packet-program action helpers are still not modeled, so
 XDP closures currently need to return an explicit numeric action code such as
-`2` (`XDP_PASS`).
+`2` (`XDP_PASS`), and TC closures currently need to return an explicit numeric
+classifier action code such as `0` (`TC_ACT_OK`).
 
 `kprobe` and `uprobe` expose `ctx.arg0`-`ctx.arg5` through `pt_regs`. `fentry` and
 `fexit` resolve `ctx.argN` and `ctx.retval` through kernel BTF. Scalar and pointer

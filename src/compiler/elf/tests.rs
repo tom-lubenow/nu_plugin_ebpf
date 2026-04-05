@@ -29,6 +29,12 @@ fn test_xdp_section_name() {
 }
 
 #[test]
+fn test_tc_section_name() {
+    let prog = EbpfProgram::from_bytecode(EbpfProgramType::Tc, "lo:ingress", "test", vec![]);
+    assert_eq!(prog.section_name(), "classifier");
+}
+
+#[test]
 fn test_program_type_metadata_for_fexit() {
     let info = EbpfProgramType::Fexit.info();
     assert_eq!(info.canonical_prefix, "fexit");
@@ -52,6 +58,10 @@ fn test_program_type_supports_raw_tracepoint_alias() {
     assert_eq!(
         EbpfProgramType::from_spec_prefix("xdp"),
         Some(EbpfProgramType::Xdp)
+    );
+    assert_eq!(
+        EbpfProgramType::from_spec_prefix("tc"),
+        Some(EbpfProgramType::Tc)
     );
 }
 
@@ -173,12 +183,38 @@ fn test_probe_context_allows_xdp_md_scalar_fields_on_xdp() {
 }
 
 #[test]
-fn test_probe_context_rejects_xdp_md_fields_on_probe_programs() {
+fn test_probe_context_allows_packet_fields_on_tc() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::IngressIfindex)
+            .is_none()
+    );
+}
+
+#[test]
+fn test_probe_context_rejects_xdp_only_packet_fields_on_tc() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let rx_err = ctx
+        .ctx_field_access_error(&CtxField::RxQueueIndex)
+        .expect("expected tc rx_queue_index access error");
+    assert!(rx_err.contains("ctx.rx_queue_index is not available on tc programs"));
+
+    let egress_err = ctx
+        .ctx_field_access_error(&CtxField::EgressIfindex)
+        .expect("expected tc egress_ifindex access error");
+    assert!(egress_err.contains("ctx.egress_ifindex is not available on tc programs"));
+}
+
+#[test]
+fn test_probe_context_rejects_packet_fields_on_probe_programs() {
     let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_openat2");
     let err = ctx
         .ctx_field_access_error(&CtxField::PacketLen)
-        .expect("expected non-xdp packet_len access error");
-    assert!(err.contains("ctx.packet_len is only available on xdp programs"));
+        .expect("expected non-packet packet_len access error");
+    assert!(err.contains("ctx.packet_len is only available on packet-context programs"));
 }
 
 #[test]

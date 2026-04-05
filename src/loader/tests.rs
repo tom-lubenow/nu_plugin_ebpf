@@ -120,6 +120,26 @@ fn test_parse_probe_spec_xdp() {
 }
 
 #[test]
+fn test_parse_probe_spec_tc_ingress() {
+    let (prog_type, target) = parse_probe_spec("tc:lo:ingress").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::Tc);
+    assert_eq!(target, "lo:ingress");
+}
+
+#[test]
+fn test_parse_probe_spec_rejects_unknown_tc_interface() {
+    let err = parse_probe_spec("tc:__nu_plugin_ebpf_no_such_iface__:ingress")
+        .expect_err("expected unknown tc interface error");
+    assert!(matches!(err, LoadError::Load(msg) if msg.contains("Unknown network interface")));
+}
+
+#[test]
+fn test_parse_probe_spec_rejects_invalid_tc_direction() {
+    let err = parse_probe_spec("tc:lo:sideways").expect_err("expected invalid tc direction");
+    assert!(matches!(err, LoadError::Load(msg) if msg.contains("Invalid tc attach direction")));
+}
+
+#[test]
 fn test_parse_probe_spec_rejects_unknown_xdp_interface() {
     let err = parse_probe_spec("xdp:__nu_plugin_ebpf_no_such_iface__")
         .expect_err("expected unknown interface error");

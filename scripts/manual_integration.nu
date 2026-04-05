@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 37
+const TOTAL_STEPS = 38
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -520,7 +520,14 @@ step 36 "xdp loopback ethernet header field counter" {
     } { trigger-ping-loopback } "xdp ethernet ethertype counter"
 }
 
-step 37 "verify no leaked probes" {
+step 37 "tc loopback packet length counter" {
+    count-at-least-one "tc:lo:ingress" {|ctx|
+        $ctx.packet_len | count
+        0
+    } { trigger-ping-loopback } "tc packet length counter"
+}
+
+step 38 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

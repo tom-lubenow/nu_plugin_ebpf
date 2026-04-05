@@ -15,6 +15,29 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 4, 8, 12, 16, 20)
     }
 
+    fn sk_buff_offsets() -> (i16, i16, i16, i16) {
+        // struct __sk_buff {
+        //     __u32 len;
+        //     ...
+        //     __u32 ingress_ifindex;
+        //     __u32 ifindex;
+        //     ...
+        //     __u32 data;
+        //     __u32 data_end;
+        // };
+        (0, 76, 80, 36)
+    }
+
+    fn packet_context_kind(&self) -> Result<PacketContextKind, CompileError> {
+        self.probe_ctx
+            .and_then(|ctx| ctx.probe_type.packet_context_kind())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "packet context fields require a packet-context program type".to_string(),
+                )
+            })
+    }
+
     /// Emit binary operation with register operand
     pub(super) fn emit_binop_reg(
         &mut self,
@@ -462,36 +485,62 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }
-            CtxField::PacketLen => {
-                let (data_offset, data_end_offset, _, _, _, _) = Self::xdp_md_offsets();
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_end_offset));
-                self.instructions
-                    .push(EbpfInsn::ldxw(EbpfReg::R0, EbpfReg::R9, data_offset));
-                self.instructions
-                    .push(EbpfInsn::sub64_reg(dst, EbpfReg::R0));
-            }
+            CtxField::PacketLen => match self.packet_context_kind()? {
+                PacketContextKind::XdpMd => {
+                    let (data_offset, data_end_offset, _, _, _, _) = Self::xdp_md_offsets();
+                    self.instructions
+                        .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_end_offset));
+                    self.instructions
+                        .push(EbpfInsn::ldxw(EbpfReg::R0, EbpfReg::R9, data_offset));
+                    self.instructions
+                        .push(EbpfInsn::sub64_reg(dst, EbpfReg::R0));
+                }
+                PacketContextKind::SkBuff => {
+                    let (len_offset, _, _, _) = Self::sk_buff_offsets();
+                    self.instructions
+                        .push(EbpfInsn::ldxw(dst, EbpfReg::R9, len_offset));
+                }
+            },
             CtxField::Data => {
-                let (data_offset, _, _, _, _, _) = Self::xdp_md_offsets();
+                let data_offset = match self.packet_context_kind()? {
+                    PacketContextKind::XdpMd => Self::xdp_md_offsets().0,
+                    PacketContextKind::SkBuff => Self::sk_buff_offsets().1,
+                };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_offset));
             }
             CtxField::DataEnd => {
-                let (_, data_end_offset, _, _, _, _) = Self::xdp_md_offsets();
+                let data_end_offset = match self.packet_context_kind()? {
+                    PacketContextKind::XdpMd => Self::xdp_md_offsets().1,
+                    PacketContextKind::SkBuff => Self::sk_buff_offsets().2,
+                };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_end_offset));
             }
             CtxField::IngressIfindex => {
-                let (_, _, _, ingress_ifindex_offset, _, _) = Self::xdp_md_offsets();
+                let ingress_ifindex_offset = match self.packet_context_kind()? {
+                    PacketContextKind::XdpMd => Self::xdp_md_offsets().3,
+                    PacketContextKind::SkBuff => Self::sk_buff_offsets().3,
+                };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, ingress_ifindex_offset));
             }
             CtxField::RxQueueIndex => {
+                let PacketContextKind::XdpMd = self.packet_context_kind()? else {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "ctx.rx_queue_index is only available on xdp programs".to_string(),
+                    ));
+                };
                 let (_, _, _, _, rx_queue_index_offset, _) = Self::xdp_md_offsets();
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, rx_queue_index_offset));
             }
             CtxField::EgressIfindex => {
+                let PacketContextKind::XdpMd = self.packet_context_kind()? else {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "ctx.egress_ifindex is only available on xdp programs".to_string(),
+                    ));
+                };
                 let (_, _, _, _, _, egress_ifindex_offset) = Self::xdp_md_offsets();
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, egress_ifindex_offset));
