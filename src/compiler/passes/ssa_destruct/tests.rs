@@ -1,5 +1,5 @@
 use super::*;
-use crate::compiler::mir::BinOpKind;
+use crate::compiler::mir::{AddressSpace, BinOpKind, MirType};
 
 fn make_ssa_function() -> MirFunction {
     // This represents a diamond CFG after SSA construction:
@@ -113,6 +113,26 @@ fn test_copies_inserted() {
         .iter()
         .any(|i| matches!(i, MirInst::Copy { .. }));
     assert!(has_copy, "bb2 should have a copy instruction");
+}
+
+#[test]
+fn test_run_with_type_hints_preserves_phi_copy_types() {
+    let mut func = make_ssa_function();
+    let cfg = CFG::build(&func);
+    let v1_1 = VReg(1);
+    let v1_2 = VReg(2);
+    let v1_3 = VReg(3);
+    let ptr_ty = MirType::Ptr {
+        pointee: Box::new(MirType::U64),
+        address_space: AddressSpace::Stack,
+    };
+    let mut hints = HashMap::from([(v1_1, ptr_ty.clone()), (v1_2, ptr_ty.clone())]);
+
+    let pass = SsaDestruction;
+    let changed = pass.run_with_type_hints(&mut func, &cfg, &mut hints);
+
+    assert!(changed);
+    assert_eq!(hints.get(&v1_3), Some(&ptr_ty));
 }
 
 #[test]
@@ -302,6 +322,69 @@ fn test_parallel_copy_loop_header_swap_cycle() {
     assert_eq!(copies[0], (temp, y));
     assert_eq!(copies[1], (y, x));
     assert_eq!(copies[2], (x, temp));
+}
+
+#[test]
+fn test_run_with_type_hints_seeds_cycle_break_temp_type() {
+    let mut func = MirFunction::new();
+    let bb0 = func.alloc_block();
+    let bb1 = func.alloc_block();
+    let bb2 = func.alloc_block();
+    let bb3 = func.alloc_block();
+    func.entry = bb0;
+
+    let x0 = func.alloc_vreg();
+    let y0 = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let x = func.alloc_vreg();
+    let y = func.alloc_vreg();
+    let pre_temp_vreg_count = func.vreg_count;
+
+    func.block_mut(bb0).instructions.push(MirInst::Copy {
+        dst: x0,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(bb0).instructions.push(MirInst::Copy {
+        dst: y0,
+        src: MirValue::Const(2),
+    });
+    func.block_mut(bb0).instructions.push(MirInst::Copy {
+        dst: cond,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(bb0).terminator = MirInst::Jump { target: bb1 };
+
+    func.block_mut(bb1).instructions.push(MirInst::Phi {
+        dst: x,
+        args: vec![(bb0, x0), (bb2, y)],
+    });
+    func.block_mut(bb1).instructions.push(MirInst::Phi {
+        dst: y,
+        args: vec![(bb0, y0), (bb2, x)],
+    });
+    func.block_mut(bb1).terminator = MirInst::Branch {
+        cond,
+        if_true: bb2,
+        if_false: bb3,
+    };
+    func.block_mut(bb2).terminator = MirInst::Jump { target: bb1 };
+    func.block_mut(bb3).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(x)),
+    };
+
+    let ptr_ty = MirType::Ptr {
+        pointee: Box::new(MirType::U64),
+        address_space: AddressSpace::Kernel,
+    };
+    let mut hints = HashMap::from([(x, ptr_ty.clone()), (y, ptr_ty.clone())]);
+
+    let cfg = CFG::build(&func);
+    let pass = SsaDestruction;
+    let changed = pass.run_with_type_hints(&mut func, &cfg, &mut hints);
+
+    assert!(changed);
+    let temp = VReg(pre_temp_vreg_count);
+    assert_eq!(hints.get(&temp), Some(&ptr_ty));
 }
 
 #[test]

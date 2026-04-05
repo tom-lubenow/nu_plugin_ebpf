@@ -222,7 +222,7 @@ pub fn optimize_with_ssa_hints(
 
     let cfg = CFG::build(func);
     let ssa_destruct = SsaDestruction;
-    if ssa_destruct.run(func, &cfg) {
+    if ssa_destruct.run_with_type_hints(func, &cfg, hints) {
         total_changes += 1;
     }
 

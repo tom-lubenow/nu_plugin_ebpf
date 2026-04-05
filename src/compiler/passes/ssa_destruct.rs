@@ -16,7 +16,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::MirPass;
 use crate::compiler::cfg::CFG;
-use crate::compiler::mir::{BlockId, MirFunction, MirInst, MirValue, VReg};
+use crate::compiler::mir::{BlockId, MirFunction, MirInst, MirType, MirValue, VReg};
 
 /// SSA destruction pass - eliminates phi functions by inserting copies
 pub struct SsaDestruction;
@@ -66,6 +66,41 @@ struct ParallelCopy {
 }
 
 impl SsaDestruction {
+    pub(crate) fn run_with_type_hints(
+        &self,
+        func: &mut MirFunction,
+        cfg: &CFG,
+        hints: &mut HashMap<VReg, MirType>,
+    ) -> bool {
+        let edge_copies = self.collect_edge_copies(func);
+        if edge_copies.is_empty() {
+            return false;
+        }
+
+        let mut edges: Vec<_> = edge_copies.into_iter().collect();
+        edges.sort_by_key(|((pred, succ), _)| (pred.0, succ.0));
+
+        for ((pred, succ), copies) in edges {
+            let lowered = self.lower_parallel_copies_with_hints(func, copies, hints);
+            if lowered.is_empty() {
+                continue;
+            }
+            if self.is_critical_edge(cfg, pred, succ) {
+                self.split_edge_and_insert_copies(func, pred, succ, lowered);
+            } else {
+                self.insert_copies(func, pred, lowered);
+            }
+        }
+
+        for block in &mut func.blocks {
+            block
+                .instructions
+                .retain(|inst| !matches!(inst, MirInst::Phi { .. }));
+        }
+
+        true
+    }
+
     /// Collect parallel-copy sets per control-flow edge `(pred -> succ)`.
     fn collect_edge_copies(
         &self,
@@ -151,6 +186,77 @@ impl SsaDestruction {
                 .expect("pending set must contain at least one destination");
             let cycle_src = pending[&cycle_dst];
             let temp = func.alloc_vreg();
+            lowered.push(MirInst::Copy {
+                dst: temp,
+                src: MirValue::VReg(cycle_src),
+            });
+            pending.insert(cycle_dst, temp);
+        }
+
+        lowered
+    }
+
+    fn lower_parallel_copies_with_hints(
+        &self,
+        func: &mut MirFunction,
+        copies: Vec<ParallelCopy>,
+        hints: &mut HashMap<VReg, MirType>,
+    ) -> Vec<MirInst> {
+        let mut pending: HashMap<VReg, VReg> = HashMap::new();
+        let mut dst_order = Vec::new();
+
+        for copy in copies {
+            if copy.dst == copy.src {
+                continue;
+            }
+            if !pending.contains_key(&copy.dst) {
+                dst_order.push(copy.dst);
+            }
+            pending.insert(copy.dst, copy.src);
+        }
+
+        let mut lowered = Vec::new();
+        while !pending.is_empty() {
+            let mut blocked = HashSet::new();
+            for src in pending.values() {
+                if pending.contains_key(src) {
+                    blocked.insert(*src);
+                }
+            }
+
+            let mut ready = Vec::new();
+            for &dst in &dst_order {
+                if pending.contains_key(&dst) && !blocked.contains(&dst) {
+                    ready.push(dst);
+                }
+            }
+
+            if !ready.is_empty() {
+                for dst in ready {
+                    let src = pending
+                        .remove(&dst)
+                        .expect("ready destination must exist in pending set");
+                    if let Some(ty) = hints.get(&src).cloned() {
+                        hints.insert(dst, ty);
+                    }
+                    lowered.push(MirInst::Copy {
+                        dst,
+                        src: MirValue::VReg(src),
+                    });
+                }
+                continue;
+            }
+
+            let cycle_dst = dst_order
+                .iter()
+                .copied()
+                .find(|dst| pending.contains_key(dst))
+                .expect("pending set must contain at least one destination");
+            let cycle_src = pending[&cycle_dst];
+            let temp = func.alloc_vreg();
+            if let Some(ty) = hints.get(&cycle_src).cloned() {
+                hints.insert(temp, ty);
+            }
             lowered.push(MirInst::Copy {
                 dst: temp,
                 src: MirValue::VReg(cycle_src),
