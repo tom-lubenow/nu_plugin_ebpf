@@ -181,8 +181,10 @@ and `ctx.egress_ifindex`, plus raw packet pointers `ctx.data` and `ctx.data_end`
 Scalar packet byte reads work through normal Nushell indexing such as
 `($ctx.data | get 0)`, and fixed-width big-endian scalars can be read directly
 through cell paths such as `$ctx.data.u16be.6` or `$ctx.data.u32be.0`. These
-lower to data_end-guarded packet loads. Richer packet struct typing and named
-XDP action helpers are still not modeled, so
+lower to data_end-guarded packet loads. Fixed header views `eth`, `ipv4`, `udp`,
+and `tcp` are also available, for example `$ctx.data.eth.ethertype` or
+`$ctx.data.eth.dst.0`. Variable header lengths, VLAN parsing, and named XDP
+action helpers are still not modeled, so
 XDP closures currently need to return an explicit numeric action code such as
 `2` (`XDP_PASS`).
 

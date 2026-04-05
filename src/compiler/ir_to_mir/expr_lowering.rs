@@ -7,6 +7,14 @@ use crate::kernel_btf::{
     TrampolineValueKind, TrampolineValueSpec, TypeInfo,
 };
 
+#[derive(Debug, Clone)]
+struct TypedProjectionStep {
+    offset: usize,
+    ty: MirType,
+    bitfield: Option<TrampolineBitfieldInfo>,
+    packet_big_endian: bool,
+}
+
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn lower_load_literal(
         &mut self,
@@ -1488,7 +1496,7 @@ impl<'a> HirToMirLowering<'a> {
         type_id: u32,
         field_name: &str,
         path_desc: &str,
-    ) -> Result<(usize, MirType, Option<TrampolineBitfieldInfo>), CompileError> {
+    ) -> Result<TypedProjectionStep, CompileError> {
         let projection = KernelBtf::get()
             .kernel_type_field_projection(
                 type_id,
@@ -1517,14 +1525,189 @@ impl<'a> HirToMirLowering<'a> {
                     path_desc, projection.type_info
                 ))
             })?;
-        Ok((offset, projected_ty, projection.path[0].bitfield))
+        Ok(TypedProjectionStep {
+            offset,
+            ty: projected_ty,
+            bitfield: projection.path[0].bitfield,
+            packet_big_endian: false,
+        })
+    }
+
+    fn packet_struct_field(
+        name: &str,
+        ty: MirType,
+        offset: usize,
+    ) -> crate::compiler::mir::StructField {
+        crate::compiler::mir::StructField {
+            name: name.to_string(),
+            ty,
+            offset,
+            synthetic: false,
+            bitfield: None,
+        }
+    }
+
+    fn packet_bytes(len: usize) -> MirType {
+        MirType::Array {
+            elem: Box::new(MirType::U8),
+            len,
+        }
+    }
+
+    fn packet_eth_header_type() -> MirType {
+        MirType::Struct {
+            name: Some("__packet_eth".to_string()),
+            kernel_btf_type_id: None,
+            fields: vec![
+                Self::packet_struct_field("dst", Self::packet_bytes(6), 0),
+                Self::packet_struct_field("src", Self::packet_bytes(6), 6),
+                Self::packet_struct_field("ethertype", MirType::U16, 12),
+            ],
+        }
+    }
+
+    fn packet_ipv4_header_type() -> MirType {
+        MirType::Struct {
+            name: Some("__packet_ipv4".to_string()),
+            kernel_btf_type_id: None,
+            fields: vec![
+                Self::packet_struct_field("version_ihl", MirType::U8, 0),
+                Self::packet_struct_field("dscp_ecn", MirType::U8, 1),
+                Self::packet_struct_field("total_len", MirType::U16, 2),
+                Self::packet_struct_field("identification", MirType::U16, 4),
+                Self::packet_struct_field("flags_fragment_offset", MirType::U16, 6),
+                Self::packet_struct_field("ttl", MirType::U8, 8),
+                Self::packet_struct_field("protocol", MirType::U8, 9),
+                Self::packet_struct_field("checksum", MirType::U16, 10),
+                Self::packet_struct_field("src", Self::packet_bytes(4), 12),
+                Self::packet_struct_field("dst", Self::packet_bytes(4), 16),
+            ],
+        }
+    }
+
+    fn packet_udp_header_type() -> MirType {
+        MirType::Struct {
+            name: Some("__packet_udp".to_string()),
+            kernel_btf_type_id: None,
+            fields: vec![
+                Self::packet_struct_field("src", MirType::U16, 0),
+                Self::packet_struct_field("dst", MirType::U16, 2),
+                Self::packet_struct_field("len", MirType::U16, 4),
+                Self::packet_struct_field("checksum", MirType::U16, 6),
+            ],
+        }
+    }
+
+    fn packet_tcp_header_type() -> MirType {
+        MirType::Struct {
+            name: Some("__packet_tcp".to_string()),
+            kernel_btf_type_id: None,
+            fields: vec![
+                Self::packet_struct_field("src", MirType::U16, 0),
+                Self::packet_struct_field("dst", MirType::U16, 2),
+                Self::packet_struct_field("seq", MirType::U32, 4),
+                Self::packet_struct_field("ack_seq", MirType::U32, 8),
+                Self::packet_struct_field("data_offset_flags", MirType::U16, 12),
+                Self::packet_struct_field("window", MirType::U16, 14),
+                Self::packet_struct_field("checksum", MirType::U16, 16),
+                Self::packet_struct_field("urg_ptr", MirType::U16, 18),
+            ],
+        }
+    }
+
+    fn packet_header_view_spec(
+        current_ty: &MirType,
+        member: &PathMember,
+    ) -> Option<TypedProjectionStep> {
+        let PathMember::String { val, .. } = member else {
+            return None;
+        };
+
+        let current_name = match current_ty {
+            MirType::Struct { name, .. } => name.as_deref(),
+            _ => None,
+        };
+        let is_raw_packet = matches!(current_ty, MirType::U8);
+
+        match (current_name, is_raw_packet, val.as_str()) {
+            (_, true, "eth" | "ethhdr") => Some(TypedProjectionStep {
+                offset: 0,
+                ty: Self::packet_eth_header_type(),
+                bitfield: None,
+                packet_big_endian: false,
+            }),
+            (_, true, "ipv4" | "iphdr") => Some(TypedProjectionStep {
+                offset: 0,
+                ty: Self::packet_ipv4_header_type(),
+                bitfield: None,
+                packet_big_endian: false,
+            }),
+            (_, true, "udp" | "udphdr") => Some(TypedProjectionStep {
+                offset: 0,
+                ty: Self::packet_udp_header_type(),
+                bitfield: None,
+                packet_big_endian: false,
+            }),
+            (_, true, "tcp" | "tcphdr") => Some(TypedProjectionStep {
+                offset: 0,
+                ty: Self::packet_tcp_header_type(),
+                bitfield: None,
+                packet_big_endian: false,
+            }),
+            (Some("__packet_eth"), _, "ipv4" | "iphdr") => Some(TypedProjectionStep {
+                offset: current_ty.size(),
+                ty: Self::packet_ipv4_header_type(),
+                bitfield: None,
+                packet_big_endian: false,
+            }),
+            (Some("__packet_ipv4"), _, "udp" | "udphdr") => Some(TypedProjectionStep {
+                offset: current_ty.size(),
+                ty: Self::packet_udp_header_type(),
+                bitfield: None,
+                packet_big_endian: false,
+            }),
+            (Some("__packet_ipv4"), _, "tcp" | "tcphdr") => Some(TypedProjectionStep {
+                offset: current_ty.size(),
+                ty: Self::packet_tcp_header_type(),
+                bitfield: None,
+                packet_big_endian: false,
+            }),
+            _ => None,
+        }
+    }
+
+    fn packet_field_is_big_endian(current_ty: &MirType, member: &PathMember) -> bool {
+        let MirType::Struct {
+            name: Some(name), ..
+        } = current_ty
+        else {
+            return false;
+        };
+        let PathMember::String { val, .. } = member else {
+            return false;
+        };
+
+        match (name.as_str(), val.as_str()) {
+            ("__packet_eth", "ethertype") => true,
+            (
+                "__packet_ipv4",
+                "total_len" | "identification" | "flags_fragment_offset" | "checksum",
+            ) => true,
+            ("__packet_udp", "src" | "dst" | "len" | "checksum") => true,
+            (
+                "__packet_tcp",
+                "src" | "dst" | "seq" | "ack_seq" | "data_offset_flags" | "window" | "checksum"
+                | "urg_ptr",
+            ) => true,
+            _ => false,
+        }
     }
 
     fn resolve_typed_value_projection_step(
         current_ty: &MirType,
         member: &PathMember,
         path_desc: &str,
-    ) -> Result<(usize, MirType, Option<TrampolineBitfieldInfo>), CompileError> {
+    ) -> Result<TypedProjectionStep, CompileError> {
         match (current_ty, member) {
             (
                 MirType::Struct {
@@ -1537,15 +1720,14 @@ impl<'a> HirToMirLowering<'a> {
                 let field = fields
                     .iter()
                     .find(|field| !field.synthetic && field.name == *val)
-                    .map(|field| {
-                        (
-                            field.offset,
-                            field.ty.clone(),
-                            field.bitfield.map(|bitfield| TrampolineBitfieldInfo {
-                                bit_offset: bitfield.bit_offset,
-                                bit_size: bitfield.bit_size,
-                            }),
-                        )
+                    .map(|field| TypedProjectionStep {
+                        offset: field.offset,
+                        ty: field.ty.clone(),
+                        bitfield: field.bitfield.map(|bitfield| TrampolineBitfieldInfo {
+                            bit_offset: bitfield.bit_offset,
+                            bit_size: bitfield.bit_size,
+                        }),
+                        packet_big_endian: Self::packet_field_is_big_endian(current_ty, member),
                     });
                 if let Some(field) = field {
                     return Ok(field);
@@ -1577,7 +1759,12 @@ impl<'a> HirToMirLowering<'a> {
                         path_desc, index, len
                     )));
                 }
-                Ok((index * elem.size(), elem.as_ref().clone(), None))
+                Ok(TypedProjectionStep {
+                    offset: index * elem.size(),
+                    ty: elem.as_ref().clone(),
+                    bitfield: None,
+                    packet_big_endian: false,
+                })
             }
             (MirType::Array { .. }, PathMember::String { val, .. }) => {
                 Err(CompileError::UnsupportedInstruction(format!(
@@ -1596,14 +1783,19 @@ impl<'a> HirToMirLowering<'a> {
         current_ty: &MirType,
         index: usize,
         path_desc: &str,
-    ) -> Result<(usize, MirType, Option<TrampolineBitfieldInfo>), CompileError> {
+    ) -> Result<TypedProjectionStep, CompileError> {
         let offset = index.checked_mul(current_ty.size()).ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
                 "typed field path '{}' pointer index {} overflowed",
                 path_desc, index
             ))
         })?;
-        Ok((offset, current_ty.clone(), None))
+        Ok(TypedProjectionStep {
+            offset,
+            ty: current_ty.clone(),
+            bitfield: None,
+            packet_big_endian: false,
+        })
     }
 
     fn packet_scalar_view_spec(member: &PathMember) -> Option<(MirType, usize, bool)> {
@@ -2006,43 +2198,101 @@ impl<'a> HirToMirLowering<'a> {
                 continue;
             };
 
-            if *address_space == AddressSpace::Packet
-                && matches!(target_ty, MirType::U8)
-                && let Some((element_ty, element_size, big_endian)) =
-                    Self::packet_scalar_view_spec(member)
-            {
-                if is_last {
-                    let packet_ptr_vreg = self.packet_load_ptr_vreg(
-                        *base_vreg,
-                        MirType::Ptr {
-                            pointee: Box::new(target_ty.clone()),
-                            address_space: AddressSpace::Packet,
-                        },
-                        dst_vreg,
-                    );
-                    self.emit_xdp_packet_guarded_load(
-                        dst_vreg,
-                        packet_ptr_vreg,
-                        &element_ty,
-                        path_desc,
-                    )?;
-                    if big_endian {
-                        self.emit_packet_big_endian_scalar_normalize(dst_vreg, &element_ty)?;
+            if *address_space == AddressSpace::Packet {
+                if let Some(TypedProjectionStep {
+                    offset: view_offset,
+                    ty: view_ty,
+                    ..
+                }) = Self::packet_header_view_spec(target_ty, member)
+                {
+                    let field_offset = base_offset.checked_add(view_offset).ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "typed field path '{}' offset overflowed",
+                            path_desc
+                        ))
+                    })?;
+
+                    if is_last {
+                        self.vreg_type_hints.insert(
+                            dst_vreg,
+                            MirType::Ptr {
+                                pointee: Box::new(view_ty.clone()),
+                                address_space: AddressSpace::Packet,
+                            },
+                        );
+                        if field_offset == 0 {
+                            self.emit(MirInst::Copy {
+                                dst: dst_vreg,
+                                src: MirValue::VReg(*base_vreg),
+                            });
+                        } else {
+                            self.emit(MirInst::BinOp {
+                                dst: dst_vreg,
+                                op: BinOpKind::Add,
+                                lhs: MirValue::VReg(*base_vreg),
+                                rhs: MirValue::Const(i64::from(
+                                    Self::trampoline_projection_offset_i32(
+                                        field_offset,
+                                        path_desc,
+                                    )?,
+                                )),
+                            });
+                        }
+                        return Ok(view_ty);
                     }
-                    return Ok(element_ty);
+
+                    cursor = ValueCursor::Pointer {
+                        base_vreg: *base_vreg,
+                        address_space: *address_space,
+                        base_offset: field_offset,
+                        target_ty: view_ty,
+                        direct: false,
+                    };
+                    continue;
                 }
 
-                cursor = ValueCursor::PacketScalar {
-                    base_vreg: *base_vreg,
-                    base_offset: *base_offset,
-                    element_ty,
-                    element_size,
-                    big_endian,
-                };
-                continue;
+                if matches!(target_ty, MirType::U8)
+                    && let Some((element_ty, element_size, big_endian)) =
+                        Self::packet_scalar_view_spec(member)
+                {
+                    if is_last {
+                        let packet_ptr_vreg = self.packet_load_ptr_vreg(
+                            *base_vreg,
+                            MirType::Ptr {
+                                pointee: Box::new(target_ty.clone()),
+                                address_space: AddressSpace::Packet,
+                            },
+                            dst_vreg,
+                        );
+                        self.emit_xdp_packet_guarded_load(
+                            dst_vreg,
+                            packet_ptr_vreg,
+                            &element_ty,
+                            path_desc,
+                        )?;
+                        if big_endian {
+                            self.emit_packet_big_endian_scalar_normalize(dst_vreg, &element_ty)?;
+                        }
+                        return Ok(element_ty);
+                    }
+
+                    cursor = ValueCursor::PacketScalar {
+                        base_vreg: *base_vreg,
+                        base_offset: *base_offset,
+                        element_ty,
+                        element_size,
+                        big_endian,
+                    };
+                    continue;
+                }
             }
 
-            let (segment_offset, next_ty, bitfield) = match (direct, member) {
+            let TypedProjectionStep {
+                offset: segment_offset,
+                ty: next_ty,
+                bitfield,
+                packet_big_endian,
+            } = match (direct, member) {
                 (true, PathMember::Int { val, .. })
                     if !matches!(target_ty, MirType::Array { .. }) =>
                 {
@@ -2115,10 +2365,31 @@ impl<'a> HirToMirLowering<'a> {
                             });
                         }
                         AddressSpace::Packet => {
-                            return Err(CompileError::UnsupportedInstruction(format!(
-                                "xdp packet path '{}' does not support by-reference aggregate projection",
-                                path_desc
-                            )));
+                            self.vreg_type_hints.insert(
+                                dst_vreg,
+                                MirType::Ptr {
+                                    pointee: Box::new(next_ty.clone()),
+                                    address_space: *address_space,
+                                },
+                            );
+                            if field_offset == 0 {
+                                self.emit(MirInst::Copy {
+                                    dst: dst_vreg,
+                                    src: MirValue::VReg(*base_vreg),
+                                });
+                            } else {
+                                self.emit(MirInst::BinOp {
+                                    dst: dst_vreg,
+                                    op: BinOpKind::Add,
+                                    lhs: MirValue::VReg(*base_vreg),
+                                    rhs: MirValue::Const(i64::from(
+                                        Self::trampoline_projection_offset_i32(
+                                            field_offset,
+                                            path_desc,
+                                        )?,
+                                    )),
+                                });
+                            }
                         }
                     }
                 } else {
@@ -2251,6 +2522,9 @@ impl<'a> HirToMirLowering<'a> {
                                 &next_ty,
                                 path_desc,
                             )?;
+                            if packet_big_endian {
+                                self.emit_packet_big_endian_scalar_normalize(dst_vreg, &next_ty)?;
+                            }
                         }
                     }
                 }

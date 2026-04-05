@@ -513,11 +513,11 @@ step 35 "typed generic map schema persists across pinned programs" {
     }
 }
 
-step 36 "xdp loopback packet u16be counter" {
+step 36 "xdp loopback ethernet header field counter" {
     count-at-least-one "xdp:lo" {|ctx|
-        $ctx.data.u16be.0 | count
+        $ctx.data.eth.ethertype | count
         2
-    } { trigger-ping-loopback } "xdp packet u16be counter"
+    } { trigger-ping-loopback } "xdp ethernet ethertype counter"
 }
 
 step 37 "verify no leaked probes" {
