@@ -1,5 +1,5 @@
 use super::*;
-use crate::compiler::EbpfProgramType;
+use crate::compiler::{EbpfProgramType, MapRef, ProgramCapability, ProgramTypeInfo};
 use std::collections::HashMap;
 
 #[test]
@@ -1077,4 +1077,62 @@ fn test_type_error_emit_record_string_scalar() {
 
     let mut ti = TypeInference::new(None);
     assert!(ti.infer(&func).is_err());
+}
+
+#[test]
+fn test_required_program_capability_classifies_counter_map_updates() {
+    let inst = MirInst::MapUpdate {
+        map: MapRef {
+            name: COUNTER_MAP_NAME.to_string(),
+            kind: MapKind::Hash,
+        },
+        key: VReg(0),
+        val: VReg(1),
+        flags: 0,
+    };
+
+    assert_eq!(
+        TypeInference::required_program_capability(&inst),
+        Some(ProgramCapability::Counters)
+    );
+}
+
+#[test]
+fn test_required_program_capability_classifies_generic_map_lookup() {
+    let inst = MirInst::MapLookup {
+        dst: VReg(2),
+        map: MapRef {
+            name: "shared_state".to_string(),
+            kind: MapKind::Hash,
+        },
+        key: VReg(0),
+    };
+
+    assert_eq!(
+        TypeInference::required_program_capability(&inst),
+        Some(ProgramCapability::GenericMaps)
+    );
+}
+
+#[test]
+fn test_validate_program_capability_rejects_kfuncs_when_capability_missing() {
+    const LIMITED_CAPABILITIES: &[ProgramCapability] = &[ProgramCapability::Emit];
+
+    let limited_program = ProgramTypeInfo {
+        supported_capabilities: LIMITED_CAPABILITIES,
+        ..*EbpfProgramType::Kprobe.info()
+    };
+    let inst = MirInst::CallKfunc {
+        dst: VReg(0),
+        kfunc: "bpf_task_release".to_string(),
+        btf_id: None,
+        args: vec![VReg(1)],
+    };
+    let mut errors = Vec::new();
+
+    TypeInference::validate_program_capability_for_info(&inst, &limited_program, &mut errors);
+
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].message.contains("kfunc calls"));
+    assert!(errors[0].message.contains("kprobe programs"));
 }

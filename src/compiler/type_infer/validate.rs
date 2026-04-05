@@ -2,6 +2,51 @@ use super::*;
 use crate::compiler::instruction::unknown_kfunc_signature_message;
 
 impl<'a> TypeInference<'a> {
+    pub(super) fn required_program_capability(inst: &MirInst) -> Option<ProgramCapability> {
+        match inst {
+            MirInst::ReadStr {
+                user_space: true, ..
+            } => Some(ProgramCapability::ReadUserString),
+            MirInst::ReadStr {
+                user_space: false, ..
+            } => Some(ProgramCapability::ReadKernelString),
+            MirInst::EmitEvent { .. } | MirInst::EmitRecord { .. } => Some(ProgramCapability::Emit),
+            MirInst::Histogram { .. } => Some(ProgramCapability::Histograms),
+            MirInst::StartTimer | MirInst::StopTimer { .. } => Some(ProgramCapability::Timers),
+            MirInst::CallKfunc { .. } => Some(ProgramCapability::KfuncCalls),
+            MirInst::TailCall { .. } => Some(ProgramCapability::TailCalls),
+            MirInst::MapLookup { map, .. }
+            | MirInst::MapUpdate { map, .. }
+            | MirInst::MapDelete { map, .. } => match map.name.as_str() {
+                COUNTER_MAP_NAME | STRING_COUNTER_MAP_NAME | BYTES_COUNTER_MAP_NAME => {
+                    Some(ProgramCapability::Counters)
+                }
+                HISTOGRAM_MAP_NAME => Some(ProgramCapability::Histograms),
+                TIMESTAMP_MAP_NAME => Some(ProgramCapability::Timers),
+                _ => Some(ProgramCapability::GenericMaps),
+            },
+            _ => None,
+        }
+    }
+
+    pub(super) fn validate_program_capability_for_info(
+        inst: &MirInst,
+        program: &ProgramTypeInfo,
+        errors: &mut Vec<TypeError>,
+    ) {
+        let Some(required) = Self::required_program_capability(inst) else {
+            return;
+        };
+        if program.supported_capabilities.contains(&required) {
+            return;
+        }
+        errors.push(TypeError::new(format!(
+            "{} programs do not support {}",
+            program.canonical_prefix,
+            required.description()
+        )));
+    }
+
     pub(super) fn validate_types(
         &self,
         func: &MirFunction,
@@ -48,6 +93,10 @@ impl<'a> TypeInference<'a> {
         slot_sizes: &HashMap<StackSlotId, i64>,
         errors: &mut Vec<TypeError>,
     ) {
+        if let Some(ctx) = self.probe_ctx.as_ref() {
+            Self::validate_program_capability_for_info(inst, ctx.probe_type.info(), errors);
+        }
+
         match inst {
             MirInst::BinOp { op, lhs, rhs, .. } => {
                 let lhs_ty = self.mir_type_for_value(lhs, types);

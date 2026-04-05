@@ -485,6 +485,14 @@ impl EbpfProgramType {
         self.supported_intrinsics().contains(&intrinsic)
     }
 
+    pub fn supported_capabilities(&self) -> &'static [ProgramCapability] {
+        self.info().supported_capabilities
+    }
+
+    pub fn supports_capability(&self, capability: ProgramCapability) -> bool {
+        self.supported_capabilities().contains(&capability)
+    }
+
     pub fn arg_access(&self) -> ProgramValueAccess {
         self.info().arg_access
     }
@@ -709,6 +717,35 @@ impl ProgramIntrinsic {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ProgramCapability {
+    Emit,
+    Counters,
+    Histograms,
+    Timers,
+    ReadUserString,
+    ReadKernelString,
+    KfuncCalls,
+    GenericMaps,
+    TailCalls,
+}
+
+impl ProgramCapability {
+    pub fn description(&self) -> &'static str {
+        match self {
+            ProgramCapability::Emit => "event emission",
+            ProgramCapability::Counters => "counter aggregations",
+            ProgramCapability::Histograms => "histogram aggregations",
+            ProgramCapability::Timers => "timer aggregations",
+            ProgramCapability::ReadUserString => "userspace string reads",
+            ProgramCapability::ReadKernelString => "kernel string reads",
+            ProgramCapability::KfuncCalls => "kfunc calls",
+            ProgramCapability::GenericMaps => "generic map operations",
+            ProgramCapability::TailCalls => "tail calls",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProgramTypeInfo {
     pub program_type: EbpfProgramType,
@@ -719,6 +756,7 @@ pub struct ProgramTypeInfo {
     pub target_kind: ProgramTargetKind,
     pub kernel_target_validation: Option<KernelTargetValidationKind>,
     pub supported_intrinsics: &'static [ProgramIntrinsic],
+    pub supported_capabilities: &'static [ProgramCapability],
     pub arg_access: ProgramValueAccess,
     pub retval_access: ProgramValueAccess,
     pub supports_tracepoint_fields: bool,
@@ -746,6 +784,17 @@ const DEFAULT_PROBE_INTRINSICS: &[ProgramIntrinsic] = &[
     ProgramIntrinsic::MapPut,
     ProgramIntrinsic::MapDelete,
 ];
+const DEFAULT_PROBE_CAPABILITIES: &[ProgramCapability] = &[
+    ProgramCapability::Emit,
+    ProgramCapability::Counters,
+    ProgramCapability::Histograms,
+    ProgramCapability::Timers,
+    ProgramCapability::ReadUserString,
+    ProgramCapability::ReadKernelString,
+    ProgramCapability::KfuncCalls,
+    ProgramCapability::GenericMaps,
+    ProgramCapability::TailCalls,
+];
 
 const KPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Kprobe,
@@ -756,6 +805,7 @@ const KPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     target_kind: ProgramTargetKind::KernelFunction,
     kernel_target_validation: Some(KernelTargetValidationKind::SymbolOnly),
     supported_intrinsics: DEFAULT_PROBE_INTRINSICS,
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::PtRegs,
     retval_access: ProgramValueAccess::None,
     supports_tracepoint_fields: false,
@@ -771,6 +821,7 @@ const KRETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     target_kind: ProgramTargetKind::KernelFunction,
     kernel_target_validation: Some(KernelTargetValidationKind::SymbolOnly),
     supported_intrinsics: DEFAULT_PROBE_INTRINSICS,
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::PtRegs,
     supports_tracepoint_fields: false,
@@ -786,6 +837,7 @@ const FENTRY_INFO: ProgramTypeInfo = ProgramTypeInfo {
     target_kind: ProgramTargetKind::KernelFunction,
     kernel_target_validation: Some(KernelTargetValidationKind::FentryTrampoline),
     supported_intrinsics: DEFAULT_PROBE_INTRINSICS,
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::None,
     supports_tracepoint_fields: false,
@@ -801,6 +853,7 @@ const FEXIT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     target_kind: ProgramTargetKind::KernelFunction,
     kernel_target_validation: Some(KernelTargetValidationKind::FexitTrampoline),
     supported_intrinsics: DEFAULT_PROBE_INTRINSICS,
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::Trampoline,
     supports_tracepoint_fields: false,
@@ -816,6 +869,7 @@ const TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     target_kind: ProgramTargetKind::Tracepoint,
     kernel_target_validation: None,
     supported_intrinsics: DEFAULT_PROBE_INTRINSICS,
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     supports_tracepoint_fields: true,
@@ -831,6 +885,7 @@ const RAW_TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     target_kind: ProgramTargetKind::RawTracepoint,
     kernel_target_validation: None,
     supported_intrinsics: DEFAULT_PROBE_INTRINSICS,
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     supports_tracepoint_fields: false,
@@ -846,6 +901,7 @@ const UPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     target_kind: ProgramTargetKind::UserFunction,
     kernel_target_validation: None,
     supported_intrinsics: DEFAULT_PROBE_INTRINSICS,
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::PtRegs,
     retval_access: ProgramValueAccess::None,
     supports_tracepoint_fields: false,
@@ -861,6 +917,7 @@ const URETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     target_kind: ProgramTargetKind::UserFunction,
     kernel_target_validation: None,
     supported_intrinsics: DEFAULT_PROBE_INTRINSICS,
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::PtRegs,
     supports_tracepoint_fields: false,

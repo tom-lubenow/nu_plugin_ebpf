@@ -19,7 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::elf::ProbeContext;
+use super::elf::{ProbeContext, ProgramCapability, ProgramTypeInfo};
 use super::hindley_milner::{
     Constraint, HMType, Substitution, TypeScheme, TypeVar, TypeVarGenerator, UnifyError, unify,
 };
@@ -41,9 +41,10 @@ use super::instruction::{
     kfunc_unknown_stack_object_copy as kfunc_unknown_stack_object_copy_shared,
 };
 use super::mir::{
-    AddressSpace, BYTES_COUNTER_MAP_NAME, BasicBlock, BinOpKind, CtxField, MapKind, MirFunction,
-    MirInst, MirType, MirValue, STRING_COUNTER_MAP_NAME, StackSlotId, StackSlotKind,
-    StringAppendType, SubfunctionId, UnaryOpKind, VReg,
+    AddressSpace, BYTES_COUNTER_MAP_NAME, BasicBlock, BinOpKind, COUNTER_MAP_NAME, CtxField,
+    HISTOGRAM_MAP_NAME, MapKind, MirFunction, MirInst, MirType, MirValue, STRING_COUNTER_MAP_NAME,
+    StackSlotId, StackSlotKind, StringAppendType, SubfunctionId, TIMESTAMP_MAP_NAME, UnaryOpKind,
+    VReg,
 };
 
 mod constraints;

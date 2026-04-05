@@ -60,6 +60,12 @@ fn test_program_type_supports_probe_intrinsics() {
 }
 
 #[test]
+fn test_program_type_supports_probe_capabilities() {
+    assert!(EbpfProgramType::Tracepoint.supports_capability(ProgramCapability::Emit));
+    assert!(EbpfProgramType::Fentry.supports_capability(ProgramCapability::KfuncCalls));
+}
+
+#[test]
 fn test_elf_generation() {
     let prog = EbpfProgram::hello_world("sys_clone");
     let elf = prog.to_elf().expect("Failed to generate ELF");
