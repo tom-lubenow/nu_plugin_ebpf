@@ -11929,6 +11929,219 @@ fn test_verify_mir_kfunc_crypto_encrypt_siv_rejects_non_zero_scalar() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_crypto_encrypt_siv_allows_known_zero_vreg() {
+    let (mut func, entry) = new_mir_function();
+    let use_ctx = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let task = func.alloc_vreg();
+    let src = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let siv = func.alloc_vreg();
+    let crypto_ctx = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let encrypt_ret = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+    let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: src,
+        src: MirValue::StackSlot(src_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst,
+        src: MirValue::StackSlot(dst_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: siv,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: crypto_ctx,
+        kfunc: "bpf_crypto_ctx_acquire".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(crypto_ctx),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: use_ctx,
+        if_false: done,
+    };
+
+    func.block_mut(use_ctx)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: encrypt_ret,
+            kfunc: "bpf_crypto_encrypt".to_string(),
+            btf_id: None,
+            args: vec![crypto_ctx, src, dst, siv],
+        });
+    func.block_mut(use_ctx)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_crypto_ctx_release".to_string(),
+            btf_id: None,
+            args: vec![crypto_ctx],
+        });
+    func.block_mut(use_ctx).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        src,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        dst,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(siv, MirType::I64);
+    types.insert(
+        crypto_ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cond, MirType::Bool);
+    types.insert(encrypt_ret, MirType::I64);
+    types.insert(release_ret, MirType::I64);
+
+    verify_mir(&func, &types)
+        .expect("expected nullable bpf_crypto_encrypt siv argument to allow known-zero vreg");
+}
+
+#[test]
+fn test_verify_mir_kfunc_crypto_encrypt_siv_rejects_non_zero_vreg() {
+    let (mut func, entry) = new_mir_function();
+    let use_ctx = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let task = func.alloc_vreg();
+    let src = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let siv = func.alloc_vreg();
+    let crypto_ctx = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let encrypt_ret = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+    let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: src,
+        src: MirValue::StackSlot(src_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst,
+        src: MirValue::StackSlot(dst_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: siv,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: crypto_ctx,
+        kfunc: "bpf_crypto_ctx_acquire".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(crypto_ctx),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: use_ctx,
+        if_false: done,
+    };
+
+    func.block_mut(use_ctx)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: encrypt_ret,
+            kfunc: "bpf_crypto_encrypt".to_string(),
+            btf_id: None,
+            args: vec![crypto_ctx, src, dst, siv],
+        });
+    func.block_mut(use_ctx)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_crypto_ctx_release".to_string(),
+            btf_id: None,
+            args: vec![crypto_ctx],
+        });
+    func.block_mut(use_ctx).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        src,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        dst,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(siv, MirType::I64);
+    types.insert(
+        crypto_ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cond, MirType::Bool);
+    types.insert(encrypt_ret, MirType::I64);
+    types.insert(release_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected non-zero vreg crypto_encrypt siv verifier error");
+    assert!(err.iter().any(|e| e
+        .message
+        .contains("kfunc 'bpf_crypto_encrypt' arg3 expects null (0) or pointer value")));
+}
+
+#[test]
 fn test_verify_mir_kfunc_crypto_decrypt_siv_allows_const_zero_scalar() {
     let (mut func, entry) = new_mir_function();
     let use_ctx = func.alloc_block();
@@ -12379,6 +12592,123 @@ fn test_verify_mir_kfunc_dynptr_slice_buffer_rejects_non_zero_scalar() {
         "unexpected error messages: {:?}",
         err
     );
+}
+
+#[test]
+fn test_verify_mir_kfunc_dynptr_slice_buffer_allows_known_zero_vreg() {
+    let (mut func, entry) = new_mir_function();
+
+    let dptr = func.alloc_vreg();
+    let off = func.alloc_vreg();
+    let buffer = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dptr,
+        src: MirValue::StackSlot(dptr_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: off,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: buffer,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(8),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_dynptr_slice".to_string(),
+        btf_id: None,
+        args: vec![dptr, off, buffer, size],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        dptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(off, MirType::I64);
+    types.insert(buffer, MirType::I64);
+    types.insert(size, MirType::I64);
+    types.insert(
+        ret,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    verify_mir(&func, &types)
+        .expect("expected nullable bpf_dynptr_slice buffer arg to allow known-zero vreg");
+}
+
+#[test]
+fn test_verify_mir_kfunc_dynptr_slice_buffer_rejects_non_zero_vreg() {
+    let (mut func, entry) = new_mir_function();
+
+    let dptr = func.alloc_vreg();
+    let off = func.alloc_vreg();
+    let buffer = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dptr,
+        src: MirValue::StackSlot(dptr_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: off,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: buffer,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(8),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_dynptr_slice".to_string(),
+        btf_id: None,
+        args: vec![dptr, off, buffer, size],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        dptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(off, MirType::I64);
+    types.insert(buffer, MirType::I64);
+    types.insert(size, MirType::I64);
+    types.insert(
+        ret,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected non-zero vreg dynptr_slice buffer verifier error");
+    assert!(err.iter().any(|e| e
+        .message
+        .contains("kfunc 'bpf_dynptr_slice' arg2 expects null (0) or pointer value")));
 }
 
 #[test]

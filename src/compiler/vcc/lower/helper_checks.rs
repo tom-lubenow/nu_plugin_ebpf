@@ -852,6 +852,14 @@ impl<'a> VccLowerer<'a> {
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
         if !self.is_pointer_reg(arg) && Self::kfunc_pointer_arg_allows_const_zero(kfunc, arg_idx) {
+            out.push(VccInst::AssertConstEq {
+                value: VccValue::Reg(VccReg(arg.0)),
+                expected: 0,
+                message: format!(
+                    "kfunc '{}' arg{} expects null (0) or pointer value",
+                    kfunc, arg_idx
+                ),
+            });
             return Ok(());
         }
         let arg_value = MirValue::VReg(arg);
