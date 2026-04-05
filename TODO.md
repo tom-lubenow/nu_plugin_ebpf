@@ -279,7 +279,7 @@ Last updated: 2026-02-15.
 - [~] Build a compatibility test matrix.
   - Add automated tests that exercise compilation and loading across representative kernel versions/configs.
   - Include differential checks against verifier behavior and manual attach smoke tests.
-  - Recent progress: added `scripts/manual_integration.sh` to run repeatable root-level attach/counters/read-str/list integration checks against the release plugin.
+  - Recent progress: added `scripts/manual_integration.nu` with a thin `scripts/manual_integration.sh` launcher to run repeatable root-level attach/counters/read-str/list integration checks against the newest built plugin.
 
 - [ ] Add end-to-end non-tracing fixtures.
   - Create integration fixtures that validate map-heavy, helper-heavy, and control-flow-heavy programs.

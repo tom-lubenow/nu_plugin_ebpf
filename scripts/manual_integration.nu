@@ -1,0 +1,520 @@
+#!/usr/bin/env nu
+
+const TOTAL_STEPS = 36
+const COUNTER_TIMEOUT = 5sec
+const STREAM_TIMEOUT = 5sec
+const POLL_INTERVAL = 100ms
+const REPO_ROOT = (path self | path dirname | path dirname)
+
+def fail [msg: string] {
+    error make { msg: $msg }
+}
+
+def cargo-toml [repo_root: string] {
+    $repo_root | path join Cargo.toml
+}
+
+def path-is-filelike [path: string] {
+    let kind = ($path | path type)
+    $kind == 'file' or $kind == 'symlink'
+}
+
+def newest-existing [label: string, candidates: list<string>] {
+    let existing = (
+        $candidates
+        | where {|candidate| path-is-filelike $candidate }
+        | each {|candidate|
+            let meta = (ls -D $candidate | first)
+            { path: $candidate, modified: $meta.modified }
+        }
+        | sort-by modified
+        | reverse
+    )
+
+    if (($existing | length) == 0) {
+        fail $"could not find ($label); checked: ($candidates | str join ', ')"
+    }
+
+    $existing | get 0.path
+}
+
+def resolve-plugin-bin [repo_root: string] {
+    let override = ($env | get -o PLUGIN_BIN)
+
+    if $override != null {
+        if (path-is-filelike $override) {
+            $override
+        } else {
+            fail $"plugin binary not found: ($override)"
+        }
+    } else {
+        newest-existing "plugin binary" [
+            ($repo_root | path join target debug nu_plugin_ebpf)
+            ($repo_root | path join target release nu_plugin_ebpf)
+        ]
+    }
+}
+
+def announce [index: int, label: string] {
+    print $"[($index)/($TOTAL_STEPS)] ($label)"
+}
+
+def step [index: int, label: string, body: closure] {
+    announce $index $label
+    do $body
+}
+
+def safe-detach [id] {
+    if $id != null {
+        try {
+            ebpf detach $id | ignore
+        } catch { |_| null }
+    }
+}
+
+def trigger-cargo-read [repo_root: string] {
+    open --raw (cargo-toml $repo_root) | str length | ignore
+}
+
+def trigger-sh-true [] {
+    ^sh -lc 'true' | ignore
+}
+
+def trigger-true [] {
+    ^true | ignore
+}
+
+def wait-for-counter-rows [id, label: string] {
+    let started = (date now)
+
+    loop {
+        let rows = (ebpf counters $id)
+        if (($rows | length) > 0) {
+            return $rows
+        }
+
+        if (((date now) - $started) >= $COUNTER_TIMEOUT) {
+            fail $"timed out waiting for counter rows in ($label)"
+        }
+
+        sleep $POLL_INTERVAL
+    }
+}
+
+def assert-row-count [rows, label: string] {
+    let row_count = ($rows | length)
+
+    if $row_count < 1 {
+        fail $"expected at least one ($label) row"
+    }
+
+    $row_count
+}
+
+def assert-field-list [actual: list<string>, expected: list<string>, label: string] {
+    if $actual != $expected {
+        let expected_nuon = ($expected | to nuon)
+        let actual_nuon = ($actual | to nuon)
+        fail $"expected ($label) fields ($expected_nuon), got ($actual_nuon)"
+    }
+}
+
+def collect-first-stream [target: string, program: closure, trigger: closure] {
+    let job_id = (
+        job spawn {
+            ebpf attach -s $target $program | first 1 | job send 0
+        }
+    )
+
+    try {
+        sleep 100ms
+        do $trigger
+        let event = (job recv --timeout $STREAM_TIMEOUT | first)
+        try {
+            job kill $job_id
+        } catch { |_| null }
+        $event
+    } catch { |err|
+        try {
+            job kill $job_id
+        } catch { |_| null }
+        error make $err
+    }
+}
+
+def counter-check [target: string, program: closure, trigger: closure, inspect: closure] {
+    let id = (ebpf attach $target $program)
+
+    try {
+        do $trigger
+        let rows = (wait-for-counter-rows $id $target)
+        let result = (do $inspect $id $rows)
+        safe-detach $id
+        $result
+    } catch { |err|
+        safe-detach $id
+        error make $err
+    }
+}
+
+def count-at-least-one [target: string, program: closure, trigger: closure, label: string] {
+    counter-check $target $program $trigger {|id, rows|
+        let row_count = (assert-row-count $rows $label)
+        { id: $id, rows: $row_count }
+    }
+}
+
+def project-entry [entry] {
+    $entry
+}
+
+def project-inode-flags [file] {
+    $file.f_inode.i_flags
+}
+
+let repo_root = $REPO_ROOT
+let plugin_bin = (resolve-plugin-bin $repo_root)
+
+print $"Using plugin binary: ($plugin_bin)"
+
+plugin add $plugin_bin
+plugin use ebpf
+
+step 1 "stream attach (kprobe:ksys_read)" {
+    collect-first-stream "kprobe:ksys_read" {|ctx|
+        $ctx.pid | emit
+    } { trigger-cargo-read $repo_root }
+}
+
+step 2 "attach -> counters -> detach" {
+    count-at-least-one "kprobe:ksys_read" {|ctx|
+        $ctx.pid | count
+    } { trigger-cargo-read $repo_root } "counter"
+}
+
+step 3 "tracepoint + read-str with null guard" {
+    collect-first-stream "tracepoint:syscalls/sys_enter_openat" {|ctx|
+        if $ctx.filename != 0 {
+            { pid: $ctx.pid, file: ($ctx.filename | read-str --max-len 32) } | emit
+        }
+    } { trigger-cargo-read $repo_root }
+}
+
+step 4 "fentry trampoline arg" {
+    count-at-least-one "fentry:do_sys_openat2" {|ctx|
+        if $ctx.arg1 != 0 {
+            1 | count
+        }
+    } { trigger-cargo-read $repo_root } "fentry trampoline counter"
+}
+
+step 5 "fentry pointer-backed trampoline field" {
+    count-at-least-one "fentry:do_sys_openat2" {|ctx|
+        $ctx.arg2.flags | count
+    } { trigger-cargo-read $repo_root } "pointer-backed trampoline field"
+}
+
+step 6 "fentry intermediate trampoline pointer hop" {
+    count-at-least-one "fentry:security_file_open" {|ctx|
+        $ctx.arg0.f_inode.i_ino | count
+    } { trigger-cargo-read $repo_root } "intermediate trampoline pointer hop"
+}
+
+step 7 "fentry post-binding pointer field projection" {
+    count-at-least-one "fentry:security_file_open" {|ctx|
+        let inode = $ctx.arg0.f_inode
+        $inode.i_ino | count
+    } { trigger-cargo-read $repo_root } "post-binding pointer field"
+}
+
+step 8 "fentry deeper post-binding pointer field projection" {
+    count-at-least-one "fentry:security_file_open" {|ctx|
+        let inode = $ctx.arg0.f_inode
+        $inode.i_sb.s_flags | count
+    } { trigger-cargo-read $repo_root } "deeper post-binding pointer field"
+}
+
+step 9 "fentry multi-level trampoline pointer hop" {
+    count-at-least-one "fentry:do_close_on_exec" {|ctx|
+        $ctx.arg0.fdt.fd.f_inode.i_ino | count
+    } { trigger-sh-true } "multi-level trampoline pointer"
+}
+
+step 10 "fentry direct pointer index" {
+    count-at-least-one "fentry:do_close_on_exec" {|ctx|
+        $ctx.arg0.fdt.fd.0.f_inode.i_ino | count
+    } { trigger-sh-true } "direct pointer index"
+}
+
+step 11 "fentry bound root trampoline arg" {
+    count-at-least-one "fentry:do_close_on_exec" {|ctx|
+        let files = $ctx.arg0
+        $files.fdt.fd.f_inode.i_ino | count
+    } { trigger-sh-true } "bound root trampoline arg"
+}
+
+step 12 "fentry bound pointer index" {
+    count-at-least-one "fentry:do_close_on_exec" {|ctx|
+        let fd = $ctx.arg0.fdt.fd
+        $fd.0.f_inode.i_ino | count
+    } { trigger-sh-true } "bound pointer index"
+}
+
+step 13 "fentry bound numeric get" {
+    count-at-least-one "fentry:do_close_on_exec" {|ctx|
+        let idx = 0
+        let fd = ($ctx.arg0.fdt.fd | get $idx)
+        $fd.f_inode.i_ino | count
+    } { trigger-sh-true } "bound numeric get"
+}
+
+step 14 "fentry trampoline array element" {
+    count-at-least-one "fentry:wake_up_new_task" {|ctx|
+        $ctx.arg0.comm.0 | count
+    } { trigger-true } "trampoline array element"
+}
+
+step 15 "fentry trampoline array leaf" {
+    count-at-least-one "fentry:wake_up_new_task" {|ctx|
+        $ctx.arg0.comm | count
+    } { trigger-true } "trampoline array leaf"
+}
+
+step 16 "fentry trampoline struct leaf emit decodes record" {
+    let event = (collect-first-stream "fentry:security_file_open" {|ctx|
+        $ctx.arg0.f_path | emit
+    } { trigger-cargo-read $repo_root })
+    let columns = ($event | columns | sort)
+    assert-field-list $columns [cpu dentry mnt] "struct leaf emit"
+    { fields: $columns }
+}
+
+step 17 "fentry trampoline struct leaf count decodes record key" {
+    counter-check "fentry:security_file_open" {|ctx|
+        $ctx.arg0.f_path | count
+    } { trigger-cargo-read $repo_root } {|id, rows|
+        let row_count = (assert-row-count $rows "struct leaf counter")
+        let key_fields = ($rows | get 0.key | columns | sort)
+        assert-field-list $key_fields [dentry mnt] "struct-leaf counter key"
+        { id: $id, rows: $row_count, key_fields: $key_fields }
+    }
+}
+
+step 18 "fexit trampoline retval" {
+    count-at-least-one "fexit:do_sys_openat2" {|ctx|
+        $ctx.retval | count
+    } { trigger-cargo-read $repo_root } "fexit retval"
+}
+
+step 19 "bounded loop-driven numeric get" {
+    count-at-least-one "fentry:do_close_on_exec" {|ctx|
+        for i in 0..0 {
+            let fd = ($ctx.arg0.fdt.fd | get $i)
+            $fd.f_inode.i_ino | count
+        }
+    } { trigger-sh-true } "bounded loop numeric get"
+}
+
+step 20 "bounded arithmetic-derived numeric get" {
+    count-at-least-one "fentry:do_close_on_exec" {|ctx|
+        for i in 0..1 {
+            let j = (($i + 1) mod 2)
+            let fd = ($ctx.arg0.fdt.fd | get $j)
+            $fd.f_inode.i_ino | count
+        }
+    } { trigger-sh-true } "bounded arithmetic numeric get"
+}
+
+step 21 "typed runtime-field numeric get" {
+    count-at-least-one "fentry:do_close_on_exec" {|ctx|
+        let idx = ($ctx.arg0.fdt.max_fds mod 2)
+        let fd = ($ctx.arg0.fdt.fd | get $idx)
+        $fd.f_inode.i_ino | count
+    } { trigger-sh-true } "typed runtime-field numeric get"
+}
+
+step 22 "runtime get on stack-backed array leaf" {
+    count-at-least-one "fentry:wake_up_new_task" {|ctx|
+        let idx = ($ctx.pid mod 2)
+        ($ctx.arg0.comm | get $idx) | count
+    } { trigger-true } "stack-backed array numeric get"
+}
+
+step 23 "runtime get on stack-backed aggregate bitfield" {
+    count-at-least-one "fentry:wake_up_new_task" {|ctx|
+        let idx = ($ctx.pid mod 2)
+        let clamp = ($ctx.arg0.uclamp_req | get $idx)
+        $clamp.value | count
+    } { trigger-true } "stack-backed aggregate bitfield"
+}
+
+step 24 "runtime get on stack-backed aggregate bitfield struct count decodes record key" {
+    counter-check "fentry:wake_up_new_task" {|ctx|
+        let idx = ($ctx.pid mod 2)
+        let clamp = ($ctx.arg0.uclamp_req | get $idx)
+        $clamp | count
+    } { trigger-true } {|id, rows|
+        let row_count = (assert-row-count $rows "stack-backed aggregate bitfield struct")
+        let key_fields = ($rows | get 0.key | columns | sort)
+        assert-field-list $key_fields [active bucket_id user_defined value] "bitfield struct key"
+        { id: $id, rows: $row_count, key_fields: $key_fields }
+    }
+}
+
+step 25 "runtime get on stack-backed aggregate bitfield struct emit decodes record" {
+    let event = (collect-first-stream "fentry:wake_up_new_task" {|ctx|
+        let idx = ($ctx.pid mod 2)
+        let clamp = ($ctx.arg0.uclamp_req | get $idx)
+        $clamp | emit
+    } { trigger-true })
+    let columns = ($event | columns | sort)
+    assert-field-list $columns [active bucket_id cpu user_defined value] "bitfield struct emit"
+    { fields: $columns }
+}
+
+step 26 "branch-refined bound numeric get" {
+    count-at-least-one "fentry:do_close_on_exec" {|ctx|
+        let max = $ctx.arg0.fdt.max_fds
+        if $max > 0 {
+            let idx = ($max - 1)
+            let fd = ($ctx.arg0.fdt.fd | get $idx)
+            $fd.f_inode.i_ino | count
+        }
+    } { trigger-sh-true } "branch-refined numeric get"
+}
+
+step 27 "branch-refined direct numeric get" {
+    count-at-least-one "fentry:do_close_on_exec" {|ctx|
+        if $ctx.arg0.fdt.max_fds > 0 {
+            let idx = ($ctx.arg0.fdt.max_fds - 1)
+            let fd = ($ctx.arg0.fdt.fd | get $idx)
+            $fd.f_inode.i_ino | count
+        }
+    } { trigger-sh-true } "direct branch-refined numeric get"
+}
+
+step 28 "typed generic map put/get projection" {
+    count-at-least-one "fentry:security_file_open" {|ctx|
+        $ctx.arg0.f_path | map-put cached_path $ctx.pid --kind hash
+        let entry = ($ctx.pid | map-get cached_path --kind hash)
+        if $entry != 0 {
+            $entry.dentry.d_flags | count
+        }
+    } { trigger-cargo-read $repo_root } "typed map put/get"
+}
+
+step 29 "typed generic map whole-value count decodes record key" {
+    counter-check "fentry:security_file_open" {|ctx|
+        $ctx.arg0.f_path | map-put cached_path $ctx.pid --kind hash
+        let entry = ($ctx.pid | map-get cached_path --kind hash)
+        if $entry != 0 {
+            $entry | count
+        }
+    } { trigger-cargo-read $repo_root } {|id, rows|
+        let row_count = (assert-row-count $rows "whole-value typed map")
+        let key_fields = ($rows | get 0.key | columns | sort)
+        assert-field-list $key_fields [dentry mnt] "whole-value map key"
+        { id: $id, rows: $row_count, key_fields: $key_fields }
+    }
+}
+
+step 30 "typed generic map whole-value emit decodes record" {
+    let event = (collect-first-stream "fentry:security_file_open" {|ctx|
+        $ctx.arg0.f_path | map-put cached_path $ctx.pid --kind hash
+        let entry = ($ctx.pid | map-get cached_path --kind hash)
+        if $entry != 0 {
+            $entry | emit
+        }
+    } { trigger-cargo-read $repo_root })
+    let columns = ($event | columns | sort)
+    assert-field-list $columns [cpu dentry mnt] "whole-value map emit"
+    { fields: $columns }
+}
+
+step 31 "typed generic map value wrapped into emitted record" {
+    let event = (collect-first-stream "fentry:security_file_open" {|ctx|
+        $ctx.arg0.f_path | map-put cached_path $ctx.pid --kind hash
+        let entry = ($ctx.pid | map-get cached_path --kind hash)
+        if $entry != 0 {
+            { path: $entry } | emit
+        }
+    } { trigger-cargo-read $repo_root })
+    let path_fields = ($event | get path | columns | sort)
+    assert-field-list $path_fields [dentry mnt] "nested map record emit"
+    { fields: $path_fields }
+}
+
+step 32 "typed generic map value through user function emits typed record" {
+    let event = (collect-first-stream "fentry:security_file_open" {|ctx|
+        $ctx.arg0.f_path | map-put cached_path $ctx.pid --kind hash
+        let entry = ($ctx.pid | map-get cached_path --kind hash)
+        if $entry != 0 {
+            (project-entry $entry) | emit
+        }
+    } { trigger-cargo-read $repo_root })
+    let columns = ($event | columns | sort)
+    assert-field-list $columns [cpu dentry mnt] "user-function map emit"
+    { fields: $columns }
+}
+
+step 33 "typed user function projects typed trampoline arg" {
+    count-at-least-one "fentry:security_file_open" {|ctx|
+        (project-inode-flags $ctx.arg0) | count
+    } { trigger-cargo-read $repo_root } "typed user-function trampoline projection"
+}
+
+step 34 "typed generic map value copied into second map" {
+    count-at-least-one "fentry:security_file_open" {|ctx|
+        $ctx.arg0.f_path | map-put cached_path $ctx.pid --kind hash
+        let entry = ($ctx.pid | map-get cached_path --kind hash)
+        if $entry != 0 {
+            $entry | map-put copied_path $ctx.pid --kind hash
+            let copied = ($ctx.pid | map-get copied_path --kind hash)
+            if $copied != 0 {
+                $copied.dentry.d_flags | count
+            }
+        }
+    } { trigger-cargo-read $repo_root } "map-to-map copy"
+}
+
+step 35 "typed generic map schema persists across pinned programs" {
+    let group = "typed_map_schema"
+    let writer = (ebpf attach "fentry:security_file_open" {|ctx|
+        $ctx.arg0.f_path | map-put cached_path $ctx.pid --kind hash
+    } --pin $group)
+
+    try {
+        trigger-cargo-read $repo_root
+        let reader = (ebpf attach "fentry:security_file_open" {|ctx|
+            let entry = ($ctx.pid | map-get cached_path --kind hash)
+            if $entry != 0 {
+                $entry.dentry.d_flags | count
+            }
+        } --pin $group)
+        try {
+            trigger-cargo-read $repo_root
+            let rows = (wait-for-counter-rows $reader "pinned typed map schema")
+            let row_count = (assert-row-count $rows "pinned typed map schema")
+            safe-detach $reader
+            safe-detach $writer
+            { writer: $writer, reader: $reader, rows: $row_count }
+        } catch { |err|
+            safe-detach $reader
+            safe-detach $writer
+            error make $err
+        }
+    } catch { |err|
+        safe-detach $writer
+        error make $err
+    }
+}
+
+step 36 "verify no leaked probes" {
+    let remaining = (ebpf list | length)
+    if $remaining != 0 {
+        fail $"expected empty probe list, got ($remaining)"
+    }
+    "ok"
+}
+
+print "Manual integration suite passed."
