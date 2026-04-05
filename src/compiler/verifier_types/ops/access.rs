@@ -75,12 +75,26 @@ pub(in crate::compiler::verifier_types) fn check_ptr_bounds(
     errors: &mut Vec<VerifierTypeError>,
 ) {
     let Some(bounds) = bounds else {
+        if space == AddressSpace::Packet {
+            errors.push(VerifierTypeError::new(format!(
+                "{op} on packet pointers requires a preceding data_end guard"
+            )));
+        }
         return;
     };
 
     match (space, bounds.origin()) {
-        (AddressSpace::Stack, PtrOrigin::Stack(_)) | (AddressSpace::Map, PtrOrigin::Map) => {}
+        (AddressSpace::Stack, PtrOrigin::Stack(_))
+        | (AddressSpace::Map, PtrOrigin::Map)
+        | (AddressSpace::Packet, PtrOrigin::Packet(_)) => {}
         _ => return,
+    }
+
+    if space == AddressSpace::Packet && bounds.limit() == UNKNOWN_PACKET_LIMIT {
+        errors.push(VerifierTypeError::new(format!(
+            "{op} on packet pointers requires a preceding data_end guard"
+        )));
+        return;
     }
 
     let size = size as i64;
@@ -95,6 +109,7 @@ pub(in crate::compiler::verifier_types) fn check_ptr_bounds(
         let origin = match bounds.origin() {
             PtrOrigin::Stack(slot) => format!("stack slot {}", slot.0),
             PtrOrigin::Map => "map value".to_string(),
+            PtrOrigin::Packet(root) => format!("packet root v{}", root.0),
         };
         errors.push(VerifierTypeError::new(format!(
             "{op} out of bounds for {origin}: access [{start}..{end}] exceeds 0..{}",

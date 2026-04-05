@@ -31,6 +31,8 @@ impl<'a> VccLowerer<'a> {
                 space: VccAddrSpace::Stack(slot),
                 nullability: VccNullability::NonNull,
                 bounds: stack_bounds(size),
+                packet_root: None,
+                packet_end: false,
                 ringbuf_ref: None,
                 kfunc_ref: None,
             },
@@ -52,6 +54,8 @@ impl<'a> VccLowerer<'a> {
                     space: VccAddrSpace::Stack(*slot),
                     nullability: VccNullability::NonNull,
                     bounds: stack_bounds(size),
+                    packet_root: None,
+                    packet_end: false,
                     ringbuf_ref: None,
                     kfunc_ref: None,
                 })
@@ -102,6 +106,8 @@ impl<'a> VccLowerer<'a> {
                         space: VccAddrSpace::RingBuf,
                         nullability: VccNullability::MaybeNull,
                         bounds: None,
+                        packet_root: None,
+                        packet_end: false,
                         ringbuf_ref: Some(VccReg(dst.0)),
                         kfunc_ref: None,
                     });
@@ -111,6 +117,8 @@ impl<'a> VccLowerer<'a> {
                         space: VccAddrSpace::Kernel,
                         nullability: VccNullability::MaybeNull,
                         bounds: None,
+                        packet_root: None,
+                        packet_end: false,
                         ringbuf_ref: None,
                         kfunc_ref: None,
                     });
@@ -134,6 +142,8 @@ impl<'a> VccLowerer<'a> {
                         space: VccAddrSpace::Kernel,
                         nullability: VccNullability::MaybeNull,
                         bounds: None,
+                        packet_root: None,
+                        packet_end: false,
                         ringbuf_ref: None,
                         kfunc_ref: None,
                     });
@@ -143,6 +153,8 @@ impl<'a> VccLowerer<'a> {
                         space: VccAddrSpace::Kernel,
                         nullability: VccNullability::MaybeNull,
                         bounds: None,
+                        packet_root: None,
+                        packet_end: false,
                         ringbuf_ref: None,
                         kfunc_ref: Some(VccReg(dst.0)),
                     });
@@ -156,6 +168,8 @@ impl<'a> VccLowerer<'a> {
                         space: VccAddrSpace::MapValue,
                         nullability: VccNullability::MaybeNull,
                         bounds: None,
+                        packet_root: None,
+                        packet_end: false,
                         ringbuf_ref: None,
                         kfunc_ref: None,
                     }),
@@ -194,6 +208,8 @@ impl<'a> VccLowerer<'a> {
                     space: VccAddrSpace::Kernel,
                     nullability: VccNullability::MaybeNull,
                     bounds: None,
+                    packet_root: None,
+                    packet_end: false,
                     ringbuf_ref: None,
                     kfunc_ref: if Self::kfunc_acquire_kind(kfunc).is_some() {
                         Some(VccReg(dst.0))

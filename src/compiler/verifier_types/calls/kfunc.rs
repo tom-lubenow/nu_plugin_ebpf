@@ -1319,6 +1319,7 @@ fn stack_slot_from_arg(state: &VerifierState, arg: VReg) -> Option<StackSlotId> 
         } => match bounds.origin() {
             PtrOrigin::Stack(slot) => Some(slot),
             PtrOrigin::Map => None,
+            PtrOrigin::Packet(_) => None,
         },
         _ => None,
     }

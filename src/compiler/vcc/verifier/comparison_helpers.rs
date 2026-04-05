@@ -121,6 +121,42 @@ impl VccVerifier {
         }
     }
 
+    pub(super) fn packet_end_comparison(
+        &self,
+        lhs: VccValue,
+        lhs_ty: VccValueType,
+        rhs: VccValue,
+        rhs_ty: VccValueType,
+        op: VccBinOp,
+    ) -> Option<(VccReg, VccBinOp)> {
+        let normalize =
+            |ptr_value: VccValue, ptr_ty: VccValueType, end_ty: VccValueType, op: VccBinOp| {
+                let VccValue::Reg(ptr_reg) = ptr_value else {
+                    return None;
+                };
+                let VccValueType::Ptr(ptr) = ptr_ty else {
+                    return None;
+                };
+                let VccValueType::Ptr(end) = end_ty else {
+                    return None;
+                };
+                if ptr.space != VccAddrSpace::Packet
+                    || end.space != VccAddrSpace::Packet
+                    || ptr.packet_root.is_none()
+                    || !end.packet_end
+                {
+                    return None;
+                }
+                if !matches!(op, VccBinOp::Lt | VccBinOp::Le | VccBinOp::Gt | VccBinOp::Ge) {
+                    return None;
+                }
+                Some((ptr_reg, op))
+            };
+
+        normalize(lhs, lhs_ty, rhs_ty, op)
+            .or_else(|| normalize(rhs, rhs_ty, lhs_ty, Self::reverse_compare(op)?))
+    }
+
     pub(super) fn is_scalar_like(ty: VccValueType) -> bool {
         matches!(ty.class(), VccTypeClass::Scalar | VccTypeClass::Bool)
     }

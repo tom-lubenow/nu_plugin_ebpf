@@ -47,6 +47,8 @@ impl<'a> VccLowerer<'a> {
                                 space: VccAddrSpace::Stack(*slot),
                                 nullability: VccNullability::NonNull,
                                 bounds: stack_bounds(size),
+                                packet_root: None,
+                                packet_end: false,
                                 ringbuf_ref: None,
                                 kfunc_ref: None,
                             },
@@ -254,12 +256,14 @@ impl<'a> VccLowerer<'a> {
                             space: VccAddrSpace::Stack(*slot),
                             nullability: VccNullability::NonNull,
                             bounds: stack_bounds(size),
+                            packet_root: None,
+                            packet_end: false,
                             ringbuf_ref: None,
                             kfunc_ref: None,
                         },
                     );
                 } else {
-                    let ty = self
+                    let mut ty = self
                         .types
                         .get(dst)
                         .map(|mir_ty| {
@@ -271,6 +275,26 @@ impl<'a> VccLowerer<'a> {
                                 .unwrap_or_else(|| vcc_type_from_mir(mir_ty))
                         })
                         .unwrap_or(VccValueType::Unknown);
+                    if let VccValueType::Ptr(ref mut info) = ty
+                        && info.space == VccAddrSpace::Packet
+                    {
+                        match field {
+                            CtxField::Data => {
+                                info.bounds = Some(VccBounds {
+                                    min: 0,
+                                    max: 0,
+                                    limit: UNKNOWN_PACKET_LIMIT,
+                                });
+                                info.packet_root = Some(VccReg(dst.0));
+                                info.packet_end = false;
+                            }
+                            CtxField::DataEnd => {
+                                info.packet_root = None;
+                                info.packet_end = true;
+                            }
+                            _ => {}
+                        }
+                    }
                     out.push(VccInst::Assume {
                         dst: VccReg(dst.0),
                         ty,
@@ -339,6 +363,8 @@ impl<'a> VccLowerer<'a> {
                         space: VccAddrSpace::MapValue,
                         nullability: VccNullability::MaybeNull,
                         bounds: None,
+                        packet_root: None,
+                        packet_end: false,
                         ringbuf_ref: None,
                         kfunc_ref: None,
                     },

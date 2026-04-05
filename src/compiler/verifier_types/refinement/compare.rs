@@ -26,7 +26,7 @@ pub(in crate::compiler::verifier_types) fn guard_from_compare(
             if matches!(lhs_ty, VerifierType::Ptr { .. })
                 || matches!(rhs_ty, VerifierType::Ptr { .. })
             {
-                return None;
+                return packet_end_guard(op, *lhs, *rhs, state);
             }
             Some(Guard::RangeCmp {
                 lhs: *lhs,
@@ -73,6 +73,58 @@ pub(in crate::compiler::verifier_types) fn guard_from_compare_reg_const(
     }
 
     Some(Guard::Range { reg, op, value })
+}
+
+fn packet_end_guard(
+    op: BinOpKind,
+    lhs: VReg,
+    rhs: VReg,
+    state: &VerifierState,
+) -> Option<Guard> {
+    let lhs_ty = state.get(lhs);
+    let rhs_ty = state.get(rhs);
+
+    let make_guard = |ptr: VReg, normalized_op: BinOpKind| match normalized_op {
+        BinOpKind::Le | BinOpKind::Lt | BinOpKind::Ge | BinOpKind::Gt => Some(Guard::PacketEnd {
+            ptr,
+            op: normalized_op,
+        }),
+        _ => None,
+    };
+
+    match (lhs_ty, rhs_ty) {
+        (
+            VerifierType::Ptr {
+                space: AddressSpace::Packet,
+                bounds: Some(bounds),
+                ..
+            },
+            VerifierType::Ptr {
+                space: AddressSpace::Packet,
+                ..
+            },
+        ) if matches!(bounds.origin(), PtrOrigin::Packet(_))
+            && state.ctx_field_source(rhs) == Some(&CtxField::DataEnd) =>
+        {
+            make_guard(lhs, op)
+        }
+        (
+            VerifierType::Ptr {
+                space: AddressSpace::Packet,
+                ..
+            },
+            VerifierType::Ptr {
+                space: AddressSpace::Packet,
+                bounds: Some(bounds),
+                ..
+            },
+        ) if matches!(bounds.origin(), PtrOrigin::Packet(_))
+            && state.ctx_field_source(lhs) == Some(&CtxField::DataEnd) =>
+        {
+            make_guard(rhs, swap_compare(op)?)
+        }
+        _ => None,
+    }
 }
 
 pub(in crate::compiler::verifier_types) fn swap_compare(op: BinOpKind) -> Option<BinOpKind> {
@@ -123,6 +175,10 @@ pub(in crate::compiler::verifier_types) fn invert_guard(guard: Guard) -> Option<
         Guard::RangeCmp { lhs, rhs, op } => Some(Guard::RangeCmp {
             lhs,
             rhs,
+            op: negate_compare(op)?,
+        }),
+        Guard::PacketEnd { ptr, op } => Some(Guard::PacketEnd {
+            ptr,
             op: negate_compare(op)?,
         }),
     }

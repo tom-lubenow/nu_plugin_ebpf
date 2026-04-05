@@ -167,6 +167,34 @@ pub(super) fn apply_load_ctx_field_inst(
             kfunc_ref: None,
         };
     }
+    if matches!(field, CtxField::Data) {
+        match ty {
+            VerifierType::Ptr {
+                space: AddressSpace::Packet,
+                nullability,
+                bounds: None,
+                ..
+            } => {
+                ty = VerifierType::Ptr {
+                    space: AddressSpace::Packet,
+                    nullability,
+                    bounds: Some(PtrBounds::new(
+                        PtrOrigin::Packet(dst),
+                        0,
+                        0,
+                        UNKNOWN_PACKET_LIMIT,
+                    )),
+                    ringbuf_ref: None,
+                    kfunc_ref: None,
+                };
+            }
+            VerifierType::Ptr {
+                space: AddressSpace::Packet,
+                ..
+            } => {}
+            _ => {}
+        }
+    }
     state.set_with_range(dst, ty, scalar_value_range_for_type(types, dst));
     state.set_ctx_field_source(dst, Some(field.clone()));
 }

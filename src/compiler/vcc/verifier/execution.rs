@@ -257,6 +257,8 @@ impl VccVerifier {
                         space: VccAddrSpace::Stack(*slot),
                         nullability: VccNullability::NonNull,
                         bounds,
+                        packet_root: None,
+                        packet_end: false,
                         ringbuf_ref: None,
                         kfunc_ref: None,
                     }),
@@ -287,6 +289,8 @@ impl VccVerifier {
                             self.scalar_const_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         let scalar_reg_cmp =
                             self.scalar_reg_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
+                        let packet_end_cmp =
+                            self.packet_end_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         let lhs_is_ptr = matches!(lhs_ty, VccValueType::Ptr(_));
                         let rhs_is_ptr = matches!(rhs_ty, VccValueType::Ptr(_));
                         if lhs_is_ptr || rhs_is_ptr {
@@ -387,6 +391,14 @@ impl VccVerifier {
                                     op: cmp_op,
                                 },
                             );
+                        } else if let Some((ptr_reg, cmp_op)) = packet_end_cmp {
+                            state.set_cond_refinement(
+                                *dst,
+                                VccCondRefinement::PacketEnd {
+                                    ptr_reg,
+                                    op: cmp_op,
+                                },
+                            );
                         }
                     }
                     VccBinOp::Lt | VccBinOp::Le | VccBinOp::Gt | VccBinOp::Ge => {
@@ -394,6 +406,8 @@ impl VccVerifier {
                             self.scalar_const_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         let scalar_reg_cmp =
                             self.scalar_reg_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
+                        let packet_end_cmp =
+                            self.packet_end_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         let lhs_is_ptr = matches!(lhs_ty, VccValueType::Ptr(_));
                         let rhs_is_ptr = matches!(rhs_ty, VccValueType::Ptr(_));
                         if lhs_is_ptr || rhs_is_ptr {
@@ -458,6 +472,14 @@ impl VccVerifier {
                                 VccCondRefinement::ScalarCmpRegs {
                                     lhs,
                                     rhs,
+                                    op: cmp_op,
+                                },
+                            );
+                        } else if let Some((ptr_reg, cmp_op)) = packet_end_cmp {
+                            state.set_cond_refinement(
+                                *dst,
+                                VccCondRefinement::PacketEnd {
+                                    ptr_reg,
                                     op: cmp_op,
                                 },
                             );
@@ -551,6 +573,8 @@ impl VccVerifier {
                         space: base_ptr.space,
                         nullability: base_ptr.nullability,
                         bounds,
+                        packet_root: base_ptr.packet_root,
+                        packet_end: base_ptr.packet_end,
                         ringbuf_ref: base_ptr.ringbuf_ref,
                         kfunc_ref: base_ptr.kfunc_ref,
                     }),
@@ -585,6 +609,17 @@ impl VccVerifier {
                                     "load requires pointer in [Stack, Map, Packet], got {}",
                                     Self::space_name(ptr_info.space)
                                 ),
+                            ));
+                            return;
+                        }
+                        if ptr_info.space == VccAddrSpace::Packet
+                            && ptr_info
+                                .bounds
+                                .is_none_or(|bounds| bounds.limit == UNKNOWN_PACKET_LIMIT)
+                        {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::PointerBounds,
+                                "load on packet pointers requires a preceding data_end guard",
                             ));
                             return;
                         }

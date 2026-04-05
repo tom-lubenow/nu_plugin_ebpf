@@ -94,6 +94,8 @@ pub struct VccBounds {
     pub limit: i64,
 }
 
+const UNKNOWN_PACKET_LIMIT: i64 = i64::MAX / 4;
+
 impl VccBounds {
     fn shifted(self, offset: VccRange) -> Option<VccBounds> {
         let new_min = self.min.saturating_add(offset.min);
@@ -155,6 +157,8 @@ pub struct VccPointerInfo {
     pub space: VccAddrSpace,
     pub nullability: VccNullability,
     pub bounds: Option<VccBounds>,
+    pub packet_root: Option<VccReg>,
+    pub packet_end: bool,
     pub ringbuf_ref: Option<VccReg>,
     pub kfunc_ref: Option<VccReg>,
 }
@@ -703,6 +707,8 @@ fn vcc_type_from_mir(ty: &MirType) -> VccValueType {
                     }
                 },
                 bounds,
+                packet_root: None,
+                packet_end: false,
                 ringbuf_ref: None,
                 kfunc_ref: None,
             })

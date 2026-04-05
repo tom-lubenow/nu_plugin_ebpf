@@ -133,6 +133,30 @@ pub(in crate::compiler::verifier_types) fn refine_on_branch(
                     matches!(new_rhs, ValueRange::Known { min, max } if min > 0 || max < 0);
                 next.set_non_zero(rhs, next.is_non_zero(rhs) || rhs_excludes_zero);
             }
+            Guard::PacketEnd { ptr, op } => {
+                let Some(effective_op) = effective_branch_compare(op, take_true) else {
+                    return next;
+                };
+                if !matches!(effective_op, BinOpKind::Le | BinOpKind::Lt) {
+                    return next;
+                }
+                let VerifierType::Ptr {
+                    space: AddressSpace::Packet,
+                    bounds: Some(bounds),
+                    ..
+                } = next.get(ptr)
+                else {
+                    return next;
+                };
+                let PtrOrigin::Packet(root) = bounds.origin() else {
+                    return next;
+                };
+                let safe_limit = bounds.max().saturating_sub(1);
+                if safe_limit < 0 {
+                    return next;
+                }
+                next.refine_packet_prefix_limit(root, safe_limit);
+            }
         }
     }
     next

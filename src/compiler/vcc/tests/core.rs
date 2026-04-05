@@ -2131,3 +2131,178 @@ fn test_verify_mir_prune_impossible_const_compare_branch() {
 
     verify_mir(&func, &types).expect("expected impossible branch to be pruned");
 }
+
+#[test]
+fn test_verify_mir_packet_load_with_data_end_guard_passes() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let load = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let data = func.alloc_vreg();
+    let access_end = func.alloc_vreg();
+    let data_end = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::LoadCtxField {
+        dst: data,
+        field: CtxField::Data,
+        slot: None,
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: access_end,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(data),
+        rhs: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::LoadCtxField {
+        dst: data_end,
+        field: CtxField::DataEnd,
+        slot: None,
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Le,
+        lhs: MirValue::VReg(access_end),
+        rhs: MirValue::VReg(data_end),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: load,
+        if_false: done,
+    };
+
+    func.block_mut(load).instructions.push(MirInst::Load {
+        dst,
+        ptr: data,
+        offset: 0,
+        ty: MirType::U8,
+    });
+    func.block_mut(load).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let packet_ptr = MirType::Ptr {
+        pointee: Box::new(MirType::U8),
+        address_space: AddressSpace::Packet,
+    };
+    let mut types = HashMap::new();
+    types.insert(data, packet_ptr.clone());
+    types.insert(access_end, packet_ptr.clone());
+    types.insert(data_end, packet_ptr);
+    types.insert(cond, MirType::Bool);
+    types.insert(dst, MirType::U8);
+
+    verify_mir(&func, &types).expect("guarded packet byte load should verify in VCC");
+}
+
+#[test]
+fn test_verify_mir_packet_load_without_data_end_guard_fails() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let data = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::LoadCtxField {
+        dst: data,
+        field: CtxField::Data,
+        slot: None,
+    });
+    func.block_mut(entry).instructions.push(MirInst::Load {
+        dst,
+        ptr: data,
+        offset: 0,
+        ty: MirType::U8,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        data,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Packet,
+        },
+    );
+    types.insert(dst, MirType::U8);
+
+    let err = verify_mir(&func, &types).expect_err("unguarded packet load should fail in VCC");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "expected pointer bounds error, got {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_packet_load_rejects_guard_that_is_too_small() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let load = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let data = func.alloc_vreg();
+    let access_end = func.alloc_vreg();
+    let data_end = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::LoadCtxField {
+        dst: data,
+        field: CtxField::Data,
+        slot: None,
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: access_end,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(data),
+        rhs: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::LoadCtxField {
+        dst: data_end,
+        field: CtxField::DataEnd,
+        slot: None,
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Le,
+        lhs: MirValue::VReg(access_end),
+        rhs: MirValue::VReg(data_end),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: load,
+        if_false: done,
+    };
+
+    func.block_mut(load).instructions.push(MirInst::Load {
+        dst,
+        ptr: data,
+        offset: 0,
+        ty: MirType::U16,
+    });
+    func.block_mut(load).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let packet_ptr = MirType::Ptr {
+        pointee: Box::new(MirType::U8),
+        address_space: AddressSpace::Packet,
+    };
+    let mut types = HashMap::new();
+    types.insert(data, packet_ptr.clone());
+    types.insert(access_end, packet_ptr.clone());
+    types.insert(data_end, packet_ptr);
+    types.insert(cond, MirType::Bool);
+    types.insert(dst, MirType::U16);
+
+    let err = verify_mir(&func, &types).expect_err("undersized packet guard should fail in VCC");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "expected pointer bounds error, got {:?}",
+        err
+    );
+}

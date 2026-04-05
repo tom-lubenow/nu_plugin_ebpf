@@ -66,6 +66,10 @@ enum VccCondRefinement {
         kfunc_ref: Option<VccReg>,
         true_means_non_null: bool,
     },
+    PacketEnd {
+        ptr_reg: VccReg,
+        op: VccBinOp,
+    },
     ScalarCmpConst {
         reg: VccReg,
         op: VccBinOp,
@@ -200,6 +204,30 @@ impl VccState {
 
     fn cond_refinement(&self, reg: VccReg) -> Option<VccCondRefinement> {
         self.cond_refinements.get(&reg).copied()
+    }
+
+    fn refine_packet_prefix_limit(&mut self, root: VccReg, safe_limit: i64) {
+        for ty in self.reg_types.values_mut() {
+            let VccValueType::Ptr(ptr) = ty else {
+                continue;
+            };
+            if ptr.space != VccAddrSpace::Packet || ptr.packet_root != Some(root) {
+                continue;
+            }
+            let Some(bounds) = ptr.bounds else {
+                continue;
+            };
+            let next_limit = if bounds.limit == UNKNOWN_PACKET_LIMIT {
+                safe_limit
+            } else {
+                bounds.limit.max(safe_limit)
+            };
+            ptr.bounds = Some(VccBounds {
+                min: bounds.min,
+                max: bounds.max,
+                limit: next_limit,
+            });
+        }
     }
 
     fn is_live_ringbuf_ref(&self, id: VccReg) -> bool {
@@ -676,6 +704,7 @@ impl VccState {
         }
         self.cond_refinements.retain(|_, info| match info {
             VccCondRefinement::PtrNull { ringbuf_ref, .. } => *ringbuf_ref != Some(id),
+            VccCondRefinement::PacketEnd { .. } => true,
             VccCondRefinement::ScalarCmpConst { .. } => true,
             VccCondRefinement::ScalarCmpRegs { .. } => true,
         });
@@ -698,6 +727,7 @@ impl VccState {
         }
         self.cond_refinements.retain(|_, info| match info {
             VccCondRefinement::PtrNull { kfunc_ref, .. } => *kfunc_ref != Some(id),
+            VccCondRefinement::PacketEnd { .. } => true,
             VccCondRefinement::ScalarCmpConst { .. } => true,
             VccCondRefinement::ScalarCmpRegs { .. } => true,
         });
@@ -872,6 +902,8 @@ impl VccState {
                     space: ptr.space,
                     nullability: VccNullability::MaybeNull,
                     bounds: None,
+                    packet_root: ptr.packet_root,
+                    packet_end: ptr.packet_end,
                     ringbuf_ref: None,
                     kfunc_ref: None,
                 }),
@@ -1186,6 +1218,12 @@ impl VccState {
                     space: lp.space,
                     nullability,
                     bounds,
+                    packet_root: if lp.packet_root == rp.packet_root {
+                        lp.packet_root
+                    } else {
+                        None
+                    },
+                    packet_end: lp.packet_end && rp.packet_end,
                     ringbuf_ref,
                     kfunc_ref,
                 })
