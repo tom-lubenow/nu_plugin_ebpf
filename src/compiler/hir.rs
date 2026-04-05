@@ -299,6 +299,7 @@ impl HirLiteral {
         match value {
             Value::Bool { val, .. } => Some(Self::Bool(*val)),
             Value::Int { val, .. } => Some(Self::Int(*val)),
+            Value::Binary { val, .. } => Some(Self::Binary(val.clone())),
             Value::String { val, .. } => Some(Self::String(val.as_bytes().to_vec())),
             Value::Glob { val, no_expand, .. } => Some(Self::GlobPattern {
                 val: val.as_bytes().to_vec(),

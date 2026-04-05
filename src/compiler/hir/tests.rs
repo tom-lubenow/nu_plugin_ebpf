@@ -58,3 +58,18 @@ fn test_supports_constant_value_for_record_with_nested_numeric_list() {
         Span::test_data()
     )));
 }
+
+#[test]
+fn test_supports_constant_value_for_binary_and_nested_binary_record() {
+    assert!(supports_constant_value(&Value::binary(
+        vec![1, 2, 3],
+        Span::test_data()
+    )));
+
+    let mut record = Record::new();
+    record.push("payload", Value::binary(vec![1, 2], Span::test_data()));
+    assert!(supports_constant_value(&Value::record(
+        record,
+        Span::test_data()
+    )));
+}

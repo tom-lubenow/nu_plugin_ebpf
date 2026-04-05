@@ -416,6 +416,7 @@ fn hm_type_for_value(val: &Value) -> HMType {
         | Value::Filesize { .. }
         | Value::Duration { .. }
         | Value::Date { .. } => HMType::I64,
+        Value::Binary { .. } => stack_string_ptr_type(),
         Value::String { .. } | Value::Glob { .. } => stack_string_ptr_type(),
         Value::Record { .. } => stack_record_ptr_type(),
         value if supports_numeric_constant_list(value) => stack_list_ptr_type(),

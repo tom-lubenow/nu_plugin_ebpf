@@ -78,6 +78,22 @@ impl<'a> HirToMirLowering<'a> {
         ))
     }
 
+    fn binary_constant_rodata_repr(bytes: &[u8]) -> Result<(MirType, Vec<u8>), CompileError> {
+        if bytes.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "empty binary constants are not yet supported in eBPF lowering".into(),
+            ));
+        }
+
+        Ok((
+            MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: bytes.len(),
+            },
+            bytes.to_vec(),
+        ))
+    }
+
     fn mutable_capture_global_repr(
         value: &Value,
     ) -> Result<Option<(MirType, Vec<u8>, Option<usize>, Option<usize>)>, CompileError> {
@@ -91,6 +107,10 @@ impl<'a> HirToMirLowering<'a> {
                 Some((MirType::I64, val.to_le_bytes().to_vec(), None, None))
             }
             Value::Nothing { .. } => Some((MirType::I64, 0i64.to_le_bytes().to_vec(), None, None)),
+            Value::Binary { val, .. } => {
+                let (ty, data) = Self::binary_constant_rodata_repr(val)?;
+                Some((ty, data, None, None))
+            }
             Value::Record { val, .. } => {
                 let (ty, data) = Self::constant_record_rodata_repr(val.as_ref())?;
                 Some((ty, data, None, None))
@@ -123,7 +143,7 @@ impl<'a> HirToMirLowering<'a> {
                 Self::mutable_capture_global_repr(value)?
             else {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "mutating captured variable {} of type {} is not yet supported; mutable captured globals currently only support numeric scalar values, strings, numeric constant lists, and representable constant records",
+                    "mutating captured variable {} of type {} is not yet supported; mutable captured globals currently only support numeric scalar values, strings, fixed binary values, numeric constant lists, and representable constant records",
                     var_id.get(),
                     value.get_type()
                 )));
@@ -319,6 +339,9 @@ impl<'a> HirToMirLowering<'a> {
         }
         if let Some(repr) = Self::string_constant_rodata_repr(value) {
             return Ok(repr);
+        }
+        if let Value::Binary { val, .. } = value {
+            return Self::binary_constant_rodata_repr(val);
         }
         if crate::compiler::hir::supports_numeric_constant_list(value)
             && let Value::List { vals, .. } = value
@@ -595,6 +618,36 @@ impl<'a> HirToMirLowering<'a> {
             | HirLiteral::Directory { val: bytes, .. }
             | HirLiteral::GlobPattern { val: bytes, .. } => {
                 self.lower_string_like_literal(dst, dst_vreg, bytes)?;
+            }
+
+            HirLiteral::Binary(bytes) => {
+                let (array_ty, data) = Self::binary_constant_rodata_repr(bytes)?;
+                let symbol = self.alloc_readonly_global_name();
+                self.readonly_globals.push(ReadonlyGlobal {
+                    name: symbol.clone(),
+                    data,
+                });
+
+                let global_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::LoadGlobal {
+                    dst: global_vreg,
+                    symbol,
+                    ty: array_ty.clone(),
+                });
+
+                let runtime_ty = MirType::Ptr {
+                    pointee: Box::new(array_ty.clone()),
+                    address_space: AddressSpace::Map,
+                };
+                self.emit(MirInst::Copy {
+                    dst: dst_vreg,
+                    src: MirValue::VReg(global_vreg),
+                });
+                self.vreg_type_hints.insert(global_vreg, runtime_ty.clone());
+                self.vreg_type_hints.insert(dst_vreg, runtime_ty);
+
+                let meta = self.get_or_create_metadata(dst);
+                meta.field_type = Some(array_ty);
             }
 
             HirLiteral::CellPath(cell_path) => {

@@ -4343,9 +4343,121 @@ fn test_lower_mutated_captured_non_numeric_list_variable_is_rejected() {
     assert!(
         err.to_string()
             .contains(
-                "mutable captured globals currently only support numeric scalar values, strings, numeric constant lists, and representable constant records"
+                "mutable captured globals currently only support numeric scalar values, strings, fixed binary values, numeric constant lists, and representable constant records"
             )
     );
+}
+
+#[test]
+fn test_lower_mutated_captured_binary_variable_uses_data_global() {
+    let capture_var = VarId::new(40);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: capture_var,
+                },
+                HirStmt::StoreVariable {
+                    var_id: capture_var,
+                    src: RegId::new(0),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(capture_var, Value::binary(vec![1, 2, 3], Span::test_data()))],
+        None,
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("mutated captured binary should lower through a writable global");
+
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+
+    let symbol = &result.data_globals[0].name;
+    let global_load_count = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::LoadGlobal { symbol: inst_symbol, .. }
+                    if inst_symbol == symbol
+            )
+        })
+        .count();
+
+    assert_eq!(global_load_count, 2);
+}
+
+#[test]
+fn test_lower_mutated_zero_filled_captured_binary_variable_uses_bss_global() {
+    let capture_var = VarId::new(41);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: capture_var,
+                },
+                HirStmt::StoreVariable {
+                    var_id: capture_var,
+                    src: RegId::new(0),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(capture_var, Value::binary(vec![0, 0, 0], Span::test_data()))],
+        None,
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("zero-filled captured binary should lower through bss");
+
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 0);
+    assert_eq!(result.bss_globals.len(), 1);
 }
 
 #[test]
@@ -4934,6 +5046,101 @@ fn test_lower_load_value_non_numeric_list_is_rejected() {
     assert!(
         err.to_string()
             .contains("constant lists currently only support numeric scalar elements")
+    );
+}
+
+#[test]
+fn test_lower_load_value_binary_uses_readonly_global() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadValue {
+                dst: RegId::new(0),
+                val: Box::new(Value::binary(vec![1, 2, 3], Span::test_data())),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("binary load values should lower through readonly globals");
+
+    assert_eq!(result.readonly_globals.len(), 1);
+    assert_eq!(result.readonly_globals[0].data, vec![1, 2, 3]);
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::LoadGlobal { .. })),
+        "expected binary load value lowering to use a readonly global"
+    );
+}
+
+#[test]
+fn test_lower_load_value_record_with_binary_field_uses_readonly_global() {
+    let mut rec = Record::new();
+    rec.push("payload", Value::binary(vec![1, 2], Span::test_data()));
+    rec.push("pid", Value::int(7, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadValue {
+                dst: RegId::new(0),
+                val: Box::new(Value::record(rec, Span::test_data())),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("records with binary fields should lower through rodata");
+
+    assert_eq!(result.readonly_globals.len(), 1);
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadGlobal { symbol, .. }
+                    if symbol == &result.readonly_globals[0].name
+            )),
+        "expected binary record lowering to load from the emitted readonly global"
     );
 }
 
