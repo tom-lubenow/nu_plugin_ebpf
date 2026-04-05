@@ -4011,7 +4011,205 @@ fn test_lower_mutated_captured_string_variable_is_rejected() {
     assert!(
         err.to_string()
             .contains(
-                "mutable captured globals currently only support numeric scalar values and representable constant records"
+                "mutable captured globals currently only support numeric scalar values, numeric constant lists, and representable constant records"
+            )
+    );
+}
+
+#[test]
+fn test_lower_mutated_captured_numeric_list_variable_uses_data_global() {
+    let capture_var = VarId::new(23);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: capture_var,
+                },
+                HirStmt::StoreVariable {
+                    var_id: capture_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(1),
+                    var_id: capture_var,
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(
+            capture_var,
+            Value::list(
+                vec![
+                    Value::int(1, Span::test_data()),
+                    Value::duration(2, Span::test_data()),
+                    Value::bool(true, Span::test_data()),
+                ],
+                Span::test_data(),
+            ),
+        )],
+        None,
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("mutated captured numeric list should lower through a writable global");
+
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+
+    let symbol = &result.data_globals[0].name;
+    let global_load_count = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::LoadReadonlyGlobal { symbol: inst_symbol, .. }
+                    if inst_symbol == symbol
+            )
+        })
+        .count();
+
+    assert_eq!(global_load_count, 3);
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::StackSlot(_),
+                    ..
+                }
+            )),
+        "expected mutable captured numeric list loading to materialize a stack list buffer"
+    );
+}
+
+#[test]
+fn test_lower_mutated_empty_captured_numeric_list_variable_uses_bss_global() {
+    let capture_var = VarId::new(24);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: capture_var,
+                },
+                HirStmt::StoreVariable {
+                    var_id: capture_var,
+                    src: RegId::new(0),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(capture_var, Value::list(Vec::new(), Span::test_data()))],
+        None,
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("mutated empty captured numeric list should lower through bss");
+
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 0);
+    assert_eq!(result.bss_globals.len(), 1);
+}
+
+#[test]
+fn test_lower_mutated_captured_non_numeric_list_variable_is_rejected() {
+    let capture_var = VarId::new(25);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: capture_var,
+                },
+                HirStmt::StoreVariable {
+                    var_id: capture_var,
+                    src: RegId::new(0),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(
+            capture_var,
+            Value::list(
+                vec![Value::string("bad", Span::test_data())],
+                Span::test_data(),
+            ),
+        )],
+        None,
+    );
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("mutated captured non-numeric lists should remain unsupported");
+
+    assert!(
+        err.to_string()
+            .contains(
+                "mutable captured globals currently only support numeric scalar values, numeric constant lists, and representable constant records"
             )
     );
 }

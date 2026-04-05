@@ -331,7 +331,6 @@ impl<'a> HirToMirLowering<'a> {
 
             HirStmt::StoreVariable { var_id, src } => {
                 if let Some(global) = self.mutable_capture_globals.get(var_id).cloned() {
-                    let src_vreg = self.get_vreg(*src);
                     let global_ptr = self.func.alloc_vreg();
                     self.emit(MirInst::LoadReadonlyGlobal {
                         dst: global_ptr,
@@ -345,47 +344,83 @@ impl<'a> HirToMirLowering<'a> {
                             address_space: crate::compiler::mir::AddressSpace::Map,
                         },
                     );
-                    match &global.ty {
-                        MirType::Array { .. } | MirType::Struct { .. } => {
-                            let Some(src_runtime_ty) = self.vreg_type_hints.get(&src_vreg).cloned()
-                            else {
-                                return Err(CompileError::UnsupportedInstruction(format!(
-                                    "storing into mutable captured variable {} requires a materialized aggregate pointer value",
-                                    var_id.get()
-                                )));
-                            };
+                    if let Some(max_len) = global.list_max_len {
+                        let Some((slot, src_max_len)) =
+                            self.get_metadata(*src).and_then(|m| m.list_buffer)
+                        else {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "storing into mutable captured variable {} requires a materialized numeric list value",
+                                var_id.get()
+                            )));
+                        };
 
-                            let Some(MirType::Ptr {
-                                pointee,
-                                address_space:
-                                    crate::compiler::mir::AddressSpace::Stack
-                                    | crate::compiler::mir::AddressSpace::Map,
-                            }) = Some(src_runtime_ty)
-                            else {
-                                return Err(CompileError::UnsupportedInstruction(format!(
-                                    "storing into mutable captured variable {} requires a stack/map aggregate pointer value",
-                                    var_id.get()
-                                )));
-                            };
-
-                            if pointee.as_ref() != &global.ty {
-                                return Err(CompileError::UnsupportedInstruction(format!(
-                                    "storing type {:?} into mutable captured variable {} of type {:?} is not supported",
-                                    pointee,
-                                    var_id.get(),
-                                    global.ty
-                                )));
-                            }
-
-                            self.emit_ptr_copy(global_ptr, src_vreg, global.ty.size())?;
+                        if src_max_len != max_len {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "storing numeric list of capacity {} into mutable captured variable {} with capacity {} is not supported",
+                                src_max_len,
+                                var_id.get(),
+                                max_len
+                            )));
                         }
-                        _ => {
-                            self.emit(MirInst::Store {
-                                ptr: global_ptr,
-                                offset: 0,
-                                val: MirValue::VReg(src_vreg),
-                                ty: global.ty,
-                            });
+
+                        let src_ptr = self.func.alloc_vreg();
+                        self.emit(MirInst::Copy {
+                            dst: src_ptr,
+                            src: MirValue::StackSlot(slot),
+                        });
+                        self.vreg_type_hints.insert(
+                            src_ptr,
+                            MirType::Ptr {
+                                pointee: Box::new(global.ty.clone()),
+                                address_space: crate::compiler::mir::AddressSpace::Stack,
+                            },
+                        );
+                        self.emit_ptr_copy(global_ptr, src_ptr, global.ty.size())?;
+                    } else {
+                        let src_vreg = self.get_vreg(*src);
+                        match &global.ty {
+                            MirType::Array { .. } | MirType::Struct { .. } => {
+                                let Some(src_runtime_ty) =
+                                    self.vreg_type_hints.get(&src_vreg).cloned()
+                                else {
+                                    return Err(CompileError::UnsupportedInstruction(format!(
+                                        "storing into mutable captured variable {} requires a materialized aggregate pointer value",
+                                        var_id.get()
+                                    )));
+                                };
+
+                                let Some(MirType::Ptr {
+                                    pointee,
+                                    address_space:
+                                        crate::compiler::mir::AddressSpace::Stack
+                                        | crate::compiler::mir::AddressSpace::Map,
+                                }) = Some(src_runtime_ty)
+                                else {
+                                    return Err(CompileError::UnsupportedInstruction(format!(
+                                        "storing into mutable captured variable {} requires a stack/map aggregate pointer value",
+                                        var_id.get()
+                                    )));
+                                };
+
+                                if pointee.as_ref() != &global.ty {
+                                    return Err(CompileError::UnsupportedInstruction(format!(
+                                        "storing type {:?} into mutable captured variable {} of type {:?} is not supported",
+                                        pointee,
+                                        var_id.get(),
+                                        global.ty
+                                    )));
+                                }
+
+                                self.emit_ptr_copy(global_ptr, src_vreg, global.ty.size())?;
+                            }
+                            _ => {
+                                self.emit(MirInst::Store {
+                                    ptr: global_ptr,
+                                    offset: 0,
+                                    val: MirValue::VReg(src_vreg),
+                                    ty: global.ty,
+                                });
+                            }
                         }
                     }
                     self.var_mappings.remove(var_id);

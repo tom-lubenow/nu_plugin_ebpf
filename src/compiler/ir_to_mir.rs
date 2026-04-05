@@ -204,6 +204,7 @@ struct SubfunctionSpecializationKey {
 struct MutableCaptureGlobal {
     symbol: String,
     ty: MirType,
+    list_max_len: Option<usize>,
 }
 
 /// Lowering context for HIR to MIR conversion

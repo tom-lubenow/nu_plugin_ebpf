@@ -260,15 +260,34 @@ impl<'a> HirToMirLowering<'a> {
                 .insert(global_ptr, global_ptr_ty.clone());
 
             self.reg_metadata.insert(dst.get(), RegMetadata::default());
-            let meta = self.get_or_create_metadata(dst);
-            meta.field_type = Some(global.ty.clone());
 
-            if matches!(global.ty, MirType::Array { .. } | MirType::Struct { .. }) {
+            if let Some(max_len) = global.list_max_len {
+                let buffer_size = (max_len.saturating_add(1)) * std::mem::size_of::<i64>();
+                let slot = self
+                    .func
+                    .alloc_stack_slot(buffer_size, 8, StackSlotKind::ListBuffer);
+                self.record_list_buffer_slot_type(slot, max_len);
+                self.emit(MirInst::Copy {
+                    dst: dst_vreg,
+                    src: MirValue::StackSlot(slot),
+                });
+                let stack_list_ptr_ty = MirType::Ptr {
+                    pointee: Box::new(global.ty.clone()),
+                    address_space: crate::compiler::mir::AddressSpace::Stack,
+                };
+                self.vreg_type_hints.insert(dst_vreg, stack_list_ptr_ty);
+                self.emit_ptr_copy(dst_vreg, global_ptr, global.ty.size())?;
+                let meta = self.get_or_create_metadata(dst);
+                meta.field_type = Some(global.ty.clone());
+                meta.list_buffer = Some((slot, max_len));
+            } else if matches!(global.ty, MirType::Array { .. } | MirType::Struct { .. }) {
                 self.emit(MirInst::Copy {
                     dst: dst_vreg,
                     src: MirValue::VReg(global_ptr),
                 });
                 self.vreg_type_hints.insert(dst_vreg, global_ptr_ty);
+                let meta = self.get_or_create_metadata(dst);
+                meta.field_type = Some(global.ty.clone());
             } else {
                 self.emit(MirInst::Load {
                     dst: dst_vreg,
@@ -276,7 +295,9 @@ impl<'a> HirToMirLowering<'a> {
                     offset: 0,
                     ty: global.ty.clone(),
                 });
-                self.vreg_type_hints.insert(dst_vreg, global.ty);
+                self.vreg_type_hints.insert(dst_vreg, global.ty.clone());
+                let meta = self.get_or_create_metadata(dst);
+                meta.field_type = Some(global.ty.clone());
             }
             return Ok(());
         }

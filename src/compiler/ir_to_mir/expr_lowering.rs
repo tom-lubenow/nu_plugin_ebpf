@@ -26,16 +26,57 @@ enum PacketPayloadStepKind {
 }
 
 impl<'a> HirToMirLowering<'a> {
+    fn mutable_numeric_list_global_repr(
+        values: &[Value],
+    ) -> Result<Option<(MirType, Vec<u8>, usize)>, CompileError> {
+        if values
+            .iter()
+            .any(|value| Self::scalar_constant_rodata_repr(value).is_none())
+        {
+            return Ok(None);
+        }
+
+        let max_len = values.len();
+        let mut data = Vec::with_capacity((max_len.saturating_add(1)) * std::mem::size_of::<i64>());
+        data.extend_from_slice(&(max_len as u64).to_le_bytes());
+        for value in values {
+            let Some((_item_ty, item_data)) = Self::scalar_constant_rodata_repr(value) else {
+                return Ok(None);
+            };
+            data.extend_from_slice(&item_data);
+        }
+
+        Ok(Some((
+            MirType::Array {
+                elem: Box::new(MirType::I64),
+                len: max_len.saturating_add(1),
+            },
+            data,
+            max_len,
+        )))
+    }
+
     fn mutable_capture_global_repr(
         value: &Value,
-    ) -> Result<Option<(MirType, Vec<u8>)>, CompileError> {
+    ) -> Result<Option<(MirType, Vec<u8>, Option<usize>)>, CompileError> {
         let repr = match value {
-            Value::Bool { val, .. } => Some((MirType::Bool, vec![u8::from(*val)])),
-            Value::Int { val, .. } => Some((MirType::I64, val.to_le_bytes().to_vec())),
-            Value::Filesize { val, .. } => Some((MirType::I64, val.get().to_le_bytes().to_vec())),
-            Value::Duration { val, .. } => Some((MirType::I64, val.to_le_bytes().to_vec())),
-            Value::Nothing { .. } => Some((MirType::I64, 0i64.to_le_bytes().to_vec())),
-            Value::Record { val, .. } => Some(Self::constant_record_rodata_repr(val.as_ref())?),
+            Value::Bool { val, .. } => Some((MirType::Bool, vec![u8::from(*val)], None)),
+            Value::Int { val, .. } => Some((MirType::I64, val.to_le_bytes().to_vec(), None)),
+            Value::Filesize { val, .. } => {
+                Some((MirType::I64, val.get().to_le_bytes().to_vec(), None))
+            }
+            Value::Duration { val, .. } => Some((MirType::I64, val.to_le_bytes().to_vec(), None)),
+            Value::Nothing { .. } => Some((MirType::I64, 0i64.to_le_bytes().to_vec(), None)),
+            Value::Record { val, .. } => {
+                let (ty, data) = Self::constant_record_rodata_repr(val.as_ref())?;
+                Some((ty, data, None))
+            }
+            Value::List { vals, .. }
+                if crate::compiler::hir::supports_numeric_constant_list(value) =>
+            {
+                Self::mutable_numeric_list_global_repr(vals)?
+                    .map(|(ty, data, max_len)| (ty, data, Some(max_len)))
+            }
             _ => None,
         };
         Ok(repr)
@@ -50,9 +91,9 @@ impl<'a> HirToMirLowering<'a> {
                 continue;
             }
 
-            let Some((ty, data)) = Self::mutable_capture_global_repr(value)? else {
+            let Some((ty, data, list_max_len)) = Self::mutable_capture_global_repr(value)? else {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "mutating captured variable {} of type {} is not yet supported; mutable captured globals currently only support numeric scalar values and representable constant records",
+                    "mutating captured variable {} of type {} is not yet supported; mutable captured globals currently only support numeric scalar values, numeric constant lists, and representable constant records",
                     var_id.get(),
                     value.get_type()
                 )));
@@ -70,8 +111,14 @@ impl<'a> HirToMirLowering<'a> {
                     data,
                 });
             }
-            self.mutable_capture_globals
-                .insert(*var_id, MutableCaptureGlobal { symbol, ty });
+            self.mutable_capture_globals.insert(
+                *var_id,
+                MutableCaptureGlobal {
+                    symbol,
+                    ty,
+                    list_max_len,
+                },
+            );
         }
 
         Ok(())
