@@ -54,7 +54,10 @@ pub use hir_to_mir::{
 pub use instruction::{BpfHelper, EbpfInsn, EbpfReg};
 pub use ir_to_mir::{UserFunctionSig, UserParam, UserParamKind};
 pub use mir::{MapRef, MirType, MirTypeHints};
-pub use mir_to_ebpf::{MirCompileResult, compile_mir_to_ebpf, compile_mir_to_ebpf_with_hints};
+pub use mir_to_ebpf::{
+    MirCompileResult, compile_mir_to_ebpf, compile_mir_to_ebpf_with_hints,
+    compile_mir_to_ebpf_with_hints_and_readonly_globals,
+};
 pub use mir_to_lir::{lower_mir_to_lir, lower_mir_to_lir_checked};
 pub use type_infer::{TypeError, TypeInference};
 pub use verifier_types::VerifierTypeError;

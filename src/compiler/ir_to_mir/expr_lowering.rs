@@ -59,19 +59,19 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
-    fn constant_record_type(fields: &[RecordField]) -> MirType {
+    fn constant_record_type_from_fields(fields: &[(String, MirType)]) -> MirType {
         let mut offset = 0usize;
         let struct_fields = fields
             .iter()
-            .map(|field| {
+            .map(|(name, ty)| {
                 let struct_field = StructField {
-                    name: field.name.clone(),
-                    ty: field.ty.clone(),
+                    name: name.clone(),
+                    ty: ty.clone(),
                     offset,
                     synthetic: false,
                     bitfield: None,
                 };
-                offset = offset.saturating_add(field.ty.size());
+                offset = offset.saturating_add(ty.size());
                 struct_field
             })
             .collect();
@@ -82,36 +82,155 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn alloc_readonly_global_name(&mut self) -> String {
+        let id = self.readonly_global_counter;
+        self.readonly_global_counter = self.readonly_global_counter.saturating_add(1);
+        format!("__nu_rodata_const_{}", id)
+    }
+
+    fn scalar_constant_rodata_repr(value: &Value) -> Option<(MirType, Vec<u8>)> {
+        let encoded = match value {
+            Value::Bool { val, .. } => Some(if *val { 1i64 } else { 0 }),
+            Value::Int { val, .. } => Some(*val),
+            Value::Filesize { val, .. } => Some(val.get()),
+            Value::Duration { val, .. } => Some(*val),
+            Value::Nothing { .. } => Some(0),
+            _ => None,
+        }?;
+        Some((MirType::I64, encoded.to_le_bytes().to_vec()))
+    }
+
+    fn string_constant_rodata_repr(value: &Value) -> Option<(MirType, Vec<u8>)> {
+        let bytes = match value {
+            Value::String { val, .. } => Some(val.as_bytes()),
+            Value::Glob { val, .. } => Some(val.as_bytes()),
+            _ => None,
+        }?;
+
+        let content_len = bytes.len().min(MAX_STRING_SIZE.saturating_sub(1));
+        let aligned_len = align_to_eight(content_len + 1).min(MAX_STRING_SIZE).max(16);
+        let mut data = vec![0u8; aligned_len];
+        data[..content_len].copy_from_slice(&bytes[..content_len]);
+        Some((
+            MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: aligned_len,
+            },
+            data,
+        ))
+    }
+
+    fn constant_value_rodata_repr(value: &Value) -> Result<(MirType, Vec<u8>), CompileError> {
+        if let Some(repr) = Self::scalar_constant_rodata_repr(value) {
+            return Ok(repr);
+        }
+        if let Some(repr) = Self::string_constant_rodata_repr(value) {
+            return Ok(repr);
+        }
+
+        match value {
+            Value::Record { val, .. } => Self::constant_record_rodata_repr(val.as_ref()),
+            Value::List { .. } => Err(CompileError::UnsupportedInstruction(
+                "constant lists nested inside records are not yet supported in eBPF lowering"
+                    .into(),
+            )),
+            _ => Err(CompileError::UnsupportedInstruction(format!(
+                "LoadValue of type {} is not supported in eBPF lowering",
+                value.get_type()
+            ))),
+        }
+    }
+
+    fn constant_record_rodata_repr(
+        record: &nu_protocol::Record,
+    ) -> Result<(MirType, Vec<u8>), CompileError> {
+        let mut field_layouts = Vec::with_capacity(record.len());
+        let mut data = Vec::new();
+
+        for (field_name, field_value) in record.iter() {
+            let (field_ty, field_data) = Self::constant_value_rodata_repr(field_value)?;
+            field_layouts.push((field_name.clone(), field_ty));
+            data.extend_from_slice(&field_data);
+        }
+
+        Ok((Self::constant_record_type_from_fields(&field_layouts), data))
+    }
+
     fn lower_constant_record_value(
         &mut self,
         dst: RegId,
         record: &nu_protocol::Record,
     ) -> Result<(), CompileError> {
-        self.lower_load_literal(
-            dst,
-            &HirLiteral::Record {
-                capacity: record.len(),
-            },
-        )?;
+        let dst_vreg = if self.reg_map.contains_key(&dst.get()) {
+            self.assign_fresh_vreg(dst)
+        } else {
+            self.get_vreg(dst)
+        };
+        self.reg_metadata.insert(dst.get(), RegMetadata::default());
 
-        for (field_name, field_value) in record.iter() {
-            let key_reg = self.alloc_synthetic_reg();
-            self.lower_load_literal(key_reg, &HirLiteral::String(field_name.as_bytes().to_vec()))?;
+        let (record_ty, data) = Self::constant_record_rodata_repr(record)?;
+        let symbol = self.alloc_readonly_global_name();
+        self.readonly_globals.push(ReadonlyGlobal {
+            name: symbol.clone(),
+            data,
+        });
 
-            let val_reg = self.alloc_synthetic_reg();
-            self.lower_constant_value_with_lists(val_reg, field_value, false)?;
-            self.lower_record_insert(dst, key_reg, val_reg)?;
+        let global_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::LoadReadonlyGlobal {
+            dst: global_vreg,
+            symbol,
+            ty: record_ty.clone(),
+        });
+
+        let base_runtime_ty = MirType::Ptr {
+            pointee: Box::new(record_ty.clone()),
+            address_space: AddressSpace::Map,
+        };
+        self.emit(MirInst::Copy {
+            dst: dst_vreg,
+            src: MirValue::VReg(global_vreg),
+        });
+        self.vreg_type_hints
+            .insert(global_vreg, base_runtime_ty.clone());
+        self.vreg_type_hints
+            .insert(dst_vreg, base_runtime_ty.clone());
+
+        let mut record_fields = Vec::new();
+        let struct_fields = match &record_ty {
+            MirType::Struct { fields, .. } => fields.clone(),
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(
+                    "constant record lowering did not produce a struct layout".into(),
+                ));
+            }
+        };
+        for field in struct_fields.into_iter().filter(|field| !field.synthetic) {
+            let field_vreg = self.func.alloc_vreg();
+            let path = vec![PathMember::string(
+                field.name.clone(),
+                false,
+                Casing::Sensitive,
+                Span::unknown(),
+            )];
+            let field_ty = self.lower_typed_value_projection(
+                field_vreg,
+                dst_vreg,
+                &base_runtime_ty,
+                &path,
+                &field.name,
+            )?;
+            record_fields.push(RecordField {
+                name: field.name,
+                value_vreg: field_vreg,
+                stack_offset: None,
+                ty: field_ty,
+            });
         }
 
-        let record_ty = self
-            .get_metadata(dst)
-            .map(|m| Self::constant_record_type(&m.record_fields))
-            .ok_or_else(|| {
-                CompileError::UnsupportedInstruction(
-                    "record metadata missing after constant record lowering".into(),
-                )
-            })?;
-        self.get_or_create_metadata(dst).field_type = Some(record_ty);
+        let meta = self.get_or_create_metadata(dst);
+        meta.is_context = false;
+        meta.record_fields = record_fields;
+        meta.field_type = Some(record_ty);
 
         Ok(())
     }

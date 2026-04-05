@@ -360,7 +360,7 @@ impl EbpfProgram {
 
         let mut obj = Object::new(BinaryFormat::Elf, Architecture::Bpf, Endianness::Little);
 
-        // Track map symbol IDs for relocations
+        // Track map/data symbol IDs for relocations
         let mut map_symbols: HashMap<String, object::write::SymbolId> = HashMap::new();
 
         if !self.readonly_globals.is_empty() {
@@ -374,7 +374,7 @@ impl EbpfProgram {
 
             for global in &self.readonly_globals {
                 let global_offset = obj.append_section_data(rodata_section_id, &global.data, 8);
-                obj.add_symbol(Symbol {
+                let sym_id = obj.add_symbol(Symbol {
                     name: global.name.as_bytes().to_vec(),
                     value: global_offset,
                     size: global.data.len() as u64,
@@ -387,6 +387,7 @@ impl EbpfProgram {
                         st_other: object::elf::STV_DEFAULT,
                     },
                 });
+                map_symbols.insert(global.name.clone(), sym_id);
             }
         }
 

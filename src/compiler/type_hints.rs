@@ -351,6 +351,14 @@ pub(crate) fn infer_instruction_def_type(
             },
             true,
         )),
+        MirInst::LoadReadonlyGlobal { dst, ty, .. } => Some((
+            *dst,
+            MirType::Ptr {
+                pointee: Box::new(ty.clone()),
+                address_space: AddressSpace::Map,
+            },
+            true,
+        )),
         MirInst::BinOp { dst, op, lhs, rhs } if matches!(op, BinOpKind::Add | BinOpKind::Sub) => {
             let lhs_ptr = match lhs {
                 MirValue::VReg(vreg) => hints.get(vreg),

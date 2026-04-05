@@ -383,6 +383,32 @@ impl<'a> VccLowerer<'a> {
                     self.ptr_regs.insert(VccReg(dst.0), info);
                 }
             }
+            MirInst::LoadReadonlyGlobal { dst, ty, .. } => {
+                let bounds = if ty.size() == 0 {
+                    None
+                } else {
+                    Some(VccBounds {
+                        min: 0,
+                        max: 0,
+                        limit: ty.size().saturating_sub(1) as i64,
+                    })
+                };
+                let ptr = VccPointerInfo {
+                    space: VccAddrSpace::MapValue,
+                    nullability: VccNullability::NonNull,
+                    bounds,
+                    packet_root: None,
+                    packet_end: false,
+                    ringbuf_ref: None,
+                    kfunc_ref: None,
+                };
+                let ty = VccValueType::Ptr(ptr);
+                out.push(VccInst::Assume {
+                    dst: VccReg(dst.0),
+                    ty,
+                });
+                self.ptr_regs.insert(VccReg(dst.0), ptr);
+            }
             MirInst::MapUpdate {
                 map,
                 key,

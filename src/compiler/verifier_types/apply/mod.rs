@@ -99,6 +99,9 @@ pub(super) fn apply_inst(
         MirInst::MapLookup { dst, map, key } => {
             apply_map_lookup_inst(*dst, map, *key, types, state, errors);
         }
+        MirInst::LoadReadonlyGlobal { dst, ty, .. } => {
+            apply_readonly_global_inst(*dst, ty, state);
+        }
         MirInst::ListNew { dst, buffer, .. } => {
             apply_list_new_inst(*dst, *buffer, slot_sizes, state);
         }

@@ -355,9 +355,9 @@ impl<'a> MirToEbpfCompiler<'a> {
         Ok(())
     }
 
-    fn emit_map_fd_load(&mut self, map_name: &str) {
+    pub(super) fn emit_map_fd_load(&mut self, dst: EbpfReg, map_name: &str) {
         let reloc_offset = self.instructions.len() * 8;
-        let [insn1, insn2] = EbpfInsn::ld_map_fd(EbpfReg::R1);
+        let [insn1, insn2] = EbpfInsn::ld_map_fd(dst);
         self.instructions.push(insn1);
         self.instructions.push(insn2);
         self.relocations.push(MapRelocation {
@@ -523,7 +523,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         self.register_generic_map_spec(map, key_size, Some(value_size))?;
 
         self.setup_map_key_arg(key_reg, key_layout)?;
-        self.emit_map_fd_load(&map.name);
+        self.emit_map_fd_load(EbpfReg::R1, &map.name);
         self.instructions
             .push(EbpfInsn::call(BpfHelper::MapLookupElem));
         if dst_reg != EbpfReg::R0 {
@@ -562,7 +562,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         self.setup_map_value_arg(val_reg, val_layout)?;
         self.instructions
             .push(EbpfInsn::mov64_imm(EbpfReg::R4, flags as i32));
-        self.emit_map_fd_load(&map.name);
+        self.emit_map_fd_load(EbpfReg::R1, &map.name);
         self.instructions
             .push(EbpfInsn::call(BpfHelper::MapUpdateElem));
         Ok(())
@@ -587,7 +587,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         self.register_generic_map_spec(map, key_size, None)?;
 
         self.setup_map_key_arg(key_reg, key_layout)?;
-        self.emit_map_fd_load(&map.name);
+        self.emit_map_fd_load(EbpfReg::R1, &map.name);
         self.instructions
             .push(EbpfInsn::call(BpfHelper::MapDeleteElem));
         Ok(())

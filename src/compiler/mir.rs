@@ -521,6 +521,13 @@ pub enum MirInst {
     /// Map lookup
     MapLookup { dst: VReg, map: MapRef, key: VReg },
 
+    /// Load a compiler-generated readonly global from `.rodata`
+    LoadReadonlyGlobal {
+        dst: VReg,
+        symbol: String,
+        ty: MirType,
+    },
+
     /// Map update
     MapUpdate {
         map: MapRef,

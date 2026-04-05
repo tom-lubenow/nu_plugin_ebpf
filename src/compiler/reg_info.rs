@@ -31,6 +31,7 @@ pub fn call_clobbers(inst: &MirInst) -> &'static [EbpfReg] {
             | MirInst::CallSubfn { .. }
             | MirInst::TailCall { .. }
             | MirInst::MapLookup { .. }
+            | MirInst::LoadReadonlyGlobal { .. }
             | MirInst::MapUpdate { .. }
             | MirInst::MapDelete { .. }
             | MirInst::EmitEvent { .. }

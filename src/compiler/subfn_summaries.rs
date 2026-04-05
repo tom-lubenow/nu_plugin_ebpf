@@ -201,6 +201,7 @@ fn apply_alias_inst(
         | MirInst::CallHelper { dst, .. }
         | MirInst::CallKfunc { dst, .. }
         | MirInst::MapLookup { dst, .. }
+        | MirInst::LoadReadonlyGlobal { dst, .. }
         | MirInst::LoadCtxField { dst, .. }
         | MirInst::ListNew { dst, .. }
         | MirInst::ListLen { dst, .. }

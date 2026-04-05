@@ -93,6 +93,16 @@ impl<'a> MirToEbpfCompiler<'a> {
         self.compile_generic_map_lookup(dst, dst_reg, map, key, key_reg)
     }
 
+    pub(super) fn compile_load_readonly_global_inst(
+        &mut self,
+        dst: VReg,
+        symbol: &str,
+    ) -> Result<(), CompileError> {
+        let dst_reg = self.alloc_dst_reg(dst)?;
+        self.emit_map_fd_load(dst_reg, symbol);
+        Ok(())
+    }
+
     pub(super) fn compile_map_update_inst(
         &mut self,
         map: &crate::compiler::mir::MapRef,

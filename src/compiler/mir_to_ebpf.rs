@@ -404,6 +404,15 @@ pub fn compile_mir_to_ebpf_with_hints(
     probe_ctx: Option<&ProbeContext>,
     type_hints: Option<&MirTypeHints>,
 ) -> Result<MirCompileResult, CompileError> {
+    compile_mir_to_ebpf_with_hints_and_readonly_globals(mir, probe_ctx, type_hints, Vec::new())
+}
+
+pub fn compile_mir_to_ebpf_with_hints_and_readonly_globals(
+    mir: &MirProgram,
+    probe_ctx: Option<&ProbeContext>,
+    type_hints: Option<&MirTypeHints>,
+    readonly_globals: Vec<ReadonlyGlobal>,
+) -> Result<MirCompileResult, CompileError> {
     let mut program = mir.clone();
     let mut normalized_type_hints = type_hints.cloned();
     let list_lowering = ListLowering;
@@ -426,7 +435,9 @@ pub fn compile_mir_to_ebpf_with_hints(
     let lir_program = lower_mir_to_lir_checked(&program)?;
 
     let compiler = MirToEbpfCompiler::new_with_types(&lir_program, probe_ctx, program_types);
-    compiler.compile()
+    let mut result = compiler.compile()?;
+    result.readonly_globals = readonly_globals;
+    Ok(result)
 }
 
 fn verify_mir_program(

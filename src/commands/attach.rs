@@ -14,7 +14,8 @@ use nu_protocol::{
 use crate::EbpfPlugin;
 use crate::compiler::{
     EbpfProgram, ProbeContext, ProgramIntrinsic, UserFunctionSig, UserParam, UserParamKind,
-    compile_mir_to_ebpf_with_hints, hir::HirFunction, hir::supports_constant_value, hir_type_infer,
+    compile_mir_to_ebpf_with_hints_and_readonly_globals, hir::HirFunction,
+    hir::supports_constant_value, hir_type_infer,
     infer_ctx_param, lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir,
     passes::optimize_with_ssa_hints,
 };
@@ -804,13 +805,17 @@ fn run_attach(
     }
 
     // Compile MIR to eBPF
-    let compile_result =
-        compile_mir_to_ebpf_with_hints(&mir_program, Some(&probe_context), Some(&type_hints))
-            .map_err(|e| {
-                LabeledError::new("eBPF compilation failed")
-                    .with_label(e.to_string(), call.head)
-                    .with_help("Check that the closure uses supported BPF operations")
-            })?;
+    let compile_result = compile_mir_to_ebpf_with_hints_and_readonly_globals(
+        &mir_program,
+        Some(&probe_context),
+        Some(&type_hints),
+        lower_result.readonly_globals,
+    )
+    .map_err(|e| {
+        LabeledError::new("eBPF compilation failed")
+            .with_label(e.to_string(), call.head)
+            .with_help("Check that the closure uses supported BPF operations")
+    })?;
 
     let mut program = EbpfProgram::with_maps(
         prog_type,

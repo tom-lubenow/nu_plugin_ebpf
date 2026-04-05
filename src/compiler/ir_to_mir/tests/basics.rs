@@ -4056,6 +4056,25 @@ fn test_lower_load_value_record_emit_preserves_nested_struct_field_type() {
     )
     .expect("constant record load value should emit as a typed record");
 
+    assert_eq!(
+        result.readonly_globals.len(),
+        1,
+        "expected constant record lowering to emit one readonly global"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadReadonlyGlobal { symbol, .. }
+                    if symbol == &result.readonly_globals[0].name
+            )),
+        "expected constant record lowering to load from the emitted readonly global"
+    );
     assert!(
         result
             .program
@@ -4288,6 +4307,25 @@ fn test_lower_captured_record_emit_preserves_nested_struct_field_type() {
     )
     .expect("captured constant record should emit as a typed record");
 
+    assert_eq!(
+        result.readonly_globals.len(),
+        1,
+        "expected captured constant record lowering to emit one readonly global"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadReadonlyGlobal { symbol, .. }
+                    if symbol == &result.readonly_globals[0].name
+            )),
+        "expected captured constant record lowering to load from the emitted readonly global"
+    );
     assert!(
         result
             .program

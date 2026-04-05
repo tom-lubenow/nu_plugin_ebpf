@@ -583,6 +583,7 @@ fn update_def(inst: &mut MirInst, new_dst: VReg) {
         | MirInst::CallKfunc { dst, .. }
         | MirInst::CallSubfn { dst, .. }
         | MirInst::MapLookup { dst, .. }
+        | MirInst::LoadReadonlyGlobal { dst, .. }
         | MirInst::StrCmp { dst, .. }
         | MirInst::StopTimer { dst, .. }
         | MirInst::ListNew { dst, .. }

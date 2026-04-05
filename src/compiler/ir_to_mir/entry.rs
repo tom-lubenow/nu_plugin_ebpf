@@ -12,6 +12,7 @@ pub struct MirLoweringResult {
     pub program: MirProgram,
     pub type_hints: MirTypeHints,
     pub generic_map_value_types: HashMap<MapRef, MirType>,
+    pub readonly_globals: Vec<ReadonlyGlobal>,
 }
 
 pub fn lower_hir_to_mir_with_hints_and_maps(
@@ -36,11 +37,13 @@ pub fn lower_hir_to_mir_with_hints_and_maps(
         decl_signatures,
     );
     lowering.lower_block(&hir.main)?;
-    let (program, type_hints, generic_map_value_types) = lowering.finish_with_hints();
+    let (program, type_hints, generic_map_value_types, readonly_globals) =
+        lowering.finish_with_hints();
     Ok(MirLoweringResult {
         program,
         type_hints,
         generic_map_value_types,
+        readonly_globals,
     })
 }
 

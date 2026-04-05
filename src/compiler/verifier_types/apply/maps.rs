@@ -32,6 +32,29 @@ pub(super) fn apply_map_lookup_inst(
     );
 }
 
+pub(super) fn apply_readonly_global_inst(dst: VReg, ty: &MirType, state: &mut VerifierState) {
+    let bounds = if ty.size() == 0 {
+        None
+    } else {
+        Some(PtrBounds::new(
+            PtrOrigin::Map,
+            0,
+            0,
+            ty.size().saturating_sub(1) as i64,
+        ))
+    };
+    state.set(
+        dst,
+        VerifierType::Ptr {
+            space: AddressSpace::Map,
+            nullability: Nullability::NonNull,
+            bounds,
+            ringbuf_ref: None,
+            kfunc_ref: None,
+        },
+    );
+}
+
 pub(super) fn apply_map_update_inst(
     map: &MapRef,
     key: VReg,

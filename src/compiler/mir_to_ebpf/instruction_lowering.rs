@@ -72,6 +72,10 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.compile_map_lookup_inst(*dst, map, *key)?;
             }
 
+            LirInst::LoadReadonlyGlobal { dst, symbol } => {
+                self.compile_load_readonly_global_inst(*dst, symbol)?;
+            }
+
             LirInst::MapUpdate {
                 map,
                 key,

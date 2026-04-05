@@ -4,6 +4,7 @@ use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
 use crate::compiler::ir_to_mir::lower_hir_to_mir_with_hints;
+use crate::compiler::{EbpfProgram, compile_mir_to_ebpf_with_hints_and_readonly_globals};
 use crate::compiler::mir::MirInst;
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use nu_protocol::ast::{CellPath, PathMember};
@@ -114,6 +115,98 @@ fn test_add() {
         lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
     let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
     assert!(!mir_result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_constant_record_rodata_survives_projection_codegen_and_elf() {
+    use crate::compiler::ReadonlyGlobal;
+    use crate::compiler::mir::{MirFunction, MirProgram, StructField};
+
+    let record_ty = MirType::Struct {
+        name: None,
+        kernel_btf_type_id: None,
+        fields: vec![
+            StructField {
+                name: "mnt".to_string(),
+                ty: MirType::I64,
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "dentry".to_string(),
+                ty: MirType::I64,
+                offset: 8,
+                synthetic: false,
+                bitfield: None,
+            },
+        ],
+    };
+    let symbol = "__nu_rodata_test".to_string();
+    let readonly_globals = vec![ReadonlyGlobal {
+        name: symbol.clone(),
+        data: [
+            1i64.to_le_bytes().as_slice(),
+            2i64.to_le_bytes().as_slice(),
+        ]
+        .concat(),
+    }];
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let rodata_vreg = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadReadonlyGlobal {
+            dst: rodata_vreg,
+            symbol: symbol.clone(),
+            ty: record_ty,
+        });
+    func.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let compile_result = compile_mir_to_ebpf_with_hints_and_readonly_globals(
+        &program,
+        None,
+        None,
+        readonly_globals.clone(),
+    )
+    .expect("constant record rodata should compile");
+
+    assert_eq!(compile_result.readonly_globals.len(), 1);
+    assert!(
+        compile_result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.map_name == symbol),
+        "expected rodata load relocation to target the readonly-global symbol"
+    );
+
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Kprobe,
+        "sys_clone",
+        "readonly_global_test",
+        compile_result.bytecode,
+        compile_result.main_size,
+        compile_result.maps,
+        compile_result.relocations,
+        compile_result.subfunction_symbols,
+        compile_result.event_schema,
+        compile_result.bytes_counter_key_schema,
+        HashMap::new(),
+    )
+    .with_readonly_globals(compile_result.readonly_globals);
+
+    let elf = program
+        .to_elf()
+        .expect("readonly-global relocation should produce a valid ELF");
+    assert!(!elf.is_empty(), "ELF should not be empty");
 }
 
 #[test]

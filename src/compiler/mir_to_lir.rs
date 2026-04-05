@@ -338,6 +338,12 @@ fn lower_inst(
                 key: *key,
             });
         }
+        MirInst::LoadReadonlyGlobal { dst, symbol, .. } => {
+            out.push(LirInst::LoadReadonlyGlobal {
+                dst: *dst,
+                symbol: symbol.clone(),
+            });
+        }
         MirInst::MapUpdate {
             map,
             key,
