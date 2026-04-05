@@ -239,6 +239,13 @@ pub struct EbpfMap {
     pub def: BpfMapDef,
 }
 
+/// A read-only global byte blob emitted into the program's `.rodata` section.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadonlyGlobal {
+    pub name: String,
+    pub data: Vec<u8>,
+}
+
 /// Location in bytecode that needs a map reference
 #[derive(Debug, Clone)]
 pub struct MapRelocation {
@@ -1292,6 +1299,8 @@ pub struct EbpfProgram {
     pub license: String,
     /// Maps used by this program
     pub maps: Vec<EbpfMap>,
+    /// Read-only globals emitted into `.rodata`
+    pub readonly_globals: Vec<ReadonlyGlobal>,
     /// Relocations for map references
     pub relocations: Vec<MapRelocation>,
     /// Subfunction symbols for BPF-to-BPF calls

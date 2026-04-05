@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::mir::{CtxField, MirType, StructField};
+use aya_obj::{EbpfSectionKind, Object as AyaObject};
 use std::collections::HashMap;
 
 #[test]
@@ -105,6 +106,21 @@ fn test_elf_generation() {
 
     // Should be BPF architecture
     // (This is in the e_machine field at offset 18-19)
+}
+
+#[test]
+fn test_elf_generation_with_readonly_globals_creates_rodata_data_map() {
+    let prog = EbpfProgram::hello_world("sys_clone").with_readonly_globals(vec![ReadonlyGlobal {
+        name: "config".to_string(),
+        data: vec![1, 2, 3, 4],
+    }]);
+
+    let elf = prog.to_elf().expect("Failed to generate ELF");
+    let obj = AyaObject::parse(&elf).expect("Aya should parse readonly globals");
+    let map = obj.maps.get(".rodata").expect("expected .rodata data map");
+
+    assert_eq!(map.section_kind(), EbpfSectionKind::Rodata);
+    assert_eq!(map.data(), &[1, 2, 3, 4]);
 }
 
 #[test]

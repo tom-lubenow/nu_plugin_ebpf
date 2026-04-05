@@ -18,6 +18,7 @@ impl EbpfProgram {
             bytecode,
             license: "GPL".to_string(),
             maps: Vec::new(),
+            readonly_globals: Vec::new(),
             relocations: Vec::new(),
             subfunctions: Vec::new(),
             event_schema: None,
@@ -42,6 +43,7 @@ impl EbpfProgram {
             main_size,
             license: "GPL".to_string(),
             maps: Vec::new(),
+            readonly_globals: Vec::new(),
             relocations: Vec::new(),
             subfunctions: Vec::new(),
             event_schema: None,
@@ -72,6 +74,7 @@ impl EbpfProgram {
             main_size,
             license: "GPL".to_string(),
             maps,
+            readonly_globals: Vec::new(),
             relocations,
             subfunctions,
             event_schema,
@@ -90,6 +93,12 @@ impl EbpfProgram {
         for map in &mut self.maps {
             map.def.pinning = BpfPinningType::ByName;
         }
+        self
+    }
+
+    /// Attach readonly globals to this program's `.rodata` section.
+    pub fn with_readonly_globals(mut self, readonly_globals: Vec<ReadonlyGlobal>) -> Self {
+        self.readonly_globals = readonly_globals;
         self
     }
 
@@ -353,6 +362,33 @@ impl EbpfProgram {
 
         // Track map symbol IDs for relocations
         let mut map_symbols: HashMap<String, object::write::SymbolId> = HashMap::new();
+
+        if !self.readonly_globals.is_empty() {
+            let rodata_section_id =
+                obj.add_section(vec![], b".rodata".to_vec(), SectionKind::ReadOnlyData);
+
+            let rodata_section = obj.section_mut(rodata_section_id);
+            rodata_section.flags = SectionFlags::Elf {
+                sh_flags: object::elf::SHF_ALLOC as u64,
+            };
+
+            for global in &self.readonly_globals {
+                let global_offset = obj.append_section_data(rodata_section_id, &global.data, 8);
+                obj.add_symbol(Symbol {
+                    name: global.name.as_bytes().to_vec(),
+                    value: global_offset,
+                    size: global.data.len() as u64,
+                    kind: SymbolKind::Data,
+                    scope: SymbolScope::Linkage,
+                    weak: false,
+                    section: SymbolSection::Section(rodata_section_id),
+                    flags: SymbolFlags::Elf {
+                        st_info: (object::elf::STB_GLOBAL << 4) | object::elf::STT_OBJECT,
+                        st_other: object::elf::STV_DEFAULT,
+                    },
+                });
+            }
+        }
 
         // Add maps section if we have any maps (using BTF-defined format)
         if !self.maps.is_empty() {

@@ -824,7 +824,8 @@ fn run_attach(
         compile_result.event_schema,
         compile_result.bytes_counter_key_schema,
         lower_result.generic_map_value_types,
-    );
+    )
+    .with_readonly_globals(compile_result.readonly_globals);
 
     if pin_group.is_some() {
         program = program.with_pinning();
