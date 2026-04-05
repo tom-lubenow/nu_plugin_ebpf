@@ -126,27 +126,26 @@ ebpf attach -s 'tracepoint:syscalls/sys_enter_openat' {|ctx|
 
 ## Manual Integration Suite
 
-Run the repeatable manual integration checks. The harness lives in
-`scripts/manual_integration.nu`; `scripts/manual_integration.sh` is just a
-launcher that picks a `nu` binary and runs the Nu script under `sudo`. The Nu
-script auto-selects the newest built plugin from `target/debug/nu_plugin_ebpf`
-and `target/release/nu_plugin_ebpf` unless `PLUGIN_BIN` is set.
+Run the repeatable manual integration checks with the Nu harness in
+`scripts/manual_integration.nu`. The script auto-selects the newest built plugin
+from `target/debug/nu_plugin_ebpf` and `target/release/nu_plugin_ebpf` unless
+`PLUGIN_BIN` is set.
 
 ```bash
 cargo build
-./scripts/manual_integration.sh
-```
-
-Override tool paths if needed:
-
-```bash
-NU_BIN=/path/to/nu PLUGIN_BIN=/path/to/nu_plugin_ebpf ./scripts/manual_integration.sh
-```
-
-You can also run the Nu harness directly:
-
-```bash
 sudo nu ./scripts/manual_integration.nu
+```
+
+Override the plugin path if needed:
+
+```bash
+PLUGIN_BIN=/path/to/nu_plugin_ebpf sudo nu ./scripts/manual_integration.nu
+```
+
+If you want to test with a specific Nu build, run that binary directly:
+
+```bash
+sudo target/debug/nu ./scripts/manual_integration.nu
 ```
 
 ## Context Fields
