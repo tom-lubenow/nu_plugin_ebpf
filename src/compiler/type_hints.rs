@@ -185,6 +185,13 @@ fn recover_ctx_field_hint(
         | CtxField::SockType
         | CtxField::Protocol
         | CtxField::MsgSrcIp4 => Some(MirType::U32),
+        CtxField::UserIp6 | CtxField::MsgSrcIp6 => Some(MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U32),
+                len: 4,
+            }),
+            address_space: AddressSpace::Stack,
+        }),
         CtxField::Data | CtxField::DataEnd => Some(MirType::Ptr {
             pointee: Box::new(MirType::U8),
             address_space: AddressSpace::Packet,

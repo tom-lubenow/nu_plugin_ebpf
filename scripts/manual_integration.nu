@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 42
+const TOTAL_STEPS = 43
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -90,6 +90,18 @@ def trigger-ping-loopback [] {
 
 def trigger-loopback-connect [] {
     ^bash -lc 'exec 3<>/dev/tcp/127.0.0.1/1 || true' out+err> /dev/null
+}
+
+def trigger-loopback-connect6 [] {
+    ^python3 -c 'import socket
+s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+s.settimeout(1.0)
+try:
+    s.connect(("::1", 1, 0, 0))
+except OSError:
+    pass
+s.close()
+' out+err> /dev/null
 }
 
 def wait-for-counter-rows [id, label: string] {
@@ -573,7 +585,20 @@ step 41 "cgroup_sock_addr root connect4 port counter" {
     }
 }
 
-step 42 "verify no leaked probes" {
+step 42 "cgroup_sock_addr root connect6 ipv6 word counter" {
+    if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
+        print "Skipping cgroup_sock_addr IPv6 smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
+    } else if not ("/proc/net/if_inet6" | path exists) {
+        print "Skipping cgroup_sock_addr IPv6 smoke: IPv6 does not appear to be enabled"
+    } else {
+        count-at-least-one "cgroup_sock_addr:/sys/fs/cgroup:connect6" {|ctx|
+            ($ctx.user_ip6 | get 3) | count
+            1
+        } { trigger-loopback-connect6 } "cgroup_sock_addr ipv6 word counter"
+    }
+}
+
+step 43 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

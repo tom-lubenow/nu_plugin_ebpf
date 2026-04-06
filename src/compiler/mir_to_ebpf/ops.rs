@@ -28,10 +28,11 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 76, 80, 36)
     }
 
-    fn bpf_sock_addr_offsets() -> (i16, i16, i16, i16, i16, i16, i16) {
+    fn bpf_sock_addr_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16) {
         // struct bpf_sock_addr {
         //     __u32 user_family;
         //     __u32 user_ip4;
+        //     __u32 user_ip6[4];
         //     ...
         //     __u32 user_port;
         //     ...
@@ -39,8 +40,44 @@ impl<'a> MirToEbpfCompiler<'a> {
         //     __u32 type;
         //     __u32 protocol;
         //     __u32 msg_src_ip4;
+        //     __u32 msg_src_ip6[4];
         // };
-        (0, 4, 24, 28, 32, 36, 40)
+        (0, 4, 8, 24, 28, 32, 36, 40, 44)
+    }
+
+    fn compile_ctx_u32_array_to_stack(
+        &mut self,
+        dst: EbpfReg,
+        slot: Option<StackSlotId>,
+        base_offset: i16,
+        count: usize,
+        field_name: &str,
+    ) -> Result<(), CompileError> {
+        let slot = slot.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{field_name} requires a stack backing slot"
+            ))
+        })?;
+        let slot_offset = *self.slot_offsets.get(&slot).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{field_name} stack slot not found"
+            ))
+        })?;
+
+        for index in 0..count {
+            let word_offset = base_offset + (index as i16 * 4);
+            let dst_offset = slot_offset + (index as i16 * 4);
+            self.instructions
+                .push(EbpfInsn::ldxw(EbpfReg::R0, EbpfReg::R9, word_offset));
+            self.instructions
+                .push(EbpfInsn::stxw(EbpfReg::R10, dst_offset, EbpfReg::R0));
+        }
+
+        self.instructions
+            .push(EbpfInsn::mov64_reg(dst, EbpfReg::R10));
+        self.instructions
+            .push(EbpfInsn::add64_imm(dst, slot_offset as i32));
+        Ok(())
     }
 
     fn packet_context_kind(&self) -> Result<PacketContextKind, CompileError> {
@@ -560,30 +597,38 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
-            CtxField::UserPort => {
+            CtxField::UserIp6 => {
                 let offset = Self::bpf_sock_addr_offsets().2;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.user_ip6")?;
             }
-            CtxField::Family => {
+            CtxField::UserPort => {
                 let offset = Self::bpf_sock_addr_offsets().3;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
-            CtxField::SockType => {
+            CtxField::Family => {
                 let offset = Self::bpf_sock_addr_offsets().4;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
-            CtxField::Protocol => {
+            CtxField::SockType => {
                 let offset = Self::bpf_sock_addr_offsets().5;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
-            CtxField::MsgSrcIp4 => {
+            CtxField::Protocol => {
                 let offset = Self::bpf_sock_addr_offsets().6;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::MsgSrcIp4 => {
+                let offset = Self::bpf_sock_addr_offsets().7;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::MsgSrcIp6 => {
+                let offset = Self::bpf_sock_addr_offsets().8;
+                self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.msg_src_ip6")?;
             }
             CtxField::Comm => {
                 let comm_offset = if let Some(slot) = slot {

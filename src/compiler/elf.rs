@@ -671,6 +671,13 @@ impl ProbeContext {
         )
     }
 
+    fn cgroup_sock_addr_is_ipv6(&self) -> bool {
+        matches!(
+            self.cgroup_sock_addr_attach_kind(),
+            Some("bind6" | "connect6" | "getpeername6" | "getsockname6" | "sendmsg6" | "recvmsg6")
+        )
+    }
+
     fn cgroup_sock_addr_has_msg_source(&self) -> bool {
         matches!(
             self.cgroup_sock_addr_attach_kind(),
@@ -803,6 +810,12 @@ impl ProbeContext {
             CtxField::UserIp4 if !self.cgroup_sock_addr_is_ipv4() => Some(
                 "ctx.user_ip4 is only available on IPv4 cgroup_sock_addr hooks (*4)".to_string(),
             ),
+            CtxField::UserIp6 if !matches!(self.probe_type, EbpfProgramType::CgroupSockAddr) => {
+                Some("ctx.user_ip6 is only available on cgroup_sock_addr programs".to_string())
+            }
+            CtxField::UserIp6 if !self.cgroup_sock_addr_is_ipv6() => Some(
+                "ctx.user_ip6 is only available on IPv6 cgroup_sock_addr hooks (*6)".to_string(),
+            ),
             CtxField::MsgSrcIp4 if !matches!(self.probe_type, EbpfProgramType::CgroupSockAddr) => {
                 Some(
                     "ctx.msg_src_ip4 is only available on cgroup_sock_addr programs".to_string(),
@@ -814,6 +827,19 @@ impl ProbeContext {
             ),
             CtxField::MsgSrcIp4 if !self.cgroup_sock_addr_has_msg_source() => Some(
                 "ctx.msg_src_ip4 is only available on cgroup_sock_addr sendmsg*/recvmsg* hooks"
+                    .to_string(),
+            ),
+            CtxField::MsgSrcIp6 if !matches!(self.probe_type, EbpfProgramType::CgroupSockAddr) => {
+                Some(
+                    "ctx.msg_src_ip6 is only available on cgroup_sock_addr programs".to_string(),
+                )
+            }
+            CtxField::MsgSrcIp6 if !self.cgroup_sock_addr_is_ipv6() => Some(
+                "ctx.msg_src_ip6 is only available on IPv6 cgroup_sock_addr hooks (*6)"
+                    .to_string(),
+            ),
+            CtxField::MsgSrcIp6 if !self.cgroup_sock_addr_has_msg_source() => Some(
+                "ctx.msg_src_ip6 is only available on cgroup_sock_addr sendmsg*/recvmsg* hooks"
                     .to_string(),
             ),
             CtxField::Arg(_) if !self.probe_type.supports_ctx_args() => Some(format!(

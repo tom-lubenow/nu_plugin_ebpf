@@ -1797,6 +1797,46 @@ fn test_lower_xdp_data_u16be_projection_adds_guarded_packet_load_and_byteswap() 
 }
 
 #[test]
+fn test_lower_cgroup_sock_addr_user_ip6_load_uses_backing_slot_and_normalizes_words() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("user_ip6")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect6");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock_addr user_ip6 should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::UserIp6,
+            slot: Some(_),
+            ..
+        }
+    )));
+    let load_count = block
+        .instructions
+        .iter()
+        .filter(|inst| matches!(inst, MirInst::Load { ty: MirType::U32, .. }))
+        .count();
+    let store_count = block
+        .instructions
+        .iter()
+        .filter(|inst| matches!(inst, MirInst::Store { ty: MirType::U32, .. }))
+        .count();
+    assert_eq!(load_count, 4);
+    assert_eq!(store_count, 4);
+}
+
+#[test]
 fn test_lower_xdp_eth_ethertype_projection_adds_guarded_packet_load_and_byteswap() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![

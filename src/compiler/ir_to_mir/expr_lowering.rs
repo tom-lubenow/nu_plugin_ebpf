@@ -1221,11 +1221,13 @@ impl<'a> HirToMirLowering<'a> {
             "egress_ifindex" => CtxField::EgressIfindex,
             "user_family" => CtxField::UserFamily,
             "user_ip4" => CtxField::UserIp4,
+            "user_ip6" => CtxField::UserIp6,
             "user_port" => CtxField::UserPort,
             "family" => CtxField::Family,
             "sock_type" | "type" => CtxField::SockType,
             "protocol" => CtxField::Protocol,
             "msg_src_ip4" => CtxField::MsgSrcIp4,
+            "msg_src_ip6" => CtxField::MsgSrcIp6,
             "retval" => CtxField::RetVal,
             "kstack" => CtxField::KStack,
             "ustack" => CtxField::UStack,
@@ -3132,6 +3134,31 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn normalize_cgroup_sock_addr_ipv6_slot(
+        &mut self,
+        base_ptr_vreg: VReg,
+    ) -> Result<(), CompileError> {
+        let element_ty = MirType::U32;
+        for index in 0..4 {
+            let word_vreg = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(word_vreg, element_ty.clone());
+            self.emit(MirInst::Load {
+                dst: word_vreg,
+                ptr: base_ptr_vreg,
+                offset: (index * 4) as i32,
+                ty: element_ty.clone(),
+            });
+            self.emit_packet_big_endian_scalar_normalize(word_vreg, &element_ty)?;
+            self.emit(MirInst::Store {
+                ptr: base_ptr_vreg,
+                offset: (index * 4) as i32,
+                val: MirValue::VReg(word_vreg),
+                ty: element_ty.clone(),
+            });
+        }
+        Ok(())
+    }
+
     fn lower_typed_value_projection(
         &mut self,
         dst_reg: RegId,
@@ -4128,6 +4155,41 @@ impl<'a> HirToMirLowering<'a> {
                     "nested ctx field access requires probe context".into(),
                 )
             })?;
+            if matches!(ctx_field, CtxField::UserIp6 | CtxField::MsgSrcIp6) {
+                let root_array_ty = MirType::Array {
+                    elem: Box::new(MirType::U32),
+                    len: 4,
+                };
+                let slot = self
+                    .func
+                    .alloc_stack_slot(align_to_eight(root_array_ty.size()), 8, StackSlotKind::Local);
+                self.record_stack_slot_type(slot, root_array_ty.clone());
+                let base_ty = MirType::Ptr {
+                    pointee: Box::new(root_array_ty.clone()),
+                    address_space: AddressSpace::Stack,
+                };
+                let base_vreg = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(base_vreg, base_ty.clone());
+                self.emit(MirInst::LoadCtxField {
+                    dst: base_vreg,
+                    field: ctx_field.clone(),
+                    slot: Some(slot),
+                });
+                self.normalize_cgroup_sock_addr_ipv6_slot(base_vreg)?;
+                let projected_ty = self.lower_typed_value_projection(
+                    src_dst,
+                    dst_vreg,
+                    base_vreg,
+                    &base_ty,
+                    &path.members[1..],
+                    &Self::typed_value_path_desc(&path.members),
+                    None,
+                )?;
+                let meta = self.get_or_create_metadata(src_dst);
+                meta.is_context = false;
+                meta.field_type = Some(projected_ty);
+                return Ok(());
+            }
             let nested_segments: Vec<TrampolineFieldSelector> = path.members[1..]
                 .iter()
                 .map(Self::trampoline_field_selector)
@@ -4244,6 +4306,14 @@ impl<'a> HirToMirLowering<'a> {
                 )),
                 _ => None,
             })
+            .or_else(|| match ctx_field {
+                CtxField::UserIp6 | CtxField::MsgSrcIp6 => Some(self.func.alloc_stack_slot(
+                    align_to_eight(16),
+                    8,
+                    StackSlotKind::Local,
+                )),
+                _ => None,
+            })
             .or_else(|| self.get_metadata(src_dst).and_then(|m| m.string_slot));
         let precise_trampoline_types = trampoline_value_spec
             .zip(self.trampoline_root_type_info(&ctx_field)?)
@@ -4262,6 +4332,17 @@ impl<'a> HirToMirLowering<'a> {
         {
             self.record_stack_slot_type(slot, pointee.as_ref().clone());
         }
+        if let Some(slot) = slot
+            && matches!(ctx_field, CtxField::UserIp6 | CtxField::MsgSrcIp6)
+        {
+            self.record_stack_slot_type(
+                slot,
+                MirType::Array {
+                    elem: Box::new(MirType::U32),
+                    len: 4,
+                },
+            );
+        }
         self.emit(MirInst::LoadCtxField {
             dst: dst_vreg,
             field: ctx_field.clone(),
@@ -4273,6 +4354,17 @@ impl<'a> HirToMirLowering<'a> {
                 let semantic_ty = MirType::Array {
                     elem: Box::new(MirType::U8),
                     len: 16,
+                };
+                let runtime_ty = MirType::Ptr {
+                    pointee: Box::new(semantic_ty.clone()),
+                    address_space: AddressSpace::Stack,
+                };
+                (semantic_ty, Some(runtime_ty))
+            }
+            CtxField::UserIp6 | CtxField::MsgSrcIp6 => {
+                let semantic_ty = MirType::Array {
+                    elem: Box::new(MirType::U32),
+                    len: 4,
                 };
                 let runtime_ty = MirType::Ptr {
                     pointee: Box::new(semantic_ty.clone()),
@@ -4334,6 +4426,9 @@ impl<'a> HirToMirLowering<'a> {
                     rhs: shift_16,
                 });
             }
+        }
+        if matches!(ctx_field, CtxField::UserIp6 | CtxField::MsgSrcIp6) {
+            self.normalize_cgroup_sock_addr_ipv6_slot(dst_vreg)?;
         }
 
         let meta = self.get_or_create_metadata(src_dst);

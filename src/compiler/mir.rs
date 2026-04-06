@@ -413,6 +413,8 @@ pub enum CtxField {
     UserFamily,
     /// bpf_sock_addr::user_ip4 (normalized to host byte order)
     UserIp4,
+    /// bpf_sock_addr::user_ip6[4] (normalized to host-byte-order u32 words)
+    UserIp6,
     /// bpf_sock_addr::user_port (normalized to host byte order)
     UserPort,
     /// bpf_sock_addr::family
@@ -423,6 +425,8 @@ pub enum CtxField {
     Protocol,
     /// bpf_sock_addr::msg_src_ip4 (normalized to host byte order)
     MsgSrcIp4,
+    /// bpf_sock_addr::msg_src_ip6[4] (normalized to host-byte-order u32 words)
+    MsgSrcIp6,
     /// Function argument (kprobe/uprobe)
     Arg(u8),
     /// Return value (kretprobe/uretprobe)
@@ -453,11 +457,13 @@ impl CtxField {
             CtxField::EgressIfindex => "egress_ifindex".to_string(),
             CtxField::UserFamily => "user_family".to_string(),
             CtxField::UserIp4 => "user_ip4".to_string(),
+            CtxField::UserIp6 => "user_ip6".to_string(),
             CtxField::UserPort => "user_port".to_string(),
             CtxField::Family => "family".to_string(),
             CtxField::SockType => "sock_type".to_string(),
             CtxField::Protocol => "protocol".to_string(),
             CtxField::MsgSrcIp4 => "msg_src_ip4".to_string(),
+            CtxField::MsgSrcIp6 => "msg_src_ip6".to_string(),
             CtxField::Arg(idx) => format!("arg{}", idx),
             CtxField::RetVal => "retval".to_string(),
             CtxField::KStack => "kstack".to_string(),
