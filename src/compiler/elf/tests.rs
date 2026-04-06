@@ -275,26 +275,9 @@ fn test_primary_program_rejects_multi_program_object() {
 
 #[test]
 fn test_primary_program_rejects_struct_ops_object_kind() {
-    let object = EbpfObject {
-        kind: EbpfObjectKind::StructOps {
-            name: "demo".to_string(),
-            value_type_name: "sched_ext_ops".to_string(),
-        },
-        license: "GPL".to_string(),
-        maps: vec![],
-        readonly_globals: vec![],
-        data_globals: vec![],
-        bss_globals: vec![],
-        extra_data_symbols: vec![ObjectDataSymbol {
-            section_name: ".struct_ops".to_string(),
-            name: "demo".to_string(),
-            data: vec![0; 8],
-            align: 8,
-            writable: true,
-            relocations: vec![],
-        }],
-        programs: vec![EbpfProgram::hello_world("sys_clone").into_program_section()],
-    };
+    let object = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8])
+        .add_callback(EbpfProgram::hello_world("sys_clone"), "demo_select_cpu")
+        .build();
 
     let err = object
         .primary_program()
@@ -304,26 +287,9 @@ fn test_primary_program_rejects_struct_ops_object_kind() {
 
 #[test]
 fn test_struct_ops_object_rejects_non_struct_ops_section_name() {
-    let object = EbpfObject {
-        kind: EbpfObjectKind::StructOps {
-            name: "demo".to_string(),
-            value_type_name: "sched_ext_ops".to_string(),
-        },
-        license: "GPL".to_string(),
-        maps: vec![],
-        readonly_globals: vec![],
-        data_globals: vec![],
-        bss_globals: vec![],
-        extra_data_symbols: vec![ObjectDataSymbol {
-            section_name: ".struct_ops".to_string(),
-            name: "demo".to_string(),
-            data: vec![0; 8],
-            align: 8,
-            writable: true,
-            relocations: vec![],
-        }],
-        programs: vec![EbpfProgram::hello_world("sys_clone").into_program_section()],
-    };
+    let object = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8])
+        .add_callback_section(EbpfProgram::hello_world("sys_clone").into_program_section())
+        .build();
 
     let err = object
         .validate_runtime_artifacts()
@@ -338,30 +304,13 @@ fn test_struct_ops_object_rejects_non_struct_ops_section_name() {
 fn test_struct_ops_object_emits_callback_section_override() {
     use object::{Object as _, ObjectSection as _};
 
-    let object = EbpfObject {
-        kind: EbpfObjectKind::StructOps {
-            name: "demo".to_string(),
-            value_type_name: "sched_ext_ops".to_string(),
-        },
-        license: "GPL".to_string(),
-        maps: vec![],
-        readonly_globals: vec![],
-        data_globals: vec![],
-        bss_globals: vec![],
-        extra_data_symbols: vec![ObjectDataSymbol {
-            section_name: ".struct_ops".to_string(),
-            name: "demo".to_string(),
-            data: vec![0; 8],
-            align: 8,
-            writable: true,
-            relocations: vec![],
-        }],
-        programs: vec![
+    let object = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8])
+        .add_callback_section(
             EbpfProgram::hello_world("sys_clone")
                 .into_program_section()
                 .with_section_name_override("struct_ops/demo_select_cpu"),
-        ],
-    };
+        )
+        .build();
 
     let elf = object
         .to_elf()
@@ -379,34 +328,17 @@ fn test_struct_ops_object_emits_callback_section_override() {
 fn test_struct_ops_object_emits_typed_callback_section() {
     use object::{Object as _, ObjectSection as _};
 
-    let object = EbpfObject {
-        kind: EbpfObjectKind::StructOps {
-            name: "demo".to_string(),
-            value_type_name: "sched_ext_ops".to_string(),
-        },
-        license: "GPL".to_string(),
-        maps: vec![],
-        readonly_globals: vec![],
-        data_globals: vec![],
-        bss_globals: vec![],
-        extra_data_symbols: vec![ObjectDataSymbol {
-            section_name: ".struct_ops".to_string(),
-            name: "demo".to_string(),
-            data: vec![0; 8],
-            align: 8,
-            writable: true,
-            relocations: vec![],
-        }],
-        programs: vec![
+    let object = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8])
+        .add_callback(
             EbpfProgram::from_bytecode(
                 EbpfProgramType::StructOps,
                 "demo_select_cpu",
                 "demo_select_cpu",
                 vec![],
-            )
-            .into_program_section(),
-        ],
-    };
+            ),
+            "demo_select_cpu",
+        )
+        .build();
 
     let elf = object
         .to_elf()
@@ -424,34 +356,10 @@ fn test_struct_ops_object_emits_typed_callback_section() {
 fn test_struct_ops_object_emits_struct_ops_value_with_callback_relocation() {
     use object::{Object as _, ObjectSection as _, ObjectSymbol as _, RelocationTarget};
 
-    let mut callback = EbpfProgram::hello_world("sys_clone")
-        .into_program_section()
-        .with_section_name_override("struct_ops/demo_select_cpu");
-    callback.name = "demo_select_cpu".to_string();
-
-    let object = EbpfObject {
-        kind: EbpfObjectKind::StructOps {
-            name: "demo".to_string(),
-            value_type_name: "sched_ext_ops".to_string(),
-        },
-        license: "GPL".to_string(),
-        maps: vec![],
-        readonly_globals: vec![],
-        data_globals: vec![],
-        bss_globals: vec![],
-        extra_data_symbols: vec![ObjectDataSymbol {
-            section_name: ".struct_ops".to_string(),
-            name: "demo".to_string(),
-            data: vec![0; 8],
-            align: 8,
-            writable: true,
-            relocations: vec![ObjectDataRelocation {
-                offset: 0,
-                symbol_name: "demo_select_cpu".to_string(),
-            }],
-        }],
-        programs: vec![callback],
-    };
+    let object = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8])
+        .add_callback(EbpfProgram::hello_world("sys_clone"), "demo_select_cpu")
+        .add_value_relocation(0, "demo_select_cpu")
+        .build();
 
     let elf = object
         .to_elf()
@@ -486,34 +394,18 @@ fn test_struct_ops_object_emits_struct_ops_value_with_callback_relocation() {
 
 #[test]
 fn test_struct_ops_object_rejects_mismatched_value_symbol_name() {
-    let object = EbpfObject {
-        kind: EbpfObjectKind::StructOps {
-            name: "demo".to_string(),
-            value_type_name: "sched_ext_ops".to_string(),
-        },
-        license: "GPL".to_string(),
-        maps: vec![],
-        readonly_globals: vec![],
-        data_globals: vec![],
-        bss_globals: vec![],
-        extra_data_symbols: vec![ObjectDataSymbol {
-            section_name: ".struct_ops".to_string(),
-            name: "other".to_string(),
-            data: vec![0; 8],
-            align: 8,
-            writable: true,
-            relocations: vec![],
-        }],
-        programs: vec![
+    let mut object = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8])
+        .add_callback(
             EbpfProgram::from_bytecode(
                 EbpfProgramType::StructOps,
                 "demo_select_cpu",
                 "demo_select_cpu",
                 vec![],
-            )
-            .into_program_section(),
-        ],
-    };
+            ),
+            "demo_select_cpu",
+        )
+        .build();
+    object.extra_data_symbols[0].name = "other".to_string();
 
     let err = object
         .validate_runtime_artifacts()
@@ -527,44 +419,25 @@ fn test_struct_ops_object_rejects_mismatched_value_symbol_name() {
 
 #[test]
 fn test_struct_ops_object_rejects_multiple_value_symbols() {
-    let object = EbpfObject {
-        kind: EbpfObjectKind::StructOps {
-            name: "demo".to_string(),
-            value_type_name: "sched_ext_ops".to_string(),
-        },
-        license: "GPL".to_string(),
-        maps: vec![],
-        readonly_globals: vec![],
-        data_globals: vec![],
-        bss_globals: vec![],
-        extra_data_symbols: vec![
-            ObjectDataSymbol {
-                section_name: ".struct_ops".to_string(),
-                name: "demo".to_string(),
-                data: vec![0; 8],
-                align: 8,
-                writable: true,
-                relocations: vec![],
-            },
-            ObjectDataSymbol {
-                section_name: ".struct_ops".to_string(),
-                name: "demo_extra".to_string(),
-                data: vec![0; 8],
-                align: 8,
-                writable: true,
-                relocations: vec![],
-            },
-        ],
-        programs: vec![
+    let mut object = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8])
+        .add_callback(
             EbpfProgram::from_bytecode(
                 EbpfProgramType::StructOps,
                 "demo_select_cpu",
                 "demo_select_cpu",
                 vec![],
-            )
-            .into_program_section(),
-        ],
-    };
+            ),
+            "demo_select_cpu",
+        )
+        .build();
+    object.extra_data_symbols.push(ObjectDataSymbol {
+        section_name: ".struct_ops".to_string(),
+        name: "demo_extra".to_string(),
+        data: vec![0; 8],
+        align: 8,
+        writable: true,
+        relocations: vec![],
+    });
 
     let err = object
         .validate_runtime_artifacts()
@@ -573,6 +446,21 @@ fn test_struct_ops_object_rejects_multiple_value_symbols() {
         err.to_string()
             .contains("requires exactly one .struct_ops value symbol"),
         "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_into_struct_ops_callback_normalizes_section_metadata() {
+    let section = EbpfProgram::hello_world("sys_clone").into_struct_ops_callback("demo_select_cpu");
+
+    assert_eq!(section.prog_type, EbpfProgramType::StructOps);
+    assert_eq!(section.target, "demo_select_cpu");
+    assert_eq!(section.name, "demo_select_cpu");
+    assert_eq!(
+        section
+            .section_name()
+            .expect("struct_ops callback section name should build"),
+        "struct_ops/demo_select_cpu"
     );
 }
 

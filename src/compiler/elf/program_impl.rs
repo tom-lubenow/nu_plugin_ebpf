@@ -228,6 +228,17 @@ impl EbpfProgram {
         }
     }
 
+    /// Convert this program into a typed `struct_ops` callback section.
+    pub fn into_struct_ops_callback(self, callback_name: impl Into<String>) -> EbpfProgramSection {
+        let callback_name = callback_name.into();
+        let mut section = self.into_program_section();
+        section.section_name_override = None;
+        section.prog_type = EbpfProgramType::StructOps;
+        section.target = callback_name.clone();
+        section.name = callback_name;
+        section
+    }
+
     /// Create a simple "hello world" kprobe that just returns 0
     ///
     /// This is useful for testing the loading infrastructure.
@@ -541,6 +552,37 @@ impl EbpfObject {
     /// Wrap a single program as an ELF object.
     pub fn single_program(program: EbpfProgram) -> Self {
         program.into_object()
+    }
+
+    /// Start building a `struct_ops` ELF object.
+    pub fn struct_ops(
+        name: impl Into<String>,
+        value_type_name: impl Into<String>,
+        value_data: impl Into<Vec<u8>>,
+    ) -> StructOpsObjectBuilder {
+        let name = name.into();
+        StructOpsObjectBuilder {
+            object: EbpfObject {
+                kind: EbpfObjectKind::StructOps {
+                    name: name.clone(),
+                    value_type_name: value_type_name.into(),
+                },
+                license: "GPL".to_string(),
+                maps: vec![],
+                readonly_globals: vec![],
+                data_globals: vec![],
+                bss_globals: vec![],
+                extra_data_symbols: vec![ObjectDataSymbol {
+                    section_name: ".struct_ops".to_string(),
+                    name,
+                    data: value_data.into(),
+                    align: 8,
+                    writable: true,
+                    relocations: vec![],
+                }],
+                programs: vec![],
+            },
+        }
     }
 
     /// Return the primary program when this object contains exactly one attachable program.
@@ -1077,6 +1119,56 @@ impl EbpfObject {
         }
 
         data
+    }
+}
+
+impl StructOpsObjectBuilder {
+    fn value_symbol_mut(&mut self) -> &mut ObjectDataSymbol {
+        self.object
+            .extra_data_symbols
+            .first_mut()
+            .expect("struct_ops builder must always have a value symbol")
+    }
+
+    pub fn with_license(mut self, license: impl Into<String>) -> Self {
+        self.object.license = license.into();
+        self
+    }
+
+    pub fn with_value_alignment(mut self, align: u64) -> Self {
+        self.value_symbol_mut().align = align;
+        self
+    }
+
+    pub fn with_value_data(mut self, data: impl Into<Vec<u8>>) -> Self {
+        self.value_symbol_mut().data = data.into();
+        self
+    }
+
+    pub fn add_value_relocation(mut self, offset: usize, symbol_name: impl Into<String>) -> Self {
+        self.value_symbol_mut()
+            .relocations
+            .push(ObjectDataRelocation {
+                offset,
+                symbol_name: symbol_name.into(),
+            });
+        self
+    }
+
+    pub fn add_callback(mut self, program: EbpfProgram, callback_name: impl Into<String>) -> Self {
+        self.object
+            .programs
+            .push(program.into_struct_ops_callback(callback_name));
+        self
+    }
+
+    pub fn add_callback_section(mut self, section: EbpfProgramSection) -> Self {
+        self.object.programs.push(section);
+        self
+    }
+
+    pub fn build(self) -> EbpfObject {
+        self.object
     }
 }
 

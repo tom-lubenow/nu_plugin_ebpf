@@ -1611,6 +1611,12 @@ pub struct EbpfObject {
     pub programs: Vec<EbpfProgramSection>,
 }
 
+/// Builder for `struct_ops` ELF objects.
+#[derive(Debug, Clone)]
+pub struct StructOpsObjectBuilder {
+    pub(crate) object: EbpfObject,
+}
+
 /// High-level kind of ELF object being emitted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EbpfObjectKind {
