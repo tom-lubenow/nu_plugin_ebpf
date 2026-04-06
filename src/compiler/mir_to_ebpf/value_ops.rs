@@ -149,7 +149,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         if let (Some(rhs_reg_value), Some(rhs_vreg)) = (rhs_reg, rhs_vreg) {
             if rhs_reg_value == dst_reg && lhs_vreg != Some(rhs_vreg) {
                 let spill_reg = [
-                    EbpfReg::R0,
                     EbpfReg::R1,
                     EbpfReg::R2,
                     EbpfReg::R3,

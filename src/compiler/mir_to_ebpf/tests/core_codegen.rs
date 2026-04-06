@@ -328,6 +328,54 @@ fn test_comparison_codegen_does_not_spill_r0_as_temp() {
 }
 
 #[test]
+fn test_binop_codegen_does_not_spill_r0_as_temp() {
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+    let lhs = func.alloc_vreg();
+    let rhs = func.alloc_vreg();
+
+    func.precolored.insert(dst, EbpfReg::R6);
+    func.precolored.insert(lhs, EbpfReg::R1);
+    func.precolored.insert(rhs, EbpfReg::R6);
+
+    func.block_mut(entry).instructions.push(LirInst::BinOp {
+        dst,
+        op: BinOpKind::Or,
+        lhs: MirValue::VReg(lhs),
+        rhs: MirValue::VReg(rhs),
+    });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .expect("binop temp program should prepare");
+    compiler
+        .compile_function(&program.main)
+        .expect("binop temp program should compile");
+    compiler.fixup_jumps().expect("jump fixups should succeed");
+
+    assert!(
+        !compiler.instructions.iter().any(|insn| {
+            insn.opcode == opcode::BPF_STX | opcode::BPF_DW | opcode::BPF_MEM
+                && insn.dst_reg == EbpfReg::R10.as_u8()
+                && insn.src_reg == EbpfReg::R0.as_u8()
+        }),
+        "binop codegen must not spill unreadable R0 as a temporary"
+    );
+}
+
+#[test]
 fn test_parallel_move_stack_to_stack() {
     let program = LirProgram::new(LirFunction::new());
     let mut compiler = MirToEbpfCompiler::new(&program, None);
