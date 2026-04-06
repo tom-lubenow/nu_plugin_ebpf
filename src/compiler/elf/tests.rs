@@ -485,6 +485,98 @@ fn test_struct_ops_object_emits_struct_ops_value_with_callback_relocation() {
 }
 
 #[test]
+fn test_struct_ops_object_rejects_mismatched_value_symbol_name() {
+    let object = EbpfObject {
+        kind: EbpfObjectKind::StructOps {
+            name: "demo".to_string(),
+            value_type_name: "sched_ext_ops".to_string(),
+        },
+        license: "GPL".to_string(),
+        maps: vec![],
+        readonly_globals: vec![],
+        data_globals: vec![],
+        bss_globals: vec![],
+        extra_data_symbols: vec![ObjectDataSymbol {
+            section_name: ".struct_ops".to_string(),
+            name: "other".to_string(),
+            data: vec![0; 8],
+            align: 8,
+            writable: true,
+            relocations: vec![],
+        }],
+        programs: vec![
+            EbpfProgram::from_bytecode(
+                EbpfProgramType::StructOps,
+                "demo_select_cpu",
+                "demo_select_cpu",
+                vec![],
+            )
+            .into_program_section(),
+        ],
+    };
+
+    let err = object
+        .validate_runtime_artifacts()
+        .expect_err("struct_ops value symbol name should match the object name");
+    assert!(
+        err.to_string()
+            .contains("must use a .struct_ops value symbol with the same name"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_struct_ops_object_rejects_multiple_value_symbols() {
+    let object = EbpfObject {
+        kind: EbpfObjectKind::StructOps {
+            name: "demo".to_string(),
+            value_type_name: "sched_ext_ops".to_string(),
+        },
+        license: "GPL".to_string(),
+        maps: vec![],
+        readonly_globals: vec![],
+        data_globals: vec![],
+        bss_globals: vec![],
+        extra_data_symbols: vec![
+            ObjectDataSymbol {
+                section_name: ".struct_ops".to_string(),
+                name: "demo".to_string(),
+                data: vec![0; 8],
+                align: 8,
+                writable: true,
+                relocations: vec![],
+            },
+            ObjectDataSymbol {
+                section_name: ".struct_ops".to_string(),
+                name: "demo_extra".to_string(),
+                data: vec![0; 8],
+                align: 8,
+                writable: true,
+                relocations: vec![],
+            },
+        ],
+        programs: vec![
+            EbpfProgram::from_bytecode(
+                EbpfProgramType::StructOps,
+                "demo_select_cpu",
+                "demo_select_cpu",
+                vec![],
+            )
+            .into_program_section(),
+        ],
+    };
+
+    let err = object
+        .validate_runtime_artifacts()
+        .expect_err("struct_ops object should currently allow exactly one value symbol");
+    assert!(
+        err.to_string()
+            .contains("requires exactly one .struct_ops value symbol"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_program_object_rejects_extra_data_symbols() {
     let object = EbpfObject {
         kind: EbpfObjectKind::Program,

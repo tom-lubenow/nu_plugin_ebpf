@@ -574,7 +574,9 @@ impl EbpfObject {
         }
 
         if let EbpfObjectKind::StructOps {
-            value_type_name, ..
+            name,
+            value_type_name,
+            ..
         } = &self.kind
         {
             if value_type_name.is_empty() {
@@ -588,11 +590,30 @@ impl EbpfObject {
                         .to_string(),
                 ));
             }
+            if self.extra_data_symbols.len() != 1 {
+                return Err(CompileError::InvalidProgram(format!(
+                    "struct_ops object '{}' currently requires exactly one .struct_ops value symbol, got {}",
+                    name,
+                    self.extra_data_symbols.len()
+                )));
+            }
             for data_symbol in &self.extra_data_symbols {
                 if data_symbol.section_name != ".struct_ops" {
                     return Err(CompileError::InvalidProgram(format!(
                         "struct_ops value symbol '{}' must live in '.struct_ops', got '{}'",
                         data_symbol.name, data_symbol.section_name
+                    )));
+                }
+                if data_symbol.name != *name {
+                    return Err(CompileError::InvalidProgram(format!(
+                        "struct_ops object '{}' must use a .struct_ops value symbol with the same name, got '{}'",
+                        name, data_symbol.name
+                    )));
+                }
+                if !data_symbol.writable {
+                    return Err(CompileError::InvalidProgram(format!(
+                        "struct_ops value symbol '{}' must be writable",
+                        data_symbol.name
                     )));
                 }
             }
