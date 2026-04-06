@@ -1524,6 +1524,8 @@ pub struct EbpfProgramSection {
 /// A complete eBPF ELF object with shared maps/globals and one or more program sections.
 #[derive(Debug, Clone)]
 pub struct EbpfObject {
+    /// The object kind, which determines how the loader should interpret it.
+    pub kind: EbpfObjectKind,
     /// License string (must be GPL-compatible for most helpers)
     pub license: String,
     /// Maps used by this object
@@ -1536,6 +1538,20 @@ pub struct EbpfObject {
     pub bss_globals: Vec<BssGlobal>,
     /// Programs emitted into this object
     pub programs: Vec<EbpfProgramSection>,
+}
+
+/// High-level kind of ELF object being emitted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EbpfObjectKind {
+    /// Ordinary attachable program object with a single primary program.
+    Program,
+    /// Future struct_ops object with callback programs plus a registration map.
+    StructOps {
+        /// User-facing object name.
+        name: String,
+        /// Kernel BTF value type name, for example `sched_ext_ops`.
+        value_type_name: String,
+    },
 }
 
 /// A complete eBPF program ready for loading

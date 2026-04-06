@@ -188,6 +188,7 @@ impl EbpfProgram {
         } = self;
 
         EbpfObject {
+            kind: EbpfObjectKind::Program,
             license,
             maps,
             readonly_globals,
@@ -533,6 +534,15 @@ impl EbpfObject {
 
     /// Return the primary program when this object contains exactly one attachable program.
     pub fn primary_program(&self) -> Result<&EbpfProgramSection, CompileError> {
+        if !matches!(self.kind, EbpfObjectKind::Program) {
+            return Err(CompileError::InvalidProgram(format!(
+                "loader attach requires a program object, got {}",
+                match &self.kind {
+                    EbpfObjectKind::Program => "program",
+                    EbpfObjectKind::StructOps { .. } => "struct_ops",
+                }
+            )));
+        }
         match self.programs.as_slice() {
             [program] => Ok(program),
             [] => Err(CompileError::InvalidProgram(

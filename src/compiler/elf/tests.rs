@@ -198,6 +198,7 @@ fn test_multi_program_object_generation_parses_in_aya() {
     );
 
     let object = EbpfObject {
+        kind: EbpfObjectKind::Program,
         license: "GPL".to_string(),
         maps: vec![],
         readonly_globals: vec![],
@@ -220,6 +221,7 @@ fn test_multi_program_object_generation_parses_in_aya() {
 #[test]
 fn test_primary_program_rejects_multi_program_object() {
     let object = EbpfObject {
+        kind: EbpfObjectKind::Program,
         license: "GPL".to_string(),
         maps: vec![],
         readonly_globals: vec![],
@@ -238,6 +240,27 @@ fn test_primary_program_rejects_multi_program_object() {
         err.to_string()
             .contains("runtime attach currently supports exactly one")
     );
+}
+
+#[test]
+fn test_primary_program_rejects_struct_ops_object_kind() {
+    let object = EbpfObject {
+        kind: EbpfObjectKind::StructOps {
+            name: "demo".to_string(),
+            value_type_name: "sched_ext_ops".to_string(),
+        },
+        license: "GPL".to_string(),
+        maps: vec![],
+        readonly_globals: vec![],
+        data_globals: vec![],
+        bss_globals: vec![],
+        programs: vec![EbpfProgram::hello_world("sys_clone").into_program_section()],
+    };
+
+    let err = object
+        .primary_program()
+        .expect_err("struct_ops object should not expose an attachable primary program");
+    assert!(err.to_string().contains("requires a program object"));
 }
 
 #[test]
