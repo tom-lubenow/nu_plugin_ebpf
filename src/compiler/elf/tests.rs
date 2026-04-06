@@ -556,6 +556,24 @@ fn test_struct_ops_object_spec_zeroed_from_kernel_btf() {
 }
 
 #[test]
+fn test_struct_ops_object_spec_rejects_non_pointer_btf_callback_member() {
+    let err = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", "file")
+        .expect("expected zeroed struct_ops spec from kernel BTF")
+        .with_callback(
+            "f_mode",
+            "demo_select_cpu",
+            EbpfProgram::hello_world("sys_clone"),
+        )
+        .to_object()
+        .expect_err("scalar file.f_mode should not be accepted as a callback slot");
+
+    assert!(
+        err.to_string().contains("resolved to a non-pointer member"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_struct_ops_builder_rejects_unknown_callback_slot() {
     let err = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8])
         .bind_callback(

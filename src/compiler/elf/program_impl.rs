@@ -1,6 +1,7 @@
 use super::*;
 use std::collections::{HashMap, HashSet};
 
+use crate::kernel_btf::TypeInfo;
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector};
 
 fn section_name_for_program(
@@ -1353,6 +1354,12 @@ impl StructOpsObjectSpec {
                         self.value_type_name, callback.slot_name
                     )));
                 };
+                if !matches!(projection.type_info, TypeInfo::Ptr { .. }) {
+                    return Err(CompileError::InvalidProgram(format!(
+                        "struct_ops callback slot '{}.{}' resolved to a non-pointer member {:?}",
+                        self.value_type_name, callback.slot_name, projection.type_info
+                    )));
+                }
                 resolved_slots.insert(callback.slot_name.clone(), offset);
             }
         }
