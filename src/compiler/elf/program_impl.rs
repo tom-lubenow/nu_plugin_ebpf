@@ -1204,6 +1204,90 @@ impl StructOpsObjectBuilder {
     }
 }
 
+impl StructOpsObjectSpec {
+    pub fn new(
+        name: impl Into<String>,
+        value_type_name: impl Into<String>,
+        value_data: impl Into<Vec<u8>>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            value_type_name: value_type_name.into(),
+            license: "GPL".to_string(),
+            value_data: value_data.into(),
+            callback_slots: Vec::new(),
+            callbacks: Vec::new(),
+        }
+    }
+
+    pub fn with_license(mut self, license: impl Into<String>) -> Self {
+        self.license = license.into();
+        self
+    }
+
+    pub fn with_callback_slot(mut self, name: impl Into<String>, offset: usize) -> Self {
+        self.callback_slots.push(StructOpsCallbackSlot {
+            name: name.into(),
+            offset,
+        });
+        self
+    }
+
+    pub fn with_callback(
+        mut self,
+        slot_name: impl Into<String>,
+        callback_name: impl Into<String>,
+        program: EbpfProgram,
+    ) -> Self {
+        self.callbacks.push(StructOpsCallbackSpec {
+            slot_name: slot_name.into(),
+            callback_name: callback_name.into(),
+            program,
+        });
+        self
+    }
+
+    pub fn to_object(&self) -> Result<EbpfObject, CompileError> {
+        let mut seen_slots = HashSet::new();
+        for slot in &self.callback_slots {
+            if !seen_slots.insert(slot.name.as_str()) {
+                return Err(CompileError::InvalidProgram(format!(
+                    "duplicate struct_ops callback slot '{}'",
+                    slot.name
+                )));
+            }
+        }
+
+        let mut seen_bindings = HashSet::new();
+        for callback in &self.callbacks {
+            if !seen_bindings.insert(callback.slot_name.as_str()) {
+                return Err(CompileError::InvalidProgram(format!(
+                    "duplicate struct_ops callback binding for slot '{}'",
+                    callback.slot_name
+                )));
+            }
+        }
+
+        let mut builder = EbpfObject::struct_ops(
+            self.name.clone(),
+            self.value_type_name.clone(),
+            self.value_data.clone(),
+        )
+        .with_license(self.license.clone());
+        for slot in &self.callback_slots {
+            builder = builder.with_callback_slot(slot.name.clone(), slot.offset);
+        }
+        for callback in &self.callbacks {
+            builder = builder.bind_callback(
+                &callback.slot_name,
+                callback.program.clone(),
+                callback.callback_name.clone(),
+            )?;
+        }
+        Ok(builder.build())
+    }
+}
+
 impl EbpfProgram {
     /// Generate an ELF object file containing this program.
     pub fn to_elf(&self) -> Result<Vec<u8>, CompileError> {

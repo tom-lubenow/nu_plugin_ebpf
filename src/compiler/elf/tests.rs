@@ -356,15 +356,15 @@ fn test_struct_ops_object_emits_typed_callback_section() {
 fn test_struct_ops_object_emits_struct_ops_value_with_callback_relocation() {
     use object::{Object as _, ObjectSection as _, ObjectSymbol as _, RelocationTarget};
 
-    let object = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8])
+    let object = StructOpsObjectSpec::new("demo", "sched_ext_ops", vec![0; 8])
         .with_callback_slot("demo_select_cpu", 0)
-        .bind_callback(
+        .with_callback(
+            "demo_select_cpu",
             "demo_select_cpu",
             EbpfProgram::hello_world("sys_clone"),
-            "demo_select_cpu",
         )
-        .expect("known callback slot should bind")
-        .build();
+        .to_object()
+        .expect("struct_ops object spec should build");
 
     let elf = object
         .to_elf()
@@ -394,6 +394,45 @@ fn test_struct_ops_object_emits_struct_ops_value_with_callback_relocation() {
     assert!(
         relocations.next().is_none(),
         "expected exactly one relocation in .struct_ops"
+    );
+}
+
+#[test]
+fn test_struct_ops_object_spec_rejects_duplicate_slot_definition() {
+    let err = StructOpsObjectSpec::new("demo", "sched_ext_ops", vec![0; 8])
+        .with_callback_slot("demo_select_cpu", 0)
+        .with_callback_slot("demo_select_cpu", 8)
+        .to_object()
+        .expect_err("duplicate callback slot definitions should fail");
+
+    assert!(
+        err.to_string()
+            .contains("duplicate struct_ops callback slot 'demo_select_cpu'"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_struct_ops_object_spec_rejects_duplicate_slot_binding() {
+    let err = StructOpsObjectSpec::new("demo", "sched_ext_ops", vec![0; 8])
+        .with_callback_slot("demo_select_cpu", 0)
+        .with_callback(
+            "demo_select_cpu",
+            "demo_select_cpu",
+            EbpfProgram::hello_world("sys_clone"),
+        )
+        .with_callback(
+            "demo_select_cpu",
+            "demo_select_cpu_alt",
+            EbpfProgram::hello_world("sys_execve"),
+        )
+        .to_object()
+        .expect_err("duplicate callback bindings should fail");
+
+    assert!(
+        err.to_string()
+            .contains("duplicate struct_ops callback binding for slot 'demo_select_cpu'"),
+        "unexpected error: {err}"
     );
 }
 

@@ -1618,6 +1618,32 @@ pub struct StructOpsObjectBuilder {
     pub(crate) callback_slots: HashMap<String, usize>,
 }
 
+/// Named callback slot within a `struct_ops` value blob.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructOpsCallbackSlot {
+    pub name: String,
+    pub offset: usize,
+}
+
+/// Callback program bound to a named `struct_ops` value slot.
+#[derive(Debug, Clone)]
+pub struct StructOpsCallbackSpec {
+    pub slot_name: String,
+    pub callback_name: String,
+    pub program: EbpfProgram,
+}
+
+/// Compiler-facing specification for a `struct_ops` object.
+#[derive(Debug, Clone)]
+pub struct StructOpsObjectSpec {
+    pub name: String,
+    pub value_type_name: String,
+    pub license: String,
+    pub value_data: Vec<u8>,
+    pub callback_slots: Vec<StructOpsCallbackSlot>,
+    pub callbacks: Vec<StructOpsCallbackSpec>,
+}
+
 /// High-level kind of ELF object being emitted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EbpfObjectKind {
