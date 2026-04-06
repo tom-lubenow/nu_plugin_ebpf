@@ -321,9 +321,29 @@ fn test_probe_context_allows_sock_addr_fields_on_cgroup_sock_addr() {
         "/sys/fs/cgroup:connect4",
     );
     assert!(ctx.ctx_field_access_error(&CtxField::UserFamily).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::UserIp4).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::UserPort).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Family).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::SockType).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Protocol).is_none());
+}
+
+#[test]
+fn test_probe_context_rejects_ipv4_sock_addr_fields_on_ipv6_hooks() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect6");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::UserIp4)
+        .expect("expected ipv6 hook rejection for ctx.user_ip4");
+    assert!(err.contains("IPv4 cgroup_sock_addr hooks"));
+}
+
+#[test]
+fn test_probe_context_rejects_msg_source_field_on_non_msg_hook() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::MsgSrcIp4)
+        .expect("expected non-msg-hook rejection for ctx.msg_src_ip4");
+    assert!(err.contains("sendmsg*/recvmsg*"));
 }
 
 #[test]

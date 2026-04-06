@@ -179,9 +179,12 @@ fn recover_ctx_field_hint(
         | CtxField::RxQueueIndex
         | CtxField::EgressIfindex
         | CtxField::UserFamily
+        | CtxField::UserIp4
+        | CtxField::UserPort
         | CtxField::Family
         | CtxField::SockType
-        | CtxField::Protocol => Some(MirType::U32),
+        | CtxField::Protocol
+        | CtxField::MsgSrcIp4 => Some(MirType::U32),
         CtxField::Data | CtxField::DataEnd => Some(MirType::Ptr {
             pointee: Box::new(MirType::U8),
             address_space: AddressSpace::Packet,

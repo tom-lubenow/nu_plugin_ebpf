@@ -657,6 +657,27 @@ pub struct ProbeContext {
 }
 
 impl ProbeContext {
+    fn cgroup_sock_addr_attach_kind(&self) -> Option<&str> {
+        if !matches!(self.probe_type, EbpfProgramType::CgroupSockAddr) {
+            return None;
+        }
+        self.target.rsplit_once(':').map(|(_, attach_kind)| attach_kind)
+    }
+
+    fn cgroup_sock_addr_is_ipv4(&self) -> bool {
+        matches!(
+            self.cgroup_sock_addr_attach_kind(),
+            Some("bind4" | "connect4" | "getpeername4" | "getsockname4" | "sendmsg4" | "recvmsg4")
+        )
+    }
+
+    fn cgroup_sock_addr_has_msg_source(&self) -> bool {
+        matches!(
+            self.cgroup_sock_addr_attach_kind(),
+            Some("sendmsg4" | "sendmsg6" | "recvmsg4" | "recvmsg6")
+        )
+    }
+
     /// Create a new probe context
     pub fn new(probe_type: EbpfProgramType, target: impl Into<String>) -> Self {
         Self {
@@ -765,6 +786,7 @@ impl ProbeContext {
                 Some(packet_field_error(field))
             }
             CtxField::UserFamily
+            | CtxField::UserPort
             | CtxField::Family
             | CtxField::SockType
             | CtxField::Protocol
@@ -775,6 +797,25 @@ impl ProbeContext {
                     field.display_name()
                 ))
             }
+            CtxField::UserIp4 if !matches!(self.probe_type, EbpfProgramType::CgroupSockAddr) => {
+                Some("ctx.user_ip4 is only available on cgroup_sock_addr programs".to_string())
+            }
+            CtxField::UserIp4 if !self.cgroup_sock_addr_is_ipv4() => Some(
+                "ctx.user_ip4 is only available on IPv4 cgroup_sock_addr hooks (*4)".to_string(),
+            ),
+            CtxField::MsgSrcIp4 if !matches!(self.probe_type, EbpfProgramType::CgroupSockAddr) => {
+                Some(
+                    "ctx.msg_src_ip4 is only available on cgroup_sock_addr programs".to_string(),
+                )
+            }
+            CtxField::MsgSrcIp4 if !self.cgroup_sock_addr_is_ipv4() => Some(
+                "ctx.msg_src_ip4 is only available on IPv4 cgroup_sock_addr hooks (*4)"
+                    .to_string(),
+            ),
+            CtxField::MsgSrcIp4 if !self.cgroup_sock_addr_has_msg_source() => Some(
+                "ctx.msg_src_ip4 is only available on cgroup_sock_addr sendmsg*/recvmsg* hooks"
+                    .to_string(),
+            ),
             CtxField::Arg(_) if !self.probe_type.supports_ctx_args() => Some(format!(
                 "ctx.{} is only available on function probes with argument access (kprobe, uprobe, fentry, fexit)",
                 field.display_name()

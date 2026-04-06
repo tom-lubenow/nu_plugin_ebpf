@@ -82,8 +82,8 @@ let id = ebpf attach 'tc:lo:ingress' {|ctx| $ctx.packet_len | count; 0 }
 # Count packets on cgroup egress traffic
 let id = ebpf attach 'cgroup_skb:/sys/fs/cgroup:egress' {|ctx| $ctx.packet_len | count; 1 }
 
-# Count requested socket families on cgroup connect4 hooks
-let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect4' {|ctx| $ctx.user_family | count; 1 }
+# Count requested ports on cgroup connect4 hooks
+let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect4' {|ctx| $ctx.user_port | count; 1 }
 ```
 
 ### Count syscalls by process
@@ -181,9 +181,12 @@ The closure receives a context parameter with these fields:
 | `rx_queue_index` | XDP receive queue index | xdp |
 | `egress_ifindex` | XDP egress interface index | xdp |
 | `user_family` | Userspace-requested socket family | cgroup_sock_addr |
+| `user_ip4` | IPv4 destination/source address in host byte order | cgroup_sock_addr (*4 hooks) |
+| `user_port` | Requested port in host byte order | cgroup_sock_addr |
 | `family` | Kernel socket family | cgroup_sock_addr |
 | `sock_type` | Socket type | cgroup_sock_addr |
 | `protocol` | Socket protocol | cgroup_sock_addr |
+| `msg_src_ip4` | IPv4 source address in host byte order | cgroup_sock_addr (sendmsg4, recvmsg4) |
 | `arg0`-`argN` | Function arguments | kprobe, uprobe, fentry, fexit |
 | `retval` | Return value | kretprobe, uretprobe, fexit |
 
@@ -209,10 +212,12 @@ XDP closures currently need to return an explicit numeric action code such as
 classifier action code such as `0` (`TC_ACT_OK`).
 
 `cgroup_sock_addr` currently exposes `ctx.cpu`, `ctx.ktime`,
-`ctx.user_family`, `ctx.family`, `ctx.sock_type`, and `ctx.protocol`.
-Closures need to return an explicit numeric allow/deny result such as `1`
-(allow) or `0` (deny). This initial slice does not yet expose the address and
-port fields like `user_ip4`, `user_ip6`, `user_port`, or `msg_src_ip4`.
+`ctx.user_family`, `ctx.user_ip4`, `ctx.user_port`, `ctx.family`,
+`ctx.sock_type`, `ctx.protocol`, and `ctx.msg_src_ip4`. The IPv4 address and
+port fields are normalized to host byte order. Closures need to return an
+explicit numeric allow/deny result such as `1` (allow) or `0` (deny). This
+initial slice still does not expose IPv6 address fields like `user_ip6` or
+`msg_src_ip6`.
 
 `kprobe` and `uprobe` expose `ctx.arg0`-`ctx.arg5` through `pt_regs`. `fentry` and
 `fexit` resolve `ctx.argN` and `ctx.retval` through kernel BTF. Scalar and pointer

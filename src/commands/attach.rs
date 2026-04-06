@@ -793,13 +793,16 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.user_family } - Get userspace-requested socket family
+    {|ctx| $ctx.user_ip4 } - Get the IPv4 destination/source address in host byte order on *4 hooks
+    {|ctx| $ctx.user_port } - Get the requested port in host byte order
     {|ctx| $ctx.family }  - Get kernel socket family
     {|ctx| $ctx.sock_type } - Get socket type
     {|ctx| $ctx.protocol } - Get socket protocol
+    {|ctx| $ctx.msg_src_ip4 } - Get the IPv4 source address in host byte order on sendmsg4/recvmsg4
     Note: cgroup_sock_addr closures currently need to return an explicit
     numeric allow/deny code such as `1` (allow) or `0` (deny). This initial
-    slice does not yet expose address or port fields like `user_ip4`,
-    `user_ip6`, or `user_port`.
+    slice does not yet expose IPv6 address fields like `user_ip6` or
+    `msg_src_ip6`.
 
   Function fields:
     {|ctx| $ctx.arg0 }    - Get function argument 0
@@ -1017,8 +1020,8 @@ Requirements:
                 result: None,
             },
             Example {
-                example: "ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect4' {|ctx| $ctx.user_family | count; 1 }",
-                description: "Count requested socket families on cgroup connect4 hooks",
+                example: "ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect4' {|ctx| $ctx.user_port | count; 1 }",
+                description: "Count requested ports on cgroup connect4 hooks",
                 result: None,
             },
         ]

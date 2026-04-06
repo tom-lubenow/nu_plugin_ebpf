@@ -1220,9 +1220,12 @@ impl<'a> HirToMirLowering<'a> {
             "rx_queue_index" => CtxField::RxQueueIndex,
             "egress_ifindex" => CtxField::EgressIfindex,
             "user_family" => CtxField::UserFamily,
+            "user_ip4" => CtxField::UserIp4,
+            "user_port" => CtxField::UserPort,
             "family" => CtxField::Family,
             "sock_type" | "type" => CtxField::SockType,
             "protocol" => CtxField::Protocol,
+            "msg_src_ip4" => CtxField::MsgSrcIp4,
             "retval" => CtxField::RetVal,
             "kstack" => CtxField::KStack,
             "ustack" => CtxField::UStack,
@@ -4286,9 +4289,12 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::RxQueueIndex
             | CtxField::EgressIfindex
             | CtxField::UserFamily
+            | CtxField::UserIp4
+            | CtxField::UserPort
             | CtxField::Family
             | CtxField::SockType
-            | CtxField::Protocol => (MirType::U32, Some(MirType::U32)),
+            | CtxField::Protocol
+            | CtxField::MsgSrcIp4 => (MirType::U32, Some(MirType::U32)),
             CtxField::Data | CtxField::DataEnd => {
                 let ptr_ty = MirType::Ptr {
                     pointee: Box::new(MirType::U8),
@@ -4312,6 +4318,22 @@ impl<'a> HirToMirLowering<'a> {
         };
         if let Some(runtime_ty) = runtime_type_hint {
             self.vreg_type_hints.insert(dst_vreg, runtime_ty);
+        }
+
+        if matches!(
+            ctx_field,
+            CtxField::UserIp4 | CtxField::UserPort | CtxField::MsgSrcIp4
+        ) {
+            self.emit_packet_big_endian_scalar_normalize(dst_vreg, &MirType::U32)?;
+            if matches!(ctx_field, CtxField::UserPort) {
+                let shift_16 = self.large_const_operand(&MirType::U32, 16);
+                self.emit(MirInst::BinOp {
+                    dst: dst_vreg,
+                    op: BinOpKind::Shr,
+                    lhs: MirValue::VReg(dst_vreg),
+                    rhs: shift_16,
+                });
+            }
         }
 
         let meta = self.get_or_create_metadata(src_dst);

@@ -562,14 +562,14 @@ step 40 "captured string constant drives lru generic map name" {
     } { trigger-cargo-read $repo_root } "captured string lru map name"
 }
 
-step 41 "cgroup_sock_addr root connect4 family counter" {
+step 41 "cgroup_sock_addr root connect4 port counter" {
     if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
         print "Skipping cgroup_sock_addr smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
     } else {
         count-at-least-one "cgroup_sock_addr:/sys/fs/cgroup:connect4" {|ctx|
-            $ctx.user_family | count
+            $ctx.user_port | count
             1
-        } { trigger-loopback-connect } "cgroup_sock_addr family counter"
+        } { trigger-loopback-connect } "cgroup_sock_addr port counter"
     }
 }
 

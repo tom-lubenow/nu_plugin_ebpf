@@ -307,9 +307,12 @@ impl<'a> TypeInference<'a> {
             | CtxField::RxQueueIndex
             | CtxField::EgressIfindex
             | CtxField::UserFamily
+            | CtxField::UserIp4
+            | CtxField::UserPort
             | CtxField::Family
             | CtxField::SockType
-            | CtxField::Protocol => HMType::U32,
+            | CtxField::Protocol
+            | CtxField::MsgSrcIp4 => HMType::U32,
 
             CtxField::Data | CtxField::DataEnd => HMType::Ptr {
                 pointee: Box::new(HMType::U8),

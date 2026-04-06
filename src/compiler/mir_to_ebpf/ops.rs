@@ -28,15 +28,19 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 76, 80, 36)
     }
 
-    fn bpf_sock_addr_offsets() -> (i16, i16, i16, i16) {
+    fn bpf_sock_addr_offsets() -> (i16, i16, i16, i16, i16, i16, i16) {
         // struct bpf_sock_addr {
         //     __u32 user_family;
+        //     __u32 user_ip4;
+        //     ...
+        //     __u32 user_port;
         //     ...
         //     __u32 family;
         //     __u32 type;
         //     __u32 protocol;
+        //     __u32 msg_src_ip4;
         // };
-        (0, 28, 32, 36)
+        (0, 4, 24, 28, 32, 36, 40)
     }
 
     fn packet_context_kind(&self) -> Result<PacketContextKind, CompileError> {
@@ -551,18 +555,33 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
-            CtxField::Family => {
+            CtxField::UserIp4 => {
                 let offset = Self::bpf_sock_addr_offsets().1;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
-            CtxField::SockType => {
+            CtxField::UserPort => {
                 let offset = Self::bpf_sock_addr_offsets().2;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
-            CtxField::Protocol => {
+            CtxField::Family => {
                 let offset = Self::bpf_sock_addr_offsets().3;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockType => {
+                let offset = Self::bpf_sock_addr_offsets().4;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::Protocol => {
+                let offset = Self::bpf_sock_addr_offsets().5;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::MsgSrcIp4 => {
+                let offset = Self::bpf_sock_addr_offsets().6;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
