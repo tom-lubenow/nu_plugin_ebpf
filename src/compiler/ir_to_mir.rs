@@ -298,6 +298,11 @@ pub struct HirToMirLowering<'a> {
     bss_globals: Vec<BssGlobal>,
     /// Captured variables that are backed by mutable globals instead of constants
     mutable_capture_globals: HashMap<VarId, MutableCaptureGlobal>,
+    /// Leading annotated `mut` locals that are backed by mutable globals
+    annotated_mut_globals: HashMap<VarId, MutableCaptureGlobal>,
+    /// The declaration-time stores for annotated mutable globals are lowered
+    /// into `.data`/`.bss` and should not execute per event.
+    pending_annotated_mut_global_init_stores: HashSet<VarId>,
     /// Explicit named globals created by `global-set`
     named_program_globals: HashMap<String, MutableCaptureGlobal>,
     /// Monotonic counter for unique readonly-global symbol names
@@ -378,6 +383,8 @@ impl<'a> HirToMirLowering<'a> {
             data_globals: Vec::new(),
             bss_globals: Vec::new(),
             mutable_capture_globals: HashMap::new(),
+            annotated_mut_globals: HashMap::new(),
+            pending_annotated_mut_global_init_stores: HashSet::new(),
             named_program_globals: HashMap::new(),
             readonly_global_counter: 0,
             subfunction_registry: HashMap::new(),

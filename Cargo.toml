@@ -11,6 +11,8 @@ license = "MIT"
 # Nushell plugin dependencies
 nu-plugin = "0.110"
 nu-protocol = { version = "0.110", features = ["plugin"] }
+nu-parser = "0.110"
+nu-cmd-lang = "0.110"
 
 # eBPF loading
 aya = { version = "0.13", default-features = false }

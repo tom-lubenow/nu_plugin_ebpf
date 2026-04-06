@@ -305,6 +305,25 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             HirStmt::StoreVariable { var_id, src } => {
+                if let Some(global) = self.annotated_mut_globals.get(var_id).cloned() {
+                    if self.pending_annotated_mut_global_init_stores.remove(var_id) {
+                        self.var_mappings.remove(var_id);
+                        self.var_metadata.remove(var_id);
+                        return Ok(());
+                    }
+
+                    let src_vreg = self.get_vreg(*src);
+                    self.store_into_mutable_global(
+                        &format!("annotated mutable variable {}", var_id.get()),
+                        &global,
+                        *src,
+                        src_vreg,
+                    )?;
+                    self.var_mappings.remove(var_id);
+                    self.var_metadata.remove(var_id);
+                    return Ok(());
+                }
+
                 if let Some(global) = self.mutable_capture_globals.get(var_id).cloned() {
                     let src_vreg = self.get_vreg(*src);
                     self.store_into_mutable_global(
@@ -345,7 +364,9 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             HirStmt::DropVariable { var_id } => {
-                if self.mutable_capture_globals.contains_key(var_id) {
+                if self.annotated_mut_globals.contains_key(var_id)
+                    || self.mutable_capture_globals.contains_key(var_id)
+                {
                     return Ok(());
                 }
                 self.var_mappings.remove(var_id);

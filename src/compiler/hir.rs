@@ -23,6 +23,9 @@ pub struct HirProgram {
     pub closures: HashMap<NuBlockId, HirFunction>,
     pub captures: Vec<(VarId, Value)>,
     pub ctx_param: Option<VarId>,
+    /// Leading annotated `mut` bindings in the attached closure that should be
+    /// lowered as compiler-managed mutable globals instead of per-invocation locals.
+    pub annotated_mut_globals: Vec<(VarId, Value)>,
 }
 
 impl HirProgram {
@@ -37,6 +40,7 @@ impl HirProgram {
             closures,
             captures,
             ctx_param,
+            annotated_mut_globals: Vec::new(),
         }
     }
 }

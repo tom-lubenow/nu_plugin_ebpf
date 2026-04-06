@@ -2,10 +2,14 @@
 
 use std::collections::{HashMap, HashSet};
 
+use nu_cmd_lang::create_default_context;
+use nu_parser::parse;
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
+use nu_protocol::ast::{Expr, ListItem, RecordItem};
 use nu_protocol::casing::Casing;
-use nu_protocol::engine::Closure;
-use nu_protocol::ir::IrBlock;
+use nu_protocol::engine::{Closure, StateWorkingSet};
+use nu_protocol::eval_const::eval_constant;
+use nu_protocol::ir::{Instruction, IrBlock};
 use nu_protocol::{
     BlockId, Category, DeclId, Example, IntoSpanned, LabeledError, PipelineData, Record, Signature,
     Span, Spanned, SyntaxShape, Type, Value, record,
@@ -146,6 +150,263 @@ fn lower_capture_literals(
         captures.push((*var_id, value.clone()));
     }
     Ok(captures)
+}
+
+#[derive(Debug, Clone)]
+struct LeadingVariableDeclaration {
+    mutable: bool,
+    annotated: bool,
+    initializer: Option<Value>,
+}
+
+fn fetch_view_source(
+    engine: &EngineInterface,
+    closure: &Spanned<Closure>,
+) -> Result<String, LabeledError> {
+    let view_source_decl = engine
+        .find_decl("view source")
+        .map_err(|e| {
+            LabeledError::new("Failed to look up 'view source'")
+                .with_label(e.to_string(), closure.span)
+        })?
+        .ok_or_else(|| {
+            LabeledError::new("Required command 'view source' not found").with_label(
+                "Annotated mutable globals require view source",
+                closure.span,
+            )
+        })?;
+
+    let mut eval = EvaluatedCall::new(closure.span);
+    eval.add_positional(Value::closure(closure.item.clone(), closure.span));
+    let data = engine
+        .call_decl(view_source_decl, eval, PipelineData::empty(), true, false)
+        .map_err(|e| {
+            LabeledError::new("Failed to run 'view source'").with_label(e.to_string(), closure.span)
+        })?;
+    let value = data.into_value(closure.span).map_err(|e| {
+        LabeledError::new("Failed to decode 'view source' output")
+            .with_label(e.to_string(), closure.span)
+    })?;
+    match value {
+        Value::String { val, .. } => Ok(val),
+        _ => Err(LabeledError::new("Unexpected 'view source' output type")
+            .with_label("Expected string output from view source", closure.span)),
+    }
+}
+
+fn eval_supported_constant_value(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+) -> Result<Value, LabeledError> {
+    if let Ok(value) = eval_constant(working_set, expr) {
+        return Ok(value);
+    }
+
+    match &expr.expr {
+        Expr::Keyword(kw) => eval_supported_constant_value(working_set, &kw.expr),
+        Expr::Subexpression(block_id) | Expr::Block(block_id) => {
+            let block = working_set.get_block(*block_id);
+            let expr = block
+                .pipelines
+                .first()
+                .and_then(|pipeline| pipeline.elements.first())
+                .map(|element| &element.expr)
+                .ok_or_else(|| {
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label("constant subexpression is empty", expr.span)
+                })?;
+            eval_supported_constant_value(working_set, expr)
+        }
+        Expr::Record(items) => {
+            let mut record = Record::new();
+            for item in items {
+                match item {
+                    RecordItem::Pair(key_expr, value_expr) => {
+                        let key = constant_record_key(working_set, key_expr)?;
+                        let value = eval_supported_constant_value(working_set, value_expr)?;
+                        record.push(key, value);
+                    }
+                    RecordItem::Spread(_, _) => {
+                        return Err(
+                            LabeledError::new("Unsupported annotated mutable global initializer")
+                                .with_label(
+                                    "record spreads are not supported in compile-time global initializers",
+                                    expr.span,
+                                ),
+                        )
+                    }
+                }
+            }
+            Ok(Value::record(record, expr.span))
+        }
+        Expr::List(items) => {
+            let mut values = Vec::with_capacity(items.len());
+            for item in items {
+                match item {
+                    ListItem::Item(item_expr) => {
+                        values.push(eval_supported_constant_value(working_set, item_expr)?);
+                    }
+                    ListItem::Spread(_, _) => {
+                        return Err(
+                            LabeledError::new("Unsupported annotated mutable global initializer")
+                                .with_label(
+                                    "list spreads are not supported in compile-time global initializers",
+                                    expr.span,
+                                ),
+                        )
+                    }
+                }
+            }
+            Ok(Value::list(values, expr.span))
+        }
+        _ => Err(LabeledError::new("Unsupported annotated mutable global initializer")
+            .with_label("Not a constant.", expr.span)
+            .with_help(
+                "Leading annotated `mut` declarations in eBPF closures require a compile-time constant initializer",
+            )),
+    }
+}
+
+fn constant_record_key(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+) -> Result<String, LabeledError> {
+    if let Ok(value) = eval_constant(working_set, expr) {
+        return value.coerce_into_string().map_err(|e| {
+            LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(e.to_string(), expr.span)
+        });
+    }
+
+    if let Some(string) = expr.as_string() {
+        return Ok(string);
+    }
+    if let Some((path, _quoted)) = expr.as_filepath() {
+        return Ok(path);
+    }
+
+    match &expr.expr {
+        Expr::Var(_) => {
+            Ok(String::from_utf8_lossy(working_set.get_span_contents(expr.span)).into())
+        }
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label("record key is not a constant string", expr.span),
+        ),
+    }
+}
+
+fn parse_leading_variable_declarations(
+    source: &str,
+    span: Span,
+) -> Result<Vec<LeadingVariableDeclaration>, LabeledError> {
+    let engine_state = create_default_context();
+    let mut working_set = StateWorkingSet::new(&engine_state);
+    let top_block = parse(&mut working_set, None, source.as_bytes(), false);
+
+    let closure_block_id = top_block
+        .pipelines
+        .iter()
+        .flat_map(|pipeline| pipeline.elements.iter())
+        .find_map(|element| match &element.expr.expr {
+            Expr::Closure(block_id) | Expr::Block(block_id) => Some(*block_id),
+            _ => None,
+        })
+        .ok_or_else(|| {
+            LabeledError::new("Failed to recover closure source structure")
+                .with_label("Expected closure source from view source", span)
+        })?;
+
+    let closure_block = working_set.get_block(closure_block_id);
+    let mut declarations = Vec::new();
+
+    for pipeline in &closure_block.pipelines {
+        let Some(first) = pipeline.elements.first() else {
+            continue;
+        };
+        let Expr::Call(call) = &first.expr.expr else {
+            break;
+        };
+        let cmd_name = working_set.get_decl(call.decl_id).name();
+        if cmd_name != "mut" && cmd_name != "let" {
+            break;
+        }
+
+        let var_expr = call.positional_nth(0).ok_or_else(|| {
+            LabeledError::new("Failed to parse leading variable declaration")
+                .with_label("Missing declaration target", first.expr.span)
+        })?;
+        let annotated = var_expr.ty != Type::Any;
+        let mutable = cmd_name == "mut";
+
+        let initializer = if mutable && annotated {
+            let init_expr = call
+                .positional_nth(1)
+                .map(|expr| expr.as_keyword().unwrap_or(expr))
+                .ok_or_else(|| {
+                    LabeledError::new("Failed to parse annotated mutable declaration")
+                        .with_label("Missing initializer", first.expr.span)
+                })?;
+            Some(eval_supported_constant_value(&working_set, init_expr)?)
+        } else {
+            None
+        };
+
+        declarations.push(LeadingVariableDeclaration {
+            mutable,
+            annotated,
+            initializer,
+        });
+    }
+
+    Ok(declarations)
+}
+
+fn collect_variable_declaration_store_var_ids(ir_block: &IrBlock) -> Vec<nu_protocol::VarId> {
+    ir_block
+        .instructions
+        .iter()
+        .zip(ir_block.comments.iter())
+        .filter_map(|(inst, comment)| match (inst, comment.as_ref()) {
+            (Instruction::StoreVariable { var_id, .. }, "let") => Some(*var_id),
+            _ => None,
+        })
+        .collect()
+}
+
+fn map_leading_annotated_mut_globals(
+    source: &str,
+    ir_block: &IrBlock,
+    span: Span,
+) -> Result<Vec<(nu_protocol::VarId, Value)>, LabeledError> {
+    let declarations = parse_leading_variable_declarations(source, span)?;
+    if declarations.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let declaration_var_ids = collect_variable_declaration_store_var_ids(ir_block);
+    if declaration_var_ids.len() < declarations.len() {
+        return Err(LabeledError::new(
+            "Failed to map annotated mutable globals onto closure variables",
+        )
+        .with_label(
+            "The recovered source declarations did not match the closure IR declaration order",
+            span,
+        )
+        .with_help(
+            "Keep compiler-managed annotated `mut` declarations at the top of the attached closure",
+        ));
+    }
+
+    Ok(declarations
+        .into_iter()
+        .zip(declaration_var_ids)
+        .filter_map(|(decl, var_id)| {
+            (decl.mutable && decl.annotated)
+                .then(|| decl.initializer.map(|value| (var_id, value)))
+                .flatten()
+        })
+        .collect())
 }
 
 fn parse_view_ir_json(
@@ -547,6 +808,11 @@ Output commands:
   global-get        - Load a named compiler-managed program global
   global-set        - Store the pipeline input into a named compiler-managed program global
 
+Globals:
+  Prefer leading annotated `mut` bindings for small private program state:
+    {|ctx| mut state: int = 0; $state = ($state + 1); $state | count }
+  The initializer must currently be a compile-time constant.
+
 Aggregation commands:
   count             - Count occurrences by key
   histogram         - Add value to log2 histogram
@@ -768,6 +1034,9 @@ fn run_attach(
     // Get IR block from engine via plugin protocol
     let (ir_block, mut ir_decl_names) =
         fetch_block_ir(engine, closure.item.block_id, closure.span)?;
+    let closure_source = fetch_view_source(engine, &closure)?;
+    let annotated_mut_globals =
+        map_leading_annotated_mut_globals(&closure_source, &ir_block, closure.span)?;
 
     // Build decl_id -> command name mapping for known commands
     let mut decl_names = build_decl_names(engine)?;
@@ -798,11 +1067,13 @@ fn run_attach(
     // but never stored (i.e., a parameter rather than a local variable)
     let ctx_param = infer_ctx_param(&ir_block);
 
-    let hir_program = lower_ir_to_hir(ir_block, closure_irs, captures, ctx_param).map_err(|e| {
-        LabeledError::new("eBPF compilation failed")
-            .with_label(e.to_string(), call.head)
-            .with_help("The closure may use unsupported operations")
-    })?;
+    let mut hir_program =
+        lower_ir_to_hir(ir_block, closure_irs, captures, ctx_param).map_err(|e| {
+            LabeledError::new("eBPF compilation failed")
+                .with_label(e.to_string(), call.head)
+                .with_help("The closure may use unsupported operations")
+        })?;
+    hir_program.annotated_mut_globals = annotated_mut_globals;
 
     let mut user_functions = HashMap::new();
     for (decl_id, ir) in user_ir_blocks.iter() {
@@ -1111,7 +1382,8 @@ mod tests {
     use nu_protocol::DeclId;
     use nu_protocol::ast::{CellPath, Comparison, Math, Operator, PathMember};
     use nu_protocol::casing::Casing;
-    use nu_protocol::{RegId, Span, VarId};
+    use nu_protocol::ir::{Instruction, IrBlock};
+    use nu_protocol::{RegId, Span, Value, VarId};
 
     #[test]
     fn test_extract_decl_names_from_formatted_instructions_filters_to_known_commands() {
@@ -1130,6 +1402,72 @@ mod tests {
                 (DeclId::new(491), "get".to_string()),
             ])
         );
+    }
+
+    #[test]
+    fn test_map_leading_annotated_mut_globals_uses_leading_declaration_order() {
+        let source =
+            "{|| let tmp = 1; mut state: record<pid: int ok: bool> = {pid: 0, ok: false}; $state }";
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(10),
+                    src: RegId::new(0),
+                },
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(1),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 4],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 4],
+            comments: vec!["let".into(), "let".into(), "".into(), "".into()],
+            register_count: 2,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .expect("leading annotated mut globals should map cleanly");
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(globals[0].0, VarId::new(11));
+        match &globals[0].1 {
+            Value::Record { val, .. } => {
+                assert_eq!(val.get("pid").and_then(|v| v.as_int().ok()), Some(0));
+                assert_eq!(val.get("ok").and_then(|v| v.as_bool().ok()), Some(false));
+            }
+            other => panic!("expected record initializer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_map_leading_annotated_mut_globals_stops_after_first_non_declaration() {
+        let source = "{|| 1 | count; mut state: int = 0; $state }";
+        let ir_block = IrBlock {
+            instructions: vec![Instruction::StoreVariable {
+                var_id: VarId::new(80),
+                src: RegId::new(0),
+            }],
+            spans: vec![Span::test_data()],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None],
+            comments: vec!["let".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .expect("non-leading annotated mut declarations should be ignored");
+
+        assert!(globals.is_empty());
     }
 
     fn make_ctx_path_program(cell_path: CellPath) -> HirProgram {

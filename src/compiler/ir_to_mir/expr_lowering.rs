@@ -176,6 +176,50 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    pub(super) fn init_annotated_mut_globals(
+        &mut self,
+        annotated_mut_globals: &[(VarId, Value)],
+    ) -> Result<(), CompileError> {
+        for (var_id, value) in annotated_mut_globals {
+            let Some((ty, data, list_max_len, string_slot_len)) =
+                Self::mutable_capture_global_repr(value)?
+            else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "leading annotated mutable variable {} of type {} is not yet supported; annotated mutable globals currently only support numeric scalar values, strings, fixed binary values, numeric constant lists, and representable constant records",
+                    var_id.get(),
+                    value.get_type()
+                )));
+            };
+
+            let symbol = format!("__nu_local_global_{}", var_id.get());
+            if data.iter().all(|byte| *byte == 0) {
+                self.bss_globals.push(BssGlobal {
+                    name: symbol.clone(),
+                    size: data.len(),
+                });
+            } else {
+                self.data_globals.push(DataGlobal {
+                    name: symbol.clone(),
+                    data,
+                });
+            }
+            self.annotated_mut_globals.insert(
+                *var_id,
+                MutableCaptureGlobal {
+                    symbol,
+                    ty,
+                    list_max_len,
+                    string_slot_len,
+                    string_content_cap: string_slot_len.map(|slot_len| slot_len.saturating_sub(1)),
+                },
+            );
+            self.pending_annotated_mut_global_init_stores
+                .insert(*var_id);
+        }
+
+        Ok(())
+    }
+
     fn lower_constant_list_value(
         &mut self,
         dst: RegId,

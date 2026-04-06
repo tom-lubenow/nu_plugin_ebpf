@@ -265,7 +265,15 @@ aggregate layout instead of a pointer wrapper. When those maps are attached
 with the same `--pin` group, active pinned programs now reuse that typed schema
 across program boundaries too.
 
-Compiler-managed named globals are available through `global-define`,
+Leading annotated `mut` bindings at the top of an attached eBPF closure now
+lower as compiler-managed per-program globals backed by `.data` or `.bss`, so
+ordinary Nushell variable syntax can express private state without a helper:
+`{|ctx| mut state: int = 0; $state = ($state + 1); $state | count }`. The
+initializer must be a compile-time constant today, and only the leading
+declaration group at the top of the closure is hoisted this way. That is now
+the preferred small-state path when plain variable syntax is enough.
+
+Compiler-managed named globals are still available through `global-define`,
 `global-get`, and `global-set`. These are compiler-managed per-program globals
 backed by `.data` or `.bss`. `global-define` is declarative: by default a
 compile-time constant input establishes the fixed layout and initial contents

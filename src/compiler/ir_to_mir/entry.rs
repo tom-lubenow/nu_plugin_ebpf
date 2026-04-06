@@ -393,6 +393,7 @@ pub fn lower_hir_to_mir_with_hints_and_maps(
         decl_signatures,
     );
     lowering.init_mutable_capture_globals(&mutated_capture_vars)?;
+    lowering.init_annotated_mut_globals(&hir.annotated_mut_globals)?;
     for (name, predecl) in forward_named_globals {
         match predecl.kind {
             NamedGlobalPredeclarationKind::Value { value, initialize } => {

@@ -248,6 +248,11 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        if let Some(global) = self.annotated_mut_globals.get(&var_id).cloned() {
+            self.load_mutable_global_value(dst, dst_vreg, &global)?;
+            return Ok(());
+        }
+
         if let Some(global) = self.mutable_capture_globals.get(&var_id).cloned() {
             self.load_mutable_global_value(dst, dst_vreg, &global)?;
             return Ok(());

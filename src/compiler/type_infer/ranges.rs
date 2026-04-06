@@ -1322,7 +1322,10 @@ impl<'a> TypeInference<'a> {
                     min: rmin,
                     max: rmax,
                 },
-            ) => ValueRange::known(lmin + rmin, lmax + rmax),
+            ) => ValueRange::known(
+                self.clamp_i128_to_i64((lmin as i128) + (rmin as i128)),
+                self.clamp_i128_to_i64((lmax as i128) + (rmax as i128)),
+            ),
             _ => ValueRange::Unknown,
         }
     }
@@ -1338,7 +1341,10 @@ impl<'a> TypeInference<'a> {
                     min: rmin,
                     max: rmax,
                 },
-            ) => ValueRange::known(lmin - rmax, lmax - rmin),
+            ) => ValueRange::known(
+                self.clamp_i128_to_i64((lmin as i128) - (rmax as i128)),
+                self.clamp_i128_to_i64((lmax as i128) - (rmin as i128)),
+            ),
             _ => ValueRange::Unknown,
         }
     }

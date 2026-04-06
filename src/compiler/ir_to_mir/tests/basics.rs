@@ -7025,3 +7025,78 @@ fn test_inline_where_closure_preserves_captured_bool() {
         "expected inlined where closure to materialize the captured bool literal"
     );
 }
+
+#[test]
+fn test_lower_leading_annotated_mut_scalar_uses_global_backing_and_skips_init_store() {
+    let global_var = VarId::new(250);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::StoreVariable {
+                    var_id: global_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(1),
+                    var_id: global_var,
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![(global_var, Value::int(7, Span::test_data()))];
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("leading annotated mutable scalar should lower through a data global");
+
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+    assert_eq!(result.data_globals[0].name, "__nu_local_global_250");
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadGlobal {
+                    symbol,
+                    ty: MirType::I64,
+                    ..
+                } if symbol == "__nu_local_global_250"
+            )),
+        "expected leading annotated mutable scalar to load from its global backing"
+    );
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::Store { .. })),
+        "expected declaration-time store to be absorbed into .data instead of executing at runtime"
+    );
+}

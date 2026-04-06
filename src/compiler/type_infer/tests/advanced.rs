@@ -291,6 +291,26 @@ fn test_stack_pointer_add_with_loop_counter_mod_index() {
 }
 
 #[test]
+fn test_range_add_and_sub_clamp_instead_of_panicking_on_i64_overflow() {
+    let ti = TypeInference::new(None);
+
+    assert_eq!(
+        ti.range_add(
+            ValueRange::known(i64::MAX, i64::MAX),
+            ValueRange::known(1, 1)
+        ),
+        ValueRange::known(i64::MAX, i64::MAX)
+    );
+    assert_eq!(
+        ti.range_sub(
+            ValueRange::known(i64::MIN, i64::MIN),
+            ValueRange::known(1, 1)
+        ),
+        ValueRange::known(i64::MIN, i64::MIN)
+    );
+}
+
+#[test]
 fn test_stack_pointer_add_with_loop_counter_bitand_index() {
     let mut func = make_test_function();
     let list = func.alloc_vreg();

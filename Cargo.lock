@@ -1136,6 +1136,8 @@ dependencies = [
  "bytes",
  "chrono",
  "libc",
+ "nu-cmd-lang",
+ "nu-parser",
  "nu-plugin",
  "nu-plugin-test-support",
  "nu-protocol",
