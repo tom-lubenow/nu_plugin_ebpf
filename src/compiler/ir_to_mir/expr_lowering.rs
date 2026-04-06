@@ -274,12 +274,7 @@ impl<'a> HirToMirLowering<'a> {
                             field_name, field_type
                         )));
                     };
-                    if field_list_max_len.is_some() || field_string_slot_len.is_some() {
-                        return Err(CompileError::UnsupportedInstruction(format!(
-                            "record field '{}' requires a dynamic runtime layout that is not yet supported inside annotated mutable globals",
-                            field_name
-                        )));
-                    }
+                    let _ = (field_list_max_len, field_string_slot_len);
                     mir_fields.push(StructField {
                         name: field_name.clone(),
                         ty: field_ty.clone(),
@@ -304,6 +299,87 @@ impl<'a> HirToMirLowering<'a> {
             }
             _ => Ok(None),
         }
+    }
+
+    fn annotated_mutable_global_semantics(
+        declared_type: &nu_protocol::Type,
+        value: &Value,
+    ) -> Result<Option<AnnotatedValueSemantics>, CompileError> {
+        if !value.is_subtype_of(declared_type) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "annotated mutable global initializer of type {} does not match declared type {}",
+                value.get_type(),
+                declared_type
+            )));
+        }
+
+        match declared_type {
+            nu_protocol::Type::String | nu_protocol::Type::Glob => {
+                let Some((_ty, _data, slot_len)) = Self::mutable_string_global_repr(value) else {
+                    return Ok(None);
+                };
+                return Ok(Some(AnnotatedValueSemantics::String {
+                    slot_len,
+                    content_cap: slot_len.saturating_sub(1),
+                }));
+            }
+            nu_protocol::Type::List(inner)
+                if matches!(
+                    inner.as_ref(),
+                    nu_protocol::Type::Int | nu_protocol::Type::Nothing
+                ) =>
+            {
+                let Value::List { vals, .. } = value else {
+                    return Ok(None);
+                };
+                return Ok(Some(AnnotatedValueSemantics::NumericList {
+                    max_len: vals.len(),
+                }));
+            }
+            nu_protocol::Type::Record(fields) => {
+                let Value::Record { val, .. } = value else {
+                    return Ok(None);
+                };
+
+                let mut field_semantics = Vec::new();
+                for (field_name, field_type) in fields.iter() {
+                    let Some(field_value) = val.get(field_name) else {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "annotated mutable global initializer is missing record field '{}'",
+                            field_name
+                        )));
+                    };
+                    if let Some(field_semantics_value) =
+                        Self::annotated_mutable_global_semantics(field_type, field_value)?
+                    {
+                        field_semantics.push((field_name.clone(), field_semantics_value));
+                    }
+                }
+
+                if field_semantics.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(AnnotatedValueSemantics::Record(field_semantics)))
+                }
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn project_annotated_value_semantics(
+        semantics: &AnnotatedValueSemantics,
+        path_members: &[PathMember],
+    ) -> Option<AnnotatedValueSemantics> {
+        let mut current = semantics.clone();
+        for member in path_members {
+            current = match (current, member) {
+                (AnnotatedValueSemantics::Record(fields), PathMember::String { val, .. }) => fields
+                    .into_iter()
+                    .find_map(|(name, semantics)| (name == *val).then_some(semantics))?,
+                _ => return None,
+            };
+        }
+        Some(current)
     }
 
     pub(super) fn init_annotated_mut_globals(
@@ -345,6 +421,13 @@ impl<'a> HirToMirLowering<'a> {
                     string_content_cap: string_slot_len.map(|slot_len| slot_len.saturating_sub(1)),
                 },
             );
+            if let Some(semantics) = Self::annotated_mutable_global_semantics(
+                &annotated.declared_type,
+                &annotated.initial_value,
+            )? {
+                self.annotated_mut_global_semantics
+                    .insert(annotated.var_id, semantics);
+            }
             self.pending_annotated_mut_global_init_stores
                 .insert(annotated.var_id);
         }
@@ -607,11 +690,13 @@ impl<'a> HirToMirLowering<'a> {
                 Span::unknown(),
             )];
             let field_ty = self.lower_typed_value_projection(
+                dst,
                 field_vreg,
                 dst_vreg,
                 &base_runtime_ty,
                 &path,
                 &field.name,
+                None,
             )?;
             record_fields.push(RecordField {
                 name: field.name,
@@ -3042,11 +3127,13 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_typed_value_projection(
         &mut self,
+        dst_reg: RegId,
         dst_vreg: VReg,
         base_vreg: VReg,
         base_runtime_ty: &MirType,
         path_members: &[PathMember],
         path_desc: &str,
+        projected_semantics: Option<&AnnotatedValueSemantics>,
     ) -> Result<MirType, CompileError> {
         let projected_by_ref =
             |ty: &MirType| matches!(ty, MirType::Array { .. } | MirType::Struct { .. });
@@ -3413,6 +3500,97 @@ impl<'a> HirToMirLowering<'a> {
                 if projected_by_ref(&next_ty) {
                     match address_space {
                         AddressSpace::Stack | AddressSpace::Map => {
+                            if let Some(AnnotatedValueSemantics::NumericList { max_len }) =
+                                projected_semantics
+                            {
+                                let buffer_size =
+                                    (max_len.saturating_add(1)) * std::mem::size_of::<i64>();
+                                let slot = self.func.alloc_stack_slot(
+                                    buffer_size,
+                                    8,
+                                    StackSlotKind::ListBuffer,
+                                );
+                                self.record_list_buffer_slot_type(slot, *max_len);
+                                self.emit(MirInst::ListNew {
+                                    dst: dst_vreg,
+                                    buffer: slot,
+                                    max_len: *max_len,
+                                });
+                                self.vreg_type_hints.insert(
+                                    dst_vreg,
+                                    MirType::Ptr {
+                                        pointee: Box::new(next_ty.clone()),
+                                        address_space: AddressSpace::Stack,
+                                    },
+                                );
+                                self.emit_ptr_to_slot_copy(
+                                    slot,
+                                    0,
+                                    *base_vreg,
+                                    field_offset,
+                                    next_ty.size(),
+                                )?;
+                                let meta = self.get_or_create_metadata(dst_reg);
+                                meta.list_buffer = Some((slot, *max_len));
+                                meta.annotated_semantics = projected_semantics.cloned();
+                                return Ok(next_ty);
+                            }
+                            if let Some(AnnotatedValueSemantics::String {
+                                slot_len,
+                                content_cap,
+                            }) = projected_semantics
+                            {
+                                let slot = self.func.alloc_stack_slot(
+                                    *slot_len,
+                                    8,
+                                    StackSlotKind::StringBuffer,
+                                );
+                                self.record_stack_slot_type(
+                                    slot,
+                                    MirType::Array {
+                                        elem: Box::new(MirType::U8),
+                                        len: *slot_len,
+                                    },
+                                );
+                                self.emit(MirInst::Copy {
+                                    dst: dst_vreg,
+                                    src: MirValue::StackSlot(slot),
+                                });
+                                self.vreg_type_hints.insert(
+                                    dst_vreg,
+                                    MirType::Ptr {
+                                        pointee: Box::new(MirType::Array {
+                                            elem: Box::new(MirType::U8),
+                                            len: *slot_len,
+                                        }),
+                                        address_space: AddressSpace::Stack,
+                                    },
+                                );
+                                let len_vreg = self.func.alloc_vreg();
+                                self.emit(MirInst::Load {
+                                    dst: len_vreg,
+                                    ptr: *base_vreg,
+                                    offset: Self::trampoline_projection_offset_i32(
+                                        field_offset,
+                                        path_desc,
+                                    )?,
+                                    ty: MirType::U64,
+                                });
+                                self.vreg_type_hints.insert(len_vreg, MirType::U64);
+                                self.emit_ptr_to_slot_copy(
+                                    slot,
+                                    0,
+                                    *base_vreg,
+                                    field_offset.saturating_add(8),
+                                    *slot_len,
+                                )?;
+                                let meta = self.get_or_create_metadata(dst_reg);
+                                meta.string_slot = Some(slot);
+                                meta.string_len_vreg = Some(len_vreg);
+                                meta.string_len_bound = Some(*content_cap);
+                                meta.annotated_semantics = projected_semantics.cloned();
+                                return Ok(next_ty);
+                            }
                             self.vreg_type_hints.insert(
                                 dst_vreg,
                                 MirType::Ptr {
@@ -3874,6 +4052,12 @@ impl<'a> HirToMirLowering<'a> {
                 dst: base_vreg,
                 src: MirValue::VReg(dst_vreg),
             });
+            let projected_semantics = self
+                .get_metadata(src_dst)
+                .and_then(|m| m.annotated_semantics.clone())
+                .and_then(|semantics| {
+                    Self::project_annotated_value_semantics(&semantics, &path.members)
+                });
             self.vreg_type_hints.insert(
                 base_vreg,
                 self.vreg_type_hints
@@ -3882,15 +4066,18 @@ impl<'a> HirToMirLowering<'a> {
                     .unwrap_or_else(|| base_runtime_ty.clone()),
             );
             let projected_ty = self.lower_typed_value_projection(
+                src_dst,
                 dst_vreg,
                 base_vreg,
                 &base_runtime_ty,
                 &path.members,
                 &path_desc,
+                projected_semantics.as_ref(),
             )?;
             let meta = self.get_or_create_metadata(src_dst);
             meta.is_context = false;
             meta.field_type = Some(projected_ty);
+            meta.annotated_semantics = projected_semantics;
             return Ok(());
         }
 
@@ -3915,11 +4102,13 @@ impl<'a> HirToMirLowering<'a> {
                 });
                 self.vreg_type_hints.insert(base_vreg, base_ty.clone());
                 let projected_ty = self.lower_typed_value_projection(
+                    src_dst,
                     dst_vreg,
                     base_vreg,
                     &base_ty,
                     &path.members[1..],
                     &Self::typed_value_path_desc(&path.members),
+                    None,
                 )?;
                 let meta = self.get_or_create_metadata(src_dst);
                 meta.is_context = false;

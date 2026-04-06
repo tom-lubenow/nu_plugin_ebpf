@@ -19,7 +19,7 @@ use crate::EbpfPlugin;
 use crate::compiler::{
     EbpfProgram, ProbeContext, ProgramIntrinsic, UserFunctionSig, UserParam, UserParamKind,
     compile_mir_to_ebpf_with_hints_and_readonly_globals, hir::AnnotatedMutGlobal, hir::HirFunction,
-    hir::supports_constant_value, hir_type_infer, infer_ctx_param,
+    hir::HirProgram, hir::HirStmt, hir::supports_constant_value, hir_type_infer, infer_ctx_param,
     lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir, passes::optimize_with_ssa_hints,
 };
 
@@ -415,6 +415,46 @@ fn map_leading_annotated_mut_globals(
                 .flatten()
         })
         .collect())
+}
+
+fn strip_leading_annotated_mut_initializer_stmts(
+    hir: &mut HirProgram,
+    span: Span,
+) -> Result<(), LabeledError> {
+    if hir.annotated_mut_globals.is_empty() {
+        return Ok(());
+    }
+
+    let entry = hir.main.entry.0;
+    let stmts = &mut hir.main.blocks[entry].stmts;
+    let mut cursor = 0usize;
+
+    for annotated in &hir.annotated_mut_globals {
+        let Some(rel_end) = stmts[cursor..].iter().position(
+            |stmt| matches!(stmt, HirStmt::StoreVariable { var_id, .. } if *var_id == annotated.var_id),
+        ) else {
+            return Err(
+                LabeledError::new("Failed to strip leading annotated mutable initializers")
+                    .with_label(
+                        format!(
+                            "Could not locate the initializer store for annotated mutable variable {} in the entry block",
+                            annotated.var_id.get()
+                        ),
+                        span,
+                    )
+                    .with_help(
+                        "Keep compiler-managed annotated `mut` declarations contiguous at the start of the attached closure",
+                    ),
+            );
+        };
+        cursor += rel_end + 1;
+    }
+
+    if cursor > 0 {
+        stmts.drain(0..cursor);
+    }
+
+    Ok(())
 }
 
 fn parse_view_ir_json(
@@ -1082,6 +1122,7 @@ fn run_attach(
                 .with_help("The closure may use unsupported operations")
         })?;
     hir_program.annotated_mut_globals = annotated_mut_globals;
+    strip_leading_annotated_mut_initializer_stmts(&mut hir_program, closure.span)?;
 
     let mut user_functions = HashMap::new();
     for (decl_id, ir) in user_ir_blocks.iter() {
@@ -1483,6 +1524,122 @@ mod tests {
                 .expect("non-leading annotated mut declarations should be ignored");
 
         assert!(globals.is_empty());
+    }
+
+    #[test]
+    fn test_strip_leading_annotated_mut_initializer_stmts_removes_leading_initializer_code() {
+        let mut hir = HirProgram::new(
+            HirFunction {
+                blocks: vec![HirBlock {
+                    id: HirBlockId(0),
+                    stmts: vec![
+                        HirStmt::LoadValue {
+                            dst: RegId::new(0),
+                            val: Box::new(Value::int(7, Span::test_data())),
+                        },
+                        HirStmt::StoreVariable {
+                            var_id: VarId::new(10),
+                            src: RegId::new(0),
+                        },
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(1),
+                            var_id: VarId::new(10),
+                        },
+                    ],
+                    terminator: HirTerminator::Return { src: RegId::new(1) },
+                }],
+                entry: HirBlockId(0),
+                spans: vec![Span::test_data(); 3],
+                ast: vec![None; 3],
+                comments: vec![],
+                register_count: 2,
+                file_count: 0,
+            },
+            HashMap::new(),
+            vec![],
+            None,
+        );
+        hir.annotated_mut_globals = vec![crate::compiler::hir::AnnotatedMutGlobal {
+            var_id: VarId::new(10),
+            declared_type: Type::Int,
+            initial_value: Value::int(7, Span::test_data()),
+        }];
+
+        super::strip_leading_annotated_mut_initializer_stmts(&mut hir, Span::test_data())
+            .expect("leading annotated mut initializer should strip cleanly");
+
+        assert_eq!(hir.main.blocks[0].stmts.len(), 1);
+        assert!(matches!(
+            &hir.main.blocks[0].stmts[0],
+            HirStmt::LoadVariable {
+                var_id,
+                dst: RegId { .. }
+            } if *var_id == VarId::new(10)
+        ));
+    }
+
+    #[test]
+    fn test_strip_leading_annotated_mut_initializer_stmts_keeps_following_code() {
+        let mut hir = HirProgram::new(
+            HirFunction {
+                blocks: vec![HirBlock {
+                    id: HirBlockId(0),
+                    stmts: vec![
+                        HirStmt::LoadValue {
+                            dst: RegId::new(0),
+                            val: Box::new(Value::int(1, Span::test_data())),
+                        },
+                        HirStmt::StoreVariable {
+                            var_id: VarId::new(10),
+                            src: RegId::new(0),
+                        },
+                        HirStmt::LoadValue {
+                            dst: RegId::new(1),
+                            val: Box::new(Value::int(2, Span::test_data())),
+                        },
+                        HirStmt::StoreVariable {
+                            var_id: VarId::new(11),
+                            src: RegId::new(1),
+                        },
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(2),
+                            var_id: VarId::new(99),
+                        },
+                    ],
+                    terminator: HirTerminator::Return { src: RegId::new(2) },
+                }],
+                entry: HirBlockId(0),
+                spans: vec![Span::test_data(); 5],
+                ast: vec![None; 5],
+                comments: vec![],
+                register_count: 3,
+                file_count: 0,
+            },
+            HashMap::new(),
+            vec![],
+            None,
+        );
+        hir.annotated_mut_globals = vec![
+            crate::compiler::hir::AnnotatedMutGlobal {
+                var_id: VarId::new(10),
+                declared_type: Type::Int,
+                initial_value: Value::int(1, Span::test_data()),
+            },
+            crate::compiler::hir::AnnotatedMutGlobal {
+                var_id: VarId::new(11),
+                declared_type: Type::Int,
+                initial_value: Value::int(2, Span::test_data()),
+            },
+        ];
+
+        super::strip_leading_annotated_mut_initializer_stmts(&mut hir, Span::test_data())
+            .expect("multiple leading annotated mut initializers should strip cleanly");
+
+        assert_eq!(hir.main.blocks[0].stmts.len(), 1);
+        assert!(matches!(
+            &hir.main.blocks[0].stmts[0],
+            HirStmt::LoadVariable { var_id, .. } if *var_id == VarId::new(99)
+        ));
     }
 
     fn make_ctx_path_program(cell_path: CellPath) -> HirProgram {

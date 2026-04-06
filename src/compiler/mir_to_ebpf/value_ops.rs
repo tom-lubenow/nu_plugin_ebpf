@@ -128,6 +128,10 @@ impl<'a> MirToEbpfCompiler<'a> {
             BinOpKind::Lt | BinOpKind::Le | BinOpKind::Gt | BinOpKind::Ge
         ) && self.value_is_packet_ptr(lhs)
             && self.value_is_packet_ptr(rhs);
+        let lhs_src_reg = match lhs {
+            MirValue::VReg(v) => Some(self.ensure_reg(*v)?),
+            _ => None,
+        };
         let lhs_vreg = match lhs {
             MirValue::VReg(v) => Some(*v),
             _ => None,
@@ -140,22 +144,45 @@ impl<'a> MirToEbpfCompiler<'a> {
             MirValue::VReg(v) => Some(self.ensure_reg(*v)?),
             _ => None,
         };
+        let mut preserved_rhs_spill: Option<(EbpfReg, i16)> = None;
 
         if let (Some(rhs_reg_value), Some(rhs_vreg)) = (rhs_reg, rhs_vreg) {
             if rhs_reg_value == dst_reg && lhs_vreg != Some(rhs_vreg) {
-                // Preserve RHS before we clobber dst_reg with LHS.
-                if dst_reg != EbpfReg::R0 {
-                    self.instructions
-                        .push(EbpfInsn::mov64_reg(EbpfReg::R0, rhs_reg_value));
-                    rhs_reg = Some(EbpfReg::R0);
-                }
+                let spill_reg = [
+                    EbpfReg::R0,
+                    EbpfReg::R1,
+                    EbpfReg::R2,
+                    EbpfReg::R3,
+                    EbpfReg::R4,
+                    EbpfReg::R5,
+                    EbpfReg::R6,
+                    EbpfReg::R7,
+                    EbpfReg::R8,
+                    EbpfReg::R9,
+                ]
+                .into_iter()
+                .find(|reg| *reg != dst_reg && Some(*reg) != lhs_src_reg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "no temporary register available for binop rhs preservation".into(),
+                    )
+                })?;
+
+                self.check_stack_space(8)?;
+                self.stack_offset -= 8;
+                let spill_offset = self.stack_offset;
+                self.emit_store(EbpfReg::R10, spill_offset, spill_reg, 8)?;
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(spill_reg, rhs_reg_value));
+                rhs_reg = Some(spill_reg);
+                preserved_rhs_spill = Some((spill_reg, spill_offset));
             }
         }
 
         // Load LHS into dst
         match lhs {
-            MirValue::VReg(v) => {
-                let src = self.ensure_reg(*v)?;
+            MirValue::VReg(_v) => {
+                let src = lhs_src_reg.expect("lhs vreg register should already be resolved");
                 if dst_reg != src {
                     self.instructions.push(EbpfInsn::mov64_reg(dst_reg, src));
                 }
@@ -185,6 +212,11 @@ impl<'a> MirToEbpfCompiler<'a> {
                     "Stack slot in binop RHS".into(),
                 ));
             }
+        }
+
+        if let Some((spill_reg, spill_offset)) = preserved_rhs_spill {
+            self.emit_load(spill_reg, EbpfReg::R10, spill_offset, 8)?;
+            self.stack_offset += 8;
         }
 
         Ok(())

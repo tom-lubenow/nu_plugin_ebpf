@@ -3,6 +3,28 @@ use crate::compiler::ProgramValueAccess;
 use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec};
 
 impl<'a> MirToEbpfCompiler<'a> {
+    fn comparison_temp_reg(&self, excluded: &[EbpfReg]) -> Result<EbpfReg, CompileError> {
+        [
+            EbpfReg::R0,
+            EbpfReg::R1,
+            EbpfReg::R2,
+            EbpfReg::R3,
+            EbpfReg::R4,
+            EbpfReg::R5,
+            EbpfReg::R6,
+            EbpfReg::R7,
+            EbpfReg::R8,
+            EbpfReg::R9,
+        ]
+        .into_iter()
+        .find(|reg| !excluded.contains(reg))
+        .ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "no temporary register available for comparison codegen".into(),
+            )
+        })
+    }
+
     fn xdp_md_offsets() -> (i16, i16, i16, i16, i16, i16) {
         // struct xdp_md {
         //     __u32 data;
@@ -110,8 +132,13 @@ impl<'a> MirToEbpfCompiler<'a> {
         rhs: EbpfReg,
         unsigned_compare: bool,
     ) -> Result<(), CompileError> {
-        // Pattern: set dst to 1, then conditionally jump over setting to 0
-        let tmp = EbpfReg::R0;
+        // Pattern: save a temporary, copy LHS out of dst, set dst to 1,
+        // then conditionally jump over setting dst back to 0.
+        let tmp = self.comparison_temp_reg(&[dst, rhs])?;
+        self.check_stack_space(8)?;
+        self.stack_offset -= 8;
+        let spill_offset = self.stack_offset;
+        self.emit_store(EbpfReg::R10, spill_offset, tmp, 8)?;
         self.instructions.push(EbpfInsn::mov64_reg(tmp, dst)); // Save LHS
         self.instructions.push(EbpfInsn::mov64_imm(dst, 1)); // Assume true
 
@@ -141,6 +168,8 @@ impl<'a> MirToEbpfCompiler<'a> {
         ));
 
         self.instructions.push(EbpfInsn::mov64_imm(dst, 0));
+        self.emit_load(tmp, EbpfReg::R10, spill_offset, 8)?;
+        self.stack_offset += 8;
         Ok(())
     }
 
@@ -153,7 +182,11 @@ impl<'a> MirToEbpfCompiler<'a> {
         unsigned_compare: bool,
     ) -> Result<(), CompileError> {
         // Save original value
-        let tmp = EbpfReg::R0;
+        let tmp = self.comparison_temp_reg(&[dst])?;
+        self.check_stack_space(8)?;
+        self.stack_offset -= 8;
+        let spill_offset = self.stack_offset;
+        self.emit_store(EbpfReg::R10, spill_offset, tmp, 8)?;
         self.instructions.push(EbpfInsn::mov64_reg(tmp, dst));
         self.instructions.push(EbpfInsn::mov64_imm(dst, 1)); // Assume true
 
@@ -177,6 +210,8 @@ impl<'a> MirToEbpfCompiler<'a> {
             .push(EbpfInsn::new(jmp_opcode, tmp.as_u8(), 0, jump_offset, imm));
 
         self.instructions.push(EbpfInsn::mov64_imm(dst, 0));
+        self.emit_load(tmp, EbpfReg::R10, spill_offset, 8)?;
+        self.stack_offset += 8;
         Ok(())
     }
 

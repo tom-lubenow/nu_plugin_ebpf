@@ -59,6 +59,37 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    pub(super) fn emit_ptr_to_slot_copy(
+        &mut self,
+        dst_slot: StackSlotId,
+        dst_offset: usize,
+        src_ptr: VReg,
+        src_offset: usize,
+        size: usize,
+    ) -> Result<(), CompileError> {
+        let mut offset = 0usize;
+        while offset < size {
+            let (chunk_ty, chunk_size) =
+                Self::fixed_copy_chunk(size - offset, &[dst_offset + offset, src_offset + offset]);
+            let tmp = self.func.alloc_vreg();
+            self.emit(MirInst::Load {
+                dst: tmp,
+                ptr: src_ptr,
+                offset: (src_offset + offset) as i32,
+                ty: chunk_ty.clone(),
+            });
+            self.vreg_type_hints.insert(tmp, chunk_ty.clone());
+            self.emit(MirInst::StoreSlot {
+                slot: dst_slot,
+                offset: (dst_offset + offset) as i32,
+                val: MirValue::VReg(tmp),
+                ty: chunk_ty,
+            });
+            offset += chunk_size;
+        }
+        Ok(())
+    }
+
     pub(super) fn emit_ptr_zero(
         &mut self,
         dst_ptr: VReg,
@@ -877,9 +908,10 @@ impl<'a> HirToMirLowering<'a> {
                 .func
                 .alloc_stack_slot(buffer_size, 8, StackSlotKind::ListBuffer);
             self.record_list_buffer_slot_type(slot, max_len);
-            self.emit(MirInst::Copy {
+            self.emit(MirInst::ListNew {
                 dst: dst_vreg,
-                src: MirValue::StackSlot(slot),
+                buffer: slot,
+                max_len,
             });
             let stack_list_ptr_ty = MirType::Ptr {
                 pointee: Box::new(global.ty.clone()),

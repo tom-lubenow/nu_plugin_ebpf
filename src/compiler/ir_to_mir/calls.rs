@@ -1143,18 +1143,32 @@ impl<'a> HirToMirLowering<'a> {
                 let input_reg = self
                     .pipeline_input_reg
                     .or(src_dst_had_value.then_some(src_dst));
-                let (idx_vreg, _) = self.positional_args.first().copied().ok_or_else(|| {
-                    CompileError::UnsupportedInstruction(
-                        "get requires a numeric positional index argument".into(),
-                    )
-                })?;
+                let (idx_vreg, idx_reg) =
+                    self.positional_args.first().copied().ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "get requires a numeric positional index argument".into(),
+                        )
+                    })?;
                 if self.positional_args.len() != 1 {
                     return Err(CompileError::UnsupportedInstruction(
                         "get accepts exactly one positional index argument in eBPF".into(),
                     ));
                 }
 
-                let idx = MirValue::VReg(idx_vreg);
+                let idx = self
+                    .get_metadata(idx_reg)
+                    .and_then(|meta| {
+                        meta.literal_int.or_else(|| {
+                            meta.cell_path
+                                .as_ref()
+                                .and_then(|path| match path.members.as_slice() {
+                                    [PathMember::Int { val, .. }] => Some(*val as i64),
+                                    _ => None,
+                                })
+                        })
+                    })
+                    .map(MirValue::Const)
+                    .unwrap_or(MirValue::VReg(idx_vreg));
                 let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
                 let mut handled_list_get = false;
                 if let Some(meta) = input_meta {
@@ -1166,7 +1180,7 @@ impl<'a> HirToMirLowering<'a> {
                         });
 
                         let out_meta = self.get_or_create_metadata(src_dst);
-                        out_meta.field_type = meta.field_type;
+                        out_meta.field_type = Some(MirType::I64);
                         handled_list_get = true;
                     }
                 }

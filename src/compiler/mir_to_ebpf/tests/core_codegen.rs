@@ -234,6 +234,52 @@ fn test_parallel_move_r0_cycle() {
 }
 
 #[test]
+fn test_comparison_codegen_preserves_rhs_when_dst_aliases_r0() {
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let cmp = func.alloc_vreg();
+    let lhs = func.alloc_vreg();
+
+    func.precolored.insert(cmp, EbpfReg::R0);
+    func.precolored.insert(lhs, EbpfReg::R1);
+
+    func.block_mut(entry).instructions.push(LirInst::BinOp {
+        dst: cmp,
+        op: BinOpKind::Lt,
+        lhs: MirValue::VReg(lhs),
+        rhs: MirValue::VReg(cmp),
+    });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(cmp)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .expect("comparison alias program should prepare");
+    compiler
+        .compile_function(&program.main)
+        .expect("comparison alias program should compile");
+    compiler.fixup_jumps().expect("jump fixups should succeed");
+
+    let self_compare_opcode = opcode::BPF_JMP | opcode::BPF_JSLT | opcode::BPF_X;
+    assert!(
+        !compiler
+            .instructions
+            .iter()
+            .any(|insn| { insn.opcode == self_compare_opcode && insn.dst_reg == insn.src_reg }),
+        "comparison codegen should not collapse aliased rhs preservation into a self-compare"
+    );
+}
+
+#[test]
 fn test_parallel_move_stack_to_stack() {
     let program = LirProgram::new(LirFunction::new());
     let mut compiler = MirToEbpfCompiler::new(&program, None);

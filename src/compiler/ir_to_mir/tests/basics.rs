@@ -5,7 +5,7 @@ use crate::compiler::hir::{
     HirTerminator,
 };
 use crate::compiler::instruction::BpfHelper;
-use crate::compiler::mir::{AddressSpace, BYTES_COUNTER_MAP_NAME, StructField};
+use crate::compiler::mir::{AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, StructField};
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 use nu_protocol::ast::{CellPath, Comparison, Math, Operator, PathMember, RangeInclusion};
 use nu_protocol::casing::Casing;
@@ -2790,23 +2790,6 @@ fn test_lower_generic_numeric_get_after_binding_pointer_sequence() {
     )
     .expect("bound numeric get projection should lower");
 
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::BinOp {
-                    op: BinOpKind::Mul,
-                    rhs: MirValue::Const(8),
-                    ..
-                }
-            )),
-        "expected numeric get to scale the pointer index by element size"
-    );
     assert!(
         result
             .program
@@ -7155,4 +7138,273 @@ fn test_lower_leading_annotated_mut_record_uses_declared_field_order() {
     assert_eq!(data.len(), 9);
     assert_eq!(&data[..8], &7i64.to_le_bytes());
     assert_eq!(data[8], 0);
+}
+
+#[test]
+fn test_lower_leading_annotated_mut_record_list_field_supports_get() {
+    let global_var = VarId::new(252);
+    let get_decl = DeclId::new(900);
+    let count_decl = DeclId::new(901);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: global_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("vals")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: count_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let mut initial = Record::new();
+    initial.push(
+        "vals",
+        Value::list(
+            vec![
+                Value::int(11, Span::test_data()),
+                Value::int(22, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+    initial.push("pid", Value::int(0, Span::test_data()));
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Record(Box::new([
+            ("vals".to_string(), Type::List(Box::new(Type::Int))),
+            ("pid".to_string(), Type::Int),
+        ])),
+        initial_value: Value::record(initial, Span::test_data()),
+    }];
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::from([
+            (get_decl, "get".to_string()),
+            (count_decl, "count".to_string()),
+        ]),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("annotated mutable record list field should lower as a stack-backed list value");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListGet { .. })),
+        "expected projected annotated-global list field to lower through ListGet"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::MapUpdate {
+                    map: MapRef { name, .. },
+                    ..
+                } if name == COUNTER_MAP_NAME
+            )),
+        "expected list get result to be typed as a scalar key, not a bytes counter key"
+    );
+}
+
+#[test]
+fn test_lower_get_with_single_int_cell_path_uses_constant_list_index() {
+    let global_var = VarId::new(254);
+    let get_decl = DeclId::new(600);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: global_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![int_member(1)],
+                    })),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::List(Box::new(Type::Int)),
+        initial_value: Value::list(
+            vec![
+                Value::int(11, Span::test_data()),
+                Value::int(22, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    }];
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::from([(get_decl, "get".to_string())]),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("get with a single-int cell path should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::ListGet {
+                    idx: MirValue::Const(1),
+                    ..
+                }
+            )),
+        "expected single-int cell path get argument to lower as a constant list index"
+    );
+}
+
+#[test]
+fn test_lower_leading_annotated_mut_record_string_field_supports_string_append() {
+    let global_var = VarId::new(253);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: global_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("comm")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("!".into()),
+                },
+                HirStmt::StringAppend {
+                    src_dst: RegId::new(0),
+                    val: RegId::new(2),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let mut initial = Record::new();
+    initial.push("comm", Value::string("hi", Span::test_data()));
+    initial.push("pid", Value::int(0, Span::test_data()));
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Record(Box::new([
+            ("comm".to_string(), Type::String),
+            ("pid".to_string(), Type::Int),
+        ])),
+        initial_value: Value::record(initial, Span::test_data()),
+    }];
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("annotated mutable record string field should lower as a stack-backed string value");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StringAppend { .. })),
+        "expected projected annotated-global string field to lower through StringAppend"
+    );
 }

@@ -186,8 +186,17 @@ struct RegMetadata {
     bounded_range: Option<BoundedRange>,
     /// List buffer (stack slot, max_len) for list construction
     list_buffer: Option<(StackSlotId, usize)>,
+    /// Logical semantics for annotated mutable globals and their projected fields.
+    annotated_semantics: Option<AnnotatedValueSemantics>,
     /// Closure block ID (for inline execution in where/each)
     closure_block_id: Option<nu_protocol::BlockId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AnnotatedValueSemantics {
+    String { slot_len: usize, content_cap: usize },
+    NumericList { max_len: usize },
+    Record(Vec<(String, AnnotatedValueSemantics)>),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -300,6 +309,8 @@ pub struct HirToMirLowering<'a> {
     mutable_capture_globals: HashMap<VarId, MutableCaptureGlobal>,
     /// Leading annotated `mut` locals that are backed by mutable globals
     annotated_mut_globals: HashMap<VarId, MutableCaptureGlobal>,
+    /// Logical semantics for annotated mutable globals with richer runtime layouts.
+    annotated_mut_global_semantics: HashMap<VarId, AnnotatedValueSemantics>,
     /// The declaration-time stores for annotated mutable globals are lowered
     /// into `.data`/`.bss` and should not execute per event.
     pending_annotated_mut_global_init_stores: HashSet<VarId>,
@@ -384,6 +395,7 @@ impl<'a> HirToMirLowering<'a> {
             bss_globals: Vec::new(),
             mutable_capture_globals: HashMap::new(),
             annotated_mut_globals: HashMap::new(),
+            annotated_mut_global_semantics: HashMap::new(),
             pending_annotated_mut_global_init_stores: HashSet::new(),
             named_program_globals: HashMap::new(),
             readonly_global_counter: 0,

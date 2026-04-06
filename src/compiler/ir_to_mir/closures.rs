@@ -250,6 +250,9 @@ impl<'a> HirToMirLowering<'a> {
 
         if let Some(global) = self.annotated_mut_globals.get(&var_id).cloned() {
             self.load_mutable_global_value(dst, dst_vreg, &global)?;
+            if let Some(semantics) = self.annotated_mut_global_semantics.get(&var_id).cloned() {
+                self.get_or_create_metadata(dst).annotated_semantics = Some(semantics);
+            }
             return Ok(());
         }
 
