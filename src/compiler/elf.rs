@@ -1640,6 +1640,10 @@ pub struct StructOpsObjectSpec {
     pub value_type_name: String,
     pub license: String,
     pub value_data: Vec<u8>,
+    pub maps: Vec<EbpfMap>,
+    pub readonly_globals: Vec<ReadonlyGlobal>,
+    pub data_globals: Vec<DataGlobal>,
+    pub bss_globals: Vec<BssGlobal>,
     pub callback_slots: Vec<StructOpsCallbackSlot>,
     pub callbacks: Vec<StructOpsCallbackSpec>,
 }

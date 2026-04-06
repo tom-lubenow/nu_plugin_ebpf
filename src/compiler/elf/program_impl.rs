@@ -1136,6 +1136,26 @@ impl StructOpsObjectBuilder {
         self
     }
 
+    pub fn with_maps(mut self, maps: Vec<EbpfMap>) -> Self {
+        self.object.maps = maps;
+        self
+    }
+
+    pub fn with_readonly_globals(mut self, readonly_globals: Vec<ReadonlyGlobal>) -> Self {
+        self.object.readonly_globals = readonly_globals;
+        self
+    }
+
+    pub fn with_data_globals(mut self, data_globals: Vec<DataGlobal>) -> Self {
+        self.object.data_globals = data_globals;
+        self
+    }
+
+    pub fn with_bss_globals(mut self, bss_globals: Vec<BssGlobal>) -> Self {
+        self.object.bss_globals = bss_globals;
+        self
+    }
+
     pub fn with_value_alignment(mut self, align: u64) -> Self {
         self.value_symbol_mut().align = align;
         self
@@ -1215,6 +1235,10 @@ impl StructOpsObjectSpec {
             value_type_name: value_type_name.into(),
             license: "GPL".to_string(),
             value_data: value_data.into(),
+            maps: Vec::new(),
+            readonly_globals: Vec::new(),
+            data_globals: Vec::new(),
+            bss_globals: Vec::new(),
             callback_slots: Vec::new(),
             callbacks: Vec::new(),
         }
@@ -1230,6 +1254,26 @@ impl StructOpsObjectSpec {
             name: name.into(),
             offset,
         });
+        self
+    }
+
+    pub fn with_maps(mut self, maps: Vec<EbpfMap>) -> Self {
+        self.maps = maps;
+        self
+    }
+
+    pub fn with_readonly_globals(mut self, readonly_globals: Vec<ReadonlyGlobal>) -> Self {
+        self.readonly_globals = readonly_globals;
+        self
+    }
+
+    pub fn with_data_globals(mut self, data_globals: Vec<DataGlobal>) -> Self {
+        self.data_globals = data_globals;
+        self
+    }
+
+    pub fn with_bss_globals(mut self, bss_globals: Vec<BssGlobal>) -> Self {
+        self.bss_globals = bss_globals;
         self
     }
 
@@ -1273,7 +1317,11 @@ impl StructOpsObjectSpec {
             self.value_type_name.clone(),
             self.value_data.clone(),
         )
-        .with_license(self.license.clone());
+        .with_license(self.license.clone())
+        .with_maps(self.maps.clone())
+        .with_readonly_globals(self.readonly_globals.clone())
+        .with_data_globals(self.data_globals.clone())
+        .with_bss_globals(self.bss_globals.clone());
         for slot in &self.callback_slots {
             builder = builder.with_callback_slot(slot.name.clone(), slot.offset);
         }

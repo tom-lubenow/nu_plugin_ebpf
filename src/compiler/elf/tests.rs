@@ -437,6 +437,51 @@ fn test_struct_ops_object_spec_rejects_duplicate_slot_binding() {
 }
 
 #[test]
+fn test_struct_ops_object_spec_preserves_shared_artifacts() {
+    use object::{Object as _, ObjectSection as _};
+
+    let object = StructOpsObjectSpec::new("demo", "sched_ext_ops", vec![0; 8])
+        .with_maps(vec![EbpfMap {
+            name: "state".to_string(),
+            def: BpfMapDef::hash(8, 8, 16),
+        }])
+        .with_readonly_globals(vec![ReadonlyGlobal {
+            name: "cfg".to_string(),
+            data: vec![1, 2, 3, 4],
+        }])
+        .with_data_globals(vec![DataGlobal {
+            name: "counter".to_string(),
+            data: vec![0; 8],
+        }])
+        .with_bss_globals(vec![BssGlobal {
+            name: "scratch".to_string(),
+            size: 16,
+        }])
+        .with_callback_slot("demo_select_cpu", 0)
+        .with_callback(
+            "demo_select_cpu",
+            "demo_select_cpu",
+            EbpfProgram::hello_world("sys_clone"),
+        )
+        .to_object()
+        .expect("struct_ops object with shared artifacts should build");
+
+    let elf = object
+        .to_elf()
+        .expect("struct_ops object with shared artifacts should emit");
+    let file = object::File::parse(&*elf).expect("object crate should parse generated ELF");
+    let section_names: Vec<String> = file
+        .sections()
+        .filter_map(|section| section.name().ok().map(str::to_string))
+        .collect();
+
+    assert!(section_names.contains(&".maps".to_string()));
+    assert!(section_names.contains(&".rodata".to_string()));
+    assert!(section_names.contains(&".data".to_string()));
+    assert!(section_names.contains(&".bss".to_string()));
+}
+
+#[test]
 fn test_struct_ops_builder_rejects_unknown_callback_slot() {
     let err = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8])
         .bind_callback(
