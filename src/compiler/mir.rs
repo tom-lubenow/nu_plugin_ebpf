@@ -409,6 +409,14 @@ pub enum CtxField {
     RxQueueIndex,
     /// XDP egress interface index
     EgressIfindex,
+    /// bpf_sock_addr::user_family
+    UserFamily,
+    /// bpf_sock_addr::family
+    Family,
+    /// bpf_sock_addr::type
+    SockType,
+    /// bpf_sock_addr::protocol
+    Protocol,
     /// Function argument (kprobe/uprobe)
     Arg(u8),
     /// Return value (kretprobe/uretprobe)
@@ -437,6 +445,10 @@ impl CtxField {
             CtxField::IngressIfindex => "ingress_ifindex".to_string(),
             CtxField::RxQueueIndex => "rx_queue_index".to_string(),
             CtxField::EgressIfindex => "egress_ifindex".to_string(),
+            CtxField::UserFamily => "user_family".to_string(),
+            CtxField::Family => "family".to_string(),
+            CtxField::SockType => "sock_type".to_string(),
+            CtxField::Protocol => "protocol".to_string(),
             CtxField::Arg(idx) => format!("arg{}", idx),
             CtxField::RetVal => "retval".to_string(),
             CtxField::KStack => "kstack".to_string(),

@@ -747,8 +747,9 @@ Supported attach types:
   - fentry, fexit
   - tracepoint, raw_tracepoint
   - uprobe, uretprobe
-  - xdp
-  - tc
+  - xdp, tc
+  - cgroup_skb
+  - cgroup_sock_addr
 
 Context parameter syntax (recommended):
   The closure can take a context parameter to access program context information:
@@ -787,6 +788,18 @@ Context parameter syntax (recommended):
     `tcp.payload` uses the runtime data offset. IPv4/TCP options are skipped
     correctly by those payload steps, but deeper option parsing and stacked
     VLAN tags are still not modeled.
+
+  cgroup_sock_addr fields:
+    {|ctx| $ctx.cpu }     - Get current CPU ID
+    {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.user_family } - Get userspace-requested socket family
+    {|ctx| $ctx.family }  - Get kernel socket family
+    {|ctx| $ctx.sock_type } - Get socket type
+    {|ctx| $ctx.protocol } - Get socket protocol
+    Note: cgroup_sock_addr closures currently need to return an explicit
+    numeric allow/deny code such as `1` (allow) or `0` (deny). This initial
+    slice does not yet expose address or port fields like `user_ip4`,
+    `user_ip6`, or `user_port`.
 
   Function fields:
     {|ctx| $ctx.arg0 }    - Get function argument 0
@@ -925,7 +938,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', or 'cgroup_skb:/sys/fs/cgroup:egress').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'cgroup_skb:/sys/fs/cgroup:egress', or 'cgroup_sock_addr:/sys/fs/cgroup:connect4').",
             )
             .required(
                 "closure",
@@ -967,6 +980,7 @@ Requirements:
             "xdp",
             "tc",
             "cgroup_skb",
+            "cgroup_sock_addr",
         ]
     }
 
@@ -1000,6 +1014,11 @@ Requirements:
             Example {
                 example: "ebpf attach 'cgroup_skb:/sys/fs/cgroup:egress' {|ctx| $ctx.packet_len | count; 1 }",
                 description: "Count packet lengths on cgroup egress traffic",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect4' {|ctx| $ctx.user_family | count; 1 }",
+                description: "Count requested socket families on cgroup connect4 hooks",
                 result: None,
             },
         ]

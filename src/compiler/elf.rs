@@ -478,6 +478,8 @@ pub enum EbpfProgramType {
     Tc,
     /// Cgroup socket-buffer program attached to a cgroup ingress/egress hook
     CgroupSkb,
+    /// Cgroup socket-address program attached to a cgroup socket-address hook
+    CgroupSockAddr,
 }
 
 impl EbpfProgramType {
@@ -494,6 +496,7 @@ impl EbpfProgramType {
             EbpfProgramType::Xdp => &XDP_INFO,
             EbpfProgramType::Tc => &TC_INFO,
             EbpfProgramType::CgroupSkb => &CGROUP_SKB_INFO,
+            EbpfProgramType::CgroupSockAddr => &CGROUP_SOCK_ADDR_INFO,
         }
     }
 
@@ -514,6 +517,7 @@ impl EbpfProgramType {
             EbpfProgramType::Xdp,
             EbpfProgramType::Tc,
             EbpfProgramType::CgroupSkb,
+            EbpfProgramType::CgroupSockAddr,
         ]
         .into_iter()
         .find(|program_type| program_type.info().spec_aliases.contains(&prefix))
@@ -760,6 +764,17 @@ impl ProbeContext {
             CtxField::EgressIfindex if !self.probe_type.supports_egress_ifindex_ctx_field() => {
                 Some(packet_field_error(field))
             }
+            CtxField::UserFamily
+            | CtxField::Family
+            | CtxField::SockType
+            | CtxField::Protocol
+                if !matches!(self.probe_type, EbpfProgramType::CgroupSockAddr) =>
+            {
+                Some(format!(
+                    "ctx.{} is only available on cgroup_sock_addr programs",
+                    field.display_name()
+                ))
+            }
             CtxField::Arg(_) if !self.probe_type.supports_ctx_args() => Some(format!(
                 "ctx.{} is only available on function probes with argument access (kprobe, uprobe, fentry, fexit)",
                 field.display_name()
@@ -805,6 +820,7 @@ pub enum ProgramAttachKind {
     Xdp,
     Tc,
     CgroupSkb,
+    CgroupSockAddr,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -816,6 +832,7 @@ pub enum ProgramTargetKind {
     NetworkInterface,
     TrafficControlInterface,
     CgroupPathAttachType,
+    CgroupPathSockAddrAttachType,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -998,6 +1015,7 @@ const URETPROBE_SPEC_ALIASES: &[&str] = &["uretprobe"];
 const XDP_SPEC_ALIASES: &[&str] = &["xdp"];
 const TC_SPEC_ALIASES: &[&str] = &["tc"];
 const CGROUP_SKB_SPEC_ALIASES: &[&str] = &["cgroup_skb"];
+const CGROUP_SOCK_ADDR_SPEC_ALIASES: &[&str] = &["cgroup_sock_addr"];
 const DEFAULT_PROBE_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::Emit,
     ProgramCapability::Counters,
@@ -1318,6 +1336,33 @@ const CGROUP_SKB_INFO: ProgramTypeInfo = ProgramTypeInfo {
     is_userspace: false,
 };
 
+const CGROUP_SOCK_ADDR_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::CgroupSockAddr,
+    canonical_prefix: "cgroup_sock_addr",
+    spec_aliases: CGROUP_SOCK_ADDR_SPEC_ALIASES,
+    section_prefix: "cgroup",
+    section_uses_target: false,
+    attach_kind: ProgramAttachKind::CgroupSockAddr,
+    target_kind: ProgramTargetKind::CgroupPathSockAddrAttachType,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+    supports_task_ctx_fields: false,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    packet_context_kind: None,
+    supports_packet_len_ctx_field: false,
+    supports_packet_data_ctx_fields: false,
+    supports_ingress_ifindex_ctx_field: false,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
+    supports_xdp_md_ctx_fields: false,
+    supports_stack_ctx_fields: false,
+    supports_tracepoint_fields: false,
+    is_userspace: false,
+};
+
 const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "kprobe",
     "kretprobe",
@@ -1331,6 +1376,7 @@ const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "xdp",
     "tc",
     "cgroup_skb",
+    "cgroup_sock_addr",
 ];
 
 const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[

@@ -5,7 +5,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: Write tracing logic in familiar Nushell syntax
-- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, xdp, tc, cgroup_skb
+- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, xdp, tc, cgroup_skb, cgroup_sock_addr
 - **Aggregations**: Count by key, histograms, timing measurements
 - **Event streaming**: Real-time event output via ring buffers
 - **Map sharing**: Share data between probes with `--pin`
@@ -81,6 +81,9 @@ let id = ebpf attach 'tc:lo:ingress' {|ctx| $ctx.packet_len | count; 0 }
 
 # Count packets on cgroup egress traffic
 let id = ebpf attach 'cgroup_skb:/sys/fs/cgroup:egress' {|ctx| $ctx.packet_len | count; 1 }
+
+# Count requested socket families on cgroup connect4 hooks
+let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect4' {|ctx| $ctx.user_family | count; 1 }
 ```
 
 ### Count syscalls by process
@@ -177,6 +180,10 @@ The closure receives a context parameter with these fields:
 | `ifindex` | XDP ingress interface index alias | xdp |
 | `rx_queue_index` | XDP receive queue index | xdp |
 | `egress_ifindex` | XDP egress interface index | xdp |
+| `user_family` | Userspace-requested socket family | cgroup_sock_addr |
+| `family` | Kernel socket family | cgroup_sock_addr |
+| `sock_type` | Socket type | cgroup_sock_addr |
+| `protocol` | Socket protocol | cgroup_sock_addr |
 | `arg0`-`argN` | Function arguments | kprobe, uprobe, fentry, fexit |
 | `retval` | Return value | kretprobe, uretprobe, fexit |
 
@@ -200,6 +207,12 @@ packet-program action helpers are still not modeled, so
 XDP closures currently need to return an explicit numeric action code such as
 `2` (`XDP_PASS`), and TC closures currently need to return an explicit numeric
 classifier action code such as `0` (`TC_ACT_OK`).
+
+`cgroup_sock_addr` currently exposes `ctx.cpu`, `ctx.ktime`,
+`ctx.user_family`, `ctx.family`, `ctx.sock_type`, and `ctx.protocol`.
+Closures need to return an explicit numeric allow/deny result such as `1`
+(allow) or `0` (deny). This initial slice does not yet expose the address and
+port fields like `user_ip4`, `user_ip6`, `user_port`, or `msg_src_ip4`.
 
 `kprobe` and `uprobe` expose `ctx.arg0`-`ctx.arg5` through `pt_regs`. `fentry` and
 `fexit` resolve `ctx.argN` and `ctx.retval` through kernel BTF. Scalar and pointer

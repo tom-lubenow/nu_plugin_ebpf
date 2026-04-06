@@ -28,6 +28,17 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 76, 80, 36)
     }
 
+    fn bpf_sock_addr_offsets() -> (i16, i16, i16, i16) {
+        // struct bpf_sock_addr {
+        //     __u32 user_family;
+        //     ...
+        //     __u32 family;
+        //     __u32 type;
+        //     __u32 protocol;
+        // };
+        (0, 28, 32, 36)
+    }
+
     fn packet_context_kind(&self) -> Result<PacketContextKind, CompileError> {
         self.probe_ctx
             .and_then(|ctx| ctx.probe_type.packet_context_kind())
@@ -534,6 +545,26 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let (_, _, _, _, _, egress_ifindex_offset) = Self::xdp_md_offsets();
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, egress_ifindex_offset));
+            }
+            CtxField::UserFamily => {
+                let offset = Self::bpf_sock_addr_offsets().0;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::Family => {
+                let offset = Self::bpf_sock_addr_offsets().1;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockType => {
+                let offset = Self::bpf_sock_addr_offsets().2;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::Protocol => {
+                let offset = Self::bpf_sock_addr_offsets().3;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::Comm => {
                 let comm_offset = if let Some(slot) = slot {

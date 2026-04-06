@@ -90,6 +90,22 @@ mod linux_tests {
         }
     }
 
+    #[test]
+    fn test_parse_cgroup_sock_addr_spec() {
+        let result = parse_probe_spec("cgroup_sock_addr:/sys/fs/cgroup:connect4");
+
+        match result {
+            Ok((prog_type, target)) => {
+                assert!(
+                    format!("{:?}", prog_type).contains("CgroupSockAddr"),
+                    "Expected CgroupSockAddr type"
+                );
+                assert_eq!(target, "/sys/fs/cgroup:connect4");
+            }
+            Err(e) => panic!("Unexpected error: {:?}", e),
+        }
+    }
+
     /// Test parsing uprobe specification
     #[test]
     fn test_parse_uprobe_spec() {

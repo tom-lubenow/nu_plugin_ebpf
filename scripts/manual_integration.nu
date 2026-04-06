@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 41
+const TOTAL_STEPS = 42
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -86,6 +86,10 @@ def trigger-true [] {
 
 def trigger-ping-loopback [] {
     ^ping -c 1 -W 1 127.0.0.1 | ignore
+}
+
+def trigger-loopback-connect [] {
+    ^bash -lc 'exec 3<>/dev/tcp/127.0.0.1/1 || true' out+err> /dev/null
 }
 
 def wait-for-counter-rows [id, label: string] {
@@ -558,7 +562,18 @@ step 40 "captured string constant drives lru generic map name" {
     } { trigger-cargo-read $repo_root } "captured string lru map name"
 }
 
-step 41 "verify no leaked probes" {
+step 41 "cgroup_sock_addr root connect4 family counter" {
+    if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
+        print "Skipping cgroup_sock_addr smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
+    } else {
+        count-at-least-one "cgroup_sock_addr:/sys/fs/cgroup:connect4" {|ctx|
+            $ctx.user_family | count
+            1
+        } { trigger-loopback-connect } "cgroup_sock_addr family counter"
+    }
+}
+
+step 42 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 
 use aya::maps::{HashMap as AyaHashMap, PerCpuHashMap, RingBuf};
 use aya::programs::{
-    CgroupAttachMode, CgroupSkb, FEntry, FExit, KProbe, RawTracePoint, SchedClassifier,
-    TracePoint, UProbe, Xdp, XdpFlags, tc,
+    CgroupAttachMode, CgroupSkb, CgroupSockAddr, FEntry, FExit, KProbe, RawTracePoint,
+    SchedClassifier, TracePoint, UProbe, Xdp, XdpFlags, tc,
 };
 use aya::{Btf, Ebpf, EbpfLoader};
 use thiserror::Error;
@@ -89,7 +89,7 @@ mod attach;
 #[path = "loader/maps.rs"]
 mod maps;
 
-pub use targets::{CgroupSkbTarget, TcTarget, UprobeTarget, parse_probe_spec};
+pub use targets::{CgroupSkbTarget, CgroupSockAddrTarget, TcTarget, UprobeTarget, parse_probe_spec};
 
 /// Information about an active probe
 pub struct ActiveProbe {

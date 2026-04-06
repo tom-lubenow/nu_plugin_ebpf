@@ -315,6 +315,27 @@ fn test_probe_context_allows_packet_fields_on_cgroup_skb() {
 }
 
 #[test]
+fn test_probe_context_allows_sock_addr_fields_on_cgroup_sock_addr() {
+    let ctx = ProbeContext::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect4",
+    );
+    assert!(ctx.ctx_field_access_error(&CtxField::UserFamily).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Family).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::SockType).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Protocol).is_none());
+}
+
+#[test]
+fn test_probe_context_rejects_sock_addr_fields_on_packet_programs() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::Protocol)
+        .expect("expected sock addr field access error");
+    assert!(err.contains("ctx.protocol is only available on cgroup_sock_addr programs"));
+}
+
+#[test]
 fn test_probe_context_rejects_xdp_only_packet_fields_on_tc() {
     let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let rx_err = ctx
@@ -349,6 +370,23 @@ fn test_cgroup_skb_section_name_uses_attach_direction() {
     assert_eq!(
         program.section_name().expect("cgroup_skb section should build"),
         "cgroup_skb/ingress"
+    );
+}
+
+#[test]
+fn test_cgroup_sock_addr_section_name_uses_attach_kind() {
+    let builder = crate::compiler::instruction::EbpfBuilder::new();
+    let program = EbpfProgram::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect4",
+        "main",
+        builder,
+    );
+    assert_eq!(
+        program
+            .section_name()
+            .expect("cgroup_sock_addr section should build"),
+        "cgroup/connect4"
     );
 }
 

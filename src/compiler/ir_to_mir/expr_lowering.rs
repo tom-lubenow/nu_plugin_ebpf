@@ -1219,6 +1219,10 @@ impl<'a> HirToMirLowering<'a> {
             "ifindex" | "ingress_ifindex" => CtxField::IngressIfindex,
             "rx_queue_index" => CtxField::RxQueueIndex,
             "egress_ifindex" => CtxField::EgressIfindex,
+            "user_family" => CtxField::UserFamily,
+            "family" => CtxField::Family,
+            "sock_type" | "type" => CtxField::SockType,
+            "protocol" => CtxField::Protocol,
             "retval" => CtxField::RetVal,
             "kstack" => CtxField::KStack,
             "ustack" => CtxField::UStack,
@@ -4280,7 +4284,11 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::PacketLen
             | CtxField::IngressIfindex
             | CtxField::RxQueueIndex
-            | CtxField::EgressIfindex => (MirType::U32, Some(MirType::U32)),
+            | CtxField::EgressIfindex
+            | CtxField::UserFamily
+            | CtxField::Family
+            | CtxField::SockType
+            | CtxField::Protocol => (MirType::U32, Some(MirType::U32)),
             CtxField::Data | CtxField::DataEnd => {
                 let ptr_ty = MirType::Ptr {
                     pointee: Box::new(MirType::U8),

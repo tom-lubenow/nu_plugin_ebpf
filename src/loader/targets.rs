@@ -1,7 +1,7 @@
 use super::LoadError;
 use crate::compiler::{EbpfProgramType, KernelTargetValidationKind, ProgramTargetKind};
 use crate::kernel_btf::{FunctionCheckResult, KernelBtf};
-use aya::programs::{CgroupSkbAttachType, TcAttachType};
+use aya::programs::{CgroupSkbAttachType, CgroupSockAddrAttachType, TcAttachType};
 use std::path::Path;
 
 /// Parsed uprobe/uretprobe target information
@@ -164,6 +164,74 @@ impl CgroupSkbTarget {
     }
 }
 
+/// Parsed cgroup_sock_addr target information.
+#[derive(Debug, Clone)]
+pub struct CgroupSockAddrTarget {
+    /// Filesystem path to the cgroup directory.
+    pub cgroup_path: String,
+    /// Attach kind.
+    pub attach_type: CgroupSockAddrAttachType,
+}
+
+impl CgroupSockAddrTarget {
+    /// Parse a cgroup_sock_addr target string of the form `/sys/fs/cgroup:connect4`.
+    pub fn parse(target: &str) -> Result<Self, LoadError> {
+        let (cgroup_path, attach_kind) = target.rsplit_once(':').ok_or_else(|| {
+            LoadError::Load(format!(
+                "Invalid cgroup_sock_addr target: {target}. Expected format: /path/to/cgroup:attach_kind"
+            ))
+        })?;
+
+        if cgroup_path.is_empty() {
+            return Err(LoadError::Load(
+                "cgroup_sock_addr cgroup path cannot be empty".to_string(),
+            ));
+        }
+
+        let attach_type = match attach_kind {
+            "bind4" => CgroupSockAddrAttachType::Bind4,
+            "bind6" => CgroupSockAddrAttachType::Bind6,
+            "connect4" => CgroupSockAddrAttachType::Connect4,
+            "connect6" => CgroupSockAddrAttachType::Connect6,
+            "getpeername4" => CgroupSockAddrAttachType::GetPeerName4,
+            "getpeername6" => CgroupSockAddrAttachType::GetPeerName6,
+            "getsockname4" => CgroupSockAddrAttachType::GetSockName4,
+            "getsockname6" => CgroupSockAddrAttachType::GetSockName6,
+            "sendmsg4" => CgroupSockAddrAttachType::UDPSendMsg4,
+            "sendmsg6" => CgroupSockAddrAttachType::UDPSendMsg6,
+            "recvmsg4" => CgroupSockAddrAttachType::UDPRecvMsg4,
+            "recvmsg6" => CgroupSockAddrAttachType::UDPRecvMsg6,
+            _ => {
+                return Err(LoadError::Load(format!(
+                    "Invalid cgroup_sock_addr attach kind: {attach_kind}. Expected one of bind4, bind6, connect4, connect6, getpeername4, getpeername6, getsockname4, getsockname6, sendmsg4, sendmsg6, recvmsg4, recvmsg6"
+                )));
+            }
+        };
+
+        Ok(Self {
+            cgroup_path: cgroup_path.to_string(),
+            attach_type,
+        })
+    }
+
+    pub fn attach_type_name(&self) -> &'static str {
+        match self.attach_type {
+            CgroupSockAddrAttachType::Bind4 => "bind4",
+            CgroupSockAddrAttachType::Bind6 => "bind6",
+            CgroupSockAddrAttachType::Connect4 => "connect4",
+            CgroupSockAddrAttachType::Connect6 => "connect6",
+            CgroupSockAddrAttachType::GetPeerName4 => "getpeername4",
+            CgroupSockAddrAttachType::GetPeerName6 => "getpeername6",
+            CgroupSockAddrAttachType::GetSockName4 => "getsockname4",
+            CgroupSockAddrAttachType::GetSockName6 => "getsockname6",
+            CgroupSockAddrAttachType::UDPSendMsg4 => "sendmsg4",
+            CgroupSockAddrAttachType::UDPSendMsg6 => "sendmsg6",
+            CgroupSockAddrAttachType::UDPRecvMsg4 => "recvmsg4",
+            CgroupSockAddrAttachType::UDPRecvMsg6 => "recvmsg6",
+        }
+    }
+}
+
 /// Parse a hex or decimal offset string
 fn parse_offset(s: &str) -> Result<u64, LoadError> {
     if s.starts_with("0x") || s.starts_with("0X") {
@@ -289,6 +357,27 @@ fn validate_cgroup_skb_target(target: &str) -> Result<(), LoadError> {
     Ok(())
 }
 
+fn validate_cgroup_sock_addr_target(target: &str) -> Result<(), LoadError> {
+    let parsed = CgroupSockAddrTarget::parse(target)?;
+    let cgroup_path = Path::new(&parsed.cgroup_path);
+
+    if !cgroup_path.exists() {
+        return Err(LoadError::Load(format!(
+            "Unknown cgroup path: {}",
+            parsed.cgroup_path
+        )));
+    }
+
+    if !cgroup_path.is_dir() {
+        return Err(LoadError::Load(format!(
+            "cgroup_sock_addr target must be a directory: {}",
+            parsed.cgroup_path
+        )));
+    }
+
+    Ok(())
+}
+
 fn validate_target_for_program_type(
     prog_type: EbpfProgramType,
     target: &str,
@@ -316,6 +405,7 @@ fn validate_target_for_program_type(
         ProgramTargetKind::NetworkInterface => validate_network_interface_target(target),
         ProgramTargetKind::TrafficControlInterface => validate_tc_target(target),
         ProgramTargetKind::CgroupPathAttachType => validate_cgroup_skb_target(target),
+        ProgramTargetKind::CgroupPathSockAddrAttachType => validate_cgroup_sock_addr_target(target),
     }
 }
 
@@ -335,6 +425,7 @@ fn validate_target_for_program_type(
 /// - `tc:interface:egress`
 /// - `cgroup_skb:/path/to/cgroup:ingress`
 /// - `cgroup_skb:/path/to/cgroup:egress`
+/// - `cgroup_sock_addr:/path/to/cgroup:connect4`
 /// - `uprobe:/path/to/binary:0x1234` (offset-based)
 /// - `uprobe:/path/to/binary:function@PID` (PID-filtered)
 pub fn parse_probe_spec(spec: &str) -> Result<(EbpfProgramType, String), LoadError> {
