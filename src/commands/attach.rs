@@ -17,10 +17,11 @@ use nu_protocol::{
 
 use crate::EbpfPlugin;
 use crate::compiler::{
-    EbpfProgram, ProbeContext, ProgramIntrinsic, UserFunctionSig, UserParam, UserParamKind,
-    compile_mir_to_ebpf_with_hints_and_readonly_globals, hir::AnnotatedMutGlobal, hir::HirFunction,
-    hir::HirProgram, hir::HirStmt, hir::supports_constant_value, hir_type_infer, infer_ctx_param,
-    lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir, passes::optimize_with_ssa_hints,
+    EbpfObject, EbpfProgram, ProbeContext, ProgramIntrinsic, UserFunctionSig, UserParam,
+    UserParamKind, compile_mir_to_ebpf_with_hints_and_readonly_globals, hir::AnnotatedMutGlobal,
+    hir::HirFunction, hir::HirProgram, hir::HirStmt, hir::supports_constant_value, hir_type_infer,
+    infer_ctx_param, lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir,
+    passes::optimize_with_ssa_hints,
 };
 
 /// Common Nushell commands used in eBPF closures.
@@ -1299,8 +1300,10 @@ fn run_attach(
         program = program.with_pinning();
     }
 
+    let object = EbpfObject::single_program(program);
+
     if dry_run {
-        let elf = program.to_elf().map_err(|e| {
+        let elf = object.to_elf().map_err(|e| {
             LabeledError::new("Failed to generate ELF").with_label(e.to_string(), call.head)
         })?;
         return Ok(PipelineData::Value(Value::binary(elf, call.head), None));
@@ -1308,7 +1311,7 @@ fn run_attach(
 
     // Load and attach
     let probe_id = state
-        .attach_with_pin(&program, pin_group.as_deref())
+        .attach_with_pin(&object, pin_group.as_deref())
         .map_err(|e| {
             let help = match &e {
                 LoadError::PermissionDenied => {

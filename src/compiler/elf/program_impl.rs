@@ -1,6 +1,53 @@
 use super::*;
 use std::collections::HashSet;
 
+fn section_name_for_program(
+    prog_type: EbpfProgramType,
+    target: &str,
+) -> Result<String, CompileError> {
+    match prog_type {
+        EbpfProgramType::CgroupSkb => {
+            let (_path, attach_type) = target.rsplit_once(':').ok_or_else(|| {
+                CompileError::InvalidProgram(format!(
+                    "invalid cgroup_skb target '{}': expected cgroup_path:ingress or cgroup_path:egress",
+                    target
+                ))
+            })?;
+            match attach_type {
+                "ingress" | "egress" => Ok(format!("cgroup_skb/{attach_type}")),
+                other => Err(CompileError::InvalidProgram(format!(
+                    "invalid cgroup_skb attach type '{}': expected ingress or egress",
+                    other
+                ))),
+            }
+        }
+        EbpfProgramType::CgroupSockAddr => {
+            let (_path, attach_type) = target.rsplit_once(':').ok_or_else(|| {
+                CompileError::InvalidProgram(format!(
+                    "invalid cgroup_sock_addr target '{}': expected cgroup_path:attach_kind",
+                    target
+                ))
+            })?;
+            match attach_type {
+                "bind4" | "bind6" | "connect4" | "connect6" | "getpeername4" | "getpeername6"
+                | "getsockname4" | "getsockname6" | "sendmsg4" | "sendmsg6" | "recvmsg4"
+                | "recvmsg6" => Ok(format!("cgroup/{attach_type}")),
+                other => Err(CompileError::InvalidProgram(format!(
+                    "invalid cgroup_sock_addr attach type '{}'",
+                    other
+                ))),
+            }
+        }
+        _ => {
+            if prog_type.info().section_uses_target {
+                Ok(format!("{}/{}", prog_type.section_prefix(), target))
+            } else {
+                Ok(prog_type.section_prefix().to_string())
+            }
+        }
+    }
+}
+
 impl EbpfProgram {
     /// Create a new eBPF program from a builder
     pub fn new(
@@ -120,6 +167,63 @@ impl EbpfProgram {
         self
     }
 
+    /// Convert this program into an object with a single program section.
+    pub fn into_object(self) -> EbpfObject {
+        let EbpfProgram {
+            prog_type,
+            target,
+            name,
+            bytecode,
+            main_size,
+            license,
+            maps,
+            readonly_globals,
+            data_globals,
+            bss_globals,
+            relocations,
+            subfunctions,
+            event_schema,
+            bytes_counter_key_schema,
+            generic_map_value_types,
+        } = self;
+
+        EbpfObject {
+            license,
+            maps,
+            readonly_globals,
+            data_globals,
+            bss_globals,
+            programs: vec![EbpfProgramSection {
+                prog_type,
+                target,
+                name,
+                bytecode,
+                main_size,
+                relocations,
+                subfunctions,
+                event_schema,
+                bytes_counter_key_schema,
+                generic_map_value_types,
+            }],
+        }
+    }
+
+    /// Convert this program into its object-local program section form.
+    pub fn into_program_section(self) -> EbpfProgramSection {
+        EbpfProgramSection {
+            prog_type: self.prog_type,
+            target: self.target,
+            name: self.name,
+            bytecode: self.bytecode,
+            main_size: self.main_size,
+            relocations: self.relocations,
+            subfunctions: self.subfunctions,
+            event_schema: self.event_schema,
+            bytes_counter_key_schema: self.bytes_counter_key_schema,
+            generic_map_value_types: self.generic_map_value_types,
+        }
+    }
+
     /// Create a simple "hello world" kprobe that just returns 0
     ///
     /// This is useful for testing the loading infrastructure.
@@ -139,51 +243,7 @@ impl EbpfProgram {
 
     /// Get the ELF section name for this program
     pub fn section_name(&self) -> Result<String, CompileError> {
-        match self.prog_type {
-            EbpfProgramType::CgroupSkb => {
-                let (_path, attach_type) = self.target.rsplit_once(':').ok_or_else(|| {
-                    CompileError::InvalidProgram(format!(
-                        "invalid cgroup_skb target '{}': expected cgroup_path:ingress or cgroup_path:egress",
-                        self.target
-                    ))
-                })?;
-                match attach_type {
-                    "ingress" | "egress" => Ok(format!("cgroup_skb/{attach_type}")),
-                    other => Err(CompileError::InvalidProgram(format!(
-                        "invalid cgroup_skb attach type '{}': expected ingress or egress",
-                        other
-                    ))),
-                }
-            }
-            EbpfProgramType::CgroupSockAddr => {
-                let (_path, attach_type) = self.target.rsplit_once(':').ok_or_else(|| {
-                    CompileError::InvalidProgram(format!(
-                        "invalid cgroup_sock_addr target '{}': expected cgroup_path:attach_kind",
-                        self.target
-                    ))
-                })?;
-                match attach_type {
-                    "bind4" | "bind6" | "connect4" | "connect6" | "getpeername4"
-                    | "getpeername6" | "getsockname4" | "getsockname6" | "sendmsg4"
-                    | "sendmsg6" | "recvmsg4" | "recvmsg6" => Ok(format!("cgroup/{attach_type}")),
-                    other => Err(CompileError::InvalidProgram(format!(
-                        "invalid cgroup_sock_addr attach type '{}'",
-                        other
-                    ))),
-                }
-            }
-            _ => {
-                if self.prog_type.info().section_uses_target {
-                    Ok(format!(
-                        "{}/{}",
-                        self.prog_type.section_prefix(),
-                        self.target
-                    ))
-                } else {
-                    Ok(self.prog_type.section_prefix().to_string())
-                }
-            }
-        }
+        section_name_for_program(self.prog_type, &self.target)
     }
 
     pub fn validate_runtime_artifacts(&self) -> Result<(), CompileError> {
@@ -457,8 +517,74 @@ impl EbpfProgram {
 
         Ok(())
     }
+}
 
-    /// Generate an ELF object file containing this program
+impl EbpfProgramSection {
+    pub fn section_name(&self) -> Result<String, CompileError> {
+        section_name_for_program(self.prog_type, &self.target)
+    }
+}
+
+impl EbpfObject {
+    /// Wrap a single program as an ELF object.
+    pub fn single_program(program: EbpfProgram) -> Self {
+        program.into_object()
+    }
+
+    /// Return the primary program when this object contains exactly one attachable program.
+    pub fn primary_program(&self) -> Result<&EbpfProgramSection, CompileError> {
+        match self.programs.as_slice() {
+            [program] => Ok(program),
+            [] => Err(CompileError::InvalidProgram(
+                "eBPF object contains no program sections".to_string(),
+            )),
+            programs => Err(CompileError::InvalidProgram(format!(
+                "eBPF object contains {} program sections; runtime attach currently supports exactly one",
+                programs.len()
+            ))),
+        }
+    }
+
+    pub fn validate_runtime_artifacts(&self) -> Result<(), CompileError> {
+        if self.programs.is_empty() {
+            return Err(CompileError::InvalidProgram(
+                "eBPF object must contain at least one program section".to_string(),
+            ));
+        }
+
+        let mut program_names = HashSet::new();
+        for program in &self.programs {
+            if !program_names.insert(program.name.as_str()) {
+                return Err(CompileError::InvalidProgram(format!(
+                    "duplicate program symbol name '{}'",
+                    program.name
+                )));
+            }
+
+            let temp = EbpfProgram {
+                prog_type: program.prog_type,
+                target: program.target.clone(),
+                name: program.name.clone(),
+                bytecode: program.bytecode.clone(),
+                main_size: program.main_size,
+                license: self.license.clone(),
+                maps: self.maps.clone(),
+                readonly_globals: self.readonly_globals.clone(),
+                data_globals: self.data_globals.clone(),
+                bss_globals: self.bss_globals.clone(),
+                relocations: program.relocations.clone(),
+                subfunctions: program.subfunctions.clone(),
+                event_schema: program.event_schema.clone(),
+                bytes_counter_key_schema: program.bytes_counter_key_schema.clone(),
+                generic_map_value_types: program.generic_map_value_types.clone(),
+            };
+            temp.validate_runtime_artifacts()?;
+        }
+
+        Ok(())
+    }
+
+    /// Generate an ELF object file containing these programs.
     pub fn to_elf(&self) -> Result<Vec<u8>, CompileError> {
         use std::collections::HashMap;
 
@@ -593,71 +719,61 @@ impl EbpfProgram {
             obj.append_section_data(btf_section_id, &btf_data, 1);
         }
 
-        // Create the program section (e.g., "kprobe/sys_clone")
-        let section_name = self.section_name()?;
-        let section_id = obj.add_section(
-            vec![], // No segment
-            section_name.as_bytes().to_vec(),
-            SectionKind::Text,
-        );
+        for program in &self.programs {
+            let section_name = program.section_name()?;
+            let section_id =
+                obj.add_section(vec![], section_name.as_bytes().to_vec(), SectionKind::Text);
 
-        // Set section flags for eBPF
-        let section = obj.section_mut(section_id);
-        section.flags = SectionFlags::Elf {
-            sh_flags: object::elf::SHF_ALLOC as u64 | object::elf::SHF_EXECINSTR as u64,
-        };
+            let section = obj.section_mut(section_id);
+            section.flags = SectionFlags::Elf {
+                sh_flags: object::elf::SHF_ALLOC as u64 | object::elf::SHF_EXECINSTR as u64,
+            };
 
-        // Add the bytecode to the section
-        let offset = obj.append_section_data(section_id, &self.bytecode, 8);
+            let offset = obj.append_section_data(section_id, &program.bytecode, 8);
 
-        // Add a symbol for the program (must be GLOBAL with DEFAULT visibility for libbpf/Aya)
-        obj.add_symbol(Symbol {
-            name: self.name.as_bytes().to_vec(),
-            value: offset,
-            size: self.main_size as u64,
-            kind: SymbolKind::Text,
-            scope: SymbolScope::Linkage, // GLOBAL binding
-            weak: false,
-            section: SymbolSection::Section(section_id),
-            flags: SymbolFlags::Elf {
-                st_info: (object::elf::STB_GLOBAL << 4) | object::elf::STT_FUNC,
-                st_other: object::elf::STV_DEFAULT,
-            },
-        });
-
-        // Add symbols for subfunctions to support BPF-to-BPF call relocation
-        for subfn in &self.subfunctions {
             obj.add_symbol(Symbol {
-                name: subfn.name.as_bytes().to_vec(),
-                value: offset + subfn.offset as u64,
-                size: subfn.size as u64,
+                name: program.name.as_bytes().to_vec(),
+                value: offset,
+                size: program.main_size as u64,
                 kind: SymbolKind::Text,
-                scope: SymbolScope::Compilation,
+                scope: SymbolScope::Linkage,
                 weak: false,
                 section: SymbolSection::Section(section_id),
                 flags: SymbolFlags::Elf {
-                    st_info: (object::elf::STB_LOCAL << 4) | object::elf::STT_FUNC,
+                    st_info: (object::elf::STB_GLOBAL << 4) | object::elf::STT_FUNC,
                     st_other: object::elf::STV_DEFAULT,
                 },
             });
-        }
 
-        // Add relocations for map references
-        for reloc in &self.relocations {
-            if let Some(&sym_id) = map_symbols.get(&reloc.map_name) {
-                // BPF uses R_BPF_64_64 relocation type (value = 1)
-                obj.add_relocation(
-                    section_id,
-                    Relocation {
-                        offset: (offset + reloc.insn_offset as u64),
-                        symbol: sym_id,
-                        addend: 0,
-                        flags: RelocationFlags::Elf {
-                            r_type: 1, // R_BPF_64_64
-                        },
+            for subfn in &program.subfunctions {
+                obj.add_symbol(Symbol {
+                    name: subfn.name.as_bytes().to_vec(),
+                    value: offset + subfn.offset as u64,
+                    size: subfn.size as u64,
+                    kind: SymbolKind::Text,
+                    scope: SymbolScope::Compilation,
+                    weak: false,
+                    section: SymbolSection::Section(section_id),
+                    flags: SymbolFlags::Elf {
+                        st_info: (object::elf::STB_LOCAL << 4) | object::elf::STT_FUNC,
+                        st_other: object::elf::STV_DEFAULT,
                     },
-                )
-                .map_err(|e| CompileError::ElfError(e.to_string()))?;
+                });
+            }
+
+            for reloc in &program.relocations {
+                if let Some(&sym_id) = map_symbols.get(&reloc.map_name) {
+                    obj.add_relocation(
+                        section_id,
+                        Relocation {
+                            offset: offset + reloc.insn_offset as u64,
+                            symbol: sym_id,
+                            addend: 0,
+                            flags: RelocationFlags::Elf { r_type: 1 },
+                        },
+                    )
+                    .map_err(|e| CompileError::ElfError(e.to_string()))?;
+                }
             }
         }
 
@@ -674,7 +790,7 @@ impl EbpfProgram {
             .map_err(|e| CompileError::ElfError(e.to_string()))
     }
 
-    /// Check if this program uses any maps (and thus needs perf buffer support)
+    /// Check if this object uses any maps (and thus needs perf buffer support)
     pub fn has_maps(&self) -> bool {
         !self.maps.is_empty()
     }
@@ -759,5 +875,17 @@ impl EbpfProgram {
         }
 
         data
+    }
+}
+
+impl EbpfProgram {
+    /// Generate an ELF object file containing this program.
+    pub fn to_elf(&self) -> Result<Vec<u8>, CompileError> {
+        self.clone().into_object().to_elf()
+    }
+
+    /// Check if this program uses any maps (and thus needs perf buffer support)
+    pub fn has_maps(&self) -> bool {
+        !self.maps.is_empty()
     }
 }

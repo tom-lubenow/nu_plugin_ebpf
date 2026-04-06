@@ -6,8 +6,8 @@ impl EbpfState {
     }
 
     /// Load and attach an eBPF program
-    pub fn attach(&self, program: &EbpfProgram) -> Result<u32, LoadError> {
-        self.attach_with_pin(program, None)
+    pub fn attach(&self, object: &EbpfObject) -> Result<u32, LoadError> {
+        self.attach_with_pin(object, None)
     }
 
     /// Load and attach an eBPF program with optional map pinning
@@ -20,11 +20,13 @@ impl EbpfState {
     /// Maps are automatically unpinned when no programs are using them.
     pub fn attach_with_pin(
         &self,
-        program: &EbpfProgram,
+        object: &EbpfObject,
         pin_group: Option<&str>,
     ) -> Result<u32, LoadError> {
+        let program = object.primary_program().map_err(LoadError::from)?;
+
         // Generate ELF
-        let elf_bytes = program.to_elf()?;
+        let elf_bytes = object.to_elf()?;
 
         // Load with Aya using EbpfLoader for optional map pinning
         let mut ebpf = if let Some(group) = pin_group {

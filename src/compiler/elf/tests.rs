@@ -177,6 +177,70 @@ fn test_elf_generation_with_bss_globals_creates_bss_data_map() {
 }
 
 #[test]
+fn test_multi_program_object_generation_parses_in_aya() {
+    use crate::compiler::instruction::{EbpfInsn, EbpfReg};
+
+    let mut builder = crate::compiler::instruction::EbpfBuilder::new();
+    builder
+        .push(EbpfInsn::mov64_imm(EbpfReg::R0, 0))
+        .push(EbpfInsn::exit());
+    let program_one = EbpfProgram::new(EbpfProgramType::Kprobe, "sys_clone", "prog_one", builder);
+
+    let mut builder = crate::compiler::instruction::EbpfBuilder::new();
+    builder
+        .push(EbpfInsn::mov64_imm(EbpfReg::R0, 0))
+        .push(EbpfInsn::exit());
+    let program_two = EbpfProgram::new(
+        EbpfProgramType::RawTracepoint,
+        "sys_enter",
+        "prog_two",
+        builder,
+    );
+
+    let object = EbpfObject {
+        license: "GPL".to_string(),
+        maps: vec![],
+        readonly_globals: vec![],
+        data_globals: vec![],
+        bss_globals: vec![],
+        programs: vec![
+            program_one.into_program_section(),
+            program_two.into_program_section(),
+        ],
+    };
+
+    let elf = object.to_elf().expect("multi-program object should build");
+    let obj = AyaObject::parse(&elf).expect("Aya should parse multi-program object");
+
+    assert_eq!(obj.programs.len(), 2);
+    assert!(obj.programs.contains_key("prog_one"));
+    assert!(obj.programs.contains_key("prog_two"));
+}
+
+#[test]
+fn test_primary_program_rejects_multi_program_object() {
+    let object = EbpfObject {
+        license: "GPL".to_string(),
+        maps: vec![],
+        readonly_globals: vec![],
+        data_globals: vec![],
+        bss_globals: vec![],
+        programs: vec![
+            EbpfProgram::hello_world("sys_clone").into_program_section(),
+            EbpfProgram::hello_world("sys_execve").into_program_section(),
+        ],
+    };
+
+    let err = object
+        .primary_program()
+        .expect_err("multi-program object should not expose a single primary program");
+    assert!(
+        err.to_string()
+            .contains("runtime attach currently supports exactly one")
+    );
+}
+
+#[test]
 fn test_runtime_artifacts_reject_duplicate_map_and_global_names() {
     let mut prog =
         EbpfProgram::hello_world("sys_clone").with_readonly_globals(vec![ReadonlyGlobal {

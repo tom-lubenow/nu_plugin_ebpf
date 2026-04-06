@@ -1496,8 +1496,50 @@ const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[
     ProgramIntrinsic::MapDelete,
 ];
 
+/// One program section within an eBPF ELF object.
+#[derive(Debug, Clone)]
+pub struct EbpfProgramSection {
+    /// The program type
+    pub prog_type: EbpfProgramType,
+    /// The target function/tracepoint name
+    pub target: String,
+    /// The program name (used as symbol name)
+    pub name: String,
+    /// The raw bytecode
+    pub bytecode: Vec<u8>,
+    /// Size of the main function in bytes
+    pub main_size: usize,
+    /// Relocations for map references
+    pub relocations: Vec<MapRelocation>,
+    /// Subfunction symbols for BPF-to-BPF calls
+    pub subfunctions: Vec<SubfunctionSymbol>,
+    /// Optional schema for structured events
+    pub event_schema: Option<EventSchema>,
+    /// Optional schema for runtime decoding of `bytes_counters` keys
+    pub bytes_counter_key_schema: Option<CounterKeySchema>,
+    /// Optional typed generic map value schemas keyed by map identity
+    pub generic_map_value_types: HashMap<MapRef, MirType>,
+}
+
+/// A complete eBPF ELF object with shared maps/globals and one or more program sections.
+#[derive(Debug, Clone)]
+pub struct EbpfObject {
+    /// License string (must be GPL-compatible for most helpers)
+    pub license: String,
+    /// Maps used by this object
+    pub maps: Vec<EbpfMap>,
+    /// Read-only globals emitted into `.rodata`
+    pub readonly_globals: Vec<ReadonlyGlobal>,
+    /// Writable initialized globals emitted into `.data`
+    pub data_globals: Vec<DataGlobal>,
+    /// Writable zero-initialized globals emitted into `.bss`
+    pub bss_globals: Vec<BssGlobal>,
+    /// Programs emitted into this object
+    pub programs: Vec<EbpfProgramSection>,
+}
+
 /// A complete eBPF program ready for loading
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EbpfProgram {
     /// The program type
     pub prog_type: EbpfProgramType,
