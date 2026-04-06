@@ -38,6 +38,9 @@ pub mod type_infer;
 pub mod vcc;
 pub mod verifier_types;
 
+pub use crate::program_spec::{
+    CgroupSkbTarget, CgroupSockAddrTarget, ProgramSpec, TcTarget, UprobeTarget,
+};
 pub use elf::{
     BpfFieldType, BpfMapDef, BssGlobal, CounterKeySchema, CounterKeySchemaField, DataGlobal,
     EbpfMap, EbpfProgram, EbpfProgramType, EventSchema, KernelTargetValidationKind, MapRelocation,

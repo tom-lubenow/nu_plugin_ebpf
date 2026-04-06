@@ -13,6 +13,8 @@ pub mod kernel_btf;
 #[cfg(target_os = "linux")]
 pub mod loader;
 #[cfg(target_os = "linux")]
+pub mod program_spec;
+#[cfg(target_os = "linux")]
 pub mod symbolize;
 
 pub use commands::*;

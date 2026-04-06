@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 
+use crate::program_spec::ProgramSpec;
 use object::write::{Object, Relocation, Symbol, SymbolSection};
 use object::{
     Architecture, BinaryFormat, Endianness, RelocationFlags, SectionFlags, SectionKind,
@@ -638,6 +639,36 @@ impl EbpfProgramType {
 
     pub fn supports_egress_ifindex_ctx_field(&self) -> bool {
         self.info().supports_egress_ifindex_ctx_field
+    }
+}
+
+impl ProgramSpec {
+    pub fn program_type(&self) -> EbpfProgramType {
+        match self {
+            ProgramSpec::Kprobe { .. } => EbpfProgramType::Kprobe,
+            ProgramSpec::Kretprobe { .. } => EbpfProgramType::Kretprobe,
+            ProgramSpec::Fentry { .. } => EbpfProgramType::Fentry,
+            ProgramSpec::Fexit { .. } => EbpfProgramType::Fexit,
+            ProgramSpec::Tracepoint { .. } => EbpfProgramType::Tracepoint,
+            ProgramSpec::RawTracepoint { .. } => EbpfProgramType::RawTracepoint,
+            ProgramSpec::Uprobe { .. } => EbpfProgramType::Uprobe,
+            ProgramSpec::Uretprobe { .. } => EbpfProgramType::Uretprobe,
+            ProgramSpec::Xdp { .. } => EbpfProgramType::Xdp,
+            ProgramSpec::Tc { .. } => EbpfProgramType::Tc,
+            ProgramSpec::CgroupSkb { .. } => EbpfProgramType::CgroupSkb,
+            ProgramSpec::CgroupSockAddr { .. } => EbpfProgramType::CgroupSockAddr,
+        }
+    }
+}
+
+impl std::fmt::Display for ProgramSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}:{}",
+            self.program_type().canonical_prefix(),
+            self.target_string()
+        )
     }
 }
 
