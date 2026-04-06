@@ -264,6 +264,63 @@ fn test_primary_program_rejects_struct_ops_object_kind() {
 }
 
 #[test]
+fn test_struct_ops_object_rejects_non_struct_ops_section_name() {
+    let object = EbpfObject {
+        kind: EbpfObjectKind::StructOps {
+            name: "demo".to_string(),
+            value_type_name: "sched_ext_ops".to_string(),
+        },
+        license: "GPL".to_string(),
+        maps: vec![],
+        readonly_globals: vec![],
+        data_globals: vec![],
+        bss_globals: vec![],
+        programs: vec![EbpfProgram::hello_world("sys_clone").into_program_section()],
+    };
+
+    let err = object
+        .validate_runtime_artifacts()
+        .expect_err("struct_ops object should require struct_ops section names");
+    assert!(
+        err.to_string()
+            .contains("must use a struct_ops* section name")
+    );
+}
+
+#[test]
+fn test_struct_ops_object_emits_callback_section_override() {
+    use object::{Object as _, ObjectSection as _};
+
+    let object = EbpfObject {
+        kind: EbpfObjectKind::StructOps {
+            name: "demo".to_string(),
+            value_type_name: "sched_ext_ops".to_string(),
+        },
+        license: "GPL".to_string(),
+        maps: vec![],
+        readonly_globals: vec![],
+        data_globals: vec![],
+        bss_globals: vec![],
+        programs: vec![
+            EbpfProgram::hello_world("sys_clone")
+                .into_program_section()
+                .with_section_name_override("struct_ops/demo_select_cpu"),
+        ],
+    };
+
+    let elf = object
+        .to_elf()
+        .expect("struct_ops object with explicit callback section should build");
+    let file = object::File::parse(&*elf).expect("object crate should parse generated ELF");
+    let section_names: Vec<String> = file
+        .sections()
+        .filter_map(|section| section.name().ok().map(str::to_string))
+        .collect();
+
+    assert!(section_names.contains(&"struct_ops/demo_select_cpu".to_string()));
+}
+
+#[test]
 fn test_runtime_artifacts_reject_duplicate_map_and_global_names() {
     let mut prog =
         EbpfProgram::hello_world("sys_clone").with_readonly_globals(vec![ReadonlyGlobal {

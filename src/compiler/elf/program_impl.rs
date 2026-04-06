@@ -195,6 +195,7 @@ impl EbpfProgram {
             data_globals,
             bss_globals,
             programs: vec![EbpfProgramSection {
+                section_name_override: None,
                 prog_type,
                 target,
                 name,
@@ -212,6 +213,7 @@ impl EbpfProgram {
     /// Convert this program into its object-local program section form.
     pub fn into_program_section(self) -> EbpfProgramSection {
         EbpfProgramSection {
+            section_name_override: None,
             prog_type: self.prog_type,
             target: self.target,
             name: self.name,
@@ -521,7 +523,15 @@ impl EbpfProgram {
 }
 
 impl EbpfProgramSection {
+    pub fn with_section_name_override(mut self, section_name: impl Into<String>) -> Self {
+        self.section_name_override = Some(section_name.into());
+        self
+    }
+
     pub fn section_name(&self) -> Result<String, CompileError> {
+        if let Some(section_name) = &self.section_name_override {
+            return Ok(section_name.clone());
+        }
         section_name_for_program(self.prog_type, &self.target)
     }
 }
@@ -560,6 +570,26 @@ impl EbpfObject {
             return Err(CompileError::InvalidProgram(
                 "eBPF object must contain at least one program section".to_string(),
             ));
+        }
+
+        if let EbpfObjectKind::StructOps {
+            value_type_name, ..
+        } = &self.kind
+        {
+            if value_type_name.is_empty() {
+                return Err(CompileError::InvalidProgram(
+                    "struct_ops object must declare a non-empty value type name".to_string(),
+                ));
+            }
+            for program in &self.programs {
+                let section_name = program.section_name()?;
+                if !section_name.starts_with("struct_ops") {
+                    return Err(CompileError::InvalidProgram(format!(
+                        "struct_ops callback program '{}' must use a struct_ops* section name, got '{}'",
+                        program.name, section_name
+                    )));
+                }
+            }
         }
 
         let mut program_names = HashSet::new();

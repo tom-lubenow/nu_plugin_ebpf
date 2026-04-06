@@ -1499,6 +1499,8 @@ const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[
 /// One program section within an eBPF ELF object.
 #[derive(Debug, Clone)]
 pub struct EbpfProgramSection {
+    /// Optional explicit ELF section name. When absent, derive from `prog_type` and `target`.
+    pub section_name_override: Option<String>,
     /// The program type
     pub prog_type: EbpfProgramType,
     /// The target function/tracepoint name
