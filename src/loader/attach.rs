@@ -251,6 +251,12 @@ impl EbpfState {
                         LoadError::Attach(format!("Failed to attach cgroup_sock_addr: {e}"))
                     })?;
             }
+            ProgramAttachKind::StructOps => {
+                return Err(LoadError::Load(
+                    "struct_ops callbacks are not directly attachable; emit them through a struct_ops object instead"
+                        .to_string(),
+                ));
+            }
         }
 
         // Check for maps

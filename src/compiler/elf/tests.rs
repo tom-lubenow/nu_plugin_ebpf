@@ -50,6 +50,21 @@ fn test_tc_section_name() {
 }
 
 #[test]
+fn test_struct_ops_section_name() {
+    let prog = EbpfProgram::from_bytecode(
+        EbpfProgramType::StructOps,
+        "demo_select_cpu",
+        "test",
+        vec![],
+    );
+    assert_eq!(
+        prog.section_name()
+            .expect("struct_ops section name should build"),
+        "struct_ops/demo_select_cpu"
+    );
+}
+
+#[test]
 fn test_program_type_metadata_for_fexit() {
     let info = EbpfProgramType::Fexit.info();
     assert_eq!(info.canonical_prefix, "fexit");
@@ -62,6 +77,19 @@ fn test_program_type_metadata_for_fexit() {
     assert_eq!(info.arg_access, ProgramValueAccess::Trampoline);
     assert_eq!(info.retval_access, ProgramValueAccess::Trampoline);
     assert!(!info.is_userspace);
+}
+
+#[test]
+fn test_program_type_metadata_for_struct_ops() {
+    let info = EbpfProgramType::StructOps.info();
+    assert_eq!(info.canonical_prefix, "struct_ops");
+    assert_eq!(info.attach_kind, ProgramAttachKind::StructOps);
+    assert_eq!(info.target_kind, ProgramTargetKind::StructOpsCallback);
+    assert_eq!(info.arg_access, ProgramValueAccess::None);
+    assert_eq!(info.retval_access, ProgramValueAccess::None);
+    assert!(EbpfProgramType::StructOps.supports_capability(ProgramCapability::Globals));
+    assert!(EbpfProgramType::StructOps.supports_capability(ProgramCapability::KfuncCalls));
+    assert!(!EbpfProgramType::StructOps.supports_capability(ProgramCapability::Emit));
 }
 
 #[test]
@@ -78,6 +106,7 @@ fn test_program_type_supports_raw_tracepoint_alias() {
         EbpfProgramType::from_spec_prefix("tc"),
         Some(EbpfProgramType::Tc)
     );
+    assert_eq!(EbpfProgramType::from_spec_prefix("struct_ops"), None);
 }
 
 #[test]
@@ -337,6 +366,51 @@ fn test_struct_ops_object_emits_callback_section_override() {
     let elf = object
         .to_elf()
         .expect("struct_ops object with explicit callback section should build");
+    let file = object::File::parse(&*elf).expect("object crate should parse generated ELF");
+    let section_names: Vec<String> = file
+        .sections()
+        .filter_map(|section| section.name().ok().map(str::to_string))
+        .collect();
+
+    assert!(section_names.contains(&"struct_ops/demo_select_cpu".to_string()));
+}
+
+#[test]
+fn test_struct_ops_object_emits_typed_callback_section() {
+    use object::{Object as _, ObjectSection as _};
+
+    let object = EbpfObject {
+        kind: EbpfObjectKind::StructOps {
+            name: "demo".to_string(),
+            value_type_name: "sched_ext_ops".to_string(),
+        },
+        license: "GPL".to_string(),
+        maps: vec![],
+        readonly_globals: vec![],
+        data_globals: vec![],
+        bss_globals: vec![],
+        extra_data_symbols: vec![ObjectDataSymbol {
+            section_name: ".struct_ops".to_string(),
+            name: "demo".to_string(),
+            data: vec![0; 8],
+            align: 8,
+            writable: true,
+            relocations: vec![],
+        }],
+        programs: vec![
+            EbpfProgram::from_bytecode(
+                EbpfProgramType::StructOps,
+                "demo_select_cpu",
+                "demo_select_cpu",
+                vec![],
+            )
+            .into_program_section(),
+        ],
+    };
+
+    let elf = object
+        .to_elf()
+        .expect("struct_ops object with typed callback section should build");
     let file = object::File::parse(&*elf).expect("object crate should parse generated ELF");
     let section_names: Vec<String> = file
         .sections()

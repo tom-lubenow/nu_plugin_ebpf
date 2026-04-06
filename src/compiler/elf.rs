@@ -507,6 +507,8 @@ pub enum EbpfProgramType {
     CgroupSkb,
     /// Cgroup socket-address program attached to a cgroup socket-address hook
     CgroupSockAddr,
+    /// Struct-ops callback program emitted into a `struct_ops/*` section.
+    StructOps,
 }
 
 impl EbpfProgramType {
@@ -524,6 +526,7 @@ impl EbpfProgramType {
             EbpfProgramType::Tc => &TC_INFO,
             EbpfProgramType::CgroupSkb => &CGROUP_SKB_INFO,
             EbpfProgramType::CgroupSockAddr => &CGROUP_SOCK_ADDR_INFO,
+            EbpfProgramType::StructOps => &STRUCT_OPS_INFO,
         }
     }
 
@@ -545,6 +548,7 @@ impl EbpfProgramType {
             EbpfProgramType::Tc,
             EbpfProgramType::CgroupSkb,
             EbpfProgramType::CgroupSockAddr,
+            EbpfProgramType::StructOps,
         ]
         .into_iter()
         .find(|program_type| program_type.info().spec_aliases.contains(&prefix))
@@ -947,6 +951,7 @@ pub enum ProgramAttachKind {
     Tc,
     CgroupSkb,
     CgroupSockAddr,
+    StructOps,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -959,6 +964,7 @@ pub enum ProgramTargetKind {
     TrafficControlInterface,
     CgroupPathAttachType,
     CgroupPathSockAddrAttachType,
+    StructOpsCallback,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1142,6 +1148,7 @@ const XDP_SPEC_ALIASES: &[&str] = &["xdp"];
 const TC_SPEC_ALIASES: &[&str] = &["tc"];
 const CGROUP_SKB_SPEC_ALIASES: &[&str] = &["cgroup_skb"];
 const CGROUP_SOCK_ADDR_SPEC_ALIASES: &[&str] = &["cgroup_sock_addr"];
+const STRUCT_OPS_SPEC_ALIASES: &[&str] = &[];
 const DEFAULT_PROBE_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::Emit,
     ProgramCapability::Counters,
@@ -1477,6 +1484,40 @@ const CGROUP_SOCK_ADDR_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: false,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
+    packet_context_kind: None,
+    supports_packet_len_ctx_field: false,
+    supports_packet_data_ctx_fields: false,
+    supports_ingress_ifindex_ctx_field: false,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
+    supports_xdp_md_ctx_fields: false,
+    supports_stack_ctx_fields: false,
+    supports_tracepoint_fields: false,
+    is_userspace: false,
+};
+
+const STRUCT_OPS_CAPABILITIES: &[ProgramCapability] = &[
+    ProgramCapability::Globals,
+    ProgramCapability::GenericMaps,
+    ProgramCapability::KfuncCalls,
+    ProgramCapability::TailCalls,
+];
+
+const STRUCT_OPS_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::StructOps,
+    canonical_prefix: "struct_ops",
+    spec_aliases: STRUCT_OPS_SPEC_ALIASES,
+    section_prefix: "struct_ops",
+    section_uses_target: true,
+    attach_kind: ProgramAttachKind::StructOps,
+    target_kind: ProgramTargetKind::StructOpsCallback,
+    kernel_target_validation: None,
+    supported_capabilities: STRUCT_OPS_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+    supports_task_ctx_fields: false,
+    supports_cpu_ctx_field: false,
+    supports_timestamp_ctx_field: false,
     packet_context_kind: None,
     supports_packet_len_ctx_field: false,
     supports_packet_data_ctx_fields: false,
