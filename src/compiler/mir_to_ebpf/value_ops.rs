@@ -144,37 +144,37 @@ impl<'a> MirToEbpfCompiler<'a> {
             MirValue::VReg(v) => Some(self.ensure_reg(*v)?),
             _ => None,
         };
-        let mut preserved_rhs_spill: Option<(EbpfReg, i16)> = None;
+        let mut spilled_rhs: Option<(EbpfReg, i16)> = None;
 
         if let (Some(rhs_reg_value), Some(rhs_vreg)) = (rhs_reg, rhs_vreg) {
             if rhs_reg_value == dst_reg && lhs_vreg != Some(rhs_vreg) {
-                let spill_reg = [
-                    EbpfReg::R1,
-                    EbpfReg::R2,
-                    EbpfReg::R3,
-                    EbpfReg::R4,
-                    EbpfReg::R5,
-                    EbpfReg::R6,
-                    EbpfReg::R7,
-                    EbpfReg::R8,
-                    EbpfReg::R9,
-                ]
-                .into_iter()
-                .find(|reg| *reg != dst_reg && Some(*reg) != lhs_src_reg)
-                .ok_or_else(|| {
-                    CompileError::UnsupportedInstruction(
-                        "no temporary register available for binop rhs preservation".into(),
-                    )
-                })?;
+                if dst_reg != EbpfReg::R0 {
+                    self.instructions
+                        .push(EbpfInsn::mov64_reg(EbpfReg::R0, rhs_reg_value));
+                    rhs_reg = Some(EbpfReg::R0);
+                } else {
+                    self.check_stack_space(8)?;
+                    self.stack_offset -= 8;
+                    let spill_offset = self.stack_offset;
+                    self.emit_store(EbpfReg::R10, spill_offset, rhs_reg_value, 8)?;
 
-                self.check_stack_space(8)?;
-                self.stack_offset -= 8;
-                let spill_offset = self.stack_offset;
-                self.emit_store(EbpfReg::R10, spill_offset, spill_reg, 8)?;
-                self.instructions
-                    .push(EbpfInsn::mov64_reg(spill_reg, rhs_reg_value));
-                rhs_reg = Some(spill_reg);
-                preserved_rhs_spill = Some((spill_reg, spill_offset));
+                    let reload_reg = lhs_src_reg
+                        .filter(|reg| *reg != dst_reg)
+                        .or_else(|| {
+                            self.available_regs
+                                .iter()
+                                .copied()
+                                .find(|reg| *reg != dst_reg)
+                        })
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "no temporary register available for binop rhs preservation".into(),
+                            )
+                        })?;
+
+                    rhs_reg = Some(reload_reg);
+                    spilled_rhs = Some((reload_reg, spill_offset));
+                }
             }
         }
 
@@ -197,6 +197,10 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
         }
 
+        if let Some((reload_reg, spill_offset)) = spilled_rhs {
+            self.emit_load(reload_reg, EbpfReg::R10, spill_offset, 8)?;
+        }
+
         // Apply operation with RHS
         match rhs {
             MirValue::VReg(v) => {
@@ -213,8 +217,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
         }
 
-        if let Some((spill_reg, spill_offset)) = preserved_rhs_spill {
-            self.emit_load(spill_reg, EbpfReg::R10, spill_offset, 8)?;
+        if spilled_rhs.is_some() {
             self.stack_offset += 8;
         }
 
