@@ -261,13 +261,13 @@ pub struct BssGlobal {
     pub size: usize,
 }
 
-/// Location in bytecode that needs a map reference
-#[derive(Debug, Clone)]
-pub struct MapRelocation {
-    /// Offset in bytecode (in bytes) where the LD_DW_IMM instruction is
+/// Location in bytecode that needs a symbol reference resolved by the ELF loader.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SymbolRelocation {
+    /// Offset in bytecode (in bytes) where the relocation applies.
     pub insn_offset: usize,
-    /// Name of the map to reference
-    pub map_name: String,
+    /// Name of the referenced ELF symbol.
+    pub symbol_name: String,
 }
 
 /// Function symbol metadata for BPF-to-BPF subfunctions.
@@ -1511,8 +1511,8 @@ pub struct EbpfProgramSection {
     pub bytecode: Vec<u8>,
     /// Size of the main function in bytes
     pub main_size: usize,
-    /// Relocations for map references
-    pub relocations: Vec<MapRelocation>,
+    /// Relocations for symbol references emitted by this program section.
+    pub relocations: Vec<SymbolRelocation>,
     /// Subfunction symbols for BPF-to-BPF calls
     pub subfunctions: Vec<SubfunctionSymbol>,
     /// Optional schema for structured events
@@ -1579,8 +1579,8 @@ pub struct EbpfProgram {
     pub data_globals: Vec<DataGlobal>,
     /// Writable zero-initialized globals emitted into `.bss`
     pub bss_globals: Vec<BssGlobal>,
-    /// Relocations for map references
-    pub relocations: Vec<MapRelocation>,
+    /// Relocations for symbol references emitted by this program.
+    pub relocations: Vec<SymbolRelocation>,
     /// Subfunction symbols for BPF-to-BPF calls
     pub subfunctions: Vec<SubfunctionSymbol>,
     /// Optional schema for structured events

@@ -1224,7 +1224,7 @@ fn test_map_lookup_compiles_and_emits_generic_map() {
         result
             .relocations
             .iter()
-            .any(|r| r.map_name == "custom_lookup")
+            .any(|r| r.symbol_name == "custom_lookup")
     );
 
     let has_lookup_helper = result.bytecode.chunks(8).any(|chunk| {
@@ -1333,7 +1333,7 @@ fn test_map_update_compiles_and_emits_generic_map() {
         result
             .relocations
             .iter()
-            .any(|r| r.map_name == "custom_update")
+            .any(|r| r.symbol_name == "custom_update")
     );
 
     let has_update_helper = result.bytecode.chunks(8).any(|chunk| {
@@ -1389,7 +1389,7 @@ fn test_map_delete_compiles_and_emits_generic_map() {
         result
             .relocations
             .iter()
-            .any(|r| r.map_name == "custom_delete")
+            .any(|r| r.symbol_name == "custom_delete")
     );
 
     let has_delete_helper = result.bytecode.chunks(8).any(|chunk| {
@@ -1484,7 +1484,7 @@ fn test_tail_call_compiles_and_emits_prog_array_map() {
         result
             .relocations
             .iter()
-            .any(|r| r.map_name == "tail_targets")
+            .any(|r| r.symbol_name == "tail_targets")
     );
 
     let has_tail_call_helper = result.bytecode.chunks(8).any(|chunk| {

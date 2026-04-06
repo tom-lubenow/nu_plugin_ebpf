@@ -44,9 +44,9 @@ pub use crate::program_spec::{
 pub use elf::{
     BpfFieldType, BpfMapDef, BssGlobal, CounterKeySchema, CounterKeySchemaField, DataGlobal,
     EbpfMap, EbpfObject, EbpfObjectKind, EbpfProgram, EbpfProgramSection, EbpfProgramType,
-    EventSchema, KernelTargetValidationKind, MapRelocation, ProbeContext, ProgramAttachKind,
-    ProgramCapability, ProgramIntrinsic, ProgramTargetKind, ProgramTypeInfo, ProgramValueAccess,
-    ReadonlyGlobal, SchemaField,
+    EventSchema, KernelTargetValidationKind, ProbeContext, ProgramAttachKind, ProgramCapability,
+    ProgramIntrinsic, ProgramTargetKind, ProgramTypeInfo, ProgramValueAccess, ReadonlyGlobal,
+    SchemaField, SymbolRelocation,
 };
 pub use hir::{
     HirProgram, extract_call_decl_ids, extract_closure_block_ids, infer_ctx_param, lower_ir_to_hir,

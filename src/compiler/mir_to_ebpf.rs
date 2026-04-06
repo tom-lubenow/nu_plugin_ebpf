@@ -24,7 +24,8 @@ use crate::compiler::CompileError;
 use crate::compiler::cfg::CFG;
 use crate::compiler::elf::{
     BpfFieldType, BpfMapDef, BssGlobal, CounterKeySchema, DataGlobal, EbpfMap, EventSchema,
-    MapRelocation, PacketContextKind, ProbeContext, ReadonlyGlobal, SchemaField, SubfunctionSymbol,
+    PacketContextKind, ProbeContext, ReadonlyGlobal, SchemaField, SubfunctionSymbol,
+    SymbolRelocation,
 };
 use crate::compiler::graph_coloring::{
     ColoringResult, GraphColoringAllocator, compute_loop_depths,
@@ -80,8 +81,8 @@ pub struct MirCompileResult {
     pub data_globals: Vec<DataGlobal>,
     /// Writable zero-initialized globals emitted into `.bss`
     pub bss_globals: Vec<BssGlobal>,
-    /// Relocations for map references
-    pub relocations: Vec<MapRelocation>,
+    /// Relocations for symbol references emitted by the compiled program
+    pub relocations: Vec<SymbolRelocation>,
     /// Subfunction symbols for BPF-to-BPF relocation
     pub subfunction_symbols: Vec<SubfunctionSymbol>,
     /// Optional schema for structured events
@@ -148,8 +149,8 @@ pub struct MirToEbpfCompiler<'a> {
     block_offsets: HashMap<BlockId, usize>,
     /// Pending jump fixups (instruction index -> target block)
     pending_jumps: Vec<(usize, BlockId)>,
-    /// Map relocations
-    relocations: Vec<MapRelocation>,
+    /// ELF symbol relocations
+    relocations: Vec<SymbolRelocation>,
     /// Needs ring buffer map
     needs_ringbuf: bool,
     /// Counter map kind (numeric keys)

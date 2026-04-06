@@ -180,7 +180,7 @@ fn test_constant_record_rodata_survives_projection_codegen_and_elf() {
         compile_result
             .relocations
             .iter()
-            .any(|reloc| reloc.map_name == symbol),
+            .any(|reloc| reloc.symbol_name == symbol),
         "expected rodata load relocation to target the readonly-global symbol"
     );
 

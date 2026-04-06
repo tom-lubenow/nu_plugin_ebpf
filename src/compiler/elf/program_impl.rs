@@ -111,7 +111,7 @@ impl EbpfProgram {
         bytecode: Vec<u8>,
         main_size: usize,
         maps: Vec<EbpfMap>,
-        relocations: Vec<MapRelocation>,
+        relocations: Vec<SymbolRelocation>,
         subfunctions: Vec<SubfunctionSymbol>,
         event_schema: Option<EventSchema>,
         bytes_counter_key_schema: Option<CounterKeySchema>,
@@ -592,8 +592,28 @@ impl EbpfObject {
             }
         }
 
+        let mut artifact_symbol_names = HashSet::new();
+        for global in &self.readonly_globals {
+            artifact_symbol_names.insert(global.name.as_str());
+        }
+        for global in &self.data_globals {
+            artifact_symbol_names.insert(global.name.as_str());
+        }
+        for global in &self.bss_globals {
+            artifact_symbol_names.insert(global.name.as_str());
+        }
+        for map in &self.maps {
+            artifact_symbol_names.insert(map.name.as_str());
+        }
+
         let mut program_names = HashSet::new();
         for program in &self.programs {
+            if artifact_symbol_names.contains(program.name.as_str()) {
+                return Err(CompileError::InvalidProgram(format!(
+                    "program symbol name '{}' conflicts with a map or global symbol",
+                    program.name
+                )));
+            }
             if !program_names.insert(program.name.as_str()) {
                 return Err(CompileError::InvalidProgram(format!(
                     "duplicate program symbol name '{}'",
@@ -632,8 +652,8 @@ impl EbpfObject {
 
         let mut obj = Object::new(BinaryFormat::Elf, Architecture::Bpf, Endianness::Little);
 
-        // Track map/data symbol IDs for relocations
-        let mut map_symbols: HashMap<String, object::write::SymbolId> = HashMap::new();
+        // Track global/map/program symbol IDs for relocations.
+        let mut symbol_ids: HashMap<String, object::write::SymbolId> = HashMap::new();
 
         if !self.readonly_globals.is_empty() {
             let rodata_section_id =
@@ -659,7 +679,7 @@ impl EbpfObject {
                         st_other: object::elf::STV_DEFAULT,
                     },
                 });
-                map_symbols.insert(global.name.clone(), sym_id);
+                symbol_ids.insert(global.name.clone(), sym_id);
             }
         }
 
@@ -686,7 +706,7 @@ impl EbpfObject {
                         st_other: object::elf::STV_DEFAULT,
                     },
                 });
-                map_symbols.insert(global.name.clone(), sym_id);
+                symbol_ids.insert(global.name.clone(), sym_id);
             }
         }
 
@@ -714,7 +734,7 @@ impl EbpfObject {
                         st_other: object::elf::STV_DEFAULT,
                     },
                 });
-                map_symbols.insert(global.name.clone(), sym_id);
+                symbol_ids.insert(global.name.clone(), sym_id);
             }
         }
 
@@ -750,7 +770,7 @@ impl EbpfObject {
                         st_other: object::elf::STV_DEFAULT,
                     },
                 });
-                map_symbols.insert(map.name.clone(), sym_id);
+                symbol_ids.insert(map.name.clone(), sym_id);
             }
 
             // Generate BTF for BTF-defined maps
@@ -771,7 +791,7 @@ impl EbpfObject {
 
             let offset = obj.append_section_data(section_id, &program.bytecode, 8);
 
-            obj.add_symbol(Symbol {
+            let prog_sym_id = obj.add_symbol(Symbol {
                 name: program.name.as_bytes().to_vec(),
                 value: offset,
                 size: program.main_size as u64,
@@ -784,6 +804,7 @@ impl EbpfObject {
                     st_other: object::elf::STV_DEFAULT,
                 },
             });
+            symbol_ids.insert(program.name.clone(), prog_sym_id);
 
             for subfn in &program.subfunctions {
                 obj.add_symbol(Symbol {
@@ -802,18 +823,22 @@ impl EbpfObject {
             }
 
             for reloc in &program.relocations {
-                if let Some(&sym_id) = map_symbols.get(&reloc.map_name) {
-                    obj.add_relocation(
-                        section_id,
-                        Relocation {
-                            offset: offset + reloc.insn_offset as u64,
-                            symbol: sym_id,
-                            addend: 0,
-                            flags: RelocationFlags::Elf { r_type: 1 },
-                        },
-                    )
-                    .map_err(|e| CompileError::ElfError(e.to_string()))?;
-                }
+                let sym_id = *symbol_ids.get(&reloc.symbol_name).ok_or_else(|| {
+                    CompileError::InvalidProgram(format!(
+                        "program '{}' references missing ELF symbol '{}'",
+                        program.name, reloc.symbol_name
+                    ))
+                })?;
+                obj.add_relocation(
+                    section_id,
+                    Relocation {
+                        offset: offset + reloc.insn_offset as u64,
+                        symbol: sym_id,
+                        addend: 0,
+                        flags: RelocationFlags::Elf { r_type: 1 },
+                    },
+                )
+                .map_err(|e| CompileError::ElfError(e.to_string()))?;
             }
         }
 

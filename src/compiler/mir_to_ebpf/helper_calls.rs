@@ -257,9 +257,9 @@ impl<'a> MirToEbpfCompiler<'a> {
         let [insn1, insn2] = EbpfInsn::ld_map_fd(EbpfReg::R2);
         self.instructions.push(insn1);
         self.instructions.push(insn2);
-        self.relocations.push(MapRelocation {
+        self.relocations.push(SymbolRelocation {
             insn_offset: reloc_offset,
-            map_name: map_name.to_string(),
+            symbol_name: map_name.to_string(),
         });
 
         // R3 = flags
@@ -300,9 +300,9 @@ impl<'a> MirToEbpfCompiler<'a> {
         let [insn1, insn2] = EbpfInsn::ld_map_fd(EbpfReg::R2);
         self.instructions.push(insn1);
         self.instructions.push(insn2);
-        self.relocations.push(MapRelocation {
+        self.relocations.push(SymbolRelocation {
             insn_offset: reloc_offset,
-            map_name: map_name.to_string(),
+            symbol_name: map_name.to_string(),
         });
 
         self.instructions.push(EbpfInsn::call(BpfHelper::TailCall));
@@ -358,9 +358,9 @@ impl<'a> MirToEbpfCompiler<'a> {
         let [insn1, insn2] = EbpfInsn::ld_map_fd(EbpfReg::R1);
         self.instructions.push(insn1);
         self.instructions.push(insn2);
-        self.relocations.push(MapRelocation {
+        self.relocations.push(SymbolRelocation {
             insn_offset: reloc_offset,
-            map_name: RINGBUF_MAP_NAME.to_string(),
+            symbol_name: RINGBUF_MAP_NAME.to_string(),
         });
 
         // R2 = data pointer
@@ -467,9 +467,9 @@ impl<'a> MirToEbpfCompiler<'a> {
         let [insn1, insn2] = EbpfInsn::ld_map_fd(EbpfReg::R1);
         self.instructions.push(insn1);
         self.instructions.push(insn2);
-        self.relocations.push(MapRelocation {
+        self.relocations.push(SymbolRelocation {
             insn_offset: reloc_offset,
-            map_name: RINGBUF_MAP_NAME.to_string(),
+            symbol_name: RINGBUF_MAP_NAME.to_string(),
         });
 
         // R2 = pointer to buffer

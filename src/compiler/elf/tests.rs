@@ -344,6 +344,81 @@ fn test_runtime_artifacts_reject_duplicate_map_and_global_names() {
 }
 
 #[test]
+fn test_runtime_artifacts_reject_program_name_conflicting_with_map_or_global() {
+    let object = EbpfObject {
+        kind: EbpfObjectKind::Program,
+        license: "GPL".to_string(),
+        maps: vec![EbpfMap {
+            name: "probe_main".to_string(),
+            def: BpfMapDef::hash(8, 8, 16),
+        }],
+        readonly_globals: vec![],
+        data_globals: vec![],
+        bss_globals: vec![],
+        programs: vec![
+            EbpfProgram::hello_world("sys_clone")
+                .into_program_section()
+                .with_section_name_override("kprobe/sys_clone"),
+        ]
+        .into_iter()
+        .map(|mut program| {
+            program.name = "probe_main".to_string();
+            program
+        })
+        .collect(),
+    };
+
+    let err = object
+        .validate_runtime_artifacts()
+        .expect_err("program symbol name should not collide with map/global symbols");
+
+    assert!(
+        err.to_string()
+            .contains("conflicts with a map or global symbol"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_to_elf_rejects_missing_relocation_symbol() {
+    use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
+
+    let mut builder = EbpfBuilder::new();
+    let [insn1, insn2] = EbpfInsn::ld_map_fd(EbpfReg::R1);
+    builder.push(insn1);
+    builder.push(insn2);
+    builder.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
+    builder.push(EbpfInsn::exit());
+    let bytecode = builder.build();
+
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Kprobe,
+        "sys_clone",
+        "missing_reloc",
+        bytecode.clone(),
+        bytecode.len(),
+        vec![],
+        vec![SymbolRelocation {
+            insn_offset: 0,
+            symbol_name: "__missing_symbol".to_string(),
+        }],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+    );
+
+    let err = program
+        .to_elf()
+        .expect_err("missing relocation symbol should fail ELF generation");
+
+    assert!(
+        err.to_string().contains("references missing ELF symbol"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_runtime_artifacts_reject_zero_sized_bss_global() {
     let prog = EbpfProgram::hello_world("sys_clone").with_bss_globals(vec![BssGlobal {
         name: "state".to_string(),

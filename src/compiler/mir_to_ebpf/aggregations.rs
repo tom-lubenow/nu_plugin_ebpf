@@ -47,9 +47,9 @@ impl<'a> MirToEbpfCompiler<'a> {
         let [insn1, insn2] = EbpfInsn::ld_map_fd(EbpfReg::R1);
         self.instructions.push(insn1);
         self.instructions.push(insn2);
-        self.relocations.push(MapRelocation {
+        self.relocations.push(SymbolRelocation {
             insn_offset: lookup_reloc,
-            map_name: HISTOGRAM_MAP_NAME.to_string(),
+            symbol_name: HISTOGRAM_MAP_NAME.to_string(),
         });
 
         self.instructions
@@ -94,9 +94,9 @@ impl<'a> MirToEbpfCompiler<'a> {
         let [insn1, insn2] = EbpfInsn::ld_map_fd(EbpfReg::R1);
         self.instructions.push(insn1);
         self.instructions.push(insn2);
-        self.relocations.push(MapRelocation {
+        self.relocations.push(SymbolRelocation {
             insn_offset: update_reloc,
-            map_name: HISTOGRAM_MAP_NAME.to_string(),
+            symbol_name: HISTOGRAM_MAP_NAME.to_string(),
         });
 
         self.instructions
@@ -173,9 +173,9 @@ impl<'a> MirToEbpfCompiler<'a> {
         let [insn1, insn2] = EbpfInsn::ld_map_fd(EbpfReg::R1);
         self.instructions.push(insn1);
         self.instructions.push(insn2);
-        self.relocations.push(MapRelocation {
+        self.relocations.push(SymbolRelocation {
             insn_offset: update_reloc,
-            map_name: TIMESTAMP_MAP_NAME.to_string(),
+            symbol_name: TIMESTAMP_MAP_NAME.to_string(),
         });
 
         self.instructions
@@ -212,9 +212,9 @@ impl<'a> MirToEbpfCompiler<'a> {
         let [insn1, insn2] = EbpfInsn::ld_map_fd(EbpfReg::R1);
         self.instructions.push(insn1);
         self.instructions.push(insn2);
-        self.relocations.push(MapRelocation {
+        self.relocations.push(SymbolRelocation {
             insn_offset: lookup_reloc,
-            map_name: TIMESTAMP_MAP_NAME.to_string(),
+            symbol_name: TIMESTAMP_MAP_NAME.to_string(),
         });
 
         self.instructions
@@ -260,9 +260,9 @@ impl<'a> MirToEbpfCompiler<'a> {
         let [insn1, insn2] = EbpfInsn::ld_map_fd(EbpfReg::R1);
         self.instructions.push(insn1);
         self.instructions.push(insn2);
-        self.relocations.push(MapRelocation {
+        self.relocations.push(SymbolRelocation {
             insn_offset: delete_reloc,
-            map_name: TIMESTAMP_MAP_NAME.to_string(),
+            symbol_name: TIMESTAMP_MAP_NAME.to_string(),
         });
 
         self.instructions
