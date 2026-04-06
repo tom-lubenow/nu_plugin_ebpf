@@ -668,6 +668,20 @@ impl KernelBtf {
         self.resolve_trampoline_field_projection(&btf, root_type_id, field_path, &raw_type_sizes)
     }
 
+    /// Resolve a field path from an arbitrary named kernel BTF type.
+    pub fn kernel_named_type_field_projection(
+        &self,
+        type_name: &str,
+        field_path: &[TrampolineFieldSelector],
+    ) -> Result<TrampolineFieldProjection, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let ty = btf
+            .get_type_by_name(type_name)
+            .map_err(|_| BtfError::TypeNotFound(type_name.to_string()))?;
+        let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
+        self.resolve_trampoline_field_projection(&btf, ty.type_id, field_path, &raw_type_sizes)
+    }
+
     fn function_trampoline_layout(
         &self,
         function_name: &str,
@@ -4086,6 +4100,40 @@ format:
             nested.type_info,
             TypeInfo::Int { size: 4 | 8, .. }
         ));
+    }
+
+    #[test]
+    fn test_kernel_named_type_field_projection_resolves_common_member() {
+        let arg_info = KernelBtf::get()
+            .function_trampoline_arg_type_info("security_file_open", 0)
+            .expect("expected security_file_open arg0 type info")
+            .expect("expected security_file_open arg0 to exist");
+        let TypeInfo::Ptr { target, .. } = arg_info else {
+            panic!("expected security_file_open arg0 to resolve to a pointer");
+        };
+        let type_id = target
+            .kernel_btf_type_id()
+            .expect("expected file target to preserve kernel BTF type id");
+
+        let projection = KernelBtf::get()
+            .kernel_named_type_field_projection(
+                "file",
+                &[TrampolineFieldSelector::Field("f_inode".to_string())],
+            )
+            .expect("expected file.f_inode projection by named type");
+        let by_type_id = KernelBtf::get()
+            .kernel_type_field_projection(
+                type_id,
+                &[TrampolineFieldSelector::Field("f_inode".to_string())],
+            )
+            .expect("expected file.f_inode projection by type id");
+
+        assert_eq!(projection.path.len(), 1);
+        assert_eq!(
+            projection.path[0].offset_bytes,
+            by_type_id.path[0].offset_bytes
+        );
+        assert!(matches!(projection.type_info, TypeInfo::Ptr { .. }));
     }
 
     #[test]

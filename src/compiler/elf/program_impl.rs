@@ -1,6 +1,8 @@
 use super::*;
 use std::collections::{HashMap, HashSet};
 
+use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector};
+
 fn section_name_for_program(
     prog_type: EbpfProgramType,
     target: &str,
@@ -1302,6 +1304,11 @@ impl StructOpsObjectSpec {
             }
         }
 
+        let mut resolved_slots: HashMap<String, usize> = self
+            .callback_slots
+            .iter()
+            .map(|slot| (slot.name.clone(), slot.offset))
+            .collect();
         let mut seen_bindings = HashSet::new();
         for callback in &self.callbacks {
             if !seen_bindings.insert(callback.slot_name.as_str()) {
@@ -1309,6 +1316,27 @@ impl StructOpsObjectSpec {
                     "duplicate struct_ops callback binding for slot '{}'",
                     callback.slot_name
                 )));
+            }
+            if !resolved_slots.contains_key(&callback.slot_name) {
+                let projection = KernelBtf::get()
+                    .kernel_named_type_field_projection(
+                        &self.value_type_name,
+                        &[TrampolineFieldSelector::Field(callback.slot_name.clone())],
+                    )
+                    .map_err(|err| {
+                        CompileError::InvalidProgram(format!(
+                            "failed to resolve struct_ops callback slot '{}.{}' from kernel BTF: {}",
+                            self.value_type_name, callback.slot_name, err
+                        ))
+                    })?;
+                let Some(offset) = projection.path.first().map(|segment| segment.offset_bytes)
+                else {
+                    return Err(CompileError::InvalidProgram(format!(
+                        "struct_ops callback slot '{}.{}' resolved to an empty field projection",
+                        self.value_type_name, callback.slot_name
+                    )));
+                };
+                resolved_slots.insert(callback.slot_name.clone(), offset);
             }
         }
 
@@ -1322,8 +1350,8 @@ impl StructOpsObjectSpec {
         .with_readonly_globals(self.readonly_globals.clone())
         .with_data_globals(self.data_globals.clone())
         .with_bss_globals(self.bss_globals.clone());
-        for slot in &self.callback_slots {
-            builder = builder.with_callback_slot(slot.name.clone(), slot.offset);
+        for (slot_name, offset) in resolved_slots {
+            builder = builder.with_callback_slot(slot_name, offset);
         }
         for callback in &self.callbacks {
             builder = builder.bind_callback(

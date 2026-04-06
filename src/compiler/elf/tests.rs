@@ -482,6 +482,59 @@ fn test_struct_ops_object_spec_preserves_shared_artifacts() {
 }
 
 #[test]
+fn test_struct_ops_object_spec_resolves_callback_slot_from_kernel_btf() {
+    use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector};
+    use object::{Object as _, ObjectSection as _, ObjectSymbol as _, RelocationTarget};
+
+    let projection = KernelBtf::get()
+        .kernel_named_type_field_projection(
+            "file",
+            &[TrampolineFieldSelector::Field("f_inode".to_string())],
+        )
+        .expect("expected file.f_inode projection for struct_ops callback slot");
+    let offset = projection.path[0].offset_bytes;
+
+    let object = StructOpsObjectSpec::new("demo", "file", vec![0; offset + 8])
+        .with_callback(
+            "f_inode",
+            "demo_select_cpu",
+            EbpfProgram::hello_world("sys_clone"),
+        )
+        .to_object()
+        .expect("struct_ops object spec should resolve callback slot from kernel BTF");
+
+    let elf = object
+        .to_elf()
+        .expect("struct_ops object with inferred callback slot should emit");
+    let file = object::File::parse(&*elf).expect("object crate should parse generated ELF");
+    let section = file
+        .section_by_name(".struct_ops")
+        .expect("expected .struct_ops section");
+
+    let mut relocations = section.relocations();
+    let (reloc_offset, relocation) = relocations
+        .next()
+        .expect("expected one relocation in inferred .struct_ops");
+    assert_eq!(reloc_offset as usize, offset);
+    match relocation.target() {
+        RelocationTarget::Symbol(symbol_idx) => {
+            let symbol = file
+                .symbol_by_index(symbol_idx)
+                .expect("relocation symbol should exist");
+            assert_eq!(
+                symbol.name().expect("relocation symbol should have a name"),
+                "demo_select_cpu"
+            );
+        }
+        other => panic!("unexpected relocation target: {other:?}"),
+    }
+    assert!(
+        relocations.next().is_none(),
+        "expected exactly one relocation in inferred .struct_ops"
+    );
+}
+
+#[test]
 fn test_struct_ops_builder_rejects_unknown_callback_slot() {
     let err = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8])
         .bind_callback(
