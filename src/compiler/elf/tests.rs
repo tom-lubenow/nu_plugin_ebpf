@@ -556,6 +556,76 @@ fn test_struct_ops_object_spec_zeroed_from_kernel_btf() {
 }
 
 #[test]
+fn test_struct_ops_object_spec_merges_compiled_callback_artifacts() {
+    let callback_program = EbpfProgram::hello_world("sys_clone")
+        .with_readonly_globals(vec![ReadonlyGlobal {
+            name: "cfg".to_string(),
+            data: vec![1, 2, 3, 4],
+        }])
+        .with_data_globals(vec![DataGlobal {
+            name: "state".to_string(),
+            data: vec![0; 8],
+        }])
+        .with_bss_globals(vec![BssGlobal {
+            name: "scratch".to_string(),
+            size: 16,
+        }]);
+
+    let object = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", "file")
+        .expect("expected zeroed struct_ops spec from kernel BTF")
+        .to_object_with_compiled_callbacks(vec![CompiledStructOpsCallback {
+            slot_name: "f_inode".to_string(),
+            callback_name: "demo_select_cpu".to_string(),
+            program: callback_program,
+        }])
+        .expect("compiled callback artifacts should merge into struct_ops object");
+
+    assert_eq!(object.readonly_globals.len(), 1);
+    assert_eq!(object.readonly_globals[0].name, "cfg");
+    assert_eq!(object.data_globals.len(), 1);
+    assert_eq!(object.data_globals[0].name, "state");
+    assert_eq!(object.bss_globals.len(), 1);
+    assert_eq!(object.bss_globals[0].name, "scratch");
+    assert_eq!(object.programs.len(), 1);
+}
+
+#[test]
+fn test_struct_ops_object_spec_rejects_incompatible_compiled_callback_map() {
+    let mut callback_one = EbpfProgram::hello_world("sys_clone");
+    callback_one.maps.push(EbpfMap {
+        name: "shared".to_string(),
+        def: BpfMapDef::hash(8, 8, 16),
+    });
+    let mut callback_two = EbpfProgram::hello_world("sys_execve");
+    callback_two.maps.push(EbpfMap {
+        name: "shared".to_string(),
+        def: BpfMapDef::hash(4, 8, 16),
+    });
+
+    let err = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", "file")
+        .expect("expected zeroed struct_ops spec from kernel BTF")
+        .to_object_with_compiled_callbacks(vec![
+            CompiledStructOpsCallback {
+                slot_name: "f_inode".to_string(),
+                callback_name: "demo_select_cpu".to_string(),
+                program: callback_one,
+            },
+            CompiledStructOpsCallback {
+                slot_name: "f_mode".to_string(),
+                callback_name: "demo_enqueue".to_string(),
+                program: callback_two,
+            },
+        ])
+        .expect_err("incompatible compiled callback map definitions should fail");
+
+    assert!(
+        err.to_string()
+            .contains("uses incompatible map definition for 'shared'"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_struct_ops_object_spec_rejects_non_pointer_btf_callback_member() {
     let err = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", "file")
         .expect("expected zeroed struct_ops spec from kernel BTF")

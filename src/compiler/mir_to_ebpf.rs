@@ -23,9 +23,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::compiler::CompileError;
 use crate::compiler::cfg::CFG;
 use crate::compiler::elf::{
-    BpfFieldType, BpfMapDef, BssGlobal, CounterKeySchema, DataGlobal, EbpfMap, EventSchema,
-    PacketContextKind, ProbeContext, ReadonlyGlobal, SchemaField, SubfunctionSymbol,
-    SymbolRelocation,
+    BpfFieldType, BpfMapDef, BssGlobal, CounterKeySchema, DataGlobal, EbpfMap, EbpfProgram,
+    EbpfProgramType, EventSchema, PacketContextKind, ProbeContext, ReadonlyGlobal, SchemaField,
+    SubfunctionSymbol, SymbolRelocation,
 };
 use crate::compiler::graph_coloring::{
     ColoringResult, GraphColoringAllocator, compute_loop_depths,
@@ -37,9 +37,10 @@ use crate::compiler::instruction::{
 use crate::compiler::lir::{LirBlock, LirFunction, LirInst, LirProgram};
 use crate::compiler::mir::{
     BYTES_COUNTER_MAP_NAME, BinOpKind, BlockId, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME,
-    KSTACK_MAP_NAME, MapKind, MirProgram, MirType, MirTypeHints, MirValue, RINGBUF_MAP_NAME,
-    RecordFieldDef, STRING_COUNTER_MAP_NAME, StackSlot, StackSlotId, StackSlotKind,
-    StringAppendType, SubfunctionId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, UnaryOpKind, VReg,
+    KSTACK_MAP_NAME, MapKind, MapRef, MirProgram, MirType, MirTypeHints, MirValue,
+    RINGBUF_MAP_NAME, RecordFieldDef, STRING_COUNTER_MAP_NAME, StackSlot, StackSlotId,
+    StackSlotKind, StringAppendType, SubfunctionId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
+    UnaryOpKind, VReg,
 };
 use crate::compiler::mir_to_lir::lower_mir_to_lir_checked;
 use crate::compiler::passes::{ListLowering, MirPass, SsaDestruction};
@@ -89,6 +90,33 @@ pub struct MirCompileResult {
     pub event_schema: Option<EventSchema>,
     /// Optional schema for runtime decoding of `bytes_counters` keys
     pub bytes_counter_key_schema: Option<CounterKeySchema>,
+}
+
+impl MirCompileResult {
+    pub fn into_program(
+        self,
+        prog_type: EbpfProgramType,
+        target: impl Into<String>,
+        name: impl Into<String>,
+        generic_map_value_types: HashMap<MapRef, MirType>,
+    ) -> EbpfProgram {
+        EbpfProgram::with_maps(
+            prog_type,
+            target,
+            name,
+            self.bytecode,
+            self.main_size,
+            self.maps,
+            self.relocations,
+            self.subfunction_symbols,
+            self.event_schema,
+            self.bytes_counter_key_schema,
+            generic_map_value_types,
+        )
+        .with_readonly_globals(self.readonly_globals)
+        .with_data_globals(self.data_globals)
+        .with_bss_globals(self.bss_globals)
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -420,6 +448,24 @@ pub fn compile_mir_to_ebpf_with_hints_and_readonly_globals(
     type_hints: Option<&MirTypeHints>,
     readonly_globals: Vec<ReadonlyGlobal>,
 ) -> Result<MirCompileResult, CompileError> {
+    compile_mir_to_ebpf_with_hints_and_globals(
+        mir,
+        probe_ctx,
+        type_hints,
+        readonly_globals,
+        Vec::new(),
+        Vec::new(),
+    )
+}
+
+pub fn compile_mir_to_ebpf_with_hints_and_globals(
+    mir: &MirProgram,
+    probe_ctx: Option<&ProbeContext>,
+    type_hints: Option<&MirTypeHints>,
+    readonly_globals: Vec<ReadonlyGlobal>,
+    data_globals: Vec<DataGlobal>,
+    bss_globals: Vec<BssGlobal>,
+) -> Result<MirCompileResult, CompileError> {
     let mut program = mir.clone();
     let mut normalized_type_hints = type_hints.cloned();
     let list_lowering = ListLowering;
@@ -444,6 +490,8 @@ pub fn compile_mir_to_ebpf_with_hints_and_readonly_globals(
     let compiler = MirToEbpfCompiler::new_with_types(&lir_program, probe_ctx, program_types);
     let mut result = compiler.compile()?;
     result.readonly_globals = readonly_globals;
+    result.data_globals = data_globals;
+    result.bss_globals = bss_globals;
     Ok(result)
 }
 

@@ -17,11 +17,10 @@ use nu_protocol::{
 
 use crate::EbpfPlugin;
 use crate::compiler::{
-    EbpfObject, EbpfProgram, ProbeContext, ProgramIntrinsic, UserFunctionSig, UserParam,
-    UserParamKind, compile_mir_to_ebpf_with_hints_and_readonly_globals, hir::AnnotatedMutGlobal,
-    hir::HirFunction, hir::HirProgram, hir::HirStmt, hir::supports_constant_value, hir_type_infer,
-    infer_ctx_param, lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir,
-    passes::optimize_with_ssa_hints,
+    EbpfObject, ProbeContext, ProgramIntrinsic, UserFunctionSig, UserParam, UserParamKind,
+    compile_mir_to_ebpf_with_hints_and_globals, hir::AnnotatedMutGlobal, hir::HirFunction,
+    hir::HirProgram, hir::HirStmt, hir::supports_constant_value, hir_type_infer, infer_ctx_param,
+    lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir, passes::optimize_with_ssa_hints,
 };
 
 /// Common Nushell commands used in eBPF closures.
@@ -1267,34 +1266,20 @@ fn run_attach(
     }
 
     // Compile MIR to eBPF
-    let compile_result = compile_mir_to_ebpf_with_hints_and_readonly_globals(
+    let mut program = compile_mir_to_ebpf_with_hints_and_globals(
         &mir_program,
         Some(&probe_context),
         Some(&type_hints),
         readonly_globals,
+        data_globals,
+        bss_globals,
     )
     .map_err(|e| {
         LabeledError::new("eBPF compilation failed")
             .with_label(e.to_string(), call.head)
             .with_help("Check that the closure uses supported BPF operations")
-    })?;
-
-    let mut program = EbpfProgram::with_maps(
-        prog_type,
-        &target,
-        "nushell_ebpf",
-        compile_result.bytecode,
-        compile_result.main_size,
-        compile_result.maps,
-        compile_result.relocations,
-        compile_result.subfunction_symbols,
-        compile_result.event_schema,
-        compile_result.bytes_counter_key_schema,
-        generic_map_value_types,
-    )
-    .with_readonly_globals(compile_result.readonly_globals)
-    .with_data_globals(data_globals)
-    .with_bss_globals(bss_globals);
+    })?
+    .into_program(prog_type, &target, "nushell_ebpf", generic_map_value_types);
 
     if pin_group.is_some() {
         program = program.with_pinning();

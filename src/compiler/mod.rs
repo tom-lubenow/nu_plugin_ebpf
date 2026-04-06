@@ -42,12 +42,13 @@ pub use crate::program_spec::{
     CgroupSkbTarget, CgroupSockAddrTarget, ProgramSpec, TcTarget, UprobeTarget,
 };
 pub use elf::{
-    BpfFieldType, BpfMapDef, BssGlobal, CounterKeySchema, CounterKeySchemaField, DataGlobal,
-    EbpfMap, EbpfObject, EbpfObjectKind, EbpfProgram, EbpfProgramSection, EbpfProgramType,
-    EventSchema, KernelTargetValidationKind, ObjectDataRelocation, ObjectDataSymbol, ProbeContext,
-    ProgramAttachKind, ProgramCapability, ProgramIntrinsic, ProgramTargetKind, ProgramTypeInfo,
-    ProgramValueAccess, ReadonlyGlobal, SchemaField, StructOpsCallbackSlot, StructOpsCallbackSpec,
-    StructOpsObjectSpec, SymbolRelocation,
+    BpfFieldType, BpfMapDef, BssGlobal, CompiledStructOpsCallback, CounterKeySchema,
+    CounterKeySchemaField, DataGlobal, EbpfMap, EbpfObject, EbpfObjectKind, EbpfProgram,
+    EbpfProgramSection, EbpfProgramType, EventSchema, KernelTargetValidationKind,
+    ObjectDataRelocation, ObjectDataSymbol, ProbeContext, ProgramAttachKind, ProgramCapability,
+    ProgramIntrinsic, ProgramTargetKind, ProgramTypeInfo, ProgramValueAccess, ReadonlyGlobal,
+    SchemaField, StructOpsCallbackSlot, StructOpsCallbackSpec, StructOpsObjectSpec,
+    SymbolRelocation,
 };
 pub use hir::{
     HirProgram, extract_call_decl_ids, extract_closure_block_ids, infer_ctx_param, lower_ir_to_hir,
@@ -61,6 +62,7 @@ pub use ir_to_mir::{UserFunctionSig, UserParam, UserParamKind};
 pub use mir::{MapRef, MirType, MirTypeHints};
 pub use mir_to_ebpf::{
     MirCompileResult, compile_mir_to_ebpf, compile_mir_to_ebpf_with_hints,
+    compile_mir_to_ebpf_with_hints_and_globals,
     compile_mir_to_ebpf_with_hints_and_readonly_globals,
 };
 pub use mir_to_lir::{lower_mir_to_lir, lower_mir_to_lir_checked};

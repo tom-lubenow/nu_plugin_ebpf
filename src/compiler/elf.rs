@@ -54,7 +54,7 @@ pub enum BpfPinningType {
 }
 
 /// Definition of a BPF map (legacy format for libbpf/Aya compatibility)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(C)]
 pub struct BpfMapDef {
     pub map_type: u32,
@@ -234,7 +234,7 @@ impl BpfMapDef {
 }
 
 /// A map to be included in the program
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EbpfMap {
     pub name: String,
     pub def: BpfMapDef,
@@ -1628,6 +1628,14 @@ pub struct StructOpsCallbackSlot {
 /// Callback program bound to a named `struct_ops` value slot.
 #[derive(Debug, Clone)]
 pub struct StructOpsCallbackSpec {
+    pub slot_name: String,
+    pub callback_name: String,
+    pub program: EbpfProgram,
+}
+
+/// Already-compiled callback program bound to a named `struct_ops` value slot.
+#[derive(Debug, Clone)]
+pub struct CompiledStructOpsCallback {
     pub slot_name: String,
     pub callback_name: String,
     pub program: EbpfProgram,

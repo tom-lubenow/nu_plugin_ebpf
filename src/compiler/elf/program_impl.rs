@@ -1311,6 +1311,62 @@ impl StructOpsObjectSpec {
         self
     }
 
+    pub fn to_object_with_compiled_callbacks(
+        &self,
+        callbacks: Vec<CompiledStructOpsCallback>,
+    ) -> Result<EbpfObject, CompileError> {
+        let mut merged = self.clone();
+
+        for callback in callbacks {
+            if callback.program.license != self.license {
+                return Err(CompileError::InvalidProgram(format!(
+                    "compiled struct_ops callback '{}' uses license '{}' but object '{}' uses '{}'",
+                    callback.callback_name, callback.program.license, self.name, self.license
+                )));
+            }
+            if callback.program.event_schema.is_some() {
+                return Err(CompileError::InvalidProgram(format!(
+                    "compiled struct_ops callback '{}' cannot emit event schemas",
+                    callback.callback_name
+                )));
+            }
+            if callback.program.bytes_counter_key_schema.is_some() {
+                return Err(CompileError::InvalidProgram(format!(
+                    "compiled struct_ops callback '{}' cannot emit bytes counter schemas",
+                    callback.callback_name
+                )));
+            }
+
+            Self::merge_maps(
+                &mut merged.maps,
+                &callback.program.maps,
+                &callback.callback_name,
+            )?;
+            Self::merge_readonly_globals(
+                &mut merged.readonly_globals,
+                &callback.program.readonly_globals,
+                &callback.callback_name,
+            )?;
+            Self::merge_data_globals(
+                &mut merged.data_globals,
+                &callback.program.data_globals,
+                &callback.callback_name,
+            )?;
+            Self::merge_bss_globals(
+                &mut merged.bss_globals,
+                &callback.program.bss_globals,
+                &callback.callback_name,
+            )?;
+            merged.callbacks.push(StructOpsCallbackSpec {
+                slot_name: callback.slot_name,
+                callback_name: callback.callback_name,
+                program: callback.program,
+            });
+        }
+
+        merged.to_object()
+    }
+
     pub fn to_object(&self) -> Result<EbpfObject, CompileError> {
         let mut seen_slots = HashSet::new();
         for slot in &self.callback_slots {
@@ -1385,6 +1441,86 @@ impl StructOpsObjectSpec {
             )?;
         }
         Ok(builder.build())
+    }
+
+    fn merge_maps(
+        existing: &mut Vec<EbpfMap>,
+        incoming: &[EbpfMap],
+        callback_name: &str,
+    ) -> Result<(), CompileError> {
+        for map in incoming {
+            if let Some(current) = existing.iter().find(|current| current.name == map.name) {
+                if current != map {
+                    return Err(CompileError::InvalidProgram(format!(
+                        "compiled struct_ops callback '{}' uses incompatible map definition for '{}'",
+                        callback_name, map.name
+                    )));
+                }
+            } else {
+                existing.push(map.clone());
+            }
+        }
+        Ok(())
+    }
+
+    fn merge_readonly_globals(
+        existing: &mut Vec<ReadonlyGlobal>,
+        incoming: &[ReadonlyGlobal],
+        callback_name: &str,
+    ) -> Result<(), CompileError> {
+        for global in incoming {
+            if let Some(current) = existing.iter().find(|current| current.name == global.name) {
+                if current != global {
+                    return Err(CompileError::InvalidProgram(format!(
+                        "compiled struct_ops callback '{}' uses incompatible readonly global '{}'",
+                        callback_name, global.name
+                    )));
+                }
+            } else {
+                existing.push(global.clone());
+            }
+        }
+        Ok(())
+    }
+
+    fn merge_data_globals(
+        existing: &mut Vec<DataGlobal>,
+        incoming: &[DataGlobal],
+        callback_name: &str,
+    ) -> Result<(), CompileError> {
+        for global in incoming {
+            if let Some(current) = existing.iter().find(|current| current.name == global.name) {
+                if current != global {
+                    return Err(CompileError::InvalidProgram(format!(
+                        "compiled struct_ops callback '{}' uses incompatible data global '{}'",
+                        callback_name, global.name
+                    )));
+                }
+            } else {
+                existing.push(global.clone());
+            }
+        }
+        Ok(())
+    }
+
+    fn merge_bss_globals(
+        existing: &mut Vec<BssGlobal>,
+        incoming: &[BssGlobal],
+        callback_name: &str,
+    ) -> Result<(), CompileError> {
+        for global in incoming {
+            if let Some(current) = existing.iter().find(|current| current.name == global.name) {
+                if current != global {
+                    return Err(CompileError::InvalidProgram(format!(
+                        "compiled struct_ops callback '{}' uses incompatible bss global '{}'",
+                        callback_name, global.name
+                    )));
+                }
+            } else {
+                existing.push(global.clone());
+            }
+        }
+        Ok(())
     }
 }
 
