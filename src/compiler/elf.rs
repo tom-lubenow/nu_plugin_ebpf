@@ -1615,6 +1615,7 @@ pub struct EbpfObject {
 #[derive(Debug, Clone)]
 pub struct StructOpsObjectBuilder {
     pub(crate) object: EbpfObject,
+    pub(crate) callback_slots: HashMap<String, usize>,
 }
 
 /// High-level kind of ELF object being emitted.

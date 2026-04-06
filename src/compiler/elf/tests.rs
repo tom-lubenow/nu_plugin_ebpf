@@ -357,8 +357,13 @@ fn test_struct_ops_object_emits_struct_ops_value_with_callback_relocation() {
     use object::{Object as _, ObjectSection as _, ObjectSymbol as _, RelocationTarget};
 
     let object = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8])
-        .add_callback(EbpfProgram::hello_world("sys_clone"), "demo_select_cpu")
-        .add_value_relocation(0, "demo_select_cpu")
+        .with_callback_slot("demo_select_cpu", 0)
+        .bind_callback(
+            "demo_select_cpu",
+            EbpfProgram::hello_world("sys_clone"),
+            "demo_select_cpu",
+        )
+        .expect("known callback slot should bind")
         .build();
 
     let elf = object
@@ -389,6 +394,23 @@ fn test_struct_ops_object_emits_struct_ops_value_with_callback_relocation() {
     assert!(
         relocations.next().is_none(),
         "expected exactly one relocation in .struct_ops"
+    );
+}
+
+#[test]
+fn test_struct_ops_builder_rejects_unknown_callback_slot() {
+    let err = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8])
+        .bind_callback(
+            "missing_slot",
+            EbpfProgram::hello_world("sys_clone"),
+            "demo_select_cpu",
+        )
+        .expect_err("unknown callback slot should fail");
+
+    assert!(
+        err.to_string()
+            .contains("unknown struct_ops callback slot 'missing_slot'"),
+        "unexpected error: {err}"
     );
 }
 

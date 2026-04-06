@@ -1,5 +1,5 @@
 use super::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 fn section_name_for_program(
     prog_type: EbpfProgramType,
@@ -582,6 +582,7 @@ impl EbpfObject {
                 }],
                 programs: vec![],
             },
+            callback_slots: HashMap::new(),
         }
     }
 
@@ -1145,6 +1146,11 @@ impl StructOpsObjectBuilder {
         self
     }
 
+    pub fn with_callback_slot(mut self, slot_name: impl Into<String>, offset: usize) -> Self {
+        self.callback_slots.insert(slot_name.into(), offset);
+        self
+    }
+
     pub fn add_value_relocation(mut self, offset: usize, symbol_name: impl Into<String>) -> Self {
         self.value_symbol_mut()
             .relocations
@@ -1165,6 +1171,32 @@ impl StructOpsObjectBuilder {
     pub fn add_callback_section(mut self, section: EbpfProgramSection) -> Self {
         self.object.programs.push(section);
         self
+    }
+
+    pub fn bind_callback(
+        mut self,
+        slot_name: impl AsRef<str>,
+        program: EbpfProgram,
+        callback_name: impl Into<String>,
+    ) -> Result<Self, CompileError> {
+        let slot_name = slot_name.as_ref();
+        let offset = *self.callback_slots.get(slot_name).ok_or_else(|| {
+            CompileError::InvalidProgram(format!(
+                "unknown struct_ops callback slot '{}' for object builder",
+                slot_name
+            ))
+        })?;
+        let callback_name = callback_name.into();
+        self.object
+            .programs
+            .push(program.into_struct_ops_callback(callback_name.clone()));
+        self.value_symbol_mut()
+            .relocations
+            .push(ObjectDataRelocation {
+                offset,
+                symbol_name: callback_name,
+            });
+        Ok(self)
     }
 
     pub fn build(self) -> EbpfObject {
