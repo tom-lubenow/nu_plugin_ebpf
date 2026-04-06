@@ -203,6 +203,30 @@ impl EbpfState {
                     .attach(&target.interface, target.attach_type)
                     .map_err(|e| LoadError::Attach(format!("Failed to attach tc: {e}")))?;
             }
+            ProgramAttachKind::CgroupSkb => {
+                let target = CgroupSkbTarget::parse(&program.target)?;
+                let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
+                    if e.kind() == ErrorKind::PermissionDenied {
+                        LoadError::PermissionDenied
+                    } else {
+                        LoadError::Attach(format!(
+                            "Failed to open cgroup path {}: {e}",
+                            target.cgroup_path
+                        ))
+                    }
+                })?;
+                let cgroup_skb: &mut CgroupSkb = prog.try_into().map_err(|e| {
+                    LoadError::Load(format!("Failed to convert to CgroupSkb: {e}"))
+                })?;
+                cgroup_skb
+                    .load()
+                    .map_err(|e| LoadError::Load(format!("Failed to load cgroup_skb: {e}")))?;
+                cgroup_skb
+                    .attach(cgroup, target.attach_type, CgroupAttachMode::Single)
+                    .map_err(|e| {
+                        LoadError::Attach(format!("Failed to attach cgroup_skb: {e}"))
+                    })?;
+            }
         }
 
         // Check for maps

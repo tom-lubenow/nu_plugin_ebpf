@@ -14,25 +14,37 @@ fn test_hello_world_creation() {
 #[test]
 fn test_section_name() {
     let prog = EbpfProgram::hello_world("sys_clone");
-    assert_eq!(prog.section_name(), "kprobe/sys_clone");
+    assert_eq!(
+        prog.section_name().expect("kprobe section name should build"),
+        "kprobe/sys_clone"
+    );
 }
 
 #[test]
 fn test_fentry_section_name() {
     let prog = EbpfProgram::from_bytecode(EbpfProgramType::Fentry, "ksys_read", "test", vec![]);
-    assert_eq!(prog.section_name(), "fentry/ksys_read");
+    assert_eq!(
+        prog.section_name().expect("fentry section name should build"),
+        "fentry/ksys_read"
+    );
 }
 
 #[test]
 fn test_xdp_section_name() {
     let prog = EbpfProgram::from_bytecode(EbpfProgramType::Xdp, "lo", "test", vec![]);
-    assert_eq!(prog.section_name(), "xdp");
+    assert_eq!(
+        prog.section_name().expect("xdp section name should build"),
+        "xdp"
+    );
 }
 
 #[test]
 fn test_tc_section_name() {
     let prog = EbpfProgram::from_bytecode(EbpfProgramType::Tc, "lo:ingress", "test", vec![]);
-    assert_eq!(prog.section_name(), "classifier");
+    assert_eq!(
+        prog.section_name().expect("tc section name should build"),
+        "classifier"
+    );
 }
 
 #[test]
@@ -291,6 +303,18 @@ fn test_probe_context_allows_packet_fields_on_tc() {
 }
 
 #[test]
+fn test_probe_context_allows_packet_fields_on_cgroup_skb() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress");
+    assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::IngressIfindex)
+            .is_none()
+    );
+}
+
+#[test]
 fn test_probe_context_rejects_xdp_only_packet_fields_on_tc() {
     let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let rx_err = ctx
@@ -311,6 +335,21 @@ fn test_probe_context_rejects_packet_fields_on_probe_programs() {
         .ctx_field_access_error(&CtxField::PacketLen)
         .expect("expected non-packet packet_len access error");
     assert!(err.contains("ctx.packet_len is only available on packet-context programs"));
+}
+
+#[test]
+fn test_cgroup_skb_section_name_uses_attach_direction() {
+    let builder = crate::compiler::instruction::EbpfBuilder::new();
+    let program = EbpfProgram::new(
+        EbpfProgramType::CgroupSkb,
+        "/sys/fs/cgroup:ingress",
+        "main",
+        builder,
+    );
+    assert_eq!(
+        program.section_name().expect("cgroup_skb section should build"),
+        "cgroup_skb/ingress"
+    );
 }
 
 #[test]

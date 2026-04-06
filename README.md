@@ -5,7 +5,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: Write tracing logic in familiar Nushell syntax
-- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, xdp, tc
+- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, xdp, tc, cgroup_skb
 - **Aggregations**: Count by key, histograms, timing measurements
 - **Event streaming**: Real-time event output via ring buffers
 - **Map sharing**: Share data between probes with `--pin`
@@ -78,6 +78,9 @@ let id = ebpf attach 'xdp:lo' {|ctx| $ctx.packet_len | count; 2 }
 
 # Count packets at tc ingress on loopback
 let id = ebpf attach 'tc:lo:ingress' {|ctx| $ctx.packet_len | count; 0 }
+
+# Count packets on cgroup egress traffic
+let id = ebpf attach 'cgroup_skb:/sys/fs/cgroup:egress' {|ctx| $ctx.packet_len | count; 1 }
 ```
 
 ### Count syscalls by process
@@ -167,10 +170,10 @@ The closure receives a context parameter with these fields:
 | `comm` | Process name (16 bytes) | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
 | `cpu` | CPU ID | All |
 | `ktime` | Kernel timestamp (ns) | All |
-| `packet_len` | Packet length (`data_end - data` on XDP, `skb->len` on TC) | xdp, tc |
-| `data` | Packet data pointer | xdp, tc |
-| `data_end` | Packet end pointer | xdp, tc |
-| `ingress_ifindex` | Ingress interface index | xdp, tc |
+| `packet_len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs) | xdp, tc, cgroup_skb |
+| `data` | Packet data pointer | xdp, tc, cgroup_skb |
+| `data_end` | Packet end pointer | xdp, tc, cgroup_skb |
+| `ingress_ifindex` | Ingress interface index | xdp, tc, cgroup_skb |
 | `ifindex` | XDP ingress interface index alias | xdp |
 | `rx_queue_index` | XDP receive queue index | xdp |
 | `egress_ifindex` | XDP egress interface index | xdp |

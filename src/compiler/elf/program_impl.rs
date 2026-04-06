@@ -138,11 +138,30 @@ impl EbpfProgram {
     }
 
     /// Get the ELF section name for this program
-    pub fn section_name(&self) -> String {
-        if self.prog_type.info().section_uses_target {
-            format!("{}/{}", self.prog_type.section_prefix(), self.target)
-        } else {
-            self.prog_type.section_prefix().to_string()
+    pub fn section_name(&self) -> Result<String, CompileError> {
+        match self.prog_type {
+            EbpfProgramType::CgroupSkb => {
+                let (_path, attach_type) = self.target.rsplit_once(':').ok_or_else(|| {
+                    CompileError::InvalidProgram(format!(
+                        "invalid cgroup_skb target '{}': expected cgroup_path:ingress or cgroup_path:egress",
+                        self.target
+                    ))
+                })?;
+                match attach_type {
+                    "ingress" | "egress" => Ok(format!("cgroup_skb/{attach_type}")),
+                    other => Err(CompileError::InvalidProgram(format!(
+                        "invalid cgroup_skb attach type '{}': expected ingress or egress",
+                        other
+                    ))),
+                }
+            }
+            _ => {
+                if self.prog_type.info().section_uses_target {
+                    Ok(format!("{}/{}", self.prog_type.section_prefix(), self.target))
+                } else {
+                    Ok(self.prog_type.section_prefix().to_string())
+                }
+            }
         }
     }
 
@@ -554,7 +573,7 @@ impl EbpfProgram {
         }
 
         // Create the program section (e.g., "kprobe/sys_clone")
-        let section_name = self.section_name();
+        let section_name = self.section_name()?;
         let section_id = obj.add_section(
             vec![], // No segment
             section_name.as_bytes().to_vec(),

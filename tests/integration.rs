@@ -141,6 +141,23 @@ mod linux_tests {
         }
     }
 
+    /// Test parsing cgroup_skb specification
+    #[test]
+    fn test_parse_cgroup_skb_spec() {
+        let result = parse_probe_spec("cgroup_skb:/sys/fs/cgroup:egress");
+
+        match result {
+            Ok((prog_type, target)) => {
+                assert!(
+                    format!("{:?}", prog_type).contains("CgroupSkb"),
+                    "Expected CgroupSkb type"
+                );
+                assert_eq!(target, "/sys/fs/cgroup:egress");
+            }
+            Err(e) => panic!("Unexpected error: {:?}", e),
+        }
+    }
+
     /// Test parsing invalid probe specification (no colon)
     #[test]
     fn test_parse_invalid_spec_no_colon() {

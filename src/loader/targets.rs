@@ -1,7 +1,7 @@
 use super::LoadError;
 use crate::compiler::{EbpfProgramType, KernelTargetValidationKind, ProgramTargetKind};
 use crate::kernel_btf::{FunctionCheckResult, KernelBtf};
-use aya::programs::TcAttachType;
+use aya::programs::{CgroupSkbAttachType, TcAttachType};
 use std::path::Path;
 
 /// Parsed uprobe/uretprobe target information
@@ -122,6 +122,48 @@ impl TcTarget {
     }
 }
 
+/// Parsed cgroup_skb target information.
+#[derive(Debug, Clone)]
+pub struct CgroupSkbTarget {
+    /// Filesystem path to the cgroup directory.
+    pub cgroup_path: String,
+    /// Attach direction.
+    pub attach_type: CgroupSkbAttachType,
+}
+
+impl CgroupSkbTarget {
+    /// Parse a cgroup_skb target string of the form `/sys/fs/cgroup:ingress`
+    /// or `/sys/fs/cgroup:egress`.
+    pub fn parse(target: &str) -> Result<Self, LoadError> {
+        let (cgroup_path, direction) = target.rsplit_once(':').ok_or_else(|| {
+            LoadError::Load(format!(
+                "Invalid cgroup_skb target: {target}. Expected format: /path/to/cgroup:ingress or /path/to/cgroup:egress"
+            ))
+        })?;
+
+        if cgroup_path.is_empty() {
+            return Err(LoadError::Load(
+                "cgroup_skb cgroup path cannot be empty".to_string(),
+            ));
+        }
+
+        let attach_type = match direction {
+            "ingress" => CgroupSkbAttachType::Ingress,
+            "egress" => CgroupSkbAttachType::Egress,
+            _ => {
+                return Err(LoadError::Load(format!(
+                    "Invalid cgroup_skb attach direction: {direction}. Expected ingress or egress"
+                )));
+            }
+        };
+
+        Ok(Self {
+            cgroup_path: cgroup_path.to_string(),
+            attach_type,
+        })
+    }
+}
+
 /// Parse a hex or decimal offset string
 fn parse_offset(s: &str) -> Result<u64, LoadError> {
     if s.starts_with("0x") || s.starts_with("0X") {
@@ -226,6 +268,27 @@ fn validate_tc_target(target: &str) -> Result<(), LoadError> {
     validate_network_interface_target(&parsed.interface)
 }
 
+fn validate_cgroup_skb_target(target: &str) -> Result<(), LoadError> {
+    let parsed = CgroupSkbTarget::parse(target)?;
+    let cgroup_path = Path::new(&parsed.cgroup_path);
+
+    if !cgroup_path.exists() {
+        return Err(LoadError::Load(format!(
+            "Unknown cgroup path: {}",
+            parsed.cgroup_path
+        )));
+    }
+
+    if !cgroup_path.is_dir() {
+        return Err(LoadError::Load(format!(
+            "cgroup_skb target must be a directory: {}",
+            parsed.cgroup_path
+        )));
+    }
+
+    Ok(())
+}
+
 fn validate_target_for_program_type(
     prog_type: EbpfProgramType,
     target: &str,
@@ -252,6 +315,7 @@ fn validate_target_for_program_type(
         }
         ProgramTargetKind::NetworkInterface => validate_network_interface_target(target),
         ProgramTargetKind::TrafficControlInterface => validate_tc_target(target),
+        ProgramTargetKind::CgroupPathAttachType => validate_cgroup_skb_target(target),
     }
 }
 
@@ -269,6 +333,8 @@ fn validate_target_for_program_type(
 /// - `xdp:interface`
 /// - `tc:interface:ingress`
 /// - `tc:interface:egress`
+/// - `cgroup_skb:/path/to/cgroup:ingress`
+/// - `cgroup_skb:/path/to/cgroup:egress`
 /// - `uprobe:/path/to/binary:0x1234` (offset-based)
 /// - `uprobe:/path/to/binary:function@PID` (PID-filtered)
 pub fn parse_probe_spec(spec: &str) -> Result<(EbpfProgramType, String), LoadError> {

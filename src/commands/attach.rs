@@ -925,7 +925,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone' or 'fentry:ksys_read').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', or 'cgroup_skb:/sys/fs/cgroup:egress').",
             )
             .required(
                 "closure",
@@ -964,6 +964,9 @@ Requirements:
             "uprobe",
             "uretprobe",
             "userspace",
+            "xdp",
+            "tc",
+            "cgroup_skb",
         ]
     }
 
@@ -992,6 +995,11 @@ Requirements:
             Example {
                 example: "ebpf attach -s 'fexit:ksys_read' {|ctx| $ctx.retval | emit } | first 5",
                 description: "Capture the first 5 fexit return values using BTF-backed trampolines",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'cgroup_skb:/sys/fs/cgroup:egress' {|ctx| $ctx.packet_len | count; 1 }",
+                description: "Count packet lengths on cgroup egress traffic",
                 result: None,
             },
         ]

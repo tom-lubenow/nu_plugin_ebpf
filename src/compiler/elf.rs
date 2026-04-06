@@ -476,6 +476,8 @@ pub enum EbpfProgramType {
     Xdp,
     /// Traffic-control classifier attached to an interface ingress/egress hook
     Tc,
+    /// Cgroup socket-buffer program attached to a cgroup ingress/egress hook
+    CgroupSkb,
 }
 
 impl EbpfProgramType {
@@ -491,6 +493,7 @@ impl EbpfProgramType {
             EbpfProgramType::Uretprobe => &URETPROBE_INFO,
             EbpfProgramType::Xdp => &XDP_INFO,
             EbpfProgramType::Tc => &TC_INFO,
+            EbpfProgramType::CgroupSkb => &CGROUP_SKB_INFO,
         }
     }
 
@@ -510,6 +513,7 @@ impl EbpfProgramType {
             EbpfProgramType::Uretprobe,
             EbpfProgramType::Xdp,
             EbpfProgramType::Tc,
+            EbpfProgramType::CgroupSkb,
         ]
         .into_iter()
         .find(|program_type| program_type.info().spec_aliases.contains(&prefix))
@@ -711,7 +715,7 @@ impl ProbeContext {
                 )
             } else {
                 format!(
-                    "ctx.{} is only available on packet-context programs (xdp, tc)",
+                    "ctx.{} is only available on packet-context programs (xdp, tc, cgroup_skb)",
                     field.display_name()
                 )
             }
@@ -800,6 +804,7 @@ pub enum ProgramAttachKind {
     Uretprobe,
     Xdp,
     Tc,
+    CgroupSkb,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -810,6 +815,7 @@ pub enum ProgramTargetKind {
     UserFunction,
     NetworkInterface,
     TrafficControlInterface,
+    CgroupPathAttachType,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -991,6 +997,7 @@ const UPROBE_SPEC_ALIASES: &[&str] = &["uprobe"];
 const URETPROBE_SPEC_ALIASES: &[&str] = &["uretprobe"];
 const XDP_SPEC_ALIASES: &[&str] = &["xdp"];
 const TC_SPEC_ALIASES: &[&str] = &["tc"];
+const CGROUP_SKB_SPEC_ALIASES: &[&str] = &["cgroup_skb"];
 const DEFAULT_PROBE_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::Emit,
     ProgramCapability::Counters,
@@ -1284,6 +1291,33 @@ const TC_INFO: ProgramTypeInfo = ProgramTypeInfo {
     is_userspace: false,
 };
 
+const CGROUP_SKB_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::CgroupSkb,
+    canonical_prefix: "cgroup_skb",
+    spec_aliases: CGROUP_SKB_SPEC_ALIASES,
+    section_prefix: "cgroup_skb",
+    section_uses_target: false,
+    attach_kind: ProgramAttachKind::CgroupSkb,
+    target_kind: ProgramTargetKind::CgroupPathAttachType,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+    supports_task_ctx_fields: false,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    packet_context_kind: Some(PacketContextKind::SkBuff),
+    supports_packet_len_ctx_field: true,
+    supports_packet_data_ctx_fields: true,
+    supports_ingress_ifindex_ctx_field: true,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
+    supports_xdp_md_ctx_fields: false,
+    supports_stack_ctx_fields: false,
+    supports_tracepoint_fields: false,
+    is_userspace: false,
+};
+
 const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "kprobe",
     "kretprobe",
@@ -1296,6 +1330,7 @@ const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "uretprobe",
     "xdp",
     "tc",
+    "cgroup_skb",
 ];
 
 const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[

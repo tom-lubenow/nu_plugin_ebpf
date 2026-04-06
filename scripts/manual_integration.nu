@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 40
+const TOTAL_STEPS = 41
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -529,14 +529,25 @@ step 37 "tc loopback packet length counter" {
     } { trigger-ping-loopback } "tc packet length counter"
 }
 
-step 38 "xdp loopback ipv4 protocol via variable payload step" {
+step 38 "cgroup_skb root egress packet length counter" {
+    if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
+        print "Skipping cgroup_skb smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
+    } else {
+        count-at-least-one "cgroup_skb:/sys/fs/cgroup:egress" {|ctx|
+            $ctx.packet_len | count
+            1
+        } { trigger-ping-loopback } "cgroup_skb packet length counter"
+    }
+}
+
+step 39 "xdp loopback ipv4 protocol via variable payload step" {
     count-at-least-one "xdp:lo" {|ctx|
         $ctx.data.eth.payload.ipv4.protocol | count
         2
     } { trigger-ping-loopback } "xdp ipv4 protocol counter"
 }
 
-step 39 "captured string constant drives lru generic map name" {
+step 40 "captured string constant drives lru generic map name" {
     let map_name = "captured_path"
     count-at-least-one "fentry:security_file_open" {|ctx|
         $ctx.arg0.f_path | map-put $map_name $ctx.pid --kind lru-hash
@@ -547,7 +558,7 @@ step 39 "captured string constant drives lru generic map name" {
     } { trigger-cargo-read $repo_root } "captured string lru map name"
 }
 
-step 40 "verify no leaked probes" {
+step 41 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

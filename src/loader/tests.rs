@@ -127,6 +127,13 @@ fn test_parse_probe_spec_tc_ingress() {
 }
 
 #[test]
+fn test_parse_probe_spec_cgroup_skb_egress() {
+    let (prog_type, target) = parse_probe_spec("cgroup_skb:/sys/fs/cgroup:egress").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::CgroupSkb);
+    assert_eq!(target, "/sys/fs/cgroup:egress");
+}
+
+#[test]
 fn test_parse_probe_spec_rejects_unknown_tc_interface() {
     let err = parse_probe_spec("tc:__nu_plugin_ebpf_no_such_iface__:ingress")
         .expect_err("expected unknown tc interface error");
@@ -137,6 +144,22 @@ fn test_parse_probe_spec_rejects_unknown_tc_interface() {
 fn test_parse_probe_spec_rejects_invalid_tc_direction() {
     let err = parse_probe_spec("tc:lo:sideways").expect_err("expected invalid tc direction");
     assert!(matches!(err, LoadError::Load(msg) if msg.contains("Invalid tc attach direction")));
+}
+
+#[test]
+fn test_parse_probe_spec_rejects_invalid_cgroup_skb_direction() {
+    let err = parse_probe_spec("cgroup_skb:/sys/fs/cgroup:sideways")
+        .expect_err("expected invalid cgroup_skb direction");
+    assert!(
+        matches!(err, LoadError::Load(msg) if msg.contains("Invalid cgroup_skb attach direction"))
+    );
+}
+
+#[test]
+fn test_parse_probe_spec_rejects_unknown_cgroup_path() {
+    let err = parse_probe_spec("cgroup_skb:/__nu_plugin_ebpf_missing_cgroup__:ingress")
+        .expect_err("expected unknown cgroup path error");
+    assert!(matches!(err, LoadError::Load(msg) if msg.contains("Unknown cgroup path")));
 }
 
 #[test]
