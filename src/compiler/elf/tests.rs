@@ -535,6 +535,27 @@ fn test_struct_ops_object_spec_resolves_callback_slot_from_kernel_btf() {
 }
 
 #[test]
+fn test_struct_ops_object_spec_zeroed_from_kernel_btf() {
+    use crate::kernel_btf::KernelBtf;
+
+    let expected_size = KernelBtf::get()
+        .kernel_named_type_size_bytes("file")
+        .expect("expected named file type size");
+    let object = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", "file")
+        .expect("expected zeroed struct_ops spec from kernel BTF")
+        .with_callback(
+            "f_inode",
+            "demo_select_cpu",
+            EbpfProgram::hello_world("sys_clone"),
+        )
+        .to_object()
+        .expect("expected zeroed struct_ops object from kernel BTF");
+
+    assert_eq!(object.extra_data_symbols.len(), 1);
+    assert_eq!(object.extra_data_symbols[0].data.len(), expected_size);
+}
+
+#[test]
 fn test_struct_ops_builder_rejects_unknown_callback_slot() {
     let err = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8])
         .bind_callback(

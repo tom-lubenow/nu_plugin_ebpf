@@ -1246,6 +1246,23 @@ impl StructOpsObjectSpec {
         }
     }
 
+    pub fn zeroed_from_kernel_btf(
+        name: impl Into<String>,
+        value_type_name: impl Into<String>,
+    ) -> Result<Self, CompileError> {
+        let name = name.into();
+        let value_type_name = value_type_name.into();
+        let size = KernelBtf::get()
+            .kernel_named_type_size_bytes(&value_type_name)
+            .map_err(|err| {
+                CompileError::InvalidProgram(format!(
+                    "failed to resolve struct_ops value type '{}' from kernel BTF: {}",
+                    value_type_name, err
+                ))
+            })?;
+        Ok(Self::new(name, value_type_name, vec![0; size]))
+    }
+
     pub fn with_license(mut self, license: impl Into<String>) -> Self {
         self.license = license.into();
         self

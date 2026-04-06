@@ -682,6 +682,20 @@ impl KernelBtf {
         self.resolve_trampoline_field_projection(&btf, ty.type_id, field_path, &raw_type_sizes)
     }
 
+    /// Resolve the size in bytes of a named kernel BTF type.
+    pub fn kernel_named_type_size_bytes(&self, type_name: &str) -> Result<usize, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let ty = btf
+            .get_type_by_name(type_name)
+            .map_err(|_| BtfError::TypeNotFound(type_name.to_string()))?;
+        let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
+        let raw_size_bytes = raw_type_sizes
+            .get(&ty.type_id)
+            .copied()
+            .map(|size| size as usize);
+        Self::trampoline_size_bytes(&btf, &ty, raw_size_bytes)
+    }
+
     fn function_trampoline_layout(
         &self,
         function_name: &str,
@@ -4134,6 +4148,14 @@ format:
             by_type_id.path[0].offset_bytes
         );
         assert!(matches!(projection.type_info, TypeInfo::Ptr { .. }));
+    }
+
+    #[test]
+    fn test_kernel_named_type_size_bytes_resolves_common_struct() {
+        let size = KernelBtf::get()
+            .kernel_named_type_size_bytes("file")
+            .expect("expected named file type size");
+        assert!(size >= 40, "unexpected file size: {size}");
     }
 
     #[test]
