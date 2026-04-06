@@ -204,6 +204,7 @@ fn test_multi_program_object_generation_parses_in_aya() {
         readonly_globals: vec![],
         data_globals: vec![],
         bss_globals: vec![],
+        extra_data_symbols: vec![],
         programs: vec![
             program_one.into_program_section(),
             program_two.into_program_section(),
@@ -227,6 +228,7 @@ fn test_primary_program_rejects_multi_program_object() {
         readonly_globals: vec![],
         data_globals: vec![],
         bss_globals: vec![],
+        extra_data_symbols: vec![],
         programs: vec![
             EbpfProgram::hello_world("sys_clone").into_program_section(),
             EbpfProgram::hello_world("sys_execve").into_program_section(),
@@ -254,6 +256,14 @@ fn test_primary_program_rejects_struct_ops_object_kind() {
         readonly_globals: vec![],
         data_globals: vec![],
         bss_globals: vec![],
+        extra_data_symbols: vec![ObjectDataSymbol {
+            section_name: ".struct_ops".to_string(),
+            name: "demo".to_string(),
+            data: vec![0; 8],
+            align: 8,
+            writable: true,
+            relocations: vec![],
+        }],
         programs: vec![EbpfProgram::hello_world("sys_clone").into_program_section()],
     };
 
@@ -275,6 +285,14 @@ fn test_struct_ops_object_rejects_non_struct_ops_section_name() {
         readonly_globals: vec![],
         data_globals: vec![],
         bss_globals: vec![],
+        extra_data_symbols: vec![ObjectDataSymbol {
+            section_name: ".struct_ops".to_string(),
+            name: "demo".to_string(),
+            data: vec![0; 8],
+            align: 8,
+            writable: true,
+            relocations: vec![],
+        }],
         programs: vec![EbpfProgram::hello_world("sys_clone").into_program_section()],
     };
 
@@ -301,6 +319,14 @@ fn test_struct_ops_object_emits_callback_section_override() {
         readonly_globals: vec![],
         data_globals: vec![],
         bss_globals: vec![],
+        extra_data_symbols: vec![ObjectDataSymbol {
+            section_name: ".struct_ops".to_string(),
+            name: "demo".to_string(),
+            data: vec![0; 8],
+            align: 8,
+            writable: true,
+            relocations: vec![],
+        }],
         programs: vec![
             EbpfProgram::hello_world("sys_clone")
                 .into_program_section()
@@ -318,6 +344,100 @@ fn test_struct_ops_object_emits_callback_section_override() {
         .collect();
 
     assert!(section_names.contains(&"struct_ops/demo_select_cpu".to_string()));
+}
+
+#[test]
+fn test_struct_ops_object_emits_struct_ops_value_with_callback_relocation() {
+    use object::{Object as _, ObjectSection as _, ObjectSymbol as _, RelocationTarget};
+
+    let mut callback = EbpfProgram::hello_world("sys_clone")
+        .into_program_section()
+        .with_section_name_override("struct_ops/demo_select_cpu");
+    callback.name = "demo_select_cpu".to_string();
+
+    let object = EbpfObject {
+        kind: EbpfObjectKind::StructOps {
+            name: "demo".to_string(),
+            value_type_name: "sched_ext_ops".to_string(),
+        },
+        license: "GPL".to_string(),
+        maps: vec![],
+        readonly_globals: vec![],
+        data_globals: vec![],
+        bss_globals: vec![],
+        extra_data_symbols: vec![ObjectDataSymbol {
+            section_name: ".struct_ops".to_string(),
+            name: "demo".to_string(),
+            data: vec![0; 8],
+            align: 8,
+            writable: true,
+            relocations: vec![ObjectDataRelocation {
+                offset: 0,
+                symbol_name: "demo_select_cpu".to_string(),
+            }],
+        }],
+        programs: vec![callback],
+    };
+
+    let elf = object
+        .to_elf()
+        .expect("struct_ops object with value relocation should build");
+    let file = object::File::parse(&*elf).expect("object crate should parse generated ELF");
+    let section = file
+        .section_by_name(".struct_ops")
+        .expect("expected .struct_ops section");
+
+    let mut relocations = section.relocations();
+    let (offset, relocation) = relocations
+        .next()
+        .expect("expected one relocation in .struct_ops");
+    assert_eq!(offset, 0);
+    match relocation.target() {
+        RelocationTarget::Symbol(symbol_idx) => {
+            let symbol = file
+                .symbol_by_index(symbol_idx)
+                .expect("relocation symbol should exist");
+            assert_eq!(
+                symbol.name().expect("relocation symbol should have a name"),
+                "demo_select_cpu"
+            );
+        }
+        other => panic!("unexpected relocation target: {other:?}"),
+    }
+    assert!(
+        relocations.next().is_none(),
+        "expected exactly one relocation in .struct_ops"
+    );
+}
+
+#[test]
+fn test_program_object_rejects_extra_data_symbols() {
+    let object = EbpfObject {
+        kind: EbpfObjectKind::Program,
+        license: "GPL".to_string(),
+        maps: vec![],
+        readonly_globals: vec![],
+        data_globals: vec![],
+        bss_globals: vec![],
+        extra_data_symbols: vec![ObjectDataSymbol {
+            section_name: ".custom".to_string(),
+            name: "blob".to_string(),
+            data: vec![1, 2, 3, 4],
+            align: 4,
+            writable: false,
+            relocations: vec![],
+        }],
+        programs: vec![EbpfProgram::hello_world("sys_clone").into_program_section()],
+    };
+
+    let err = object
+        .validate_runtime_artifacts()
+        .expect_err("ordinary program object should reject extra data symbols");
+    assert!(
+        err.to_string()
+            .contains("ordinary program objects do not yet support extra data symbols"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -355,6 +475,7 @@ fn test_runtime_artifacts_reject_program_name_conflicting_with_map_or_global() {
         readonly_globals: vec![],
         data_globals: vec![],
         bss_globals: vec![],
+        extra_data_symbols: vec![],
         programs: vec![
             EbpfProgram::hello_world("sys_clone")
                 .into_program_section()
@@ -374,7 +495,7 @@ fn test_runtime_artifacts_reject_program_name_conflicting_with_map_or_global() {
 
     assert!(
         err.to_string()
-            .contains("conflicts with a map or global symbol"),
+            .contains("conflicts with a map, global, or data symbol"),
         "unexpected error: {err}"
     );
 }

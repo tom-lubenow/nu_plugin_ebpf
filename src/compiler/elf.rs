@@ -270,6 +270,32 @@ pub struct SymbolRelocation {
     pub symbol_name: String,
 }
 
+/// Relocation within an object-local data symbol.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObjectDataRelocation {
+    /// Offset in bytes within the symbol's data blob where the relocation applies.
+    pub offset: usize,
+    /// Name of the referenced ELF symbol.
+    pub symbol_name: String,
+}
+
+/// Extra object-local data symbol emitted into a custom ELF section.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObjectDataSymbol {
+    /// ELF section name, for example `.struct_ops`.
+    pub section_name: String,
+    /// Symbol name within the section.
+    pub name: String,
+    /// Raw bytes for the symbol payload.
+    pub data: Vec<u8>,
+    /// Alignment in bytes.
+    pub align: u64,
+    /// Whether the section should be writable.
+    pub writable: bool,
+    /// Relocations within this symbol's data payload.
+    pub relocations: Vec<ObjectDataRelocation>,
+}
+
 /// Function symbol metadata for BPF-to-BPF subfunctions.
 #[derive(Debug, Clone)]
 pub struct SubfunctionSymbol {
@@ -1538,6 +1564,8 @@ pub struct EbpfObject {
     pub data_globals: Vec<DataGlobal>,
     /// Writable zero-initialized globals emitted into `.bss`
     pub bss_globals: Vec<BssGlobal>,
+    /// Extra object-local data symbols emitted into custom sections.
+    pub extra_data_symbols: Vec<ObjectDataSymbol>,
     /// Programs emitted into this object
     pub programs: Vec<EbpfProgramSection>,
 }
@@ -1547,7 +1575,7 @@ pub struct EbpfObject {
 pub enum EbpfObjectKind {
     /// Ordinary attachable program object with a single primary program.
     Program,
-    /// Future struct_ops object with callback programs plus a registration map.
+    /// Struct_ops object with callback programs plus registration data.
     StructOps {
         /// User-facing object name.
         name: String,

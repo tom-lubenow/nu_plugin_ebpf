@@ -194,6 +194,7 @@ impl EbpfProgram {
             readonly_globals,
             data_globals,
             bss_globals,
+            extra_data_symbols: Vec::new(),
             programs: vec![EbpfProgramSection {
                 section_name_override: None,
                 prog_type,
@@ -581,6 +582,20 @@ impl EbpfObject {
                     "struct_ops object must declare a non-empty value type name".to_string(),
                 ));
             }
+            if self.extra_data_symbols.is_empty() {
+                return Err(CompileError::InvalidProgram(
+                    "struct_ops object must contain at least one .struct_ops value symbol"
+                        .to_string(),
+                ));
+            }
+            for data_symbol in &self.extra_data_symbols {
+                if data_symbol.section_name != ".struct_ops" {
+                    return Err(CompileError::InvalidProgram(format!(
+                        "struct_ops value symbol '{}' must live in '.struct_ops', got '{}'",
+                        data_symbol.name, data_symbol.section_name
+                    )));
+                }
+            }
             for program in &self.programs {
                 let section_name = program.section_name()?;
                 if !section_name.starts_with("struct_ops") {
@@ -605,12 +620,49 @@ impl EbpfObject {
         for map in &self.maps {
             artifact_symbol_names.insert(map.name.as_str());
         }
+        for data_symbol in &self.extra_data_symbols {
+            if data_symbol.section_name.is_empty() {
+                return Err(CompileError::InvalidProgram(format!(
+                    "extra data symbol '{}' must use a non-empty section name",
+                    data_symbol.name
+                )));
+            }
+            if data_symbol.name.is_empty() {
+                return Err(CompileError::InvalidProgram(
+                    "extra data symbols must use non-empty symbol names".to_string(),
+                ));
+            }
+            if data_symbol.data.is_empty() {
+                return Err(CompileError::InvalidProgram(format!(
+                    "extra data symbol '{}' must have a non-zero size",
+                    data_symbol.name
+                )));
+            }
+            if data_symbol.align == 0 {
+                return Err(CompileError::InvalidProgram(format!(
+                    "extra data symbol '{}' must use non-zero alignment",
+                    data_symbol.name
+                )));
+            }
+            if !artifact_symbol_names.insert(data_symbol.name.as_str()) {
+                return Err(CompileError::InvalidProgram(format!(
+                    "duplicate global, map, or data symbol name '{}'",
+                    data_symbol.name
+                )));
+            }
+        }
+
+        if matches!(self.kind, EbpfObjectKind::Program) && !self.extra_data_symbols.is_empty() {
+            return Err(CompileError::InvalidProgram(
+                "ordinary program objects do not yet support extra data symbols".to_string(),
+            ));
+        }
 
         let mut program_names = HashSet::new();
         for program in &self.programs {
             if artifact_symbol_names.contains(program.name.as_str()) {
                 return Err(CompileError::InvalidProgram(format!(
-                    "program symbol name '{}' conflicts with a map or global symbol",
+                    "program symbol name '{}' conflicts with a map, global, or data symbol",
                     program.name
                 )));
             }
@@ -833,6 +885,70 @@ impl EbpfObject {
                     section_id,
                     Relocation {
                         offset: offset + reloc.insn_offset as u64,
+                        symbol: sym_id,
+                        addend: 0,
+                        flags: RelocationFlags::Elf { r_type: 1 },
+                    },
+                )
+                .map_err(|e| CompileError::ElfError(e.to_string()))?;
+            }
+        }
+
+        let mut data_sections: HashMap<(String, bool), object::write::SectionId> = HashMap::new();
+        let mut pending_data_relocations = Vec::new();
+        for data_symbol in &self.extra_data_symbols {
+            let section_key = (data_symbol.section_name.clone(), data_symbol.writable);
+            let section_id = if let Some(&section_id) = data_sections.get(&section_key) {
+                section_id
+            } else {
+                let kind = if data_symbol.writable {
+                    SectionKind::Data
+                } else {
+                    SectionKind::ReadOnlyData
+                };
+                let section_id =
+                    obj.add_section(vec![], data_symbol.section_name.as_bytes().to_vec(), kind);
+                let section = obj.section_mut(section_id);
+                let mut sh_flags = object::elf::SHF_ALLOC as u64;
+                if data_symbol.writable {
+                    sh_flags |= object::elf::SHF_WRITE as u64;
+                }
+                section.flags = SectionFlags::Elf { sh_flags };
+                data_sections.insert(section_key, section_id);
+                section_id
+            };
+
+            let symbol_offset =
+                obj.append_section_data(section_id, &data_symbol.data, data_symbol.align);
+            let sym_id = obj.add_symbol(Symbol {
+                name: data_symbol.name.as_bytes().to_vec(),
+                value: symbol_offset,
+                size: data_symbol.data.len() as u64,
+                kind: SymbolKind::Data,
+                scope: SymbolScope::Linkage,
+                weak: false,
+                section: SymbolSection::Section(section_id),
+                flags: SymbolFlags::Elf {
+                    st_info: (object::elf::STB_GLOBAL << 4) | object::elf::STT_OBJECT,
+                    st_other: object::elf::STV_DEFAULT,
+                },
+            });
+            symbol_ids.insert(data_symbol.name.clone(), sym_id);
+            pending_data_relocations.push((section_id, symbol_offset, data_symbol));
+        }
+
+        for (section_id, symbol_offset, data_symbol) in pending_data_relocations {
+            for reloc in &data_symbol.relocations {
+                let sym_id = *symbol_ids.get(&reloc.symbol_name).ok_or_else(|| {
+                    CompileError::InvalidProgram(format!(
+                        "data symbol '{}' references missing ELF symbol '{}'",
+                        data_symbol.name, reloc.symbol_name
+                    ))
+                })?;
+                obj.add_relocation(
+                    section_id,
+                    Relocation {
+                        offset: symbol_offset + reloc.offset as u64,
                         symbol: sym_id,
                         addend: 0,
                         flags: RelocationFlags::Elf { r_type: 1 },
