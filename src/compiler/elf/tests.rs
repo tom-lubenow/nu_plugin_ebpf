@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::mir::{CtxField, MirType, StructField};
+use crate::compiler::mir_to_ebpf::compile_mir_to_ebpf;
 use aya_obj::{EbpfSectionKind, Object as AyaObject};
 use std::collections::HashMap;
 
@@ -587,6 +588,47 @@ fn test_struct_ops_object_spec_merges_compiled_callback_artifacts() {
     assert_eq!(object.bss_globals.len(), 1);
     assert_eq!(object.bss_globals[0].name, "scratch");
     assert_eq!(object.programs.len(), 1);
+}
+
+#[test]
+fn test_struct_ops_object_spec_accepts_callbacks_from_mir_compile_results() {
+    use crate::compiler::mir::{
+        BasicBlock, BlockId, MirFunction, MirInst, MirProgram, MirValue, VReg,
+    };
+
+    let mut func = MirFunction::new();
+    let mut entry_block = BasicBlock::new(BlockId(0));
+    entry_block.instructions.push(MirInst::Copy {
+        dst: VReg(0),
+        src: MirValue::Const(0),
+    });
+    entry_block.terminator = MirInst::Return {
+        val: Some(MirValue::VReg(VReg(0))),
+    };
+    func.blocks.push(entry_block);
+    func.vreg_count = 1;
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let callback = compile_mir_to_ebpf(&program, None)
+        .expect("expected MIR callback compile result")
+        .into_struct_ops_callback("f_inode", "demo_select_cpu", HashMap::new());
+
+    let object = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", "file")
+        .expect("expected zeroed struct_ops spec from kernel BTF")
+        .to_object_with_compiled_callbacks(vec![callback])
+        .expect("expected struct_ops object from compiled callback");
+
+    assert_eq!(object.programs.len(), 1);
+    assert_eq!(
+        object.programs[0]
+            .section_name()
+            .expect("struct_ops callback section name should build"),
+        "struct_ops/demo_select_cpu"
+    );
 }
 
 #[test]

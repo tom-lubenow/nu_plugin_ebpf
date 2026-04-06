@@ -23,9 +23,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::compiler::CompileError;
 use crate::compiler::cfg::CFG;
 use crate::compiler::elf::{
-    BpfFieldType, BpfMapDef, BssGlobal, CounterKeySchema, DataGlobal, EbpfMap, EbpfProgram,
-    EbpfProgramType, EventSchema, PacketContextKind, ProbeContext, ReadonlyGlobal, SchemaField,
-    SubfunctionSymbol, SymbolRelocation,
+    BpfFieldType, BpfMapDef, BssGlobal, CompiledStructOpsCallback, CounterKeySchema, DataGlobal,
+    EbpfMap, EbpfProgram, EbpfProgramType, EventSchema, PacketContextKind, ProbeContext,
+    ReadonlyGlobal, SchemaField, SubfunctionSymbol, SymbolRelocation,
 };
 use crate::compiler::graph_coloring::{
     ColoringResult, GraphColoringAllocator, compute_loop_depths,
@@ -116,6 +116,25 @@ impl MirCompileResult {
         .with_readonly_globals(self.readonly_globals)
         .with_data_globals(self.data_globals)
         .with_bss_globals(self.bss_globals)
+    }
+
+    pub fn into_struct_ops_callback(
+        self,
+        slot_name: impl Into<String>,
+        callback_name: impl Into<String>,
+        generic_map_value_types: HashMap<MapRef, MirType>,
+    ) -> CompiledStructOpsCallback {
+        let callback_name = callback_name.into();
+        CompiledStructOpsCallback {
+            slot_name: slot_name.into(),
+            callback_name: callback_name.clone(),
+            program: self.into_program(
+                EbpfProgramType::StructOps,
+                callback_name.clone(),
+                callback_name,
+                generic_map_value_types,
+            ),
+        }
     }
 }
 
