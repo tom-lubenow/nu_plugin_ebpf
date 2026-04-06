@@ -280,6 +280,54 @@ fn test_comparison_codegen_preserves_rhs_when_dst_aliases_r0() {
 }
 
 #[test]
+fn test_comparison_codegen_does_not_spill_r0_as_temp() {
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let cmp = func.alloc_vreg();
+    let lhs = func.alloc_vreg();
+    let rhs = func.alloc_vreg();
+
+    func.precolored.insert(cmp, EbpfReg::R6);
+    func.precolored.insert(lhs, EbpfReg::R6);
+    func.precolored.insert(rhs, EbpfReg::R3);
+
+    func.block_mut(entry).instructions.push(LirInst::BinOp {
+        dst: cmp,
+        op: BinOpKind::Le,
+        lhs: MirValue::VReg(lhs),
+        rhs: MirValue::VReg(rhs),
+    });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(cmp)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .expect("comparison temp program should prepare");
+    compiler
+        .compile_function(&program.main)
+        .expect("comparison temp program should compile");
+    compiler.fixup_jumps().expect("jump fixups should succeed");
+
+    assert!(
+        !compiler.instructions.iter().any(|insn| {
+            insn.opcode == opcode::BPF_STX | opcode::BPF_DW | opcode::BPF_MEM
+                && insn.dst_reg == EbpfReg::R10.as_u8()
+                && insn.src_reg == EbpfReg::R0.as_u8()
+        }),
+        "comparison codegen must not spill unreadable R0 as a temporary"
+    );
+}
+
+#[test]
 fn test_parallel_move_stack_to_stack() {
     let program = LirProgram::new(LirFunction::new());
     let mut compiler = MirToEbpfCompiler::new(&program, None);

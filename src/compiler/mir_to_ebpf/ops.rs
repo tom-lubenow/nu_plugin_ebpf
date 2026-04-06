@@ -5,7 +5,6 @@ use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec};
 impl<'a> MirToEbpfCompiler<'a> {
     fn comparison_temp_reg(&self, excluded: &[EbpfReg]) -> Result<EbpfReg, CompileError> {
         [
-            EbpfReg::R0,
             EbpfReg::R1,
             EbpfReg::R2,
             EbpfReg::R3,
