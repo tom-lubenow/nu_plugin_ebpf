@@ -7,14 +7,14 @@
 
 use std::collections::HashMap;
 
-use nu_protocol::ast::{Boolean, Operator};
-use nu_protocol::{BlockId as NuBlockId, DeclId, RegId, Value, VarId};
+use nu_protocol::ast::{Boolean, CellPath, Operator, PathMember};
+use nu_protocol::{BlockId as NuBlockId, DeclId, RegId, Type, Value, VarId};
 
 use super::hindley_milner::{
     HMType, Substitution, TypeScheme, TypeVar, TypeVarGenerator, UnifyError, unify,
 };
 use super::hir::{
-    HirBlock, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
+    AnnotatedMutGlobal, HirBlock, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
     supports_numeric_constant_list,
 };
 use super::mir::AddressSpace;
@@ -104,13 +104,23 @@ pub fn infer_hir_types_with_decls(
     let mut errors = Vec::new();
     let mut type_info = HirTypeInfo::default();
 
-    match infer_function(&program.main, decl_names, &program.captures) {
+    match infer_function(
+        &program.main,
+        decl_names,
+        &program.captures,
+        &program.annotated_mut_globals,
+    ) {
         Ok(types) => type_info.main = types,
         Err(mut errs) => errors.append(&mut errs),
     }
 
     for (block_id, func) in &program.closures {
-        match infer_function(func, decl_names, &program.captures) {
+        match infer_function(
+            func,
+            decl_names,
+            &program.captures,
+            &program.annotated_mut_globals,
+        ) {
             Ok(types) => {
                 type_info.closures.insert(*block_id, types);
             }
@@ -119,7 +129,12 @@ pub fn infer_hir_types_with_decls(
     }
 
     for (decl_id, func) in decls {
-        match infer_function(func, decl_names, &program.captures) {
+        match infer_function(
+            func,
+            decl_names,
+            &program.captures,
+            &program.annotated_mut_globals,
+        ) {
             Ok(types) => {
                 type_info.decls.insert(*decl_id, types);
             }
@@ -137,22 +152,36 @@ pub fn infer_hir_types_with_decls(
 struct HirTypeInference<'a> {
     tvar_gen: TypeVarGenerator,
     reg_vars: HashMap<u32, TypeVar>,
+    cell_paths: HashMap<u32, CellPath>,
     substitution: Substitution,
     env: VarEnv,
+    annotated_global_types: HashMap<VarId, HMType>,
     decl_names: &'a HashMap<DeclId, String>,
 }
 
 impl<'a> HirTypeInference<'a> {
-    fn new(decl_names: &'a HashMap<DeclId, String>, captures: &[(VarId, Value)]) -> Self {
+    fn new(
+        decl_names: &'a HashMap<DeclId, String>,
+        captures: &[(VarId, Value)],
+        annotated_mut_globals: &[AnnotatedMutGlobal],
+    ) -> Self {
         let mut env = VarEnv::default();
         for (var_id, value) in captures {
             env.insert(*var_id, TypeScheme::mono(hm_type_for_value(value)));
         }
+        let mut annotated_global_types = HashMap::new();
+        for annotated in annotated_mut_globals {
+            let declared_ty = hm_type_for_declared_global_type(&annotated.declared_type);
+            env.insert(annotated.var_id, TypeScheme::mono(declared_ty.clone()));
+            annotated_global_types.insert(annotated.var_id, declared_ty);
+        }
         Self {
             tvar_gen: TypeVarGenerator::new(),
             reg_vars: HashMap::new(),
+            cell_paths: HashMap::new(),
             substitution: Substitution::new(),
             env,
+            annotated_global_types,
             decl_names,
         }
     }
@@ -199,18 +228,39 @@ impl<'a> HirTypeInference<'a> {
                 let dst_ty = self.write_reg_type(*dst);
                 let lit_ty = hm_type_for_literal(lit);
                 self.constrain(dst_ty, lit_ty, "literal")?;
+                if let HirLiteral::CellPath(path) = lit {
+                    self.cell_paths.insert(dst.get(), (**path).clone());
+                } else {
+                    self.cell_paths.remove(&dst.get());
+                }
             }
             HirStmt::LoadValue { dst, val } => {
                 let dst_ty = self.write_reg_type(*dst);
                 let lit_ty = hm_type_for_value(val);
                 self.constrain(dst_ty, lit_ty, "value")?;
+                self.cell_paths.remove(&dst.get());
             }
-            HirStmt::Move { dst, src }
-            | HirStmt::Clone { dst, src }
-            | HirStmt::CloneCellPath { dst, src, .. } => {
+            HirStmt::Move { dst, src } | HirStmt::Clone { dst, src } => {
                 let dst_ty = self.write_reg_type(*dst);
                 let src_ty = self.reg_type(*src);
                 self.constrain(dst_ty, src_ty, "move")?;
+                if let Some(path) = self.cell_paths.get(&src.get()).cloned() {
+                    self.cell_paths.insert(dst.get(), path);
+                } else {
+                    self.cell_paths.remove(&dst.get());
+                }
+            }
+            HirStmt::CloneCellPath { dst, src, path } => {
+                let src_ty = self.reg_type(*src);
+                let src_ty = self.substitution.apply(&src_ty);
+                let projected = self
+                    .cell_paths
+                    .get(&path.get())
+                    .and_then(|cell_path| project_hm_type(&src_ty, cell_path))
+                    .unwrap_or(HMType::Unknown);
+                let dst_ty = self.write_reg_type(*dst);
+                self.constrain(dst_ty, projected, "clone_cell_path")?;
+                self.cell_paths.remove(&dst.get());
             }
             HirStmt::Collect { src_dst }
             | HirStmt::Span { src_dst }
@@ -233,8 +283,13 @@ impl<'a> HirTypeInference<'a> {
                     .unwrap_or_else(|| TypeScheme::mono(HMType::Unknown));
                 let inst = scheme.instantiate(&mut self.tvar_gen);
                 self.constrain(dst_ty, inst, "load_var")?;
+                self.cell_paths.remove(&dst.get());
             }
             HirStmt::StoreVariable { var_id, src } => {
+                if let Some(declared_ty) = self.annotated_global_types.get(var_id).cloned() {
+                    self.env.insert(*var_id, TypeScheme::mono(declared_ty));
+                    return Ok(());
+                }
                 let src_ty = self.reg_type(*src);
                 let src_ty = self.substitution.apply(&src_ty);
                 let env = self.env.apply(&self.substitution);
@@ -265,6 +320,33 @@ impl<'a> HirTypeInference<'a> {
                 let key_ty = self.reg_type(*key);
                 self.constrain(record_ty, stack_record_ptr_type(), "record_insert_dst")?;
                 self.constrain(key_ty, stack_string_ptr_type(), "record_insert_key")?;
+            }
+            HirStmt::FollowCellPath { src_dst, path } => {
+                let src_ty = self.reg_type(*src_dst);
+                let src_ty = self.substitution.apply(&src_ty);
+                let projected = self
+                    .cell_paths
+                    .get(&path.get())
+                    .and_then(|cell_path| project_hm_type(&src_ty, cell_path))
+                    .unwrap_or(HMType::Unknown);
+                let dst_ty = self.write_reg_type(*src_dst);
+                self.constrain(dst_ty, projected, "follow_cell_path")?;
+            }
+            HirStmt::UpsertCellPath {
+                src_dst,
+                path,
+                new_value,
+            } => {
+                let src_ty = self.reg_type(*src_dst);
+                let src_ty = self.substitution.apply(&src_ty);
+                if let Some(projected) = self
+                    .cell_paths
+                    .get(&path.get())
+                    .and_then(|cell_path| project_hm_type(&src_ty, cell_path))
+                {
+                    let new_value_ty = self.reg_type(*new_value);
+                    self.constrain(new_value_ty, projected, "upsert_cell_path")?;
+                }
             }
             HirStmt::BinaryOp { lhs_dst, op, rhs } => {
                 let lhs_ty = self.reg_type(*lhs_dst);
@@ -303,6 +385,7 @@ impl<'a> HirTypeInference<'a> {
                     _ => HMType::Unknown,
                 };
                 self.constrain(dst_ty, ret_ty, "call")?;
+                self.cell_paths.remove(&src_dst.get());
             }
             _ => {}
         }
@@ -381,8 +464,9 @@ fn infer_function(
     func: &HirFunction,
     decl_names: &HashMap<DeclId, String>,
     captures: &[(VarId, Value)],
+    annotated_mut_globals: &[AnnotatedMutGlobal],
 ) -> Result<HashMap<RegId, HMType>, Vec<TypeError>> {
-    let mut infer = HirTypeInference::new(decl_names, captures);
+    let mut infer = HirTypeInference::new(decl_names, captures, annotated_mut_globals);
     infer.infer_function(func)?;
     Ok(infer.type_map())
 }
@@ -422,6 +506,59 @@ fn hm_type_for_value(val: &Value) -> HMType {
         value if supports_numeric_constant_list(value) => stack_list_ptr_type(),
         _ => HMType::Unknown,
     }
+}
+
+fn hm_type_for_declared_global_type(ty: &Type) -> HMType {
+    match ty {
+        Type::Bool => HMType::Bool,
+        Type::Int => HMType::I64,
+        Type::String | Type::Glob => stack_string_ptr_type(),
+        Type::Binary => stack_string_ptr_type(),
+        Type::List(inner) if matches!(inner.as_ref(), Type::Int | Type::Nothing) => {
+            stack_list_ptr_type()
+        }
+        Type::Record(fields) => HMType::Struct {
+            name: None,
+            kernel_btf_type_id: None,
+            fields: fields
+                .iter()
+                .map(|(name, ty)| (name.clone(), hm_type_for_declared_global_type(ty)))
+                .collect(),
+        },
+        _ => HMType::Unknown,
+    }
+}
+
+fn project_hm_type(ty: &HMType, path: &CellPath) -> Option<HMType> {
+    let mut current = ty.clone();
+    for member in &path.members {
+        current = match member {
+            PathMember::String { val, .. } => {
+                let source = match current {
+                    HMType::Ptr { pointee, .. } => *pointee,
+                    other => other,
+                };
+                let HMType::Struct { fields, .. } = source else {
+                    return None;
+                };
+                fields
+                    .iter()
+                    .find(|(name, _)| name == val)
+                    .map(|(_, field_ty)| field_ty.clone())?
+            }
+            PathMember::Int { .. } => {
+                let source = match current {
+                    HMType::Ptr { pointee, .. } => *pointee,
+                    other => other,
+                };
+                let HMType::Array { elem, .. } = source else {
+                    return None;
+                };
+                *elem
+            }
+        };
+    }
+    Some(current)
 }
 
 fn stack_string_ptr_type() -> HMType {

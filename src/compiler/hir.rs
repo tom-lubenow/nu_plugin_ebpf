@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, FixedOffset};
 use nu_protocol::ast::{CellPath, Expression, Operator, Pattern, RangeInclusion};
 use nu_protocol::ir::{Instruction, IrAstRef, IrBlock, Literal, RedirectMode};
-use nu_protocol::{BlockId as NuBlockId, DeclId, Filesize, RegId, Span, Value, VarId};
+use nu_protocol::{BlockId as NuBlockId, DeclId, Filesize, RegId, Span, Type, Value, VarId};
 
 use super::CompileError;
 
@@ -25,7 +25,14 @@ pub struct HirProgram {
     pub ctx_param: Option<VarId>,
     /// Leading annotated `mut` bindings in the attached closure that should be
     /// lowered as compiler-managed mutable globals instead of per-invocation locals.
-    pub annotated_mut_globals: Vec<(VarId, Value)>,
+    pub annotated_mut_globals: Vec<AnnotatedMutGlobal>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AnnotatedMutGlobal {
+    pub var_id: VarId,
+    pub declared_type: Type,
+    pub initial_value: Value,
 }
 
 impl HirProgram {

@@ -18,7 +18,7 @@ use nu_protocol::{
 use crate::EbpfPlugin;
 use crate::compiler::{
     EbpfProgram, ProbeContext, ProgramIntrinsic, UserFunctionSig, UserParam, UserParamKind,
-    compile_mir_to_ebpf_with_hints_and_readonly_globals, hir::HirFunction,
+    compile_mir_to_ebpf_with_hints_and_readonly_globals, hir::AnnotatedMutGlobal, hir::HirFunction,
     hir::supports_constant_value, hir_type_infer, infer_ctx_param,
     lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir, passes::optimize_with_ssa_hints,
 };
@@ -155,7 +155,7 @@ fn lower_capture_literals(
 #[derive(Debug, Clone)]
 struct LeadingVariableDeclaration {
     mutable: bool,
-    annotated: bool,
+    declared_type: Option<Type>,
     initializer: Option<Value>,
 }
 
@@ -336,10 +336,10 @@ fn parse_leading_variable_declarations(
             LabeledError::new("Failed to parse leading variable declaration")
                 .with_label("Missing declaration target", first.expr.span)
         })?;
-        let annotated = var_expr.ty != Type::Any;
+        let declared_type = (var_expr.ty != Type::Any).then(|| var_expr.ty.clone());
         let mutable = cmd_name == "mut";
 
-        let initializer = if mutable && annotated {
+        let initializer = if mutable && declared_type.is_some() {
             let init_expr = call
                 .positional_nth(1)
                 .map(|expr| expr.as_keyword().unwrap_or(expr))
@@ -354,7 +354,7 @@ fn parse_leading_variable_declarations(
 
         declarations.push(LeadingVariableDeclaration {
             mutable,
-            annotated,
+            declared_type,
             initializer,
         });
     }
@@ -378,7 +378,7 @@ fn map_leading_annotated_mut_globals(
     source: &str,
     ir_block: &IrBlock,
     span: Span,
-) -> Result<Vec<(nu_protocol::VarId, Value)>, LabeledError> {
+) -> Result<Vec<AnnotatedMutGlobal>, LabeledError> {
     let declarations = parse_leading_variable_declarations(source, span)?;
     if declarations.is_empty() {
         return Ok(Vec::new());
@@ -402,8 +402,16 @@ fn map_leading_annotated_mut_globals(
         .into_iter()
         .zip(declaration_var_ids)
         .filter_map(|(decl, var_id)| {
-            (decl.mutable && decl.annotated)
-                .then(|| decl.initializer.map(|value| (var_id, value)))
+            (decl.mutable && decl.declared_type.is_some())
+                .then(|| {
+                    decl.initializer.zip(decl.declared_type).map(
+                        |(initial_value, declared_type)| AnnotatedMutGlobal {
+                            var_id,
+                            declared_type,
+                            initial_value,
+                        },
+                    )
+                })
                 .flatten()
         })
         .collect())
@@ -1383,7 +1391,7 @@ mod tests {
     use nu_protocol::ast::{CellPath, Comparison, Math, Operator, PathMember};
     use nu_protocol::casing::Casing;
     use nu_protocol::ir::{Instruction, IrBlock};
-    use nu_protocol::{RegId, Span, Value, VarId};
+    use nu_protocol::{RegId, Span, Type, Value, VarId};
 
     #[test]
     fn test_extract_decl_names_from_formatted_instructions_filters_to_known_commands() {
@@ -1437,8 +1445,15 @@ mod tests {
                 .expect("leading annotated mut globals should map cleanly");
 
         assert_eq!(globals.len(), 1);
-        assert_eq!(globals[0].0, VarId::new(11));
-        match &globals[0].1 {
+        assert_eq!(globals[0].var_id, VarId::new(11));
+        assert_eq!(
+            globals[0].declared_type,
+            Type::Record(Box::new([
+                ("pid".to_string(), Type::Int),
+                ("ok".to_string(), Type::Bool),
+            ]))
+        );
+        match &globals[0].initial_value {
             Value::Record { val, .. } => {
                 assert_eq!(val.get("pid").and_then(|v| v.as_int().ok()), Some(0));
                 assert_eq!(val.get("ok").and_then(|v| v.as_bool().ok()), Some(false));

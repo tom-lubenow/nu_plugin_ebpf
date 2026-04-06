@@ -1,14 +1,15 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
 use crate::compiler::hir::{
-    HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
+    AnnotatedMutGlobal, HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt,
+    HirTerminator,
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{AddressSpace, BYTES_COUNTER_MAP_NAME, StructField};
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 use nu_protocol::ast::{CellPath, Comparison, Math, Operator, PathMember, RangeInclusion};
 use nu_protocol::casing::Casing;
-use nu_protocol::{DeclId, Record, RegId, Span, Value, VarId};
+use nu_protocol::{DeclId, Record, RegId, Span, Type, Value, VarId};
 use std::collections::HashMap;
 
 #[test]
@@ -7056,7 +7057,11 @@ fn test_lower_leading_annotated_mut_scalar_uses_global_backing_and_skips_init_st
         file_count: 0,
     };
     let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
-    hir.annotated_mut_globals = vec![(global_var, Value::int(7, Span::test_data()))];
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Int,
+        initial_value: Value::int(7, Span::test_data()),
+    }];
 
     let result = lower_hir_to_mir_with_hints(
         &hir,
@@ -7099,4 +7104,55 @@ fn test_lower_leading_annotated_mut_scalar_uses_global_backing_and_skips_init_st
             .any(|inst| matches!(inst, MirInst::Store { .. })),
         "expected declaration-time store to be absorbed into .data instead of executing at runtime"
     );
+}
+
+#[test]
+fn test_lower_leading_annotated_mut_record_uses_declared_field_order() {
+    let global_var = VarId::new(251);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: global_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let mut initial = Record::new();
+    initial.push("ok", Value::bool(false, Span::test_data()));
+    initial.push("pid", Value::int(7, Span::test_data()));
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Record(Box::new([
+            ("pid".to_string(), Type::Int),
+            ("ok".to_string(), Type::Bool),
+        ])),
+        initial_value: Value::record(initial, Span::test_data()),
+    }];
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("typed annotated mutable record should lower through a data global");
+
+    assert_eq!(result.data_globals.len(), 1);
+    let data = &result.data_globals[0].data;
+    assert_eq!(data.len(), 9);
+    assert_eq!(&data[..8], &7i64.to_le_bytes());
+    assert_eq!(data[8], 0);
 }

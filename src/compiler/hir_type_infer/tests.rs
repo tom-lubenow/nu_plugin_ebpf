@@ -1,10 +1,11 @@
 use super::*;
 use crate::compiler::hir::{
-    HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
+    AnnotatedMutGlobal, HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt,
+    HirTerminator,
 };
-use nu_protocol::ast::{Comparison, Operator};
-use nu_protocol::{Record, RegId, VarId};
-use nu_protocol::{Span, Value};
+use nu_protocol::ast::{CellPath, Comparison, Math, Operator, PathMember};
+use nu_protocol::casing::Casing;
+use nu_protocol::{Record, RegId, Span, Type, Value, VarId};
 
 #[test]
 fn test_let_generalization_allows_distinct_instantiations() {
@@ -467,4 +468,82 @@ fn test_capture_numeric_list_seeded_into_hm_environment() {
         inferred.main.get(&RegId::new(0)),
         Some(&stack_list_ptr_type())
     );
+}
+
+#[test]
+fn test_annotated_record_global_field_math_infers_from_declared_type() {
+    let state_var = VarId::new(21);
+
+    let mut init = Record::new();
+    init.push("ok", Value::bool(false, Span::test_data()));
+    init.push("pid", Value::int(7, Span::test_data()));
+    let mut declared_init = Record::new();
+    declared_init.push("ok", Value::bool(false, Span::test_data()));
+    declared_init.push("pid", Value::int(7, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::record(init, Span::test_data())),
+                },
+                HirStmt::StoreVariable {
+                    var_id: state_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(1),
+                    var_id: state_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![PathMember::test_string(
+                            "pid".to_string(),
+                            false,
+                            Casing::Sensitive,
+                        )],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(1),
+                    path: RegId::new(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(1),
+                    op: Operator::Math(Math::Add),
+                    rhs: RegId::new(3),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let mut program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    program.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: state_var,
+        declared_type: Type::Record(Box::new([
+            ("pid".to_string(), Type::Int),
+            ("ok".to_string(), Type::Bool),
+        ])),
+        initial_value: Value::record(declared_init, Span::test_data()),
+    }];
+
+    let decl_names = HashMap::new();
+    let inferred =
+        infer_hir_types(&program, &decl_names).expect("annotated record field math should infer");
+
+    assert_eq!(inferred.main.get(&RegId::new(1)), Some(&HMType::I64));
 }

@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::ProgramValueAccess;
+use crate::compiler::hir::AnnotatedMutGlobal;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
 use crate::compiler::mir::StructField;
@@ -176,22 +177,153 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn typed_mutable_global_repr(
+        declared_type: &nu_protocol::Type,
+        value: &Value,
+    ) -> Result<Option<(MirType, Vec<u8>, Option<usize>, Option<usize>)>, CompileError> {
+        if !value.is_subtype_of(declared_type) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "annotated mutable global initializer of type {} does not match declared type {}",
+                value.get_type(),
+                declared_type
+            )));
+        }
+
+        match declared_type {
+            nu_protocol::Type::Bool => match value {
+                Value::Bool { val, .. } => {
+                    return Ok(Some((MirType::Bool, vec![u8::from(*val)], None, None)));
+                }
+                _ => return Ok(None),
+            },
+            nu_protocol::Type::Int => match value {
+                Value::Int { val, .. } => {
+                    return Ok(Some((MirType::I64, val.to_le_bytes().to_vec(), None, None)));
+                }
+                Value::Filesize { val, .. } => {
+                    return Ok(Some((
+                        MirType::I64,
+                        val.get().to_le_bytes().to_vec(),
+                        None,
+                        None,
+                    )));
+                }
+                Value::Duration { val, .. } => {
+                    return Ok(Some((MirType::I64, val.to_le_bytes().to_vec(), None, None)));
+                }
+                Value::Nothing { .. } => {
+                    return Ok(Some((
+                        MirType::I64,
+                        0i64.to_le_bytes().to_vec(),
+                        None,
+                        None,
+                    )));
+                }
+                _ => return Ok(None),
+            },
+            nu_protocol::Type::String | nu_protocol::Type::Glob => {
+                let Some((ty, data, slot_len)) = Self::mutable_string_global_repr(value) else {
+                    return Ok(None);
+                };
+                return Ok(Some((ty, data, None, Some(slot_len))));
+            }
+            nu_protocol::Type::Binary => {
+                let Value::Binary { val, .. } = value else {
+                    return Ok(None);
+                };
+                let (ty, data) = Self::binary_constant_rodata_repr(val)?;
+                return Ok(Some((ty, data, None, None)));
+            }
+            _ => {}
+        }
+
+        match declared_type {
+            nu_protocol::Type::List(inner)
+                if matches!(
+                    inner.as_ref(),
+                    nu_protocol::Type::Int | nu_protocol::Type::Nothing
+                ) =>
+            {
+                let Value::List { vals, .. } = value else {
+                    return Ok(None);
+                };
+                Ok(Self::mutable_numeric_list_global_repr(vals)?
+                    .map(|(ty, data, max_len)| (ty, data, Some(max_len), None)))
+            }
+            nu_protocol::Type::Record(fields) => {
+                let Value::Record { val, .. } = value else {
+                    return Ok(None);
+                };
+
+                let mut mir_fields = Vec::with_capacity(fields.len());
+                let mut data = Vec::new();
+                let mut offset = 0usize;
+
+                for (field_name, field_type) in fields.iter() {
+                    let field_value = val.get(field_name).ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "annotated mutable global initializer is missing record field '{}'",
+                            field_name
+                        ))
+                    })?;
+                    let Some((field_ty, field_data, field_list_max_len, field_string_slot_len)) =
+                        Self::typed_mutable_global_repr(field_type, field_value)?
+                    else {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "record field '{}' of declared type {} is not yet supported in annotated mutable globals",
+                            field_name, field_type
+                        )));
+                    };
+                    if field_list_max_len.is_some() || field_string_slot_len.is_some() {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "record field '{}' requires a dynamic runtime layout that is not yet supported inside annotated mutable globals",
+                            field_name
+                        )));
+                    }
+                    mir_fields.push(StructField {
+                        name: field_name.clone(),
+                        ty: field_ty.clone(),
+                        offset,
+                        synthetic: false,
+                        bitfield: None,
+                    });
+                    offset = offset.saturating_add(field_ty.size());
+                    data.extend_from_slice(&field_data);
+                }
+
+                Ok(Some((
+                    MirType::Struct {
+                        name: None,
+                        kernel_btf_type_id: None,
+                        fields: mir_fields,
+                    },
+                    data,
+                    None,
+                    None,
+                )))
+            }
+            _ => Ok(None),
+        }
+    }
+
     pub(super) fn init_annotated_mut_globals(
         &mut self,
-        annotated_mut_globals: &[(VarId, Value)],
+        annotated_mut_globals: &[AnnotatedMutGlobal],
     ) -> Result<(), CompileError> {
-        for (var_id, value) in annotated_mut_globals {
-            let Some((ty, data, list_max_len, string_slot_len)) =
-                Self::mutable_capture_global_repr(value)?
+        for annotated in annotated_mut_globals {
+            let Some((ty, data, list_max_len, string_slot_len)) = Self::typed_mutable_global_repr(
+                &annotated.declared_type,
+                &annotated.initial_value,
+            )?
             else {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "leading annotated mutable variable {} of type {} is not yet supported; annotated mutable globals currently only support numeric scalar values, strings, fixed binary values, numeric constant lists, and representable constant records",
-                    var_id.get(),
-                    value.get_type()
+                    "leading annotated mutable variable {} declared as {} is not yet supported; annotated mutable globals currently support scalar, string, binary, numeric list<int>, and flat scalar/binary record layouts",
+                    annotated.var_id.get(),
+                    annotated.declared_type
                 )));
             };
 
-            let symbol = format!("__nu_local_global_{}", var_id.get());
+            let symbol = format!("__nu_local_global_{}", annotated.var_id.get());
             if data.iter().all(|byte| *byte == 0) {
                 self.bss_globals.push(BssGlobal {
                     name: symbol.clone(),
@@ -204,7 +336,7 @@ impl<'a> HirToMirLowering<'a> {
                 });
             }
             self.annotated_mut_globals.insert(
-                *var_id,
+                annotated.var_id,
                 MutableCaptureGlobal {
                     symbol,
                     ty,
@@ -214,7 +346,7 @@ impl<'a> HirToMirLowering<'a> {
                 },
             );
             self.pending_annotated_mut_global_init_stores
-                .insert(*var_id);
+                .insert(annotated.var_id);
         }
 
         Ok(())

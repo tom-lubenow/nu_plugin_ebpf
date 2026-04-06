@@ -271,7 +271,10 @@ ordinary Nushell variable syntax can express private state without a helper:
 `{|ctx| mut state: int = 0; $state = ($state + 1); $state | count }`. The
 initializer must be a compile-time constant today, and only the leading
 declaration group at the top of the closure is hoisted this way. That is now
-the preferred small-state path when plain variable syntax is enough.
+the preferred small-state path when plain variable syntax is enough. For
+supported annotations, the declared Nushell type is now the layout source for
+that global, so record field order comes from the annotation rather than the
+record literal initializer.
 
 Compiler-managed named globals are still available through `global-define`,
 `global-get`, and `global-set`. These are compiler-managed per-program globals
