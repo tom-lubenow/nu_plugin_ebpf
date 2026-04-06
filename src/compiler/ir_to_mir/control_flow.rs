@@ -117,32 +117,7 @@ impl<'a> HirToMirLowering<'a> {
                 path,
                 new_value,
             } => {
-                // Cell path updates (like $record.field = 42) are not supported
-                // in eBPF because:
-                // 1. Records are stack-allocated with fixed layout
-                // 2. Most eBPF programs build records once for emission
-                // Get the path for a better error message
-                let path_str = self
-                    .get_metadata(*path)
-                    .and_then(|m| {
-                        m.cell_path.as_ref().map(|cp| {
-                            cp.members
-                                .iter()
-                                .map(|m| match m {
-                                    PathMember::String { val, .. } => val.clone(),
-                                    PathMember::Int { val, .. } => val.to_string(),
-                                })
-                                .collect::<Vec<_>>()
-                                .join(".")
-                        })
-                    })
-                    .unwrap_or_else(|| "<unknown>".to_string());
-
-                let _ = (src_dst, new_value); // Silence unused warnings
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "Cell path update (.{} = ...) is not supported in eBPF.                      Consider building the record with the correct value initially.",
-                    path_str
-                )));
+                self.lower_upsert_cell_path(*src_dst, *path, *new_value)?;
             }
 
             // === Commands ===
@@ -340,6 +315,15 @@ impl<'a> HirToMirLowering<'a> {
                     )?;
                     self.var_mappings.remove(var_id);
                     self.var_metadata.remove(var_id);
+                    return Ok(());
+                }
+
+                if let Some(src_meta) = self.get_metadata(*src).cloned()
+                    && let Some((materialized_vreg, materialized_meta)) =
+                        self.materialize_metadata_record_value(&src_meta)?
+                {
+                    self.var_mappings.insert(*var_id, materialized_vreg);
+                    self.var_metadata.insert(*var_id, materialized_meta);
                     return Ok(());
                 }
 

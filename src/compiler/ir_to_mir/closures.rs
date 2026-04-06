@@ -53,6 +53,9 @@ impl<'a> HirToMirLowering<'a> {
             dst: preserved_vreg,
             src: MirValue::VReg(val_vreg),
         });
+        if let Some(ty) = self.vreg_type_hints.get(&val_vreg).cloned() {
+            self.vreg_type_hints.insert(preserved_vreg, ty);
+        }
 
         // Add field to the record being built (using preserved VReg with inferred type)
         let field = RecordField {

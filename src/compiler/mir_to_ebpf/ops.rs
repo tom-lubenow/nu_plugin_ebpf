@@ -80,7 +80,7 @@ impl<'a> MirToEbpfCompiler<'a> {
     ) -> Result<(), CompileError> {
         match op {
             BinOpKind::Add => self.instructions.push(EbpfInsn::add64_imm(dst, imm)),
-            BinOpKind::Sub => self.instructions.push(EbpfInsn::add64_imm(dst, -imm)),
+            BinOpKind::Sub => self.instructions.push(EbpfInsn::sub64_imm(dst, imm)),
             BinOpKind::Mul => self.instructions.push(EbpfInsn::mul64_imm(dst, imm)),
             BinOpKind::Div => self.instructions.push(EbpfInsn::div64_imm(dst, imm)),
             BinOpKind::Mod => self.instructions.push(EbpfInsn::mod64_imm(dst, imm)),

@@ -251,7 +251,7 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
-    fn constant_record_type_from_fields(fields: &[(String, MirType)]) -> MirType {
+    pub(super) fn record_type_from_fields(fields: &[(String, MirType)]) -> MirType {
         let mut offset = 0usize;
         let struct_fields = fields
             .iter()
@@ -371,7 +371,7 @@ impl<'a> HirToMirLowering<'a> {
             data.extend_from_slice(&field_data);
         }
 
-        Ok((Self::constant_record_type_from_fields(&field_layouts), data))
+        Ok((Self::record_type_from_fields(&field_layouts), data))
     }
 
     fn lower_constant_record_value(
@@ -495,12 +495,14 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     fn lower_const_i64_literal(&mut self, dst: RegId, dst_vreg: VReg, value: i64) {
+        self.vreg_type_hints.insert(dst_vreg, MirType::I64);
         self.emit(MirInst::Copy {
             dst: dst_vreg,
             src: MirValue::Const(value),
         });
         let meta = self.get_or_create_metadata(dst);
         meta.literal_int = Some(value);
+        meta.field_type = Some(MirType::I64);
     }
 
     fn lower_string_like_literal(
@@ -597,10 +599,12 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             HirLiteral::Bool(val) => {
+                self.vreg_type_hints.insert(dst_vreg, MirType::Bool);
                 self.emit(MirInst::Copy {
                     dst: dst_vreg,
                     src: MirValue::Const(if *val { 1 } else { 0 }),
                 });
+                self.get_or_create_metadata(dst).field_type = Some(MirType::Bool);
             }
 
             HirLiteral::Filesize(val) => {
@@ -614,10 +618,12 @@ impl<'a> HirToMirLowering<'a> {
             HirLiteral::Nothing => {
                 // `nothing` is used by Nushell IR for omitted range steps and
                 // other optional parser slots. Lower it to a zero placeholder.
+                self.vreg_type_hints.insert(dst_vreg, MirType::I64);
                 self.emit(MirInst::Copy {
                     dst: dst_vreg,
                     src: MirValue::Const(0),
                 });
+                self.get_or_create_metadata(dst).field_type = Some(MirType::I64);
             }
 
             HirLiteral::String(bytes)
@@ -1186,6 +1192,64 @@ impl<'a> HirToMirLowering<'a> {
 
     fn mir_type_is_signed(ty: &MirType) -> bool {
         matches!(ty, MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64)
+    }
+
+    fn mir_type_is_unsigned(ty: &MirType) -> bool {
+        matches!(ty, MirType::U8 | MirType::U16 | MirType::U32 | MirType::U64)
+    }
+
+    fn coerce_scalar_assignment_value(
+        &mut self,
+        src_vreg: VReg,
+        src_ty: &MirType,
+        dst_ty: &MirType,
+    ) -> Option<VReg> {
+        if src_ty == dst_ty {
+            return Some(src_vreg);
+        }
+
+        let src_size = src_ty.size();
+        let dst_size = dst_ty.size();
+        if src_size == 0 || dst_size == 0 || src_size > dst_size {
+            return None;
+        }
+
+        if Self::mir_type_is_unsigned(src_ty) && Self::mir_type_is_unsigned(dst_ty) {
+            let widened = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(widened, dst_ty.clone());
+            self.emit(MirInst::Copy {
+                dst: widened,
+                src: MirValue::VReg(src_vreg),
+            });
+            return Some(widened);
+        }
+
+        if Self::mir_type_is_signed(src_ty) && Self::mir_type_is_signed(dst_ty) {
+            let sign_bit_shift = u32::try_from(src_size.checked_mul(8)?.checked_sub(1)?).ok()?;
+            let sign_bit = 1i64.checked_shl(sign_bit_shift)?;
+            let sign_bit_value = self.large_const_operand(dst_ty, sign_bit);
+            let xor_vreg = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(xor_vreg, dst_ty.clone());
+            self.emit(MirInst::BinOp {
+                dst: xor_vreg,
+                op: BinOpKind::Xor,
+                lhs: MirValue::VReg(src_vreg),
+                rhs: sign_bit_value,
+            });
+
+            let sign_bit_value = self.large_const_operand(dst_ty, sign_bit);
+            let widened = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(widened, dst_ty.clone());
+            self.emit(MirInst::BinOp {
+                dst: widened,
+                op: BinOpKind::Sub,
+                lhs: MirValue::VReg(xor_vreg),
+                rhs: sign_bit_value,
+            });
+            return Some(widened);
+        }
+
+        None
     }
 
     fn large_const_operand(&mut self, ty: &MirType, value: i64) -> MirValue {
@@ -3881,6 +3945,128 @@ impl<'a> HirToMirLowering<'a> {
         meta.is_context = false;
         meta.field_type = Some(field_type);
 
+        Ok(())
+    }
+
+    pub(super) fn lower_upsert_cell_path(
+        &mut self,
+        src_dst: RegId,
+        path_reg: RegId,
+        new_value: RegId,
+    ) -> Result<(), CompileError> {
+        let path = self
+            .get_metadata(path_reg)
+            .and_then(|m| m.cell_path.clone())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction("Cell path literal not found".into())
+            })?;
+        if path.members.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "Empty cell path is not supported".into(),
+            ));
+        }
+
+        let path_desc = Self::typed_value_path_desc(&path.members);
+        if path.members.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' is only supported for a single flat field on a materialized aggregate value",
+                path_desc
+            )));
+        }
+
+        let base_vreg = self.get_vreg(src_dst);
+        let base_runtime_ty = self
+            .typed_value_runtime_type(src_dst, base_vreg)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' requires type information for the base value",
+                    path_desc
+                ))
+            })?;
+        let MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Stack | AddressSpace::Map,
+        } = base_runtime_ty
+        else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' requires a materialized stack/map aggregate pointer value",
+                path_desc
+            )));
+        };
+
+        let projection = Self::resolve_typed_value_projection_step(
+            pointee.as_ref(),
+            &path.members[0],
+            &path_desc,
+        )?;
+        if projection.bitfield.is_some() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' does not support bitfield fields",
+                path_desc
+            )));
+        }
+
+        let new_value_vreg = self.get_vreg(new_value);
+        let new_value_runtime_ty = self
+            .typed_value_runtime_type(new_value, new_value_vreg)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' requires type information for the new value",
+                    path_desc
+                ))
+            })?;
+
+        match &projection.ty {
+            MirType::Array { .. } | MirType::Struct { .. } => {
+                let MirType::Ptr {
+                    pointee: new_value_pointee,
+                    address_space: AddressSpace::Stack | AddressSpace::Map,
+                } = new_value_runtime_ty
+                else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "cell path update '.{} = ...' requires a materialized aggregate pointer value for field {:?}",
+                        path_desc, projection.ty
+                    )));
+                };
+
+                if new_value_pointee.as_ref() != &projection.ty {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "cell path update '.{} = ...' cannot store type {:?} into field of type {:?}",
+                        path_desc, new_value_pointee, projection.ty
+                    )));
+                }
+
+                self.emit_ptr_copy_with_offsets(
+                    base_vreg,
+                    projection.offset,
+                    new_value_vreg,
+                    0,
+                    projection.ty.size(),
+                )?;
+            }
+            _ => {
+                let Some(stored_vreg) = self.coerce_scalar_assignment_value(
+                    new_value_vreg,
+                    &new_value_runtime_ty,
+                    &projection.ty,
+                ) else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "cell path update '.{} = ...' cannot store type {:?} into field of type {:?}",
+                        path_desc, new_value_runtime_ty, projection.ty
+                    )));
+                };
+
+                self.emit(MirInst::Store {
+                    ptr: base_vreg,
+                    offset: projection.offset as i32,
+                    val: MirValue::VReg(stored_vreg),
+                    ty: projection.ty.clone(),
+                });
+            }
+        }
+
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.field_type = Some(pointee.as_ref().clone());
         Ok(())
     }
 }

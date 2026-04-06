@@ -165,6 +165,108 @@ impl<'a> HirToMirLowering<'a> {
         );
     }
 
+    pub(super) fn materialize_metadata_record_value(
+        &mut self,
+        meta: &RegMetadata,
+    ) -> Result<Option<(VReg, RegMetadata)>, CompileError> {
+        if meta.record_fields.is_empty() {
+            return Ok(None);
+        }
+
+        let field_layouts: Vec<_> = meta
+            .record_fields
+            .iter()
+            .map(|field| (field.name.clone(), field.ty.clone()))
+            .collect();
+        let record_ty = Self::record_type_from_fields(&field_layouts);
+        let size = record_ty.size();
+        if size == 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "storing an empty record value is not supported in eBPF".into(),
+            ));
+        }
+
+        let slot = self
+            .func
+            .alloc_stack_slot(align_to_eight(size), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(slot, record_ty.clone());
+
+        let record_ptr = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: record_ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        self.vreg_type_hints.insert(
+            record_ptr,
+            MirType::Ptr {
+                pointee: Box::new(record_ty.clone()),
+                address_space: crate::compiler::mir::AddressSpace::Stack,
+            },
+        );
+
+        let MirType::Struct { fields, .. } = &record_ty else {
+            return Err(CompileError::UnsupportedInstruction(
+                "metadata-backed record materialization produced a non-struct type".into(),
+            ));
+        };
+
+        for (record_field, layout_field) in meta.record_fields.iter().zip(fields.iter()) {
+            match &record_field.ty {
+                MirType::Array { .. } | MirType::Struct { .. } => {
+                    let field_runtime_ty = self
+                        .vreg_type_hints
+                        .get(&record_field.value_vreg)
+                        .cloned()
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "record field '{}' requires a materialized aggregate pointer value",
+                                record_field.name
+                            ))
+                        })?;
+                    let MirType::Ptr {
+                        pointee,
+                        address_space:
+                            crate::compiler::mir::AddressSpace::Stack
+                            | crate::compiler::mir::AddressSpace::Map,
+                    } = field_runtime_ty
+                    else {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "record field '{}' requires a materialized aggregate pointer value",
+                            record_field.name
+                        )));
+                    };
+                    if pointee.as_ref() != &record_field.ty {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "record field '{}' cannot store type {:?} into field of type {:?}",
+                            record_field.name, pointee, record_field.ty
+                        )));
+                    }
+                    self.emit_ptr_copy_with_offsets(
+                        record_ptr,
+                        layout_field.offset,
+                        record_field.value_vreg,
+                        0,
+                        record_field.ty.size(),
+                    )?;
+                }
+                _ => {
+                    self.emit(MirInst::StoreSlot {
+                        slot,
+                        offset: layout_field.offset as i32,
+                        val: MirValue::VReg(record_field.value_vreg),
+                        ty: record_field.ty.clone(),
+                    });
+                }
+            }
+        }
+
+        let materialized_meta = RegMetadata {
+            field_type: Some(record_ty),
+            ..Default::default()
+        };
+        Ok(Some((record_ptr, materialized_meta)))
+    }
+
     pub(super) fn stored_generic_map_value_type(&self, ty: &MirType) -> MirType {
         match ty {
             MirType::Ptr {

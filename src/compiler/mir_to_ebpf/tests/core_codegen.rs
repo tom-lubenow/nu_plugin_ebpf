@@ -1021,6 +1021,42 @@ fn test_mir_direct_compile() {
     );
 }
 
+#[test]
+fn test_mir_subtract_i32_min_immediate_compile() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+
+    let mut entry_block = BasicBlock::new(BlockId(0));
+    entry_block.instructions.push(MirInst::Copy {
+        dst: VReg(0),
+        src: MirValue::Const(1),
+    });
+    entry_block.instructions.push(MirInst::BinOp {
+        dst: VReg(0),
+        op: BinOpKind::Sub,
+        lhs: MirValue::VReg(VReg(0)),
+        rhs: MirValue::Const(i32::MIN as i64),
+    });
+    entry_block.terminator = MirInst::Return {
+        val: Some(MirValue::VReg(VReg(0))),
+    };
+
+    func.blocks.push(entry_block);
+    func.vreg_count = 1;
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let result = compile_mir_to_ebpf(&program, None).unwrap();
+    assert!(
+        !result.bytecode.is_empty(),
+        "subtract with i32::MIN immediate should compile without panicking"
+    );
+}
+
 /// Test MIR branching directly
 #[test]
 fn test_mir_branch_compile() {
