@@ -1058,7 +1058,7 @@ fn run_attach(
     engine: &EngineInterface,
     call: &EvaluatedCall,
 ) -> Result<PipelineData, LabeledError> {
-    use crate::loader::{LoadError, get_state, parse_probe_spec};
+    use crate::loader::{LoadError, get_state, parse_program_spec};
 
     let probe_spec: String = call.req(0)?;
     let closure: Spanned<Closure> = call.req(1)?;
@@ -1067,7 +1067,7 @@ fn run_attach(
     let pin_group: Option<String> = call.get_flag("pin")?;
 
     // Parse the probe specification (includes validation)
-    let (prog_type, target) = parse_probe_spec(&probe_spec).map_err(|e| match &e {
+    let program_spec = parse_program_spec(&probe_spec).map_err(|e| match &e {
         crate::loader::LoadError::FunctionNotFound { name, suggestions } => {
             let help = if suggestions.is_empty() {
                 format!("Check the function name. Use 'sudo cat /sys/kernel/tracing/available_filter_functions | grep {name}' to find available functions.")
@@ -1113,6 +1113,9 @@ fn run_attach(
             .with_label(e.to_string(), call.head)
             .with_help("Use format like 'kprobe:sys_clone' or 'tracepoint:syscalls/sys_enter_read'"),
     })?;
+
+    let prog_type = program_spec.program_type();
+    let target = program_spec.target_string();
 
     let probe_context = ProbeContext::new(prog_type, &target);
 

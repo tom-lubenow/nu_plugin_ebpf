@@ -165,9 +165,7 @@ impl EbpfProgram {
                 match attach_type {
                     "bind4" | "bind6" | "connect4" | "connect6" | "getpeername4"
                     | "getpeername6" | "getsockname4" | "getsockname6" | "sendmsg4"
-                    | "sendmsg6" | "recvmsg4" | "recvmsg6" => {
-                        Ok(format!("cgroup/{attach_type}"))
-                    }
+                    | "sendmsg6" | "recvmsg4" | "recvmsg6" => Ok(format!("cgroup/{attach_type}")),
                     other => Err(CompileError::InvalidProgram(format!(
                         "invalid cgroup_sock_addr attach type '{}'",
                         other
@@ -176,7 +174,11 @@ impl EbpfProgram {
             }
             _ => {
                 if self.prog_type.info().section_uses_target {
-                    Ok(format!("{}/{}", self.prog_type.section_prefix(), self.target))
+                    Ok(format!(
+                        "{}/{}",
+                        self.prog_type.section_prefix(),
+                        self.target
+                    ))
                 } else {
                     Ok(self.prog_type.section_prefix().to_string())
                 }

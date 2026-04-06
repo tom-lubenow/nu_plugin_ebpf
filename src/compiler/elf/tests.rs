@@ -15,7 +15,8 @@ fn test_hello_world_creation() {
 fn test_section_name() {
     let prog = EbpfProgram::hello_world("sys_clone");
     assert_eq!(
-        prog.section_name().expect("kprobe section name should build"),
+        prog.section_name()
+            .expect("kprobe section name should build"),
         "kprobe/sys_clone"
     );
 }
@@ -24,7 +25,8 @@ fn test_section_name() {
 fn test_fentry_section_name() {
     let prog = EbpfProgram::from_bytecode(EbpfProgramType::Fentry, "ksys_read", "test", vec![]);
     assert_eq!(
-        prog.section_name().expect("fentry section name should build"),
+        prog.section_name()
+            .expect("fentry section name should build"),
         "fentry/ksys_read"
     );
 }
@@ -316,10 +318,7 @@ fn test_probe_context_allows_packet_fields_on_cgroup_skb() {
 
 #[test]
 fn test_probe_context_allows_sock_addr_fields_on_cgroup_sock_addr() {
-    let ctx = ProbeContext::new(
-        EbpfProgramType::CgroupSockAddr,
-        "/sys/fs/cgroup:connect4",
-    );
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
     assert!(ctx.ctx_field_access_error(&CtxField::UserFamily).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::UserIp4).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::UserPort).is_none());
@@ -412,7 +411,9 @@ fn test_cgroup_skb_section_name_uses_attach_direction() {
         builder,
     );
     assert_eq!(
-        program.section_name().expect("cgroup_skb section should build"),
+        program
+            .section_name()
+            .expect("cgroup_skb section should build"),
         "cgroup_skb/ingress"
     );
 }

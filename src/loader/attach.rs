@@ -215,17 +215,15 @@ impl EbpfState {
                         ))
                     }
                 })?;
-                let cgroup_skb: &mut CgroupSkb = prog.try_into().map_err(|e| {
-                    LoadError::Load(format!("Failed to convert to CgroupSkb: {e}"))
-                })?;
+                let cgroup_skb: &mut CgroupSkb = prog
+                    .try_into()
+                    .map_err(|e| LoadError::Load(format!("Failed to convert to CgroupSkb: {e}")))?;
                 cgroup_skb
                     .load()
                     .map_err(|e| LoadError::Load(format!("Failed to load cgroup_skb: {e}")))?;
                 cgroup_skb
                     .attach(cgroup, target.attach_type, CgroupAttachMode::Single)
-                    .map_err(|e| {
-                        LoadError::Attach(format!("Failed to attach cgroup_skb: {e}"))
-                    })?;
+                    .map_err(|e| LoadError::Attach(format!("Failed to attach cgroup_skb: {e}")))?;
             }
             ProgramAttachKind::CgroupSockAddr => {
                 let target = CgroupSockAddrTarget::parse(&program.target)?;

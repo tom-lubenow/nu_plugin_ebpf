@@ -59,9 +59,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             ))
         })?;
         let slot_offset = *self.slot_offsets.get(&slot).ok_or_else(|| {
-            CompileError::UnsupportedInstruction(format!(
-                "{field_name} stack slot not found"
-            ))
+            CompileError::UnsupportedInstruction(format!("{field_name} stack slot not found"))
         })?;
 
         for index in 0..count {
@@ -177,13 +175,8 @@ impl<'a> MirToEbpfCompiler<'a> {
             _ => unreachable!(),
         };
 
-        self.instructions.push(EbpfInsn::new(
-            jmp_opcode,
-            dst.as_u8(),
-            rhs.as_u8(),
-            2,
-            0,
-        ));
+        self.instructions
+            .push(EbpfInsn::new(jmp_opcode, dst.as_u8(), rhs.as_u8(), 2, 0));
 
         self.instructions.push(EbpfInsn::mov64_imm(dst, 0));
         self.instructions.push(EbpfInsn::jump(1));

@@ -4160,9 +4160,11 @@ impl<'a> HirToMirLowering<'a> {
                     elem: Box::new(MirType::U32),
                     len: 4,
                 };
-                let slot = self
-                    .func
-                    .alloc_stack_slot(align_to_eight(root_array_ty.size()), 8, StackSlotKind::Local);
+                let slot = self.func.alloc_stack_slot(
+                    align_to_eight(root_array_ty.size()),
+                    8,
+                    StackSlotKind::Local,
+                );
                 self.record_stack_slot_type(slot, root_array_ty.clone());
                 let base_ty = MirType::Ptr {
                     pointee: Box::new(root_array_ty.clone()),

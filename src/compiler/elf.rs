@@ -661,7 +661,9 @@ impl ProbeContext {
         if !matches!(self.probe_type, EbpfProgramType::CgroupSockAddr) {
             return None;
         }
-        self.target.rsplit_once(':').map(|(_, attach_kind)| attach_kind)
+        self.target
+            .rsplit_once(':')
+            .map(|(_, attach_kind)| attach_kind)
     }
 
     fn cgroup_sock_addr_is_ipv4(&self) -> bool {

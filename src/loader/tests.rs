@@ -69,6 +69,23 @@ fn test_parse_probe_spec_uprobe() {
 }
 
 #[test]
+fn test_parse_program_spec_uprobe_is_structured() {
+    let spec = parse_program_spec("uprobe:/usr/bin/app:main+0x10@123").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::Uprobe {
+            target: UprobeTarget {
+                binary_path: "/usr/bin/app".to_string(),
+                function_name: Some("main".to_string()),
+                offset: 0x10,
+                pid: Some(123),
+            }
+        }
+    );
+    assert_eq!(spec.to_string(), "uprobe:/usr/bin/app:main+0x10@123");
+}
+
+#[test]
 fn test_parse_probe_spec_uretprobe() {
     let (prog_type, target) = parse_probe_spec("uretprobe:/lib/libc.so.6:malloc").unwrap();
     assert!(matches!(prog_type, EbpfProgramType::Uretprobe));
@@ -127,6 +144,21 @@ fn test_parse_probe_spec_tc_ingress() {
 }
 
 #[test]
+fn test_parse_program_spec_tc_is_structured() {
+    let spec = parse_program_spec("tc:lo:ingress").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::Tc {
+            target: TcTarget {
+                interface: "lo".to_string(),
+                attach_type: aya::programs::TcAttachType::Ingress,
+            }
+        }
+    );
+    assert_eq!(spec.to_string(), "tc:lo:ingress");
+}
+
+#[test]
 fn test_parse_probe_spec_cgroup_skb_egress() {
     let (prog_type, target) = parse_probe_spec("cgroup_skb:/sys/fs/cgroup:egress").unwrap();
     assert_eq!(prog_type, EbpfProgramType::CgroupSkb);
@@ -135,10 +167,24 @@ fn test_parse_probe_spec_cgroup_skb_egress() {
 
 #[test]
 fn test_parse_probe_spec_cgroup_sock_addr_connect4() {
-    let (prog_type, target) =
-        parse_probe_spec("cgroup_sock_addr:/sys/fs/cgroup:connect4").unwrap();
+    let (prog_type, target) = parse_probe_spec("cgroup_sock_addr:/sys/fs/cgroup:connect4").unwrap();
     assert_eq!(prog_type, EbpfProgramType::CgroupSockAddr);
     assert_eq!(target, "/sys/fs/cgroup:connect4");
+}
+
+#[test]
+fn test_parse_program_spec_cgroup_sock_addr_is_structured() {
+    let spec = parse_program_spec("cgroup_sock_addr:/sys/fs/cgroup:connect4").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::CgroupSockAddr {
+            target: CgroupSockAddrTarget {
+                cgroup_path: "/sys/fs/cgroup".to_string(),
+                attach_type: aya::programs::CgroupSockAddrAttachType::Connect4,
+            }
+        }
+    );
+    assert_eq!(spec.to_string(), "cgroup_sock_addr:/sys/fs/cgroup:connect4");
 }
 
 #[test]

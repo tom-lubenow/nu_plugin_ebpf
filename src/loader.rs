@@ -89,7 +89,10 @@ mod attach;
 #[path = "loader/maps.rs"]
 mod maps;
 
-pub use targets::{CgroupSkbTarget, CgroupSockAddrTarget, TcTarget, UprobeTarget, parse_probe_spec};
+pub use targets::{
+    CgroupSkbTarget, CgroupSockAddrTarget, ProgramSpec, TcTarget, UprobeTarget, parse_probe_spec,
+    parse_program_spec,
+};
 
 /// Information about an active probe
 pub struct ActiveProbe {

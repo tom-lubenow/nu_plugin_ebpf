@@ -1825,12 +1825,28 @@ fn test_lower_cgroup_sock_addr_user_ip6_load_uses_backing_slot_and_normalizes_wo
     let load_count = block
         .instructions
         .iter()
-        .filter(|inst| matches!(inst, MirInst::Load { ty: MirType::U32, .. }))
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::U32,
+                    ..
+                }
+            )
+        })
         .count();
     let store_count = block
         .instructions
         .iter()
-        .filter(|inst| matches!(inst, MirInst::Store { ty: MirType::U32, .. }))
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::Store {
+                    ty: MirType::U32,
+                    ..
+                }
+            )
+        })
         .count();
     assert_eq!(load_count, 4);
     assert_eq!(store_count, 4);

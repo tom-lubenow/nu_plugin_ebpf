@@ -5,7 +5,7 @@ use aya::programs::{CgroupSkbAttachType, CgroupSockAddrAttachType, TcAttachType}
 use std::path::Path;
 
 /// Parsed uprobe/uretprobe target information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UprobeTarget {
     /// Path to the binary or library
     pub binary_path: String,
@@ -79,6 +79,27 @@ impl UprobeTarget {
             pid,
         })
     }
+
+    /// Render this parsed target back into canonical target syntax.
+    pub fn target_string(&self) -> String {
+        let mut target = String::with_capacity(self.binary_path.len() + 32);
+        target.push_str(&self.binary_path);
+        target.push(':');
+        match (&self.function_name, self.offset) {
+            (Some(function_name), 0) => target.push_str(function_name),
+            (Some(function_name), offset) => {
+                target.push_str(function_name);
+                target.push('+');
+                target.push_str(&format!("0x{offset:x}"));
+            }
+            (None, offset) => target.push_str(&format!("0x{offset:x}")),
+        }
+        if let Some(pid) = self.pid {
+            target.push('@');
+            target.push_str(&pid.to_string());
+        }
+        target
+    }
 }
 
 /// Parsed tc target information.
@@ -119,6 +140,15 @@ impl TcTarget {
             interface: interface.to_string(),
             attach_type,
         })
+    }
+
+    pub fn target_string(&self) -> String {
+        let direction = match self.attach_type {
+            TcAttachType::Ingress => "ingress",
+            TcAttachType::Egress => "egress",
+            _ => "unknown",
+        };
+        format!("{}:{direction}", self.interface)
     }
 }
 
@@ -162,7 +192,26 @@ impl CgroupSkbTarget {
             attach_type,
         })
     }
+
+    pub fn attach_type_name(&self) -> &'static str {
+        match self.attach_type {
+            CgroupSkbAttachType::Ingress => "ingress",
+            CgroupSkbAttachType::Egress => "egress",
+        }
+    }
+
+    pub fn target_string(&self) -> String {
+        format!("{}:{}", self.cgroup_path, self.attach_type_name())
+    }
 }
+
+impl PartialEq for CgroupSkbTarget {
+    fn eq(&self, other: &Self) -> bool {
+        self.cgroup_path == other.cgroup_path && self.attach_type_name() == other.attach_type_name()
+    }
+}
+
+impl Eq for CgroupSkbTarget {}
 
 /// Parsed cgroup_sock_addr target information.
 #[derive(Debug, Clone)]
@@ -229,6 +278,83 @@ impl CgroupSockAddrTarget {
             CgroupSockAddrAttachType::UDPRecvMsg4 => "recvmsg4",
             CgroupSockAddrAttachType::UDPRecvMsg6 => "recvmsg6",
         }
+    }
+
+    pub fn target_string(&self) -> String {
+        format!("{}:{}", self.cgroup_path, self.attach_type_name())
+    }
+}
+
+impl PartialEq for CgroupSockAddrTarget {
+    fn eq(&self, other: &Self) -> bool {
+        self.cgroup_path == other.cgroup_path && self.attach_type_name() == other.attach_type_name()
+    }
+}
+
+impl Eq for CgroupSockAddrTarget {}
+
+/// Parsed program specification with structured target metadata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProgramSpec {
+    Kprobe { function: String },
+    Kretprobe { function: String },
+    Fentry { function: String },
+    Fexit { function: String },
+    Tracepoint { category: String, name: String },
+    RawTracepoint { name: String },
+    Uprobe { target: UprobeTarget },
+    Uretprobe { target: UprobeTarget },
+    Xdp { interface: String },
+    Tc { target: TcTarget },
+    CgroupSkb { target: CgroupSkbTarget },
+    CgroupSockAddr { target: CgroupSockAddrTarget },
+}
+
+impl ProgramSpec {
+    pub fn program_type(&self) -> EbpfProgramType {
+        match self {
+            ProgramSpec::Kprobe { .. } => EbpfProgramType::Kprobe,
+            ProgramSpec::Kretprobe { .. } => EbpfProgramType::Kretprobe,
+            ProgramSpec::Fentry { .. } => EbpfProgramType::Fentry,
+            ProgramSpec::Fexit { .. } => EbpfProgramType::Fexit,
+            ProgramSpec::Tracepoint { .. } => EbpfProgramType::Tracepoint,
+            ProgramSpec::RawTracepoint { .. } => EbpfProgramType::RawTracepoint,
+            ProgramSpec::Uprobe { .. } => EbpfProgramType::Uprobe,
+            ProgramSpec::Uretprobe { .. } => EbpfProgramType::Uretprobe,
+            ProgramSpec::Xdp { .. } => EbpfProgramType::Xdp,
+            ProgramSpec::Tc { .. } => EbpfProgramType::Tc,
+            ProgramSpec::CgroupSkb { .. } => EbpfProgramType::CgroupSkb,
+            ProgramSpec::CgroupSockAddr { .. } => EbpfProgramType::CgroupSockAddr,
+        }
+    }
+
+    pub fn target_string(&self) -> String {
+        match self {
+            ProgramSpec::Kprobe { function }
+            | ProgramSpec::Kretprobe { function }
+            | ProgramSpec::Fentry { function }
+            | ProgramSpec::Fexit { function } => function.clone(),
+            ProgramSpec::Tracepoint { category, name } => format!("{category}/{name}"),
+            ProgramSpec::RawTracepoint { name } => name.clone(),
+            ProgramSpec::Uprobe { target } | ProgramSpec::Uretprobe { target } => {
+                target.target_string()
+            }
+            ProgramSpec::Xdp { interface } => interface.clone(),
+            ProgramSpec::Tc { target } => target.target_string(),
+            ProgramSpec::CgroupSkb { target } => target.target_string(),
+            ProgramSpec::CgroupSockAddr { target } => target.target_string(),
+        }
+    }
+}
+
+impl std::fmt::Display for ProgramSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}:{}",
+            self.program_type().canonical_prefix(),
+            self.target_string()
+        )
     }
 }
 
@@ -428,7 +554,7 @@ fn validate_target_for_program_type(
 /// - `cgroup_sock_addr:/path/to/cgroup:connect4`
 /// - `uprobe:/path/to/binary:0x1234` (offset-based)
 /// - `uprobe:/path/to/binary:function@PID` (PID-filtered)
-pub fn parse_probe_spec(spec: &str) -> Result<(EbpfProgramType, String), LoadError> {
+pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
     let Some((prefix, target)) = spec.split_once(':') else {
         return Err(LoadError::Load(format!(
             "Invalid probe spec: {spec}. Expected format: type:target (e.g., kprobe:sys_clone)"
@@ -443,6 +569,70 @@ pub fn parse_probe_spec(spec: &str) -> Result<(EbpfProgramType, String), LoadErr
     };
 
     validate_target_for_program_type(prog_type, target)?;
+
+    match prog_type {
+        EbpfProgramType::Kprobe => Ok(ProgramSpec::Kprobe {
+            function: target.to_string(),
+        }),
+        EbpfProgramType::Kretprobe => Ok(ProgramSpec::Kretprobe {
+            function: target.to_string(),
+        }),
+        EbpfProgramType::Fentry => Ok(ProgramSpec::Fentry {
+            function: target.to_string(),
+        }),
+        EbpfProgramType::Fexit => Ok(ProgramSpec::Fexit {
+            function: target.to_string(),
+        }),
+        EbpfProgramType::Tracepoint => {
+            let (category, name) = target.split_once('/').ok_or_else(|| {
+                LoadError::Load(format!(
+                    "Invalid tracepoint target: {target}. Expected format: category/name"
+                ))
+            })?;
+            Ok(ProgramSpec::Tracepoint {
+                category: category.to_string(),
+                name: name.to_string(),
+            })
+        }
+        EbpfProgramType::RawTracepoint => Ok(ProgramSpec::RawTracepoint {
+            name: target.to_string(),
+        }),
+        EbpfProgramType::Uprobe => Ok(ProgramSpec::Uprobe {
+            target: UprobeTarget::parse(target)?,
+        }),
+        EbpfProgramType::Uretprobe => Ok(ProgramSpec::Uretprobe {
+            target: UprobeTarget::parse(target)?,
+        }),
+        EbpfProgramType::Xdp => Ok(ProgramSpec::Xdp {
+            interface: target.to_string(),
+        }),
+        EbpfProgramType::Tc => Ok(ProgramSpec::Tc {
+            target: TcTarget::parse(target)?,
+        }),
+        EbpfProgramType::CgroupSkb => Ok(ProgramSpec::CgroupSkb {
+            target: CgroupSkbTarget::parse(target)?,
+        }),
+        EbpfProgramType::CgroupSockAddr => Ok(ProgramSpec::CgroupSockAddr {
+            target: CgroupSockAddrTarget::parse(target)?,
+        }),
+    }
+}
+
+pub fn parse_probe_spec(spec: &str) -> Result<(EbpfProgramType, String), LoadError> {
+    let Some((prefix, target)) = spec.split_once(':') else {
+        return Err(LoadError::Load(format!(
+            "Invalid probe spec: {spec}. Expected format: type:target (e.g., kprobe:sys_clone)"
+        )));
+    };
+
+    let Some(prog_type) = EbpfProgramType::from_spec_prefix(prefix) else {
+        return Err(LoadError::Load(format!(
+            "Unknown probe type: {prefix}. Supported: {}",
+            EbpfProgramType::supported_spec_prefixes().join(", ")
+        )));
+    };
+
+    parse_program_spec(spec)?;
 
     Ok((prog_type, target.to_string()))
 }

@@ -5,7 +5,9 @@
 
 #[cfg(target_os = "linux")]
 mod linux_tests {
-    use nu_plugin_ebpf::loader::{LoadError, UprobeTarget, parse_probe_spec};
+    use nu_plugin_ebpf::loader::{
+        LoadError, ProgramSpec, UprobeTarget, parse_probe_spec, parse_program_spec,
+    };
 
     /// Test parsing valid kprobe specification
     #[test]
@@ -103,6 +105,29 @@ mod linux_tests {
                 assert_eq!(target, "/sys/fs/cgroup:connect4");
             }
             Err(e) => panic!("Unexpected error: {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_parse_structured_tracepoint_spec() {
+        let result = parse_program_spec("tracepoint:syscalls/sys_enter_openat");
+
+        match result {
+            Ok(ProgramSpec::Tracepoint { category, name }) => {
+                assert_eq!(category, "syscalls");
+                assert_eq!(name, "sys_enter_openat");
+            }
+            other => panic!("Unexpected result: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_structured_xdp_spec() {
+        let result = parse_program_spec("xdp:lo");
+
+        match result {
+            Ok(ProgramSpec::Xdp { interface }) => assert_eq!(interface, "lo"),
+            other => panic!("Unexpected result: {:?}", other),
         }
     }
 
