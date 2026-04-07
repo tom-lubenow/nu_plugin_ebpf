@@ -94,6 +94,14 @@ ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
     select_cpu: {|ctx| 0 }
 }
 
+# Live sched_ext registration is gated behind an explicit opt-in because a buggy
+# scheduler can make the host unstable. Prefer dry-run on the host and use a VM
+# or disposable environment for real sched_ext loads.
+# ebpf attach --unsafe-struct-ops 'struct_ops:sched_ext_ops' {
+#     name: 'nu_demo'
+#     select_cpu: {|ctx| 0 }
+# }
+
 # Fixed integer-array value members can be initialized from constant int lists
 # when the underlying struct_ops field uses an integer element type.
 # Nested record values are also supported for by-value substruct members.
@@ -158,6 +166,10 @@ Run the repeatable manual integration checks with the Nu harness in
 `scripts/manual_integration.nu`. The script auto-selects the newest built plugin
 from `target/debug/nu_plugin_ebpf` and `target/release/nu_plugin_ebpf` unless
 `PLUGIN_BIN` is set.
+
+The normal host-side harness intentionally avoids live `sched_ext` registration.
+Use `--dry-run` for `sched_ext_ops` on development hosts, and only opt into
+`--unsafe-struct-ops` inside an isolated environment you are willing to reset.
 
 ```bash
 cargo build
