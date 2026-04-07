@@ -385,6 +385,45 @@ fn validate_struct_ops_top_level_field_kind(
     }
 }
 
+fn required_struct_ops_callbacks(value_type_name: &str) -> &'static [&'static str] {
+    match value_type_name {
+        "tcp_congestion_ops" => &["ssthresh", "cong_avoid", "undo_cwnd"],
+        _ => &[],
+    }
+}
+
+fn validate_required_struct_ops_callbacks(
+    value_type_name: &str,
+    callback_fields: &HashSet<String>,
+    span: Span,
+) -> Result<(), LabeledError> {
+    let missing: Vec<&'static str> = required_struct_ops_callbacks(value_type_name)
+        .iter()
+        .copied()
+        .filter(|field_name| !callback_fields.contains(*field_name))
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    let help = match value_type_name {
+        "tcp_congestion_ops" => {
+            "tcp_congestion_ops requires closure members for ssthresh, cong_avoid, and undo_cwnd, for example { ssthresh: {|ctx| 2 }, undo_cwnd: {|ctx| 2 }, cong_avoid: {|ctx| 0 } }"
+        }
+        _ => "Provide closures for the required struct_ops callback members",
+    };
+    Err(LabeledError::new("Invalid struct_ops object")
+        .with_label(
+            format!(
+                "struct_ops '{}' is missing required callback closure(s): {}",
+                value_type_name,
+                missing.join(", ")
+            ),
+            span,
+        )
+        .with_help(help))
+}
+
 fn sanitize_struct_ops_component(component: &str) -> String {
     let sanitized: String = component
         .chars()
@@ -1150,6 +1189,7 @@ fn compile_struct_ops_object(
                 .with_label(e.to_string(), call_head)
         })?;
     let mut callbacks = Vec::new();
+    let mut callback_fields = HashSet::new();
 
     for (field_name, value) in body.iter() {
         match value {
@@ -1180,6 +1220,7 @@ fn compile_struct_ops_object(
                     object_name,
                     sanitize_struct_ops_component(field_name)
                 );
+                callback_fields.insert(field_name.to_string());
                 callbacks.push(compiled.compile_result.into_struct_ops_callback(
                     field_name.as_str(),
                     callback_name,
@@ -1198,6 +1239,8 @@ fn compile_struct_ops_object(
             }
         }
     }
+
+    validate_required_struct_ops_callbacks(value_type_name, &callback_fields, call_head)?;
 
     if callbacks.is_empty() {
         return Err(LabeledError::new("Invalid struct_ops object")
@@ -1849,7 +1892,7 @@ impl Drop for EventStreamIterator {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
     use crate::compiler::hir::{
         HirBlock, HirBlockId, HirCallArgs, HirFunction, HirLiteral, HirProgram, HirStmt,
@@ -2447,6 +2490,49 @@ mod tests {
             Span::test_data(),
         )
         .expect("lower-risk struct_ops families should not be gated");
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_callbacks_rejects_missing_tcp_congestion_callbacks() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("tcp_congestion_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let err = super::validate_required_struct_ops_callbacks(
+            "tcp_congestion_ops",
+            &HashSet::from(["ssthresh".to_string()]),
+            Span::test_data(),
+        )
+        .expect_err("missing required tcp_congestion_ops callbacks should be rejected");
+        assert!(err.labels.iter().any(|label| {
+            label
+                .text
+                .contains("missing required callback closure(s): cong_avoid, undo_cwnd")
+        }));
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_callbacks_allows_complete_tcp_congestion_callbacks() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("tcp_congestion_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        super::validate_required_struct_ops_callbacks(
+            "tcp_congestion_ops",
+            &HashSet::from([
+                "ssthresh".to_string(),
+                "cong_avoid".to_string(),
+                "undo_cwnd".to_string(),
+            ]),
+            Span::test_data(),
+        )
+        .expect("complete tcp_congestion_ops callbacks should be allowed");
     }
 
     #[test]

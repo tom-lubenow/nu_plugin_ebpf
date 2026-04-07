@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 43
+const TOTAL_STEPS = 44
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -57,6 +57,14 @@ def resolve-plugin-bin [repo_root: string] {
 
 def announce [index: int, label: string] {
     print $"[($index)/($TOTAL_STEPS)] ($label)"
+}
+
+def current-nu-bin [] {
+    $nu.current-exe
+}
+
+def run-nu-with-plugin [plugin_bin: string, code: string] {
+    run-external (current-nu-bin) "--plugins" $"[($plugin_bin)]" "-c" $code
 }
 
 def step [index: int, label: string, body: closure] {
@@ -598,7 +606,30 @@ step 42 "cgroup_sock_addr root connect6 ipv6 word counter" {
     }
 }
 
-step 43 "verify no leaked probes" {
+step 43 "tcp_congestion_ops live attach and detach" {
+    let code = ([
+        'let id = (ebpf attach "struct_ops:tcp_congestion_ops" {'
+        '    name: "nu_demo"'
+        '    ssthresh: {|ctx| 2 }'
+        '    undo_cwnd: {|ctx| 2 }'
+        '    cong_avoid: {|ctx| 0 }'
+        '})'
+        'if $id < 1 {'
+        '    error make { msg: $"expected positive struct_ops id, got ($id)" }'
+        '}'
+        'ebpf detach $id | ignore'
+        '$id'
+    ] | str join (char newline))
+    let id = (run-nu-with-plugin $plugin_bin $code | str trim | into int)
+
+    if $id < 1 {
+        fail $"expected positive struct_ops id, got ($id)"
+    }
+
+    $id
+}
+
+step 44 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"
