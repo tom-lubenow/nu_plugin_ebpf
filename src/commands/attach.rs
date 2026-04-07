@@ -23,6 +23,7 @@ use crate::compiler::{
     hir::HirProgram, hir::HirStmt, hir::supports_constant_value, hir_type_infer, infer_ctx_param,
     lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir, passes::optimize_with_ssa_hints,
 };
+use crate::kernel_btf::TrampolineFieldSelector;
 
 /// Common Nushell commands used in eBPF closures.
 const NU_CLOSURE_COMMANDS: &[&str] = &[
@@ -232,13 +233,29 @@ fn struct_ops_value_field_from_value(
 
 fn apply_struct_ops_value_field(
     mut spec: StructOpsObjectSpec,
-    field_path: &mut Vec<String>,
+    field_path: &mut Vec<TrampolineFieldSelector>,
     value: &Value,
 ) -> Result<StructOpsObjectSpec, LabeledError> {
+    let field_path_label = field_path
+        .iter()
+        .map(|segment| match segment {
+            TrampolineFieldSelector::Field(name) => name.clone(),
+            TrampolineFieldSelector::Index(index) => index.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(".");
     match value {
         Value::Record { val, .. } => {
             for (field_name, nested_value) in val.iter() {
-                field_path.push(field_name.to_string());
+                field_path.push(TrampolineFieldSelector::Field(field_name.to_string()));
+                spec = apply_struct_ops_value_field(spec, field_path, nested_value)?;
+                field_path.pop();
+            }
+            Ok(spec)
+        }
+        Value::List { vals, .. } => {
+            for (idx, nested_value) in vals.iter().enumerate() {
+                field_path.push(TrampolineFieldSelector::Index(idx));
                 spec = apply_struct_ops_value_field(spec, field_path, nested_value)?;
                 field_path.pop();
             }
@@ -247,12 +264,11 @@ fn apply_struct_ops_value_field(
         Value::Closure { .. } => Err(LabeledError::new("Invalid struct_ops object").with_label(
             format!(
                 "Nested callback field '{}' is not supported; struct_ops callback closures must be top-level record members",
-                field_path.join(".")
+                field_path_label
             ),
             value.span(),
         )),
         _ => {
-            let field_path_label = field_path.join(".");
             let field_value = struct_ops_value_field_from_value(&field_path_label, value)?;
             spec.with_value_field_path(field_path, field_value)
                 .map_err(|e| {
@@ -1059,7 +1075,7 @@ fn compile_struct_ops_object(
                 ));
             }
             _ => {
-                let mut field_path = vec![field_name.to_string()];
+                let mut field_path = vec![TrampolineFieldSelector::Field(field_name.to_string())];
                 spec = apply_struct_ops_value_field(spec, &mut field_path, value)?;
             }
         }
@@ -1120,6 +1136,8 @@ Body forms:
     Top-level value fields currently accept int, bool, string, binary, and
     constant int-list values for fixed integer arrays.
     Nested record values are also supported for by-value substruct members.
+    Nested list values are also supported for by-value array members, including
+    arrays of records.
     Pointer-hop field initialization is still rejected.
 
 Context parameter syntax (recommended):
@@ -2048,6 +2066,42 @@ mod tests {
         None
     }
 
+    fn find_struct_ops_array_record_candidate() -> Option<(String, usize, usize)> {
+        for (type_name, path) in [(
+            "task_struct",
+            vec![
+                TrampolineFieldSelector::Field("uclamp_req".to_string()),
+                TrampolineFieldSelector::Index(0),
+                TrampolineFieldSelector::Field("value".to_string()),
+            ],
+        )] {
+            let Ok(projection) =
+                KernelBtf::get().kernel_named_type_field_projection(type_name, &path)
+            else {
+                continue;
+            };
+            if projection.path.len() <= 2
+                || projection
+                    .path
+                    .iter()
+                    .take(projection.path.len().saturating_sub(1))
+                    .any(|segment| matches!(segment.type_info, TypeInfo::Ptr { .. }))
+                || !matches!(projection.type_info, TypeInfo::Int { .. })
+            {
+                continue;
+            }
+            let Some(offset) = projection
+                .path
+                .iter()
+                .try_fold(0usize, |acc, segment| acc.checked_add(segment.offset_bytes))
+            else {
+                continue;
+            };
+            return Some((type_name.to_string(), offset, projection.type_info.size()));
+        }
+        None
+    }
+
     #[test]
     fn test_apply_struct_ops_value_field_initializes_nested_record_member() {
         let Some((type_name, path, offset, size)) = find_nested_struct_ops_value_candidate() else {
@@ -2065,7 +2119,7 @@ mod tests {
 
         let spec = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", &type_name)
             .expect("expected zeroed spec for nested value-field candidate");
-        let mut field_path = vec![path[0].clone()];
+        let mut field_path = vec![TrampolineFieldSelector::Field(path[0].clone())];
         let spec = super::apply_struct_ops_value_field(spec, &mut field_path, &nested)
             .expect("nested struct_ops value field should lower");
         let object = spec
@@ -2086,6 +2140,40 @@ mod tests {
     }
 
     #[test]
+    fn test_apply_struct_ops_value_field_initializes_array_of_record_member() {
+        let Some((type_name, offset, size)) = find_struct_ops_array_record_candidate() else {
+            return;
+        };
+        let mut elem = Record::new();
+        elem.push("value", Value::int(17, Span::test_data()));
+        let value = Value::list(
+            vec![Value::record(elem, Span::test_data())],
+            Span::test_data(),
+        );
+
+        let spec = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", &type_name)
+            .expect("expected zeroed spec for array-of-record candidate");
+        let mut field_path = vec![TrampolineFieldSelector::Field("uclamp_req".to_string())];
+        let spec = super::apply_struct_ops_value_field(spec, &mut field_path, &value)
+            .expect("array-of-record struct_ops value field should lower");
+        let object = spec
+            .to_object()
+            .expect("array-of-record struct_ops object should build");
+
+        let bytes = &object.extra_data_symbols[0].data[offset..offset + size];
+        let value = match size {
+            1 => i8::from_le_bytes([bytes[0]]) as i64,
+            2 => i16::from_le_bytes([bytes[0], bytes[1]]) as i64,
+            4 => i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as i64,
+            8 => i64::from_le_bytes([
+                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+            ]),
+            other => panic!("unexpected integer width {}", other),
+        };
+        assert_eq!(value, 17);
+    }
+
+    #[test]
     fn test_apply_struct_ops_value_field_rejects_nested_callback() {
         let spec = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", "task_struct")
             .expect("expected zeroed task_struct object spec");
@@ -2100,7 +2188,7 @@ mod tests {
                 Span::test_data(),
             ),
         );
-        let mut field_path = vec!["state".to_string()];
+        let mut field_path = vec![TrampolineFieldSelector::Field("state".to_string())];
         let err = super::apply_struct_ops_value_field(
             spec,
             &mut field_path,

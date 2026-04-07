@@ -97,6 +97,8 @@ ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
 # Fixed integer-array value members can be initialized from constant int lists
 # when the underlying struct_ops field uses an integer element type.
 # Nested record values are also supported for by-value substruct members.
+# Nested list values are also supported for by-value array members, including
+# arrays of records.
 # Initializers that would cross a pointer hop are still rejected.
 ```
 

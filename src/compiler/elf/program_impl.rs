@@ -1360,13 +1360,13 @@ impl StructOpsObjectSpec {
         value: StructOpsValueField,
     ) -> Result<Self, CompileError> {
         let field_name = field_name.into();
-        self.set_value_field_path(std::slice::from_ref(&field_name), &value)?;
+        self.set_value_field_path(&[TrampolineFieldSelector::Field(field_name)], &value)?;
         Ok(self)
     }
 
     pub fn with_value_field_path(
         mut self,
-        field_path: &[String],
+        field_path: &[TrampolineFieldSelector],
         value: StructOpsValueField,
     ) -> Result<Self, CompileError> {
         self.set_value_field_path(field_path, &value)?;
@@ -1505,13 +1505,20 @@ impl StructOpsObjectSpec {
         Ok(builder.build())
     }
 
-    fn format_value_field_path(field_path: &[String]) -> String {
-        field_path.join(".")
+    fn format_value_field_path(field_path: &[TrampolineFieldSelector]) -> String {
+        field_path
+            .iter()
+            .map(|segment| match segment {
+                TrampolineFieldSelector::Field(name) => name.clone(),
+                TrampolineFieldSelector::Index(index) => index.to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join(".")
     }
 
     fn set_value_field_path(
         &mut self,
-        field_path: &[String],
+        field_path: &[TrampolineFieldSelector],
         value: &StructOpsValueField,
     ) -> Result<(), CompileError> {
         if field_path.is_empty() {
@@ -1520,13 +1527,8 @@ impl StructOpsObjectSpec {
             ));
         }
         let field_path_label = Self::format_value_field_path(field_path);
-        let selector_path: Vec<_> = field_path
-            .iter()
-            .cloned()
-            .map(TrampolineFieldSelector::Field)
-            .collect();
         let projection = KernelBtf::get()
-            .kernel_named_type_field_projection(&self.value_type_name, &selector_path)
+            .kernel_named_type_field_projection(&self.value_type_name, field_path)
             .map_err(|err| {
                 CompileError::InvalidProgram(format!(
                     "failed to resolve struct_ops value field '{}.{}' from kernel BTF: {}",
