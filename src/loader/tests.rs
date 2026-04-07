@@ -1,6 +1,8 @@
 use super::*;
 use crate::compiler::mir::MapKind;
-use crate::compiler::{CounterKeySchema, CounterKeySchemaField, EbpfProgramType, MapRef, MirType};
+use crate::compiler::{
+    CounterKeySchema, CounterKeySchemaField, EbpfObject, EbpfProgramType, MapRef, MirType,
+};
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use std::collections::HashMap;
 
@@ -313,6 +315,20 @@ fn test_merge_generic_map_value_types_drops_conflicts() {
 
     assert_eq!(merged.get(&unique), Some(&other_ty));
     assert!(!merged.contains_key(&shared));
+}
+
+#[test]
+fn test_attach_with_pin_rejects_struct_ops_objects() {
+    let state = EbpfState::new();
+    let object = EbpfObject::struct_ops("demo", "file", vec![0; 8]).build();
+
+    let err = state
+        .attach_with_pin(&object, Some("shared"))
+        .expect_err("struct_ops objects should reject pinned map sharing");
+
+    assert!(
+        matches!(err, LoadError::Load(msg) if msg.contains("do not yet support pinned map sharing"))
+    );
 }
 
 #[test]

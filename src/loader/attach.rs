@@ -23,6 +23,22 @@ impl EbpfState {
         object: &EbpfObject,
         pin_group: Option<&str>,
     ) -> Result<u32, LoadError> {
+        match &object.kind {
+            crate::compiler::EbpfObjectKind::Program => {
+                self.attach_program_object(object, pin_group)
+            }
+            crate::compiler::EbpfObjectKind::StructOps {
+                name,
+                value_type_name,
+            } => self.attach_struct_ops_object(object, pin_group, name, value_type_name),
+        }
+    }
+
+    fn attach_program_object(
+        &self,
+        object: &EbpfObject,
+        pin_group: Option<&str>,
+    ) -> Result<u32, LoadError> {
         let program = object.primary_program().map_err(LoadError::from)?;
 
         // Generate ELF
@@ -305,7 +321,8 @@ impl EbpfState {
             id,
             probe_spec,
             attached_at: Instant::now(),
-            ebpf,
+            aya_ebpf: Some(ebpf),
+            struct_ops: None,
             has_ringbuf,
             has_counter_map,
             has_string_counter_map,
@@ -318,6 +335,51 @@ impl EbpfState {
             bytes_counter_key_schema: program.bytes_counter_key_schema.clone(),
             generic_map_value_types: program.generic_map_value_types.clone(),
             pin_group: pin_group_owned,
+        };
+
+        self.probes
+            .lock()
+            .map_err(|_| LoadError::LockPoisoned)?
+            .insert(id, active_probe);
+
+        Ok(id)
+    }
+
+    fn attach_struct_ops_object(
+        &self,
+        object: &EbpfObject,
+        pin_group: Option<&str>,
+        name: &str,
+        value_type_name: &str,
+    ) -> Result<u32, LoadError> {
+        if pin_group.is_some() {
+            return Err(LoadError::Load(
+                "struct_ops objects do not yet support pinned map sharing".to_string(),
+            ));
+        }
+
+        let elf_bytes = object.to_elf()?;
+        let handle = LibbpfStructOpsHandle::load_and_attach(elf_bytes, name)?;
+        let id = self.next_probe_id();
+
+        let active_probe = ActiveProbe {
+            id,
+            probe_spec: format!("struct_ops:{name}:{value_type_name}"),
+            attached_at: Instant::now(),
+            aya_ebpf: None,
+            struct_ops: Some(handle),
+            has_ringbuf: false,
+            has_counter_map: false,
+            has_string_counter_map: false,
+            has_bytes_counter_map: false,
+            has_histogram_map: false,
+            has_kstack_map: false,
+            has_ustack_map: false,
+            ringbuf: None,
+            event_schema: None,
+            bytes_counter_key_schema: None,
+            generic_map_value_types: HashMap::new(),
+            pin_group: None,
         };
 
         self.probes

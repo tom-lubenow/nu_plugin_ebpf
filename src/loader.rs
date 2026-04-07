@@ -17,6 +17,7 @@ use aya::programs::{
 use aya::{Btf, Ebpf, EbpfLoader};
 use thiserror::Error;
 
+use self::libbpf::LibbpfStructOpsHandle;
 use crate::compiler::{
     BpfFieldType, CompileError, CounterKeySchema, EbpfObject, EventSchema, MapRef, MirType,
     ProgramAttachKind,
@@ -86,6 +87,8 @@ mod targets;
 
 #[path = "loader/attach.rs"]
 mod attach;
+#[path = "loader/libbpf.rs"]
+mod libbpf;
 #[path = "loader/maps.rs"]
 mod maps;
 
@@ -102,8 +105,10 @@ pub struct ActiveProbe {
     pub probe_spec: String,
     /// When the probe was attached
     pub attached_at: Instant,
-    /// The loaded eBPF object (keeps program alive)
-    ebpf: Ebpf,
+    /// The loaded Aya eBPF object for ordinary program kinds.
+    aya_ebpf: Option<Ebpf>,
+    /// The loaded libbpf-backed struct_ops runtime handle.
+    struct_ops: Option<LibbpfStructOpsHandle>,
     /// Whether this probe has a ring buffer map for output
     has_ringbuf: bool,
     /// Whether this probe has a counter map (hash or per-CPU hash, integer keys)
@@ -136,6 +141,16 @@ impl std::fmt::Debug for ActiveProbe {
             .field("id", &self.id)
             .field("probe_spec", &self.probe_spec)
             .field("attached_at", &self.attached_at)
+            .field(
+                "runtime",
+                &if self.aya_ebpf.is_some() {
+                    "aya"
+                } else if self.struct_ops.is_some() {
+                    "struct_ops"
+                } else {
+                    "none"
+                },
+            )
             .field("has_ringbuf", &self.has_ringbuf)
             .field("has_counter_map", &self.has_counter_map)
             .field("has_string_counter_map", &self.has_string_counter_map)
@@ -153,6 +168,12 @@ impl std::fmt::Debug for ActiveProbe {
                 &self.generic_map_value_types.len(),
             )
             .finish()
+    }
+}
+
+impl ActiveProbe {
+    fn ebpf_mut(&mut self) -> Option<&mut Ebpf> {
+        self.aya_ebpf.as_mut()
     }
 }
 

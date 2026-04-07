@@ -217,7 +217,7 @@ impl EbpfState {
 
         let mut entries = Vec::new();
 
-        if let Some(map) = probe.ebpf.map_mut(map_name) {
+        if let Some(map) = probe.ebpf_mut().and_then(|ebpf| ebpf.map_mut(map_name)) {
             if let Ok(hash_map) = AyaHashMap::<_, i64, i64>::try_from(&mut *map) {
                 for (key, value) in hash_map.iter().filter_map(|item| item.ok()) {
                     entries.push((key, value));
@@ -274,7 +274,10 @@ impl EbpfState {
 
         let mut entries = Vec::new();
 
-        if let Some(map) = probe.ebpf.map_mut("str_counters") {
+        if let Some(map) = probe
+            .ebpf_mut()
+            .and_then(|ebpf| ebpf.map_mut("str_counters"))
+        {
             // String counter map uses [u8; 16] as key (comm is 16 bytes)
             if let Ok(hash_map) = AyaHashMap::<_, [u8; 16], i64>::try_from(&mut *map) {
                 for (key_bytes, count) in hash_map.iter().filter_map(|item| item.ok()) {
@@ -331,7 +334,10 @@ impl EbpfState {
         let mut entries = Vec::new();
         let key_schema = probe.bytes_counter_key_schema.clone();
 
-        if let Some(map) = probe.ebpf.map_mut("bytes_counters") {
+        if let Some(map) = probe
+            .ebpf_mut()
+            .and_then(|ebpf| ebpf.map_mut("bytes_counters"))
+        {
             let (map_data, per_cpu) = hash_map_data(map).ok_or_else(|| {
                 LoadError::MapNotFound(
                     "Failed to convert bytes_counters map as hash/per-cpu hash".to_string(),
@@ -458,7 +464,7 @@ impl EbpfState {
 
         let mut stacks = Vec::new();
 
-        if let Some(map) = probe.ebpf.map_mut(map_name) {
+        if let Some(map) = probe.ebpf_mut().and_then(|ebpf| ebpf.map_mut(map_name)) {
             // StackTraceMap is keyed by stack_id (u32) and contains arrays of u64 IPs
             let stack_map: aya::maps::StackTraceMap<_> = aya::maps::StackTraceMap::try_from(map)
                 .map_err(|e| {
