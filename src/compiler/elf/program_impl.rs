@@ -891,7 +891,6 @@ impl EbpfObject {
                 });
                 symbol_ids.insert(map.name.clone(), sym_id);
             }
-
         }
 
         if let Some(btf_data) = self.generate_btf() {
@@ -1125,9 +1124,10 @@ impl EbpfObject {
                     .relocations
                     .iter()
                     .filter_map(|reloc| {
-                        reloc.field_name.as_deref().map(|field_name| {
-                            (field_name, callback_ptr_type, reloc.offset as u32)
-                        })
+                        reloc
+                            .field_name
+                            .as_deref()
+                            .map(|field_name| (field_name, callback_ptr_type, reloc.offset as u32))
                     })
                     .collect();
                 callback_members.sort_by_key(|(_, _, offset)| *offset);

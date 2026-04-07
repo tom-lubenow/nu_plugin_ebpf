@@ -224,12 +224,20 @@ fn test_struct_ops_object_emits_btf_without_generic_maps() {
 
     let elf = object.to_elf().expect("struct_ops object should emit");
     let parsed = object::File::parse(&*elf).expect("emitted object should parse");
-    let btf_section = parsed.section_by_name(".BTF").expect("expected .BTF section");
+    let btf_section = parsed
+        .section_by_name(".BTF")
+        .expect("expected .BTF section");
     let btf_data = btf_section.data().expect(".BTF section should be readable");
     let btf = Btf::parse(btf_data, Endianness::Little).expect("expected parsable BTF");
 
-    assert!(btf.id_by_type_name_kind(".struct_ops", BtfKind::DataSec).is_ok());
-    assert!(btf.id_by_type_name_kind("fake_ops", BtfKind::Struct).is_ok());
+    assert!(
+        btf.id_by_type_name_kind(".struct_ops", BtfKind::DataSec)
+            .is_ok()
+    );
+    assert!(
+        btf.id_by_type_name_kind("fake_ops", BtfKind::Struct)
+            .is_ok()
+    );
     assert!(btf.id_by_type_name_kind("demo", BtfKind::Var).is_ok());
     assert!(
         btf_data
