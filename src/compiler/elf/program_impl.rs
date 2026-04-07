@@ -1360,7 +1360,16 @@ impl StructOpsObjectSpec {
         value: StructOpsValueField,
     ) -> Result<Self, CompileError> {
         let field_name = field_name.into();
-        self.set_value_field(&field_name, &value)?;
+        self.set_value_field_path(std::slice::from_ref(&field_name), &value)?;
+        Ok(self)
+    }
+
+    pub fn with_value_field_path(
+        mut self,
+        field_path: &[String],
+        value: StructOpsValueField,
+    ) -> Result<Self, CompileError> {
+        self.set_value_field_path(field_path, &value)?;
         Ok(self)
     }
 
@@ -1496,40 +1505,73 @@ impl StructOpsObjectSpec {
         Ok(builder.build())
     }
 
-    fn set_value_field(
+    fn format_value_field_path(field_path: &[String]) -> String {
+        field_path.join(".")
+    }
+
+    fn set_value_field_path(
         &mut self,
-        field_name: &str,
+        field_path: &[String],
         value: &StructOpsValueField,
     ) -> Result<(), CompileError> {
+        if field_path.is_empty() {
+            return Err(CompileError::InvalidProgram(
+                "struct_ops value field path cannot be empty".to_string(),
+            ));
+        }
+        let field_path_label = Self::format_value_field_path(field_path);
+        let selector_path: Vec<_> = field_path
+            .iter()
+            .cloned()
+            .map(TrampolineFieldSelector::Field)
+            .collect();
         let projection = KernelBtf::get()
-            .kernel_named_type_field_projection(
-                &self.value_type_name,
-                &[TrampolineFieldSelector::Field(field_name.to_string())],
-            )
+            .kernel_named_type_field_projection(&self.value_type_name, &selector_path)
             .map_err(|err| {
                 CompileError::InvalidProgram(format!(
                     "failed to resolve struct_ops value field '{}.{}' from kernel BTF: {}",
-                    self.value_type_name, field_name, err
+                    self.value_type_name, field_path_label, err
                 ))
             })?;
-        let Some(offset) = projection.path.first().map(|segment| segment.offset_bytes) else {
+        if projection
+            .path
+            .iter()
+            .take(projection.path.len().saturating_sub(1))
+            .any(|segment| matches!(segment.type_info, TypeInfo::Ptr { .. }))
+        {
+            return Err(CompileError::InvalidProgram(format!(
+                "struct_ops value field '{}.{}' crosses a pointer hop, which is not supported for constant value initialization",
+                self.value_type_name, field_path_label
+            )));
+        }
+        if projection.path.is_empty() {
             return Err(CompileError::InvalidProgram(format!(
                 "struct_ops value field '{}.{}' resolved to an empty projection",
-                self.value_type_name, field_name
+                self.value_type_name, field_path_label
             )));
-        };
+        }
+        let offset = projection
+            .path
+            .iter()
+            .try_fold(0usize, |acc, segment| acc.checked_add(segment.offset_bytes))
+            .ok_or_else(|| {
+                CompileError::InvalidProgram(format!(
+                    "struct_ops value field '{}.{}' overflowed value-data offset accounting",
+                    self.value_type_name, field_path_label
+                ))
+            })?;
         let size = projection.type_info.size();
         let end = offset.checked_add(size).ok_or_else(|| {
             CompileError::InvalidProgram(format!(
                 "struct_ops value field '{}.{}' overflowed value-data bounds",
-                self.value_type_name, field_name
+                self.value_type_name, field_path_label
             ))
         })?;
         if end > self.value_data.len() {
             return Err(CompileError::InvalidProgram(format!(
                 "struct_ops value field '{}.{}' exceeds value-data bounds (end {}, len {})",
                 self.value_type_name,
-                field_name,
+                field_path_label,
                 end,
                 self.value_data.len()
             )));
@@ -1539,7 +1581,7 @@ impl StructOpsObjectSpec {
         field_bytes.fill(0);
         Self::encode_value_field_bytes(
             &self.value_type_name,
-            field_name,
+            &field_path_label,
             &projection.type_info,
             value,
             field_bytes,
