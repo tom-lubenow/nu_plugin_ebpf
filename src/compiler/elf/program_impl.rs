@@ -2,7 +2,7 @@ use super::*;
 use std::collections::{HashMap, HashSet};
 
 use crate::kernel_btf::TypeInfo;
-use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector};
+use crate::kernel_btf::{FieldInfo, KernelBtf, TrampolineFieldSelector};
 
 fn section_name_for_program(
     prog_type: EbpfProgramType,
@@ -1043,6 +1043,156 @@ impl EbpfObject {
         !self.maps.is_empty()
     }
 
+    fn local_btf_int_name(size: u32, signed: bool) -> &'static str {
+        match (size, signed) {
+            (1, false) => "u8",
+            (1, true) => "s8",
+            (2, false) => "u16",
+            (2, true) => "s16",
+            (4, false) => "u32",
+            (4, true) => "s32",
+            (8, false) => "u64",
+            (8, true) => "s64",
+            _ if signed => "int",
+            _ => "uint",
+        }
+    }
+
+    fn sanitize_local_btf_struct_name(name: &str, size: usize, field_count: usize) -> String {
+        let mut sanitized: String = name
+            .chars()
+            .map(|ch| {
+                if ch.is_ascii_alphanumeric() || ch == '_' {
+                    ch
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        if sanitized.is_empty() || sanitized == "_anonymous_" {
+            sanitized = format!("__anon_struct_{}_{}", size, field_count);
+        }
+        sanitized
+    }
+
+    fn emit_local_btf_type(
+        btf: &mut BtfBuilder,
+        type_info: &TypeInfo,
+        fallback_size: usize,
+        array_index_type: u32,
+    ) -> u32 {
+        match type_info {
+            TypeInfo::Int { size, signed } => {
+                let size = *size as u32;
+                btf.add_int(Self::local_btf_int_name(size, *signed), size, *signed)
+            }
+            TypeInfo::Ptr { target, .. } => {
+                let target_type = match target.as_ref() {
+                    TypeInfo::Void | TypeInfo::Unknown => 0,
+                    other => {
+                        let target_fallback_size = match other {
+                            TypeInfo::Void | TypeInfo::Unknown => 0,
+                            _ => other.size(),
+                        };
+                        Self::emit_local_btf_type(
+                            btf,
+                            other,
+                            target_fallback_size,
+                            array_index_type,
+                        )
+                    }
+                };
+                btf.add_ptr(target_type)
+            }
+            TypeInfo::Array { element, len } => {
+                let elem_fallback_size = if *len == 0 { 0 } else { fallback_size / *len };
+                let elem_type =
+                    Self::emit_local_btf_type(btf, element, elem_fallback_size, array_index_type);
+                btf.add_array(elem_type, array_index_type, *len as u32)
+            }
+            TypeInfo::Struct {
+                name, size, fields, ..
+            } => Self::emit_local_btf_struct_type(btf, name, *size, fields, None, array_index_type),
+            TypeInfo::Void | TypeInfo::Unknown => {
+                if fallback_size == 0 {
+                    return 0;
+                }
+                let byte_type = btf.add_int("u8", 1, false);
+                if fallback_size == 1 {
+                    byte_type
+                } else {
+                    btf.add_array(byte_type, array_index_type, fallback_size as u32)
+                }
+            }
+        }
+    }
+
+    fn emit_local_btf_struct_type(
+        btf: &mut BtfBuilder,
+        name: &str,
+        size: usize,
+        fields: &[FieldInfo],
+        callback_member_types: Option<&HashMap<String, u32>>,
+        array_index_type: u32,
+    ) -> u32 {
+        let members: Vec<(String, u32, u32)> = fields
+            .iter()
+            .map(|field| {
+                let field_type = callback_member_types
+                    .and_then(|members| members.get(&field.name).copied())
+                    .unwrap_or_else(|| {
+                        Self::emit_local_btf_type(
+                            btf,
+                            &field.type_info,
+                            field.size,
+                            array_index_type,
+                        )
+                    });
+                (field.name.clone(), field_type, field.offset as u32)
+            })
+            .collect();
+        let member_refs: Vec<(&str, u32, u32)> = members
+            .iter()
+            .map(|(name, field_type, offset)| (name.as_str(), *field_type, *offset))
+            .collect();
+        let sanitized_name = Self::sanitize_local_btf_struct_name(name, size, fields.len());
+        btf.add_struct_with_offsets(&sanitized_name, size as u32, &member_refs)
+    }
+
+    fn emit_struct_ops_value_btf_type(
+        btf: &mut BtfBuilder,
+        value_type_name: &str,
+        value_size: usize,
+        callback_members_with_offsets: &[(String, u32, u32)],
+        callback_member_types: &HashMap<String, u32>,
+        array_index_type: u32,
+    ) -> u32 {
+        let mut fallback_type = || {
+            let fallback_member_refs: Vec<(&str, u32, u32)> = callback_members_with_offsets
+                .iter()
+                .map(|(name, field_type, offset)| (name.as_str(), *field_type, *offset))
+                .collect();
+            btf.add_struct_with_offsets(value_type_name, value_size as u32, &fallback_member_refs)
+        };
+        let Ok(type_info) = KernelBtf::get().kernel_named_type_info(value_type_name) else {
+            return fallback_type();
+        };
+        let TypeInfo::Struct { size, fields, .. } = type_info else {
+            return fallback_type();
+        };
+        if size != value_size {
+            return fallback_type();
+        }
+        Self::emit_local_btf_struct_type(
+            btf,
+            value_type_name,
+            size,
+            &fields,
+            Some(callback_member_types),
+            array_index_type,
+        )
+    }
+
     /// Generate BTF (BPF Type Format) metadata for object-local loader metadata.
     ///
     /// Today this covers:
@@ -1120,22 +1270,31 @@ impl EbpfObject {
 
                 emitted_anything = true;
 
-                let mut callback_members: Vec<(&str, u32, u32)> = data_symbol
+                let mut callback_members_with_offsets: Vec<(String, u32, u32)> = data_symbol
                     .relocations
                     .iter()
                     .filter_map(|reloc| {
-                        reloc
-                            .field_name
-                            .as_deref()
-                            .map(|field_name| (field_name, callback_ptr_type, reloc.offset as u32))
+                        reloc.field_name.as_deref().map(|field_name| {
+                            (
+                                field_name.to_string(),
+                                callback_ptr_type,
+                                reloc.offset as u32,
+                            )
+                        })
                     })
                     .collect();
-                callback_members.sort_by_key(|(_, _, offset)| *offset);
-
-                let value_type = btf.add_struct_with_offsets(
+                callback_members_with_offsets.sort_by_key(|(_, _, offset)| *offset);
+                let callback_members: HashMap<String, u32> = callback_members_with_offsets
+                    .iter()
+                    .map(|(name, field_type, _)| (name.clone(), *field_type))
+                    .collect();
+                let value_type = Self::emit_struct_ops_value_btf_type(
+                    &mut btf,
                     value_type_name,
-                    data_symbol.data.len() as u32,
+                    data_symbol.data.len(),
+                    &callback_members_with_offsets,
                     &callback_members,
+                    int_type,
                 );
                 let var_type =
                     btf.add_var(&data_symbol.name, value_type, BtfVarLinkage::GlobalAlloc);

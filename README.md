@@ -102,6 +102,16 @@ ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
 #     select_cpu: {|ctx| 0 }
 # }
 
+# Safer live struct_ops families can be loaded directly. This minimal
+# tcp_congestion_ops example registers and can then be detached again.
+let id = ebpf attach 'struct_ops:tcp_congestion_ops' {
+    name: 'nu_demo'
+    ssthresh: {|ctx| 2 }
+    undo_cwnd: {|ctx| 2 }
+    cong_avoid: {|ctx| 0 }
+}
+ebpf detach $id
+
 # Fixed integer-array value members can be initialized from constant int lists
 # when the underlying struct_ops field uses an integer element type.
 # Nested record values are also supported for by-value substruct members.

@@ -263,6 +263,67 @@ fn test_struct_ops_object_emits_btf_without_generic_maps() {
 }
 
 #[test]
+fn test_struct_ops_object_btf_includes_value_members_from_kernel_layout() {
+    use crate::kernel_btf::KernelBtf;
+
+    if KernelBtf::get()
+        .kernel_named_type_field_projection(
+            "tcp_congestion_ops",
+            &[crate::kernel_btf::TrampolineFieldSelector::Field(
+                "name".to_string(),
+            )],
+        )
+        .is_err()
+    {
+        return;
+    }
+
+    let object = StructOpsObjectSpec::zeroed_from_kernel_btf("nu_tcp", "tcp_congestion_ops")
+        .expect("expected zeroed tcp_congestion_ops spec")
+        .with_value_field("name", StructOpsValueField::String("nu_demo".to_string()))
+        .expect("expected name initializer")
+        .with_callback(
+            "ssthresh",
+            "nu_tcp_ssthresh",
+            EbpfProgram::hello_world("sys_clone"),
+        )
+        .with_callback(
+            "undo_cwnd",
+            "nu_tcp_undo_cwnd",
+            EbpfProgram::hello_world("sys_execve"),
+        )
+        .with_callback(
+            "cong_avoid",
+            "nu_tcp_cong_avoid",
+            EbpfProgram::hello_world("sys_enter"),
+        )
+        .to_object()
+        .expect("expected tcp_congestion_ops object");
+
+    let elf = object
+        .to_elf()
+        .expect("tcp_congestion_ops object should emit");
+    let parsed = object::File::parse(&*elf).expect("emitted object should parse");
+    let btf_section = parsed
+        .section_by_name(".BTF")
+        .expect("expected .BTF section");
+    let btf_data = btf_section.data().expect(".BTF section should be readable");
+
+    assert!(
+        btf_data
+            .windows(b"name\0".len())
+            .any(|window| window == b"name\0"),
+        "expected value member name in emitted BTF string table"
+    );
+    assert!(
+        btf_data
+            .windows(b"ssthresh\0".len())
+            .any(|window| window == b"ssthresh\0"),
+        "expected callback member name in emitted BTF string table"
+    );
+}
+
+#[test]
 fn test_multi_program_object_generation_parses_in_aya() {
     use crate::compiler::instruction::{EbpfInsn, EbpfReg};
 
