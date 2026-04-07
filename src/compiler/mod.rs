@@ -48,7 +48,7 @@ pub use elf::{
     ObjectDataRelocation, ObjectDataSymbol, ProbeContext, ProgramAttachKind, ProgramCapability,
     ProgramIntrinsic, ProgramTargetKind, ProgramTypeInfo, ProgramValueAccess, ReadonlyGlobal,
     SchemaField, StructOpsCallbackSlot, StructOpsCallbackSpec, StructOpsObjectSpec,
-    SymbolRelocation,
+    StructOpsValueField, SymbolRelocation,
 };
 pub use hir::{
     HirProgram, extract_call_decl_ids, extract_closure_block_ids, infer_ctx_param, lower_ir_to_hir,

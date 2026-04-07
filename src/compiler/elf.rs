@@ -1662,6 +1662,15 @@ pub struct CompiledStructOpsCallback {
     pub program: EbpfProgram,
 }
 
+/// Constant initializer for a top-level `struct_ops` value field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StructOpsValueField {
+    Int(i64),
+    Bool(bool),
+    String(String),
+    Bytes(Vec<u8>),
+}
+
 /// Compiler-facing specification for a `struct_ops` object.
 #[derive(Debug, Clone)]
 pub struct StructOpsObjectSpec {

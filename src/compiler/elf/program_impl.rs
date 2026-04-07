@@ -1354,6 +1354,16 @@ impl StructOpsObjectSpec {
         self
     }
 
+    pub fn with_value_field(
+        mut self,
+        field_name: impl Into<String>,
+        value: StructOpsValueField,
+    ) -> Result<Self, CompileError> {
+        let field_name = field_name.into();
+        self.set_value_field(&field_name, &value)?;
+        Ok(self)
+    }
+
     pub fn to_object_with_compiled_callbacks(
         &self,
         callbacks: Vec<CompiledStructOpsCallback>,
@@ -1484,6 +1494,176 @@ impl StructOpsObjectSpec {
             )?;
         }
         Ok(builder.build())
+    }
+
+    fn set_value_field(
+        &mut self,
+        field_name: &str,
+        value: &StructOpsValueField,
+    ) -> Result<(), CompileError> {
+        let projection = KernelBtf::get()
+            .kernel_named_type_field_projection(
+                &self.value_type_name,
+                &[TrampolineFieldSelector::Field(field_name.to_string())],
+            )
+            .map_err(|err| {
+                CompileError::InvalidProgram(format!(
+                    "failed to resolve struct_ops value field '{}.{}' from kernel BTF: {}",
+                    self.value_type_name, field_name, err
+                ))
+            })?;
+        let Some(offset) = projection.path.first().map(|segment| segment.offset_bytes) else {
+            return Err(CompileError::InvalidProgram(format!(
+                "struct_ops value field '{}.{}' resolved to an empty projection",
+                self.value_type_name, field_name
+            )));
+        };
+        let size = projection.type_info.size();
+        let end = offset.checked_add(size).ok_or_else(|| {
+            CompileError::InvalidProgram(format!(
+                "struct_ops value field '{}.{}' overflowed value-data bounds",
+                self.value_type_name, field_name
+            ))
+        })?;
+        if end > self.value_data.len() {
+            return Err(CompileError::InvalidProgram(format!(
+                "struct_ops value field '{}.{}' exceeds value-data bounds (end {}, len {})",
+                self.value_type_name,
+                field_name,
+                end,
+                self.value_data.len()
+            )));
+        }
+
+        let field_bytes = &mut self.value_data[offset..end];
+        field_bytes.fill(0);
+        Self::encode_value_field_bytes(
+            &self.value_type_name,
+            field_name,
+            &projection.type_info,
+            value,
+            field_bytes,
+        )
+    }
+
+    fn encode_value_field_bytes(
+        value_type_name: &str,
+        field_name: &str,
+        type_info: &TypeInfo,
+        value: &StructOpsValueField,
+        out: &mut [u8],
+    ) -> Result<(), CompileError> {
+        match (type_info, value) {
+            (TypeInfo::Int { size, signed }, StructOpsValueField::Int(v)) => {
+                Self::write_int_value(*size, *signed, *v, out).map_err(|msg| {
+                    CompileError::InvalidProgram(format!(
+                        "invalid initializer for struct_ops value field '{}.{}': {}",
+                        value_type_name, field_name, msg
+                    ))
+                })
+            }
+            (TypeInfo::Int { size, signed }, StructOpsValueField::Bool(v)) => {
+                let raw = if *v { 1 } else { 0 };
+                Self::write_int_value(*size, *signed, raw, out).map_err(|msg| {
+                    CompileError::InvalidProgram(format!(
+                        "invalid initializer for struct_ops value field '{}.{}': {}",
+                        value_type_name, field_name, msg
+                    ))
+                })
+            }
+            (TypeInfo::Array { element, len }, StructOpsValueField::String(s))
+                if matches!(element.as_ref(), TypeInfo::Int { size: 1, .. }) =>
+            {
+                let bytes = s.as_bytes();
+                if bytes.len() >= *len {
+                    return Err(CompileError::InvalidProgram(format!(
+                        "string initializer for struct_ops value field '{}.{}' is too long: {} bytes for {}-byte field",
+                        value_type_name,
+                        field_name,
+                        bytes.len(),
+                        len
+                    )));
+                }
+                out[..bytes.len()].copy_from_slice(bytes);
+                Ok(())
+            }
+            (TypeInfo::Array { element, len }, StructOpsValueField::Bytes(bytes))
+                if matches!(element.as_ref(), TypeInfo::Int { size: 1, .. }) =>
+            {
+                if bytes.len() > *len {
+                    return Err(CompileError::InvalidProgram(format!(
+                        "byte initializer for struct_ops value field '{}.{}' is too long: {} bytes for {}-byte field",
+                        value_type_name,
+                        field_name,
+                        bytes.len(),
+                        len
+                    )));
+                }
+                out[..bytes.len()].copy_from_slice(bytes);
+                Ok(())
+            }
+            (actual, init) => Err(CompileError::InvalidProgram(format!(
+                "unsupported initializer {:?} for struct_ops value field '{}.{}' of type {:?}",
+                init, value_type_name, field_name, actual
+            ))),
+        }
+    }
+
+    fn write_int_value(
+        size: usize,
+        signed: bool,
+        value: i64,
+        out: &mut [u8],
+    ) -> Result<(), String> {
+        match (size, signed) {
+            (1, true) => {
+                let value = i8::try_from(value)
+                    .map_err(|_| format!("expected signed 8-bit integer, got {}", value))?;
+                out.copy_from_slice(&value.to_le_bytes());
+                Ok(())
+            }
+            (2, true) => {
+                let value = i16::try_from(value)
+                    .map_err(|_| format!("expected signed 16-bit integer, got {}", value))?;
+                out.copy_from_slice(&value.to_le_bytes());
+                Ok(())
+            }
+            (4, true) => {
+                let value = i32::try_from(value)
+                    .map_err(|_| format!("expected signed 32-bit integer, got {}", value))?;
+                out.copy_from_slice(&value.to_le_bytes());
+                Ok(())
+            }
+            (8, true) => {
+                out.copy_from_slice(&value.to_le_bytes());
+                Ok(())
+            }
+            (1, false) => {
+                let value = u8::try_from(value)
+                    .map_err(|_| format!("expected unsigned 8-bit integer, got {}", value))?;
+                out.copy_from_slice(&value.to_le_bytes());
+                Ok(())
+            }
+            (2, false) => {
+                let value = u16::try_from(value)
+                    .map_err(|_| format!("expected unsigned 16-bit integer, got {}", value))?;
+                out.copy_from_slice(&value.to_le_bytes());
+                Ok(())
+            }
+            (4, false) => {
+                let value = u32::try_from(value)
+                    .map_err(|_| format!("expected unsigned 32-bit integer, got {}", value))?;
+                out.copy_from_slice(&value.to_le_bytes());
+                Ok(())
+            }
+            (8, false) => {
+                let value = u64::try_from(value)
+                    .map_err(|_| format!("expected unsigned 64-bit integer, got {}", value))?;
+                out.copy_from_slice(&value.to_le_bytes());
+                Ok(())
+            }
+            _ => Err(format!("unsupported integer field width {}", size)),
+        }
     }
 
     fn merge_maps(

@@ -610,6 +610,92 @@ fn test_struct_ops_object_spec_zeroed_from_kernel_btf() {
 }
 
 #[test]
+fn test_struct_ops_object_spec_initializes_scalar_value_field() {
+    use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector};
+
+    let projection = KernelBtf::get()
+        .kernel_named_type_field_projection(
+            "task_struct",
+            &[TrampolineFieldSelector::Field("pid".to_string())],
+        )
+        .expect("expected task_struct.pid projection");
+    let offset = projection.path[0].offset_bytes;
+    let size = projection.type_info.size();
+
+    let object = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", "task_struct")
+        .expect("expected zeroed task_struct object spec")
+        .with_value_field("pid", StructOpsValueField::Int(42))
+        .expect("expected scalar value field initializer to succeed")
+        .to_object()
+        .expect("expected struct_ops object with scalar value field");
+
+    let bytes = &object.extra_data_symbols[0].data[offset..offset + size];
+    let value = match size {
+        1 => i8::from_le_bytes([bytes[0]]) as i64,
+        2 => i16::from_le_bytes([bytes[0], bytes[1]]) as i64,
+        4 => i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as i64,
+        8 => i64::from_le_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        ]),
+        other => panic!("unexpected integer width {}", other),
+    };
+
+    assert_eq!(value, 42);
+}
+
+#[test]
+fn test_struct_ops_object_spec_initializes_string_value_field() {
+    use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
+
+    let projection = KernelBtf::get()
+        .kernel_named_type_field_projection(
+            "task_struct",
+            &[TrampolineFieldSelector::Field("comm".to_string())],
+        )
+        .expect("expected task_struct.comm projection");
+    let offset = projection.path[0].offset_bytes;
+    let TypeInfo::Array { len, .. } = projection.type_info else {
+        panic!("expected task_struct.comm to be a fixed array");
+    };
+
+    let object = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", "task_struct")
+        .expect("expected zeroed task_struct object spec")
+        .with_value_field("comm", StructOpsValueField::String("nu".to_string()))
+        .expect("expected string value field initializer to succeed")
+        .to_object()
+        .expect("expected struct_ops object with string value field");
+
+    let bytes = &object.extra_data_symbols[0].data[offset..offset + len];
+    assert_eq!(&bytes[..2], b"nu");
+    assert!(bytes[2..].iter().all(|byte| *byte == 0));
+}
+
+#[test]
+fn test_struct_ops_object_spec_rejects_oversized_string_value_field() {
+    use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
+
+    let projection = KernelBtf::get()
+        .kernel_named_type_field_projection(
+            "task_struct",
+            &[TrampolineFieldSelector::Field("comm".to_string())],
+        )
+        .expect("expected task_struct.comm projection");
+    let TypeInfo::Array { len, .. } = projection.type_info else {
+        panic!("expected task_struct.comm to be a fixed array");
+    };
+
+    let err = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", "task_struct")
+        .expect("expected zeroed task_struct object spec")
+        .with_value_field("comm", StructOpsValueField::String("x".repeat(len)))
+        .expect_err("oversized string value field should fail");
+
+    assert!(
+        err.to_string().contains("is too long"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_struct_ops_object_spec_merges_compiled_callback_artifacts() {
     let callback_program = EbpfProgram::hello_world("sys_clone")
         .with_readonly_globals(vec![ReadonlyGlobal {
