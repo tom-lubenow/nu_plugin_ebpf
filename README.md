@@ -93,6 +93,9 @@ ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
     name: 'nu_demo'
     select_cpu: {|ctx| 0 }
 }
+
+# Fixed integer-array value members can be initialized from constant int lists
+# when the underlying struct_ops field uses an integer element type.
 ```
 
 ### Count syscalls by process

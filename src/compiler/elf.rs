@@ -1671,6 +1671,7 @@ pub enum StructOpsValueField {
     Bool(bool),
     String(String),
     Bytes(Vec<u8>),
+    IntList(Vec<i64>),
 }
 
 /// Compiler-facing specification for a `struct_ops` object.

@@ -1602,6 +1602,44 @@ impl StructOpsObjectSpec {
                 out[..bytes.len()].copy_from_slice(bytes);
                 Ok(())
             }
+            (TypeInfo::Array { element, len }, StructOpsValueField::IntList(values))
+                if matches!(element.as_ref(), TypeInfo::Int { .. }) =>
+            {
+                let TypeInfo::Int { size, signed } = element.as_ref() else {
+                    unreachable!("matched integer array element");
+                };
+                if values.len() > *len {
+                    return Err(CompileError::InvalidProgram(format!(
+                        "integer-list initializer for struct_ops value field '{}.{}' is too long: {} items for {}-element field",
+                        value_type_name,
+                        field_name,
+                        values.len(),
+                        len
+                    )));
+                }
+                for (idx, value) in values.iter().enumerate() {
+                    let byte_offset = idx.checked_mul(*size).ok_or_else(|| {
+                        CompileError::InvalidProgram(format!(
+                            "integer-list initializer for struct_ops value field '{}.{}' overflowed element layout",
+                            value_type_name, field_name
+                        ))
+                    })?;
+                    let byte_end = byte_offset.checked_add(*size).ok_or_else(|| {
+                        CompileError::InvalidProgram(format!(
+                            "integer-list initializer for struct_ops value field '{}.{}' overflowed element layout",
+                            value_type_name, field_name
+                        ))
+                    })?;
+                    Self::write_int_value(*size, *signed, *value, &mut out[byte_offset..byte_end])
+                        .map_err(|msg| {
+                            CompileError::InvalidProgram(format!(
+                                "invalid initializer for struct_ops value field '{}.{}' at index {}: {}",
+                                value_type_name, field_name, idx, msg
+                            ))
+                        })?;
+                }
+                Ok(())
+            }
             (actual, init) => Err(CompileError::InvalidProgram(format!(
                 "unsupported initializer {:?} for struct_ops value field '{}.{}' of type {:?}",
                 init, value_type_name, field_name, actual

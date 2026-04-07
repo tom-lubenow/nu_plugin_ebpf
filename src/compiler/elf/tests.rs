@@ -674,6 +674,33 @@ fn test_struct_ops_object_spec_initializes_string_value_field() {
 }
 
 #[test]
+fn test_struct_ops_object_spec_initializes_integer_list_value_field() {
+    use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
+
+    let projection = KernelBtf::get()
+        .kernel_named_type_field_projection(
+            "task_struct",
+            &[TrampolineFieldSelector::Field("comm".to_string())],
+        )
+        .expect("expected task_struct.comm projection");
+    let offset = projection.path[0].offset_bytes;
+    let TypeInfo::Array { len, .. } = projection.type_info else {
+        panic!("expected task_struct.comm to be a fixed array");
+    };
+
+    let object = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", "task_struct")
+        .expect("expected zeroed task_struct object spec")
+        .with_value_field("comm", StructOpsValueField::IntList(vec![110, 117]))
+        .expect("expected integer-list value field initializer to succeed")
+        .to_object()
+        .expect("expected struct_ops object with integer-list value field");
+
+    let bytes = &object.extra_data_symbols[0].data[offset..offset + len];
+    assert_eq!(&bytes[..2], b"nu");
+    assert!(bytes[2..].iter().all(|byte| *byte == 0));
+}
+
+#[test]
 fn test_struct_ops_object_spec_rejects_oversized_string_value_field() {
     use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 

@@ -194,16 +194,38 @@ fn struct_ops_value_field_from_value(
         Value::Bool { val, .. } => Ok(StructOpsValueField::Bool(*val)),
         Value::String { val, .. } => Ok(StructOpsValueField::String(val.clone())),
         Value::Binary { val, .. } => Ok(StructOpsValueField::Bytes(val.clone())),
+        Value::List { vals, .. } => {
+            let mut items = Vec::with_capacity(vals.len());
+            for item in vals {
+                match item {
+                    Value::Int { val, .. } => items.push(*val),
+                    other => {
+                        return Err(LabeledError::new("Unsupported struct_ops value field")
+                            .with_label(
+                                format!(
+                                    "Field '{field_name}' uses a list containing unsupported item type {}; only int items are supported in struct_ops constant lists",
+                                    other.get_type()
+                                ),
+                                other.span(),
+                            )
+                            .with_help(
+                                "Use a closure for callback fields, or a constant int/bool/string/binary/int-list value for top-level struct_ops value fields",
+                            ));
+                    }
+                }
+            }
+            Ok(StructOpsValueField::IntList(items))
+        }
         other => Err(LabeledError::new("Unsupported struct_ops value field")
             .with_label(
                 format!(
-                    "Field '{field_name}' uses unsupported constant type {}; supported top-level struct_ops field values are int, bool, string, and binary",
+                    "Field '{field_name}' uses unsupported constant type {}; supported top-level struct_ops field values are int, bool, string, binary, and int lists",
                     other.get_type()
                 ),
                 value.span(),
             )
             .with_help(
-                "Use a closure for callback fields, or a simple int/bool/string/binary constant for top-level value fields",
+                "Use a closure for callback fields, or a constant int/bool/string/binary/int-list value for top-level struct_ops value fields",
             )),
     }
 }
@@ -1067,6 +1089,8 @@ Body forms:
   - struct_ops uses a record body whose callback fields are closures and whose
     simple top-level value fields are compile-time constants:
       { select_cpu: {|ctx| 0 }, name: "demo" }
+    Top-level value fields currently accept int, bool, string, binary, and
+    constant int-list values for fixed integer arrays.
 
 Context parameter syntax (recommended):
   The closure can take a context parameter to access program context information:
@@ -1895,6 +1919,40 @@ mod tests {
         .expect("binary field should lower");
 
         assert_eq!(field, StructOpsValueField::Bytes(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn test_struct_ops_value_field_from_value_accepts_int_list() {
+        let field = super::struct_ops_value_field_from_value(
+            "cookie",
+            &Value::list(
+                vec![
+                    Value::int(1, Span::test_data()),
+                    Value::int(2, Span::test_data()),
+                ],
+                Span::test_data(),
+            ),
+        )
+        .expect("int-list field should lower");
+
+        assert_eq!(field, StructOpsValueField::IntList(vec![1, 2]));
+    }
+
+    #[test]
+    fn test_struct_ops_value_field_from_value_rejects_mixed_list() {
+        let err = super::struct_ops_value_field_from_value(
+            "cookie",
+            &Value::list(
+                vec![
+                    Value::int(1, Span::test_data()),
+                    Value::string("oops", Span::test_data()),
+                ],
+                Span::test_data(),
+            ),
+        )
+        .expect_err("mixed list should be rejected");
+
+        assert!(err.to_string().contains("Unsupported struct_ops value field"));
     }
 
     #[test]
