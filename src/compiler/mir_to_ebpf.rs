@@ -47,11 +47,11 @@ use crate::compiler::passes::{ListLowering, MirPass, SsaDestruction};
 use crate::compiler::subfn_summaries::infer_subfunction_return_summaries;
 use crate::compiler::type_hints::recover_optimized_mir_type_hints;
 use crate::compiler::type_infer::{
-    TypeInference, infer_subfunction_schemes_with_hints, validate_program_capabilities,
+    TypeError, TypeInference, infer_subfunction_schemes_with_hints, validate_program_capabilities,
 };
 use crate::compiler::vcc;
 use crate::compiler::verifier_types;
-use crate::kernel_btf::KernelBtf;
+use crate::kernel_btf::{KernelBtf, TypeInfo};
 
 mod aggregations;
 mod calls;
@@ -514,6 +514,54 @@ pub fn compile_mir_to_ebpf_with_hints_and_globals(
     Ok(result)
 }
 
+fn struct_ops_callback_expected_return_type(
+    probe_ctx: &ProbeContext,
+) -> Result<Option<HMType>, CompileError> {
+    let value_type_name = probe_ctx
+        .struct_ops_value_type_name
+        .as_deref()
+        .ok_or_else(|| {
+            CompileError::TypeError(TypeError::new(format!(
+                "missing struct_ops value type for callback '{}'",
+                probe_ctx.target
+            )))
+        })?;
+    let ret_type = KernelBtf::get()
+        .struct_ops_callback_ret_type_info(value_type_name, &probe_ctx.target)
+        .map_err(|err| {
+            CompileError::TypeError(TypeError::new(format!(
+                "failed to resolve return type for struct_ops {}.{}: {}",
+                value_type_name, probe_ctx.target, err
+            )))
+        })?;
+
+    match ret_type {
+        None | Some(TypeInfo::Void) => Ok(None),
+        Some(TypeInfo::Int { .. }) | Some(TypeInfo::Ptr { .. }) => Ok(Some(HMType::I64)),
+        Some(TypeInfo::Struct { .. }) | Some(TypeInfo::Array { .. }) => {
+            Err(CompileError::TypeError(TypeError::new(format!(
+                "struct_ops {}.{} returns an aggregate type, which is not supported yet",
+                value_type_name, probe_ctx.target
+            ))))
+        }
+        Some(TypeInfo::Unknown) => Err(CompileError::TypeError(TypeError::new(format!(
+            "struct_ops {}.{} returns an unsupported type",
+            value_type_name, probe_ctx.target
+        )))),
+    }
+}
+
+fn main_function_expected_return_type(
+    probe_ctx: Option<&ProbeContext>,
+) -> Result<Option<HMType>, CompileError> {
+    match probe_ctx {
+        Some(ctx) if matches!(ctx.probe_type, EbpfProgramType::StructOps) => {
+            struct_ops_callback_expected_return_type(ctx)
+        }
+        _ => Ok(Some(HMType::I64)),
+    }
+}
+
 fn verify_mir_program(
     program: &MirProgram,
     probe_ctx: Option<&ProbeContext>,
@@ -558,7 +606,11 @@ fn verify_mir_program(
                 return Err(crate::compiler::CompileError::TypeError(err));
             }
         }
-        let expected_return = (idx == 0).then_some(HMType::I64);
+        let expected_return = if idx == 0 {
+            main_function_expected_return_type(probe_ctx)?
+        } else {
+            None
+        };
         let mut type_infer = TypeInference::new_with_env(
             probe_ctx.cloned(),
             Some(&subfn_schemes),

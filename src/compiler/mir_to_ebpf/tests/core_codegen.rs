@@ -1,11 +1,12 @@
 use super::*;
-use crate::compiler::EbpfProgramType;
+use crate::compiler::hindley_milner::HMType;
 use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
 use crate::compiler::ir_to_mir::lower_hir_to_mir_with_hints;
 use crate::compiler::mir::MirInst;
 use crate::compiler::{EbpfProgram, compile_mir_to_ebpf_with_hints_and_readonly_globals};
+use crate::compiler::{EbpfProgramType, ProbeContext};
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use nu_protocol::ast::{CellPath, PathMember};
 use nu_protocol::casing::Casing;
@@ -30,12 +31,48 @@ fn find_aggregate_fentry_arg_candidate() -> (String, u8, usize) {
 fn find_struct_ops_arg_candidate() -> Option<(String, String)> {
     for (value_type_name, callback_name) in [
         ("sched_ext_ops", "select_cpu"),
+        ("tcp_congestion_ops", "ssthresh"),
         ("tcp_congestion_ops", "cong_avoid"),
         ("tcp_congestion_ops", "init"),
     ] {
         if matches!(
             KernelBtf::get().struct_ops_callback_arg_type_info(value_type_name, callback_name, 0),
             Ok(Some(_))
+        ) {
+            return Some((value_type_name.to_string(), callback_name.to_string()));
+        }
+    }
+    None
+}
+
+fn find_struct_ops_scalar_ret_candidate() -> Option<(String, String)> {
+    for (value_type_name, callback_name) in [
+        ("sched_ext_ops", "select_cpu"),
+        ("tcp_congestion_ops", "ssthresh"),
+        ("tcp_congestion_ops", "undo_cwnd"),
+    ] {
+        if matches!(
+            KernelBtf::get().struct_ops_callback_ret_type_info(value_type_name, callback_name),
+            Ok(Some(
+                crate::kernel_btf::TypeInfo::Int { .. } | crate::kernel_btf::TypeInfo::Ptr { .. }
+            ))
+        ) {
+            return Some((value_type_name.to_string(), callback_name.to_string()));
+        }
+    }
+    None
+}
+
+fn find_struct_ops_void_ret_candidate() -> Option<(String, String)> {
+    for (value_type_name, callback_name) in [
+        ("tcp_congestion_ops", "cong_avoid"),
+        ("tcp_congestion_ops", "init"),
+        ("tcp_congestion_ops", "release"),
+        ("sched_ext_ops", "enqueue"),
+    ] {
+        if matches!(
+            KernelBtf::get().struct_ops_callback_ret_type_info(value_type_name, callback_name),
+            Ok(None)
         ) {
             return Some((value_type_name.to_string(), callback_name.to_string()));
         }
@@ -131,6 +168,28 @@ fn test_add() {
         lower_ir_to_mir(&ir, None, &HashMap::new(), &HashMap::new(), &[], None).unwrap();
     let mir_result = compile_mir_to_ebpf(&mir_program, None).unwrap();
     assert!(!mir_result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_struct_ops_scalar_callback_uses_i64_main_return_contract() {
+    let Some((value_type_name, callback_name)) = find_struct_ops_scalar_ret_candidate() else {
+        return;
+    };
+    let probe_ctx = ProbeContext::new_struct_ops_callback(value_type_name, callback_name);
+    let expected = super::main_function_expected_return_type(Some(&probe_ctx))
+        .expect("scalar struct_ops callback return should resolve");
+    assert_eq!(expected, Some(HMType::I64));
+}
+
+#[test]
+fn test_struct_ops_void_callback_uses_void_main_return_contract() {
+    let Some((value_type_name, callback_name)) = find_struct_ops_void_ret_candidate() else {
+        return;
+    };
+    let probe_ctx = ProbeContext::new_struct_ops_callback(value_type_name, callback_name);
+    let expected = super::main_function_expected_return_type(Some(&probe_ctx))
+        .expect("void struct_ops callback return should resolve");
+    assert_eq!(expected, None);
 }
 
 #[test]

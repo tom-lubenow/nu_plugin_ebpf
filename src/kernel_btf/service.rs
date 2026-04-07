@@ -382,6 +382,17 @@ impl KernelBtf {
         })
     }
 
+    fn load_function_proto_return_type_id_map(&self) -> Result<HashMap<u32, u32>, BtfError> {
+        let raw = fs::read(Self::KERNEL_BTF_PATH).map_err(|e| {
+            BtfError::KernelBtfError(format!("failed to read {}: {e}", Self::KERNEL_BTF_PATH))
+        })?;
+        parse_function_proto_return_type_ids_from_raw_btf(&raw).ok_or_else(|| {
+            BtfError::KernelBtfError(
+                "failed to parse raw kernel BTF function proto return ids".into(),
+            )
+        })
+    }
+
     fn load_raw_type_size_map(&self) -> Result<HashMap<u32, u32>, BtfError> {
         {
             let cache = self.raw_type_size_cache.read().unwrap();
@@ -545,6 +556,38 @@ impl KernelBtf {
             ))
         })?;
         Self::type_info_from_btf_type(&btf, &param_ty, &raw_type_sizes).map(Some)
+    }
+
+    /// Resolve the exact kernel-BTF return type for a `struct_ops` callback.
+    ///
+    /// Returns `Ok(None)` when the callback returns `void`.
+    pub fn struct_ops_callback_ret_type_info(
+        &self,
+        value_type_name: &str,
+        callback_name: &str,
+    ) -> Result<Option<TypeInfo>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let function_proto_ret_type_ids = self.load_function_proto_return_type_id_map()?;
+        let callback_ty =
+            Self::resolve_struct_ops_callback_member_type(&btf, value_type_name, callback_name)?;
+        let Some(ret_type_id) = function_proto_ret_type_ids
+            .get(&callback_ty.type_id)
+            .copied()
+        else {
+            return Ok(None);
+        };
+        if ret_type_id == 0 {
+            return Ok(None);
+        }
+
+        let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
+        let ret_ty = btf.get_type_by_id(ret_type_id).map_err(|e| {
+            BtfError::KernelBtfError(format!(
+                "failed to resolve kernel BTF type {}: {}",
+                ret_type_id, e
+            ))
+        })?;
+        Self::type_info_from_btf_type(&btf, &ret_ty, &raw_type_sizes).map(Some)
     }
 
     /// Resolve a typed trampoline return-value slot for an attached function.
@@ -3494,7 +3537,9 @@ fn infer_kfunc_ret_shape(btf: &Btf, ret_type_id: u32) -> KfuncRetShape {
     KfuncRetShape::Scalar
 }
 
-fn parse_function_return_type_ids_from_raw_btf(raw: &[u8]) -> Option<HashMap<u32, u32>> {
+fn parse_function_and_proto_return_type_ids_from_raw_btf(
+    raw: &[u8],
+) -> Option<(HashMap<u32, u32>, HashMap<u32, u32>)> {
     let endianness = detect_btf_endianness(raw)?;
     let hdr_len = read_u32(raw, 4, endianness)?;
     let type_off = read_u32(raw, 8, endianness)?;
@@ -3541,13 +3586,23 @@ fn parse_function_return_type_ids_from_raw_btf(raw: &[u8]) -> Option<HashMap<u32
         return None;
     }
 
-    let mut out = HashMap::with_capacity(func_to_proto.len());
+    let mut func_to_ret = HashMap::with_capacity(func_to_proto.len());
     for (func_type_id, proto_type_id) in func_to_proto {
         if let Some(ret_type_id) = proto_to_ret.get(&proto_type_id).copied() {
-            out.insert(func_type_id, ret_type_id);
+            func_to_ret.insert(func_type_id, ret_type_id);
         }
     }
-    Some(out)
+    Some((func_to_ret, proto_to_ret))
+}
+
+fn parse_function_return_type_ids_from_raw_btf(raw: &[u8]) -> Option<HashMap<u32, u32>> {
+    let (func_to_ret, _) = parse_function_and_proto_return_type_ids_from_raw_btf(raw)?;
+    Some(func_to_ret)
+}
+
+fn parse_function_proto_return_type_ids_from_raw_btf(raw: &[u8]) -> Option<HashMap<u32, u32>> {
+    let (_, proto_to_ret) = parse_function_and_proto_return_type_ids_from_raw_btf(raw)?;
+    Some(proto_to_ret)
 }
 
 fn parse_declared_type_sizes_from_raw_btf(raw: &[u8]) -> Option<HashMap<u32, u32>> {
@@ -4169,6 +4224,7 @@ format:
     fn find_struct_ops_callback_candidate() -> Option<(&'static str, &'static str)> {
         for (value_type_name, callback_name) in [
             ("sched_ext_ops", "select_cpu"),
+            ("tcp_congestion_ops", "ssthresh"),
             ("tcp_congestion_ops", "cong_avoid"),
             ("tcp_congestion_ops", "init"),
         ] {
@@ -4198,6 +4254,32 @@ format:
             .expect("struct_ops callback arg0 should exist");
 
         assert!(matches!(arg, TypeInfo::Ptr { .. } | TypeInfo::Int { .. }));
+    }
+
+    #[test]
+    fn test_struct_ops_callback_ret_type_info_resolves_candidate() {
+        for (value_type_name, callback_name) in [
+            ("sched_ext_ops", "select_cpu"),
+            ("tcp_congestion_ops", "ssthresh"),
+            ("tcp_congestion_ops", "cong_avoid"),
+            ("tcp_congestion_ops", "init"),
+        ] {
+            let Ok(ret_ty) =
+                KernelBtf::get().struct_ops_callback_ret_type_info(value_type_name, callback_name)
+            else {
+                continue;
+            };
+            assert!(matches!(
+                ret_ty,
+                None | Some(TypeInfo::Int { .. })
+                    | Some(TypeInfo::Ptr { .. })
+                    | Some(TypeInfo::Struct { .. })
+                    | Some(TypeInfo::Array { .. })
+                    | Some(TypeInfo::Void)
+                    | Some(TypeInfo::Unknown)
+            ));
+            return;
+        }
     }
 
     #[test]
