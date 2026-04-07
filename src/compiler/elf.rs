@@ -275,6 +275,11 @@ pub struct SymbolRelocation {
 pub struct ObjectDataRelocation {
     /// Offset in bytes within the symbol's data blob where the relocation applies.
     pub offset: usize,
+    /// Optional named field within the data symbol that this relocation targets.
+    ///
+    /// Used for `.struct_ops` value symbols, where libbpf expects local BTF members
+    /// to line up with callback relocation offsets by name.
+    pub field_name: Option<String>,
     /// Name of the referenced ELF symbol.
     pub symbol_name: String,
 }

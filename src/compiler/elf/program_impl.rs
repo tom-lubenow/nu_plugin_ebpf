@@ -892,8 +892,9 @@ impl EbpfObject {
                 symbol_ids.insert(map.name.clone(), sym_id);
             }
 
-            // Generate BTF for BTF-defined maps
-            let btf_data = self.generate_btf();
+        }
+
+        if let Some(btf_data) = self.generate_btf() {
             let btf_section_id = obj.add_section(vec![], b".BTF".to_vec(), SectionKind::Metadata);
             obj.append_section_data(btf_section_id, &btf_data, 1);
         }
@@ -1043,69 +1044,109 @@ impl EbpfObject {
         !self.maps.is_empty()
     }
 
-    /// Generate BTF (BPF Type Format) metadata for BTF-defined maps
+    /// Generate BTF (BPF Type Format) metadata for object-local loader metadata.
     ///
-    /// This implements the libbpf BTF-defined map format where map attributes
-    /// are encoded using the __uint macro pattern: int (*name)[value]
-    ///
-    /// The BTF represents:
-    /// - An anonymous struct with pointer members
-    /// - Each pointer points to an array whose size encodes the attribute value
-    /// - e.g., __uint(type, 4) becomes: PTR -> ARRAY[4] -> INT
-    fn generate_btf(&self) -> Vec<u8> {
+    /// Today this covers:
+    /// - BTF-defined maps in `.maps`
+    /// - `struct_ops` value sections in `.struct_ops`
+    fn generate_btf(&self) -> Option<Vec<u8>> {
         use crate::compiler::btf::BtfVarLinkage;
 
         let mut btf = BtfBuilder::new();
+        let mut emitted_anything = false;
 
         // Add base int type (used as array element and index type)
         let int_type = btf.add_int("int", 4, true);
 
-        // Track variable type IDs and offsets for datasec
-        let mut vars: Vec<(u32, u32, u32)> = Vec::new();
-        let mut offset = 0u32;
+        if !self.maps.is_empty() {
+            emitted_anything = true;
 
-        for map in &self.maps {
-            // Create __uint types for each map attribute
-            // __uint(name, val) expands to: int (*name)[val]
+            // Track variable type IDs and offsets for datasec
+            let mut vars: Vec<(u32, u32, u32)> = Vec::new();
+            let mut offset = 0u32;
 
-            // type field: __uint(type, map_type_value)
-            let type_ptr = btf.add_uint_type(int_type, map.def.map_type);
+            for map in &self.maps {
+                // Create __uint types for each map attribute
+                // __uint(name, val) expands to: int (*name)[val]
 
-            // key_size field: __uint(key_size, size_value)
-            let key_size_ptr = btf.add_uint_type(int_type, map.def.key_size);
+                // type field: __uint(type, map_type_value)
+                let type_ptr = btf.add_uint_type(int_type, map.def.map_type);
 
-            // value_size field: __uint(value_size, size_value)
-            let value_size_ptr = btf.add_uint_type(int_type, map.def.value_size);
+                // key_size field: __uint(key_size, size_value)
+                let key_size_ptr = btf.add_uint_type(int_type, map.def.key_size);
 
-            // max_entries field: __uint(max_entries, count)
-            // Note: 0 means auto-size (e.g., num_cpus for perf event arrays)
-            let max_entries_ptr = btf.add_uint_type(int_type, map.def.max_entries);
+                // value_size field: __uint(value_size, size_value)
+                let value_size_ptr = btf.add_uint_type(int_type, map.def.value_size);
 
-            // pinning field: __uint(pinning, LIBBPF_PIN_BY_NAME) for shared maps
-            let pinning_ptr = btf.add_uint_type(int_type, map.def.pinning as u32);
+                // max_entries field: __uint(max_entries, count)
+                // Note: 0 means auto-size (e.g., num_cpus for perf event arrays)
+                let max_entries_ptr = btf.add_uint_type(int_type, map.def.max_entries);
 
-            // Create the anonymous map struct with pointer-sized members
-            let struct_type = btf.add_btf_map_struct(&[
-                ("type", type_ptr),
-                ("key_size", key_size_ptr),
-                ("value_size", value_size_ptr),
-                ("max_entries", max_entries_ptr),
-                ("pinning", pinning_ptr),
-            ]);
+                // pinning field: __uint(pinning, LIBBPF_PIN_BY_NAME) for shared maps
+                let pinning_ptr = btf.add_uint_type(int_type, map.def.pinning as u32);
 
-            // Add a variable for this map
-            let var_type = btf.add_var(&map.name, struct_type, BtfVarLinkage::GlobalAlloc);
+                // Create the anonymous map struct with pointer-sized members
+                let struct_type = btf.add_btf_map_struct(&[
+                    ("type", type_ptr),
+                    ("key_size", key_size_ptr),
+                    ("value_size", value_size_ptr),
+                    ("max_entries", max_entries_ptr),
+                    ("pinning", pinning_ptr),
+                ]);
 
-            // Size of BTF-defined map struct (5 pointers * 8 bytes = 40 bytes)
-            let map_size = 40u32;
-            vars.push((var_type, offset, map_size));
-            offset += map_size;
+                // Add a variable for this map
+                let var_type = btf.add_var(&map.name, struct_type, BtfVarLinkage::GlobalAlloc);
+
+                // Size of BTF-defined map struct (5 pointers * 8 bytes = 40 bytes)
+                let map_size = 40u32;
+                vars.push((var_type, offset, map_size));
+                offset += map_size;
+            }
+
+            // Add datasec for .maps section
+            btf.add_datasec(".maps", &vars);
         }
 
-        // Add datasec for .maps section
-        btf.add_datasec(".maps", &vars);
+        if let EbpfObjectKind::StructOps {
+            value_type_name, ..
+        } = &self.kind
+        {
+            let callback_proto = btf.add_func_proto(0, &[]);
+            let callback_ptr_type = btf.add_ptr(callback_proto);
 
-        btf.build()
+            for data_symbol in &self.extra_data_symbols {
+                if !data_symbol.section_name.starts_with(".struct_ops") {
+                    continue;
+                }
+
+                emitted_anything = true;
+
+                let mut callback_members: Vec<(&str, u32, u32)> = data_symbol
+                    .relocations
+                    .iter()
+                    .filter_map(|reloc| {
+                        reloc.field_name.as_deref().map(|field_name| {
+                            (field_name, callback_ptr_type, reloc.offset as u32)
+                        })
+                    })
+                    .collect();
+                callback_members.sort_by_key(|(_, _, offset)| *offset);
+
+                let value_type = btf.add_struct_with_offsets(
+                    value_type_name,
+                    data_symbol.data.len() as u32,
+                    &callback_members,
+                );
+                let var_type =
+                    btf.add_var(&data_symbol.name, value_type, BtfVarLinkage::GlobalAlloc);
+                btf.add_datasec(
+                    &data_symbol.section_name,
+                    &[(var_type, 0, data_symbol.data.len() as u32)],
+                );
+            }
+        }
+
+        emitted_anything.then(|| btf.build())
     }
 
     /// Generate map section data for BTF-defined maps
@@ -1179,6 +1220,7 @@ impl StructOpsObjectBuilder {
             .relocations
             .push(ObjectDataRelocation {
                 offset,
+                field_name: None,
                 symbol_name: symbol_name.into(),
             });
         self
@@ -1217,6 +1259,7 @@ impl StructOpsObjectBuilder {
             .relocations
             .push(ObjectDataRelocation {
                 offset,
+                field_name: Some(slot_name.to_string()),
                 symbol_name: callback_name,
             });
         Ok(self)

@@ -190,6 +190,34 @@ impl BtfBuilder {
         type_id
     }
 
+    /// Add a struct type with explicit member offsets (in bytes), return its type ID.
+    pub fn add_struct_with_offsets(
+        &mut self,
+        name: &str,
+        size: u32,
+        members: &[(&str, u32, u32)],
+    ) -> u32 {
+        let name_off = self.add_string(name);
+        let type_id = self.next_type_id;
+        self.next_type_id += 1;
+
+        self.types.extend_from_slice(&name_off.to_le_bytes());
+        self.types.extend_from_slice(
+            &Self::encode_info(BtfKind::Struct, members.len() as u16, false).to_le_bytes(),
+        );
+        self.types.extend_from_slice(&size.to_le_bytes());
+
+        for (member_name, member_type, member_offset_bytes) in members {
+            let member_name_off = self.add_string(member_name);
+            self.types.extend_from_slice(&member_name_off.to_le_bytes());
+            self.types.extend_from_slice(&member_type.to_le_bytes());
+            self.types
+                .extend_from_slice(&(member_offset_bytes * 8).to_le_bytes());
+        }
+
+        type_id
+    }
+
     /// Add an anonymous struct (no name) with pointer-sized members
     ///
     /// This is used for BTF-defined maps where all fields are pointers.
@@ -237,6 +265,28 @@ impl BtfBuilder {
             .extend_from_slice(&(linkage as u32).to_le_bytes());
 
         var_type_id
+    }
+
+    /// Add a function prototype type, return its type ID.
+    ///
+    /// Params are `(name, type_id)` pairs.
+    pub fn add_func_proto(&mut self, return_type: u32, params: &[(&str, u32)]) -> u32 {
+        let type_id = self.next_type_id;
+        self.next_type_id += 1;
+
+        self.types.extend_from_slice(&0u32.to_le_bytes()); // name_off = 0
+        self.types.extend_from_slice(
+            &Self::encode_info(BtfKind::FuncProto, params.len() as u16, false).to_le_bytes(),
+        );
+        self.types.extend_from_slice(&return_type.to_le_bytes());
+
+        for (param_name, param_type) in params {
+            let param_name_off = self.add_string(param_name);
+            self.types.extend_from_slice(&param_name_off.to_le_bytes());
+            self.types.extend_from_slice(&param_type.to_le_bytes());
+        }
+
+        type_id
     }
 
     /// Add a datasec (describes a section like .maps), return its type ID

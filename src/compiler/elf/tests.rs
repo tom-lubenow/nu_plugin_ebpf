@@ -1,7 +1,11 @@
 use super::*;
 use crate::compiler::mir::{CtxField, MirType, StructField};
 use crate::compiler::mir_to_ebpf::compile_mir_to_ebpf;
-use aya_obj::{EbpfSectionKind, Object as AyaObject};
+use aya_obj::{
+    EbpfSectionKind, Object as AyaObject,
+    btf::{Btf, BtfKind},
+};
+use object::{Endianness, Object as _, ObjectSection as _};
 use std::collections::HashMap;
 
 #[test]
@@ -204,6 +208,35 @@ fn test_elf_generation_with_bss_globals_creates_bss_data_map() {
 
     assert_eq!(map.section_kind(), EbpfSectionKind::Bss);
     assert_eq!(map.data(), &[0, 0, 0, 0]);
+}
+
+#[test]
+fn test_struct_ops_object_emits_btf_without_generic_maps() {
+    let object = EbpfObject::struct_ops("demo", "fake_ops", vec![0; 32])
+        .with_callback_slot("select_cpu", 8)
+        .bind_callback(
+            "select_cpu",
+            EbpfProgram::hello_world("sys_clone"),
+            "demo_select_cpu",
+        )
+        .expect("callback slot should bind")
+        .build();
+
+    let elf = object.to_elf().expect("struct_ops object should emit");
+    let parsed = object::File::parse(&*elf).expect("emitted object should parse");
+    let btf_section = parsed.section_by_name(".BTF").expect("expected .BTF section");
+    let btf_data = btf_section.data().expect(".BTF section should be readable");
+    let btf = Btf::parse(btf_data, Endianness::Little).expect("expected parsable BTF");
+
+    assert!(btf.id_by_type_name_kind(".struct_ops", BtfKind::DataSec).is_ok());
+    assert!(btf.id_by_type_name_kind("fake_ops", BtfKind::Struct).is_ok());
+    assert!(btf.id_by_type_name_kind("demo", BtfKind::Var).is_ok());
+    assert!(
+        btf_data
+            .windows(b"select_cpu\0".len())
+            .any(|window| window == b"select_cpu\0"),
+        "expected callback member name in emitted BTF string table"
+    );
 }
 
 #[test]
