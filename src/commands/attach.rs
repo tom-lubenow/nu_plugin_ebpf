@@ -23,7 +23,7 @@ use crate::compiler::{
     hir::HirProgram, hir::HirStmt, hir::supports_constant_value, hir_type_infer, infer_ctx_param,
     lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir, passes::optimize_with_ssa_hints,
 };
-use crate::kernel_btf::TrampolineFieldSelector;
+use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector};
 
 /// Common Nushell commands used in eBPF closures.
 const NU_CLOSURE_COMMANDS: &[&str] = &[
@@ -275,6 +275,76 @@ fn apply_struct_ops_value_field(
                     LabeledError::new("Failed to initialize struct_ops value field")
                         .with_label(e.to_string(), value.span())
                 })
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StructOpsTopLevelFieldKind {
+    Callback,
+    Value,
+}
+
+fn validate_struct_ops_top_level_field_kind(
+    value_type_name: &str,
+    field_name: &str,
+    expected_kind: StructOpsTopLevelFieldKind,
+    span: Span,
+) -> Result<(), LabeledError> {
+    let callback_result =
+        KernelBtf::get().struct_ops_callback_ret_type_info(value_type_name, field_name);
+    let value_result = KernelBtf::get().kernel_named_type_field_projection(
+        value_type_name,
+        &[TrampolineFieldSelector::Field(field_name.to_string())],
+    );
+
+    match expected_kind {
+        StructOpsTopLevelFieldKind::Callback => match callback_result {
+            Ok(_) => Ok(()),
+            Err(_) if value_result.is_ok() => Err(
+                LabeledError::new("Invalid struct_ops object")
+                    .with_label(
+                        format!(
+                            "Field '{}' on struct_ops '{}' is a value member, not a callback slot",
+                            field_name, value_type_name
+                        ),
+                        span,
+                    )
+                    .with_help(
+                        "Use a compile-time constant for value members, and reserve top-level closures for callback slots",
+                    ),
+            ),
+            Err(err) => Err(LabeledError::new("Invalid struct_ops object").with_label(
+                format!(
+                    "Field '{}' is not a valid callback member of struct_ops '{}': {}",
+                    field_name, value_type_name, err
+                ),
+                span,
+            )),
+        },
+        StructOpsTopLevelFieldKind::Value => {
+            if callback_result.is_ok() {
+                return Err(LabeledError::new("Invalid struct_ops object")
+                    .with_label(
+                        format!(
+                            "Field '{}' on struct_ops '{}' is a callback slot; provide a closure",
+                            field_name, value_type_name
+                        ),
+                        span,
+                    )
+                    .with_help(
+                        "Use a closure like {|ctx| ... } for callback slots, and constants only for non-callback value members",
+                    ));
+            }
+            value_result.map(|_| ()).map_err(|err| {
+                LabeledError::new("Invalid struct_ops object").with_label(
+                    format!(
+                        "Field '{}' is not a valid value member of struct_ops '{}': {}",
+                        field_name, value_type_name, err
+                    ),
+                    span,
+                )
+            })
         }
     }
 }
@@ -1050,6 +1120,12 @@ fn compile_struct_ops_object(
             Value::Closure {
                 val, internal_span, ..
             } => {
+                validate_struct_ops_top_level_field_kind(
+                    value_type_name,
+                    field_name,
+                    StructOpsTopLevelFieldKind::Callback,
+                    value.span(),
+                )?;
                 let closure = Spanned {
                     item: (**val).clone(),
                     span: *internal_span,
@@ -1075,6 +1151,12 @@ fn compile_struct_ops_object(
                 ));
             }
             _ => {
+                validate_struct_ops_top_level_field_kind(
+                    value_type_name,
+                    field_name,
+                    StructOpsTopLevelFieldKind::Value,
+                    value.span(),
+                )?;
                 let mut field_path = vec![TrampolineFieldSelector::Field(field_name.to_string())];
                 spec = apply_struct_ops_value_field(spec, &mut field_path, value)?;
             }
@@ -2102,6 +2184,44 @@ mod tests {
         None
     }
 
+    fn find_struct_ops_callback_member_candidate() -> Option<(String, String)> {
+        for (value_type_name, field_name) in [
+            ("sched_ext_ops", "select_cpu"),
+            ("tcp_congestion_ops", "cong_avoid"),
+            ("tcp_congestion_ops", "ssthresh"),
+        ] {
+            if KernelBtf::get()
+                .struct_ops_callback_ret_type_info(value_type_name, field_name)
+                .is_ok()
+            {
+                return Some((value_type_name.to_string(), field_name.to_string()));
+            }
+        }
+        None
+    }
+
+    fn find_struct_ops_value_member_candidate() -> Option<(String, String)> {
+        for (value_type_name, field_name) in [
+            ("tcp_congestion_ops", "name"),
+            ("tcp_congestion_ops", "flags"),
+            ("sched_ext_ops", "name"),
+        ] {
+            if KernelBtf::get()
+                .struct_ops_callback_ret_type_info(value_type_name, field_name)
+                .is_err()
+                && KernelBtf::get()
+                    .kernel_named_type_field_projection(
+                        value_type_name,
+                        &[TrampolineFieldSelector::Field(field_name.to_string())],
+                    )
+                    .is_ok()
+            {
+                return Some((value_type_name.to_string(), field_name.to_string()));
+            }
+        }
+        None
+    }
+
     #[test]
     fn test_apply_struct_ops_value_field_initializes_nested_record_member() {
         let Some((type_name, path, offset, size)) = find_nested_struct_ops_value_candidate() else {
@@ -2196,6 +2316,45 @@ mod tests {
         )
         .expect_err("nested callback should be rejected");
         assert!(err.to_string().contains("Invalid struct_ops object"));
+    }
+
+    #[test]
+    fn test_validate_struct_ops_top_level_field_kind_rejects_closure_on_value_member() {
+        let Some((value_type_name, field_name)) = find_struct_ops_value_member_candidate() else {
+            return;
+        };
+        let err = super::validate_struct_ops_top_level_field_kind(
+            &value_type_name,
+            &field_name,
+            super::StructOpsTopLevelFieldKind::Callback,
+            Span::test_data(),
+        )
+        .expect_err("value member used as callback slot should be rejected");
+        assert!(
+            err.labels
+                .iter()
+                .any(|label| label.text.contains("value member, not a callback slot"))
+        );
+    }
+
+    #[test]
+    fn test_validate_struct_ops_top_level_field_kind_rejects_constant_on_callback_member() {
+        let Some((value_type_name, field_name)) = find_struct_ops_callback_member_candidate()
+        else {
+            return;
+        };
+        let err = super::validate_struct_ops_top_level_field_kind(
+            &value_type_name,
+            &field_name,
+            super::StructOpsTopLevelFieldKind::Value,
+            Span::test_data(),
+        )
+        .expect_err("callback member used as value field should be rejected");
+        assert!(
+            err.labels
+                .iter()
+                .any(|label| label.text.contains("callback slot; provide a closure"))
+        );
     }
 
     #[test]
