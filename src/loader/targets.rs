@@ -352,11 +352,25 @@ fn validate_target_for_program_type(
         ProgramTargetKind::TrafficControlInterface => validate_tc_target(target),
         ProgramTargetKind::CgroupPathAttachType => validate_cgroup_skb_target(target),
         ProgramTargetKind::CgroupPathSockAddrAttachType => validate_cgroup_sock_addr_target(target),
-        ProgramTargetKind::StructOpsCallback => Err(LoadError::Load(
-            "struct_ops callbacks are internal object-only program sections, not standalone attach targets"
-                .to_string(),
-        )),
+        ProgramTargetKind::StructOpsCallback => validate_struct_ops_value_type(target),
     }
+}
+
+fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError> {
+    if value_type_name.is_empty() {
+        return Err(LoadError::Load(
+            "struct_ops value type name cannot be empty".to_string(),
+        ));
+    }
+
+    KernelBtf::get()
+        .kernel_named_type_size_bytes(value_type_name)
+        .map(|_| ())
+        .map_err(|err| {
+            LoadError::Load(format!(
+                "Unknown struct_ops value type '{value_type_name}': {err}"
+            ))
+        })
 }
 
 /// Parse a probe specification like "kprobe:sys_clone" or "tracepoint:syscalls/sys_enter_read"
@@ -439,10 +453,9 @@ pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
         EbpfProgramType::CgroupSockAddr => Ok(ProgramSpec::CgroupSockAddr {
             target: CgroupSockAddrTarget::parse(target)?,
         }),
-        EbpfProgramType::StructOps => Err(LoadError::Load(
-            "struct_ops callbacks are internal object-only program sections, not standalone attach specs"
-                .to_string(),
-        )),
+        EbpfProgramType::StructOps => Ok(ProgramSpec::StructOps {
+            value_type_name: target.to_string(),
+        }),
     }
 }
 

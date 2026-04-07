@@ -692,6 +692,7 @@ impl ProgramSpec {
             ProgramSpec::Tc { .. } => EbpfProgramType::Tc,
             ProgramSpec::CgroupSkb { .. } => EbpfProgramType::CgroupSkb,
             ProgramSpec::CgroupSockAddr { .. } => EbpfProgramType::CgroupSockAddr,
+            ProgramSpec::StructOps { .. } => EbpfProgramType::StructOps,
         }
     }
 }
@@ -1169,7 +1170,7 @@ const XDP_SPEC_ALIASES: &[&str] = &["xdp"];
 const TC_SPEC_ALIASES: &[&str] = &["tc"];
 const CGROUP_SKB_SPEC_ALIASES: &[&str] = &["cgroup_skb"];
 const CGROUP_SOCK_ADDR_SPEC_ALIASES: &[&str] = &["cgroup_sock_addr"];
-const STRUCT_OPS_SPEC_ALIASES: &[&str] = &[];
+const STRUCT_OPS_SPEC_ALIASES: &[&str] = &["struct_ops"];
 const DEFAULT_PROBE_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::Emit,
     ProgramCapability::Counters,
@@ -1565,6 +1566,7 @@ const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "tc",
     "cgroup_skb",
     "cgroup_sock_addr",
+    "struct_ops",
 ];
 
 const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[

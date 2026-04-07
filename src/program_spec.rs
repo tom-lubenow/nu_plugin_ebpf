@@ -141,6 +141,7 @@ pub enum ProgramSpec {
     Tc { target: TcTarget },
     CgroupSkb { target: CgroupSkbTarget },
     CgroupSockAddr { target: CgroupSockAddrTarget },
+    StructOps { value_type_name: String },
 }
 
 impl ProgramSpec {
@@ -159,6 +160,7 @@ impl ProgramSpec {
             ProgramSpec::Tc { target } => target.target_string(),
             ProgramSpec::CgroupSkb { target } => target.target_string(),
             ProgramSpec::CgroupSockAddr { target } => target.target_string(),
+            ProgramSpec::StructOps { value_type_name } => value_type_name.clone(),
         }
     }
 }

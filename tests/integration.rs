@@ -131,6 +131,18 @@ mod linux_tests {
         }
     }
 
+    #[test]
+    fn test_parse_structured_struct_ops_spec() {
+        let result = parse_program_spec("struct_ops:file");
+
+        match result {
+            Ok(ProgramSpec::StructOps { value_type_name }) => {
+                assert_eq!(value_type_name, "file");
+            }
+            other => panic!("Unexpected result: {:?}", other),
+        }
+    }
+
     /// Test parsing uprobe specification
     #[test]
     fn test_parse_uprobe_spec() {

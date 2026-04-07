@@ -17,7 +17,8 @@ use nu_protocol::{
 
 use crate::EbpfPlugin;
 use crate::compiler::{
-    EbpfObject, ProbeContext, ProgramIntrinsic, UserFunctionSig, UserParam, UserParamKind,
+    EbpfObject, MapRef, MirCompileResult, MirType, ProbeContext, ProgramIntrinsic,
+    StructOpsObjectSpec, StructOpsValueField, UserFunctionSig, UserParam, UserParamKind,
     compile_mir_to_ebpf_with_hints_and_globals, hir::AnnotatedMutGlobal, hir::HirFunction,
     hir::HirProgram, hir::HirStmt, hir::supports_constant_value, hir_type_infer, infer_ctx_param,
     lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir, passes::optimize_with_ssa_hints,
@@ -157,6 +158,77 @@ struct LeadingVariableDeclaration {
     mutable: bool,
     declared_type: Option<Type>,
     initializer: Option<Value>,
+}
+
+struct CompiledClosureArtifacts {
+    compile_result: MirCompileResult,
+    generic_map_value_types: HashMap<MapRef, MirType>,
+}
+
+fn value_to_spanned_closure(value: Value, span: Span) -> Result<Spanned<Closure>, LabeledError> {
+    match value {
+        Value::Closure {
+            val, internal_span, ..
+        } => Ok(Spanned {
+            item: *val,
+            span: internal_span,
+        }),
+        other => Err(LabeledError::new("Invalid eBPF body")
+            .with_label(
+                format!(
+                    "Expected a closure body for this attach target, got {}",
+                    other.get_type()
+                ),
+                span,
+            )
+            .with_help("Use a closure like {|ctx| ... } for ordinary program types")),
+    }
+}
+
+fn struct_ops_value_field_from_value(
+    field_name: &str,
+    value: &Value,
+) -> Result<StructOpsValueField, LabeledError> {
+    match value {
+        Value::Int { val, .. } => Ok(StructOpsValueField::Int(*val)),
+        Value::Bool { val, .. } => Ok(StructOpsValueField::Bool(*val)),
+        Value::String { val, .. } => Ok(StructOpsValueField::String(val.clone())),
+        Value::Binary { val, .. } => Ok(StructOpsValueField::Bytes(val.clone())),
+        other => Err(LabeledError::new("Unsupported struct_ops value field")
+            .with_label(
+                format!(
+                    "Field '{field_name}' uses unsupported constant type {}; supported top-level struct_ops field values are int, bool, string, and binary",
+                    other.get_type()
+                ),
+                value.span(),
+            )
+            .with_help(
+                "Use a closure for callback fields, or a simple int/bool/string/binary constant for top-level value fields",
+            )),
+    }
+}
+
+fn sanitize_struct_ops_component(component: &str) -> String {
+    let sanitized: String = component
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let trimmed = sanitized.trim_matches('_');
+    if trimmed.is_empty() {
+        "struct_ops".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn default_struct_ops_object_name(value_type_name: &str) -> String {
+    format!("nu_{}", sanitize_struct_ops_component(value_type_name))
 }
 
 fn fetch_view_source(
@@ -723,6 +795,244 @@ fn fetch_user_function_signatures(
     Ok(sigs)
 }
 
+fn compile_closure_with_context(
+    engine: &EngineInterface,
+    closure: &Spanned<Closure>,
+    probe_context: &ProbeContext,
+    pin_group: Option<&str>,
+    call_head: Span,
+) -> Result<CompiledClosureArtifacts, LabeledError> {
+    use crate::loader::{LoadError, get_state};
+
+    let (ir_block, mut ir_decl_names) =
+        fetch_block_ir(engine, closure.item.block_id, closure.span)?;
+    let closure_source = fetch_view_source(engine, closure)?;
+    let annotated_mut_globals =
+        map_leading_annotated_mut_globals(&closure_source, &ir_block, closure.span)?;
+
+    let mut decl_names = build_decl_names(engine)?;
+    decl_names.extend(ir_decl_names.drain());
+
+    let mut closure_irs = HashMap::new();
+    fetch_closure_irs(
+        engine,
+        &ir_block,
+        &mut closure_irs,
+        &mut decl_names,
+        call_head,
+    )?;
+
+    let user_ir_blocks = collect_user_function_irs(
+        engine,
+        &ir_block,
+        &mut closure_irs,
+        &mut decl_names,
+        call_head,
+    )?;
+
+    let captures = lower_capture_literals(closure)?;
+    let ctx_param = infer_ctx_param(&ir_block);
+
+    let mut hir_program =
+        lower_ir_to_hir(ir_block, closure_irs, captures, ctx_param).map_err(|e| {
+            LabeledError::new("eBPF compilation failed")
+                .with_label(e.to_string(), call_head)
+                .with_help("The closure may use unsupported operations")
+        })?;
+    hir_program.annotated_mut_globals = annotated_mut_globals;
+    strip_leading_annotated_mut_initializer_stmts(&mut hir_program, closure.span)?;
+
+    let mut user_functions = HashMap::new();
+    for (decl_id, ir) in user_ir_blocks.iter() {
+        let func = HirFunction::from_ir_block(ir.clone()).map_err(|e| {
+            LabeledError::new("eBPF compilation failed")
+                .with_label(e.to_string(), call_head)
+                .with_help("User-defined function uses unsupported operations")
+        })?;
+        user_functions.insert(*decl_id, func);
+    }
+
+    let user_decl_ids: HashSet<DeclId> = user_functions.keys().copied().collect();
+    let user_signatures = fetch_user_function_signatures(engine, &user_decl_ids, call_head)?;
+    let state = get_state();
+    let external_map_value_types = pin_group
+        .map(|group| {
+            state
+                .pinned_generic_map_value_types(group)
+                .map_err(|e| match e {
+                    LoadError::LockPoisoned => LabeledError::new("Failed to attach eBPF probe")
+                        .with_label("loader state lock poisoned", call_head),
+                    other => LabeledError::new("Failed to attach eBPF probe")
+                        .with_label(other.to_string(), call_head),
+                })
+        })
+        .transpose()?;
+
+    let hir_types = match hir_type_infer::infer_hir_types_with_decls(
+        &hir_program,
+        &decl_names,
+        &user_functions,
+    ) {
+        Ok(types) => types,
+        Err(errors) => {
+            if let Some(err) = errors.into_iter().next() {
+                return Err(LabeledError::new("eBPF compilation failed")
+                    .with_label(err.to_string(), call_head)
+                    .with_help("The closure may use unsupported operations"));
+            }
+            unreachable!("infer_hir_types returned empty error list");
+        }
+    };
+
+    let lower_result = lower_hir_to_mir_with_hints_and_maps(
+        &hir_program,
+        Some(probe_context),
+        &decl_names,
+        Some(&hir_types),
+        external_map_value_types.as_ref(),
+        &user_functions,
+        &user_signatures,
+    )
+    .map_err(|e| {
+        LabeledError::new("eBPF compilation failed")
+            .with_label(e.to_string(), call_head)
+            .with_help("The closure may use unsupported operations")
+    })?;
+    let crate::compiler::MirLoweringResult {
+        program: mut mir_program,
+        mut type_hints,
+        generic_map_value_types,
+        readonly_globals,
+        data_globals,
+        bss_globals,
+    } = lower_result;
+
+    optimize_with_ssa_hints(
+        &mut mir_program.main,
+        Some(probe_context),
+        &mut type_hints.main,
+        &type_hints.main_stack_slots,
+        &type_hints.generic_map_value_types,
+    );
+    if type_hints.subfunctions.len() < mir_program.subfunctions.len() {
+        type_hints
+            .subfunctions
+            .resize_with(mir_program.subfunctions.len(), HashMap::new);
+    }
+    if type_hints.subfunction_stack_slots.len() < mir_program.subfunctions.len() {
+        type_hints
+            .subfunction_stack_slots
+            .resize_with(mir_program.subfunctions.len(), HashMap::new);
+    }
+    for (subfn, subfn_hints, subfn_stack_slots) in mir_program
+        .subfunctions
+        .iter_mut()
+        .zip(type_hints.subfunctions.iter_mut())
+        .zip(type_hints.subfunction_stack_slots.iter())
+        .map(|((subfn, subfn_hints), subfn_stack_slots)| (subfn, subfn_hints, subfn_stack_slots))
+    {
+        optimize_with_ssa_hints(
+            subfn,
+            None,
+            subfn_hints,
+            subfn_stack_slots,
+            &type_hints.generic_map_value_types,
+        );
+    }
+
+    let compile_result = compile_mir_to_ebpf_with_hints_and_globals(
+        &mir_program,
+        Some(probe_context),
+        Some(&type_hints),
+        readonly_globals,
+        data_globals,
+        bss_globals,
+    )
+    .map_err(|e| {
+        LabeledError::new("eBPF compilation failed")
+            .with_label(e.to_string(), call_head)
+            .with_help("Check that the closure uses supported BPF operations")
+    })?;
+
+    Ok(CompiledClosureArtifacts {
+        compile_result,
+        generic_map_value_types,
+    })
+}
+
+fn compile_struct_ops_object(
+    engine: &EngineInterface,
+    value_type_name: &str,
+    body: &Record,
+    call_head: Span,
+) -> Result<EbpfObject, LabeledError> {
+    let object_name = default_struct_ops_object_name(value_type_name);
+    let mut spec = StructOpsObjectSpec::zeroed_from_kernel_btf(&object_name, value_type_name)
+        .map_err(|e| {
+            LabeledError::new("Failed to initialize struct_ops object")
+                .with_label(e.to_string(), call_head)
+        })?;
+    let mut callbacks = Vec::new();
+
+    for (field_name, value) in body.iter() {
+        match value {
+            Value::Closure {
+                val, internal_span, ..
+            } => {
+                let closure = Spanned {
+                    item: (**val).clone(),
+                    span: *internal_span,
+                };
+                let probe_context =
+                    ProbeContext::new_struct_ops_callback(value_type_name, field_name.as_str());
+                let compiled = compile_closure_with_context(
+                    engine,
+                    &closure,
+                    &probe_context,
+                    None,
+                    call_head,
+                )?;
+                let callback_name = format!(
+                    "{}_{}",
+                    object_name,
+                    sanitize_struct_ops_component(field_name)
+                );
+                callbacks.push(compiled.compile_result.into_struct_ops_callback(
+                    field_name.as_str(),
+                    callback_name,
+                    compiled.generic_map_value_types,
+                ));
+            }
+            _ => {
+                let field_value = struct_ops_value_field_from_value(field_name, value)?;
+                spec = spec
+                    .with_value_field(field_name, field_value)
+                    .map_err(|e| {
+                        LabeledError::new("Failed to initialize struct_ops value field")
+                            .with_label(e.to_string(), value.span())
+                    })?;
+            }
+        }
+    }
+
+    if callbacks.is_empty() {
+        return Err(LabeledError::new("Invalid struct_ops object")
+            .with_label(
+                "Expected at least one callback closure field in the struct_ops record",
+                call_head,
+            )
+            .with_help(
+                "Provide a record whose callback members are closures, for example { select_cpu: {|ctx| 0 } }",
+            ));
+    }
+
+    spec.to_object_with_compiled_callbacks(callbacks)
+        .map_err(|e| {
+            LabeledError::new("Failed to build struct_ops object")
+                .with_label(e.to_string(), call_head)
+        })
+}
+
 #[derive(Clone)]
 pub struct EbpfAttach;
 
@@ -750,6 +1060,13 @@ Supported attach types:
   - xdp, tc
   - cgroup_skb
   - cgroup_sock_addr
+  - struct_ops
+
+Body forms:
+  - Ordinary program types use a closure body: {|ctx| ... }
+  - struct_ops uses a record body whose callback fields are closures and whose
+    simple top-level value fields are compile-time constants:
+      { select_cpu: {|ctx| 0 }, name: "demo" }
 
 Context parameter syntax (recommended):
   The closure can take a context parameter to access program context information:
@@ -946,9 +1263,9 @@ Requirements:
                 "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'cgroup_skb:/sys/fs/cgroup:egress', or 'cgroup_sock_addr:/sys/fs/cgroup:connect4').",
             )
             .required(
-                "closure",
-                SyntaxShape::Closure(None),
-                "The closure to compile and run as eBPF bytecode in the kernel.",
+                "body",
+                SyntaxShape::Any,
+                "Closure body for ordinary attach types, or a record of callback closures plus constant fields for struct_ops.",
             )
             .switch(
                 "stream",
@@ -986,6 +1303,7 @@ Requirements:
             "tc",
             "cgroup_skb",
             "cgroup_sock_addr",
+            "struct_ops",
         ]
     }
 
@@ -1031,6 +1349,11 @@ Requirements:
                 description: "Count the last host-order IPv6 address word on cgroup connect6 hooks",
                 result: None,
             },
+            Example {
+                example: "ebpf attach --dry-run 'struct_ops:sched_ext_ops' { name: 'nu_demo', select_cpu: {|ctx| 0 } }",
+                description: "Build a struct_ops object from callback closures and constant value fields without loading it",
+                result: None,
+            },
         ]
     }
 
@@ -1058,10 +1381,10 @@ fn run_attach(
     engine: &EngineInterface,
     call: &EvaluatedCall,
 ) -> Result<PipelineData, LabeledError> {
-    use crate::loader::{LoadError, get_state, parse_program_spec};
+    use crate::loader::{LoadError, ProgramSpec, get_state, parse_program_spec};
 
     let probe_spec: String = call.req(0)?;
-    let closure: Spanned<Closure> = call.req(1)?;
+    let body: Value = call.req(1)?;
     let dry_run = call.has_flag("dry-run")?;
     let stream = call.has_flag("stream")?;
     let pin_group: Option<String> = call.get_flag("pin")?;
@@ -1114,178 +1437,56 @@ fn run_attach(
             .with_help("Use format like 'kprobe:sys_clone' or 'tracepoint:syscalls/sys_enter_read'"),
     })?;
 
-    let prog_type = program_spec.program_type();
-    let target = program_spec.target_string();
-
-    let probe_context = ProbeContext::new(prog_type, &target);
-
-    // Get IR block from engine via plugin protocol
-    let (ir_block, mut ir_decl_names) =
-        fetch_block_ir(engine, closure.item.block_id, closure.span)?;
-    let closure_source = fetch_view_source(engine, &closure)?;
-    let annotated_mut_globals =
-        map_leading_annotated_mut_globals(&closure_source, &ir_block, closure.span)?;
-
-    // Build decl_id -> command name mapping for known commands
-    let mut decl_names = build_decl_names(engine)?;
-    decl_names.extend(ir_decl_names.drain());
-
-    // Fetch IR for any nested closures (used by where, each, etc.)
-    let mut closure_irs = HashMap::new();
-    fetch_closure_irs(
-        engine,
-        &ir_block,
-        &mut closure_irs,
-        &mut decl_names,
-        call.head,
-    )?;
-
-    // Fetch IR for any user-defined functions referenced by the closure or nested closures.
-    let user_ir_blocks = collect_user_function_irs(
-        engine,
-        &ir_block,
-        &mut closure_irs,
-        &mut decl_names,
-        call.head,
-    )?;
-
-    let captures = lower_capture_literals(&closure)?;
-
-    // Infer the context parameter from IR - it's the first variable that's loaded
-    // but never stored (i.e., a parameter rather than a local variable)
-    let ctx_param = infer_ctx_param(&ir_block);
-
-    let mut hir_program =
-        lower_ir_to_hir(ir_block, closure_irs, captures, ctx_param).map_err(|e| {
-            LabeledError::new("eBPF compilation failed")
-                .with_label(e.to_string(), call.head)
-                .with_help("The closure may use unsupported operations")
-        })?;
-    hir_program.annotated_mut_globals = annotated_mut_globals;
-    strip_leading_annotated_mut_initializer_stmts(&mut hir_program, closure.span)?;
-
-    let mut user_functions = HashMap::new();
-    for (decl_id, ir) in user_ir_blocks.iter() {
-        let func = HirFunction::from_ir_block(ir.clone()).map_err(|e| {
-            LabeledError::new("eBPF compilation failed")
-                .with_label(e.to_string(), call.head)
-                .with_help("User-defined function uses unsupported operations")
-        })?;
-        user_functions.insert(*decl_id, func);
-    }
-
-    let user_decl_ids: HashSet<DeclId> = user_functions.keys().copied().collect();
-    let user_signatures = fetch_user_function_signatures(engine, &user_decl_ids, call.head)?;
-    let state = get_state();
-    let external_map_value_types = pin_group
-        .as_deref()
-        .map(|group| {
-            state
-                .pinned_generic_map_value_types(group)
-                .map_err(|e| match e {
-                    LoadError::LockPoisoned => LabeledError::new("Failed to attach eBPF probe")
-                        .with_label("loader state lock poisoned", call.head),
-                    other => LabeledError::new("Failed to attach eBPF probe")
-                        .with_label(other.to_string(), call.head),
-                })
-        })
-        .transpose()?;
-
-    let hir_types = match hir_type_infer::infer_hir_types_with_decls(
-        &hir_program,
-        &decl_names,
-        &user_functions,
-    ) {
-        Ok(types) => types,
-        Err(errors) => {
-            if let Some(err) = errors.into_iter().next() {
-                return Err(LabeledError::new("eBPF compilation failed")
-                    .with_label(err.to_string(), call.head)
-                    .with_help("The closure may use unsupported operations"));
+    let object = match &program_spec {
+        ProgramSpec::StructOps { value_type_name } => {
+            if stream {
+                return Err(LabeledError::new("Streaming is not supported for struct_ops objects")
+                    .with_label(
+                        "struct_ops objects currently register callbacks but cannot stream events",
+                        call.head,
+                    ));
             }
-            unreachable!("infer_hir_types returned empty error list");
+            if pin_group.is_some() {
+                return Err(LabeledError::new(
+                    "Pinned map sharing is not supported for struct_ops",
+                )
+                .with_label("struct_ops objects currently cannot use --pin", call.head));
+            }
+            let record = body.into_record().map_err(|e| {
+                LabeledError::new("Invalid struct_ops body")
+                    .with_label(e.to_string(), call.head)
+                    .with_help(
+                        "Use a record whose callback fields are closures, for example { select_cpu: {|ctx| 0 } }",
+                    )
+            })?;
+            compile_struct_ops_object(engine, value_type_name, &record, call.head)?
+        }
+        _ => {
+            let closure = value_to_spanned_closure(body, call.head)?;
+            let prog_type = program_spec.program_type();
+            let target = program_spec.target_string();
+            let probe_context = ProbeContext::new(prog_type, &target);
+            let compiled = compile_closure_with_context(
+                engine,
+                &closure,
+                &probe_context,
+                pin_group.as_deref(),
+                call.head,
+            )?;
+            let mut program = compiled.compile_result.into_program(
+                prog_type,
+                &target,
+                "nushell_ebpf",
+                compiled.generic_map_value_types,
+            );
+            if pin_group.is_some() {
+                program = program.with_pinning();
+            }
+            EbpfObject::single_program(program)
         }
     };
 
-    // Lower HIR to MIR
-    let lower_result = lower_hir_to_mir_with_hints_and_maps(
-        &hir_program,
-        Some(&probe_context),
-        &decl_names,
-        Some(&hir_types),
-        external_map_value_types.as_ref(),
-        &user_functions,
-        &user_signatures,
-    )
-    .map_err(|e| {
-        LabeledError::new("eBPF compilation failed")
-            .with_label(e.to_string(), call.head)
-            .with_help("The closure may use unsupported operations")
-    })?;
-    let crate::compiler::MirLoweringResult {
-        program: mut mir_program,
-        mut type_hints,
-        generic_map_value_types,
-        readonly_globals,
-        data_globals,
-        bss_globals,
-    } = lower_result;
-
-    // Run SSA-based optimizations
-    optimize_with_ssa_hints(
-        &mut mir_program.main,
-        Some(&probe_context),
-        &mut type_hints.main,
-        &type_hints.main_stack_slots,
-        &type_hints.generic_map_value_types,
-    );
-    if type_hints.subfunctions.len() < mir_program.subfunctions.len() {
-        type_hints
-            .subfunctions
-            .resize_with(mir_program.subfunctions.len(), HashMap::new);
-    }
-    if type_hints.subfunction_stack_slots.len() < mir_program.subfunctions.len() {
-        type_hints
-            .subfunction_stack_slots
-            .resize_with(mir_program.subfunctions.len(), HashMap::new);
-    }
-    for (subfn, subfn_hints, subfn_stack_slots) in mir_program
-        .subfunctions
-        .iter_mut()
-        .zip(type_hints.subfunctions.iter_mut())
-        .zip(type_hints.subfunction_stack_slots.iter())
-        .map(|((subfn, subfn_hints), subfn_stack_slots)| (subfn, subfn_hints, subfn_stack_slots))
-    {
-        optimize_with_ssa_hints(
-            subfn,
-            None,
-            subfn_hints,
-            subfn_stack_slots,
-            &type_hints.generic_map_value_types,
-        );
-    }
-
-    // Compile MIR to eBPF
-    let mut program = compile_mir_to_ebpf_with_hints_and_globals(
-        &mir_program,
-        Some(&probe_context),
-        Some(&type_hints),
-        readonly_globals,
-        data_globals,
-        bss_globals,
-    )
-    .map_err(|e| {
-        LabeledError::new("eBPF compilation failed")
-            .with_label(e.to_string(), call.head)
-            .with_help("Check that the closure uses supported BPF operations")
-    })?
-    .into_program(prog_type, &target, "nushell_ebpf", generic_map_value_types);
-
-    if pin_group.is_some() {
-        program = program.with_pinning();
-    }
-
-    let object = EbpfObject::single_program(program);
+    let state = get_state();
 
     if dry_run {
         let elf = object.to_elf().map_err(|e| {
@@ -1454,13 +1655,14 @@ mod tests {
     use crate::compiler::passes::optimize_with_ssa_hints;
     use crate::compiler::{
         CounterKeySchema, CounterKeySchemaField, EbpfProgramType, MirType, ProbeContext,
-        compile_mir_to_ebpf_with_hints,
+        StructOpsValueField, compile_mir_to_ebpf_with_hints,
     };
     use nu_protocol::DeclId;
     use nu_protocol::ast::{CellPath, Comparison, Math, Operator, PathMember};
     use nu_protocol::casing::Casing;
+    use nu_protocol::engine::Closure;
     use nu_protocol::ir::{Instruction, IrBlock};
-    use nu_protocol::{RegId, Span, Type, Value, VarId};
+    use nu_protocol::{BlockId, Record, RegId, Span, Type, Value, VarId};
 
     #[test]
     fn test_extract_decl_names_from_formatted_instructions_filters_to_known_commands() {
@@ -1668,6 +1870,60 @@ mod tests {
             &hir.main.blocks[0].stmts[0],
             HirStmt::LoadVariable { var_id, .. } if *var_id == VarId::new(99)
         ));
+    }
+
+    #[test]
+    fn test_value_to_spanned_closure_accepts_closure_value() {
+        let closure = Closure {
+            block_id: BlockId::new(7),
+            captures: vec![],
+        };
+        let value = Value::closure(closure.clone(), Span::test_data());
+
+        let lowered = super::value_to_spanned_closure(value, Span::test_data())
+            .expect("closure should lower");
+
+        assert_eq!(lowered.item.block_id, closure.block_id);
+    }
+
+    #[test]
+    fn test_struct_ops_value_field_from_value_accepts_binary() {
+        let field = super::struct_ops_value_field_from_value(
+            "cookie",
+            &Value::binary(vec![1, 2, 3], Span::test_data()),
+        )
+        .expect("binary field should lower");
+
+        assert_eq!(field, StructOpsValueField::Bytes(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn test_struct_ops_value_field_from_value_rejects_record() {
+        let mut record = Record::new();
+        record.push("pid", Value::int(7, Span::test_data()));
+
+        let err = super::struct_ops_value_field_from_value(
+            "state",
+            &Value::record(record, Span::test_data()),
+        )
+        .expect_err("record field should be rejected");
+
+        assert!(
+            err.to_string()
+                .contains("Unsupported struct_ops value field")
+        );
+    }
+
+    #[test]
+    fn test_default_struct_ops_object_name_sanitizes_type_name() {
+        assert_eq!(
+            super::default_struct_ops_object_name("sched_ext_ops"),
+            "nu_sched_ext_ops"
+        );
+        assert_eq!(
+            super::default_struct_ops_object_name("weird-type/name"),
+            "nu_weird_type_name"
+        );
     }
 
     fn make_ctx_path_program(cell_path: CellPath) -> HirProgram {

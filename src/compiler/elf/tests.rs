@@ -123,7 +123,10 @@ fn test_program_type_supports_raw_tracepoint_alias() {
         EbpfProgramType::from_spec_prefix("tc"),
         Some(EbpfProgramType::Tc)
     );
-    assert_eq!(EbpfProgramType::from_spec_prefix("struct_ops"), None);
+    assert_eq!(
+        EbpfProgramType::from_spec_prefix("struct_ops"),
+        Some(EbpfProgramType::StructOps)
+    );
 }
 
 #[test]

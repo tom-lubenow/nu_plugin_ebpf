@@ -5,7 +5,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: Write tracing logic in familiar Nushell syntax
-- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, xdp, tc, cgroup_skb, cgroup_sock_addr
+- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, xdp, tc, cgroup_skb, cgroup_sock_addr, initial struct_ops object support
 - **Aggregations**: Count by key, histograms, timing measurements
 - **Event streaming**: Real-time event output via ring buffers
 - **Map sharing**: Share data between probes with `--pin`
@@ -87,6 +87,12 @@ let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect4' {|ctx| $ctx.user
 
 # Inspect the last host-order IPv6 word on cgroup connect6 hooks
 let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect6' {|ctx| ($ctx.user_ip6 | get 3) | count; 1 }
+
+# Build a struct_ops object from callback closures plus constant value fields
+ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
+    name: 'nu_demo'
+    select_cpu: {|ctx| 0 }
+}
 ```
 
 ### Count syscalls by process
