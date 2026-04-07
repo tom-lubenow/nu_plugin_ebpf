@@ -424,6 +424,46 @@ fn validate_required_struct_ops_callbacks(
         .with_help(help))
 }
 
+fn validate_required_struct_ops_value_fields(
+    value_type_name: &str,
+    body: &Record,
+    span: Span,
+) -> Result<(), LabeledError> {
+    match value_type_name {
+        "tcp_congestion_ops" => {
+            let Some(name_value) = body.get("name") else {
+                return Err(LabeledError::new("Invalid struct_ops object")
+                    .with_label(
+                        "struct_ops 'tcp_congestion_ops' is missing required value field 'name'",
+                        span,
+                    )
+                    .with_help(
+                        "tcp_congestion_ops requires a non-empty 'name' value member, for example { name: 'nu_demo', ssthresh: {|ctx| 2 }, undo_cwnd: {|ctx| 2 }, cong_avoid: {|ctx| 0 } }",
+                    ));
+            };
+
+            let name_is_empty = match name_value {
+                Value::String { val, .. } => val.is_empty(),
+                Value::Binary { val, .. } => val.is_empty(),
+                _ => false,
+            };
+            if name_is_empty {
+                return Err(LabeledError::new("Invalid struct_ops object")
+                    .with_label(
+                        "struct_ops 'tcp_congestion_ops' requires a non-empty 'name' value field",
+                        name_value.span(),
+                    )
+                    .with_help(
+                        "Set 'name' to a non-empty string like 'nu_demo' before registering tcp_congestion_ops",
+                    ));
+            }
+
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
 fn sanitize_struct_ops_component(component: &str) -> String {
     let sanitized: String = component
         .chars()
@@ -1183,6 +1223,7 @@ fn compile_struct_ops_object(
     call_head: Span,
 ) -> Result<EbpfObject, LabeledError> {
     let object_name = default_struct_ops_object_name(value_type_name);
+    validate_required_struct_ops_value_fields(value_type_name, body, call_head)?;
     let mut spec = StructOpsObjectSpec::zeroed_from_kernel_btf(&object_name, value_type_name)
         .map_err(|e| {
             LabeledError::new("Failed to initialize struct_ops object")
@@ -2533,6 +2574,73 @@ mod tests {
             Span::test_data(),
         )
         .expect("complete tcp_congestion_ops callbacks should be allowed");
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_missing_tcp_congestion_name() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("tcp_congestion_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "tcp_congestion_ops",
+            &Record::new(),
+            Span::test_data(),
+        )
+        .expect_err("missing tcp_congestion_ops name should be rejected");
+        assert!(
+            err.labels
+                .iter()
+                .any(|label| { label.text.contains("missing required value field 'name'") })
+        );
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_empty_tcp_congestion_name() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("tcp_congestion_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("", Span::test_data()));
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "tcp_congestion_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("empty tcp_congestion_ops name should be rejected");
+        assert!(err.labels.iter().any(|label| {
+            label
+                .text
+                .contains("requires a non-empty 'name' value field")
+        }));
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_allows_non_empty_tcp_congestion_name() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("tcp_congestion_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu_demo", Span::test_data()));
+
+        super::validate_required_struct_ops_value_fields(
+            "tcp_congestion_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect("non-empty tcp_congestion_ops name should be allowed");
     }
 
     #[test]
