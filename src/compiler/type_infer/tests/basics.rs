@@ -37,6 +37,22 @@ fn find_aggregate_fexit_ret_candidate() -> (String, usize) {
     );
 }
 
+fn find_struct_ops_arg_candidate() -> Option<(String, String)> {
+    for (value_type_name, callback_name) in [
+        ("sched_ext_ops", "select_cpu"),
+        ("tcp_congestion_ops", "cong_avoid"),
+        ("tcp_congestion_ops", "init"),
+    ] {
+        if matches!(
+            KernelBtf::get().struct_ops_callback_arg_type_info(value_type_name, callback_name, 0),
+            Ok(Some(_))
+        ) {
+            return Some((value_type_name.to_string(), callback_name.to_string()));
+        }
+    }
+    None
+}
+
 fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
     match type_info {
         TypeInfo::Int { size, signed } => Some(match (*size, *signed) {
@@ -449,6 +465,65 @@ fn test_infer_fentry_arg_is_int() {
     );
 
     assert_eq!(types.get(&v0), Some(&expected));
+}
+
+#[test]
+fn test_infer_struct_ops_arg_matches_kernel_btf() {
+    let Some((value_type_name, callback_name)) = find_struct_ops_arg_candidate() else {
+        return;
+    };
+
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::Arg(0),
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new_struct_ops_callback(&value_type_name, &callback_name);
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+    let expected_type_info = KernelBtf::get()
+        .struct_ops_callback_arg_type_info(&value_type_name, &callback_name, 0)
+        .unwrap()
+        .expect("expected struct_ops callback arg0 type info");
+    let inferred = types
+        .get(&v0)
+        .expect("expected inferred type for struct_ops callback arg0");
+
+    match (&expected_type_info, inferred) {
+        (
+            TypeInfo::Ptr {
+                is_user: false,
+                target,
+                ..
+            },
+            MirType::Ptr {
+                pointee,
+                address_space,
+            },
+        ) => {
+            assert_eq!(*address_space, AddressSpace::Kernel);
+            if let (
+                TypeInfo::Struct { btf_type_id, .. },
+                MirType::Struct {
+                    kernel_btf_type_id, ..
+                },
+            ) = (&**target, &**pointee)
+            {
+                assert_eq!(kernel_btf_type_id, btf_type_id);
+            }
+        }
+        _ => {
+            let expected = expected_runtime_trampoline_type(&expected_type_info);
+            assert_eq!(inferred, &expected);
+        }
+    }
 }
 
 #[test]

@@ -720,6 +720,8 @@ pub struct ProbeContext {
     pub probe_type: EbpfProgramType,
     /// The target function or tracepoint name
     pub target: String,
+    /// Optional kernel BTF container type for `struct_ops` callbacks.
+    pub struct_ops_value_type_name: Option<String>,
 }
 
 impl ProbeContext {
@@ -758,6 +760,19 @@ impl ProbeContext {
         Self {
             probe_type,
             target: target.into(),
+            struct_ops_value_type_name: None,
+        }
+    }
+
+    /// Create a probe context for a `struct_ops` callback.
+    pub fn new_struct_ops_callback(
+        value_type_name: impl Into<String>,
+        callback_name: impl Into<String>,
+    ) -> Self {
+        Self {
+            probe_type: EbpfProgramType::StructOps,
+            target: callback_name.into(),
+            struct_ops_value_type_name: Some(value_type_name.into()),
         }
     }
 
@@ -770,6 +785,7 @@ impl ProbeContext {
         Self {
             probe_type: EbpfProgramType::Kprobe,
             target: String::new(),
+            struct_ops_value_type_name: None,
         }
     }
 
@@ -1518,7 +1534,7 @@ const STRUCT_OPS_INFO: ProgramTypeInfo = ProgramTypeInfo {
     target_kind: ProgramTargetKind::StructOpsCallback,
     kernel_target_validation: None,
     supported_capabilities: STRUCT_OPS_CAPABILITIES,
-    arg_access: ProgramValueAccess::None,
+    arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::None,
     supports_task_ctx_fields: false,
     supports_cpu_ctx_field: false,

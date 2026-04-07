@@ -1,5 +1,5 @@
 use super::*;
-use crate::compiler::ProgramValueAccess;
+use crate::compiler::{EbpfProgramType, ProgramValueAccess};
 use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec};
 
 impl<'a> MirToEbpfCompiler<'a> {
@@ -654,25 +654,50 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let n = *n as usize;
                 match self.probe_ctx {
                     Some(ctx) if ctx.probe_type.uses_btf_trampoline() => {
-                        let spec = KernelBtf::get()
-                            .function_trampoline_arg(&ctx.target, n)
-                            .map_err(|e| {
-                                CompileError::UnsupportedInstruction(format!(
-                                    "failed to resolve ctx.arg{} for {}:{}: {}",
-                                    n,
-                                    ctx.probe_type.section_prefix(),
-                                    ctx.target,
-                                    e
-                                ))
-                            })?
-                            .ok_or_else(|| {
-                                CompileError::UnsupportedInstruction(format!(
-                                    "ctx.arg{} is not available on {}:{}",
-                                    n,
-                                    ctx.probe_type.section_prefix(),
-                                    ctx.target
-                                ))
-                            })?;
+                        let spec = match ctx.probe_type {
+                            EbpfProgramType::StructOps => {
+                                let value_type_name =
+                                    ctx.struct_ops_value_type_name.as_deref().ok_or_else(|| {
+                                        CompileError::UnsupportedInstruction(format!(
+                                            "missing struct_ops value type for callback '{}'",
+                                            ctx.target
+                                        ))
+                                    })?;
+                                KernelBtf::get()
+                                    .struct_ops_callback_arg(value_type_name, &ctx.target, n)
+                                    .map_err(|e| {
+                                        CompileError::UnsupportedInstruction(format!(
+                                            "failed to resolve ctx.arg{} for struct_ops {}.{}: {}",
+                                            n, value_type_name, ctx.target, e
+                                        ))
+                                    })?
+                                    .ok_or_else(|| {
+                                        CompileError::UnsupportedInstruction(format!(
+                                            "ctx.arg{} is not available on struct_ops {}.{}",
+                                            n, value_type_name, ctx.target
+                                        ))
+                                    })?
+                            }
+                            _ => KernelBtf::get()
+                                .function_trampoline_arg(&ctx.target, n)
+                                .map_err(|e| {
+                                    CompileError::UnsupportedInstruction(format!(
+                                        "failed to resolve ctx.arg{} for {}:{}: {}",
+                                        n,
+                                        ctx.probe_type.section_prefix(),
+                                        ctx.target,
+                                        e
+                                    ))
+                                })?
+                                .ok_or_else(|| {
+                                    CompileError::UnsupportedInstruction(format!(
+                                        "ctx.arg{} is not available on {}:{}",
+                                        n,
+                                        ctx.probe_type.section_prefix(),
+                                        ctx.target
+                                    ))
+                                })?,
+                        };
                         self.compile_trampoline_value_load(
                             dst,
                             slot,

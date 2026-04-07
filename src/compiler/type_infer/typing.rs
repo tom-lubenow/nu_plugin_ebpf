@@ -1,5 +1,5 @@
 use super::*;
-use crate::compiler::ProgramValueAccess;
+use crate::compiler::{EbpfProgramType, ProgramValueAccess};
 use crate::kernel_btf::{KernelBtf, TypeInfo};
 
 impl<'a> TypeInference<'a> {
@@ -162,25 +162,54 @@ impl<'a> TypeInference<'a> {
             return Ok(None);
         }
 
-        let type_info = KernelBtf::get()
-            .function_trampoline_arg_type_info(&ctx.target, idx as usize)
-            .map_err(|e| {
-                TypeError::new(format!(
-                    "failed to resolve ctx.arg{} for {}:{}: {}",
-                    idx,
-                    ctx.probe_type.section_prefix(),
-                    ctx.target,
-                    e
-                ))
-            })?;
+        let type_info = match ctx.probe_type {
+            EbpfProgramType::StructOps => {
+                let value_type_name =
+                    ctx.struct_ops_value_type_name.as_deref().ok_or_else(|| {
+                        TypeError::new(format!(
+                            "missing struct_ops value type for callback '{}'",
+                            ctx.target
+                        ))
+                    })?;
+                KernelBtf::get()
+                    .struct_ops_callback_arg_type_info(value_type_name, &ctx.target, idx as usize)
+                    .map_err(|e| {
+                        TypeError::new(format!(
+                            "failed to resolve ctx.arg{} for struct_ops {}.{}: {}",
+                            idx, value_type_name, ctx.target, e
+                        ))
+                    })?
+            }
+            _ => KernelBtf::get()
+                .function_trampoline_arg_type_info(&ctx.target, idx as usize)
+                .map_err(|e| {
+                    TypeError::new(format!(
+                        "failed to resolve ctx.arg{} for {}:{}: {}",
+                        idx,
+                        ctx.probe_type.section_prefix(),
+                        ctx.target,
+                        e
+                    ))
+                })?,
+        };
         type_info
             .ok_or_else(|| {
-                TypeError::new(format!(
-                    "ctx.arg{} is not available on {}:{}",
-                    idx,
-                    ctx.probe_type.section_prefix(),
-                    ctx.target
-                ))
+                TypeError::new(match ctx.probe_type {
+                    EbpfProgramType::StructOps => format!(
+                        "ctx.arg{} is not available on struct_ops {}.{}",
+                        idx,
+                        ctx.struct_ops_value_type_name
+                            .as_deref()
+                            .unwrap_or("<unknown>"),
+                        ctx.target
+                    ),
+                    _ => format!(
+                        "ctx.arg{} is not available on {}:{}",
+                        idx,
+                        ctx.probe_type.section_prefix(),
+                        ctx.target
+                    ),
+                })
             })
             .map(|type_info| {
                 Some(match type_info {
@@ -248,24 +277,57 @@ impl<'a> TypeInference<'a> {
 
             match field {
                 CtxField::Arg(idx) if ctx.probe_type.uses_btf_trampoline() => {
-                    let spec = KernelBtf::get()
-                        .function_trampoline_arg(&ctx.target, *idx as usize)
-                        .map_err(|e| {
-                            TypeError::new(format!(
-                                "failed to resolve ctx.arg{} for {}:{}: {}",
+                    let spec = match ctx.probe_type {
+                        EbpfProgramType::StructOps => {
+                            let value_type_name =
+                                ctx.struct_ops_value_type_name.as_deref().ok_or_else(|| {
+                                    TypeError::new(format!(
+                                        "missing struct_ops value type for callback '{}'",
+                                        ctx.target
+                                    ))
+                                })?;
+                            KernelBtf::get()
+                                .struct_ops_callback_arg(
+                                    value_type_name,
+                                    &ctx.target,
+                                    *idx as usize,
+                                )
+                                .map_err(|e| {
+                                    TypeError::new(format!(
+                                        "failed to resolve ctx.arg{} for struct_ops {}.{}: {}",
+                                        idx, value_type_name, ctx.target, e
+                                    ))
+                                })?
+                        }
+                        _ => KernelBtf::get()
+                            .function_trampoline_arg(&ctx.target, *idx as usize)
+                            .map_err(|e| {
+                                TypeError::new(format!(
+                                    "failed to resolve ctx.arg{} for {}:{}: {}",
+                                    idx,
+                                    ctx.probe_type.section_prefix(),
+                                    ctx.target,
+                                    e
+                                ))
+                            })?,
+                    };
+                    if spec.is_none() {
+                        return Err(TypeError::new(match ctx.probe_type {
+                            EbpfProgramType::StructOps => format!(
+                                "ctx.arg{} is not available on struct_ops {}.{}",
+                                idx,
+                                ctx.struct_ops_value_type_name
+                                    .as_deref()
+                                    .unwrap_or("<unknown>"),
+                                ctx.target
+                            ),
+                            _ => format!(
+                                "ctx.arg{} is not available on {}:{}",
                                 idx,
                                 ctx.probe_type.section_prefix(),
-                                ctx.target,
-                                e
-                            ))
-                        })?;
-                    if spec.is_none() {
-                        return Err(TypeError::new(format!(
-                            "ctx.arg{} is not available on {}:{}",
-                            idx,
-                            ctx.probe_type.section_prefix(),
-                            ctx.target
-                        )));
+                                ctx.target
+                            ),
+                        }));
                     }
                 }
                 CtxField::RetVal

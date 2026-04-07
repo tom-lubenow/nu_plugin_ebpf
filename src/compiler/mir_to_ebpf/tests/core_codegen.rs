@@ -27,6 +27,22 @@ fn find_aggregate_fentry_arg_candidate() -> (String, u8, usize) {
     panic!("expected an aggregate fentry candidate on this kernel");
 }
 
+fn find_struct_ops_arg_candidate() -> Option<(String, String)> {
+    for (value_type_name, callback_name) in [
+        ("sched_ext_ops", "select_cpu"),
+        ("tcp_congestion_ops", "cong_avoid"),
+        ("tcp_congestion_ops", "init"),
+    ] {
+        if matches!(
+            KernelBtf::get().struct_ops_callback_arg_type_info(value_type_name, callback_name, 0),
+            Ok(Some(_))
+        ) {
+            return Some((value_type_name.to_string(), callback_name.to_string()));
+        }
+    }
+    None
+}
+
 fn string_member(name: &str) -> PathMember {
     PathMember::test_string(name.to_string(), false, Casing::Sensitive)
 }
@@ -599,6 +615,47 @@ fn test_compile_fentry_aggregate_arg_copies_into_backing_slot() {
         "expected at least {expected_chunks} stores into the backing slot"
     );
     assert!(saw_stack_addr, "expected load to return a stack pointer");
+}
+
+#[test]
+fn test_compile_struct_ops_arg_uses_trampoline_layout() {
+    let Some((value_type_name, callback_name)) = find_struct_ops_arg_candidate() else {
+        return;
+    };
+    let ctx = ProbeContext::new_struct_ops_callback(&value_type_name, &callback_name);
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::LoadCtxField {
+            dst,
+            field: CtxField::Arg(0),
+            slot: None,
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    assert!(
+        !compiler.instructions.is_empty(),
+        "expected codegen output for struct_ops callback arg load"
+    );
 }
 
 #[test]

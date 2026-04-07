@@ -193,6 +193,9 @@ pub struct KernelBtf {
     raw_type_size_cache: RwLock<Option<Result<HashMap<u32, u32>, BtfError>>>,
     /// Cached per-function trampoline layouts for fentry/fexit/tp_btf style programs.
     trampoline_layout_cache: RwLock<HashMap<String, Result<TrampolineFunctionLayout, BtfError>>>,
+    /// Cached per-callback trampoline layouts for struct_ops callbacks.
+    struct_ops_layout_cache:
+        RwLock<HashMap<(String, String), Result<TrampolineFunctionLayout, BtfError>>>,
     /// Cached mapping of kfunc names to nullable pointer argument indices.
     kfunc_nullable_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to const-qualified pointer argument indices.
@@ -255,6 +258,7 @@ impl KernelBtf {
                 pt_regs_cache: RwLock::new(None),
                 raw_type_size_cache: RwLock::new(None),
                 trampoline_layout_cache: RwLock::new(HashMap::new()),
+                struct_ops_layout_cache: RwLock::new(HashMap::new()),
                 kfunc_nullable_arg_cache: RwLock::new(None),
                 kfunc_const_pointer_arg_cache: RwLock::new(None),
                 kfunc_user_pointer_arg_cache: RwLock::new(None),
@@ -436,6 +440,35 @@ impl KernelBtf {
         )))
     }
 
+    /// Resolve a typed trampoline argument slot for a `struct_ops` callback.
+    ///
+    /// Returns `Ok(None)` when the callback exists but does not have that argument.
+    /// Returns an error if the argument exists but has an unsupported by-value type.
+    pub fn struct_ops_callback_arg(
+        &self,
+        value_type_name: &str,
+        callback_name: &str,
+        arg_idx: usize,
+    ) -> Result<Option<TrampolineValueSpec>, BtfError> {
+        let layout = self.struct_ops_callback_layout(value_type_name, callback_name)?;
+        let Some(field) = layout.args.get(arg_idx) else {
+            return Ok(None);
+        };
+        if let Some(value) = field.value {
+            return Ok(Some(value));
+        }
+        Err(BtfError::KernelBtfError(format!(
+            "argument {} for struct_ops callback '{}.{}' uses an unsupported trampoline type: {}",
+            arg_idx,
+            value_type_name,
+            callback_name,
+            field
+                .unsupported_reason
+                .as_deref()
+                .unwrap_or("unknown layout")
+        )))
+    }
+
     /// Resolve the exact kernel-BTF type for a trampoline argument.
     ///
     /// Returns `Ok(None)` when the function exists but does not have that argument.
@@ -454,6 +487,44 @@ impl KernelBtf {
             return Err(BtfError::KernelBtfError(format!(
                 "function '{}' is missing a function prototype in kernel BTF",
                 function_name
+            )));
+        };
+
+        let Some(param) = proto
+            .params
+            .iter()
+            .take_while(|param| param.type_id != 0)
+            .nth(arg_idx)
+        else {
+            return Ok(None);
+        };
+
+        let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
+        let param_ty = btf.get_type_by_id(param.type_id).map_err(|e| {
+            BtfError::KernelBtfError(format!(
+                "failed to resolve kernel BTF type {}: {}",
+                param.type_id, e
+            ))
+        })?;
+        Self::type_info_from_btf_type(&btf, &param_ty, &raw_type_sizes).map(Some)
+    }
+
+    /// Resolve the exact kernel-BTF type for a `struct_ops` callback argument.
+    ///
+    /// Returns `Ok(None)` when the callback exists but does not have that argument.
+    pub fn struct_ops_callback_arg_type_info(
+        &self,
+        value_type_name: &str,
+        callback_name: &str,
+        arg_idx: usize,
+    ) -> Result<Option<TypeInfo>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let callback_ty =
+            Self::resolve_struct_ops_callback_member_type(&btf, value_type_name, callback_name)?;
+        let Type::FunctionProto(proto) = &callback_ty.base_type else {
+            return Err(BtfError::KernelBtfError(format!(
+                "struct_ops callback '{}.{}' is missing a function prototype in kernel BTF",
+                value_type_name, callback_name
             )));
         };
 
@@ -630,6 +701,40 @@ impl KernelBtf {
             .map(Some)
     }
 
+    /// Resolve a named field path within a `struct_ops` callback argument.
+    ///
+    /// Returns `Ok(None)` when the callback exists but does not have that argument.
+    pub fn struct_ops_callback_arg_field(
+        &self,
+        value_type_name: &str,
+        callback_name: &str,
+        arg_idx: usize,
+        field_path: &[TrampolineFieldSelector],
+    ) -> Result<Option<TrampolineFieldProjection>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let callback_ty =
+            Self::resolve_struct_ops_callback_member_type(&btf, value_type_name, callback_name)?;
+        let Type::FunctionProto(proto) = &callback_ty.base_type else {
+            return Err(BtfError::KernelBtfError(format!(
+                "struct_ops callback '{}.{}' is missing a function prototype in kernel BTF",
+                value_type_name, callback_name
+            )));
+        };
+
+        let Some(param) = proto
+            .params
+            .iter()
+            .take_while(|param| param.type_id != 0)
+            .nth(arg_idx)
+        else {
+            return Ok(None);
+        };
+
+        let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
+        self.resolve_trampoline_field_projection(&btf, param.type_id, field_path, &raw_type_sizes)
+            .map(Some)
+    }
+
     /// Resolve a named field path within a by-value trampoline return value.
     ///
     /// Returns `Ok(None)` when the function returns `void`.
@@ -773,6 +878,116 @@ impl KernelBtf {
         };
 
         Ok(TrampolineFunctionLayout { args, retval })
+    }
+
+    fn struct_ops_callback_layout(
+        &self,
+        value_type_name: &str,
+        callback_name: &str,
+    ) -> Result<TrampolineFunctionLayout, BtfError> {
+        let key = (value_type_name.to_string(), callback_name.to_string());
+        {
+            let cache = self.struct_ops_layout_cache.read().unwrap();
+            if let Some(layout) = cache.get(&key) {
+                return layout.clone();
+            }
+        }
+
+        let layout = self.compute_struct_ops_callback_layout(value_type_name, callback_name);
+
+        let mut cache = self.struct_ops_layout_cache.write().unwrap();
+        cache.insert(key, layout.clone());
+        layout
+    }
+
+    fn compute_struct_ops_callback_layout(
+        &self,
+        value_type_name: &str,
+        callback_name: &str,
+    ) -> Result<TrampolineFunctionLayout, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let callback_ty =
+            Self::resolve_struct_ops_callback_member_type(&btf, value_type_name, callback_name)?;
+        let Type::FunctionProto(proto) = &callback_ty.base_type else {
+            return Err(BtfError::KernelBtfError(format!(
+                "struct_ops callback '{}.{}' is missing a function prototype in kernel BTF",
+                value_type_name, callback_name
+            )));
+        };
+
+        let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
+        let mut next_slot = 0usize;
+        let mut args = Vec::with_capacity(proto.params.len());
+        for param in &proto.params {
+            if param.type_id == 0 {
+                break;
+            }
+            let raw_size_bytes = raw_type_sizes
+                .get(&param.type_id)
+                .copied()
+                .map(|size| size as usize);
+            let layout =
+                Self::trampoline_field_layout(&btf, param.type_id, next_slot, raw_size_bytes)?;
+            next_slot = next_slot.checked_add(layout.slot_count).ok_or_else(|| {
+                BtfError::KernelBtfError(format!(
+                    "trampoline layout for struct_ops callback '{}.{}' overflowed slot accounting",
+                    value_type_name, callback_name
+                ))
+            })?;
+            args.push(layout);
+        }
+
+        Ok(TrampolineFunctionLayout { args, retval: None })
+    }
+
+    fn resolve_struct_ops_callback_member_type(
+        btf: &Btf,
+        value_type_name: &str,
+        callback_name: &str,
+    ) -> Result<FlattenedType, BtfError> {
+        let ty = btf
+            .get_type_by_name(value_type_name)
+            .map_err(|_| BtfError::TypeNotFound(value_type_name.to_string()))?;
+
+        let member = match &ty.base_type {
+            Type::Struct(struct_ty) | Type::Union(struct_ty) => struct_ty
+                .members
+                .iter()
+                .find(|member| member.name.as_deref() == Some(callback_name))
+                .ok_or_else(|| {
+                    BtfError::KernelBtfError(format!(
+                        "kernel BTF type '{}' has no callback member '{}'",
+                        value_type_name, callback_name
+                    ))
+                })?,
+            other => {
+                return Err(BtfError::KernelBtfError(format!(
+                    "kernel BTF type '{}' is not a struct/union (got {:?})",
+                    value_type_name, other
+                )));
+            }
+        };
+
+        let member_ty = btf.get_type_by_id(member.type_id).map_err(|e| {
+            BtfError::KernelBtfError(format!(
+                "failed to resolve kernel BTF type {}: {}",
+                member.type_id, e
+            ))
+        })?;
+        if member_ty.num_refs == 0 {
+            return Err(BtfError::KernelBtfError(format!(
+                "struct_ops callback '{}.{}' is not a function pointer",
+                value_type_name, callback_name
+            )));
+        }
+        if !matches!(member_ty.base_type, Type::FunctionProto(_)) {
+            return Err(BtfError::KernelBtfError(format!(
+                "struct_ops callback '{}.{}' does not resolve to a function prototype",
+                value_type_name, callback_name
+            )));
+        }
+
+        Ok(member_ty.clone())
     }
 
     fn load_kfunc_nullable_arg_map(&self) -> Result<HashMap<String, Vec<usize>>, BtfError> {
@@ -3437,6 +3652,7 @@ mod tests {
             pt_regs_cache: RwLock::new(None),
             raw_type_size_cache: RwLock::new(None),
             trampoline_layout_cache: RwLock::new(HashMap::new()),
+            struct_ops_layout_cache: RwLock::new(HashMap::new()),
             kfunc_nullable_arg_cache: RwLock::new(None),
             kfunc_const_pointer_arg_cache: RwLock::new(None),
             kfunc_user_pointer_arg_cache: RwLock::new(None),
@@ -3948,6 +4164,40 @@ format:
         assert!(
             matches!(err, BtfError::KernelBtfError(message) if message.contains("aggregate return"))
         );
+    }
+
+    fn find_struct_ops_callback_candidate() -> Option<(&'static str, &'static str)> {
+        for (value_type_name, callback_name) in [
+            ("sched_ext_ops", "select_cpu"),
+            ("tcp_congestion_ops", "cong_avoid"),
+            ("tcp_congestion_ops", "init"),
+        ] {
+            if matches!(
+                KernelBtf::get().struct_ops_callback_arg_type_info(
+                    value_type_name,
+                    callback_name,
+                    0
+                ),
+                Ok(Some(_))
+            ) {
+                return Some((value_type_name, callback_name));
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn test_struct_ops_callback_arg_type_info_resolves_candidate() {
+        let Some((value_type_name, callback_name)) = find_struct_ops_callback_candidate() else {
+            return;
+        };
+
+        let arg = KernelBtf::get()
+            .struct_ops_callback_arg_type_info(value_type_name, callback_name, 0)
+            .expect("struct_ops callback arg query should succeed")
+            .expect("struct_ops callback arg0 should exist");
+
+        assert!(matches!(arg, TypeInfo::Ptr { .. } | TypeInfo::Int { .. }));
     }
 
     #[test]

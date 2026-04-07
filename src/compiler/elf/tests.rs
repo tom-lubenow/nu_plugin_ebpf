@@ -90,11 +90,23 @@ fn test_program_type_metadata_for_struct_ops() {
     assert_eq!(info.canonical_prefix, "struct_ops");
     assert_eq!(info.attach_kind, ProgramAttachKind::StructOps);
     assert_eq!(info.target_kind, ProgramTargetKind::StructOpsCallback);
-    assert_eq!(info.arg_access, ProgramValueAccess::None);
+    assert_eq!(info.arg_access, ProgramValueAccess::Trampoline);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
     assert!(EbpfProgramType::StructOps.supports_capability(ProgramCapability::Globals));
     assert!(EbpfProgramType::StructOps.supports_capability(ProgramCapability::KfuncCalls));
     assert!(!EbpfProgramType::StructOps.supports_capability(ProgramCapability::Emit));
+}
+
+#[test]
+fn test_probe_context_for_struct_ops_callback_preserves_value_type_name() {
+    let ctx = ProbeContext::new_struct_ops_callback("sched_ext_ops", "select_cpu");
+
+    assert_eq!(ctx.probe_type, EbpfProgramType::StructOps);
+    assert_eq!(ctx.target, "select_cpu");
+    assert_eq!(
+        ctx.struct_ops_value_type_name.as_deref(),
+        Some("sched_ext_ops")
+    );
 }
 
 #[test]
