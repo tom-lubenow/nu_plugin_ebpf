@@ -395,9 +395,6 @@ impl<'a> HirToMirLowering<'a> {
             // === No-ops ===
             HirStmt::Span { .. }
             | HirStmt::Collect { .. }
-            | HirStmt::Drop { .. }
-            | HirStmt::Drain { .. }
-            | HirStmt::DrainIfEnd { .. }
             | HirStmt::CheckErrRedirected { .. }
             | HirStmt::OpenFile { .. }
             | HirStmt::WriteFile { .. }
@@ -409,6 +406,10 @@ impl<'a> HirToMirLowering<'a> {
             | HirStmt::PopErrorHandler
             | HirStmt::CheckMatchGuard { .. } => {
                 // No-ops in eBPF (no spans/streams/redirection/files)
+            }
+
+            HirStmt::Drop { src } | HirStmt::Drain { src } | HirStmt::DrainIfEnd { src } => {
+                self.invalidate_reg_value(*src);
             }
         }
         Ok(())

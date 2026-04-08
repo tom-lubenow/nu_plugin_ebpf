@@ -177,6 +177,107 @@ fn test_kfunc_call_without_pipeline_does_not_inject_src_dst() {
 }
 
 #[test]
+fn test_kfunc_call_does_not_inject_drained_src_dst() {
+    use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
+    use nu_protocol::{DeclId, RegId};
+    use std::sync::Arc;
+
+    let kfunc_name = b"scx_bpf_select_cpu_dfl";
+    let data: Arc<[u8]> = kfunc_name.to_vec().into();
+
+    let main_ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadLiteral {
+                dst: RegId::new(0),
+                lit: Literal::Int(1),
+            },
+            Instruction::StoreVariable {
+                var_id: nu_protocol::VarId::new(80),
+                src: RegId::new(0),
+            },
+            Instruction::Drain { src: RegId::new(0) },
+            Instruction::Drop { src: RegId::new(0) },
+            Instruction::LoadLiteral {
+                dst: RegId::new(0),
+                lit: Literal::Int(2),
+            },
+            Instruction::StoreVariable {
+                var_id: nu_protocol::VarId::new(81),
+                src: RegId::new(0),
+            },
+            Instruction::Drain { src: RegId::new(0) },
+            Instruction::Drop { src: RegId::new(0) },
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::String(DataSlice {
+                    start: 0,
+                    len: kfunc_name.len() as u32,
+                }),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(2),
+                var_id: nu_protocol::VarId::new(80),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(3),
+                var_id: nu_protocol::VarId::new(81),
+            },
+            Instruction::PushPositional { src: RegId::new(1) },
+            Instruction::PushPositional { src: RegId::new(2) },
+            Instruction::PushPositional { src: RegId::new(3) },
+            Instruction::Call {
+                decl_id: DeclId::new(42),
+                src_dst: RegId::new(0),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data,
+        ast: vec![],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(
+        HirFunction::from_ir_block(main_ir).unwrap(),
+        HashMap::new(),
+        vec![],
+        None,
+    );
+
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "kfunc-call".to_string());
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("kfunc-call lowering should succeed");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    let call = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::CallKfunc { args, .. } => Some(args),
+            _ => None,
+        })
+        .expect("expected lowered kfunc call");
+
+    assert_eq!(
+        call.len(),
+        2,
+        "drained src_dst should not be injected as an implicit pipeline input"
+    );
+}
+
+#[test]
 fn test_kfunc_call_requires_literal_string_name() {
     use nu_protocol::ir::{Instruction, IrBlock, Literal};
     use nu_protocol::{DeclId, RegId};

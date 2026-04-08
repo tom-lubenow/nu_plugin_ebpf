@@ -164,6 +164,11 @@ impl<'a> HirToMirLowering<'a> {
         vreg
     }
 
+    pub(super) fn invalidate_reg_value(&mut self, reg: RegId) {
+        self.reg_map.remove(&reg.get());
+        self.reg_metadata.remove(&reg.get());
+    }
+
     /// Get the current block being built
     pub(super) fn current_block_mut(&mut self) -> &mut BasicBlock {
         self.func.block_mut(self.current_block)
