@@ -459,6 +459,54 @@ fn resolve_struct_ops_char_array_field_capacity(
         })
 }
 
+fn resolve_sched_ext_allowed_flags_mask(span: Span) -> Result<u64, LabeledError> {
+    let enum_info = KernelBtf::get()
+        .kernel_named_enum_info("scx_ops_flags")
+        .map_err(|e| {
+            LabeledError::new("Invalid struct_ops object").with_label(
+                format!(
+                    "failed to resolve sched_ext_ops flag definitions from kernel BTF: {}",
+                    e
+                ),
+                span,
+            )
+        })?;
+    if enum_info.is_signed {
+        return Err(LabeledError::new("Invalid struct_ops object").with_label(
+            "kernel BTF exposed signed sched_ext flag definitions; expected an unsigned bitmask enum",
+            span,
+        ));
+    }
+
+    if let Some((_, value)) = enum_info
+        .entries
+        .iter()
+        .find(|(name, _)| name == "SCX_OPS_ALL_FLAGS")
+    {
+        return Ok(*value as u64);
+    }
+
+    let internal_mask = enum_info
+        .entries
+        .iter()
+        .find(|(name, _)| name == "__SCX_OPS_INTERNAL_MASK")
+        .map(|(_, value)| *value as u64)
+        .unwrap_or(0);
+    let allowed_mask = enum_info
+        .entries
+        .iter()
+        .filter(|(name, _)| name.starts_with("SCX_OPS_") && name != "SCX_OPS_ALL_FLAGS")
+        .fold(0u64, |mask, (_, value)| mask | (*value as u64))
+        & !internal_mask;
+    if allowed_mask == 0 {
+        return Err(LabeledError::new("Invalid struct_ops object").with_label(
+            "kernel BTF did not expose any usable sched_ext flag bits",
+            span,
+        ));
+    }
+    Ok(allowed_mask)
+}
+
 fn validate_required_struct_ops_value_fields(
     value_type_name: &str,
     body: &Record,
@@ -595,6 +643,48 @@ fn validate_required_struct_ops_value_fields(
                     .with_help(
                         "Use a name like 'nu_demo' or 'nu.demo_1' without spaces or dashes",
                     ));
+            }
+
+            if let Some(flags_value) = body.get("flags") {
+                let flags = match flags_value {
+                    Value::Int { val, .. } => u64::try_from(*val).map_err(|_| {
+                        LabeledError::new("Invalid struct_ops object")
+                            .with_label(
+                                "struct_ops 'sched_ext_ops' requires 'flags' to be a non-negative integer bitmask",
+                                flags_value.span(),
+                            )
+                            .with_help(
+                                "Use an integer bitmask built from scx_ops_flags bits such as SCX_OPS_SWITCH_PARTIAL",
+                            )
+                    })?,
+                    other => {
+                        return Err(LabeledError::new("Invalid struct_ops object")
+                            .with_label(
+                                format!(
+                                    "struct_ops 'sched_ext_ops' requires 'flags' to be a non-negative integer bitmask, got {}",
+                                    other.get_type()
+                                ),
+                                other.span(),
+                            )
+                            .with_help(
+                                "Use an integer bitmask built from scx_ops_flags bits such as SCX_OPS_SWITCH_PARTIAL",
+                            ));
+                    }
+                };
+                let allowed_flags = resolve_sched_ext_allowed_flags_mask(flags_value.span())?;
+                let unknown_flags = flags & !allowed_flags;
+                if unknown_flags != 0 {
+                    return Err(LabeledError::new("Invalid struct_ops object")
+                        .with_label(
+                            format!(
+                                "struct_ops 'sched_ext_ops' flags set unknown or unsupported bits: 0x{unknown_flags:x}",
+                            ),
+                            flags_value.span(),
+                        )
+                        .with_help(format!(
+                            "Use only kernel-supported scx_ops_flags bits on this system (allowed mask 0x{allowed_flags:x})",
+                        )));
+                }
             }
 
             Ok(())
@@ -2979,6 +3069,118 @@ mod tests {
 
         super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
             .expect("valid sched_ext_ops object names should be allowed");
+    }
+
+    fn sched_ext_flag_masks() -> Option<(u64, u64)> {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return None;
+        }
+        let allowed = super::resolve_sched_ext_allowed_flags_mask(Span::test_data()).ok()?;
+        let known = (0..63)
+            .map(|bit| 1u64 << bit)
+            .find(|bit| (allowed & *bit) != 0)?;
+        let unknown = (0..63)
+            .map(|bit| 1u64 << bit)
+            .find(|bit| (allowed & *bit) == 0)?;
+        Some((known, unknown))
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_non_int_sched_ext_flags() {
+        if sched_ext_flag_masks().is_none() {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push("flags", Value::bool(true, Span::test_data()));
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("non-integer sched_ext_ops flags should be rejected");
+        assert!(err.labels.iter().any(|label| {
+            label
+                .text
+                .contains("requires 'flags' to be a non-negative integer bitmask")
+        }));
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_negative_sched_ext_flags() {
+        if sched_ext_flag_masks().is_none() {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push("flags", Value::int(-1, Span::test_data()));
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("negative sched_ext_ops flags should be rejected");
+        assert!(err.labels.iter().any(|label| {
+            label
+                .text
+                .contains("requires 'flags' to be a non-negative integer bitmask")
+        }));
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_unknown_sched_ext_flags_bits() {
+        let Some((_, unknown_flags)) = sched_ext_flag_masks() else {
+            return;
+        };
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push(
+            "flags",
+            Value::int(
+                i64::try_from(unknown_flags).expect("unknown flag bit should fit in i64"),
+                Span::test_data(),
+            ),
+        );
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("unknown sched_ext_ops flag bits should be rejected");
+        assert!(
+            err.labels
+                .iter()
+                .any(|label| { label.text.contains("flags set unknown or unsupported bits") })
+        );
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_allows_known_sched_ext_flags_bits() {
+        let Some((known_flags, _)) = sched_ext_flag_masks() else {
+            return;
+        };
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push(
+            "flags",
+            Value::int(
+                i64::try_from(known_flags).expect("known flag bit should fit in i64"),
+                Span::test_data(),
+            ),
+        );
+
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect("known sched_ext_ops flags should be allowed");
     }
 
     #[test]

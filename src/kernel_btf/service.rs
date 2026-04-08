@@ -68,6 +68,13 @@ pub enum FunctionCheckResult {
     CannotValidate,
 }
 
+/// Named kernel enum definition resolved from kernel BTF.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KernelEnumInfo {
+    pub is_signed: bool,
+    pub entries: Vec<(String, i64)>,
+}
+
 /// Coarse argument shape inferred from kernel BTF.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KfuncArgShape {
@@ -892,6 +899,37 @@ impl KernelBtf {
             .copied()
             .map(|size| size as usize);
         Self::trampoline_size_bytes(&btf, &ty, raw_size_bytes)
+    }
+
+    /// Resolve a named kernel enum definition and its entries from kernel BTF.
+    pub fn kernel_named_enum_info(&self, type_name: &str) -> Result<KernelEnumInfo, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let ty = btf
+            .get_type_by_name(type_name)
+            .map_err(|_| BtfError::TypeNotFound(type_name.to_string()))?;
+        match &ty.base_type {
+            Type::Enum32(enum_ty) | Type::Enum64(enum_ty) => Ok(KernelEnumInfo {
+                is_signed: enum_ty.is_signed,
+                entries: enum_ty
+                    .entries
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, entry)| {
+                        (
+                            entry
+                                .name
+                                .clone()
+                                .unwrap_or_else(|| format!("<anonymous:{idx}>")),
+                            entry.value,
+                        )
+                    })
+                    .collect(),
+            }),
+            other => Err(BtfError::KernelBtfError(format!(
+                "named kernel BTF type '{}' is not an enum: {:?}",
+                type_name, other
+            ))),
+        }
     }
 
     fn function_trampoline_layout(
@@ -4589,6 +4627,24 @@ format:
             .kernel_named_type_size_bytes("file")
             .expect("expected named file type size");
         assert!(size >= 40, "unexpected file size: {size}");
+    }
+
+    #[test]
+    fn test_kernel_named_enum_info_resolves_sched_ext_flags_if_present() {
+        let Ok(info) = KernelBtf::get().kernel_named_enum_info("scx_ops_flags") else {
+            return;
+        };
+
+        assert!(
+            !info.is_signed,
+            "expected scx_ops_flags to be an unsigned enum"
+        );
+        assert!(
+            info.entries
+                .iter()
+                .any(|(name, value)| name == "SCX_OPS_ALL_FLAGS" && (*value as u64) != 0),
+            "expected scx_ops_flags to expose SCX_OPS_ALL_FLAGS"
+        );
     }
 
     #[test]
