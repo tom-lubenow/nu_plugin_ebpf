@@ -507,6 +507,8 @@ fn resolve_sched_ext_allowed_flags_mask(span: Span) -> Result<u64, LabeledError>
     Ok(allowed_mask)
 }
 
+const SCHED_EXT_MAX_TIMEOUT_MS: i64 = 30_000;
+
 fn validate_required_struct_ops_value_fields(
     value_type_name: &str,
     body: &Record,
@@ -683,6 +685,48 @@ fn validate_required_struct_ops_value_fields(
                         )
                         .with_help(format!(
                             "Use only kernel-supported scx_ops_flags bits on this system (allowed mask 0x{allowed_flags:x})",
+                        )));
+                }
+            }
+
+            if let Some(timeout_value) = body.get("timeout_ms") {
+                let timeout_ms = match timeout_value {
+                    Value::Int { val, .. } => *val,
+                    other => {
+                        return Err(LabeledError::new("Invalid struct_ops object")
+                            .with_label(
+                                format!(
+                                    "struct_ops 'sched_ext_ops' requires 'timeout_ms' to be a non-negative integer number of milliseconds, got {}",
+                                    other.get_type()
+                                ),
+                                other.span(),
+                            )
+                            .with_help(format!(
+                                "Use an integer timeout in milliseconds no greater than {SCHED_EXT_MAX_TIMEOUT_MS}",
+                            )));
+                    }
+                };
+                if timeout_ms < 0 {
+                    return Err(LabeledError::new("Invalid struct_ops object")
+                        .with_label(
+                            "struct_ops 'sched_ext_ops' requires 'timeout_ms' to be a non-negative integer number of milliseconds",
+                            timeout_value.span(),
+                        )
+                        .with_help(format!(
+                            "Use an integer timeout in milliseconds no greater than {SCHED_EXT_MAX_TIMEOUT_MS}",
+                        )));
+                }
+                if timeout_ms > SCHED_EXT_MAX_TIMEOUT_MS {
+                    return Err(LabeledError::new("Invalid struct_ops object")
+                        .with_label(
+                            format!(
+                                "struct_ops 'sched_ext_ops' timeout_ms is too large: {}ms exceeds the documented {}ms maximum",
+                                timeout_ms, SCHED_EXT_MAX_TIMEOUT_MS
+                            ),
+                            timeout_value.span(),
+                        )
+                        .with_help(format!(
+                            "Set timeout_ms to at most {SCHED_EXT_MAX_TIMEOUT_MS} to match the sched_ext limit",
                         )));
                 }
             }
@@ -3181,6 +3225,107 @@ mod tests {
 
         super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
             .expect("known sched_ext_ops flags should be allowed");
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_non_int_sched_ext_timeout() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push("timeout_ms", Value::bool(true, Span::test_data()));
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("non-integer sched_ext_ops timeout_ms should be rejected");
+        assert!(err.labels.iter().any(|label| {
+            label.text.contains(
+                "requires 'timeout_ms' to be a non-negative integer number of milliseconds",
+            )
+        }));
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_negative_sched_ext_timeout() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push("timeout_ms", Value::int(-1, Span::test_data()));
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("negative sched_ext_ops timeout_ms should be rejected");
+        assert!(err.labels.iter().any(|label| {
+            label.text.contains(
+                "requires 'timeout_ms' to be a non-negative integer number of milliseconds",
+            )
+        }));
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_too_large_sched_ext_timeout() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push(
+            "timeout_ms",
+            Value::int(super::SCHED_EXT_MAX_TIMEOUT_MS + 1, Span::test_data()),
+        );
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("overlarge sched_ext_ops timeout_ms should be rejected");
+        assert!(
+            err.labels
+                .iter()
+                .any(|label| { label.text.contains("timeout_ms is too large") })
+        );
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_allows_sched_ext_timeout_within_limit() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push(
+            "timeout_ms",
+            Value::int(super::SCHED_EXT_MAX_TIMEOUT_MS, Span::test_data()),
+        );
+
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect("sched_ext_ops timeout_ms within limit should be allowed");
     }
 
     #[test]

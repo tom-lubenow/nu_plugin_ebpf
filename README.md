@@ -92,6 +92,7 @@ let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect6' {|ctx| ($ctx.use
 # sched_ext_ops only requires a non-empty valid BPF object name using only
 # [A-Za-z0-9_.]. Additional callbacks are optional. If you set `flags`,
 # the bitmask is validated against the kernel's `scx_ops_flags` definitions.
+# `timeout_ms` is also checked against the documented 30000ms maximum.
 ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
     name: 'nu_demo'
 }
