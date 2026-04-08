@@ -119,6 +119,214 @@ fn test_type_error_sched_ext_cpu_release_only_kfunc_rejected_in_dispatch() {
 }
 
 #[test]
+fn test_sched_ext_select_cpu_dfl_allowed_in_select_cpu() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let prev_cpu = func.alloc_vreg();
+    let wake_flags = func.alloc_vreg();
+    let cpumask = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: prev_cpu,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: wake_flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: cpumask,
+        kfunc: "scx_bpf_get_online_cpumask".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_select_cpu_dfl".to_string(),
+        btf_id: None,
+        args: vec![task, prev_cpu, wake_flags, cpumask],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    infer_in_sched_ext_callback(&func, "select_cpu")
+        .expect("select_cpu_dfl should be accepted in sched_ext_ops.select_cpu");
+}
+
+#[test]
+fn test_type_error_sched_ext_select_cpu_dfl_rejected_in_enqueue() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let prev_cpu = func.alloc_vreg();
+    let wake_flags = func.alloc_vreg();
+    let cpumask = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: prev_cpu,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: wake_flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: cpumask,
+        kfunc: "scx_bpf_get_online_cpumask".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_select_cpu_dfl".to_string(),
+        btf_id: None,
+        args: vec![task, prev_cpu, wake_flags, cpumask],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let errs = infer_in_sched_ext_callback(&func, "enqueue")
+        .expect_err("select_cpu_dfl should be rejected outside sched_ext_ops.select_cpu");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "kfunc 'scx_bpf_select_cpu_dfl' is only valid in sched_ext_ops.select_cpu, not sched_ext_ops.enqueue"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_sched_ext_select_cpu_and_allowed_in_enqueue() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let prev_cpu = func.alloc_vreg();
+    let wake_flags = func.alloc_vreg();
+    let cpumask = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: prev_cpu,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: wake_flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: cpumask,
+        kfunc: "scx_bpf_get_online_cpumask".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_select_cpu_and".to_string(),
+        btf_id: None,
+        args: vec![task, prev_cpu, wake_flags, cpumask, flags],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    infer_in_sched_ext_callback(&func, "enqueue")
+        .expect("select_cpu_and should be accepted in sched_ext_ops.enqueue");
+}
+
+#[test]
+fn test_type_error_sched_ext_select_cpu_and_rejected_in_dispatch() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let prev_cpu = func.alloc_vreg();
+    let wake_flags = func.alloc_vreg();
+    let cpumask = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: prev_cpu,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: wake_flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: cpumask,
+        kfunc: "scx_bpf_get_online_cpumask".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_select_cpu_and".to_string(),
+        btf_id: None,
+        args: vec![task, prev_cpu, wake_flags, cpumask, flags],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let errs = infer_in_sched_ext_callback(&func, "dispatch")
+        .expect_err("select_cpu_and should be rejected outside sched_ext_ops.select_cpu/enqueue");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "kfunc 'scx_bpf_select_cpu_and' is only valid in sched_ext_ops.select_cpu or sched_ext_ops.enqueue, not sched_ext_ops.dispatch"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_kfunc_pointer_argument_required() {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();

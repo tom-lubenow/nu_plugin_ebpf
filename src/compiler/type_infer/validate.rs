@@ -18,6 +18,8 @@ impl<'a> TypeInference<'a> {
         match kfunc {
             "scx_bpf_dispatch_nr_slots" | "scx_bpf_dsq_move_to_local" => Some(&["dispatch"]),
             "scx_bpf_reenqueue_local" => Some(&["cpu_release"]),
+            "scx_bpf_select_cpu_dfl" => Some(&["select_cpu"]),
+            "scx_bpf_select_cpu_and" => Some(&["select_cpu", "enqueue"]),
             "scx_bpf_dsq_insert" | "scx_bpf_dsq_insert_vtime" => {
                 Some(&["select_cpu", "enqueue", "dispatch"])
             }
