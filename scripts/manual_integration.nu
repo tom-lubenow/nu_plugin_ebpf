@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 44
+const TOTAL_STEPS = 45
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -606,7 +606,22 @@ step 42 "cgroup_sock_addr root connect6 ipv6 word counter" {
     }
 }
 
-step 43 "tcp_congestion_ops live attach and detach" {
+step 43 "sched_ext_ops dry-run name-only object" {
+    let code = ([
+        'ebpf attach --dry-run "struct_ops:sched_ext_ops" {'
+        '    name: "nu.demo_1"'
+        '} | describe'
+    ] | str join (char newline))
+    let result = (run-nu-with-plugin $plugin_bin $code | str trim)
+
+    if $result != "binary" {
+        fail $"expected sched_ext dry-run to return binary, got ($result)"
+    }
+
+    $result
+}
+
+step 44 "tcp_congestion_ops live attach and detach" {
     let code = ([
         'let id = (ebpf attach "struct_ops:tcp_congestion_ops" {'
         '    name: "nu_demo"'
@@ -629,7 +644,7 @@ step 43 "tcp_congestion_ops live attach and detach" {
     $id
 }
 
-step 44 "verify no leaked probes" {
+step 45 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"
