@@ -424,6 +424,41 @@ fn validate_required_struct_ops_callbacks(
         .with_help(help))
 }
 
+fn resolve_struct_ops_char_array_field_capacity(
+    value_type_name: &str,
+    field_name: &str,
+    span: Span,
+) -> Result<usize, LabeledError> {
+    KernelBtf::get()
+        .kernel_named_type_field_projection(
+            value_type_name,
+            &[TrampolineFieldSelector::Field(field_name.to_string())],
+        )
+        .map_err(|e| {
+            LabeledError::new("Invalid struct_ops object").with_label(
+                format!(
+                    "failed to resolve {}.{} from kernel BTF: {}",
+                    value_type_name, field_name, e
+                ),
+                span,
+            )
+        })
+        .and_then(|projection| match projection.type_info {
+            TypeInfo::Array { element, len }
+                if matches!(element.as_ref(), TypeInfo::Int { size: 1, .. }) =>
+            {
+                Ok(len)
+            }
+            other => Err(LabeledError::new("Invalid struct_ops object").with_label(
+                format!(
+                    "{}.{} resolved to unexpected kernel BTF type {:?}",
+                    value_type_name, field_name, other
+                ),
+                span,
+            )),
+        })
+}
+
 fn validate_required_struct_ops_value_fields(
     value_type_name: &str,
     body: &Record,
@@ -442,12 +477,24 @@ fn validate_required_struct_ops_value_fields(
                     ));
             };
 
-            let name_is_empty = match name_value {
-                Value::String { val, .. } => val.is_empty(),
-                Value::Binary { val, .. } => val.is_empty(),
-                _ => false,
+            let name_len = match name_value {
+                Value::String { val, .. } => val.len(),
+                Value::Binary { val, .. } => val.len(),
+                other => {
+                    return Err(LabeledError::new("Invalid struct_ops object")
+                        .with_label(
+                            format!(
+                                "struct_ops 'tcp_congestion_ops' requires 'name' to be a string or binary byte buffer, got {}",
+                                other.get_type()
+                            ),
+                            other.span(),
+                        )
+                        .with_help(
+                            "Set 'name' to a short string like 'nu_demo' before registering tcp_congestion_ops",
+                        ));
+                }
             };
-            if name_is_empty {
+            if name_len == 0 {
                 return Err(LabeledError::new("Invalid struct_ops object")
                     .with_label(
                         "struct_ops 'tcp_congestion_ops' requires a non-empty 'name' value field",
@@ -456,6 +503,23 @@ fn validate_required_struct_ops_value_fields(
                     .with_help(
                         "Set 'name' to a non-empty string like 'nu_demo' before registering tcp_congestion_ops",
                     ));
+            }
+
+            let name_capacity =
+                resolve_struct_ops_char_array_field_capacity("tcp_congestion_ops", "name", span)?;
+            if name_len >= name_capacity {
+                return Err(LabeledError::new("Invalid struct_ops object")
+                    .with_label(
+                        format!(
+                            "struct_ops 'tcp_congestion_ops' name is too long: {} bytes for {}-byte field",
+                            name_len, name_capacity
+                        ),
+                        name_value.span(),
+                    )
+                    .with_help(format!(
+                        "Use a tcp_congestion_ops name shorter than {} bytes so it remains NUL-terminated",
+                        name_capacity
+                    )));
             }
 
             Ok(())
@@ -499,34 +563,8 @@ fn validate_required_struct_ops_value_fields(
                     ));
             }
 
-            let name_capacity = KernelBtf::get()
-                .kernel_named_type_field_projection(
-                    "sched_ext_ops",
-                    &[TrampolineFieldSelector::Field("name".to_string())],
-                )
-                .map_err(|e| {
-                    LabeledError::new("Invalid struct_ops object").with_label(
-                        format!(
-                            "failed to resolve sched_ext_ops.name from kernel BTF: {}",
-                            e
-                        ),
-                        span,
-                    )
-                })
-                .and_then(|projection| match projection.type_info {
-                    TypeInfo::Array { element, len }
-                        if matches!(element.as_ref(), TypeInfo::Int { size: 1, .. }) =>
-                    {
-                        Ok(len)
-                    }
-                    other => Err(LabeledError::new("Invalid struct_ops object").with_label(
-                        format!(
-                            "sched_ext_ops.name resolved to unexpected kernel BTF type {:?}",
-                            other
-                        ),
-                        span,
-                    )),
-                })?;
+            let name_capacity =
+                resolve_struct_ops_char_array_field_capacity("sched_ext_ops", "name", span)?;
             if name.len() >= name_capacity {
                 return Err(LabeledError::new("Invalid struct_ops object")
                     .with_label(
@@ -2744,6 +2782,60 @@ mod tests {
             Span::test_data(),
         )
         .expect("non-empty tcp_congestion_ops name should be allowed");
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_non_string_tcp_congestion_name() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("tcp_congestion_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::int(7, Span::test_data()));
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "tcp_congestion_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("integer tcp_congestion_ops name should be rejected");
+        assert!(err.labels.iter().any(|label| {
+            label
+                .text
+                .contains("requires 'name' to be a string or binary byte buffer")
+        }));
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_too_long_tcp_congestion_name() {
+        let Ok(name_capacity) = super::resolve_struct_ops_char_array_field_capacity(
+            "tcp_congestion_ops",
+            "name",
+            Span::test_data(),
+        ) else {
+            return;
+        };
+
+        let mut body = Record::new();
+        body.push(
+            "name",
+            Value::string("x".repeat(name_capacity), Span::test_data()),
+        );
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "tcp_congestion_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("overlong tcp_congestion_ops name should be rejected");
+        assert!(err.labels.iter().any(|label| {
+            label
+                .text
+                .contains("struct_ops 'tcp_congestion_ops' name is too long")
+        }));
     }
 
     #[test]

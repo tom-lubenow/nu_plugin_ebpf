@@ -106,8 +106,8 @@ ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
 
 # Safer live struct_ops families can be loaded directly. This minimal
 # tcp_congestion_ops example registers and can then be detached again.
-# The kernel requires a non-empty name plus callback closures for
-# ssthresh, cong_avoid, and undo_cwnd.
+# The kernel requires a non-empty name that fits the fixed field plus
+# callback closures for ssthresh, cong_avoid, and undo_cwnd.
 let id = ebpf attach 'struct_ops:tcp_congestion_ops' {
     name: 'nu_demo'
     ssthresh: {|ctx| 2 }
