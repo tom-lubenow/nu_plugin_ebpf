@@ -459,6 +459,117 @@ fn resolve_struct_ops_char_array_field_capacity(
         })
 }
 
+fn validate_struct_ops_non_negative_integer_field(
+    value_type_name: &str,
+    body: &Record,
+    field_name: &str,
+    span: Span,
+) -> Result<(), LabeledError> {
+    let Some(field_value) = body.get(field_name) else {
+        return Ok(());
+    };
+
+    let raw_value = match field_value {
+        Value::Int { val, .. } => *val,
+        other => {
+            return Err(LabeledError::new("Invalid struct_ops object")
+                .with_label(
+                    format!(
+                        "struct_ops '{}' requires '{}' to be a non-negative integer, got {}",
+                        value_type_name,
+                        field_name,
+                        other.get_type()
+                    ),
+                    other.span(),
+                )
+                .with_help(format!(
+                    "Set '{}' to a non-negative integer that fits the kernel BTF field width",
+                    field_name
+                )));
+        }
+    };
+
+    let value = u64::try_from(raw_value).map_err(|_| {
+        LabeledError::new("Invalid struct_ops object")
+            .with_label(
+                format!(
+                    "struct_ops '{}' requires '{}' to be a non-negative integer",
+                    value_type_name, field_name
+                ),
+                field_value.span(),
+            )
+            .with_help(format!(
+                "Set '{}' to a non-negative integer that fits the kernel BTF field width",
+                field_name
+            ))
+    })?;
+
+    let field_type = KernelBtf::get()
+        .kernel_named_type_field_projection(
+            value_type_name,
+            &[TrampolineFieldSelector::Field(field_name.to_string())],
+        )
+        .map_err(|e| {
+            LabeledError::new("Invalid struct_ops object").with_label(
+                format!(
+                    "failed to resolve {}.{} from kernel BTF: {}",
+                    value_type_name, field_name, e
+                ),
+                span,
+            )
+        })?;
+    let TypeInfo::Int { size, signed } = field_type.type_info else {
+        return Err(LabeledError::new("Invalid struct_ops object").with_label(
+            format!(
+                "{}.{} resolved to unexpected kernel BTF type {:?}",
+                value_type_name, field_name, field_type.type_info
+            ),
+            span,
+        ));
+    };
+    if signed {
+        return Err(LabeledError::new("Invalid struct_ops object").with_label(
+            format!(
+                "{}.{} resolved to a signed integer field in kernel BTF; expected unsigned field",
+                value_type_name, field_name
+            ),
+            span,
+        ));
+    }
+
+    let max_value = match size {
+        1 => u8::MAX as u64,
+        2 => u16::MAX as u64,
+        4 => u32::MAX as u64,
+        8 => u64::MAX,
+        other => {
+            return Err(LabeledError::new("Invalid struct_ops object").with_label(
+                format!(
+                    "{}.{} uses unsupported integer width {} in kernel BTF",
+                    value_type_name, field_name, other
+                ),
+                span,
+            ));
+        }
+    };
+    if value > max_value {
+        return Err(LabeledError::new("Invalid struct_ops object")
+            .with_label(
+                format!(
+                    "struct_ops '{}.{}' value {} does not fit the kernel BTF field width ({} bytes)",
+                    value_type_name, field_name, value, size
+                ),
+                field_value.span(),
+            )
+            .with_help(format!(
+                "Use a non-negative integer no larger than {} for '{}'",
+                max_value, field_name
+            )));
+    }
+
+    Ok(())
+}
+
 fn resolve_sched_ext_allowed_flags_mask(span: Span) -> Result<u64, LabeledError> {
     let enum_info = KernelBtf::get()
         .kernel_named_enum_info("scx_ops_flags")
@@ -743,6 +854,25 @@ fn validate_required_struct_ops_value_fields(
                         ));
                 }
             }
+
+            validate_struct_ops_non_negative_integer_field(
+                "sched_ext_ops",
+                body,
+                "dispatch_max_batch",
+                span,
+            )?;
+            validate_struct_ops_non_negative_integer_field(
+                "sched_ext_ops",
+                body,
+                "exit_dump_len",
+                span,
+            )?;
+            validate_struct_ops_non_negative_integer_field(
+                "sched_ext_ops",
+                body,
+                "hotplug_seq",
+                span,
+            )?;
 
             if let Some(timeout_value) = body.get("timeout_ms") {
                 let timeout_ms = match timeout_value {
@@ -3462,6 +3592,160 @@ mod tests {
 
         super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
             .expect("sched_ext_ops update_idle with KEEP_BUILTIN_IDLE should be allowed");
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_non_int_dispatch_max_batch() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push("dispatch_max_batch", Value::bool(true, Span::test_data()));
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("non-integer sched_ext_ops dispatch_max_batch should be rejected");
+        assert!(err.labels.iter().any(|label| {
+            label
+                .text
+                .contains("requires 'dispatch_max_batch' to be a non-negative integer")
+        }));
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_negative_dispatch_max_batch() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push("dispatch_max_batch", Value::int(-1, Span::test_data()));
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("negative sched_ext_ops dispatch_max_batch should be rejected");
+        assert!(err.labels.iter().any(|label| {
+            label
+                .text
+                .contains("requires 'dispatch_max_batch' to be a non-negative integer")
+        }));
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_too_large_dispatch_max_batch() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push(
+            "dispatch_max_batch",
+            Value::int(i64::from(u32::MAX) + 1, Span::test_data()),
+        );
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("oversized sched_ext_ops dispatch_max_batch should be rejected");
+        assert!(err.labels.iter().any(|label| {
+            label.text.contains("dispatch_max_batch' value")
+                || label.text.contains("dispatch_max_batch")
+        }));
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_allows_dispatch_max_batch_u32_max() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push(
+            "dispatch_max_batch",
+            Value::int(i64::from(u32::MAX), Span::test_data()),
+        );
+
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect(
+                "sched_ext_ops dispatch_max_batch within the kernel field width should be allowed",
+            );
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_negative_exit_dump_len() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push("exit_dump_len", Value::int(-1, Span::test_data()));
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("negative sched_ext_ops exit_dump_len should be rejected");
+        assert!(err.labels.iter().any(|label| {
+            label
+                .text
+                .contains("requires 'exit_dump_len' to be a non-negative integer")
+        }));
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_negative_hotplug_seq() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push("hotplug_seq", Value::int(-1, Span::test_data()));
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("negative sched_ext_ops hotplug_seq should be rejected");
+        assert!(err.labels.iter().any(|label| {
+            label
+                .text
+                .contains("requires 'hotplug_seq' to be a non-negative integer")
+        }));
     }
 
     #[test]

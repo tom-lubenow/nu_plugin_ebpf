@@ -94,7 +94,8 @@ let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect6' {|ctx| ($ctx.use
 # the bitmask is validated against the kernel's `scx_ops_flags` definitions.
 # `timeout_ms` is also checked against the documented 30000ms maximum. If you
 # implement `update_idle`, you must also implement `select_cpu` unless you set
-# `SCX_OPS_KEEP_BUILTIN_IDLE`.
+# `SCX_OPS_KEEP_BUILTIN_IDLE`. Other scalar value members are range-checked
+# against their kernel BTF field widths.
 ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
     name: 'nu_demo'
 }
