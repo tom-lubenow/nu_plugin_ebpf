@@ -23,7 +23,7 @@ use crate::compiler::{
     hir::HirProgram, hir::HirStmt, hir::supports_constant_value, hir_type_infer, infer_ctx_param,
     lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir, passes::optimize_with_ssa_hints,
 };
-use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector};
+use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 
 /// Common Nushell commands used in eBPF closures.
 const NU_CLOSURE_COMMANDS: &[&str] = &[
@@ -472,12 +472,23 @@ fn validate_required_struct_ops_value_fields(
                     ));
             };
 
-            let name_is_empty = match name_value {
-                Value::String { val, .. } => val.is_empty(),
-                Value::Binary { val, .. } => val.is_empty(),
-                _ => false,
+            let name = match name_value {
+                Value::String { val, .. } => val,
+                other => {
+                    return Err(LabeledError::new("Invalid struct_ops object")
+                        .with_label(
+                            format!(
+                                "struct_ops 'sched_ext_ops' requires 'name' to be a string, got {}",
+                                other.get_type()
+                            ),
+                            other.span(),
+                        )
+                        .with_help(
+                            "Set 'name' to a non-empty string like 'nu_demo'; sched_ext_ops names must be valid BPF object names",
+                        ));
+                }
             };
-            if name_is_empty {
+            if name.is_empty() {
                 return Err(LabeledError::new("Invalid struct_ops object")
                     .with_label(
                         "struct_ops 'sched_ext_ops' requires a non-empty 'name' value field",
@@ -485,6 +496,66 @@ fn validate_required_struct_ops_value_fields(
                     )
                     .with_help(
                         "Set 'name' to a non-empty string like 'nu_demo' before building or registering sched_ext_ops",
+                    ));
+            }
+
+            let name_capacity = KernelBtf::get()
+                .kernel_named_type_field_projection(
+                    "sched_ext_ops",
+                    &[TrampolineFieldSelector::Field("name".to_string())],
+                )
+                .map_err(|e| {
+                    LabeledError::new("Invalid struct_ops object").with_label(
+                        format!(
+                            "failed to resolve sched_ext_ops.name from kernel BTF: {}",
+                            e
+                        ),
+                        span,
+                    )
+                })
+                .and_then(|projection| match projection.type_info {
+                    TypeInfo::Array { element, len }
+                        if matches!(element.as_ref(), TypeInfo::Int { size: 1, .. }) =>
+                    {
+                        Ok(len)
+                    }
+                    other => Err(LabeledError::new("Invalid struct_ops object").with_label(
+                        format!(
+                            "sched_ext_ops.name resolved to unexpected kernel BTF type {:?}",
+                            other
+                        ),
+                        span,
+                    )),
+                })?;
+            if name.len() >= name_capacity {
+                return Err(LabeledError::new("Invalid struct_ops object")
+                    .with_label(
+                        format!(
+                            "struct_ops 'sched_ext_ops' name is too long: {} bytes for {}-byte field",
+                            name.len(),
+                            name_capacity
+                        ),
+                        name_value.span(),
+                    )
+                    .with_help(
+                        format!(
+                            "Use a sched_ext_ops name shorter than {} bytes so it remains NUL-terminated",
+                            name_capacity
+                        ),
+                    ));
+            }
+
+            if !name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'.')
+            {
+                return Err(LabeledError::new("Invalid struct_ops object")
+                    .with_label(
+                        "struct_ops 'sched_ext_ops' name must be a valid BPF object name using only [A-Za-z0-9_.]",
+                        name_value.span(),
+                    )
+                    .with_help(
+                        "Use a name like 'nu_demo' or 'nu.demo_1' without spaces or dashes",
                     ));
             }
 
@@ -2734,6 +2805,97 @@ mod tests {
 
         super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
             .expect("non-empty sched_ext_ops name should be allowed");
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_non_string_sched_ext_name() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::binary(vec![0x6e, 0x75], Span::test_data()));
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("binary sched_ext_ops name should be rejected");
+        assert!(
+            err.labels
+                .iter()
+                .any(|label| { label.text.contains("requires 'name' to be a string") })
+        );
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_invalid_sched_ext_name_chars() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu-demo", Span::test_data()));
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("invalid sched_ext_ops object name chars should be rejected");
+        assert!(err.labels.iter().any(|label| {
+            label
+                .text
+                .contains("must be a valid BPF object name using only [A-Za-z0-9_.]")
+        }));
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_too_long_sched_ext_name() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("x".repeat(128), Span::test_data()));
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("overlong sched_ext_ops name should be rejected");
+        assert!(err.labels.iter().any(|label| {
+            label
+                .text
+                .contains("struct_ops 'sched_ext_ops' name is too long")
+        }));
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_allows_valid_sched_ext_object_name() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect("valid sched_ext_ops object names should be allowed");
     }
 
     #[test]
