@@ -537,7 +537,23 @@ fn struct_ops_callback_expected_return_type(
 
     match ret_type {
         None | Some(TypeInfo::Void) => Ok(None),
-        Some(TypeInfo::Int { .. }) | Some(TypeInfo::Ptr { .. }) => Ok(Some(HMType::I64)),
+        Some(TypeInfo::Int { size, signed }) => Ok(Some(match (size, signed) {
+            (1, false) => HMType::Bool,
+            (1, true) => HMType::I8,
+            (2, false) => HMType::U16,
+            (2, true) => HMType::I16,
+            (4, false) => HMType::U32,
+            (4, true) => HMType::I32,
+            (8, false) => HMType::U64,
+            (8, true) => HMType::I64,
+            _ => {
+                return Err(CompileError::TypeError(TypeError::new(format!(
+                    "struct_ops {}.{} returns an unsupported integer width {}",
+                    value_type_name, probe_ctx.target, size
+                ))));
+            }
+        })),
+        Some(TypeInfo::Ptr { .. }) => Ok(Some(HMType::I64)),
         Some(TypeInfo::Struct { .. }) | Some(TypeInfo::Array { .. }) => {
             Err(CompileError::TypeError(TypeError::new(format!(
                 "struct_ops {}.{} returns an aggregate type, which is not supported yet",

@@ -63,6 +63,24 @@ fn find_struct_ops_scalar_ret_candidate() -> Option<(String, String)> {
     None
 }
 
+fn find_struct_ops_bool_ret_candidate() -> Option<(String, String)> {
+    for (value_type_name, callback_name) in [
+        ("sched_ext_ops", "yield"),
+        ("sched_ext_ops", "core_sched_before"),
+    ] {
+        if matches!(
+            KernelBtf::get().struct_ops_callback_ret_type_info(value_type_name, callback_name),
+            Ok(Some(crate::kernel_btf::TypeInfo::Int {
+                size: 1,
+                signed: false
+            }))
+        ) {
+            return Some((value_type_name.to_string(), callback_name.to_string()));
+        }
+    }
+    None
+}
+
 fn find_struct_ops_void_ret_candidate() -> Option<(String, String)> {
     for (value_type_name, callback_name) in [
         ("tcp_congestion_ops", "cong_avoid"),
@@ -171,14 +189,50 @@ fn test_add() {
 }
 
 #[test]
-fn test_struct_ops_scalar_callback_uses_i64_main_return_contract() {
+fn test_struct_ops_scalar_callback_uses_exact_main_return_contract() {
     let Some((value_type_name, callback_name)) = find_struct_ops_scalar_ret_candidate() else {
         return;
     };
     let probe_ctx = ProbeContext::new_struct_ops_callback(value_type_name, callback_name);
     let expected = super::main_function_expected_return_type(Some(&probe_ctx))
         .expect("scalar struct_ops callback return should resolve");
-    assert_eq!(expected, Some(HMType::I64));
+    let kernel_ret = KernelBtf::get()
+        .struct_ops_callback_ret_type_info(
+            probe_ctx
+                .struct_ops_value_type_name
+                .as_deref()
+                .expect("struct_ops value type should be present"),
+            &probe_ctx.target,
+        )
+        .expect("kernel BTF callback return should resolve")
+        .expect("candidate should have a return type");
+    let expected_ty = match kernel_ret {
+        crate::kernel_btf::TypeInfo::Int { size, signed } => match (size, signed) {
+            (1, false) => HMType::Bool,
+            (1, true) => HMType::I8,
+            (2, false) => HMType::U16,
+            (2, true) => HMType::I16,
+            (4, false) => HMType::U32,
+            (4, true) => HMType::I32,
+            (8, false) => HMType::U64,
+            (8, true) => HMType::I64,
+            other => panic!("unexpected scalar return shape {:?}", other),
+        },
+        crate::kernel_btf::TypeInfo::Ptr { .. } => HMType::I64,
+        other => panic!("unexpected scalar return type {:?}", other),
+    };
+    assert_eq!(expected, Some(expected_ty));
+}
+
+#[test]
+fn test_struct_ops_bool_callback_uses_bool_main_return_contract() {
+    let Some((value_type_name, callback_name)) = find_struct_ops_bool_ret_candidate() else {
+        return;
+    };
+    let probe_ctx = ProbeContext::new_struct_ops_callback(value_type_name, callback_name);
+    let expected = super::main_function_expected_return_type(Some(&probe_ctx))
+        .expect("bool struct_ops callback return should resolve");
+    assert_eq!(expected, Some(HMType::Bool));
 }
 
 #[test]
