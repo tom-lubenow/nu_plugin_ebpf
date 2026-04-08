@@ -1,5 +1,16 @@
 use super::*;
 
+fn infer_in_sched_ext_callback(
+    func: &MirFunction,
+    callback_name: &str,
+) -> Result<HashMap<VReg, MirType>, Vec<TypeError>> {
+    let mut ti = TypeInference::new(Some(ProbeContext::new_struct_ops_callback(
+        "sched_ext_ops",
+        callback_name,
+    )));
+    ti.infer(func)
+}
+
 #[test]
 fn test_type_error_unknown_kfunc_signature() {
     let mut func = make_test_function();
@@ -23,6 +34,88 @@ fn test_type_error_unknown_kfunc_signature() {
         .infer(&func)
         .expect_err("expected unknown-kfunc type error");
     assert!(errs.iter().any(|e| e.message.contains("unknown kfunc")));
+}
+
+#[test]
+fn test_sched_ext_dispatch_only_kfunc_allowed_in_dispatch() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_dispatch_nr_slots".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    infer_in_sched_ext_callback(&func, "dispatch")
+        .expect("dispatch-only sched_ext kfunc should be accepted in dispatch");
+}
+
+#[test]
+fn test_type_error_sched_ext_dispatch_only_kfunc_rejected_in_select_cpu() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_dispatch_nr_slots".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let errs = infer_in_sched_ext_callback(&func, "select_cpu")
+        .expect_err("dispatch-only sched_ext kfunc should be rejected outside dispatch");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "kfunc 'scx_bpf_dispatch_nr_slots' is only valid in sched_ext_ops.dispatch, not sched_ext_ops.select_cpu"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_sched_ext_cpu_release_only_kfunc_allowed_in_cpu_release() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_reenqueue_local".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    infer_in_sched_ext_callback(&func, "cpu_release")
+        .expect("cpu_release-only sched_ext kfunc should be accepted in cpu_release");
+}
+
+#[test]
+fn test_type_error_sched_ext_cpu_release_only_kfunc_rejected_in_dispatch() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_reenqueue_local".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let errs = infer_in_sched_ext_callback(&func, "dispatch")
+        .expect_err("cpu_release-only sched_ext kfunc should be rejected outside cpu_release");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "kfunc 'scx_bpf_reenqueue_local' is only valid in sched_ext_ops.cpu_release, not sched_ext_ops.dispatch"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
 }
 
 #[test]
