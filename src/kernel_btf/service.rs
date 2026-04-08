@@ -558,6 +558,46 @@ impl KernelBtf {
         Self::type_info_from_btf_type(&btf, &param_ty, &raw_type_sizes).map(Some)
     }
 
+    fn resolve_struct_ops_callback_named_function<'a>(
+        btf: &'a Btf,
+        value_type_name: &str,
+        callback_name: &str,
+    ) -> Result<&'a FlattenedType, BtfError> {
+        let function_name = format!("{}__{}", value_type_name, callback_name);
+        btf.get_types()
+            .iter()
+            .find(|ty| ty.is_function && ty.name.as_deref() == Some(function_name.as_str()))
+            .ok_or(BtfError::TypeNotFound(function_name))
+    }
+
+    /// Resolve the argument index for a named `struct_ops` callback parameter.
+    ///
+    /// Returns `Ok(None)` when the callback exists but does not have a parameter
+    /// with the requested name.
+    pub fn struct_ops_callback_arg_index_by_name(
+        &self,
+        value_type_name: &str,
+        callback_name: &str,
+        arg_name: &str,
+    ) -> Result<Option<usize>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let callback_fn =
+            Self::resolve_struct_ops_callback_named_function(&btf, value_type_name, callback_name)?;
+        let Type::FunctionProto(proto) = &callback_fn.base_type else {
+            return Err(BtfError::KernelBtfError(format!(
+                "struct_ops callback function '{}__{}' is missing a function prototype in kernel BTF",
+                value_type_name, callback_name
+            )));
+        };
+
+        Ok(proto
+            .params
+            .iter()
+            .take_while(|param| param.type_id != 0)
+            .enumerate()
+            .find_map(|(idx, param)| (param.name.as_deref() == Some(arg_name)).then_some(idx)))
+    }
+
     /// Resolve the exact kernel-BTF return type for a `struct_ops` callback.
     ///
     /// Returns `Ok(None)` when the callback returns `void`.
@@ -4252,6 +4292,29 @@ format:
         None
     }
 
+    fn find_struct_ops_named_arg_candidate()
+    -> Option<(&'static str, &'static str, &'static str, usize)> {
+        for (value_type_name, callback_name, arg_name, expected_idx) in [
+            ("sched_ext_ops", "select_cpu", "p", 0usize),
+            ("sched_ext_ops", "select_cpu", "prev_cpu", 1),
+            ("tcp_congestion_ops", "ssthresh", "sk", 0),
+            ("tcp_congestion_ops", "cong_avoid", "sk", 0),
+            ("tcp_congestion_ops", "init", "sk", 0),
+        ] {
+            if matches!(
+                KernelBtf::get().struct_ops_callback_arg_index_by_name(
+                    value_type_name,
+                    callback_name,
+                    arg_name
+                ),
+                Ok(Some(idx)) if idx == expected_idx
+            ) {
+                return Some((value_type_name, callback_name, arg_name, expected_idx));
+            }
+        }
+        None
+    }
+
     #[test]
     fn test_struct_ops_callback_arg_type_info_resolves_candidate() {
         let Some((value_type_name, callback_name)) = find_struct_ops_callback_candidate() else {
@@ -4264,6 +4327,22 @@ format:
             .expect("struct_ops callback arg0 should exist");
 
         assert!(matches!(arg, TypeInfo::Ptr { .. } | TypeInfo::Int { .. }));
+    }
+
+    #[test]
+    fn test_struct_ops_callback_arg_index_by_name_resolves_candidate() {
+        let Some((value_type_name, callback_name, arg_name, expected_idx)) =
+            find_struct_ops_named_arg_candidate()
+        else {
+            return;
+        };
+
+        let arg_idx = KernelBtf::get()
+            .struct_ops_callback_arg_index_by_name(value_type_name, callback_name, arg_name)
+            .expect("struct_ops callback arg index query should succeed")
+            .expect("named struct_ops callback arg should exist");
+
+        assert_eq!(arg_idx, expected_idx);
     }
 
     #[test]

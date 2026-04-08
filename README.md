@@ -93,7 +93,7 @@ let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect6' {|ctx| ($ctx.use
 # [A-Za-z0-9_.]; other callbacks depend on the scheduler you want to build.
 ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
     name: 'nu_demo'
-    select_cpu: {|ctx| 0 }
+    select_cpu: {|ctx| $ctx.arg.prev_cpu }
 }
 
 # Live sched_ext registration is gated behind an explicit opt-in because a buggy
@@ -306,8 +306,10 @@ so `let files = $ctx.arg0; $files.fdt.fd.f_inode.i_ino`,
 `ctx.arg0.fdt.fd.0.f_inode.i_ino`, `let fd = $ctx.arg0.fdt.fd;
 $fd.0.f_inode.i_ino`, `let idx = 0; let fd = ($ctx.arg0.fdt.fd | get $idx);
 $fd.f_inode.i_ino`, and `let inode = $ctx.arg0.f_inode; $inode.i_sb.s_flags`
-continue to type-check and lower as expected. 16-byte byte-array/string keys
-such as `ctx.arg0.comm` continue to display as strings.
+continue to type-check and lower as expected. `struct_ops` callbacks also
+expose kernel BTF parameter names through `ctx.arg.<name>`, for example
+`ctx.arg.prev_cpu` or `ctx.arg.p.pid`. 16-byte byte-array/string keys such as
+`ctx.arg0.comm` continue to display as strings.
 Aggregate `fexit` returns still depend on kernel trampoline support; some
 kernels reject struct returns entirely.
 Generic named maps are also available through `map-get`, `map-put`, and

@@ -1241,6 +1241,64 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
+    fn resolve_ctx_field_from_path(
+        &self,
+        path: &CellPath,
+    ) -> Result<(CtxField, usize), CompileError> {
+        let field_name = Self::ctx_path_member_name(&path.members[0])?;
+        if field_name == "arg" {
+            let Some(arg_member) = path.members.get(1) else {
+                return Err(CompileError::UnsupportedInstruction(
+                    "ctx.arg.<name> requires a named struct_ops callback parameter".into(),
+                ));
+            };
+            let PathMember::String { val: arg_name, .. } = arg_member else {
+                return Err(CompileError::UnsupportedInstruction(
+                    "ctx.arg.<name> requires a named struct_ops callback parameter".into(),
+                ));
+            };
+            let Some(ctx) = self.probe_ctx else {
+                return Err(CompileError::UnsupportedInstruction(
+                    "ctx.arg.<name> is only available on struct_ops callbacks".into(),
+                ));
+            };
+            if ctx.probe_type != EbpfProgramType::StructOps {
+                return Err(CompileError::UnsupportedInstruction(
+                    "ctx.arg.<name> is only available on struct_ops callbacks".into(),
+                ));
+            }
+            let value_type_name = ctx.struct_ops_value_type_name.as_deref().ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "missing struct_ops value type for callback '{}'",
+                    ctx.target
+                ))
+            })?;
+            let Some(arg_idx) = KernelBtf::get()
+                .struct_ops_callback_arg_index_by_name(value_type_name, &ctx.target, arg_name)
+                .map_err(|e| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "failed to resolve ctx.arg.{} for struct_ops {}.{}: {}",
+                        arg_name, value_type_name, ctx.target, e
+                    ))
+                })?
+            else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "ctx.arg.{} is not a valid argument name for struct_ops {}.{}",
+                    arg_name, value_type_name, ctx.target
+                )));
+            };
+            let arg_idx = u8::try_from(arg_idx).map_err(|_| {
+                CompileError::UnsupportedInstruction(format!(
+                    "ctx.arg.{} resolved to unsupported parameter index {}",
+                    arg_name, arg_idx
+                ))
+            })?;
+            return Ok((CtxField::Arg(arg_idx), 2));
+        }
+
+        Ok((Self::ctx_field_from_name(field_name)?, 1))
+    }
+
     fn trampoline_field_selector(
         member: &PathMember,
     ) -> Result<TrampolineFieldSelector, CompileError> {
@@ -4163,14 +4221,14 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        let field_name = Self::ctx_path_member_name(&path.members[0])?;
-        let ctx_field = Self::ctx_field_from_name(field_name)?;
+        let (ctx_field, root_members_consumed) = self.resolve_ctx_field_from_path(&path)?;
+        let remaining_members = &path.members[root_members_consumed..];
         if let Some(ctx) = self.probe_ctx {
             ctx.validate_ctx_field_access(&ctx_field)?;
         }
         let trampoline_value_spec = self.trampoline_value_spec(&ctx_field)?;
 
-        if path.members.len() > 1 {
+        if !remaining_members.is_empty() {
             if matches!(ctx_field, CtxField::Data | CtxField::DataEnd) {
                 let base_ty = MirType::Ptr {
                     pointee: Box::new(MirType::U8),
@@ -4188,7 +4246,7 @@ impl<'a> HirToMirLowering<'a> {
                     dst_vreg,
                     base_vreg,
                     &base_ty,
-                    &path.members[1..],
+                    remaining_members,
                     &Self::typed_value_path_desc(&path.members),
                     None,
                 )?;
@@ -4231,7 +4289,7 @@ impl<'a> HirToMirLowering<'a> {
                     dst_vreg,
                     base_vreg,
                     &base_ty,
-                    &path.members[1..],
+                    remaining_members,
                     &Self::typed_value_path_desc(&path.members),
                     None,
                 )?;
@@ -4240,7 +4298,7 @@ impl<'a> HirToMirLowering<'a> {
                 meta.field_type = Some(projected_ty);
                 return Ok(());
             }
-            let nested_segments: Vec<TrampolineFieldSelector> = path.members[1..]
+            let nested_segments: Vec<TrampolineFieldSelector> = remaining_members
                 .iter()
                 .map(Self::trampoline_field_selector)
                 .collect::<Result<_, _>>()?;

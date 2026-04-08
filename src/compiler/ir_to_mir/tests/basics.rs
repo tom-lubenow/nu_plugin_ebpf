@@ -270,6 +270,66 @@ fn make_ctx_path_call_program(path: CellPath, decl_id: DeclId) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn find_struct_ops_named_arg_candidate() -> Option<(String, String, String, u8)> {
+    for (value_type_name, callback_name, arg_name, expected_idx) in [
+        ("sched_ext_ops", "select_cpu", "p", 0u8),
+        ("sched_ext_ops", "select_cpu", "prev_cpu", 1),
+        ("tcp_congestion_ops", "ssthresh", "sk", 0),
+        ("tcp_congestion_ops", "cong_avoid", "sk", 0),
+        ("tcp_congestion_ops", "init", "sk", 0),
+    ] {
+        if matches!(
+            KernelBtf::get().struct_ops_callback_arg_index_by_name(
+                value_type_name,
+                callback_name,
+                arg_name
+            ),
+            Ok(Some(idx)) if idx == expected_idx as usize
+        ) {
+            return Some((
+                value_type_name.to_string(),
+                callback_name.to_string(),
+                arg_name.to_string(),
+                expected_idx,
+            ));
+        }
+    }
+    None
+}
+
+fn find_struct_ops_named_pointer_projection_candidate() -> Option<(String, String, String, String)>
+{
+    for (value_type_name, callback_name, arg_name, arg_idx, field_name) in
+        [("sched_ext_ops", "select_cpu", "p", 0usize, "pid")]
+    {
+        let path = [TrampolineFieldSelector::Field(field_name.to_string())];
+        if matches!(
+            KernelBtf::get().struct_ops_callback_arg_index_by_name(
+                value_type_name,
+                callback_name,
+                arg_name
+            ),
+            Ok(Some(idx)) if idx == arg_idx
+        ) && matches!(
+            KernelBtf::get().struct_ops_callback_arg_field(
+                value_type_name,
+                callback_name,
+                arg_idx,
+                &path,
+            ),
+            Ok(Some(_))
+        ) {
+            return Some((
+                value_type_name.to_string(),
+                callback_name.to_string(),
+                arg_name.to_string(),
+                field_name.to_string(),
+            ));
+        }
+    }
+    None
+}
+
 fn make_map_put_get_projection_program(
     map_put_decl: DeclId,
     map_get_decl: DeclId,
@@ -3827,6 +3887,82 @@ fn test_lower_nested_field_access_rejects_nonaggregate_ctx_value() {
     assert!(err.to_string().contains(
         "nested ctx field access requires a struct/union trampoline value or pointer to one"
     ));
+}
+
+#[test]
+fn test_lower_struct_ops_named_arg_alias() {
+    let Some((value_type_name, callback_name, arg_name, expected_idx)) =
+        find_struct_ops_named_arg_candidate()
+    else {
+        return;
+    };
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("arg"), string_member(&arg_name)],
+    });
+    let probe_ctx = ProbeContext::new_struct_ops_callback(&value_type_name, &callback_name);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("named struct_ops arg alias should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Arg(idx),
+            ..
+        } if *idx == expected_idx
+    )));
+}
+
+#[test]
+fn test_lower_struct_ops_named_arg_alias_nested_projection() {
+    let Some((value_type_name, callback_name, arg_name, field_name)) =
+        find_struct_ops_named_pointer_projection_candidate()
+    else {
+        return;
+    };
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("arg"),
+            string_member(&arg_name),
+            string_member(&field_name),
+        ],
+    });
+    let probe_ctx = ProbeContext::new_struct_ops_callback(&value_type_name, &callback_name);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("named struct_ops arg alias nested projection should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Arg(0),
+                    ..
+                }
+            )),
+        "expected named struct_ops arg alias to resolve through ctx.arg0 before nested projection"
+    );
 }
 
 #[test]
