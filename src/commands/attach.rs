@@ -460,6 +460,36 @@ fn validate_required_struct_ops_value_fields(
 
             Ok(())
         }
+        "sched_ext_ops" => {
+            let Some(name_value) = body.get("name") else {
+                return Err(LabeledError::new("Invalid struct_ops object")
+                    .with_label(
+                        "struct_ops 'sched_ext_ops' is missing required value field 'name'",
+                        span,
+                    )
+                    .with_help(
+                        "sched_ext_ops requires a non-empty 'name' value member, for example { name: 'nu_demo', select_cpu: {|ctx| 0 } }",
+                    ));
+            };
+
+            let name_is_empty = match name_value {
+                Value::String { val, .. } => val.is_empty(),
+                Value::Binary { val, .. } => val.is_empty(),
+                _ => false,
+            };
+            if name_is_empty {
+                return Err(LabeledError::new("Invalid struct_ops object")
+                    .with_label(
+                        "struct_ops 'sched_ext_ops' requires a non-empty 'name' value field",
+                        name_value.span(),
+                    )
+                    .with_help(
+                        "Set 'name' to a non-empty string like 'nu_demo' before building or registering sched_ext_ops",
+                    ));
+            }
+
+            Ok(())
+        }
         _ => Ok(()),
     }
 }
@@ -2641,6 +2671,69 @@ mod tests {
             Span::test_data(),
         )
         .expect("non-empty tcp_congestion_ops name should be allowed");
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_missing_sched_ext_name() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &Record::new(),
+            Span::test_data(),
+        )
+        .expect_err("missing sched_ext_ops name should be rejected");
+        assert!(
+            err.labels
+                .iter()
+                .any(|label| { label.text.contains("missing required value field 'name'") })
+        );
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_empty_sched_ext_name() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("", Span::test_data()));
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("empty sched_ext_ops name should be rejected");
+        assert!(err.labels.iter().any(|label| {
+            label
+                .text
+                .contains("requires a non-empty 'name' value field")
+        }));
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_allows_non_empty_sched_ext_name() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu_demo", Span::test_data()));
+
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect("non-empty sched_ext_ops name should be allowed");
     }
 
     #[test]
