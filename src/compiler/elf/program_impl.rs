@@ -232,10 +232,19 @@ impl EbpfProgram {
     }
 
     /// Convert this program into a typed `struct_ops` callback section.
-    pub fn into_struct_ops_callback(self, callback_name: impl Into<String>) -> EbpfProgramSection {
+    pub fn into_struct_ops_callback(
+        self,
+        value_type_name: &str,
+        slot_name: &str,
+        callback_name: impl Into<String>,
+    ) -> EbpfProgramSection {
         let callback_name = callback_name.into();
         let mut section = self.into_program_section();
-        section.section_name_override = None;
+        section.section_name_override = Some(struct_ops_callback_section_name(
+            value_type_name,
+            slot_name,
+            &callback_name,
+        ));
         section.prog_type = EbpfProgramType::StructOps;
         section.target = callback_name.clone();
         section.name = callback_name;
@@ -1327,6 +1336,17 @@ impl EbpfObject {
 }
 
 impl StructOpsObjectBuilder {
+    fn value_type_name(&self) -> &str {
+        match &self.object.kind {
+            EbpfObjectKind::StructOps {
+                value_type_name, ..
+            } => value_type_name,
+            EbpfObjectKind::Program => {
+                panic!("StructOpsObjectBuilder must always wrap a struct_ops object")
+            }
+        }
+    }
+
     fn value_symbol_mut(&mut self) -> &mut ObjectDataSymbol {
         self.object
             .extra_data_symbols
@@ -1386,9 +1406,13 @@ impl StructOpsObjectBuilder {
     }
 
     pub fn add_callback(mut self, program: EbpfProgram, callback_name: impl Into<String>) -> Self {
-        self.object
-            .programs
-            .push(program.into_struct_ops_callback(callback_name));
+        let callback_name = callback_name.into();
+        let value_type_name = self.value_type_name().to_string();
+        self.object.programs.push(program.into_struct_ops_callback(
+            &value_type_name,
+            &callback_name,
+            callback_name.clone(),
+        ));
         self
     }
 
@@ -1411,9 +1435,12 @@ impl StructOpsObjectBuilder {
             ))
         })?;
         let callback_name = callback_name.into();
-        self.object
-            .programs
-            .push(program.into_struct_ops_callback(callback_name.clone()));
+        let value_type_name = self.value_type_name().to_string();
+        self.object.programs.push(program.into_struct_ops_callback(
+            &value_type_name,
+            slot_name,
+            callback_name.clone(),
+        ));
         self.value_symbol_mut()
             .relocations
             .push(ObjectDataRelocation {

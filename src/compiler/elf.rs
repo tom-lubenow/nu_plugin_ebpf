@@ -1664,6 +1664,37 @@ pub struct CompiledStructOpsCallback {
     pub program: EbpfProgram,
 }
 
+pub fn struct_ops_callback_is_sleepable(value_type_name: &str, callback_name: &str) -> bool {
+    match value_type_name {
+        // sched_ext documents these callbacks as sleepable and they must be
+        // emitted under `struct_ops.s/...` rather than plain `struct_ops/...`.
+        "sched_ext_ops" => matches!(
+            callback_name,
+            "init_task"
+                | "cgroup_init"
+                | "cgroup_exit"
+                | "cgroup_prep_move"
+                | "cpu_online"
+                | "cpu_offline"
+                | "init"
+                | "exit"
+        ),
+        _ => false,
+    }
+}
+
+pub fn struct_ops_callback_section_name(
+    value_type_name: &str,
+    callback_slot_name: &str,
+    callback_program_name: &str,
+) -> String {
+    if struct_ops_callback_is_sleepable(value_type_name, callback_slot_name) {
+        format!("struct_ops.s/{callback_program_name}")
+    } else {
+        format!("struct_ops/{callback_program_name}")
+    }
+}
+
 /// Constant initializer for a top-level `struct_ops` value field.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StructOpsValueField {

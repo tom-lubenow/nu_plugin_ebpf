@@ -1021,7 +1021,11 @@ fn test_struct_ops_object_rejects_multiple_value_symbols() {
 
 #[test]
 fn test_into_struct_ops_callback_normalizes_section_metadata() {
-    let section = EbpfProgram::hello_world("sys_clone").into_struct_ops_callback("demo_select_cpu");
+    let section = EbpfProgram::hello_world("sys_clone").into_struct_ops_callback(
+        "file",
+        "demo_select_cpu",
+        "demo_select_cpu",
+    );
 
     assert_eq!(section.prog_type, EbpfProgramType::StructOps);
     assert_eq!(section.target, "demo_select_cpu");
@@ -1031,6 +1035,75 @@ fn test_into_struct_ops_callback_normalizes_section_metadata() {
             .section_name()
             .expect("struct_ops callback section name should build"),
         "struct_ops/demo_select_cpu"
+    );
+}
+
+#[test]
+fn test_into_struct_ops_callback_uses_sleepable_sched_ext_section() {
+    let section = EbpfProgram::hello_world("sys_clone").into_struct_ops_callback(
+        "sched_ext_ops",
+        "init",
+        "demo_init",
+    );
+
+    assert_eq!(section.prog_type, EbpfProgramType::StructOps);
+    assert_eq!(section.target, "demo_init");
+    assert_eq!(section.name, "demo_init");
+    assert_eq!(
+        section
+            .section_name()
+            .expect("sleepable sched_ext callback section name should build"),
+        "struct_ops.s/demo_init"
+    );
+}
+
+#[test]
+fn test_struct_ops_object_uses_sleepable_sched_ext_callback_section() {
+    use crate::compiler::mir::{
+        BasicBlock, BlockId, MirFunction, MirInst, MirProgram, MirValue, VReg,
+    };
+
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
+    }
+
+    let object = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", "sched_ext_ops")
+        .expect("expected zeroed sched_ext_ops spec from kernel BTF")
+        .to_object_with_compiled_callbacks(vec![
+            compile_mir_to_ebpf(
+                &{
+                    let mut func = MirFunction::new();
+                    let mut entry_block = BasicBlock::new(BlockId(0));
+                    entry_block.instructions.push(MirInst::Copy {
+                        dst: VReg(0),
+                        src: MirValue::Const(0),
+                    });
+                    entry_block.terminator = MirInst::Return {
+                        val: Some(MirValue::VReg(VReg(0))),
+                    };
+                    func.blocks.push(entry_block);
+                    func.vreg_count = 1;
+                    MirProgram {
+                        main: func,
+                        subfunctions: vec![],
+                    }
+                },
+                None,
+            )
+            .expect("expected MIR sched_ext callback compile result")
+            .into_struct_ops_callback("init", "demo_init", HashMap::new()),
+        ])
+        .expect("expected struct_ops object from compiled sched_ext callback");
+
+    assert_eq!(object.programs.len(), 1);
+    assert_eq!(
+        object.programs[0]
+            .section_name()
+            .expect("sleepable sched_ext callback section name should build"),
+        "struct_ops.s/demo_init"
     );
 }
 
