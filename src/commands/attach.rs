@@ -507,6 +507,41 @@ fn resolve_sched_ext_allowed_flags_mask(span: Span) -> Result<u64, LabeledError>
     Ok(allowed_mask)
 }
 
+fn resolve_sched_ext_flag_bit(flag_name: &str, span: Span) -> Result<u64, LabeledError> {
+    let enum_info = KernelBtf::get()
+        .kernel_named_enum_info("scx_ops_flags")
+        .map_err(|e| {
+            LabeledError::new("Invalid struct_ops object").with_label(
+                format!(
+                    "failed to resolve sched_ext_ops flag definitions from kernel BTF: {}",
+                    e
+                ),
+                span,
+            )
+        })?;
+    if enum_info.is_signed {
+        return Err(LabeledError::new("Invalid struct_ops object").with_label(
+            "kernel BTF exposed signed sched_ext flag definitions; expected an unsigned bitmask enum",
+            span,
+        ));
+    }
+
+    enum_info
+        .entries
+        .iter()
+        .find(|(name, _)| name == flag_name)
+        .map(|(_, value)| *value as u64)
+        .ok_or_else(|| {
+            LabeledError::new("Invalid struct_ops object").with_label(
+                format!(
+                    "kernel BTF did not expose the sched_ext flag '{}' on this system",
+                    flag_name
+                ),
+                span,
+            )
+        })
+}
+
 const SCHED_EXT_MAX_TIMEOUT_MS: i64 = 30_000;
 
 fn validate_required_struct_ops_value_fields(
@@ -647,7 +682,7 @@ fn validate_required_struct_ops_value_fields(
                     ));
             }
 
-            if let Some(flags_value) = body.get("flags") {
+            let sched_ext_flags = if let Some(flags_value) = body.get("flags") {
                 let flags = match flags_value {
                     Value::Int { val, .. } => u64::try_from(*val).map_err(|_| {
                         LabeledError::new("Invalid struct_ops object")
@@ -686,6 +721,26 @@ fn validate_required_struct_ops_value_fields(
                         .with_help(format!(
                             "Use only kernel-supported scx_ops_flags bits on this system (allowed mask 0x{allowed_flags:x})",
                         )));
+                }
+                flags
+            } else {
+                0
+            };
+
+            if matches!(body.get("update_idle"), Some(Value::Closure { .. }))
+                && !matches!(body.get("select_cpu"), Some(Value::Closure { .. }))
+            {
+                let keep_builtin_idle =
+                    resolve_sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE", span)?;
+                if (sched_ext_flags & keep_builtin_idle) == 0 {
+                    return Err(LabeledError::new("Invalid struct_ops object")
+                        .with_label(
+                            "struct_ops 'sched_ext_ops' must define 'select_cpu' when 'update_idle' is implemented without SCX_OPS_KEEP_BUILTIN_IDLE",
+                            span,
+                        )
+                        .with_help(
+                            "Either add a select_cpu callback or set the SCX_OPS_KEEP_BUILTIN_IDLE flag to keep the built-in idle tracking path",
+                        ));
                 }
             }
 
@@ -3132,6 +3187,26 @@ mod tests {
         Some((known, unknown))
     }
 
+    fn sched_ext_flag_bit(flag_name: &str) -> Option<u64> {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return None;
+        }
+        super::resolve_sched_ext_flag_bit(flag_name, Span::test_data()).ok()
+    }
+
+    fn test_closure_value() -> Value {
+        Value::closure(
+            Closure {
+                block_id: BlockId::new(0),
+                captures: vec![],
+            },
+            Span::test_data(),
+        )
+    }
+
     #[test]
     fn test_validate_required_struct_ops_value_fields_rejects_non_int_sched_ext_flags() {
         if sched_ext_flag_masks().is_none() {
@@ -3326,6 +3401,67 @@ mod tests {
 
         super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
             .expect("sched_ext_ops timeout_ms within limit should be allowed");
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_update_idle_without_select_cpu() {
+        let Some(_keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
+            return;
+        };
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push("update_idle", test_closure_value());
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err(
+            "sched_ext_ops update_idle without select_cpu or KEEP_BUILTIN_IDLE should be rejected",
+        );
+        assert!(err.labels.iter().any(|label| {
+            label
+                .text
+                .contains("must define 'select_cpu' when 'update_idle' is implemented")
+        }));
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_allows_update_idle_with_select_cpu() {
+        let Some(_keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
+            return;
+        };
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push("update_idle", test_closure_value());
+        body.push("select_cpu", test_closure_value());
+
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect("sched_ext_ops update_idle with select_cpu should be allowed");
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_allows_update_idle_with_keep_builtin_idle() {
+        let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
+            return;
+        };
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push("update_idle", test_closure_value());
+        body.push(
+            "flags",
+            Value::int(
+                i64::try_from(keep_builtin_idle).expect("flag bit should fit in i64"),
+                Span::test_data(),
+            ),
+        );
+
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect("sched_ext_ops update_idle with KEEP_BUILTIN_IDLE should be allowed");
     }
 
     #[test]
