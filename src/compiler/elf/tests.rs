@@ -1,6 +1,7 @@
 use super::*;
 use crate::compiler::mir::{CtxField, MirType, StructField};
 use crate::compiler::mir_to_ebpf::compile_mir_to_ebpf;
+use crate::kernel_btf::KernelBtf;
 use aya_obj::{
     EbpfSectionKind, Object as AyaObject,
     btf::{Btf, BtfKind},
@@ -95,6 +96,35 @@ fn test_program_type_metadata_for_struct_ops() {
     assert!(EbpfProgramType::StructOps.supports_capability(ProgramCapability::Globals));
     assert!(EbpfProgramType::StructOps.supports_capability(ProgramCapability::KfuncCalls));
     assert!(!EbpfProgramType::StructOps.supports_capability(ProgramCapability::Emit));
+}
+
+#[test]
+fn test_sched_ext_object_can_emit_without_callbacks() {
+    if KernelBtf::get()
+        .kernel_named_type_field_projection(
+            "sched_ext_ops",
+            &[crate::kernel_btf::TrampolineFieldSelector::Field(
+                "name".to_string(),
+            )],
+        )
+        .is_err()
+    {
+        return;
+    }
+
+    let object = StructOpsObjectSpec::zeroed_from_kernel_btf("nu_sched", "sched_ext_ops")
+        .expect("expected zeroed sched_ext_ops spec")
+        .with_value_field("name", StructOpsValueField::String("nu_demo".to_string()))
+        .expect("expected name initializer")
+        .to_object()
+        .expect("expected sched_ext_ops object without callbacks");
+
+    let elf = object.to_elf().expect("sched_ext_ops object should emit");
+    let parsed = object::File::parse(&*elf).expect("emitted object should parse");
+    assert!(
+        parsed.section_by_name(".struct_ops").is_some(),
+        "expected .struct_ops section even without callback closures"
+    );
 }
 
 #[test]

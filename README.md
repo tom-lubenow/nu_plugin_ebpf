@@ -88,12 +88,11 @@ let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect4' {|ctx| $ctx.user
 # Inspect the last host-order IPv6 word on cgroup connect6 hooks
 let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect6' {|ctx| ($ctx.user_ip6 | get 3) | count; 1 }
 
-# Build a struct_ops object from callback closures plus constant value fields.
-# sched_ext_ops requires a non-empty valid BPF object name using only
-# [A-Za-z0-9_.]; other callbacks depend on the scheduler you want to build.
+# Build a struct_ops object from constant value fields and optional callback closures.
+# sched_ext_ops only requires a non-empty valid BPF object name using only
+# [A-Za-z0-9_.]. Additional callbacks are optional.
 ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
     name: 'nu_demo'
-    select_cpu: {|ctx| $ctx.arg.prev_cpu }
 }
 
 # Live sched_ext registration is gated behind an explicit opt-in because a buggy

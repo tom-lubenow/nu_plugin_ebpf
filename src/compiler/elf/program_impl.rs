@@ -613,7 +613,7 @@ impl EbpfObject {
     }
 
     pub fn validate_runtime_artifacts(&self) -> Result<(), CompileError> {
-        if self.programs.is_empty() {
+        if self.programs.is_empty() && matches!(self.kind, EbpfObjectKind::Program) {
             return Err(CompileError::InvalidProgram(
                 "eBPF object must contain at least one program section".to_string(),
             ));

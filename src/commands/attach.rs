@@ -1422,17 +1422,6 @@ fn compile_struct_ops_object(
 
     validate_required_struct_ops_callbacks(value_type_name, &callback_fields, call_head)?;
 
-    if callbacks.is_empty() {
-        return Err(LabeledError::new("Invalid struct_ops object")
-            .with_label(
-                "Expected at least one callback closure field in the struct_ops record",
-                call_head,
-            )
-            .with_help(
-                "Provide a record whose callback members are closures, for example { select_cpu: {|ctx| 0 } }",
-            ));
-    }
-
     spec.to_object_with_compiled_callbacks(callbacks)
         .map_err(|e| {
             LabeledError::new("Failed to build struct_ops object")
@@ -1685,7 +1674,7 @@ Requirements:
             .required(
                 "body",
                 SyntaxShape::Any,
-                "Closure body for ordinary attach types, or a record of callback closures plus constant fields for struct_ops.",
+                "Closure body for ordinary attach types, or a record of constant fields and optional callback closures for struct_ops.",
             )
             .switch(
                 "stream",
@@ -1775,8 +1764,8 @@ Requirements:
                 result: None,
             },
             Example {
-                example: "ebpf attach --dry-run 'struct_ops:sched_ext_ops' { name: 'nu_demo', select_cpu: {|ctx| 0 } }",
-                description: "Build a struct_ops object from callback closures and constant value fields without loading it",
+                example: "ebpf attach --dry-run 'struct_ops:sched_ext_ops' { name: 'nu_demo' }",
+                description: "Build a struct_ops object from constant value fields and optional callback closures without loading it",
                 result: None,
             },
         ]
