@@ -100,15 +100,65 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     pub(super) fn infer_pipeline_input_reg(hir: &HirFunction) -> Option<RegId> {
+        fn stmt_defined_reg(stmt: &HirStmt) -> Option<RegId> {
+            match stmt {
+                HirStmt::LoadLiteral { dst, .. }
+                | HirStmt::LoadValue { dst, .. }
+                | HirStmt::Move { dst, .. }
+                | HirStmt::Clone { dst, .. }
+                | HirStmt::CloneCellPath { dst, .. }
+                | HirStmt::LoadVariable { dst, .. }
+                | HirStmt::LoadEnv { dst, .. }
+                | HirStmt::LoadEnvOpt { dst, .. }
+                | HirStmt::OnErrorInto { dst, .. } => Some(*dst),
+                HirStmt::BinaryOp { lhs_dst, .. }
+                | HirStmt::Not { src_dst: lhs_dst }
+                | HirStmt::FollowCellPath {
+                    src_dst: lhs_dst, ..
+                }
+                | HirStmt::UpsertCellPath {
+                    src_dst: lhs_dst, ..
+                }
+                | HirStmt::RecordInsert {
+                    src_dst: lhs_dst, ..
+                }
+                | HirStmt::RecordSpread {
+                    src_dst: lhs_dst, ..
+                }
+                | HirStmt::StringAppend {
+                    src_dst: lhs_dst, ..
+                }
+                | HirStmt::GlobFrom {
+                    src_dst: lhs_dst, ..
+                }
+                | HirStmt::ListPush {
+                    src_dst: lhs_dst, ..
+                }
+                | HirStmt::ListSpread {
+                    src_dst: lhs_dst, ..
+                }
+                | HirStmt::Call { src_dst: lhs_dst, .. }
+                | HirStmt::Collect { src_dst: lhs_dst }
+                | HirStmt::Span { src_dst: lhs_dst } => Some(*lhs_dst),
+                _ => None,
+            }
+        }
+
+        let mut defined = HashSet::new();
         for block in &hir.blocks {
             for stmt in &block.stmts {
                 match stmt {
                     HirStmt::Collect { src_dst }
                     | HirStmt::Drain { src: src_dst }
                     | HirStmt::DrainIfEnd { src: src_dst } => {
-                        return Some(*src_dst);
+                        if !defined.contains(src_dst) {
+                            return Some(*src_dst);
+                        }
                     }
                     _ => {}
+                }
+                if let Some(dst) = stmt_defined_reg(stmt) {
+                    defined.insert(dst);
                 }
             }
         }
