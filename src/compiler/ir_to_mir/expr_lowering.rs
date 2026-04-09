@@ -4730,6 +4730,10 @@ impl<'a> HirToMirLowering<'a> {
             &path.members[0],
             &path_desc,
         )?;
+        let projected_semantics = self
+            .get_metadata(src_dst)
+            .and_then(|m| m.annotated_semantics.clone())
+            .and_then(|semantics| Self::project_annotated_value_semantics(&semantics, &path.members));
         if projection.bitfield.is_some() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "cell path update '.{} = ...' does not support bitfield fields",
@@ -4749,6 +4753,89 @@ impl<'a> HirToMirLowering<'a> {
 
         match &projection.ty {
             MirType::Array { .. } | MirType::Struct { .. } => {
+                if let Some(AnnotatedValueSemantics::String {
+                    slot_len,
+                    content_cap,
+                }) = projected_semantics.as_ref()
+                {
+                    let src_meta = self.get_metadata(new_value).cloned().ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "cell path update '.{} = ...' requires a materialized string value with tracked length",
+                            path_desc
+                        ))
+                    })?;
+                    let slot = src_meta.string_slot.ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "cell path update '.{} = ...' requires a materialized string value with tracked length",
+                            path_desc
+                        ))
+                    })?;
+                    let len_vreg = src_meta.string_len_vreg.ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "cell path update '.{} = ...' requires a tracked string length",
+                            path_desc
+                        ))
+                    })?;
+                    let src_slot_size = self.stack_slot_size(slot).ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "string slot not found during cell path update".into(),
+                        )
+                    })?;
+                    if src_slot_size > *slot_len {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "cell path update '.{} = ...' cannot store string buffer of size {} into field capacity {}",
+                            path_desc, src_slot_size, slot_len
+                        )));
+                    }
+                    let src_max_len = src_meta
+                        .string_len_bound
+                        .unwrap_or(src_slot_size.saturating_sub(1));
+                    if src_max_len > *content_cap {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "cell path update '.{} = ...' cannot store string value with capacity {} into field content capacity {}",
+                            path_desc, src_max_len, content_cap
+                        )));
+                    }
+
+                    self.emit(MirInst::Store {
+                        ptr: base_vreg,
+                        offset: projection.offset as i32,
+                        val: MirValue::VReg(len_vreg),
+                        ty: MirType::U64,
+                    });
+
+                    let src_ptr = self.func.alloc_vreg();
+                    self.emit(MirInst::Copy {
+                        dst: src_ptr,
+                        src: MirValue::StackSlot(slot),
+                    });
+                    self.vreg_type_hints.insert(
+                        src_ptr,
+                        MirType::Ptr {
+                            pointee: Box::new(MirType::Array {
+                                elem: Box::new(MirType::U8),
+                                len: src_slot_size,
+                            }),
+                            address_space: AddressSpace::Stack,
+                        },
+                    );
+                    self.emit_ptr_copy_with_offsets(
+                        base_vreg,
+                        projection.offset + 8,
+                        src_ptr,
+                        0,
+                        src_slot_size,
+                    )?;
+                    if src_slot_size < *slot_len {
+                        self.emit_ptr_zero(
+                            base_vreg,
+                            projection.offset + 8 + src_slot_size,
+                            slot_len - src_slot_size,
+                        )?;
+                    }
+                    return Ok(());
+                }
+
                 let MirType::Ptr {
                     pointee: new_value_pointee,
                     address_space: AddressSpace::Stack | AddressSpace::Map,
