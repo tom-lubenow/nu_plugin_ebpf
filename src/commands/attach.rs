@@ -1002,6 +1002,19 @@ fn validate_sched_ext_callback_kfunc_requirements(
                 ));
         }
 
+        if per_node_idle_enabled && used_kfuncs.contains("scx_bpf_pick_any_cpu") {
+            return Err(LabeledError::new("Invalid struct_ops object")
+                .with_label(
+                    format!(
+                        "sched_ext_ops.{callback} uses 'scx_bpf_pick_any_cpu', but SCX_OPS_BUILTIN_IDLE_PER_NODE requires scx_bpf_pick_idle_cpu_node instead",
+                    ),
+                    span,
+                )
+                .with_help(
+                    "Use scx_bpf_pick_idle_cpu_node when SCX_OPS_BUILTIN_IDLE_PER_NODE is set, or clear the flag to keep the flat idle mask helpers",
+                ));
+        }
+
         if !per_node_idle_enabled && used_kfuncs.contains("scx_bpf_pick_idle_cpu_node") {
             return Err(LabeledError::new("Invalid struct_ops object")
                 .with_label(
@@ -3846,6 +3859,42 @@ mod tests {
             label
                 .text
                 .contains("uses 'scx_bpf_pick_idle_cpu', but SCX_OPS_BUILTIN_IDLE_PER_NODE enables per-node idle masks")
+        }));
+    }
+
+    #[test]
+    fn test_validate_sched_ext_callback_kfunc_requirements_rejects_pick_any_cpu_with_per_node_flag()
+    {
+        let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
+            return;
+        };
+        let Some(builtin_idle_per_node) = sched_ext_flag_bit("SCX_OPS_BUILTIN_IDLE_PER_NODE")
+        else {
+            return;
+        };
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push(
+            "flags",
+            Value::int(
+                i64::try_from(keep_builtin_idle | builtin_idle_per_node)
+                    .expect("flag bits should fit in i64"),
+                Span::test_data(),
+            ),
+        );
+
+        let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &["scx_bpf_pick_any_cpu"]);
+        let err = super::validate_sched_ext_callback_kfunc_requirements(
+            &body,
+            &callback_kfuncs,
+            Span::test_data(),
+        )
+        .expect_err("pick_any_cpu should be rejected when per-node idle masks are enabled");
+        assert!(err.labels.iter().any(|label| {
+            label
+                .text
+                .contains("uses 'scx_bpf_pick_any_cpu', but SCX_OPS_BUILTIN_IDLE_PER_NODE requires scx_bpf_pick_idle_cpu_node instead")
         }));
     }
 

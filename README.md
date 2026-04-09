@@ -96,8 +96,10 @@ let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect6' {|ctx| ($ctx.use
 # implement `update_idle`, you must also implement `select_cpu` unless you set
 # `SCX_OPS_KEEP_BUILTIN_IDLE`. That same flag keeps built-in idle-selection
 # kfuncs like `scx_bpf_select_cpu_dfl`, `scx_bpf_select_cpu_and`, and
-# `scx_bpf_pick_idle_cpu*` available. Other scalar value members are
-# range-checked against their kernel BTF field widths.
+# `scx_bpf_pick_idle_cpu*` available. If you set
+# `SCX_OPS_BUILTIN_IDLE_PER_NODE`, use `scx_bpf_pick_idle_cpu_node` instead of
+# `scx_bpf_pick_idle_cpu` / `scx_bpf_pick_any_cpu`. Other scalar value members
+# are range-checked against their kernel BTF field widths.
 ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
     name: 'nu_demo'
 }
