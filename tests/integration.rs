@@ -6,8 +6,9 @@
 #[cfg(target_os = "linux")]
 mod linux_tests {
     use nu_plugin_ebpf::loader::{
-        LoadError, PerfEventSamplePolicy, PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec,
-        UprobeTarget, parse_probe_spec, parse_program_spec,
+        LoadError, PerfEventEvent, PerfEventHardwareEvent, PerfEventSamplePolicy,
+        PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, UprobeTarget, parse_probe_spec,
+        parse_program_spec,
     };
 
     /// Test parsing valid kprobe specification
@@ -141,7 +142,7 @@ mod linux_tests {
                 assert_eq!(
                     target,
                     PerfEventTarget {
-                        event: PerfEventSoftwareEvent::CpuClock,
+                        event: PerfEventEvent::Software(PerfEventSoftwareEvent::CpuClock),
                         cpu: None,
                         sample_policy: PerfEventSamplePolicy::Period(100000),
                     }
@@ -160,9 +161,28 @@ mod linux_tests {
                 assert_eq!(
                     target,
                     PerfEventTarget {
-                        event: PerfEventSoftwareEvent::ContextSwitches,
+                        event: PerfEventEvent::Software(PerfEventSoftwareEvent::ContextSwitches),
                         cpu: None,
                         sample_policy: PerfEventSamplePolicy::Period(1_000_000),
+                    }
+                );
+            }
+            other => panic!("Unexpected result: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_structured_perf_event_hardware_spec() {
+        let result = parse_program_spec("perf_event:hardware:cache-misses:freq=99");
+
+        match result {
+            Ok(ProgramSpec::PerfEvent { target }) => {
+                assert_eq!(
+                    target,
+                    PerfEventTarget {
+                        event: PerfEventEvent::Hardware(PerfEventHardwareEvent::CacheMisses),
+                        cpu: None,
+                        sample_policy: PerfEventSamplePolicy::Frequency(99),
                     }
                 );
             }

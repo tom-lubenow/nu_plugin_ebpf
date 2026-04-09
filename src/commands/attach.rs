@@ -2010,8 +2010,12 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.comm }   - Get current command name at sample time
     Note: initial perf_event support covers software `cpu-clock`,
     `task-clock`, `context-switches`, `cpu-migrations`, `page-faults`,
-    `minor-faults`, and `major-faults` through specs like
-    `perf_event:software:cpu-clock`, with optional selectors `cpu=N`,
+    `minor-faults`, and `major-faults`, plus hardware `cpu-cycles`,
+    `instructions`, `cache-references`, `cache-misses`,
+    `branch-instructions`, `branch-misses`, `bus-cycles`,
+    `stalled-cycles-frontend`, `stalled-cycles-backend`, and
+    `ref-cpu-cycles` through specs like `perf_event:software:cpu-clock`
+    or `perf_event:hardware:cpu-cycles`, with optional selectors `cpu=N`,
     `period=N`, or `freq=N`. Omitting the sample policy defaults to
     `period=1000000`, and omitting `cpu=` attaches on all online CPUs.
 

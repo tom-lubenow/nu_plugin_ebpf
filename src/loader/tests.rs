@@ -152,7 +152,7 @@ fn test_parse_program_spec_perf_event_is_structured() {
         spec,
         ProgramSpec::PerfEvent {
             target: PerfEventTarget {
-                event: PerfEventSoftwareEvent::TaskClock,
+                event: PerfEventEvent::Software(PerfEventSoftwareEvent::TaskClock),
                 cpu: Some(0),
                 sample_policy: PerfEventSamplePolicy::Frequency(99),
             }
@@ -171,7 +171,7 @@ fn test_parse_program_spec_perf_event_page_faults_is_structured() {
         spec,
         ProgramSpec::PerfEvent {
             target: PerfEventTarget {
-                event: PerfEventSoftwareEvent::PageFaults,
+                event: PerfEventEvent::Software(PerfEventSoftwareEvent::PageFaults),
                 cpu: None,
                 sample_policy: PerfEventSamplePolicy::Period(4096),
             }
@@ -180,6 +180,25 @@ fn test_parse_program_spec_perf_event_page_faults_is_structured() {
     assert_eq!(
         spec.to_string(),
         "perf_event:software:page-faults:period=4096"
+    );
+}
+
+#[test]
+fn test_parse_program_spec_perf_event_hardware_is_structured() {
+    let spec = parse_program_spec("perf_event:hardware:instructions:cpu=0:period=100000").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::PerfEvent {
+            target: PerfEventTarget {
+                event: PerfEventEvent::Hardware(PerfEventHardwareEvent::Instructions),
+                cpu: Some(0),
+                sample_policy: PerfEventSamplePolicy::Period(100000),
+            }
+        }
+    );
+    assert_eq!(
+        spec.to_string(),
+        "perf_event:hardware:instructions:cpu=0:period=100000"
     );
 }
 

@@ -2,8 +2,9 @@ use super::LoadError;
 use crate::compiler::{EbpfProgramType, KernelTargetValidationKind, ProgramTargetKind};
 use crate::kernel_btf::{FunctionCheckResult, KernelBtf};
 use crate::program_spec::{
-    CgroupSkbTarget, CgroupSockAddrTarget, DEFAULT_PERF_EVENT_PERIOD, PerfEventSamplePolicy,
-    PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, TcTarget, UprobeTarget,
+    CgroupSkbTarget, CgroupSockAddrTarget, DEFAULT_PERF_EVENT_PERIOD, PerfEventEvent,
+    PerfEventHardwareEvent, PerfEventSamplePolicy, PerfEventSoftwareEvent, PerfEventTarget,
+    ProgramSpec, TcTarget, UprobeTarget,
 };
 use aya::programs::{CgroupSkbAttachType, CgroupSockAddrAttachType, TcAttachType};
 use aya::util::online_cpus;
@@ -181,37 +182,75 @@ impl CgroupSockAddrTarget {
 }
 
 impl PerfEventTarget {
-    /// Parse a perf_event target string of the form `software:cpu-clock[:cpu=0][:period=1000000]`.
+    /// Parse a perf_event target string of the form
+    /// `software:cpu-clock[:cpu=0][:period=1000000]` or
+    /// `hardware:cpu-cycles[:cpu=0][:period=1000000]`.
     pub fn parse(target: &str) -> Result<Self, LoadError> {
         let mut parts = target.split(':');
         let source = parts.next().ok_or_else(|| {
             LoadError::Load(format!(
-                "Invalid perf_event target: {target}. Expected format: software:cpu-clock[:cpu=N][:period=N|freq=N]"
+                "Invalid perf_event target: {target}. Expected format: software:cpu-clock[:cpu=N][:period=N|freq=N] or hardware:cpu-cycles[:cpu=N][:period=N|freq=N]"
             ))
         })?;
         let event_name = parts.next().ok_or_else(|| {
             LoadError::Load(format!(
-                "Invalid perf_event target: {target}. Expected format: software:cpu-clock[:cpu=N][:period=N|freq=N]"
+                "Invalid perf_event target: {target}. Expected format: software:cpu-clock[:cpu=N][:period=N|freq=N] or hardware:cpu-cycles[:cpu=N][:period=N|freq=N]"
             ))
         })?;
 
-        if source != "software" {
-            return Err(LoadError::Load(format!(
-                "Unsupported perf_event source: {source}. Initial support only covers software perf events"
-            )));
-        }
-
-        let event = match event_name {
-            "cpu-clock" => PerfEventSoftwareEvent::CpuClock,
-            "task-clock" => PerfEventSoftwareEvent::TaskClock,
-            "context-switches" => PerfEventSoftwareEvent::ContextSwitches,
-            "cpu-migrations" => PerfEventSoftwareEvent::CpuMigrations,
-            "page-faults" => PerfEventSoftwareEvent::PageFaults,
-            "minor-faults" => PerfEventSoftwareEvent::MinorFaults,
-            "major-faults" => PerfEventSoftwareEvent::MajorFaults,
+        let event = match source {
+            "software" => match event_name {
+                "cpu-clock" => PerfEventEvent::Software(PerfEventSoftwareEvent::CpuClock),
+                "task-clock" => PerfEventEvent::Software(PerfEventSoftwareEvent::TaskClock),
+                "context-switches" => {
+                    PerfEventEvent::Software(PerfEventSoftwareEvent::ContextSwitches)
+                }
+                "cpu-migrations" => {
+                    PerfEventEvent::Software(PerfEventSoftwareEvent::CpuMigrations)
+                }
+                "page-faults" => PerfEventEvent::Software(PerfEventSoftwareEvent::PageFaults),
+                "minor-faults" => PerfEventEvent::Software(PerfEventSoftwareEvent::MinorFaults),
+                "major-faults" => PerfEventEvent::Software(PerfEventSoftwareEvent::MajorFaults),
+                _ => {
+                    return Err(LoadError::Load(format!(
+                        "Unsupported perf_event software event: {event_name}. Expected one of cpu-clock, task-clock, context-switches, cpu-migrations, page-faults, minor-faults, major-faults"
+                    )));
+                }
+            },
+            "hardware" => match event_name {
+                "cpu-cycles" => PerfEventEvent::Hardware(PerfEventHardwareEvent::CpuCycles),
+                "instructions" => {
+                    PerfEventEvent::Hardware(PerfEventHardwareEvent::Instructions)
+                }
+                "cache-references" => {
+                    PerfEventEvent::Hardware(PerfEventHardwareEvent::CacheReferences)
+                }
+                "cache-misses" => PerfEventEvent::Hardware(PerfEventHardwareEvent::CacheMisses),
+                "branch-instructions" => {
+                    PerfEventEvent::Hardware(PerfEventHardwareEvent::BranchInstructions)
+                }
+                "branch-misses" => {
+                    PerfEventEvent::Hardware(PerfEventHardwareEvent::BranchMisses)
+                }
+                "bus-cycles" => PerfEventEvent::Hardware(PerfEventHardwareEvent::BusCycles),
+                "stalled-cycles-frontend" => {
+                    PerfEventEvent::Hardware(PerfEventHardwareEvent::StalledCyclesFrontend)
+                }
+                "stalled-cycles-backend" => {
+                    PerfEventEvent::Hardware(PerfEventHardwareEvent::StalledCyclesBackend)
+                }
+                "ref-cpu-cycles" => {
+                    PerfEventEvent::Hardware(PerfEventHardwareEvent::RefCpuCycles)
+                }
+                _ => {
+                    return Err(LoadError::Load(format!(
+                        "Unsupported perf_event hardware event: {event_name}. Expected one of cpu-cycles, instructions, cache-references, cache-misses, branch-instructions, branch-misses, bus-cycles, stalled-cycles-frontend, stalled-cycles-backend, ref-cpu-cycles"
+                    )));
+                }
+            },
             _ => {
                 return Err(LoadError::Load(format!(
-                    "Unsupported perf_event software event: {event_name}. Expected one of cpu-clock, task-clock, context-switches, cpu-migrations, page-faults, minor-faults, major-faults"
+                    "Unsupported perf_event source: {source}. Expected software or hardware"
                 )));
             }
         };

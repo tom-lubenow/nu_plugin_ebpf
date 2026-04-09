@@ -154,6 +154,61 @@ impl PerfEventSoftwareEvent {
     }
 }
 
+/// Supported hardware perf events for the initial perf_event hardware surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PerfEventHardwareEvent {
+    CpuCycles,
+    Instructions,
+    CacheReferences,
+    CacheMisses,
+    BranchInstructions,
+    BranchMisses,
+    BusCycles,
+    StalledCyclesFrontend,
+    StalledCyclesBackend,
+    RefCpuCycles,
+}
+
+impl PerfEventHardwareEvent {
+    pub fn name(&self) -> &'static str {
+        match self {
+            PerfEventHardwareEvent::CpuCycles => "cpu-cycles",
+            PerfEventHardwareEvent::Instructions => "instructions",
+            PerfEventHardwareEvent::CacheReferences => "cache-references",
+            PerfEventHardwareEvent::CacheMisses => "cache-misses",
+            PerfEventHardwareEvent::BranchInstructions => "branch-instructions",
+            PerfEventHardwareEvent::BranchMisses => "branch-misses",
+            PerfEventHardwareEvent::BusCycles => "bus-cycles",
+            PerfEventHardwareEvent::StalledCyclesFrontend => "stalled-cycles-frontend",
+            PerfEventHardwareEvent::StalledCyclesBackend => "stalled-cycles-backend",
+            PerfEventHardwareEvent::RefCpuCycles => "ref-cpu-cycles",
+        }
+    }
+}
+
+/// Supported perf_event sources and their event selectors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PerfEventEvent {
+    Software(PerfEventSoftwareEvent),
+    Hardware(PerfEventHardwareEvent),
+}
+
+impl PerfEventEvent {
+    pub fn source_name(&self) -> &'static str {
+        match self {
+            PerfEventEvent::Software(_) => "software",
+            PerfEventEvent::Hardware(_) => "hardware",
+        }
+    }
+
+    pub fn event_name(&self) -> &'static str {
+        match self {
+            PerfEventEvent::Software(event) => event.name(),
+            PerfEventEvent::Hardware(event) => event.name(),
+        }
+    }
+}
+
 /// Sample policy for perf_event programs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PerfEventSamplePolicy {
@@ -173,8 +228,8 @@ impl PerfEventSamplePolicy {
 /// Parsed perf_event target information.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PerfEventTarget {
-    /// Software event name.
-    pub event: PerfEventSoftwareEvent,
+    /// Perf event source and selector.
+    pub event: PerfEventEvent,
     /// Optional CPU selector. `None` means attach on all online CPUs.
     pub cpu: Option<u32>,
     /// Perf sampling policy.
@@ -183,7 +238,7 @@ pub struct PerfEventTarget {
 
 impl PerfEventTarget {
     pub fn target_string(&self) -> String {
-        let mut target = format!("software:{}", self.event.name());
+        let mut target = format!("{}:{}", self.event.source_name(), self.event.event_name());
         if let Some(cpu) = self.cpu {
             target.push_str(&format!(":cpu={cpu}"));
         }

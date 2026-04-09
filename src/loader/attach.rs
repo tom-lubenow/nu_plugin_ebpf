@@ -1,4 +1,5 @@
 use super::*;
+use aya::programs::perf_event::perf_hw_id;
 
 impl EbpfState {
     fn next_probe_id(&self) -> u32 {
@@ -208,26 +209,68 @@ impl EbpfState {
                     LoadError::Load(format!("Failed to load perf_event program: {e}"))
                 })?;
 
-                let perf_config = match target.event {
-                    PerfEventSoftwareEvent::CpuClock => perf_sw_ids::PERF_COUNT_SW_CPU_CLOCK as u64,
-                    PerfEventSoftwareEvent::TaskClock => {
-                        perf_sw_ids::PERF_COUNT_SW_TASK_CLOCK as u64
-                    }
-                    PerfEventSoftwareEvent::ContextSwitches => {
-                        perf_sw_ids::PERF_COUNT_SW_CONTEXT_SWITCHES as u64
-                    }
-                    PerfEventSoftwareEvent::CpuMigrations => {
-                        perf_sw_ids::PERF_COUNT_SW_CPU_MIGRATIONS as u64
-                    }
-                    PerfEventSoftwareEvent::PageFaults => {
-                        perf_sw_ids::PERF_COUNT_SW_PAGE_FAULTS as u64
-                    }
-                    PerfEventSoftwareEvent::MinorFaults => {
-                        perf_sw_ids::PERF_COUNT_SW_PAGE_FAULTS_MIN as u64
-                    }
-                    PerfEventSoftwareEvent::MajorFaults => {
-                        perf_sw_ids::PERF_COUNT_SW_PAGE_FAULTS_MAJ as u64
-                    }
+                let (perf_type, perf_config) = match target.event {
+                    PerfEventEvent::Software(event) => (
+                        PerfTypeId::Software,
+                        match event {
+                            PerfEventSoftwareEvent::CpuClock => {
+                                perf_sw_ids::PERF_COUNT_SW_CPU_CLOCK as u64
+                            }
+                            PerfEventSoftwareEvent::TaskClock => {
+                                perf_sw_ids::PERF_COUNT_SW_TASK_CLOCK as u64
+                            }
+                            PerfEventSoftwareEvent::ContextSwitches => {
+                                perf_sw_ids::PERF_COUNT_SW_CONTEXT_SWITCHES as u64
+                            }
+                            PerfEventSoftwareEvent::CpuMigrations => {
+                                perf_sw_ids::PERF_COUNT_SW_CPU_MIGRATIONS as u64
+                            }
+                            PerfEventSoftwareEvent::PageFaults => {
+                                perf_sw_ids::PERF_COUNT_SW_PAGE_FAULTS as u64
+                            }
+                            PerfEventSoftwareEvent::MinorFaults => {
+                                perf_sw_ids::PERF_COUNT_SW_PAGE_FAULTS_MIN as u64
+                            }
+                            PerfEventSoftwareEvent::MajorFaults => {
+                                perf_sw_ids::PERF_COUNT_SW_PAGE_FAULTS_MAJ as u64
+                            }
+                        },
+                    ),
+                    PerfEventEvent::Hardware(event) => (
+                        PerfTypeId::Hardware,
+                        match event {
+                            PerfEventHardwareEvent::CpuCycles => {
+                                perf_hw_id::PERF_COUNT_HW_CPU_CYCLES as u64
+                            }
+                            PerfEventHardwareEvent::Instructions => {
+                                perf_hw_id::PERF_COUNT_HW_INSTRUCTIONS as u64
+                            }
+                            PerfEventHardwareEvent::CacheReferences => {
+                                perf_hw_id::PERF_COUNT_HW_CACHE_REFERENCES as u64
+                            }
+                            PerfEventHardwareEvent::CacheMisses => {
+                                perf_hw_id::PERF_COUNT_HW_CACHE_MISSES as u64
+                            }
+                            PerfEventHardwareEvent::BranchInstructions => {
+                                perf_hw_id::PERF_COUNT_HW_BRANCH_INSTRUCTIONS as u64
+                            }
+                            PerfEventHardwareEvent::BranchMisses => {
+                                perf_hw_id::PERF_COUNT_HW_BRANCH_MISSES as u64
+                            }
+                            PerfEventHardwareEvent::BusCycles => {
+                                perf_hw_id::PERF_COUNT_HW_BUS_CYCLES as u64
+                            }
+                            PerfEventHardwareEvent::StalledCyclesFrontend => {
+                                perf_hw_id::PERF_COUNT_HW_STALLED_CYCLES_FRONTEND as u64
+                            }
+                            PerfEventHardwareEvent::StalledCyclesBackend => {
+                                perf_hw_id::PERF_COUNT_HW_STALLED_CYCLES_BACKEND as u64
+                            }
+                            PerfEventHardwareEvent::RefCpuCycles => {
+                                perf_hw_id::PERF_COUNT_HW_REF_CPU_CYCLES as u64
+                            }
+                        },
+                    ),
                 };
                 let sample_policy = match target.sample_policy {
                     PerfEventSamplePolicy::Period(period) => SamplePolicy::Period(period),
@@ -245,7 +288,7 @@ impl EbpfState {
                 for cpu in cpus {
                     perf_event
                         .attach(
-                            PerfTypeId::Software,
+                            perf_type.clone(),
                             perf_config,
                             PerfEventScope::AllProcessesOneCpu { cpu },
                             sample_policy.clone(),

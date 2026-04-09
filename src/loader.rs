@@ -96,8 +96,9 @@ mod libbpf;
 mod maps;
 
 pub use crate::program_spec::{
-    CgroupSkbTarget, CgroupSockAddrTarget, PerfEventSamplePolicy, PerfEventSoftwareEvent,
-    PerfEventTarget, ProgramSpec, TcTarget, UprobeTarget,
+    CgroupSkbTarget, CgroupSockAddrTarget, PerfEventEvent, PerfEventHardwareEvent,
+    PerfEventSamplePolicy, PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, TcTarget,
+    UprobeTarget,
 };
 pub use targets::{parse_probe_spec, parse_program_spec};
 
