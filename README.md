@@ -5,7 +5,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: Write tracing logic in familiar Nushell syntax
-- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, lsm, perf_event, xdp, tc, cgroup_skb, cgroup_sock, cgroup_sysctl, cgroup_sockopt, cgroup_sock_addr, sk_lookup, initial struct_ops object support
+- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, lsm, perf_event, xdp, tc, cgroup_skb, cgroup_sock, sock_ops, cgroup_sysctl, cgroup_sockopt, cgroup_sock_addr, sk_lookup, initial struct_ops object support
 - **Aggregations**: Count by key, histograms, timing measurements
 - **Event streaming**: Real-time event output via ring buffers
 - **Map sharing**: Share data between probes with `--pin`
@@ -93,6 +93,9 @@ let id = ebpf attach 'cgroup_sysctl:/sys/fs/cgroup' {|ctx| $ctx.write | count; '
 
 # Count socket families at cgroup socket-create time
 let id = ebpf attach 'cgroup_sock:/sys/fs/cgroup:sock_create' {|ctx| $ctx.family | count; 'allow' }
+
+# Count sock_ops callback opcodes inside a cgroup
+let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.op | count; 1 }
 
 # Count getsockopt option names inside a cgroup
 let id = ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| $ctx.optname | count; 'allow' }
@@ -274,20 +277,24 @@ The closure receives a context parameter with these fields:
 | `user_ip4` | IPv4 destination/source address in host byte order | cgroup_sock_addr (*4 hooks) |
 | `user_ip6` | IPv6 address as four host-order `u32` words | cgroup_sock_addr (*6 hooks) |
 | `user_port` | Requested port in host byte order | cgroup_sock_addr |
-| `family` | Kernel socket family | cgroup_sock, cgroup_sock_addr, sk_lookup |
+| `family` | Kernel socket family | cgroup_sock, cgroup_sock_addr, sk_lookup, sock_ops |
 | `sock_type` | Socket type | cgroup_sock, cgroup_sock_addr |
 | `protocol` | Socket protocol | cgroup_sock, cgroup_sock_addr, sk_lookup |
 | `bound_dev_if` | Bound device ifindex | cgroup_sock |
 | `mark` | Socket mark | cgroup_sock |
 | `priority` | Socket priority | cgroup_sock |
+| `op` | sock_ops callback opcode | sock_ops |
+| `is_fullsock` | Whether the context has a full socket | sock_ops |
+| `cb_flags` | Requested sock_ops callback flags | sock_ops |
+| `state` | Current TCP state | sock_ops |
 | `msg_src_ip4` | IPv4 source address in host byte order | cgroup_sock_addr (sendmsg4, recvmsg4) |
 | `msg_src_ip6` | IPv6 source address as four host-order `u32` words | cgroup_sock_addr (sendmsg6, recvmsg6) |
-| `remote_ip4` | Remote IPv4 address in host byte order | sk_lookup |
-| `remote_ip6` | Remote IPv6 address as four host-order `u32` words | sk_lookup |
-| `remote_port` | Remote port in host byte order | sk_lookup |
-| `local_ip4` | Local IPv4 address in host byte order | sk_lookup |
-| `local_ip6` | Local IPv6 address as four host-order `u32` words | sk_lookup |
-| `local_port` | Local port in host byte order | sk_lookup |
+| `remote_ip4` | Remote IPv4 address in host byte order | sk_lookup, sock_ops |
+| `remote_ip6` | Remote IPv6 address as four host-order `u32` words | sk_lookup, sock_ops |
+| `remote_port` | Remote port in host byte order | sk_lookup, sock_ops |
+| `local_ip4` | Local IPv4 address in host byte order | sk_lookup, sock_ops |
+| `local_ip6` | Local IPv6 address as four host-order `u32` words | sk_lookup, sock_ops |
+| `local_port` | Local port in host byte order | sk_lookup, sock_ops |
 | `arg0`-`argN` | Function arguments | kprobe, uprobe, fentry, fexit |
 | `retval` | Return value | kretprobe, uretprobe, fexit |
 
@@ -332,6 +339,16 @@ sampling. The initial surface uses the ordinary helper-backed fields like
 `ctx.mark`, and `ctx.priority`, and closures can return `"allow"` /
 `"deny"` instead of raw `1` / `0` result codes. Address fields from the
 underlying `struct bpf_sock` are not surfaced yet.
+
+`sock_ops` currently attaches to a cgroup path such as `/sys/fs/cgroup`.
+It exposes `ctx.cpu`, `ctx.ktime`, `ctx.op`, `ctx.family`,
+`ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`,
+`ctx.local_ip6`, `ctx.local_port`, `ctx.is_fullsock`, `ctx.cb_flags`,
+and `ctx.state`. The IPv4 address and remote port fields are normalized to
+host byte order. The IPv6 fields are exposed as fixed arrays of four
+host-order `u32` words, so ordinary Nushell indexing works, for example
+`($ctx.remote_ip6 | get 3)`. This initial slice is read-only and uses raw
+integer return codes; observation-only examples should return `1`.
 
 `cgroup_sock_addr` currently exposes `ctx.cpu`, `ctx.ktime`,
 `ctx.user_family`, `ctx.user_ip4`, `ctx.user_ip6`, `ctx.user_port`,

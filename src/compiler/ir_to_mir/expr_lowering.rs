@@ -1311,8 +1311,18 @@ impl<'a> HirToMirLowering<'a> {
             })?;
             return Ok((CtxField::Arg(arg_idx), 2));
         }
+        let field = match (
+            self.probe_ctx.map(|ctx| ctx.probe_type),
+            field_name.as_str(),
+        ) {
+            (Some(EbpfProgramType::SockOps), "op") => CtxField::SockOp,
+            (Some(EbpfProgramType::SockOps), "is_fullsock") => CtxField::IsFullsock,
+            (Some(EbpfProgramType::SockOps), "cb_flags") => CtxField::SockOpsCbFlags,
+            (Some(EbpfProgramType::SockOps), "state") => CtxField::SockState,
+            _ => Self::ctx_field_from_name(field_name)?,
+        };
 
-        Ok((Self::ctx_field_from_name(field_name)?, 1))
+        Ok((field, 1))
     }
 
     fn trampoline_field_selector(
@@ -4601,6 +4611,10 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::RemotePort
             | CtxField::LocalIp4
             | CtxField::LocalPort
+            | CtxField::SockOp
+            | CtxField::IsFullsock
+            | CtxField::SockOpsCbFlags
+            | CtxField::SockState
             | CtxField::SysctlWrite
             | CtxField::SysctlFilePos => (MirType::U32, Some(MirType::U32)),
             CtxField::SockoptLevel

@@ -1951,6 +1951,7 @@ Supported attach types:
   - xdp, tc
   - cgroup_skb
   - cgroup_sock
+  - sock_ops
   - cgroup_sysctl
   - cgroup_sockopt
   - cgroup_sock_addr
@@ -2055,6 +2056,25 @@ Context parameter syntax (recommended):
     raw `1`/`0` result codes. Initial support covers `sock_create`,
     `sock_release`, `post_bind4`, and `post_bind6` with the scalar fields
     above; address fields are not surfaced yet.
+
+  sock_ops fields:
+    {|ctx| $ctx.cpu }     - Get current CPU ID
+    {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.op }      - Get the sock_ops callback opcode
+    {|ctx| $ctx.family }  - Get socket family
+    {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order
+    {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words
+    {|ctx| $ctx.remote_port } - Get the remote port in host byte order
+    {|ctx| $ctx.local_ip4 } - Get the local IPv4 address in host byte order
+    {|ctx| $ctx.local_ip6 } - Get the local IPv6 address as four host-order u32 words
+    {|ctx| $ctx.local_port } - Get the local port in host byte order
+    {|ctx| $ctx.is_fullsock } - Get whether the context has a full socket
+    {|ctx| $ctx.cb_flags } - Get requested sock_ops callback flags
+    {|ctx| $ctx.state }   - Get the current TCP state
+    Note: initial sock_ops support is read-only and uses raw integer return
+    codes. Observation-only examples should return `1`. IPv6 addresses are
+    exposed as fixed arrays of four host-order u32 words, for example
+    `($ctx.remote_ip6 | get 3)`.
 
   cgroup_sockopt fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
@@ -2245,7 +2265,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', or 'sk_lookup:/proc/self/ns/net').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', or 'sk_lookup:/proc/self/ns/net').",
             )
             .required(
                 "body",
@@ -2294,6 +2314,7 @@ Requirements:
             "tc",
             "cgroup_skb",
             "cgroup_sock",
+            "sock_ops",
             "cgroup_sysctl",
             "cgroup_sockopt",
             "cgroup_sock_addr",
@@ -2347,6 +2368,11 @@ Requirements:
             Example {
                 example: "ebpf attach 'cgroup_sock:/sys/fs/cgroup:sock_create' {|ctx| $ctx.family | count; 'allow' }",
                 description: "Count socket families at cgroup socket-create time",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.op | count; 1 }",
+                description: "Count sock_ops callback opcodes on TCP socket events in a cgroup",
                 result: None,
             },
             Example {

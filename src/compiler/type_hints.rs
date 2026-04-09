@@ -192,6 +192,10 @@ fn recover_ctx_field_hint(
         | CtxField::RemotePort
         | CtxField::LocalIp4
         | CtxField::LocalPort
+        | CtxField::SockOp
+        | CtxField::IsFullsock
+        | CtxField::SockOpsCbFlags
+        | CtxField::SockState
         | CtxField::SysctlWrite
         | CtxField::SysctlFilePos => Some(MirType::U32),
         CtxField::SockoptLevel

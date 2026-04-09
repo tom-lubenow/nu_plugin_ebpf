@@ -95,6 +95,25 @@ impl<'a> MirToEbpfCompiler<'a> {
         (8, 12, 16, 20, 36, 40, 44, 60, 64)
     }
 
+    fn bpf_sock_ops_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16, i16) {
+        // struct bpf_sock_ops {
+        //     __u32 op;
+        //     union { __u32 args[4]; __u32 reply; __u32 replylong[4]; };
+        //     __u32 family;
+        //     __u32 remote_ip4;     // network byte order
+        //     __u32 local_ip4;      // network byte order
+        //     __u32 remote_ip6[4];  // network byte order
+        //     __u32 local_ip6[4];   // network byte order
+        //     __u32 remote_port;    // network byte order
+        //     __u32 local_port;     // host byte order
+        //     __u32 is_fullsock;
+        //     ...
+        //     __u32 bpf_sock_ops_cb_flags;
+        //     __u32 state;
+        // };
+        (0, 20, 24, 28, 32, 48, 64, 68, 72, 84, 88)
+    }
+
     fn compile_ctx_u32_array_to_stack(
         &mut self,
         dst: EbpfReg,
@@ -658,13 +677,10 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::Family => {
-                let offset = if matches!(
-                    self.probe_ctx.as_ref().map(|ctx| ctx.probe_type),
-                    Some(EbpfProgramType::CgroupSock)
-                ) {
-                    Self::bpf_sock_offsets().1
-                } else {
-                    Self::bpf_sock_addr_offsets().4
+                let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
+                    Some(EbpfProgramType::CgroupSock) => Self::bpf_sock_offsets().1,
+                    Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().1,
+                    _ => Self::bpf_sock_addr_offsets().4,
                 };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
@@ -725,33 +741,71 @@ impl<'a> MirToEbpfCompiler<'a> {
                 )?;
             }
             CtxField::RemoteIp4 => {
-                let offset = Self::bpf_sk_lookup_offsets().2;
+                let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
+                    Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().2,
+                    _ => Self::bpf_sk_lookup_offsets().2,
+                };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
                 self.instructions.push(EbpfInsn::end32_to_be(dst));
             }
             CtxField::RemoteIp6 => {
-                let offset = Self::bpf_sk_lookup_offsets().3;
+                let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
+                    Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().4,
+                    _ => Self::bpf_sk_lookup_offsets().3,
+                };
                 self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.remote_ip6", true)?;
             }
             CtxField::RemotePort => {
-                let offset = Self::bpf_sk_lookup_offsets().4;
+                let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
+                    Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().6,
+                    _ => Self::bpf_sk_lookup_offsets().4,
+                };
                 self.instructions
                     .push(EbpfInsn::ldxh(dst, EbpfReg::R9, offset));
                 self.instructions.push(EbpfInsn::end16_to_be(dst));
             }
             CtxField::LocalIp4 => {
-                let offset = Self::bpf_sk_lookup_offsets().5;
+                let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
+                    Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().3,
+                    _ => Self::bpf_sk_lookup_offsets().5,
+                };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
                 self.instructions.push(EbpfInsn::end32_to_be(dst));
             }
             CtxField::LocalIp6 => {
-                let offset = Self::bpf_sk_lookup_offsets().6;
+                let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
+                    Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().5,
+                    _ => Self::bpf_sk_lookup_offsets().6,
+                };
                 self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.local_ip6", true)?;
             }
             CtxField::LocalPort => {
-                let offset = Self::bpf_sk_lookup_offsets().7;
+                let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
+                    Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().7,
+                    _ => Self::bpf_sk_lookup_offsets().7,
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOp => {
+                let offset = Self::bpf_sock_ops_offsets().0;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::IsFullsock => {
+                let offset = Self::bpf_sock_ops_offsets().8;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsCbFlags => {
+                let offset = Self::bpf_sock_ops_offsets().9;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockState => {
+                let offset = Self::bpf_sock_ops_offsets().10;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }

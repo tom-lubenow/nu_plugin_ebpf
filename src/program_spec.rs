@@ -121,6 +121,19 @@ impl PartialEq for CgroupSockTarget {
 
 impl Eq for CgroupSockTarget {}
 
+/// Parsed sock_ops target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SockOpsTarget {
+    /// Filesystem path to the cgroup directory.
+    pub cgroup_path: String,
+}
+
+impl SockOpsTarget {
+    pub fn target_string(&self) -> String {
+        self.cgroup_path.clone()
+    }
+}
+
 /// Parsed cgroup_sock_addr target information.
 #[derive(Debug, Clone)]
 pub struct CgroupSockAddrTarget {
@@ -353,6 +366,7 @@ pub enum ProgramSpec {
     Xdp { interface: String },
     PerfEvent { target: PerfEventTarget },
     SkLookup { target: SkLookupTarget },
+    SockOps { target: SockOpsTarget },
     Tc { target: TcTarget },
     CgroupSkb { target: CgroupSkbTarget },
     CgroupSock { target: CgroupSockTarget },
@@ -378,6 +392,7 @@ impl ProgramSpec {
             ProgramSpec::Xdp { interface } => interface.clone(),
             ProgramSpec::PerfEvent { target } => target.target_string(),
             ProgramSpec::SkLookup { target } => target.target_string(),
+            ProgramSpec::SockOps { target } => target.target_string(),
             ProgramSpec::Tc { target } => target.target_string(),
             ProgramSpec::CgroupSkb { target } => target.target_string(),
             ProgramSpec::CgroupSock { target } => target.target_string(),

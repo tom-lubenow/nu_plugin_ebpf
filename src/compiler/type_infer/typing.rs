@@ -398,6 +398,10 @@ impl<'a> TypeInference<'a> {
             | CtxField::RemotePort
             | CtxField::LocalIp4
             | CtxField::LocalPort
+            | CtxField::SockOp
+            | CtxField::IsFullsock
+            | CtxField::SockOpsCbFlags
+            | CtxField::SockState
             | CtxField::SysctlWrite
             | CtxField::SysctlFilePos => HMType::U32,
 

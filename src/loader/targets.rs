@@ -4,7 +4,8 @@ use crate::kernel_btf::{FunctionCheckResult, KernelBtf};
 use crate::program_spec::{
     CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockTarget, CgroupSockoptTarget,
     DEFAULT_PERF_EVENT_PERIOD, PerfEventEvent, PerfEventHardwareEvent, PerfEventSamplePolicy,
-    PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, SkLookupTarget, TcTarget, UprobeTarget,
+    PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, SkLookupTarget, SockOpsTarget, TcTarget,
+    UprobeTarget,
 };
 use aya::programs::{
     CgroupSkbAttachType, CgroupSockAddrAttachType, CgroupSockAttachType, CgroupSockoptAttachType,
@@ -261,6 +262,21 @@ impl SkLookupTarget {
 
         Ok(Self {
             netns_path: target.to_string(),
+        })
+    }
+}
+
+impl SockOpsTarget {
+    /// Parse a sock_ops target string of the form `/sys/fs/cgroup`.
+    pub fn parse(target: &str) -> Result<Self, LoadError> {
+        if target.is_empty() {
+            return Err(LoadError::Load(
+                "sock_ops cgroup path cannot be empty".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            cgroup_path: target.to_string(),
         })
     }
 }
@@ -746,6 +762,7 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `xdp:interface`
 /// - `perf_event:software:cpu-clock[:cpu=N][:pid=N][:period=N|freq=N]`
 /// - `sk_lookup:/proc/self/ns/net`
+/// - `sock_ops:/path/to/cgroup`
 /// - `tc:interface:ingress`
 /// - `tc:interface:egress`
 /// - `cgroup_skb:/path/to/cgroup:ingress`
@@ -820,6 +837,9 @@ pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
         }),
         EbpfProgramType::SkLookup => Ok(ProgramSpec::SkLookup {
             target: SkLookupTarget::parse(target)?,
+        }),
+        EbpfProgramType::SockOps => Ok(ProgramSpec::SockOps {
+            target: SockOpsTarget::parse(target)?,
         }),
         EbpfProgramType::Tc => Ok(ProgramSpec::Tc {
             target: TcTarget::parse(target)?,

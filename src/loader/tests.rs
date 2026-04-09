@@ -288,6 +288,13 @@ fn test_parse_probe_spec_sk_lookup_root_netns() {
 }
 
 #[test]
+fn test_parse_probe_spec_sock_ops_root_cgroup() {
+    let (prog_type, target) = parse_probe_spec("sock_ops:/sys/fs/cgroup").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::SockOps);
+    assert_eq!(target, "/sys/fs/cgroup");
+}
+
+#[test]
 fn test_parse_probe_spec_lsm_file_open() {
     let (prog_type, target) = parse_probe_spec("lsm:file_open").unwrap();
     assert_eq!(prog_type, EbpfProgramType::Lsm);
@@ -375,6 +382,20 @@ fn test_parse_program_spec_sk_lookup_is_structured() {
         }
     );
     assert_eq!(spec.to_string(), "sk_lookup:/proc/self/ns/net");
+}
+
+#[test]
+fn test_parse_program_spec_sock_ops_is_structured() {
+    let spec = parse_program_spec("sock_ops:/sys/fs/cgroup").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::SockOps {
+            target: crate::program_spec::SockOpsTarget {
+                cgroup_path: "/sys/fs/cgroup".to_string(),
+            }
+        }
+    );
+    assert_eq!(spec.to_string(), "sock_ops:/sys/fs/cgroup");
 }
 
 #[test]

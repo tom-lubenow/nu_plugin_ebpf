@@ -446,6 +446,14 @@ pub enum CtxField {
     LocalIp6,
     /// bpf_sk_lookup::local_port (host byte order)
     LocalPort,
+    /// bpf_sock_ops::op
+    SockOp,
+    /// bpf_sock_ops::is_fullsock
+    IsFullsock,
+    /// bpf_sock_ops::bpf_sock_ops_cb_flags
+    SockOpsCbFlags,
+    /// bpf_sock_ops::state
+    SockState,
     /// bpf_sysctl::write
     SysctlWrite,
     /// bpf_sysctl::file_pos
@@ -504,6 +512,10 @@ impl CtxField {
             CtxField::LocalIp4 => "local_ip4".to_string(),
             CtxField::LocalIp6 => "local_ip6".to_string(),
             CtxField::LocalPort => "local_port".to_string(),
+            CtxField::SockOp => "op".to_string(),
+            CtxField::IsFullsock => "is_fullsock".to_string(),
+            CtxField::SockOpsCbFlags => "cb_flags".to_string(),
+            CtxField::SockState => "state".to_string(),
             CtxField::SysctlWrite => "write".to_string(),
             CtxField::SysctlFilePos => "file_pos".to_string(),
             CtxField::SockoptLevel => "level".to_string(),

@@ -735,6 +735,58 @@ fn test_infer_sk_lookup_remote_ip6_field_as_stack_backed_u32_array() {
 }
 
 #[test]
+fn test_infer_sock_ops_op_field_as_u32() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::SockOp,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::U32));
+}
+
+#[test]
+fn test_infer_sock_ops_remote_ip6_field_as_stack_backed_u32_array() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::Local);
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::RemoteIp6,
+            slot: Some(slot),
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(
+        types.get(&v0),
+        Some(&MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U32),
+                len: 4,
+            }),
+            address_space: AddressSpace::Stack,
+        })
+    );
+}
+
+#[test]
 fn test_infer_fentry_aggregate_arg_is_stack_backed_byte_array() {
     let (func_name, arg_idx, _size_bytes) = find_aggregate_fentry_arg_candidate();
     let mut func = make_test_function();
