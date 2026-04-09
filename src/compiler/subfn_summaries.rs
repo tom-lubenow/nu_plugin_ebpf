@@ -353,14 +353,17 @@ mod tests {
             .insert("__nu_local_global_250".to_string(), 0);
 
         let loaded = subfn.alloc_vreg();
-        subfn.block_mut(entry).instructions.push(MirInst::LoadGlobal {
-            dst: loaded,
-            symbol: "__nu_local_global_250".to_string(),
-            ty: crate::compiler::mir::MirType::Ptr {
-                pointee: Box::new(crate::compiler::mir::MirType::Unknown),
-                address_space: crate::compiler::mir::AddressSpace::Map,
-            },
-        });
+        subfn
+            .block_mut(entry)
+            .instructions
+            .push(MirInst::LoadGlobal {
+                dst: loaded,
+                symbol: "__nu_local_global_250".to_string(),
+                ty: crate::compiler::mir::MirType::Ptr {
+                    pointee: Box::new(crate::compiler::mir::MirType::Unknown),
+                    address_space: crate::compiler::mir::AddressSpace::Map,
+                },
+            });
         subfn.block_mut(entry).terminator = MirInst::Return {
             val: Some(MirValue::VReg(loaded)),
         };

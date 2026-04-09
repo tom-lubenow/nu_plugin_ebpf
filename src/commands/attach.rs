@@ -94,9 +94,7 @@ fn extract_decl_names_from_formatted_instructions(
             continue;
         };
         let name = &after_quote[..name_end];
-        if is_known_closure_command(name) {
-            decl_names.insert(DeclId::new(decl_id), name.to_string());
-        }
+        decl_names.insert(DeclId::new(decl_id), name.to_string());
     }
 
     decl_names
@@ -1429,9 +1427,7 @@ fn strip_leading_annotated_mut_initializer_stmts(
         if let Some(cleanup_src) = cleanup_src {
             while let Some(stmt) = stmts.get(cursor) {
                 match stmt {
-                    HirStmt::Drain { src } | HirStmt::Drop { src }
-                        if *src == cleanup_src =>
-                    {
+                    HirStmt::Drain { src } | HirStmt::Drop { src } if *src == cleanup_src => {
                         cursor += 1;
                     }
                     HirStmt::DrainIfEnd { src } if *src == cleanup_src => {
@@ -1554,7 +1550,10 @@ fn collect_user_function_irs(
         pending: &mut Vec<DeclId>,
     ) {
         for decl_id in extract_call_decl_ids(block) {
-            if decl_names.contains_key(&decl_id) {
+            if decl_names
+                .get(&decl_id)
+                .is_some_and(|name| is_known_closure_command(name))
+            {
                 continue;
             }
             if seen.insert(decl_id) {
@@ -1648,6 +1647,118 @@ fn signature_from_record(record: &Record) -> Option<UserFunctionSig> {
         });
     }
     Some(UserFunctionSig { params: out })
+}
+
+fn user_signature_from_ast_signature(sig: &Signature) -> UserFunctionSig {
+    let mut params = Vec::new();
+    params.push(UserParam {
+        name: None,
+        kind: UserParamKind::Input,
+        optional: false,
+    });
+
+    params.extend(sig.required_positional.iter().map(|param| UserParam {
+        name: Some(param.name.clone()),
+        kind: UserParamKind::Positional,
+        optional: false,
+    }));
+    params.extend(sig.optional_positional.iter().map(|param| UserParam {
+        name: Some(param.name.clone()),
+        kind: UserParamKind::Positional,
+        optional: true,
+    }));
+    if let Some(rest) = &sig.rest_positional {
+        params.push(UserParam {
+            name: Some(rest.name.clone()),
+            kind: UserParamKind::Rest,
+            optional: true,
+        });
+    }
+    params.extend(sig.named.iter().map(|flag| UserParam {
+        name: Some(flag.long.clone()),
+        kind: if flag.arg.is_some() {
+            UserParamKind::Named
+        } else {
+            UserParamKind::Switch
+        },
+        optional: !flag.required,
+    }));
+
+    UserFunctionSig { params }
+}
+
+fn parse_inline_user_function_signatures(
+    source: &str,
+    decl_ids: &HashSet<DeclId>,
+    decl_names: &HashMap<DeclId, String>,
+    span: Span,
+) -> Result<HashMap<DeclId, UserFunctionSig>, LabeledError> {
+    if decl_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut name_to_decl_id = HashMap::new();
+    let mut ambiguous_names = HashSet::new();
+    for decl_id in decl_ids {
+        let Some(name) = decl_names.get(decl_id).cloned() else {
+            continue;
+        };
+        if name_to_decl_id.insert(name.clone(), *decl_id).is_some() {
+            ambiguous_names.insert(name);
+        }
+    }
+    for name in &ambiguous_names {
+        name_to_decl_id.remove(name);
+    }
+
+    if name_to_decl_id.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let engine_state = create_default_context();
+    let mut working_set = StateWorkingSet::new(&engine_state);
+    let top_block = parse(&mut working_set, None, source.as_bytes(), false);
+
+    let closure_block_id = top_block
+        .pipelines
+        .iter()
+        .flat_map(|pipeline| pipeline.elements.iter())
+        .find_map(|element| match &element.expr.expr {
+            Expr::Closure(block_id) | Expr::Block(block_id) => Some(*block_id),
+            _ => None,
+        })
+        .ok_or_else(|| {
+            LabeledError::new("Failed to recover closure source structure")
+                .with_label("Expected closure source from view source", span)
+        })?;
+
+    let closure_block = working_set.get_block(closure_block_id);
+    let mut out = HashMap::new();
+
+    for pipeline in &closure_block.pipelines {
+        let Some(first) = pipeline.elements.first() else {
+            continue;
+        };
+        let Expr::Call(call) = &first.expr.expr else {
+            continue;
+        };
+        let cmd_name = working_set.get_decl(call.decl_id).name();
+        if cmd_name != "def" {
+            continue;
+        }
+        let Some(def_name) = call.positional_nth(0).and_then(|expr| expr.as_string()) else {
+            continue;
+        };
+        let Some(&decl_id) = name_to_decl_id.get(&def_name) else {
+            continue;
+        };
+        let Some(sig) = call.positional_nth(1).and_then(|expr| expr.as_signature()) else {
+            continue;
+        };
+        out.insert(decl_id, user_signature_from_ast_signature(&sig));
+    }
+
+    Ok(out)
 }
 
 fn fetch_user_function_signatures(
@@ -1774,7 +1885,16 @@ fn compile_closure_with_context(
     }
 
     let user_decl_ids: HashSet<DeclId> = user_functions.keys().copied().collect();
-    let user_signatures = fetch_user_function_signatures(engine, &user_decl_ids, call_head)?;
+    let mut user_signatures = fetch_user_function_signatures(engine, &user_decl_ids, call_head)?;
+    let inline_signatures = parse_inline_user_function_signatures(
+        &closure_source,
+        &user_decl_ids,
+        &decl_names,
+        closure.span,
+    )?;
+    for (decl_id, sig) in inline_signatures {
+        user_signatures.entry(decl_id).or_insert(sig);
+    }
     let state = get_state();
     let external_map_value_types = pin_group
         .map(|group| {
@@ -2809,7 +2929,7 @@ mod tests {
     use nu_protocol::{BlockId, Record, RegId, Span, Type, Value, VarId};
 
     #[test]
-    fn test_extract_decl_names_from_formatted_instructions_filters_to_known_commands() {
+    fn test_extract_decl_names_from_formatted_instructions_preserves_user_function_names() {
         let decl_names = super::extract_decl_names_from_formatted_instructions(&[
             r#"call                   decl 488 "global-define", %0"#.to_string(),
             r#"call                   decl 489 "project-entry", %1"#.to_string(),
@@ -2821,10 +2941,72 @@ mod tests {
             decl_names,
             HashMap::from([
                 (DeclId::new(488), "global-define".to_string()),
+                (DeclId::new(489), "project-entry".to_string()),
                 (DeclId::new(490), "count".to_string()),
                 (DeclId::new(491), "get".to_string()),
             ])
         );
+    }
+
+    #[test]
+    fn test_parse_inline_user_function_signatures_extracts_closure_local_def() {
+        let source = r#"{|ctx|
+            def bump [msg] { "ok" }
+            let next = (bump "hi")
+            $next | count
+        }"#;
+        let decl_ids = HashSet::from([DeclId::new(515)]);
+        let decl_names = HashMap::from([(DeclId::new(515), "bump".to_string())]);
+
+        let sigs = super::parse_inline_user_function_signatures(
+            source,
+            &decl_ids,
+            &decl_names,
+            Span::test_data(),
+        )
+        .expect("inline def signatures should parse");
+
+        assert_eq!(sigs.len(), 1);
+        let sig = sigs
+            .get(&DeclId::new(515))
+            .expect("bump signature should exist");
+        assert_eq!(sig.params.len(), 2);
+        assert!(matches!(
+            sig.params[0],
+            crate::compiler::UserParam {
+                kind: crate::compiler::UserParamKind::Input,
+                ..
+            }
+        ));
+        assert!(matches!(
+            sig.params[1],
+            crate::compiler::UserParam {
+                kind: crate::compiler::UserParamKind::Positional,
+                optional: false,
+                ..
+            }
+        ));
+        assert_eq!(sig.params[1].name.as_deref(), Some("msg"));
+    }
+
+    #[test]
+    fn test_parse_inline_user_function_signatures_skips_ambiguous_names() {
+        let source = r#"{|ctx| def bump [msg] { "ok" } }"#;
+        let decl_ids = HashSet::from([DeclId::new(515), DeclId::new(516)]);
+        let decl_names = HashMap::from([
+            (DeclId::new(515), "bump".to_string()),
+            (DeclId::new(516), "bump".to_string()),
+        ]);
+
+        let sigs = super::parse_inline_user_function_signatures(
+            source,
+            &decl_ids,
+            &decl_names,
+            Span::test_data(),
+        )
+        .expect("ambiguous inline defs should not error");
+
+        assert!(sigs.is_empty(), "ambiguous def names should not be guessed");
     }
 
     #[test]

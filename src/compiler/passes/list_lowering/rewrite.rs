@@ -128,8 +128,9 @@ impl ListLowering {
                             }
 
                             if idx + 1 == meta.max_len {
-                                func.block_mut(compare_block_id).terminator =
-                                    MirInst::Jump { target: store_block_id };
+                                func.block_mut(compare_block_id).terminator = MirInst::Jump {
+                                    target: store_block_id,
+                                };
                                 break;
                             }
 

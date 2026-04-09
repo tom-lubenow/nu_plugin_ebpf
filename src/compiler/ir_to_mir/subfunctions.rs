@@ -156,13 +156,7 @@ impl<'a> HirToMirLowering<'a> {
                 let vreg = self.func.alloc_vreg();
                 self.var_mappings.insert(*var_id, vreg);
                 let seed = arg_seeds.get(next_arg_seed + idx);
-                self.seed_subfunction_param(
-                    vreg,
-                    next_arg_seed + idx,
-                    seed,
-                    None,
-                    Some(*var_id),
-                );
+                self.seed_subfunction_param(vreg, next_arg_seed + idx, seed, None, Some(*var_id));
             }
             for _ in param_vars.len()..param_count {
                 let _unused = self.func.alloc_vreg();

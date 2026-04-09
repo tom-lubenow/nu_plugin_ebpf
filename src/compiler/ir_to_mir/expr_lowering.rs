@@ -4745,7 +4745,9 @@ impl<'a> HirToMirLowering<'a> {
         let projected_semantics = self
             .get_metadata(src_dst)
             .and_then(|m| m.annotated_semantics.clone())
-            .and_then(|semantics| Self::project_annotated_value_semantics(&semantics, &path.members));
+            .and_then(|semantics| {
+                Self::project_annotated_value_semantics(&semantics, &path.members)
+            });
         if projection.bitfield.is_some() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "cell path update '.{} = ...' does not support bitfield fields",

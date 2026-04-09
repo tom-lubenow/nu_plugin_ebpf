@@ -56,16 +56,14 @@ fn test_list_push_is_lowered() {
         "ListPush lowering should insert a bounds branch"
     );
     assert!(
-        insts
-            .iter()
-            .any(|inst| matches!(
-                inst,
-                MirInst::StoreSlot {
-                    slot: lowered_slot,
-                    offset,
-                    ..
-                } if *lowered_slot == slot && (*offset == 8 || *offset == 16)
-            )),
+        insts.iter().any(|inst| matches!(
+            inst,
+            MirInst::StoreSlot {
+                slot: lowered_slot,
+                offset,
+                ..
+            } if *lowered_slot == slot && (*offset == 8 || *offset == 16)
+        )),
         "ListPush lowering should emit slot stores for list elements"
     );
 }

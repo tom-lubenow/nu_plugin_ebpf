@@ -137,7 +137,9 @@ impl<'a> HirToMirLowering<'a> {
                 | HirStmt::ListSpread {
                     src_dst: lhs_dst, ..
                 }
-                | HirStmt::Call { src_dst: lhs_dst, .. }
+                | HirStmt::Call {
+                    src_dst: lhs_dst, ..
+                }
                 | HirStmt::Collect { src_dst: lhs_dst }
                 | HirStmt::Span { src_dst: lhs_dst } => Some(*lhs_dst),
                 _ => None,

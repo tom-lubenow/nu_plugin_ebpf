@@ -1,6 +1,8 @@
 use super::*;
 use crate::compiler::hir::{AnnotatedMutGlobal, HirBlock};
-use crate::compiler::{compile_mir_to_ebpf_with_hints_and_globals, passes::optimize_with_ssa_hints};
+use crate::compiler::{
+    compile_mir_to_ebpf_with_hints_and_globals, passes::optimize_with_ssa_hints,
+};
 
 #[test]
 fn test_user_function_call_lowers_to_subfn() {
