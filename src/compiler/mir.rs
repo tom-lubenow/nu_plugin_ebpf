@@ -58,6 +58,7 @@ pub struct MapRef {
 pub enum MapKind {
     Hash,
     Array,
+    LpmTrie,
     LruHash,
     PerCpuHash,
     PerCpuArray,

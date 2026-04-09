@@ -311,6 +311,7 @@ impl EbpfProgram {
                 x if x == BpfMapType::PerCpuArray as u32 => "PerCpuArray",
                 x if x == BpfMapType::LruHash as u32 => "LruHash",
                 x if x == BpfMapType::LruPerCpuHash as u32 => "LruPerCpuHash",
+                x if x == BpfMapType::LpmTrie as u32 => "LpmTrie",
                 x if x == BpfMapType::StackTrace as u32 => "StackTrace",
                 x if x == BpfMapType::RingBuf as u32 => "RingBuf",
                 _ => "Unknown",

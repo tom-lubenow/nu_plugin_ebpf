@@ -273,6 +273,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             kind,
             MapKind::Hash
                 | MapKind::Array
+                | MapKind::LpmTrie
                 | MapKind::LruHash
                 | MapKind::PerCpuHash
                 | MapKind::PerCpuArray
@@ -489,6 +490,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         let map_def = match spec.kind {
             MapKind::Hash => BpfMapDef::hash(spec.key_size, spec.value_size, max_entries),
             MapKind::Array => BpfMapDef::array(spec.value_size, max_entries),
+            MapKind::LpmTrie => BpfMapDef::lpm_trie(spec.key_size, spec.value_size, max_entries),
             MapKind::LruHash => BpfMapDef::lru_hash(spec.key_size, spec.value_size, max_entries),
             MapKind::PerCpuHash => {
                 BpfMapDef::per_cpu_hash(spec.key_size, spec.value_size, max_entries)

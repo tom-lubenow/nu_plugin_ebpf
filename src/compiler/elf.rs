@@ -39,6 +39,7 @@ pub enum BpfMapType {
     PerCpuArray = 6,
     LruHash = 9,
     LruPerCpuHash = 10,
+    LpmTrie = 11,
     StackTrace = 7,
     RingBuf = 27,
 }
@@ -87,6 +88,18 @@ impl BpfMapDef {
             value_size,
             max_entries,
             map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a generic LPM trie map definition.
+    pub fn lpm_trie(key_size: u32, value_size: u32, max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::LpmTrie as u32,
+            key_size,
+            value_size,
+            max_entries,
+            map_flags: 1, // BPF_F_NO_PREALLOC
             pinning: BpfPinningType::None,
         }
     }

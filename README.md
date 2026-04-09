@@ -393,8 +393,10 @@ write is a compile-time constant the global is initialized from it, otherwise
 it starts zeroed. They are best suited for small per-program state without the
 overhead of an explicit map. Like the current mutable-capture path, they only
 support values with a truthful fixed layout.
-Generic map `--kind` now supports `hash`, `array`, `lru-hash`,
+Generic map `--kind` now supports `hash`, `array`, `lpm-trie`, `lru-hash`,
 `per-cpu-hash`, `per-cpu-array`, and `lru-per-cpu-hash`.
+`lpm-trie` uses the kernel's raw trie-key layout, so the key bytes must
+already begin with a `u32` prefix length followed by the trie payload.
 
 Read-only closure captures now lower as real constants for supported types
 (`int`, `bool`, `string`, `binary`, `nothing`, constant records, and numeric

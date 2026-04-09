@@ -17,6 +17,7 @@ fn supports_generic_map_kind(kind: MapKind) -> bool {
         kind,
         MapKind::Hash
             | MapKind::Array
+            | MapKind::LpmTrie
             | MapKind::LruHash
             | MapKind::PerCpuHash
             | MapKind::PerCpuArray

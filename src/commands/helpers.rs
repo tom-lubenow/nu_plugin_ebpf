@@ -273,6 +273,9 @@ project typed fields directly from their parameters. The same typed schema also
 carries across active programs that share a pinned map group. The result is a
 maybe-null pointer, so guard it before dereferencing.
 
+For `--kind lpm-trie`, the key bytes must already use the kernel LPM layout:
+leading `u32` prefix length followed by the trie payload bytes.
+
 Example:
   let entry = ($ctx.pid | map-get seen_paths --kind hash)
   if $entry != 0 { $entry | emit }"#
@@ -290,7 +293,7 @@ Example:
             .named(
                 "kind",
                 SyntaxShape::String,
-                "Map kind: hash, array, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash)",
+                "Map kind: hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash)",
                 None,
             )
             .category(Category::Experimental)
@@ -537,7 +540,10 @@ group. If the pipeline input is a whole typed `map-get` value, `map-put`
 stores the underlying aggregate bytes rather than the pointer wrapper.
 
 Example:
-  $ctx.arg0.f_path | map-put seen_paths $ctx.pid --kind hash"#
+  $ctx.arg0.f_path | map-put seen_paths $ctx.pid --kind hash
+
+For `--kind lpm-trie`, the key bytes must already use the kernel LPM layout:
+leading `u32` prefix length followed by the trie payload bytes."#
     }
 
     fn signature(&self) -> Signature {
@@ -548,7 +554,7 @@ Example:
             .named(
                 "kind",
                 SyntaxShape::String,
-                "Map kind: hash, array, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash)",
+                "Map kind: hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash)",
                 None,
             )
             .named(
@@ -597,6 +603,9 @@ impl PluginCommand for MapDelete {
         r#"Deletes a key from a named generic map. Use pipeline input as the key,
 or pass an explicit key as the second positional argument.
 
+For `--kind lpm-trie`, the key bytes must already use the kernel LPM layout:
+leading `u32` prefix length followed by the trie payload bytes.
+
 Example:
   $ctx.pid | map-delete seen_paths --kind hash"#
     }
@@ -613,7 +622,7 @@ Example:
             .named(
                 "kind",
                 SyntaxShape::String,
-                "Map kind: hash, array, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash)",
+                "Map kind: hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash)",
                 None,
             )
             .category(Category::Experimental)
