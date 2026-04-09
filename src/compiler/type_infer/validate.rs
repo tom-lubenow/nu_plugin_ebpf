@@ -22,7 +22,11 @@ impl<'a> TypeInference<'a> {
         match kfunc {
             "scx_bpf_dispatch_nr_slots"
             | "scx_bpf_dsq_move_to_local"
-            | "scx_bpf_dispatch_cancel" => Some(&["dispatch"]),
+            | "scx_bpf_dispatch_cancel"
+            | "scx_bpf_dsq_move"
+            | "scx_bpf_dsq_move_vtime"
+            | "scx_bpf_dsq_move_set_slice"
+            | "scx_bpf_dsq_move_set_vtime" => Some(&["dispatch"]),
             "scx_bpf_reenqueue_local" => Some(&["cpu_release"]),
             "scx_bpf_select_cpu_dfl" => Some(&["select_cpu", "enqueue"]),
             "scx_bpf_select_cpu_and" => Some(&["select_cpu", "enqueue"]),

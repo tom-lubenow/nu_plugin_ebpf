@@ -589,6 +589,180 @@ fn test_sched_ext_select_cpu_and_with_cpumask_release_allowed_in_select_cpu() {
 }
 
 #[test]
+fn test_sched_ext_dsq_move_set_slice_allowed_in_dispatch() {
+    let mut func = make_test_function();
+    let iter = func.alloc_vreg();
+    let slice = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let iter_slot = func.alloc_stack_slot(256, 8, StackSlotKind::Local);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(iter_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: slice,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_dsq_move_set_slice".to_string(),
+        btf_id: None,
+        args: vec![iter, slice],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    infer_in_sched_ext_callback(&func, "dispatch")
+        .expect("dsq_move_set_slice should be accepted in sched_ext_ops.dispatch");
+}
+
+#[test]
+fn test_type_error_sched_ext_dsq_move_set_slice_rejected_in_enqueue() {
+    let mut func = make_test_function();
+    let iter = func.alloc_vreg();
+    let slice = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let iter_slot = func.alloc_stack_slot(256, 8, StackSlotKind::Local);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(iter_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: slice,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_dsq_move_set_slice".to_string(),
+        btf_id: None,
+        args: vec![iter, slice],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let errs = infer_in_sched_ext_callback(&func, "enqueue")
+        .expect_err("dsq_move_set_slice should be rejected outside sched_ext_ops.dispatch");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "kfunc 'scx_bpf_dsq_move_set_slice' is only valid in sched_ext_ops.dispatch, not sched_ext_ops.enqueue"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_sched_ext_dsq_move_allowed_in_dispatch() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let iter = func.alloc_vreg();
+    let dsq_id = func.alloc_vreg();
+    let enq_flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let release = func.alloc_vreg();
+    let iter_slot = func.alloc_stack_slot(256, 8, StackSlotKind::Local);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(iter_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: dsq_id,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: enq_flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_dsq_move".to_string(),
+        btf_id: None,
+        args: vec![iter, task, dsq_id, enq_flags],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: release,
+        kfunc: "bpf_task_release".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    infer_in_sched_ext_callback(&func, "dispatch")
+        .expect("dsq_move should be accepted in sched_ext_ops.dispatch");
+}
+
+#[test]
+fn test_type_error_sched_ext_dsq_move_rejected_in_select_cpu() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let iter = func.alloc_vreg();
+    let dsq_id = func.alloc_vreg();
+    let enq_flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let release = func.alloc_vreg();
+    let iter_slot = func.alloc_stack_slot(256, 8, StackSlotKind::Local);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(iter_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: dsq_id,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: enq_flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_dsq_move".to_string(),
+        btf_id: None,
+        args: vec![iter, task, dsq_id, enq_flags],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: release,
+        kfunc: "bpf_task_release".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let errs = infer_in_sched_ext_callback(&func, "select_cpu")
+        .expect_err("dsq_move should be rejected outside sched_ext_ops.dispatch");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "kfunc 'scx_bpf_dsq_move' is only valid in sched_ext_ops.dispatch, not sched_ext_ops.select_cpu"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_sched_ext_create_dsq_allowed_in_sleepable_init() {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();
