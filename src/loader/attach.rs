@@ -277,28 +277,73 @@ impl EbpfState {
                     PerfEventSamplePolicy::Frequency(freq) => SamplePolicy::Frequency(freq),
                 };
 
-                let cpus = if let Some(cpu) = target.cpu {
-                    vec![cpu]
-                } else {
-                    online_cpus().map_err(|(_, e)| {
-                        LoadError::Attach(format!("Failed to enumerate online CPUs: {e}"))
-                    })?
-                };
-
-                for cpu in cpus {
-                    perf_event
-                        .attach(
-                            perf_type.clone(),
-                            perf_config,
-                            PerfEventScope::AllProcessesOneCpu { cpu },
-                            sample_policy.clone(),
-                            true,
-                        )
-                        .map_err(|e| {
-                            LoadError::Attach(format!(
-                                "Failed to attach perf_event on cpu {cpu}: {e}"
-                            ))
+                match (target.cpu, target.pid) {
+                    (Some(cpu), Some(pid)) => {
+                        perf_event
+                            .attach(
+                                perf_type,
+                                perf_config,
+                                PerfEventScope::OneProcessOneCpu { cpu, pid },
+                                sample_policy,
+                                true,
+                            )
+                            .map_err(|e| {
+                                LoadError::Attach(format!(
+                                    "Failed to attach perf_event on pid {pid} cpu {cpu}: {e}"
+                                ))
+                            })?;
+                    }
+                    (None, Some(pid)) => {
+                        perf_event
+                            .attach(
+                                perf_type,
+                                perf_config,
+                                PerfEventScope::OneProcessAnyCpu { pid },
+                                sample_policy,
+                                true,
+                            )
+                            .map_err(|e| {
+                                LoadError::Attach(format!(
+                                    "Failed to attach perf_event on pid {pid}: {e}"
+                                ))
+                            })?;
+                    }
+                    (Some(cpu), None) => {
+                        perf_event
+                            .attach(
+                                perf_type,
+                                perf_config,
+                                PerfEventScope::AllProcessesOneCpu { cpu },
+                                sample_policy,
+                                true,
+                            )
+                            .map_err(|e| {
+                                LoadError::Attach(format!(
+                                    "Failed to attach perf_event on cpu {cpu}: {e}"
+                                ))
+                            })?;
+                    }
+                    (None, None) => {
+                        let cpus = online_cpus().map_err(|(_, e)| {
+                            LoadError::Attach(format!("Failed to enumerate online CPUs: {e}"))
                         })?;
+
+                        for cpu in cpus {
+                            perf_event
+                                .attach(
+                                    perf_type.clone(),
+                                    perf_config,
+                                    PerfEventScope::AllProcessesOneCpu { cpu },
+                                    sample_policy.clone(),
+                                    true,
+                                )
+                                .map_err(|e| {
+                                    LoadError::Attach(format!(
+                                        "Failed to attach perf_event on cpu {cpu}: {e}"
+                                    ))
+                                })?;
+                        }
+                    }
                 }
             }
             ProgramAttachKind::Tc => {

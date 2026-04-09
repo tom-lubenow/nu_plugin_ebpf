@@ -3,6 +3,7 @@ use crate::compiler::mir::MapKind;
 use crate::compiler::{
     CounterKeySchema, CounterKeySchemaField, EbpfObject, EbpfProgramType, MapRef, MirType,
 };
+use crate::program_spec::DEFAULT_PERF_EVENT_PERIOD;
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use std::collections::HashMap;
 
@@ -147,20 +148,21 @@ fn test_parse_probe_spec_perf_event() {
 
 #[test]
 fn test_parse_program_spec_perf_event_is_structured() {
-    let spec = parse_program_spec("perf_event:software:task-clock:cpu=0:freq=99").unwrap();
+    let spec = parse_program_spec("perf_event:software:task-clock:cpu=0:pid=123:freq=99").unwrap();
     assert_eq!(
         spec,
         ProgramSpec::PerfEvent {
             target: PerfEventTarget {
                 event: PerfEventEvent::Software(PerfEventSoftwareEvent::TaskClock),
                 cpu: Some(0),
+                pid: Some(123),
                 sample_policy: PerfEventSamplePolicy::Frequency(99),
             }
         }
     );
     assert_eq!(
         spec.to_string(),
-        "perf_event:software:task-clock:cpu=0:freq=99"
+        "perf_event:software:task-clock:cpu=0:pid=123:freq=99"
     );
 }
 
@@ -173,6 +175,7 @@ fn test_parse_program_spec_perf_event_page_faults_is_structured() {
             target: PerfEventTarget {
                 event: PerfEventEvent::Software(PerfEventSoftwareEvent::PageFaults),
                 cpu: None,
+                pid: None,
                 sample_policy: PerfEventSamplePolicy::Period(4096),
             }
         }
@@ -192,6 +195,7 @@ fn test_parse_program_spec_perf_event_hardware_is_structured() {
             target: PerfEventTarget {
                 event: PerfEventEvent::Hardware(PerfEventHardwareEvent::Instructions),
                 cpu: Some(0),
+                pid: None,
                 sample_policy: PerfEventSamplePolicy::Period(100000),
             }
         }
@@ -200,6 +204,23 @@ fn test_parse_program_spec_perf_event_hardware_is_structured() {
         spec.to_string(),
         "perf_event:hardware:instructions:cpu=0:period=100000"
     );
+}
+
+#[test]
+fn test_parse_program_spec_perf_event_pid_selector_is_structured() {
+    let spec = parse_program_spec("perf_event:hardware:cpu-cycles:pid=456").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::PerfEvent {
+            target: PerfEventTarget {
+                event: PerfEventEvent::Hardware(PerfEventHardwareEvent::CpuCycles),
+                cpu: None,
+                pid: Some(456),
+                sample_policy: PerfEventSamplePolicy::Period(DEFAULT_PERF_EVENT_PERIOD),
+            }
+        }
+    );
+    assert_eq!(spec.to_string(), "perf_event:hardware:cpu-cycles:pid=456");
 }
 
 #[test]

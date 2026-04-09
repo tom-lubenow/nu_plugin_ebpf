@@ -232,6 +232,8 @@ pub struct PerfEventTarget {
     pub event: PerfEventEvent,
     /// Optional CPU selector. `None` means attach on all online CPUs.
     pub cpu: Option<u32>,
+    /// Optional PID selector. `None` means attach across processes.
+    pub pid: Option<u32>,
     /// Perf sampling policy.
     pub sample_policy: PerfEventSamplePolicy,
 }
@@ -241,6 +243,9 @@ impl PerfEventTarget {
         let mut target = format!("{}:{}", self.event.source_name(), self.event.event_name());
         if let Some(cpu) = self.cpu {
             target.push_str(&format!(":cpu={cpu}"));
+        }
+        if let Some(pid) = self.pid {
+            target.push_str(&format!(":pid={pid}"));
         }
         match self.sample_policy {
             PerfEventSamplePolicy::Period(period) if period != DEFAULT_PERF_EVENT_PERIOD => {

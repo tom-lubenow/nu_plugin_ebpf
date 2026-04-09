@@ -295,10 +295,12 @@ aliases are available in return position. XDP closures can return strings like
 `branch-misses`, `bus-cycles`, `stalled-cycles-frontend`,
 `stalled-cycles-backend`, and `ref-cpu-cycles` through specs like
 `perf_event:software:cpu-clock` or `perf_event:hardware:cpu-cycles`.
-Optional selectors `cpu=N`, `period=N`, and `freq=N` are supported;
-omitting the sample policy defaults to `period=1000000`, and omitting
-`cpu=` attaches on all online CPUs. The initial surface uses the ordinary
-helper-backed fields like `ctx.pid`, `ctx.comm`, `ctx.cpu`, and `ctx.ktime`.
+Optional selectors `cpu=N`, `pid=N`, `period=N`, and `freq=N` are
+supported; omitting the sample policy defaults to `period=1000000`, and
+omitting `cpu=` attaches on all online CPUs. `pid=N` scopes the event to a
+single process, and it can be combined with `cpu=N` for one-process/one-cpu
+sampling. The initial surface uses the ordinary helper-backed fields like
+`ctx.pid`, `ctx.comm`, `ctx.cpu`, and `ctx.ktime`.
 
 `cgroup_sock_addr` currently exposes `ctx.cpu`, `ctx.ktime`,
 `ctx.user_family`, `ctx.user_ip4`, `ctx.user_ip6`, `ctx.user_port`,

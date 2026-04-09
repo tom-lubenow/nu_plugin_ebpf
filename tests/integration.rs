@@ -144,6 +144,7 @@ mod linux_tests {
                     PerfEventTarget {
                         event: PerfEventEvent::Software(PerfEventSoftwareEvent::CpuClock),
                         cpu: None,
+                        pid: None,
                         sample_policy: PerfEventSamplePolicy::Period(100000),
                     }
                 );
@@ -163,6 +164,7 @@ mod linux_tests {
                     PerfEventTarget {
                         event: PerfEventEvent::Software(PerfEventSoftwareEvent::ContextSwitches),
                         cpu: None,
+                        pid: None,
                         sample_policy: PerfEventSamplePolicy::Period(1_000_000),
                     }
                 );
@@ -182,7 +184,28 @@ mod linux_tests {
                     PerfEventTarget {
                         event: PerfEventEvent::Hardware(PerfEventHardwareEvent::CacheMisses),
                         cpu: None,
+                        pid: None,
                         sample_policy: PerfEventSamplePolicy::Frequency(99),
+                    }
+                );
+            }
+            other => panic!("Unexpected result: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_structured_perf_event_pid_selector_spec() {
+        let result = parse_program_spec("perf_event:hardware:instructions:pid=321");
+
+        match result {
+            Ok(ProgramSpec::PerfEvent { target }) => {
+                assert_eq!(
+                    target,
+                    PerfEventTarget {
+                        event: PerfEventEvent::Hardware(PerfEventHardwareEvent::Instructions),
+                        cpu: None,
+                        pid: Some(321),
+                        sample_policy: PerfEventSamplePolicy::Period(1_000_000),
                     }
                 );
             }

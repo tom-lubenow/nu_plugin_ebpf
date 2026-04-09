@@ -2016,8 +2016,8 @@ Context parameter syntax (recommended):
     `stalled-cycles-frontend`, `stalled-cycles-backend`, and
     `ref-cpu-cycles` through specs like `perf_event:software:cpu-clock`
     or `perf_event:hardware:cpu-cycles`, with optional selectors `cpu=N`,
-    `period=N`, or `freq=N`. Omitting the sample policy defaults to
-    `period=1000000`, and omitting `cpu=` attaches on all online CPUs.
+    `pid=N`, `period=N`, or `freq=N`. Omitting the sample policy defaults
+    to `period=1000000`, and omitting `cpu=` attaches on all online CPUs.
 
   cgroup_sock_addr fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

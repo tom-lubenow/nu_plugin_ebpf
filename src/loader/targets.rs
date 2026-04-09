@@ -183,18 +183,18 @@ impl CgroupSockAddrTarget {
 
 impl PerfEventTarget {
     /// Parse a perf_event target string of the form
-    /// `software:cpu-clock[:cpu=0][:period=1000000]` or
-    /// `hardware:cpu-cycles[:cpu=0][:period=1000000]`.
+    /// `software:cpu-clock[:cpu=0][:pid=1234][:period=1000000]` or
+    /// `hardware:cpu-cycles[:cpu=0][:pid=1234][:period=1000000]`.
     pub fn parse(target: &str) -> Result<Self, LoadError> {
         let mut parts = target.split(':');
         let source = parts.next().ok_or_else(|| {
             LoadError::Load(format!(
-                "Invalid perf_event target: {target}. Expected format: software:cpu-clock[:cpu=N][:period=N|freq=N] or hardware:cpu-cycles[:cpu=N][:period=N|freq=N]"
+                "Invalid perf_event target: {target}. Expected format: software:cpu-clock[:cpu=N][:pid=N][:period=N|freq=N] or hardware:cpu-cycles[:cpu=N][:pid=N][:period=N|freq=N]"
             ))
         })?;
         let event_name = parts.next().ok_or_else(|| {
             LoadError::Load(format!(
-                "Invalid perf_event target: {target}. Expected format: software:cpu-clock[:cpu=N][:period=N|freq=N] or hardware:cpu-cycles[:cpu=N][:period=N|freq=N]"
+                "Invalid perf_event target: {target}. Expected format: software:cpu-clock[:cpu=N][:pid=N][:period=N|freq=N] or hardware:cpu-cycles[:cpu=N][:pid=N][:period=N|freq=N]"
             ))
         })?;
 
@@ -256,6 +256,7 @@ impl PerfEventTarget {
         };
 
         let mut cpu = None;
+        let mut pid = None;
         let mut sample_policy = PerfEventSamplePolicy::Period(DEFAULT_PERF_EVENT_PERIOD);
 
         for option in parts {
@@ -268,6 +269,24 @@ impl PerfEventTarget {
                 cpu = Some(raw_cpu.parse::<u32>().map_err(|_| {
                     LoadError::Load(format!("Invalid perf_event cpu selector: {raw_cpu}"))
                 })?);
+                continue;
+            }
+
+            if let Some(raw_pid) = option.strip_prefix("pid=") {
+                if pid.is_some() {
+                    return Err(LoadError::Load(
+                        "perf_event target cannot specify pid more than once".to_string(),
+                    ));
+                }
+                let parsed_pid = raw_pid.parse::<u32>().map_err(|_| {
+                    LoadError::Load(format!("Invalid perf_event pid selector: {raw_pid}"))
+                })?;
+                if parsed_pid == 0 {
+                    return Err(LoadError::Load(
+                        "perf_event pid selector must be greater than zero".to_string(),
+                    ));
+                }
+                pid = Some(parsed_pid);
                 continue;
             }
 
@@ -315,13 +334,14 @@ impl PerfEventTarget {
             }
 
             return Err(LoadError::Load(format!(
-                "Unrecognized perf_event selector: {option}. Expected cpu=N, period=N, or freq=N"
+                "Unrecognized perf_event selector: {option}. Expected cpu=N, pid=N, period=N, or freq=N"
             )));
         }
 
         Ok(Self {
             event,
             cpu,
+            pid,
             sample_policy,
         })
     }
@@ -548,7 +568,7 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `uprobe:/path/to/binary:function_name`
 /// - `uretprobe:/path/to/binary:function_name`
 /// - `xdp:interface`
-/// - `perf_event:software:cpu-clock[:cpu=N][:period=N|freq=N]`
+/// - `perf_event:software:cpu-clock[:cpu=N][:pid=N][:period=N|freq=N]`
 /// - `tc:interface:ingress`
 /// - `tc:interface:egress`
 /// - `cgroup_skb:/path/to/cgroup:ingress`
