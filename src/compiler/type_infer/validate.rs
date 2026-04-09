@@ -448,6 +448,12 @@ impl<'a> TypeInference<'a> {
             }
 
             MirInst::MapDelete { map, key } => {
+                if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
+                    errors.push(TypeError::new(format!(
+                        "map delete is not supported for array map kind {:?} ('{}')",
+                        map.kind, map.name
+                    )));
+                }
                 let key_ty = self.mir_type_for_vreg(*key, types);
                 if map.name == STRING_COUNTER_MAP_NAME || map.name == BYTES_COUNTER_MAP_NAME {
                     match key_ty {

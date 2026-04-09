@@ -1197,3 +1197,34 @@ fn test_validate_program_capabilities_for_function_rejects_missing_tail_call_cap
     assert!(errors[0].message.contains("tail calls"));
     assert!(errors[0].message.contains("kprobe programs"));
 }
+
+#[test]
+fn test_type_infer_rejects_array_map_delete() {
+    let mut func = make_test_function();
+    let key = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::MapDelete {
+        map: MapRef {
+            name: "slots".to_string(),
+            kind: MapKind::Array,
+        },
+        key,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errors = ti
+        .infer(&func)
+        .expect_err("array map delete should be rejected during validation");
+
+    assert!(errors.iter().any(|e| {
+        e.message
+            .contains("map delete is not supported for array map kind")
+            && e.message.contains("slots")
+    }));
+}

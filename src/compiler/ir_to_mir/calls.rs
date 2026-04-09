@@ -98,6 +98,20 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn validate_generic_map_delete_kind(
+        &self,
+        map_kind: MapKind,
+        map_name: &str,
+    ) -> Result<(), CompileError> {
+        if matches!(map_kind, MapKind::Array | MapKind::PerCpuArray) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map delete is not supported for array map kind {:?} ('{}')",
+                map_kind, map_name
+            )));
+        }
+        Ok(())
+    }
+
     fn require_only_named_args(&self, context: &str, allowed: &[&str]) -> Result<(), CompileError> {
         for key in self.named_args.keys() {
             if !allowed.iter().any(|allowed_key| allowed_key == key) {
@@ -832,6 +846,7 @@ impl<'a> HirToMirLowering<'a> {
                 let map_name = self.literal_string_arg(map_reg, "map-delete")?;
                 self.validate_generic_map_name(&map_name, "map-delete")?;
                 let map_kind = self.generic_map_kind_arg("map-delete")?;
+                self.validate_generic_map_delete_kind(map_kind, &map_name)?;
                 let map_ref = MapRef {
                     name: map_name,
                     kind: map_kind,

@@ -3987,6 +3987,32 @@ fn test_lower_map_delete_respects_kind() {
 }
 
 #[test]
+fn test_lower_map_delete_rejects_array_kind() {
+    let hir = make_map_delete_program(DeclId::new(42), "array");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "map-delete".to_string());
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("array map delete should be rejected during lowering");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("map delete is not supported for array map kind"));
+            assert!(msg.contains("Array"));
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
 fn test_lower_captured_string_map_name_respects_literal_metadata() {
     let hir = make_captured_map_delete_program(DeclId::new(42), VarId::new(11), "hash");
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
