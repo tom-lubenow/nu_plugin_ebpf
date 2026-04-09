@@ -222,6 +222,24 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         let dst_vreg = self.get_vreg(dst);
 
+        if let Some(&source_var) = self.subfunction_global_aliases.get(&var_id) {
+            if let Some(global) = self.annotated_mut_globals.get(&source_var).cloned() {
+                self.load_mutable_global_value(dst, dst_vreg, &global)?;
+                if let Some(semantics) = self.annotated_mut_global_semantics.get(&source_var).cloned()
+                {
+                    self.get_or_create_metadata(dst).annotated_semantics = Some(semantics);
+                }
+                self.get_or_create_metadata(dst).source_var = Some(source_var);
+                return Ok(());
+            }
+
+            if let Some(global) = self.mutable_capture_globals.get(&source_var).cloned() {
+                self.load_mutable_global_value(dst, dst_vreg, &global)?;
+                self.get_or_create_metadata(dst).source_var = Some(source_var);
+                return Ok(());
+            }
+        }
+
         // Check if this is a parameter from an inlined function
         if let Some(&param_vreg) = self.var_mappings.get(&var_id) {
             // Copy the parameter value to the destination
@@ -230,7 +248,7 @@ impl<'a> HirToMirLowering<'a> {
                 src: MirValue::VReg(param_vreg),
             });
             if let Some(mut meta) = self.var_metadata.get(&var_id).cloned() {
-                meta.source_var = Some(var_id);
+                meta.source_var.get_or_insert(var_id);
                 self.reg_metadata.insert(dst.get(), meta);
             } else {
                 self.get_or_create_metadata(dst).source_var = Some(var_id);

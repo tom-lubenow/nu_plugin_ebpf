@@ -12,6 +12,15 @@ impl<'a> HirToMirLowering<'a> {
             return;
         };
 
+        if let Some(var) = var
+            && let Some(source_var) = seed.metadata.as_ref().and_then(|meta| meta.source_var)
+            && source_var != var
+            && (self.annotated_mut_globals.contains_key(&source_var)
+                || self.mutable_capture_globals.contains_key(&source_var))
+        {
+            self.subfunction_global_aliases.insert(var, source_var);
+        }
+
         if let Some(ty) = seed.type_hint.clone() {
             self.vreg_type_hints.insert(vreg, ty);
         }
@@ -93,12 +102,15 @@ impl<'a> HirToMirLowering<'a> {
         );
         let old_vreg_hints = std::mem::take(&mut self.vreg_type_hints);
         let old_stack_slot_hints = std::mem::take(&mut self.stack_slot_type_hints);
+        let old_subfunction_global_aliases = std::mem::take(&mut self.subfunction_global_aliases);
         let old_ctx_param = self.ctx_param;
 
         self.ctx_param = None;
         let mut next_arg_seed = 0usize;
 
-        let param_base = Self::infer_param_base_var_id(hir);
+        let param_base = Self::infer_param_base_var_id(hir).or_else(|| {
+            sig.and_then(|_| Self::infer_referenced_var_base_var_id(hir))
+        });
         if needs_input {
             let vreg = self.func.alloc_vreg();
             if let Some(reg) = input_reg {
@@ -153,6 +165,7 @@ impl<'a> HirToMirLowering<'a> {
         self.hir_block_map = old_hir_block_map;
         self.loop_body_inits = old_loop_body_inits;
         self.current_type_hints = old_type_hints;
+        self.subfunction_global_aliases = old_subfunction_global_aliases;
         self.ctx_param = old_ctx_param;
 
         self.subfunction_in_progress.remove(&decl_id);

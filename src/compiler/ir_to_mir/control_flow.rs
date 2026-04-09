@@ -559,6 +559,29 @@ impl<'a> HirToMirLowering<'a> {
                     return Ok(());
                 }
 
+                if let Some(&source_var) = self.subfunction_global_aliases.get(var_id) {
+                    let src_vreg = self.get_vreg(*src);
+                    if let Some(global) = self.annotated_mut_globals.get(&source_var).cloned() {
+                        self.store_into_mutable_global(
+                            &format!("annotated mutable variable {}", source_var.get()),
+                            &global,
+                            *src,
+                            src_vreg,
+                        )?;
+                        return Ok(());
+                    }
+
+                    if let Some(global) = self.mutable_capture_globals.get(&source_var).cloned() {
+                        self.store_into_mutable_global(
+                            &format!("captured variable {}", source_var.get()),
+                            &global,
+                            *src,
+                            src_vreg,
+                        )?;
+                        return Ok(());
+                    }
+                }
+
                 if let Some(src_meta) = self.get_metadata(*src).cloned()
                     && let Some((materialized_vreg, materialized_meta)) =
                         self.materialize_metadata_record_value(&src_meta)?

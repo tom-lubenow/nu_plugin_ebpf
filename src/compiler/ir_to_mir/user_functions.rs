@@ -63,6 +63,29 @@ impl<'a> HirToMirLowering<'a> {
         min_var.map(VarId::new)
     }
 
+    pub(super) fn infer_referenced_var_base_var_id(hir: &HirFunction) -> Option<VarId> {
+        let mut min_var: Option<usize> = None;
+
+        for block in &hir.blocks {
+            for stmt in &block.stmts {
+                let var_id = match stmt {
+                    HirStmt::LoadVariable { var_id, .. }
+                    | HirStmt::StoreVariable { var_id, .. }
+                    | HirStmt::DropVariable { var_id } => Some(*var_id),
+                    _ => None,
+                };
+                if let Some(var_id) = var_id
+                    && var_id != IN_VARIABLE_ID
+                {
+                    let id = var_id.get();
+                    min_var = Some(min_var.map_or(id, |cur| cur.min(id)));
+                }
+            }
+        }
+
+        min_var.map(VarId::new)
+    }
+
     pub(super) fn uses_in_variable(hir: &HirFunction) -> bool {
         for block in &hir.blocks {
             for stmt in &block.stmts {
