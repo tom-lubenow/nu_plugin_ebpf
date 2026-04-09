@@ -2271,10 +2271,13 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.level }   - Get the socket-option level
     {|ctx| $ctx.optname } - Get the socket-option name
     {|ctx| $ctx.optlen }  - Get the socket-option length
+    {|ctx| $ctx.optval }  - Get the kernel pointer to the sockopt buffer
+    {|ctx| $ctx.optval_end } - Get the end pointer for the sockopt buffer
     {|ctx| $ctx.sockopt_retval } - Get the getsockopt return value on `cgroup_sockopt:get`
     Note: cgroup_sockopt closures can return `allow` or `deny` instead of
-    raw `1`/`0` result codes. Initial support models the scalar fields above;
-    `optval` buffer access is not surfaced yet.
+    raw `1`/`0` result codes. `optval` / `optval_end` are surfaced as kernel
+    pointers, so existing pointer reads like `($ctx.optval | get 0)` or
+    `read-kernel-str` can inspect buffer contents.
 
   cgroup_sock_addr fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

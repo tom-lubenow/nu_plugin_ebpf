@@ -62,7 +62,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 4, 8)
     }
 
-    fn bpf_sockopt_offsets() -> (i16, i16, i16, i16) {
+    fn bpf_sockopt_offsets() -> (i16, i16, i16, i16, i16, i16) {
         // struct bpf_sockopt {
         //     __u64 sk;
         //     __u64 optval;
@@ -72,7 +72,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         //     __s32 optlen;
         //     __s32 retval;
         // };
-        (24, 28, 32, 36)
+        (8, 16, 24, 28, 32, 36)
     }
 
     fn bpf_sock_offsets() -> (i16, i16, i16, i16, i16, i16) {
@@ -844,22 +844,32 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::SockoptLevel => {
-                let offset = Self::bpf_sockopt_offsets().0;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
-            }
-            CtxField::SockoptOptname => {
-                let offset = Self::bpf_sockopt_offsets().1;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
-            }
-            CtxField::SockoptOptlen => {
                 let offset = Self::bpf_sockopt_offsets().2;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
-            CtxField::SockoptRetval => {
+            CtxField::SockoptOptname => {
                 let offset = Self::bpf_sockopt_offsets().3;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockoptOptlen => {
+                let offset = Self::bpf_sockopt_offsets().4;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockoptOptval => {
+                let offset = Self::bpf_sockopt_offsets().0;
+                self.instructions
+                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockoptOptvalEnd => {
+                let offset = Self::bpf_sockopt_offsets().1;
+                self.instructions
+                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockoptRetval => {
+                let offset = Self::bpf_sockopt_offsets().5;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }

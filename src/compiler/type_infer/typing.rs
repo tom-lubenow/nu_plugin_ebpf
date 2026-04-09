@@ -413,6 +413,11 @@ impl<'a> TypeInference<'a> {
             | CtxField::SockoptOptlen
             | CtxField::SockoptRetval => HMType::I32,
 
+            CtxField::SockoptOptval | CtxField::SockoptOptvalEnd => HMType::Ptr {
+                pointee: Box::new(HMType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+
             CtxField::UserIp6 | CtxField::MsgSrcIp6 | CtxField::RemoteIp6 | CtxField::LocalIp6 => {
                 HMType::Ptr {
                     pointee: Box::new(HMType::Array {

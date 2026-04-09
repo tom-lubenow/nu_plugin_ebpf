@@ -1070,7 +1070,11 @@ impl ProbeContext {
                     field.display_name()
                 ))
             }
-            CtxField::SockoptLevel | CtxField::SockoptOptname | CtxField::SockoptOptlen
+            CtxField::SockoptLevel
+            | CtxField::SockoptOptname
+            | CtxField::SockoptOptlen
+            | CtxField::SockoptOptval
+            | CtxField::SockoptOptvalEnd
                 if !matches!(self.probe_type, EbpfProgramType::CgroupSockopt) =>
             {
                 Some(format!(

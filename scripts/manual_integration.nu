@@ -697,21 +697,32 @@ step 47 "cgroup_sockopt root getsockopt counter" {
     }
 }
 
-step 48 "sk_lookup root netns local_port counter" {
+step 48 "cgroup_sockopt root getsockopt buffer first byte" {
+    if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
+        print "Skipping cgroup_sockopt optval smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
+    } else {
+        count-at-least-one "cgroup_sockopt:/sys/fs/cgroup:get" {|ctx|
+            ($ctx.optval | get 0) | count
+            'allow'
+        } { trigger-sockopt-read } "cgroup_sockopt optval first-byte counter"
+    }
+}
+
+step 49 "sk_lookup root netns local_port counter" {
     count-at-least-one "sk_lookup:/proc/self/ns/net" {|ctx|
         $ctx.local_port | count
         'pass'
     } { trigger-loopback-connect } "sk_lookup local_port counter"
 }
 
-step 49 "socket_filter udp4 loopback packet length counter" {
+step 50 "socket_filter udp4 loopback packet length counter" {
     count-at-least-one "socket_filter:udp4:127.0.0.1:41337" {|ctx|
         $ctx.packet_len | count
         'pass'
     } { trigger-udp-loopback 41337 } "socket_filter packet length counter"
 }
 
-step 50 "sched_ext_ops dry-run name-only object" {
+step 51 "sched_ext_ops dry-run name-only object" {
     let code = ([
         'ebpf attach --dry-run "struct_ops:sched_ext_ops" {'
         '    name: "nu.demo_1"'
@@ -726,7 +737,7 @@ step 50 "sched_ext_ops dry-run name-only object" {
     $result
 }
 
-step 51 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
+step 52 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
     let code = ([
         'ebpf attach --dry-run "struct_ops:sched_ext_ops" {'
         '    name: "nu.demo_1"'
@@ -754,7 +765,7 @@ step 51 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
     $result
 }
 
-step 52 "tcp_congestion_ops live attach and detach" {
+step 53 "tcp_congestion_ops live attach and detach" {
     let code = ([
         'let id = (ebpf attach "struct_ops:tcp_congestion_ops" {'
         '    name: "nu_demo"'
@@ -777,7 +788,7 @@ step 52 "tcp_congestion_ops live attach and detach" {
     $id
 }
 
-step 53 "lsm file_open dry-run" {
+step 54 "lsm file_open dry-run" {
     let code = ([
         'ebpf attach --dry-run "lsm:file_open" {|ctx| $ctx.arg0.f_flags | count; 0 } | describe'
     ] | str join (char newline))
@@ -790,14 +801,14 @@ step 53 "lsm file_open dry-run" {
     $result
 }
 
-step 54 "perf_event software cpu-clock counter" {
+step 55 "perf_event software cpu-clock counter" {
     count-at-least-one "perf_event:software:cpu-clock:period=100000" {|ctx|
         $ctx.cpu | count
         0
     } { trigger-cpu-work } "perf_event cpu-clock counter"
 }
 
-step 55 "verify no leaked probes" {
+step 56 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

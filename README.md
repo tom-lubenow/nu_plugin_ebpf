@@ -106,6 +106,9 @@ let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.op | count; 1 }
 # Count getsockopt option names inside a cgroup
 let id = ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| $ctx.optname | count; 'allow' }
 
+# Inspect the first byte of the getsockopt buffer through ctx.optval
+let id = ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| ($ctx.optval | get 0) | count; 'allow' }
+
 # Count requested ports on cgroup connect4 hooks
 let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect4' {|ctx| $ctx.user_port | count; 'allow' }
 
@@ -304,6 +307,12 @@ The closure receives a context parameter with these fields:
 | `local_ip4` | Local IPv4 address in host byte order | sk_lookup, sock_ops |
 | `local_ip6` | Local IPv6 address as four host-order `u32` words | sk_lookup, sock_ops |
 | `local_port` | Local port in host byte order | sk_lookup, sock_ops |
+| `level` | Socket-option level | cgroup_sockopt |
+| `optname` | Socket-option name | cgroup_sockopt |
+| `optlen` | Socket-option length | cgroup_sockopt |
+| `optval` | Kernel pointer to the sockopt buffer | cgroup_sockopt |
+| `optval_end` | Kernel pointer to the end of the sockopt buffer | cgroup_sockopt |
+| `sockopt_retval` | Getsockopt return value on `get` hooks | cgroup_sockopt |
 | `arg0`-`argN` | Function arguments | kprobe, uprobe, fentry, fexit |
 | `retval` | Return value | kretprobe, uretprobe, fexit |
 

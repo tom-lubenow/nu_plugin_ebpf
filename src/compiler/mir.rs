@@ -470,6 +470,10 @@ pub enum CtxField {
     SockoptOptname,
     /// bpf_sockopt::optlen
     SockoptOptlen,
+    /// bpf_sockopt::optval kernel pointer
+    SockoptOptval,
+    /// bpf_sockopt::optval_end kernel pointer
+    SockoptOptvalEnd,
     /// bpf_sockopt::retval
     SockoptRetval,
     /// Function argument (kprobe/uprobe)
@@ -530,6 +534,8 @@ impl CtxField {
             CtxField::SockoptLevel => "level".to_string(),
             CtxField::SockoptOptname => "optname".to_string(),
             CtxField::SockoptOptlen => "optlen".to_string(),
+            CtxField::SockoptOptval => "optval".to_string(),
+            CtxField::SockoptOptvalEnd => "optval_end".to_string(),
             CtxField::SockoptRetval => "sockopt_retval".to_string(),
             CtxField::Arg(idx) => format!("arg{}", idx),
             CtxField::RetVal => "retval".to_string(),

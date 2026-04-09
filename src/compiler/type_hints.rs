@@ -205,6 +205,10 @@ fn recover_ctx_field_hint(
         | CtxField::SockoptOptname
         | CtxField::SockoptOptlen
         | CtxField::SockoptRetval => Some(MirType::I32),
+        CtxField::SockoptOptval | CtxField::SockoptOptvalEnd => Some(MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        }),
         CtxField::UserIp6 | CtxField::MsgSrcIp6 | CtxField::RemoteIp6 | CtxField::LocalIp6 => {
             Some(MirType::Ptr {
                 pointee: Box::new(MirType::Array {

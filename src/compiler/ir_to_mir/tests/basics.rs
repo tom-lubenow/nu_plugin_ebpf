@@ -1965,6 +1965,33 @@ fn test_lower_cgroup_sockopt_ctx_optname_field() {
     )));
 }
 
+#[test]
+fn test_lower_cgroup_sockopt_ctx_optval_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("optval")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sockopt ctx.optval should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::SockoptOptval,
+            ..
+        }
+    )));
+}
+
 fn string_member(name: &str) -> PathMember {
     PathMember::test_string(name.to_string(), false, Casing::Sensitive)
 }

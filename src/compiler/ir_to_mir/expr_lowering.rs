@@ -1255,6 +1255,8 @@ impl<'a> HirToMirLowering<'a> {
             "level" => CtxField::SockoptLevel,
             "optname" => CtxField::SockoptOptname,
             "optlen" => CtxField::SockoptOptlen,
+            "optval" => CtxField::SockoptOptval,
+            "optval_end" => CtxField::SockoptOptvalEnd,
             "sockopt_retval" => CtxField::SockoptRetval,
             "retval" => CtxField::RetVal,
             "kstack" => CtxField::KStack,
@@ -4639,6 +4641,13 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::SockoptOptname
             | CtxField::SockoptOptlen
             | CtxField::SockoptRetval => (MirType::I32, Some(MirType::I32)),
+            CtxField::SockoptOptval | CtxField::SockoptOptvalEnd => {
+                let ptr_ty = MirType::Ptr {
+                    pointee: Box::new(MirType::U8),
+                    address_space: AddressSpace::Kernel,
+                };
+                (ptr_ty.clone(), Some(ptr_ty))
+            }
             CtxField::Data | CtxField::DataEnd => {
                 let ptr_ty = MirType::Ptr {
                     pointee: Box::new(MirType::U8),

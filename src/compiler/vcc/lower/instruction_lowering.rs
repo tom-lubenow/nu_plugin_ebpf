@@ -46,6 +46,8 @@ impl<'a> VccLowerer<'a> {
             CtxField::SockoptLevel => "level".to_string(),
             CtxField::SockoptOptname => "optname".to_string(),
             CtxField::SockoptOptlen => "optlen".to_string(),
+            CtxField::SockoptOptval => "optval".to_string(),
+            CtxField::SockoptOptvalEnd => "optval_end".to_string(),
             CtxField::SockoptRetval => "sockopt_retval".to_string(),
             CtxField::Arg(idx) => format!("arg:{idx}"),
             CtxField::RetVal => "retval".to_string(),
