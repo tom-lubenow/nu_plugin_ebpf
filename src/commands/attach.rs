@@ -864,6 +864,21 @@ fn validate_required_struct_ops_value_fields(
                 0
             };
 
+            if let Ok(enq_last) = resolve_sched_ext_flag_bit("SCX_OPS_ENQ_LAST", span) {
+                if (sched_ext_flags & enq_last) != 0
+                    && !matches!(body.get("enqueue"), Some(Value::Closure { .. }))
+                {
+                    return Err(LabeledError::new("Invalid struct_ops object")
+                        .with_label(
+                            "struct_ops 'sched_ext_ops' sets SCX_OPS_ENQ_LAST without implementing 'enqueue'",
+                            span,
+                        )
+                        .with_help(
+                            "Add an enqueue callback when using SCX_OPS_ENQ_LAST, or clear the flag to keep the default post-slice behavior",
+                        ));
+                }
+            }
+
             if matches!(body.get("update_idle"), Some(Value::Closure { .. }))
                 && !matches!(body.get("select_cpu"), Some(Value::Closure { .. }))
             {
@@ -878,6 +893,27 @@ fn validate_required_struct_ops_value_fields(
                         .with_help(
                             "Either add a select_cpu callback or set the SCX_OPS_KEEP_BUILTIN_IDLE flag to keep the built-in idle tracking path",
                         ));
+                }
+            }
+
+            if let Ok(builtin_idle_per_node) =
+                resolve_sched_ext_flag_bit("SCX_OPS_BUILTIN_IDLE_PER_NODE", span)
+            {
+                if (sched_ext_flags & builtin_idle_per_node) != 0
+                    && matches!(body.get("update_idle"), Some(Value::Closure { .. }))
+                {
+                    let keep_builtin_idle =
+                        resolve_sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE", span)?;
+                    if (sched_ext_flags & keep_builtin_idle) == 0 {
+                        return Err(LabeledError::new("Invalid struct_ops object")
+                            .with_label(
+                                "struct_ops 'sched_ext_ops' sets SCX_OPS_BUILTIN_IDLE_PER_NODE without built-in CPU idle selection enabled",
+                                span,
+                            )
+                            .with_help(
+                                "Either clear SCX_OPS_BUILTIN_IDLE_PER_NODE, or set SCX_OPS_KEEP_BUILTIN_IDLE when update_idle is implemented",
+                            ));
+                    }
                 }
             }
 
@@ -3567,6 +3603,56 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_enq_last_without_enqueue() {
+        let Some(enq_last) = sched_ext_flag_bit("SCX_OPS_ENQ_LAST") else {
+            return;
+        };
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push(
+            "flags",
+            Value::int(
+                i64::try_from(enq_last).expect("flag bit should fit in i64"),
+                Span::test_data(),
+            ),
+        );
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("SCX_OPS_ENQ_LAST without enqueue should be rejected");
+        assert!(err.labels.iter().any(|label| {
+            label
+                .text
+                .contains("sets SCX_OPS_ENQ_LAST without implementing 'enqueue'")
+        }));
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_allows_enq_last_with_enqueue() {
+        let Some(enq_last) = sched_ext_flag_bit("SCX_OPS_ENQ_LAST") else {
+            return;
+        };
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push(
+            "flags",
+            Value::int(
+                i64::try_from(enq_last).expect("flag bit should fit in i64"),
+                Span::test_data(),
+            ),
+        );
+        body.push("enqueue", test_closure_value());
+
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect("SCX_OPS_ENQ_LAST with enqueue should be allowed");
+    }
+
+    #[test]
     fn test_validate_required_struct_ops_value_fields_rejects_non_int_sched_ext_timeout() {
         if KernelBtf::get()
             .kernel_named_type_size_bytes("sched_ext_ops")
@@ -3726,6 +3812,67 @@ mod tests {
 
         super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
             .expect("sched_ext_ops update_idle with KEEP_BUILTIN_IDLE should be allowed");
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_rejects_builtin_idle_per_node_without_builtin_idle_enabled()
+     {
+        let Some(builtin_idle_per_node) = sched_ext_flag_bit("SCX_OPS_BUILTIN_IDLE_PER_NODE")
+        else {
+            return;
+        };
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push("update_idle", test_closure_value());
+        body.push("select_cpu", test_closure_value());
+        body.push(
+            "flags",
+            Value::int(
+                i64::try_from(builtin_idle_per_node).expect("flag bit should fit in i64"),
+                Span::test_data(),
+            ),
+        );
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("SCX_OPS_BUILTIN_IDLE_PER_NODE without builtin idle should be rejected");
+        assert!(err.labels.iter().any(|label| {
+            label.text.contains(
+                "sets SCX_OPS_BUILTIN_IDLE_PER_NODE without built-in CPU idle selection enabled",
+            )
+        }));
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_allows_builtin_idle_per_node_with_keep_builtin_idle()
+     {
+        let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
+            return;
+        };
+        let Some(builtin_idle_per_node) = sched_ext_flag_bit("SCX_OPS_BUILTIN_IDLE_PER_NODE")
+        else {
+            return;
+        };
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push("update_idle", test_closure_value());
+        body.push(
+            "flags",
+            Value::int(
+                i64::try_from(keep_builtin_idle | builtin_idle_per_node)
+                    .expect("flag bits should fit in i64"),
+                Span::test_data(),
+            ),
+        );
+        body.push("select_cpu", test_closure_value());
+
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect("SCX_OPS_BUILTIN_IDLE_PER_NODE with KEEP_BUILTIN_IDLE should be allowed");
     }
 
     #[test]
