@@ -394,6 +394,10 @@ impl<'a> TypeInference<'a> {
             | CtxField::SockMark
             | CtxField::SockPriority
             | CtxField::MsgSrcIp4
+            | CtxField::RemoteIp4
+            | CtxField::RemotePort
+            | CtxField::LocalIp4
+            | CtxField::LocalPort
             | CtxField::SysctlWrite
             | CtxField::SysctlFilePos => HMType::U32,
 
@@ -402,13 +406,15 @@ impl<'a> TypeInference<'a> {
             | CtxField::SockoptOptlen
             | CtxField::SockoptRetval => HMType::I32,
 
-            CtxField::UserIp6 | CtxField::MsgSrcIp6 => HMType::Ptr {
-                pointee: Box::new(HMType::Array {
-                    elem: Box::new(HMType::U32),
-                    len: 4,
-                }),
-                address_space: AddressSpace::Stack,
-            },
+            CtxField::UserIp6 | CtxField::MsgSrcIp6 | CtxField::RemoteIp6 | CtxField::LocalIp6 => {
+                HMType::Ptr {
+                    pointee: Box::new(HMType::Array {
+                        elem: Box::new(HMType::U32),
+                        len: 4,
+                    }),
+                    address_space: AddressSpace::Stack,
+                }
+            }
 
             CtxField::Data | CtxField::DataEnd => HMType::Ptr {
                 pointee: Box::new(HMType::U8),

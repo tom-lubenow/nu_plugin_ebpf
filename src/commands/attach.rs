@@ -1954,6 +1954,7 @@ Supported attach types:
   - cgroup_sysctl
   - cgroup_sockopt
   - cgroup_sock_addr
+  - sk_lookup
   - struct_ops
 
 Body forms:
@@ -2082,6 +2083,23 @@ Context parameter syntax (recommended):
     raw `1`/`0` result codes. This initial slice still exposes IPv6
     addresses as fixed arrays of four u32 words rather than a higher-level
     address type.
+
+  sk_lookup fields:
+    {|ctx| $ctx.cpu }     - Get current CPU ID
+    {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.family }  - Get socket family
+    {|ctx| $ctx.protocol } - Get IP protocol
+    {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order
+    {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words
+    {|ctx| $ctx.remote_port } - Get the remote port in host byte order
+    {|ctx| $ctx.local_ip4 } - Get the local IPv4 address in host byte order
+    {|ctx| $ctx.local_ip6 } - Get the local IPv6 address as four host-order u32 words
+    {|ctx| $ctx.local_port } - Get the local port in host byte order
+    {|ctx| $ctx.ingress_ifindex } - Get the arriving ingress interface index
+    Note: sk_lookup closures can return `pass` or `drop` instead of raw
+    `1`/`0` result codes. `allow` / `deny` aliases also work. IPv6
+    addresses are exposed as fixed arrays of four host-order u32 words, so
+    normal Nushell indexing works, for example `($ctx.remote_ip6 | get 3)`.
 
   Function fields:
     {|ctx| $ctx.arg0 }    - Get function argument 0
@@ -2227,7 +2245,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', or 'cgroup_sock_addr:/sys/fs/cgroup:connect4').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', or 'sk_lookup:/proc/self/ns/net').",
             )
             .required(
                 "body",
@@ -2279,6 +2297,7 @@ Requirements:
             "cgroup_sysctl",
             "cgroup_sockopt",
             "cgroup_sock_addr",
+            "sk_lookup",
             "struct_ops",
         ]
     }
@@ -2348,6 +2367,11 @@ Requirements:
             Example {
                 example: "ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect6' {|ctx| ($ctx.user_ip6 | get 3) | count; 'allow' }",
                 description: "Count the last host-order IPv6 address word on cgroup connect6 hooks",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'sk_lookup:/proc/self/ns/net' {|ctx| $ctx.local_port | count; 'pass' }",
+                description: "Count local ports seen by socket lookup in the current network namespace",
                 result: None,
             },
             Example {

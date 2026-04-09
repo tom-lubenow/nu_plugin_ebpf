@@ -191,6 +191,19 @@ impl PartialEq for CgroupSockoptTarget {
 
 impl Eq for CgroupSockoptTarget {}
 
+/// Parsed sk_lookup target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkLookupTarget {
+    /// Filesystem path to the network namespace file.
+    pub netns_path: String,
+}
+
+impl SkLookupTarget {
+    pub fn target_string(&self) -> String {
+        self.netns_path.clone()
+    }
+}
+
 pub const DEFAULT_PERF_EVENT_PERIOD: u64 = 1_000_000;
 
 /// Supported software perf events for the initial perf_event program surface.
@@ -339,6 +352,7 @@ pub enum ProgramSpec {
     Uretprobe { target: UprobeTarget },
     Xdp { interface: String },
     PerfEvent { target: PerfEventTarget },
+    SkLookup { target: SkLookupTarget },
     Tc { target: TcTarget },
     CgroupSkb { target: CgroupSkbTarget },
     CgroupSock { target: CgroupSockTarget },
@@ -363,6 +377,7 @@ impl ProgramSpec {
             }
             ProgramSpec::Xdp { interface } => interface.clone(),
             ProgramSpec::PerfEvent { target } => target.target_string(),
+            ProgramSpec::SkLookup { target } => target.target_string(),
             ProgramSpec::Tc { target } => target.target_string(),
             ProgramSpec::CgroupSkb { target } => target.target_string(),
             ProgramSpec::CgroupSock { target } => target.target_string(),

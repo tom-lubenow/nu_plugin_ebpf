@@ -359,18 +359,22 @@ fn test_user_function_mutating_annotated_global_param_writes_through_global() {
 
     let subfn = &result.program.subfunctions[0];
     assert!(
-        subfn.blocks.iter().flat_map(|block| block.instructions.iter()).any(
-            |inst| matches!(
+        subfn
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
                 inst,
                 MirInst::LoadGlobal { symbol, .. } if symbol == "__nu_local_global_250"
-            )
-        ),
+            )),
         "expected user-function param loads to read through the annotated global backing"
     );
     assert!(
-        subfn.blocks.iter().flat_map(|block| block.instructions.iter()).any(
-            |inst| matches!(inst, MirInst::Store { .. })
-        ),
+        subfn
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::Store { .. })),
         "expected user-function param mutation to emit a write through the backing global"
     );
 }

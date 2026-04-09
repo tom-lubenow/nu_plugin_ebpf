@@ -358,6 +358,28 @@ impl EbpfState {
                     }
                 }
             }
+            ProgramAttachKind::SkLookup => {
+                let target = SkLookupTarget::parse(&program.target)?;
+                let netns = std::fs::File::open(&target.netns_path).map_err(|e| {
+                    if e.kind() == ErrorKind::PermissionDenied {
+                        LoadError::PermissionDenied
+                    } else {
+                        LoadError::Attach(format!(
+                            "Failed to open network namespace path {}: {e}",
+                            target.netns_path
+                        ))
+                    }
+                })?;
+                let sk_lookup: &mut SkLookup = prog
+                    .try_into()
+                    .map_err(|e| LoadError::Load(format!("Failed to convert to SkLookup: {e}")))?;
+                sk_lookup
+                    .load()
+                    .map_err(|e| LoadError::Load(format!("Failed to load sk_lookup: {e}")))?;
+                sk_lookup
+                    .attach(netns)
+                    .map_err(|e| LoadError::Attach(format!("Failed to attach sk_lookup: {e}")))?;
+            }
             ProgramAttachKind::Tc => {
                 let target = TcTarget::parse(&program.target)?;
                 let classifier: &mut SchedClassifier = prog.try_into().map_err(|e| {

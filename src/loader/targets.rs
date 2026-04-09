@@ -4,7 +4,7 @@ use crate::kernel_btf::{FunctionCheckResult, KernelBtf};
 use crate::program_spec::{
     CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockTarget, CgroupSockoptTarget,
     DEFAULT_PERF_EVENT_PERIOD, PerfEventEvent, PerfEventHardwareEvent, PerfEventSamplePolicy,
-    PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, TcTarget, UprobeTarget,
+    PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, SkLookupTarget, TcTarget, UprobeTarget,
 };
 use aya::programs::{
     CgroupSkbAttachType, CgroupSockAddrAttachType, CgroupSockAttachType, CgroupSockoptAttachType,
@@ -246,6 +246,21 @@ impl CgroupSockoptTarget {
         Ok(Self {
             cgroup_path: cgroup_path.to_string(),
             attach_type,
+        })
+    }
+}
+
+impl SkLookupTarget {
+    /// Parse an sk_lookup target string of the form `/proc/self/ns/net`.
+    pub fn parse(target: &str) -> Result<Self, LoadError> {
+        if target.is_empty() {
+            return Err(LoadError::Load(
+                "sk_lookup network namespace path cannot be empty".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            netns_path: target.to_string(),
         })
     }
 }
@@ -614,6 +629,27 @@ fn validate_cgroup_sock_addr_target(target: &str) -> Result<(), LoadError> {
     Ok(())
 }
 
+fn validate_sk_lookup_target(target: &str) -> Result<(), LoadError> {
+    let parsed = SkLookupTarget::parse(target)?;
+    let netns_path = Path::new(&parsed.netns_path);
+
+    if !netns_path.exists() {
+        return Err(LoadError::Load(format!(
+            "Unknown network namespace path: {}",
+            parsed.netns_path
+        )));
+    }
+
+    if netns_path.is_dir() {
+        return Err(LoadError::Load(format!(
+            "sk_lookup target must be a network namespace file, not a directory: {}",
+            parsed.netns_path
+        )));
+    }
+
+    Ok(())
+}
+
 fn validate_target_for_program_type(
     prog_type: EbpfProgramType,
     target: &str,
@@ -667,6 +703,7 @@ fn validate_target_for_program_type(
             }
             Ok(())
         }
+        ProgramTargetKind::NetworkNamespacePath => validate_sk_lookup_target(target),
         ProgramTargetKind::TrafficControlInterface => validate_tc_target(target),
         ProgramTargetKind::CgroupPathAttachType => validate_cgroup_skb_target(target),
         ProgramTargetKind::CgroupPathSockAttachType => validate_cgroup_sock_target(target),
@@ -708,6 +745,7 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `uretprobe:/path/to/binary:function_name`
 /// - `xdp:interface`
 /// - `perf_event:software:cpu-clock[:cpu=N][:pid=N][:period=N|freq=N]`
+/// - `sk_lookup:/proc/self/ns/net`
 /// - `tc:interface:ingress`
 /// - `tc:interface:egress`
 /// - `cgroup_skb:/path/to/cgroup:ingress`
@@ -779,6 +817,9 @@ pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
         }),
         EbpfProgramType::PerfEvent => Ok(ProgramSpec::PerfEvent {
             target: PerfEventTarget::parse(target)?,
+        }),
+        EbpfProgramType::SkLookup => Ok(ProgramSpec::SkLookup {
+            target: SkLookupTarget::parse(target)?,
         }),
         EbpfProgramType::Tc => Ok(ProgramSpec::Tc {
             target: TcTarget::parse(target)?,

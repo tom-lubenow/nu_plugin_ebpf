@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 51
+const TOTAL_STEPS = 52
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -662,7 +662,14 @@ step 45 "cgroup_sockopt root getsockopt counter" {
     }
 }
 
-step 46 "sched_ext_ops dry-run name-only object" {
+step 46 "sk_lookup root netns local_port counter" {
+    count-at-least-one "sk_lookup:/proc/self/ns/net" {|ctx|
+        $ctx.local_port | count
+        'pass'
+    } { trigger-loopback-connect } "sk_lookup local_port counter"
+}
+
+step 47 "sched_ext_ops dry-run name-only object" {
     let code = ([
         'ebpf attach --dry-run "struct_ops:sched_ext_ops" {'
         '    name: "nu.demo_1"'
@@ -677,7 +684,7 @@ step 46 "sched_ext_ops dry-run name-only object" {
     $result
 }
 
-step 47 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
+step 48 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
     let code = ([
         'ebpf attach --dry-run "struct_ops:sched_ext_ops" {'
         '    name: "nu.demo_1"'
@@ -705,7 +712,7 @@ step 47 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
     $result
 }
 
-step 48 "tcp_congestion_ops live attach and detach" {
+step 49 "tcp_congestion_ops live attach and detach" {
     let code = ([
         'let id = (ebpf attach "struct_ops:tcp_congestion_ops" {'
         '    name: "nu_demo"'
@@ -728,7 +735,7 @@ step 48 "tcp_congestion_ops live attach and detach" {
     $id
 }
 
-step 49 "lsm file_open dry-run" {
+step 50 "lsm file_open dry-run" {
     let code = ([
         'ebpf attach --dry-run "lsm:file_open" {|ctx| $ctx.arg0.f_flags | count; 0 } | describe'
     ] | str join (char newline))
@@ -741,14 +748,14 @@ step 49 "lsm file_open dry-run" {
     $result
 }
 
-step 50 "perf_event software cpu-clock counter" {
+step 51 "perf_event software cpu-clock counter" {
     count-at-least-one "perf_event:software:cpu-clock:period=100000" {|ctx|
         $ctx.cpu | count
         0
     } { trigger-cpu-work } "perf_event cpu-clock counter"
 }
 
-step 51 "verify no leaked probes" {
+step 52 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

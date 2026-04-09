@@ -523,6 +523,8 @@ pub enum EbpfProgramType {
     Xdp,
     /// Perf event program attached to software or hardware perf counters
     PerfEvent,
+    /// Socket lookup program attached to a network namespace
+    SkLookup,
     /// Traffic-control classifier attached to an interface ingress/egress hook
     Tc,
     /// Cgroup socket-buffer program attached to a cgroup ingress/egress hook
@@ -553,6 +555,7 @@ impl EbpfProgramType {
             EbpfProgramType::Lsm => &LSM_INFO,
             EbpfProgramType::Xdp => &XDP_INFO,
             EbpfProgramType::PerfEvent => &PERF_EVENT_INFO,
+            EbpfProgramType::SkLookup => &SK_LOOKUP_INFO,
             EbpfProgramType::Tc => &TC_INFO,
             EbpfProgramType::CgroupSkb => &CGROUP_SKB_INFO,
             EbpfProgramType::CgroupSock => &CGROUP_SOCK_INFO,
@@ -580,6 +583,7 @@ impl EbpfProgramType {
             EbpfProgramType::Lsm,
             EbpfProgramType::Xdp,
             EbpfProgramType::PerfEvent,
+            EbpfProgramType::SkLookup,
             EbpfProgramType::Tc,
             EbpfProgramType::CgroupSkb,
             EbpfProgramType::CgroupSock,
@@ -724,6 +728,7 @@ impl ProgramSpec {
             ProgramSpec::Uretprobe { .. } => EbpfProgramType::Uretprobe,
             ProgramSpec::Xdp { .. } => EbpfProgramType::Xdp,
             ProgramSpec::PerfEvent { .. } => EbpfProgramType::PerfEvent,
+            ProgramSpec::SkLookup { .. } => EbpfProgramType::SkLookup,
             ProgramSpec::Tc { .. } => EbpfProgramType::Tc,
             ProgramSpec::CgroupSkb { .. } => EbpfProgramType::CgroupSkb,
             ProgramSpec::CgroupSock { .. } => EbpfProgramType::CgroupSock,
@@ -928,6 +933,19 @@ impl ProbeContext {
             CtxField::EgressIfindex if !self.probe_type.supports_egress_ifindex_ctx_field() => {
                 Some(packet_field_error(field))
             }
+            CtxField::RemoteIp4
+            | CtxField::RemoteIp6
+            | CtxField::RemotePort
+            | CtxField::LocalIp4
+            | CtxField::LocalIp6
+            | CtxField::LocalPort
+                if !matches!(self.probe_type, EbpfProgramType::SkLookup) =>
+            {
+                Some(format!(
+                    "ctx.{} is only available on sk_lookup programs",
+                    field.display_name()
+                ))
+            }
             CtxField::UserFamily
             | CtxField::UserPort
                 if !matches!(self.probe_type, EbpfProgramType::CgroupSockAddr) =>
@@ -940,11 +958,13 @@ impl ProbeContext {
             CtxField::Family | CtxField::SockType | CtxField::Protocol
                 if !matches!(
                     self.probe_type,
-                    EbpfProgramType::CgroupSockAddr | EbpfProgramType::CgroupSock
+                    EbpfProgramType::CgroupSockAddr
+                        | EbpfProgramType::CgroupSock
+                        | EbpfProgramType::SkLookup
                 ) =>
             {
                 Some(format!(
-                    "ctx.{} is only available on cgroup_sock and cgroup_sock_addr programs",
+                    "ctx.{} is only available on cgroup_sock, cgroup_sock_addr, and sk_lookup programs",
                     field.display_name()
                 ))
             }
@@ -1061,6 +1081,7 @@ pub enum ProgramAttachKind {
     Lsm,
     Xdp,
     PerfEvent,
+    SkLookup,
     Tc,
     CgroupSkb,
     CgroupSock,
@@ -1079,6 +1100,7 @@ pub enum ProgramTargetKind {
     UserFunction,
     NetworkInterface,
     PerfEventTarget,
+    NetworkNamespacePath,
     TrafficControlInterface,
     CgroupPathAttachType,
     CgroupPathSockAttachType,
@@ -1269,6 +1291,7 @@ const URETPROBE_SPEC_ALIASES: &[&str] = &["uretprobe"];
 const LSM_SPEC_ALIASES: &[&str] = &["lsm"];
 const XDP_SPEC_ALIASES: &[&str] = &["xdp"];
 const PERF_EVENT_SPEC_ALIASES: &[&str] = &["perf_event"];
+const SK_LOOKUP_SPEC_ALIASES: &[&str] = &["sk_lookup"];
 const TC_SPEC_ALIASES: &[&str] = &["tc"];
 const CGROUP_SKB_SPEC_ALIASES: &[&str] = &["cgroup_skb"];
 const CGROUP_SOCK_SPEC_ALIASES: &[&str] = &["cgroup_sock"];
@@ -1596,6 +1619,33 @@ const PERF_EVENT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     is_userspace: false,
 };
 
+const SK_LOOKUP_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::SkLookup,
+    canonical_prefix: "sk_lookup",
+    spec_aliases: SK_LOOKUP_SPEC_ALIASES,
+    section_prefix: "sk_lookup",
+    section_uses_target: false,
+    attach_kind: ProgramAttachKind::SkLookup,
+    target_kind: ProgramTargetKind::NetworkNamespacePath,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+    supports_task_ctx_fields: false,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    packet_context_kind: None,
+    supports_packet_len_ctx_field: false,
+    supports_packet_data_ctx_fields: false,
+    supports_ingress_ifindex_ctx_field: true,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
+    supports_xdp_md_ctx_fields: false,
+    supports_stack_ctx_fields: false,
+    supports_tracepoint_fields: false,
+    is_userspace: false,
+};
+
 const TC_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Tc,
     canonical_prefix: "tc",
@@ -1805,6 +1855,7 @@ const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "uretprobe",
     "perf_event",
     "xdp",
+    "sk_lookup",
     "tc",
     "cgroup_skb",
     "cgroup_sock",

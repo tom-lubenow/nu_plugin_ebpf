@@ -78,6 +78,23 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 4, 8, 12, 16, 20)
     }
 
+    fn bpf_sk_lookup_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16) {
+        // struct bpf_sk_lookup {
+        //     union { struct bpf_sock *sk; __u64 cookie; };
+        //     __u32 family;
+        //     __u32 protocol;
+        //     __u32 remote_ip4;     // network byte order
+        //     __u32 remote_ip6[4];  // network byte order
+        //     __be16 remote_port;   // network byte order
+        //     ...
+        //     __u32 local_ip4;      // network byte order
+        //     __u32 local_ip6[4];   // network byte order
+        //     __u32 local_port;     // host byte order
+        //     __u32 ingress_ifindex;
+        // };
+        (8, 12, 16, 20, 36, 40, 44, 60, 64)
+    }
+
     fn compile_ctx_u32_array_to_stack(
         &mut self,
         dst: EbpfReg,
@@ -85,6 +102,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         base_offset: i16,
         count: usize,
         field_name: &str,
+        normalize_big_endian: bool,
     ) -> Result<(), CompileError> {
         let slot = slot.ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
@@ -100,6 +118,9 @@ impl<'a> MirToEbpfCompiler<'a> {
             let dst_offset = slot_offset + (index as i16 * 4);
             self.instructions
                 .push(EbpfInsn::ldxw(EbpfReg::R0, EbpfReg::R9, word_offset));
+            if normalize_big_endian {
+                self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
+            }
             self.instructions
                 .push(EbpfInsn::stxw(EbpfReg::R10, dst_offset, EbpfReg::R0));
         }
@@ -586,9 +607,13 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_end_offset));
             }
             CtxField::IngressIfindex => {
-                let ingress_ifindex_offset = match self.packet_context_kind()? {
-                    PacketContextKind::XdpMd => Self::xdp_md_offsets().3,
-                    PacketContextKind::SkBuff => Self::sk_buff_offsets().3,
+                let ingress_ifindex_offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type)
+                {
+                    Some(EbpfProgramType::SkLookup) => Self::bpf_sk_lookup_offsets().8,
+                    _ => match self.packet_context_kind()? {
+                        PacketContextKind::XdpMd => Self::xdp_md_offsets().3,
+                        PacketContextKind::SkBuff => Self::sk_buff_offsets().3,
+                    },
                 };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, ingress_ifindex_offset));
@@ -625,7 +650,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
             CtxField::UserIp6 => {
                 let offset = Self::bpf_sock_addr_offsets().2;
-                self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.user_ip6")?;
+                self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.user_ip6", false)?;
             }
             CtxField::UserPort => {
                 let offset = Self::bpf_sock_addr_offsets().3;
@@ -690,7 +715,45 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
             CtxField::MsgSrcIp6 => {
                 let offset = Self::bpf_sock_addr_offsets().8;
-                self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.msg_src_ip6")?;
+                self.compile_ctx_u32_array_to_stack(
+                    dst,
+                    slot,
+                    offset,
+                    4,
+                    "ctx.msg_src_ip6",
+                    false,
+                )?;
+            }
+            CtxField::RemoteIp4 => {
+                let offset = Self::bpf_sk_lookup_offsets().2;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                self.instructions.push(EbpfInsn::end32_to_be(dst));
+            }
+            CtxField::RemoteIp6 => {
+                let offset = Self::bpf_sk_lookup_offsets().3;
+                self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.remote_ip6", true)?;
+            }
+            CtxField::RemotePort => {
+                let offset = Self::bpf_sk_lookup_offsets().4;
+                self.instructions
+                    .push(EbpfInsn::ldxh(dst, EbpfReg::R9, offset));
+                self.instructions.push(EbpfInsn::end16_to_be(dst));
+            }
+            CtxField::LocalIp4 => {
+                let offset = Self::bpf_sk_lookup_offsets().5;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                self.instructions.push(EbpfInsn::end32_to_be(dst));
+            }
+            CtxField::LocalIp6 => {
+                let offset = Self::bpf_sk_lookup_offsets().6;
+                self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.local_ip6", true)?;
+            }
+            CtxField::LocalPort => {
+                let offset = Self::bpf_sk_lookup_offsets().7;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::SysctlWrite => {
                 let offset = Self::bpf_sysctl_offsets().0;

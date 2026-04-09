@@ -1232,6 +1232,12 @@ impl<'a> HirToMirLowering<'a> {
             "priority" => CtxField::SockPriority,
             "msg_src_ip4" => CtxField::MsgSrcIp4,
             "msg_src_ip6" => CtxField::MsgSrcIp6,
+            "remote_ip4" => CtxField::RemoteIp4,
+            "remote_ip6" => CtxField::RemoteIp6,
+            "remote_port" => CtxField::RemotePort,
+            "local_ip4" => CtxField::LocalIp4,
+            "local_ip6" => CtxField::LocalIp6,
+            "local_port" => CtxField::LocalPort,
             "write" => CtxField::SysctlWrite,
             "file_pos" => CtxField::SysctlFilePos,
             "level" => CtxField::SockoptLevel,
@@ -3272,7 +3278,7 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    fn normalize_cgroup_sock_addr_ipv6_slot(
+    fn normalize_host_order_u32_array_slot(
         &mut self,
         base_ptr_vreg: VReg,
     ) -> Result<(), CompileError> {
@@ -4295,7 +4301,10 @@ impl<'a> HirToMirLowering<'a> {
                     "nested ctx field access requires probe context".into(),
                 )
             })?;
-            if matches!(ctx_field, CtxField::UserIp6 | CtxField::MsgSrcIp6) {
+            if matches!(
+                ctx_field,
+                CtxField::UserIp6 | CtxField::MsgSrcIp6 | CtxField::RemoteIp6 | CtxField::LocalIp6
+            ) {
                 let root_array_ty = MirType::Array {
                     elem: Box::new(MirType::U32),
                     len: 4,
@@ -4317,7 +4326,7 @@ impl<'a> HirToMirLowering<'a> {
                     field: ctx_field.clone(),
                     slot: Some(slot),
                 });
-                self.normalize_cgroup_sock_addr_ipv6_slot(base_vreg)?;
+                self.normalize_host_order_u32_array_slot(base_vreg)?;
                 let projected_ty = self.lower_typed_value_projection(
                     src_dst,
                     dst_vreg,
@@ -4499,7 +4508,10 @@ impl<'a> HirToMirLowering<'a> {
                 _ => None,
             })
             .or_else(|| match ctx_field {
-                CtxField::UserIp6 | CtxField::MsgSrcIp6 => Some(self.func.alloc_stack_slot(
+                CtxField::UserIp6
+                | CtxField::MsgSrcIp6
+                | CtxField::RemoteIp6
+                | CtxField::LocalIp6 => Some(self.func.alloc_stack_slot(
                     align_to_eight(16),
                     8,
                     StackSlotKind::Local,
@@ -4525,7 +4537,10 @@ impl<'a> HirToMirLowering<'a> {
             self.record_stack_slot_type(slot, pointee.as_ref().clone());
         }
         if let Some(slot) = slot
-            && matches!(ctx_field, CtxField::UserIp6 | CtxField::MsgSrcIp6)
+            && matches!(
+                ctx_field,
+                CtxField::UserIp6 | CtxField::MsgSrcIp6 | CtxField::RemoteIp6 | CtxField::LocalIp6
+            )
         {
             self.record_stack_slot_type(
                 slot,
@@ -4553,7 +4568,7 @@ impl<'a> HirToMirLowering<'a> {
                 };
                 (semantic_ty, Some(runtime_ty))
             }
-            CtxField::UserIp6 | CtxField::MsgSrcIp6 => {
+            CtxField::UserIp6 | CtxField::MsgSrcIp6 | CtxField::RemoteIp6 | CtxField::LocalIp6 => {
                 let semantic_ty = MirType::Array {
                     elem: Box::new(MirType::U32),
                     len: 4,
@@ -4582,6 +4597,10 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::SockMark
             | CtxField::SockPriority
             | CtxField::MsgSrcIp4
+            | CtxField::RemoteIp4
+            | CtxField::RemotePort
+            | CtxField::LocalIp4
+            | CtxField::LocalPort
             | CtxField::SysctlWrite
             | CtxField::SysctlFilePos => (MirType::U32, Some(MirType::U32)),
             CtxField::SockoptLevel
@@ -4629,7 +4648,7 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
         if matches!(ctx_field, CtxField::UserIp6 | CtxField::MsgSrcIp6) {
-            self.normalize_cgroup_sock_addr_ipv6_slot(dst_vreg)?;
+            self.normalize_host_order_u32_array_slot(dst_vreg)?;
         }
 
         let meta = self.get_or_create_metadata(src_dst);

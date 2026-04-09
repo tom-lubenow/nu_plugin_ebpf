@@ -344,6 +344,7 @@ pub mod opcode {
     pub const BPF_XOR: u8 = 0xa0;
     pub const BPF_MOV: u8 = 0xb0;
     pub const BPF_ARSH: u8 = 0xc0; // Arithmetic right shift
+    pub const BPF_END: u8 = 0xd0; // Endianness conversion
 
     // Jump operations
     pub const BPF_JA: u8 = 0x00; // Jump always

@@ -434,6 +434,18 @@ pub enum CtxField {
     MsgSrcIp4,
     /// bpf_sock_addr::msg_src_ip6[4] (normalized to host-byte-order u32 words)
     MsgSrcIp6,
+    /// bpf_sk_lookup::remote_ip4 (normalized to host byte order)
+    RemoteIp4,
+    /// bpf_sk_lookup::remote_ip6[4] (normalized to host-byte-order u32 words)
+    RemoteIp6,
+    /// bpf_sk_lookup::remote_port (normalized to host byte order)
+    RemotePort,
+    /// bpf_sk_lookup::local_ip4 (normalized to host byte order)
+    LocalIp4,
+    /// bpf_sk_lookup::local_ip6[4] (normalized to host-byte-order u32 words)
+    LocalIp6,
+    /// bpf_sk_lookup::local_port (host byte order)
+    LocalPort,
     /// bpf_sysctl::write
     SysctlWrite,
     /// bpf_sysctl::file_pos
@@ -486,6 +498,12 @@ impl CtxField {
             CtxField::SockPriority => "priority".to_string(),
             CtxField::MsgSrcIp4 => "msg_src_ip4".to_string(),
             CtxField::MsgSrcIp6 => "msg_src_ip6".to_string(),
+            CtxField::RemoteIp4 => "remote_ip4".to_string(),
+            CtxField::RemoteIp6 => "remote_ip6".to_string(),
+            CtxField::RemotePort => "remote_port".to_string(),
+            CtxField::LocalIp4 => "local_ip4".to_string(),
+            CtxField::LocalIp6 => "local_ip6".to_string(),
+            CtxField::LocalPort => "local_port".to_string(),
             CtxField::SysctlWrite => "write".to_string(),
             CtxField::SysctlFilePos => "file_pos".to_string(),
             CtxField::SockoptLevel => "level".to_string(),

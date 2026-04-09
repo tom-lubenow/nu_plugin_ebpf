@@ -108,9 +108,8 @@ impl<'a> HirToMirLowering<'a> {
         self.ctx_param = None;
         let mut next_arg_seed = 0usize;
 
-        let param_base = Self::infer_param_base_var_id(hir).or_else(|| {
-            sig.and_then(|_| Self::infer_referenced_var_base_var_id(hir))
-        });
+        let param_base = Self::infer_param_base_var_id(hir)
+            .or_else(|| sig.and_then(|_| Self::infer_referenced_var_base_var_id(hir)));
         if needs_input {
             let vreg = self.func.alloc_vreg();
             if let Some(reg) = input_reg {

@@ -905,6 +905,104 @@ fn test_compile_cgroup_sock_addr_user_ip6_load_copies_four_words_into_stack_slot
 }
 
 #[test]
+fn test_compile_sk_lookup_remote_ip6_load_normalizes_four_words_into_stack_slot() {
+    let ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::Local);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::LoadCtxField {
+            dst,
+            field: CtxField::RemoteIp6,
+            slot: Some(slot),
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    let word_load_offsets: Vec<i16> = compiler
+        .instructions
+        .iter()
+        .filter(|insn| {
+            insn.opcode == opcode::BPF_LDX | opcode::BPF_W | opcode::BPF_MEM
+                && insn.src_reg == EbpfReg::R9.as_u8()
+        })
+        .map(|insn| insn.offset)
+        .collect();
+    assert_eq!(word_load_offsets, vec![20, 24, 28, 32]);
+
+    let end32_count = compiler
+        .instructions
+        .iter()
+        .filter(|insn| {
+            insn.opcode == opcode::BPF_ALU | opcode::BPF_END | opcode::BPF_X && insn.imm == 32
+        })
+        .count();
+    assert_eq!(end32_count, 4);
+}
+
+#[test]
+fn test_compile_sk_lookup_remote_port_load_uses_be16_normalize() {
+    let ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::LoadCtxField {
+            dst,
+            field: CtxField::RemotePort,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_LDX | opcode::BPF_H | opcode::BPF_MEM
+            && insn.src_reg == EbpfReg::R9.as_u8()
+            && insn.offset == 36
+    }));
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_ALU | opcode::BPF_END | opcode::BPF_X && insn.imm == 16
+    }));
+}
+
+#[test]
 fn test_compile_xdp_u16be_packet_projection() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("data"), string_member("u16be"), int_member(0)],

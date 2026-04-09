@@ -188,19 +188,25 @@ fn recover_ctx_field_hint(
         | CtxField::SockMark
         | CtxField::SockPriority
         | CtxField::MsgSrcIp4
+        | CtxField::RemoteIp4
+        | CtxField::RemotePort
+        | CtxField::LocalIp4
+        | CtxField::LocalPort
         | CtxField::SysctlWrite
         | CtxField::SysctlFilePos => Some(MirType::U32),
         CtxField::SockoptLevel
         | CtxField::SockoptOptname
         | CtxField::SockoptOptlen
         | CtxField::SockoptRetval => Some(MirType::I32),
-        CtxField::UserIp6 | CtxField::MsgSrcIp6 => Some(MirType::Ptr {
-            pointee: Box::new(MirType::Array {
-                elem: Box::new(MirType::U32),
-                len: 4,
-            }),
-            address_space: AddressSpace::Stack,
-        }),
+        CtxField::UserIp6 | CtxField::MsgSrcIp6 | CtxField::RemoteIp6 | CtxField::LocalIp6 => {
+            Some(MirType::Ptr {
+                pointee: Box::new(MirType::Array {
+                    elem: Box::new(MirType::U32),
+                    len: 4,
+                }),
+                address_space: AddressSpace::Stack,
+            })
+        }
         CtxField::Data | CtxField::DataEnd => Some(MirType::Ptr {
             pointee: Box::new(MirType::U8),
             address_space: AddressSpace::Packet,

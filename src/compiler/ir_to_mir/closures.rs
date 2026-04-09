@@ -225,7 +225,10 @@ impl<'a> HirToMirLowering<'a> {
         if let Some(&source_var) = self.subfunction_global_aliases.get(&var_id) {
             if let Some(global) = self.annotated_mut_globals.get(&source_var).cloned() {
                 self.load_mutable_global_value(dst, dst_vreg, &global)?;
-                if let Some(semantics) = self.annotated_mut_global_semantics.get(&source_var).cloned()
+                if let Some(semantics) = self
+                    .annotated_mut_global_semantics
+                    .get(&source_var)
+                    .cloned()
                 {
                     self.get_or_create_metadata(dst).annotated_semantics = Some(semantics);
                 }

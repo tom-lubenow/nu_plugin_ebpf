@@ -281,6 +281,13 @@ fn test_parse_probe_spec_cgroup_sock_addr_connect4() {
 }
 
 #[test]
+fn test_parse_probe_spec_sk_lookup_root_netns() {
+    let (prog_type, target) = parse_probe_spec("sk_lookup:/proc/self/ns/net").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::SkLookup);
+    assert_eq!(target, "/proc/self/ns/net");
+}
+
+#[test]
 fn test_parse_probe_spec_lsm_file_open() {
     let (prog_type, target) = parse_probe_spec("lsm:file_open").unwrap();
     assert_eq!(prog_type, EbpfProgramType::Lsm);
@@ -354,6 +361,20 @@ fn test_parse_program_spec_cgroup_sock_addr_is_structured() {
         }
     );
     assert_eq!(spec.to_string(), "cgroup_sock_addr:/sys/fs/cgroup:connect4");
+}
+
+#[test]
+fn test_parse_program_spec_sk_lookup_is_structured() {
+    let spec = parse_program_spec("sk_lookup:/proc/self/ns/net").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::SkLookup {
+            target: SkLookupTarget {
+                netns_path: "/proc/self/ns/net".to_string(),
+            }
+        }
+    );
+    assert_eq!(spec.to_string(), "sk_lookup:/proc/self/ns/net");
 }
 
 #[test]

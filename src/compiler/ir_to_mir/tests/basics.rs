@@ -1770,6 +1770,57 @@ fn test_lower_cgroup_sockopt_action_alias_return_to_const() {
 }
 
 #[test]
+fn test_lower_sk_lookup_action_alias_return_to_const() {
+    let hir = make_return_literal_program(HirLiteral::String(b"pass".to_vec()));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_lookup action alias should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(matches!(
+        block.terminator,
+        MirInst::Return {
+            val: Some(MirValue::Const(1))
+        }
+    ));
+}
+
+#[test]
+fn test_lower_sk_lookup_ctx_local_port_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("local_port")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_lookup ctx.local_port should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::LocalPort,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_cgroup_sockopt_ctx_optname_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("optname")],

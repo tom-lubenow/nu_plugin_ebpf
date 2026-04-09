@@ -217,6 +217,28 @@ impl EbpfInsn {
         Self::new(opcode::BPF_ALU64 | opcode::BPF_NEG, dst.as_u8(), 0, 0, 0)
     }
 
+    /// END16 dst, be - Convert lower 16 bits between host and big-endian.
+    pub const fn end16_to_be(dst: EbpfReg) -> Self {
+        Self::new(
+            opcode::BPF_ALU | opcode::BPF_END | opcode::BPF_X,
+            dst.as_u8(),
+            0,
+            0,
+            16,
+        )
+    }
+
+    /// END32 dst, be - Convert lower 32 bits between host and big-endian.
+    pub const fn end32_to_be(dst: EbpfReg) -> Self {
+        Self::new(
+            opcode::BPF_ALU | opcode::BPF_END | opcode::BPF_X,
+            dst.as_u8(),
+            0,
+            0,
+            32,
+        )
+    }
+
     /// STXDW [dst+off], src - Store 64-bit value from register to memory
     pub const fn stxdw(dst: EbpfReg, offset: i16, src: EbpfReg) -> Self {
         Self::new(
