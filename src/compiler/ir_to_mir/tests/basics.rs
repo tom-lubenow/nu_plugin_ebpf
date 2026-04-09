@@ -1575,20 +1575,18 @@ fn test_lower_default_step_range_iterate_emits_loop_header_start() {
         result.program.main.block(loop_header.2).instructions.len(),
         1
     );
+    let exit_block = result.program.main.block(loop_header.3);
+    let exit_initializes_result = exit_block.instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::Copy {
+                src: MirValue::Const(0),
+                ..
+            }
+        )
+    }) || matches!(exit_block.terminator, MirInst::Return { val: Some(MirValue::Const(0)) });
     assert!(
-        result
-            .program
-            .main
-            .block(loop_header.3)
-            .instructions
-            .iter()
-            .any(|inst| matches!(
-                inst,
-                MirInst::Copy {
-                    src: MirValue::Const(0),
-                    ..
-                }
-            )),
+        exit_initializes_result,
         "expected exit edge to initialize the loop result register"
     );
 }

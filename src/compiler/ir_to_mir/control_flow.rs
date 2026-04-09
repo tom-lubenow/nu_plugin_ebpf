@@ -1,6 +1,73 @@
 use super::*;
 
 impl<'a> HirToMirLowering<'a> {
+    fn cleanup_return_src(hir: &HirFunction, target: HirBlockId) -> Option<RegId> {
+        fn cleanup_only_for_src(stmts: &[HirStmt], src: RegId) -> bool {
+            stmts.iter().all(|stmt| {
+                matches!(
+                    stmt,
+                    HirStmt::Drop { src: stmt_src }
+                        | HirStmt::Drain { src: stmt_src }
+                        | HirStmt::DrainIfEnd { src: stmt_src }
+                        if *stmt_src == src
+                )
+            })
+        }
+
+        fn resolve_cleanup_return_src(
+            hir: &HirFunction,
+            target: HirBlockId,
+            visited: &mut Vec<HirBlockId>,
+        ) -> Option<RegId> {
+            if visited.contains(&target) {
+                return None;
+            }
+            visited.push(target);
+
+            let candidate = hir.blocks.iter().find(|candidate| candidate.id == target)?;
+            match &candidate.terminator {
+                HirTerminator::Return { src } if cleanup_only_for_src(&candidate.stmts, *src) => {
+                    Some(*src)
+                }
+                HirTerminator::Goto { target } | HirTerminator::Jump { target } => {
+                    let src = resolve_cleanup_return_src(hir, *target, visited)?;
+                    cleanup_only_for_src(&candidate.stmts, src).then_some(src)
+                }
+                _ => None,
+            }
+        }
+
+        resolve_cleanup_return_src(hir, target, &mut Vec::new())
+    }
+
+    fn return_value_for_reg(&self, reg: RegId) -> MirValue {
+        self.reg_map
+            .get(&reg.get())
+            .copied()
+            .map(MirValue::VReg)
+            .unwrap_or(MirValue::Const(0))
+    }
+
+    fn lower_cleanup_return_edge(&mut self, src: RegId) -> BlockId {
+        let return_block = self.func.alloc_block();
+        let old_block = self.current_block;
+        self.current_block = return_block;
+        self.terminate(MirInst::Return {
+            val: Some(self.return_value_for_reg(src)),
+        });
+        self.current_block = old_block;
+        return_block
+    }
+
+    fn lower_constant_return_edge(&mut self, value: MirValue) -> BlockId {
+        let return_block = self.func.alloc_block();
+        let old_block = self.current_block;
+        self.current_block = return_block;
+        self.terminate(MirInst::Return { val: Some(value) });
+        self.current_block = old_block;
+        return_block
+    }
+
     pub fn lower_block(&mut self, hir: &HirFunction) -> Result<(), CompileError> {
         self.hir_block_map.clear();
         for block in &hir.blocks {
@@ -25,6 +92,112 @@ impl<'a> HirToMirLowering<'a> {
 
             for stmt in &block.stmts {
                 self.lower_stmt(stmt)?;
+            }
+            if let HirTerminator::Goto { target } | HirTerminator::Jump { target } =
+                &block.terminator
+                && let Some(src) = Self::cleanup_return_src(hir, *target)
+            {
+                self.terminate(MirInst::Return {
+                    val: Some(self.return_value_for_reg(src)),
+                });
+                continue;
+            }
+            if let HirTerminator::BranchIf {
+                cond,
+                if_true,
+                if_false,
+            } = &block.terminator
+            {
+                let if_true = if let Some(src) = Self::cleanup_return_src(hir, *if_true) {
+                    self.lower_cleanup_return_edge(src)
+                } else {
+                    *self.hir_block_map.get(if_true).ok_or_else(|| {
+                        CompileError::UnsupportedInstruction("Invalid branch target".into())
+                    })?
+                };
+                let if_false = if let Some(src) = Self::cleanup_return_src(hir, *if_false) {
+                    self.lower_cleanup_return_edge(src)
+                } else {
+                    *self.hir_block_map.get(if_false).ok_or_else(|| {
+                        CompileError::UnsupportedInstruction("Invalid branch target".into())
+                    })?
+                };
+                let cond_vreg = self.get_vreg(*cond);
+                self.terminate(MirInst::Branch {
+                    cond: cond_vreg,
+                    if_true,
+                    if_false,
+                });
+                continue;
+            }
+            if let HirTerminator::Iterate {
+                dst,
+                stream,
+                body,
+                end,
+            } = &block.terminator
+            {
+                let range = self
+                    .get_metadata(*stream)
+                    .and_then(|m| m.bounded_range)
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "Iterate requires a compile-time known range (e.g., 1..10)".into(),
+                        )
+                    })?;
+                if range.step < 0 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "descending ranges are not supported in eBPF loops yet".into(),
+                    ));
+                }
+
+                let dst_vreg = self.get_vreg(*dst);
+                let counter_vreg = self.get_vreg(*stream);
+
+                let limit = if range.inclusive {
+                    range.end + range.step.signum()
+                } else {
+                    range.end
+                };
+
+                let body_block = *self.hir_block_map.get(body).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction("Invalid loop body".into())
+                })?;
+                let cleanup_return_exit = Self::cleanup_return_src(hir, *end).is_some();
+                let exit_block = if cleanup_return_exit {
+                    self.lower_constant_return_edge(MirValue::Const(0))
+                } else {
+                    *self.hir_block_map.get(end).ok_or_else(|| {
+                        CompileError::UnsupportedInstruction("Invalid loop exit".into())
+                    })?
+                };
+
+                self.terminate(MirInst::LoopHeader {
+                    counter: counter_vreg,
+                    start: range.start,
+                    limit,
+                    body: body_block,
+                    exit: exit_block,
+                });
+
+                self.loop_body_inits
+                    .entry(body_block)
+                    .or_default()
+                    .push((dst_vreg, MirValue::VReg(counter_vreg)));
+                if !cleanup_return_exit {
+                    self.loop_body_inits
+                        .entry(exit_block)
+                        .or_default()
+                        .push((dst_vreg, MirValue::Const(0)));
+                }
+
+                self.loop_contexts.push(LoopContext {
+                    header_block: self.current_block,
+                    exit_block,
+                    counter_vreg,
+                    step: range.step,
+                });
+                continue;
             }
             self.lower_terminator(&block.terminator)?;
         }
