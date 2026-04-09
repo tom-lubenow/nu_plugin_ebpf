@@ -2164,9 +2164,9 @@ Context parameter syntax (recommended):
     Note: XDP closures can return action aliases like `pass`, `drop`,
     `tx`, and `redirect`, and TC closures can return aliases like `ok`,
     `shot`, `pipe`, and `redirect`. cgroup_skb closures can return
-    `allow` or `deny`. socket_filter currently uses raw numeric return
-    values: return `0` to drop or a positive snapshot length to keep the
-    packet. Raw numeric return codes still work. Packet reads currently support scalar byte access
+    `allow` or `deny`. socket_filter closures can return `drop` / `deny`
+    for `0`, or `pass` / `keep` / `allow` to snapshot the full packet by
+    returning `ctx.packet_len`. Raw numeric return codes still work. Packet reads currently support scalar byte access
     through `get`/indexing, direct `u16be`/`u32be` cell-path scalar loads,
     and typed header views `eth`, `ipv4`, `udp`, and `tcp`. Those views also
     support `payload` stepping: `eth.payload` skips Ethernet and a single
@@ -2201,7 +2201,8 @@ Context parameter syntax (recommended):
     Note: the initial socket_filter surface uses targets like
     `socket_filter:udp4:127.0.0.1:31337`, which create and hold open a
     bound UDP4 receive socket while the program is attached. Return values
-    are raw snapshot lengths: `0` drops the packet, positive values keep it.
+    are snapshot lengths: `0` drops the packet, positive values keep it,
+    and aliases like `pass` / `keep` expand to `ctx.packet_len`.
 
   lsm targets:
     {|ctx| $ctx.pid }    - Get current thread ID at hook time
@@ -2551,7 +2552,7 @@ Requirements:
                 result: None,
             },
             Example {
-                example: "ebpf attach 'socket_filter:udp4:127.0.0.1:31337' {|ctx| $ctx.packet_len | count; $ctx.packet_len }",
+                example: "ebpf attach 'socket_filter:udp4:127.0.0.1:31337' {|ctx| $ctx.packet_len | count; 'pass' }",
                 description: "Count loopback UDP packet lengths on a bound socket_filter receive socket",
                 result: None,
             },

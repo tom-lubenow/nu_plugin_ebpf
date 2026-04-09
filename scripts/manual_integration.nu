@@ -707,7 +707,7 @@ step 48 "sk_lookup root netns local_port counter" {
 step 49 "socket_filter udp4 loopback packet length counter" {
     count-at-least-one "socket_filter:udp4:127.0.0.1:41337" {|ctx|
         $ctx.packet_len | count
-        $ctx.packet_len
+        'pass'
     } { trigger-udp-loopback 41337 } "socket_filter packet length counter"
 }
 

@@ -1,6 +1,12 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ActionAliasReturn {
+    Const(i64),
+    PacketLen,
+}
+
 impl<'a> HirToMirLowering<'a> {
     fn cleanup_return_src(hir: &HirFunction, target: HirBlockId) -> Option<RegId> {
         fn cleanup_only_for_src(stmts: &[HirStmt], src: RegId) -> bool {
@@ -41,7 +47,7 @@ impl<'a> HirToMirLowering<'a> {
         resolve_cleanup_return_src(hir, target, &mut Vec::new())
     }
 
-    fn action_alias_return_value(&self, reg: RegId) -> Option<i64> {
+    fn action_alias_return_value(&self, reg: RegId) -> Option<ActionAliasReturn> {
         let program_type = self.probe_ctx.as_ref().map(|ctx| ctx.probe_type)?;
         let alias = self
             .get_metadata(reg)
@@ -57,23 +63,30 @@ impl<'a> HirToMirLowering<'a> {
 
         match program_type {
             EbpfProgramType::Xdp => match alias.as_str() {
-                "abort" | "aborted" => Some(0),
-                "drop" => Some(1),
-                "pass" => Some(2),
-                "tx" => Some(3),
-                "redirect" => Some(4),
+                "abort" | "aborted" => Some(ActionAliasReturn::Const(0)),
+                "drop" => Some(ActionAliasReturn::Const(1)),
+                "pass" => Some(ActionAliasReturn::Const(2)),
+                "tx" => Some(ActionAliasReturn::Const(3)),
+                "redirect" => Some(ActionAliasReturn::Const(4)),
+                _ => None,
+            },
+            EbpfProgramType::SocketFilter => match alias.as_str() {
+                "deny" | "drop" | "reject" => Some(ActionAliasReturn::Const(0)),
+                "allow" | "accept" | "permit" | "keep" | "pass" => {
+                    Some(ActionAliasReturn::PacketLen)
+                }
                 _ => None,
             },
             EbpfProgramType::Tc => match alias.as_str() {
-                "ok" => Some(0),
-                "reclassify" => Some(1),
-                "shot" | "drop" => Some(2),
-                "pipe" => Some(3),
-                "stolen" => Some(4),
-                "queued" => Some(5),
-                "repeat" => Some(6),
-                "redirect" => Some(7),
-                "trap" => Some(8),
+                "ok" => Some(ActionAliasReturn::Const(0)),
+                "reclassify" => Some(ActionAliasReturn::Const(1)),
+                "shot" | "drop" => Some(ActionAliasReturn::Const(2)),
+                "pipe" => Some(ActionAliasReturn::Const(3)),
+                "stolen" => Some(ActionAliasReturn::Const(4)),
+                "queued" => Some(ActionAliasReturn::Const(5)),
+                "repeat" => Some(ActionAliasReturn::Const(6)),
+                "redirect" => Some(ActionAliasReturn::Const(7)),
+                "trap" => Some(ActionAliasReturn::Const(8)),
                 _ => None,
             },
             EbpfProgramType::CgroupSkb
@@ -83,17 +96,28 @@ impl<'a> HirToMirLowering<'a> {
             | EbpfProgramType::CgroupSockopt
             | EbpfProgramType::CgroupSockAddr
             | EbpfProgramType::SkLookup => match alias.as_str() {
-                "deny" | "drop" | "reject" => Some(0),
-                "allow" | "pass" | "accept" | "permit" => Some(1),
+                "deny" | "drop" | "reject" => Some(ActionAliasReturn::Const(0)),
+                "allow" | "pass" | "accept" | "permit" => Some(ActionAliasReturn::Const(1)),
                 _ => None,
             },
             _ => None,
         }
     }
 
-    fn return_value_for_reg(&self, reg: RegId) -> MirValue {
+    fn return_value_for_reg(&mut self, reg: RegId) -> MirValue {
         if let Some(alias) = self.action_alias_return_value(reg) {
-            return MirValue::Const(alias);
+            return match alias {
+                ActionAliasReturn::Const(value) => MirValue::Const(value),
+                ActionAliasReturn::PacketLen => {
+                    let dst = self.func.alloc_vreg();
+                    self.emit(MirInst::LoadCtxField {
+                        dst,
+                        field: CtxField::PacketLen,
+                        slot: None,
+                    });
+                    MirValue::VReg(dst)
+                }
+            };
         }
         self.reg_map
             .get(&reg.get())
@@ -106,9 +130,8 @@ impl<'a> HirToMirLowering<'a> {
         let return_block = self.func.alloc_block();
         let old_block = self.current_block;
         self.current_block = return_block;
-        self.terminate(MirInst::Return {
-            val: Some(self.return_value_for_reg(src)),
-        });
+        let val = Some(self.return_value_for_reg(src));
+        self.terminate(MirInst::Return { val });
         self.current_block = old_block;
         return_block
     }
@@ -151,9 +174,8 @@ impl<'a> HirToMirLowering<'a> {
                 &block.terminator
                 && let Some(src) = Self::cleanup_return_src(hir, *target)
             {
-                self.terminate(MirInst::Return {
-                    val: Some(self.return_value_for_reg(src)),
-                });
+                let val = Some(self.return_value_for_reg(src));
+                self.terminate(MirInst::Return { val });
                 continue;
             }
             if let HirTerminator::BranchIf {

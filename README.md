@@ -80,7 +80,7 @@ ebpf attach --dry-run 'lsm:file_open' {|ctx| $ctx.arg0.f_flags | count; 0 }
 let id = ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.cpu | count; 0 }
 
 # Count loopback UDP packets by packet length on a bound socket_filter receive socket
-let id = ebpf attach 'socket_filter:udp4:127.0.0.1:31337' {|ctx| $ctx.packet_len | count; $ctx.packet_len }
+let id = ebpf attach 'socket_filter:udp4:127.0.0.1:31337' {|ctx| $ctx.packet_len | count; 'pass' }
 
 # Count loopback packets by packet length via XDP, then pass them through
 let id = ebpf attach 'xdp:lo' {|ctx| $ctx.packet_len | count; 'pass' }
@@ -325,8 +325,9 @@ runtime-sized TCP header using the data offset. `xdp` additionally exposes `ctx.
 `ctx.rx_queue_index`, and `ctx.egress_ifindex`. The initial `socket_filter`
 surface uses targets like `socket_filter:udp4:127.0.0.1:31337`, which create
 and keep open a bound UDP4 receive socket while attached. `socket_filter`
-return values are raw snapshot lengths: return `0` to drop the packet or a
-positive value to keep it. Variable header lengths, VLAN
+return values are snapshot lengths: return `0` to drop the packet or a
+positive value to keep it, and aliases like `"pass"` / `"keep"` expand to
+`ctx.packet_len`. Variable header lengths, VLAN
 options parsing, deeper TCP option parsing, stacked VLAN tags, and named
 packet-program action helpers are still not modeled, but compile-time action
 aliases are available in return position. XDP closures can return strings like

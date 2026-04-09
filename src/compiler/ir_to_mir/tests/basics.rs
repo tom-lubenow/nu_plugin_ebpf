@@ -1572,6 +1572,43 @@ fn test_lower_xdp_action_alias_return_to_const() {
 }
 
 #[test]
+fn test_lower_socket_filter_pass_alias_return_to_packet_len() {
+    let hir = make_return_literal_program(HirLiteral::String(b"pass".to_vec()));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("socket_filter pass alias should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    let packet_len_vreg = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::LoadCtxField {
+                dst,
+                field: CtxField::PacketLen,
+                ..
+            } => Some(*dst),
+            _ => None,
+        })
+        .expect("expected socket_filter pass alias to load ctx.packet_len");
+
+    assert!(matches!(
+        block.terminator,
+        MirInst::Return {
+            val: Some(MirValue::VReg(vreg))
+        } if vreg == packet_len_vreg
+    ));
+}
+
+#[test]
 fn test_lower_tc_action_alias_return_to_const() {
     let hir = make_return_literal_program(HirLiteral::String(b"ok".to_vec()));
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
