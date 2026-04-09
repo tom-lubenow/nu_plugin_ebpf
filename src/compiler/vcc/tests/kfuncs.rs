@@ -2815,27 +2815,15 @@ fn test_verify_mir_kfunc_scx_dsq_move_set_vtime_requires_matching_iter_scx_dsq_s
 }
 
 #[test]
-fn test_verify_mir_kfunc_scx_select_cpu_dfl_rejects_task_reference_for_cpumask_arg3() {
+fn test_verify_mir_kfunc_scx_select_cpu_dfl_rejects_kernel_pointer_for_is_idle_arg3() {
     let (mut func, entry) = new_mir_function();
 
-    let cpu = func.alloc_vreg();
-    let rq = func.alloc_vreg();
     let pid = func.alloc_vreg();
     let task = func.alloc_vreg();
     let prev_cpu = func.alloc_vreg();
     let wake_flags = func.alloc_vreg();
     let selected_cpu = func.alloc_vreg();
 
-    func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: cpu,
-        src: MirValue::Const(0),
-    });
-    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
-        dst: rq,
-        kfunc: "scx_bpf_cpu_rq".to_string(),
-        btf_id: None,
-        args: vec![cpu],
-    });
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: pid,
         src: MirValue::Const(1),
@@ -2858,19 +2846,11 @@ fn test_verify_mir_kfunc_scx_select_cpu_dfl_rejects_task_reference_for_cpumask_a
         dst: selected_cpu,
         kfunc: "scx_bpf_select_cpu_dfl".to_string(),
         btf_id: None,
-        args: vec![rq, prev_cpu, wake_flags, task],
+        args: vec![task, prev_cpu, wake_flags, task],
     });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
-    types.insert(cpu, MirType::I64);
-    types.insert(
-        rq,
-        MirType::Ptr {
-            pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Kernel,
-        },
-    );
     types.insert(pid, MirType::I64);
     types.insert(
         task,
@@ -2883,16 +2863,12 @@ fn test_verify_mir_kfunc_scx_select_cpu_dfl_rejects_task_reference_for_cpumask_a
     types.insert(wake_flags, MirType::I64);
     types.insert(selected_cpu, MirType::I64);
 
-    let err = verify_mir(&func, &types).expect_err("expected scx select_cpu_dfl cpumask mismatch");
+    let err =
+        verify_mir(&func, &types).expect_err("expected scx select_cpu_dfl stack-pointer mismatch");
     assert!(
         err.iter().any(|e| e
             .message
-            .contains("kfunc 'scx_bpf_select_cpu_dfl' arg3 expects cpumask reference")),
-        "unexpected error messages: {:?}",
-        err
-    );
-    assert!(
-        err.iter().any(|e| e.message.contains("task reference")),
+            .contains("kfunc 'scx_bpf_select_cpu_dfl' arg3 expects pointer in [Stack]")),
         "unexpected error messages: {:?}",
         err
     );

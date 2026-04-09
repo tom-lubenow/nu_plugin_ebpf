@@ -1527,7 +1527,7 @@ fn test_kfunc_pointer_arg_ref_kind_mappings() {
     );
     assert_eq!(
         kfunc_pointer_arg_ref_kind("scx_bpf_select_cpu_dfl", 3),
-        Some(KfuncRefKind::Cpumask)
+        None
     );
     assert_eq!(
         kfunc_pointer_arg_ref_kind("scx_bpf_put_cpumask", 0),
@@ -1589,7 +1589,7 @@ fn test_kfunc_pointer_arg_requires_kernel_mappings() {
         "scx_bpf_dsq_move_set_vtime",
         0
     ));
-    assert!(kfunc_pointer_arg_requires_kernel(
+    assert!(!kfunc_pointer_arg_requires_kernel(
         "scx_bpf_select_cpu_dfl",
         3
     ));
@@ -1699,6 +1699,10 @@ fn test_kfunc_pointer_arg_requires_stack_mappings() {
     assert!(kfunc_pointer_arg_requires_stack(
         "bpf_iter_scx_dsq_destroy",
         0
+    ));
+    assert!(kfunc_pointer_arg_requires_stack(
+        "scx_bpf_select_cpu_dfl",
+        3
     ));
     assert!(kfunc_pointer_arg_requires_stack(
         "bpf_copy_from_user_dynptr",
@@ -1965,6 +1969,10 @@ fn test_kfunc_pointer_arg_requires_stack_slot_base_mappings() {
     assert!(kfunc_pointer_arg_requires_stack_slot_base(
         "scx_bpf_exit_bstr",
         2
+    ));
+    assert!(kfunc_pointer_arg_requires_stack_slot_base(
+        "scx_bpf_select_cpu_dfl",
+        3
     ));
     assert!(!kfunc_pointer_arg_requires_stack_slot_base(
         "bpf_path_d_path",
@@ -2328,6 +2336,23 @@ fn test_kfunc_semantics_scx_exit_bstr_rules() {
     assert!(!data.allowed.allow_user);
     assert_eq!(data.fixed_size, None);
     assert_eq!(data.size_from_arg, Some(3));
+}
+
+#[test]
+fn test_kfunc_semantics_scx_select_cpu_dfl_is_idle_rule() {
+    let semantics = kfunc_semantics("scx_bpf_select_cpu_dfl");
+    assert_eq!(semantics.positive_size_args, &[] as &[usize]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 1);
+
+    let rule = semantics.ptr_arg_rules[0];
+    assert_eq!(rule.arg_idx, 3);
+    assert_eq!(rule.op, "kfunc scx_bpf_select_cpu_dfl is_idle");
+    assert!(rule.allowed.allow_stack);
+    assert!(!rule.allowed.allow_map);
+    assert!(!rule.allowed.allow_kernel);
+    assert!(!rule.allowed.allow_user);
+    assert_eq!(rule.fixed_size, Some(1));
+    assert_eq!(rule.size_from_arg, None);
 }
 
 #[test]

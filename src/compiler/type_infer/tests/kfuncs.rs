@@ -126,7 +126,8 @@ fn test_sched_ext_select_cpu_dfl_allowed_in_select_cpu() {
     let task = func.alloc_vreg();
     let prev_cpu = func.alloc_vreg();
     let wake_flags = func.alloc_vreg();
-    let cpumask = func.alloc_vreg();
+    let is_idle = func.alloc_vreg();
+    let idle_slot = func.alloc_stack_slot(1, 1, StackSlotKind::Local);
     let block = func.block_mut(BlockId(0));
     block.instructions.push(MirInst::Copy {
         dst: pid,
@@ -146,17 +147,15 @@ fn test_sched_ext_select_cpu_dfl_allowed_in_select_cpu() {
         dst: wake_flags,
         src: MirValue::Const(0),
     });
-    block.instructions.push(MirInst::CallKfunc {
-        dst: cpumask,
-        kfunc: "scx_bpf_get_online_cpumask".to_string(),
-        btf_id: None,
-        args: vec![],
+    block.instructions.push(MirInst::Copy {
+        dst: is_idle,
+        src: MirValue::StackSlot(idle_slot),
     });
     block.instructions.push(MirInst::CallKfunc {
         dst,
         kfunc: "scx_bpf_select_cpu_dfl".to_string(),
         btf_id: None,
-        args: vec![task, prev_cpu, wake_flags, cpumask],
+        args: vec![task, prev_cpu, wake_flags, is_idle],
     });
     block.terminator = MirInst::Return { val: None };
 
@@ -172,7 +171,8 @@ fn test_type_error_sched_ext_select_cpu_dfl_rejected_in_enqueue() {
     let task = func.alloc_vreg();
     let prev_cpu = func.alloc_vreg();
     let wake_flags = func.alloc_vreg();
-    let cpumask = func.alloc_vreg();
+    let is_idle = func.alloc_vreg();
+    let idle_slot = func.alloc_stack_slot(1, 1, StackSlotKind::Local);
     let block = func.block_mut(BlockId(0));
     block.instructions.push(MirInst::Copy {
         dst: pid,
@@ -192,17 +192,15 @@ fn test_type_error_sched_ext_select_cpu_dfl_rejected_in_enqueue() {
         dst: wake_flags,
         src: MirValue::Const(0),
     });
-    block.instructions.push(MirInst::CallKfunc {
-        dst: cpumask,
-        kfunc: "scx_bpf_get_online_cpumask".to_string(),
-        btf_id: None,
-        args: vec![],
+    block.instructions.push(MirInst::Copy {
+        dst: is_idle,
+        src: MirValue::StackSlot(idle_slot),
     });
     block.instructions.push(MirInst::CallKfunc {
         dst,
         kfunc: "scx_bpf_select_cpu_dfl".to_string(),
         btf_id: None,
-        args: vec![task, prev_cpu, wake_flags, cpumask],
+        args: vec![task, prev_cpu, wake_flags, is_idle],
     });
     block.terminator = MirInst::Return { val: None };
 
@@ -545,7 +543,7 @@ fn test_type_error_kfunc_scx_dsq_move_set_vtime_requires_stack_iterator_pointer(
 }
 
 #[test]
-fn test_type_error_kfunc_scx_select_cpu_dfl_requires_kernel_cpumask_pointer_arg3() {
+fn test_type_error_kfunc_scx_select_cpu_dfl_rejects_kernel_cpumask_pointer_arg3() {
     let mut func = make_test_function();
     let pid = func.alloc_vreg();
     let task = func.alloc_vreg();
@@ -553,7 +551,6 @@ fn test_type_error_kfunc_scx_select_cpu_dfl_requires_kernel_cpumask_pointer_arg3
     let wake_flags = func.alloc_vreg();
     let cpumask = func.alloc_vreg();
     let dst = func.alloc_vreg();
-    let cpumask_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
     let block = func.block_mut(BlockId(0));
     block.instructions.push(MirInst::Copy {
         dst: pid,
@@ -573,9 +570,11 @@ fn test_type_error_kfunc_scx_select_cpu_dfl_requires_kernel_cpumask_pointer_arg3
         dst: wake_flags,
         src: MirValue::Const(0),
     });
-    block.instructions.push(MirInst::Copy {
+    block.instructions.push(MirInst::CallKfunc {
         dst: cpumask,
-        src: MirValue::StackSlot(cpumask_slot),
+        kfunc: "scx_bpf_get_online_cpumask".to_string(),
+        btf_id: None,
+        args: vec![],
     });
     block.instructions.push(MirInst::CallKfunc {
         dst,
@@ -588,10 +587,11 @@ fn test_type_error_kfunc_scx_select_cpu_dfl_requires_kernel_cpumask_pointer_arg3
     let mut ti = TypeInference::new(None);
     let errs = ti
         .infer(&func)
-        .expect_err("expected select_cpu_dfl arg3 kernel-pointer type error");
+        .expect_err("expected select_cpu_dfl arg3 stack-pointer type error");
     assert!(
-        errs.iter()
-            .any(|e| e.message.contains("arg3 expects kernel pointer")),
+        errs.iter().any(|e| e.message.contains(
+            "kfunc scx_bpf_select_cpu_dfl is_idle expects pointer in [Stack], got Kernel"
+        )),
         "unexpected errors: {:?}",
         errs
     );

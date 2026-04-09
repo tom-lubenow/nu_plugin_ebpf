@@ -208,6 +208,13 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
             size_from_arg: Some(3),
         },
     ];
+    const SCX_SELECT_CPU_DFL_RULES: &[KfuncPtrArgRule] = &[KfuncPtrArgRule {
+        arg_idx: 3,
+        op: "kfunc scx_bpf_select_cpu_dfl is_idle",
+        allowed: STACK_ONLY,
+        fixed_size: Some(1),
+        size_from_arg: None,
+    }];
     const COPY_FROM_USER_STR_RULES: &[KfuncPtrArgRule] = &[
         KfuncPtrArgRule {
             arg_idx: 0,
@@ -476,6 +483,10 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         "scx_bpf_exit_bstr" => KfuncSemantics {
             ptr_arg_rules: SCX_EXIT_BSTR_RULES,
             positive_size_args: &[3],
+        },
+        "scx_bpf_select_cpu_dfl" => KfuncSemantics {
+            ptr_arg_rules: SCX_SELECT_CPU_DFL_RULES,
+            positive_size_args: &[],
         },
         _ => NONE,
     }
@@ -1150,7 +1161,6 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
             | ("scx_bpf_put_cpumask", 0)
             | ("scx_bpf_put_idle_cpumask", 0)
             | ("scx_bpf_select_cpu_and", 3)
-            | ("scx_bpf_select_cpu_dfl", 3)
     ) {
         return Some(KfuncRefKind::Cpumask);
     }
@@ -1273,6 +1283,7 @@ pub fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
             | ("bpf_dynptr_memset", 0)
             | ("bpf_dynptr_slice", 0)
             | ("bpf_dynptr_slice_rdwr", 0)
+            | ("scx_bpf_select_cpu_dfl", 3)
             | ("scx_bpf_dsq_move", 0)
             | ("scx_bpf_dsq_move_set_slice", 0)
             | ("scx_bpf_dsq_move_set_vtime", 0)
@@ -1327,6 +1338,7 @@ pub fn kfunc_pointer_arg_requires_stack_slot_base(kfunc: &str, arg_idx: usize) -
             | ("scx_bpf_error_bstr", 1)
             | ("scx_bpf_exit_bstr", 1)
             | ("scx_bpf_exit_bstr", 2)
+            | ("scx_bpf_select_cpu_dfl", 3)
     ) {
         return true;
     }
