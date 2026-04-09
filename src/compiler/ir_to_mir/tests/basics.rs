@@ -1916,6 +1916,33 @@ fn test_lower_sock_ops_ctx_op_field() {
 }
 
 #[test]
+fn test_lower_sock_ops_ctx_args_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("args")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sock_ops ctx.args should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::SockOpsArgs,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_socket_filter_ctx_packet_len_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("packet_len")],

@@ -835,6 +835,37 @@ fn test_infer_sock_ops_remote_ip6_field_as_stack_backed_u32_array() {
 }
 
 #[test]
+fn test_infer_sock_ops_args_field_as_stack_backed_u32_array() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::Local);
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::SockOpsArgs,
+            slot: Some(slot),
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(
+        types.get(&v0),
+        Some(&MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U32),
+                len: 4,
+            }),
+            address_space: AddressSpace::Stack,
+        })
+    );
+}
+
+#[test]
 fn test_infer_cgroup_device_access_type_field_as_u32() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();

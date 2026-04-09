@@ -1250,6 +1250,7 @@ impl<'a> HirToMirLowering<'a> {
             "local_ip4" => CtxField::LocalIp4,
             "local_ip6" => CtxField::LocalIp6,
             "local_port" => CtxField::LocalPort,
+            "args" => CtxField::SockOpsArgs,
             "write" => CtxField::SysctlWrite,
             "file_pos" => CtxField::SysctlFilePos,
             "level" => CtxField::SockoptLevel,
@@ -4368,7 +4369,11 @@ impl<'a> HirToMirLowering<'a> {
             })?;
             if matches!(
                 ctx_field,
-                CtxField::UserIp6 | CtxField::MsgSrcIp6 | CtxField::RemoteIp6 | CtxField::LocalIp6
+                CtxField::UserIp6
+                    | CtxField::MsgSrcIp6
+                    | CtxField::RemoteIp6
+                    | CtxField::LocalIp6
+                    | CtxField::SockOpsArgs
             ) {
                 let root_array_ty = MirType::Array {
                     elem: Box::new(MirType::U32),
@@ -4391,7 +4396,14 @@ impl<'a> HirToMirLowering<'a> {
                     field: ctx_field.clone(),
                     slot: Some(slot),
                 });
-                self.normalize_host_order_u32_array_slot(base_vreg)?;
+                if matches!(
+                    ctx_field,
+                    CtxField::RemoteIp6 | CtxField::LocalIp6 | CtxField::SockOpsArgs
+                ) {
+                    // Already host-order words; just keep the stack-backed array shape.
+                } else {
+                    self.normalize_host_order_u32_array_slot(base_vreg)?;
+                }
                 let projected_ty = self.lower_typed_value_projection(
                     src_dst,
                     dst_vreg,
@@ -4576,7 +4588,8 @@ impl<'a> HirToMirLowering<'a> {
                 CtxField::UserIp6
                 | CtxField::MsgSrcIp6
                 | CtxField::RemoteIp6
-                | CtxField::LocalIp6 => Some(self.func.alloc_stack_slot(
+                | CtxField::LocalIp6
+                | CtxField::SockOpsArgs => Some(self.func.alloc_stack_slot(
                     align_to_eight(16),
                     8,
                     StackSlotKind::Local,
@@ -4604,7 +4617,11 @@ impl<'a> HirToMirLowering<'a> {
         if let Some(slot) = slot
             && matches!(
                 ctx_field,
-                CtxField::UserIp6 | CtxField::MsgSrcIp6 | CtxField::RemoteIp6 | CtxField::LocalIp6
+                CtxField::UserIp6
+                    | CtxField::MsgSrcIp6
+                    | CtxField::RemoteIp6
+                    | CtxField::LocalIp6
+                    | CtxField::SockOpsArgs
             )
         {
             self.record_stack_slot_type(
@@ -4633,7 +4650,11 @@ impl<'a> HirToMirLowering<'a> {
                 };
                 (semantic_ty, Some(runtime_ty))
             }
-            CtxField::UserIp6 | CtxField::MsgSrcIp6 | CtxField::RemoteIp6 | CtxField::LocalIp6 => {
+            CtxField::UserIp6
+            | CtxField::MsgSrcIp6
+            | CtxField::RemoteIp6
+            | CtxField::LocalIp6
+            | CtxField::SockOpsArgs => {
                 let semantic_ty = MirType::Array {
                     elem: Box::new(MirType::U32),
                     len: 4,

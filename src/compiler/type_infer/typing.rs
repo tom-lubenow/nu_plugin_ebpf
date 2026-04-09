@@ -418,15 +418,17 @@ impl<'a> TypeInference<'a> {
                 address_space: AddressSpace::Kernel,
             },
 
-            CtxField::UserIp6 | CtxField::MsgSrcIp6 | CtxField::RemoteIp6 | CtxField::LocalIp6 => {
-                HMType::Ptr {
-                    pointee: Box::new(HMType::Array {
-                        elem: Box::new(HMType::U32),
-                        len: 4,
-                    }),
-                    address_space: AddressSpace::Stack,
-                }
-            }
+            CtxField::UserIp6
+            | CtxField::MsgSrcIp6
+            | CtxField::RemoteIp6
+            | CtxField::LocalIp6
+            | CtxField::SockOpsArgs => HMType::Ptr {
+                pointee: Box::new(HMType::Array {
+                    elem: Box::new(HMType::U32),
+                    len: 4,
+                }),
+                address_space: AddressSpace::Stack,
+            },
 
             CtxField::Data | CtxField::DataEnd => HMType::Ptr {
                 pointee: Box::new(HMType::U8),

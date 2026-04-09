@@ -2250,6 +2250,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.op }      - Get the sock_ops callback opcode
+    {|ctx| $ctx.args }    - Get the four sock_ops callback argument words as a fixed array
     {|ctx| $ctx.family }  - Get socket family
     {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order
     {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words
@@ -2263,7 +2264,8 @@ Context parameter syntax (recommended):
     Note: initial sock_ops support is read-only and uses raw integer return
     codes. Observation-only examples should return `1`. IPv6 addresses are
     exposed as fixed arrays of four host-order u32 words, for example
-    `($ctx.remote_ip6 | get 3)`.
+    `($ctx.remote_ip6 | get 3)`. `ctx.args` uses the same fixed-array model,
+    for example `($ctx.args | get 0)`.
 
   cgroup_sockopt fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

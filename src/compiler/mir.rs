@@ -454,6 +454,8 @@ pub enum CtxField {
     DeviceMinor,
     /// bpf_sock_ops::op
     SockOp,
+    /// bpf_sock_ops::args[4]
+    SockOpsArgs,
     /// bpf_sock_ops::is_fullsock
     IsFullsock,
     /// bpf_sock_ops::bpf_sock_ops_cb_flags
@@ -526,6 +528,7 @@ impl CtxField {
             CtxField::DeviceMajor => "major".to_string(),
             CtxField::DeviceMinor => "minor".to_string(),
             CtxField::SockOp => "op".to_string(),
+            CtxField::SockOpsArgs => "args".to_string(),
             CtxField::IsFullsock => "is_fullsock".to_string(),
             CtxField::SockOpsCbFlags => "cb_flags".to_string(),
             CtxField::SockState => "state".to_string(),

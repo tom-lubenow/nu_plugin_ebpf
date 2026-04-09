@@ -103,6 +103,9 @@ let id = ebpf attach 'cgroup_sock:/sys/fs/cgroup:sock_create' {|ctx| $ctx.family
 # Count sock_ops callback opcodes inside a cgroup
 let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.op | count; 1 }
 
+# Inspect the first sock_ops argument word through the normal fixed-array path
+let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| ($ctx.args | get 0) | count; 1 }
+
 # Count getsockopt option names inside a cgroup
 let id = ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| $ctx.optname | count; 'allow' }
 
@@ -298,6 +301,7 @@ The closure receives a context parameter with these fields:
 | `mark` | Socket mark | cgroup_sock |
 | `priority` | Socket priority | cgroup_sock |
 | `op` | sock_ops callback opcode | sock_ops |
+| `args` | sock_ops callback argument words as four host-order `u32` values | sock_ops |
 | `is_fullsock` | Whether the context has a full socket | sock_ops |
 | `cb_flags` | Requested sock_ops callback flags | sock_ops |
 | `state` | Current TCP state | sock_ops |

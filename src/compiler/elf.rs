@@ -972,7 +972,11 @@ impl ProbeContext {
                     field.display_name()
                 ))
             }
-            CtxField::SockOp | CtxField::IsFullsock | CtxField::SockOpsCbFlags | CtxField::SockState
+            CtxField::SockOp
+            | CtxField::SockOpsArgs
+            | CtxField::IsFullsock
+            | CtxField::SockOpsCbFlags
+            | CtxField::SockState
                 if !matches!(self.probe_type, EbpfProgramType::SockOps) =>
             {
                 Some(format!(

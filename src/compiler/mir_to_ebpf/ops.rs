@@ -123,6 +123,10 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 20, 24, 28, 32, 48, 64, 68, 72, 84, 88)
     }
 
+    fn bpf_sock_ops_args_offset() -> i16 {
+        4
+    }
+
     fn compile_ctx_u32_array_to_stack(
         &mut self,
         dst: EbpfReg,
@@ -817,6 +821,10 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = Self::bpf_sock_ops_offsets().0;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsArgs => {
+                let offset = Self::bpf_sock_ops_args_offset();
+                self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.args", false)?;
             }
             CtxField::IsFullsock => {
                 let offset = Self::bpf_sock_ops_offsets().8;

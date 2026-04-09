@@ -1058,6 +1058,61 @@ fn test_compile_sock_ops_remote_ip6_load_normalizes_four_words_into_stack_slot()
 }
 
 #[test]
+fn test_compile_sock_ops_args_load_copies_four_words_into_stack_slot() {
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::Local);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::LoadCtxField {
+            dst,
+            field: CtxField::SockOpsArgs,
+            slot: Some(slot),
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    let word_load_offsets: Vec<i16> = compiler
+        .instructions
+        .iter()
+        .filter(|insn| {
+            insn.opcode == opcode::BPF_LDX | opcode::BPF_W | opcode::BPF_MEM
+                && insn.src_reg == EbpfReg::R9.as_u8()
+        })
+        .map(|insn| insn.offset)
+        .collect();
+    assert_eq!(word_load_offsets, vec![4, 8, 12, 16]);
+
+    let end32_count = compiler
+        .instructions
+        .iter()
+        .filter(|insn| {
+            insn.opcode == opcode::BPF_ALU | opcode::BPF_END | opcode::BPF_X && insn.imm == 32
+        })
+        .count();
+    assert_eq!(end32_count, 0);
+}
+
+#[test]
 fn test_compile_sock_ops_remote_port_load_uses_be16_normalize() {
     let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
 

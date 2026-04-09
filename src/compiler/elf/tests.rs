@@ -1506,6 +1506,7 @@ fn test_probe_context_allows_sk_lookup_fields() {
 fn test_probe_context_allows_sock_ops_fields() {
     let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
     assert!(ctx.ctx_field_access_error(&CtxField::SockOp).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::SockOpsArgs).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Family).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::RemoteIp4).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::RemoteIp6).is_none());
