@@ -680,6 +680,7 @@ fn resolve_sched_ext_flag_bit(flag_name: &str, span: Span) -> Result<u64, Labele
 }
 
 const SCHED_EXT_MAX_TIMEOUT_MS: i64 = 30_000;
+const SCHED_EXT_MAX_DISPATCH_BATCH: i64 = i32::MAX as i64;
 
 fn validate_required_struct_ops_value_fields(
     value_type_name: &str,
@@ -923,6 +924,24 @@ fn validate_required_struct_ops_value_fields(
                 "dispatch_max_batch",
                 span,
             )?;
+            if let Some(dispatch_max_batch) = body.get("dispatch_max_batch") {
+                let Value::Int { val, .. } = dispatch_max_batch else {
+                    unreachable!("dispatch_max_batch type was already validated");
+                };
+                if *val > SCHED_EXT_MAX_DISPATCH_BATCH {
+                    return Err(LabeledError::new("Invalid struct_ops object")
+                        .with_label(
+                            format!(
+                                "struct_ops 'sched_ext_ops' dispatch_max_batch is too large: {} exceeds the kernel INT_MAX limit {}",
+                                val, SCHED_EXT_MAX_DISPATCH_BATCH
+                            ),
+                            dispatch_max_batch.span(),
+                        )
+                        .with_help(format!(
+                            "Set dispatch_max_batch to at most {SCHED_EXT_MAX_DISPATCH_BATCH} to match the kernel sched_ext limit",
+                        )));
+                }
+            }
             validate_struct_ops_non_negative_integer_field(
                 "sched_ext_ops",
                 body,
@@ -4160,7 +4179,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_required_struct_ops_value_fields_allows_dispatch_max_batch_u32_max() {
+    fn test_validate_required_struct_ops_value_fields_rejects_dispatch_max_batch_above_int_max() {
         if KernelBtf::get()
             .kernel_named_type_size_bytes("sched_ext_ops")
             .is_err()
@@ -4172,13 +4191,40 @@ mod tests {
         body.push("name", Value::string("nu.demo_1", Span::test_data()));
         body.push(
             "dispatch_max_batch",
-            Value::int(i64::from(u32::MAX), Span::test_data()),
+            Value::int(super::SCHED_EXT_MAX_DISPATCH_BATCH + 1, Span::test_data()),
+        );
+
+        let err = super::validate_required_struct_ops_value_fields(
+            "sched_ext_ops",
+            &body,
+            Span::test_data(),
+        )
+        .expect_err("dispatch_max_batch above INT_MAX should be rejected");
+        assert!(
+            err.labels
+                .iter()
+                .any(|label| { label.text.contains("dispatch_max_batch is too large") })
+        );
+    }
+
+    #[test]
+    fn test_validate_required_struct_ops_value_fields_allows_dispatch_max_batch_int_max() {
+        if KernelBtf::get()
+            .kernel_named_type_size_bytes("sched_ext_ops")
+            .is_err()
+        {
+            return;
+        }
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push(
+            "dispatch_max_batch",
+            Value::int(super::SCHED_EXT_MAX_DISPATCH_BATCH, Span::test_data()),
         );
 
         super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
-            .expect(
-                "sched_ext_ops dispatch_max_batch within the kernel field width should be allowed",
-            );
+            .expect("sched_ext_ops dispatch_max_batch at INT_MAX should be allowed");
     }
 
     #[test]
