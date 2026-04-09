@@ -184,6 +184,9 @@ fn recover_ctx_field_hint(
         | CtxField::Family
         | CtxField::SockType
         | CtxField::Protocol
+        | CtxField::BoundDevIf
+        | CtxField::SockMark
+        | CtxField::SockPriority
         | CtxField::MsgSrcIp4
         | CtxField::SysctlWrite
         | CtxField::SysctlFilePos => Some(MirType::U32),

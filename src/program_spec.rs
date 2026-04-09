@@ -1,5 +1,6 @@
 use aya::programs::{
-    CgroupSkbAttachType, CgroupSockAddrAttachType, CgroupSockoptAttachType, TcAttachType,
+    CgroupSkbAttachType, CgroupSockAddrAttachType, CgroupSockAttachType, CgroupSockoptAttachType,
+    TcAttachType,
 };
 
 /// Parsed uprobe/uretprobe target information.
@@ -87,6 +88,38 @@ impl PartialEq for CgroupSkbTarget {
 }
 
 impl Eq for CgroupSkbTarget {}
+
+/// Parsed cgroup_sock target information.
+#[derive(Debug, Clone)]
+pub struct CgroupSockTarget {
+    /// Filesystem path to the cgroup directory.
+    pub cgroup_path: String,
+    /// Attach kind.
+    pub attach_type: CgroupSockAttachType,
+}
+
+impl CgroupSockTarget {
+    pub fn attach_type_name(&self) -> &'static str {
+        match self.attach_type {
+            CgroupSockAttachType::PostBind4 => "post_bind4",
+            CgroupSockAttachType::PostBind6 => "post_bind6",
+            CgroupSockAttachType::SockCreate => "sock_create",
+            CgroupSockAttachType::SockRelease => "sock_release",
+        }
+    }
+
+    pub fn target_string(&self) -> String {
+        format!("{}:{}", self.cgroup_path, self.attach_type_name())
+    }
+}
+
+impl PartialEq for CgroupSockTarget {
+    fn eq(&self, other: &Self) -> bool {
+        self.cgroup_path == other.cgroup_path && self.attach_type_name() == other.attach_type_name()
+    }
+}
+
+impl Eq for CgroupSockTarget {}
 
 /// Parsed cgroup_sock_addr target information.
 #[derive(Debug, Clone)]
@@ -308,6 +341,7 @@ pub enum ProgramSpec {
     PerfEvent { target: PerfEventTarget },
     Tc { target: TcTarget },
     CgroupSkb { target: CgroupSkbTarget },
+    CgroupSock { target: CgroupSockTarget },
     CgroupSysctl { cgroup_path: String },
     CgroupSockopt { target: CgroupSockoptTarget },
     CgroupSockAddr { target: CgroupSockAddrTarget },
@@ -331,6 +365,7 @@ impl ProgramSpec {
             ProgramSpec::PerfEvent { target } => target.target_string(),
             ProgramSpec::Tc { target } => target.target_string(),
             ProgramSpec::CgroupSkb { target } => target.target_string(),
+            ProgramSpec::CgroupSock { target } => target.target_string(),
             ProgramSpec::CgroupSysctl { cgroup_path } => cgroup_path.clone(),
             ProgramSpec::CgroupSockopt { target } => target.target_string(),
             ProgramSpec::CgroupSockAddr { target } => target.target_string(),

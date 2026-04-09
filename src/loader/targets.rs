@@ -2,12 +2,13 @@ use super::LoadError;
 use crate::compiler::{EbpfProgramType, KernelTargetValidationKind, ProgramTargetKind};
 use crate::kernel_btf::{FunctionCheckResult, KernelBtf};
 use crate::program_spec::{
-    CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockoptTarget, DEFAULT_PERF_EVENT_PERIOD,
-    PerfEventEvent, PerfEventHardwareEvent, PerfEventSamplePolicy, PerfEventSoftwareEvent,
-    PerfEventTarget, ProgramSpec, TcTarget, UprobeTarget,
+    CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockTarget, CgroupSockoptTarget,
+    DEFAULT_PERF_EVENT_PERIOD, PerfEventEvent, PerfEventHardwareEvent, PerfEventSamplePolicy,
+    PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, TcTarget, UprobeTarget,
 };
 use aya::programs::{
-    CgroupSkbAttachType, CgroupSockAddrAttachType, CgroupSockoptAttachType, TcAttachType,
+    CgroupSkbAttachType, CgroupSockAddrAttachType, CgroupSockAttachType, CgroupSockoptAttachType,
+    TcAttachType,
 };
 use aya::util::online_cpus;
 use std::path::Path;
@@ -141,6 +142,40 @@ impl CgroupSkbTarget {
     }
 }
 
+impl CgroupSockTarget {
+    /// Parse a cgroup_sock target string of the form `/sys/fs/cgroup:sock_create`.
+    pub fn parse(target: &str) -> Result<Self, LoadError> {
+        let (cgroup_path, attach_kind) = target.rsplit_once(':').ok_or_else(|| {
+            LoadError::Load(format!(
+                "Invalid cgroup_sock target: {target}. Expected format: /path/to/cgroup:sock_create|sock_release|post_bind4|post_bind6"
+            ))
+        })?;
+
+        if cgroup_path.is_empty() {
+            return Err(LoadError::Load(
+                "cgroup_sock cgroup path cannot be empty".to_string(),
+            ));
+        }
+
+        let attach_type = match attach_kind {
+            "sock_create" => CgroupSockAttachType::SockCreate,
+            "sock_release" => CgroupSockAttachType::SockRelease,
+            "post_bind4" => CgroupSockAttachType::PostBind4,
+            "post_bind6" => CgroupSockAttachType::PostBind6,
+            _ => {
+                return Err(LoadError::Load(format!(
+                    "Invalid cgroup_sock attach kind: {attach_kind}. Expected sock_create, sock_release, post_bind4, or post_bind6"
+                )));
+            }
+        };
+
+        Ok(Self {
+            cgroup_path: cgroup_path.to_string(),
+            attach_type,
+        })
+    }
+}
+
 impl CgroupSockAddrTarget {
     /// Parse a cgroup_sock_addr target string of the form `/sys/fs/cgroup:connect4`.
     pub fn parse(target: &str) -> Result<Self, LoadError> {
@@ -239,9 +274,7 @@ impl PerfEventTarget {
                 "context-switches" => {
                     PerfEventEvent::Software(PerfEventSoftwareEvent::ContextSwitches)
                 }
-                "cpu-migrations" => {
-                    PerfEventEvent::Software(PerfEventSoftwareEvent::CpuMigrations)
-                }
+                "cpu-migrations" => PerfEventEvent::Software(PerfEventSoftwareEvent::CpuMigrations),
                 "page-faults" => PerfEventEvent::Software(PerfEventSoftwareEvent::PageFaults),
                 "minor-faults" => PerfEventEvent::Software(PerfEventSoftwareEvent::MinorFaults),
                 "major-faults" => PerfEventEvent::Software(PerfEventSoftwareEvent::MajorFaults),
@@ -253,9 +286,7 @@ impl PerfEventTarget {
             },
             "hardware" => match event_name {
                 "cpu-cycles" => PerfEventEvent::Hardware(PerfEventHardwareEvent::CpuCycles),
-                "instructions" => {
-                    PerfEventEvent::Hardware(PerfEventHardwareEvent::Instructions)
-                }
+                "instructions" => PerfEventEvent::Hardware(PerfEventHardwareEvent::Instructions),
                 "cache-references" => {
                     PerfEventEvent::Hardware(PerfEventHardwareEvent::CacheReferences)
                 }
@@ -263,9 +294,7 @@ impl PerfEventTarget {
                 "branch-instructions" => {
                     PerfEventEvent::Hardware(PerfEventHardwareEvent::BranchInstructions)
                 }
-                "branch-misses" => {
-                    PerfEventEvent::Hardware(PerfEventHardwareEvent::BranchMisses)
-                }
+                "branch-misses" => PerfEventEvent::Hardware(PerfEventHardwareEvent::BranchMisses),
                 "bus-cycles" => PerfEventEvent::Hardware(PerfEventHardwareEvent::BusCycles),
                 "stalled-cycles-frontend" => {
                     PerfEventEvent::Hardware(PerfEventHardwareEvent::StalledCyclesFrontend)
@@ -273,9 +302,7 @@ impl PerfEventTarget {
                 "stalled-cycles-backend" => {
                     PerfEventEvent::Hardware(PerfEventHardwareEvent::StalledCyclesBackend)
                 }
-                "ref-cpu-cycles" => {
-                    PerfEventEvent::Hardware(PerfEventHardwareEvent::RefCpuCycles)
-                }
+                "ref-cpu-cycles" => PerfEventEvent::Hardware(PerfEventHardwareEvent::RefCpuCycles),
                 _ => {
                     return Err(LoadError::Load(format!(
                         "Unsupported perf_event hardware event: {event_name}. Expected one of cpu-cycles, instructions, cache-references, cache-misses, branch-instructions, branch-misses, bus-cycles, stalled-cycles-frontend, stalled-cycles-backend, ref-cpu-cycles"
@@ -507,6 +534,27 @@ fn validate_cgroup_skb_target(target: &str) -> Result<(), LoadError> {
     Ok(())
 }
 
+fn validate_cgroup_sock_target(target: &str) -> Result<(), LoadError> {
+    let parsed = CgroupSockTarget::parse(target)?;
+    let cgroup_path = Path::new(&parsed.cgroup_path);
+
+    if !cgroup_path.exists() {
+        return Err(LoadError::Load(format!(
+            "Unknown cgroup path: {}",
+            parsed.cgroup_path
+        )));
+    }
+
+    if !cgroup_path.is_dir() {
+        return Err(LoadError::Load(format!(
+            "cgroup_sock target must be a directory: {}",
+            parsed.cgroup_path
+        )));
+    }
+
+    Ok(())
+}
+
 fn validate_cgroup_path_target(target: &str) -> Result<(), LoadError> {
     let cgroup_path = Path::new(target);
 
@@ -621,6 +669,7 @@ fn validate_target_for_program_type(
         }
         ProgramTargetKind::TrafficControlInterface => validate_tc_target(target),
         ProgramTargetKind::CgroupPathAttachType => validate_cgroup_skb_target(target),
+        ProgramTargetKind::CgroupPathSockAttachType => validate_cgroup_sock_target(target),
         ProgramTargetKind::CgroupPath => validate_cgroup_path_target(target),
         ProgramTargetKind::CgroupPathSockoptAttachType => validate_cgroup_sockopt_target(target),
         ProgramTargetKind::CgroupPathSockAddrAttachType => validate_cgroup_sock_addr_target(target),
@@ -663,6 +712,10 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `tc:interface:egress`
 /// - `cgroup_skb:/path/to/cgroup:ingress`
 /// - `cgroup_skb:/path/to/cgroup:egress`
+/// - `cgroup_sock:/path/to/cgroup:sock_create`
+/// - `cgroup_sock:/path/to/cgroup:sock_release`
+/// - `cgroup_sock:/path/to/cgroup:post_bind4`
+/// - `cgroup_sock:/path/to/cgroup:post_bind6`
 /// - `cgroup_sysctl:/path/to/cgroup`
 /// - `cgroup_sockopt:/path/to/cgroup:get`
 /// - `cgroup_sockopt:/path/to/cgroup:set`
@@ -732,6 +785,9 @@ pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
         }),
         EbpfProgramType::CgroupSkb => Ok(ProgramSpec::CgroupSkb {
             target: CgroupSkbTarget::parse(target)?,
+        }),
+        EbpfProgramType::CgroupSock => Ok(ProgramSpec::CgroupSock {
+            target: CgroupSockTarget::parse(target)?,
         }),
         EbpfProgramType::CgroupSysctl => Ok(ProgramSpec::CgroupSysctl {
             cgroup_path: target.to_string(),

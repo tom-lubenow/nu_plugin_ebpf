@@ -390,6 +390,9 @@ impl<'a> TypeInference<'a> {
             | CtxField::Family
             | CtxField::SockType
             | CtxField::Protocol
+            | CtxField::BoundDevIf
+            | CtxField::SockMark
+            | CtxField::SockPriority
             | CtxField::MsgSrcIp4
             | CtxField::SysctlWrite
             | CtxField::SysctlFilePos => HMType::U32,

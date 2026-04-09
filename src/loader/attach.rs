@@ -402,6 +402,28 @@ impl EbpfState {
                     .attach(cgroup, target.attach_type, CgroupAttachMode::Single)
                     .map_err(|e| LoadError::Attach(format!("Failed to attach cgroup_skb: {e}")))?;
             }
+            ProgramAttachKind::CgroupSock => {
+                let target = CgroupSockTarget::parse(&program.target)?;
+                let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
+                    if e.kind() == ErrorKind::PermissionDenied {
+                        LoadError::PermissionDenied
+                    } else {
+                        LoadError::Attach(format!(
+                            "Failed to open cgroup path {}: {e}",
+                            target.cgroup_path
+                        ))
+                    }
+                })?;
+                let cgroup_sock: &mut CgroupSock = prog.try_into().map_err(|e| {
+                    LoadError::Load(format!("Failed to convert to CgroupSock: {e}"))
+                })?;
+                cgroup_sock
+                    .load()
+                    .map_err(|e| LoadError::Load(format!("Failed to load cgroup_sock: {e}")))?;
+                cgroup_sock
+                    .attach(cgroup, CgroupAttachMode::Single)
+                    .map_err(|e| LoadError::Attach(format!("Failed to attach cgroup_sock: {e}")))?;
+            }
             ProgramAttachKind::CgroupSysctl => {
                 let cgroup = std::fs::File::open(&program.target).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {

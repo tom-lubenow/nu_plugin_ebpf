@@ -527,6 +527,8 @@ pub enum EbpfProgramType {
     Tc,
     /// Cgroup socket-buffer program attached to a cgroup ingress/egress hook
     CgroupSkb,
+    /// Cgroup socket program attached to socket lifecycle hooks
+    CgroupSock,
     /// Cgroup sysctl program attached to a cgroup sysctl hook
     CgroupSysctl,
     /// Cgroup socket-option program attached to getsockopt/setsockopt hooks
@@ -553,6 +555,7 @@ impl EbpfProgramType {
             EbpfProgramType::PerfEvent => &PERF_EVENT_INFO,
             EbpfProgramType::Tc => &TC_INFO,
             EbpfProgramType::CgroupSkb => &CGROUP_SKB_INFO,
+            EbpfProgramType::CgroupSock => &CGROUP_SOCK_INFO,
             EbpfProgramType::CgroupSysctl => &CGROUP_SYSCTL_INFO,
             EbpfProgramType::CgroupSockopt => &CGROUP_SOCKOPT_INFO,
             EbpfProgramType::CgroupSockAddr => &CGROUP_SOCK_ADDR_INFO,
@@ -579,6 +582,7 @@ impl EbpfProgramType {
             EbpfProgramType::PerfEvent,
             EbpfProgramType::Tc,
             EbpfProgramType::CgroupSkb,
+            EbpfProgramType::CgroupSock,
             EbpfProgramType::CgroupSysctl,
             EbpfProgramType::CgroupSockopt,
             EbpfProgramType::CgroupSockAddr,
@@ -722,6 +726,7 @@ impl ProgramSpec {
             ProgramSpec::PerfEvent { .. } => EbpfProgramType::PerfEvent,
             ProgramSpec::Tc { .. } => EbpfProgramType::Tc,
             ProgramSpec::CgroupSkb { .. } => EbpfProgramType::CgroupSkb,
+            ProgramSpec::CgroupSock { .. } => EbpfProgramType::CgroupSock,
             ProgramSpec::CgroupSysctl { .. } => EbpfProgramType::CgroupSysctl,
             ProgramSpec::CgroupSockopt { .. } => EbpfProgramType::CgroupSockopt,
             ProgramSpec::CgroupSockAddr { .. } => EbpfProgramType::CgroupSockAddr,
@@ -925,13 +930,29 @@ impl ProbeContext {
             }
             CtxField::UserFamily
             | CtxField::UserPort
-            | CtxField::Family
-            | CtxField::SockType
-            | CtxField::Protocol
                 if !matches!(self.probe_type, EbpfProgramType::CgroupSockAddr) =>
             {
                 Some(format!(
                     "ctx.{} is only available on cgroup_sock_addr programs",
+                    field.display_name()
+                ))
+            }
+            CtxField::Family | CtxField::SockType | CtxField::Protocol
+                if !matches!(
+                    self.probe_type,
+                    EbpfProgramType::CgroupSockAddr | EbpfProgramType::CgroupSock
+                ) =>
+            {
+                Some(format!(
+                    "ctx.{} is only available on cgroup_sock and cgroup_sock_addr programs",
+                    field.display_name()
+                ))
+            }
+            CtxField::BoundDevIf | CtxField::SockMark | CtxField::SockPriority
+                if !matches!(self.probe_type, EbpfProgramType::CgroupSock) =>
+            {
+                Some(format!(
+                    "ctx.{} is only available on cgroup_sock programs",
                     field.display_name()
                 ))
             }
@@ -1042,6 +1063,7 @@ pub enum ProgramAttachKind {
     PerfEvent,
     Tc,
     CgroupSkb,
+    CgroupSock,
     CgroupSysctl,
     CgroupSockopt,
     CgroupSockAddr,
@@ -1059,6 +1081,7 @@ pub enum ProgramTargetKind {
     PerfEventTarget,
     TrafficControlInterface,
     CgroupPathAttachType,
+    CgroupPathSockAttachType,
     CgroupPath,
     CgroupPathSockoptAttachType,
     CgroupPathSockAddrAttachType,
@@ -1248,6 +1271,7 @@ const XDP_SPEC_ALIASES: &[&str] = &["xdp"];
 const PERF_EVENT_SPEC_ALIASES: &[&str] = &["perf_event"];
 const TC_SPEC_ALIASES: &[&str] = &["tc"];
 const CGROUP_SKB_SPEC_ALIASES: &[&str] = &["cgroup_skb"];
+const CGROUP_SOCK_SPEC_ALIASES: &[&str] = &["cgroup_sock"];
 const CGROUP_SYSCTL_SPEC_ALIASES: &[&str] = &["cgroup_sysctl"];
 const CGROUP_SOCKOPT_SPEC_ALIASES: &[&str] = &["cgroup_sockopt"];
 const CGROUP_SOCK_ADDR_SPEC_ALIASES: &[&str] = &["cgroup_sock_addr"];
@@ -1626,6 +1650,33 @@ const CGROUP_SKB_INFO: ProgramTypeInfo = ProgramTypeInfo {
     is_userspace: false,
 };
 
+const CGROUP_SOCK_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::CgroupSock,
+    canonical_prefix: "cgroup_sock",
+    spec_aliases: CGROUP_SOCK_SPEC_ALIASES,
+    section_prefix: "cgroup",
+    section_uses_target: false,
+    attach_kind: ProgramAttachKind::CgroupSock,
+    target_kind: ProgramTargetKind::CgroupPathSockAttachType,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+    supports_task_ctx_fields: false,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    packet_context_kind: None,
+    supports_packet_len_ctx_field: false,
+    supports_packet_data_ctx_fields: false,
+    supports_ingress_ifindex_ctx_field: false,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
+    supports_xdp_md_ctx_fields: false,
+    supports_stack_ctx_fields: false,
+    supports_tracepoint_fields: false,
+    is_userspace: false,
+};
+
 const CGROUP_SYSCTL_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::CgroupSysctl,
     canonical_prefix: "cgroup_sysctl",
@@ -1756,6 +1807,7 @@ const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "xdp",
     "tc",
     "cgroup_skb",
+    "cgroup_sock",
     "cgroup_sysctl",
     "cgroup_sockopt",
     "cgroup_sock_addr",

@@ -66,6 +66,18 @@ impl<'a> MirToEbpfCompiler<'a> {
         (24, 28, 32, 36)
     }
 
+    fn bpf_sock_offsets() -> (i16, i16, i16, i16, i16, i16) {
+        // struct bpf_sock {
+        //     __u32 bound_dev_if;
+        //     __u32 family;
+        //     __u32 type;
+        //     __u32 protocol;
+        //     __u32 mark;
+        //     __u32 priority;
+        // };
+        (0, 4, 8, 12, 16, 20)
+    }
+
     fn compile_ctx_u32_array_to_stack(
         &mut self,
         dst: EbpfReg,
@@ -621,17 +633,53 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::Family => {
-                let offset = Self::bpf_sock_addr_offsets().4;
+                let offset = if matches!(
+                    self.probe_ctx.as_ref().map(|ctx| ctx.probe_type),
+                    Some(EbpfProgramType::CgroupSock)
+                ) {
+                    Self::bpf_sock_offsets().1
+                } else {
+                    Self::bpf_sock_addr_offsets().4
+                };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::SockType => {
-                let offset = Self::bpf_sock_addr_offsets().5;
+                let offset = if matches!(
+                    self.probe_ctx.as_ref().map(|ctx| ctx.probe_type),
+                    Some(EbpfProgramType::CgroupSock)
+                ) {
+                    Self::bpf_sock_offsets().2
+                } else {
+                    Self::bpf_sock_addr_offsets().5
+                };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::Protocol => {
-                let offset = Self::bpf_sock_addr_offsets().6;
+                let offset = if matches!(
+                    self.probe_ctx.as_ref().map(|ctx| ctx.probe_type),
+                    Some(EbpfProgramType::CgroupSock)
+                ) {
+                    Self::bpf_sock_offsets().3
+                } else {
+                    Self::bpf_sock_addr_offsets().6
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::BoundDevIf => {
+                let offset = Self::bpf_sock_offsets().0;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockMark => {
+                let offset = Self::bpf_sock_offsets().4;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockPriority => {
+                let offset = Self::bpf_sock_offsets().5;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }

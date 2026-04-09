@@ -310,6 +310,23 @@ mod linux_tests {
         }
     }
 
+    /// Test parsing cgroup_sock specification
+    #[test]
+    fn test_parse_cgroup_sock_spec() {
+        let result = parse_probe_spec("cgroup_sock:/sys/fs/cgroup:sock_create");
+
+        match result {
+            Ok((prog_type, target)) => {
+                assert!(
+                    format!("{:?}", prog_type).contains("CgroupSock"),
+                    "Expected CgroupSock type"
+                );
+                assert_eq!(target, "/sys/fs/cgroup:sock_create");
+            }
+            Err(e) => panic!("Unexpected error: {:?}", e),
+        }
+    }
+
     /// Test parsing cgroup_sockopt specification
     #[test]
     fn test_parse_cgroup_sockopt_spec() {

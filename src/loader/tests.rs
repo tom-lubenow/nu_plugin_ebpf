@@ -253,6 +253,13 @@ fn test_parse_probe_spec_cgroup_skb_egress() {
 }
 
 #[test]
+fn test_parse_probe_spec_cgroup_sock_create() {
+    let (prog_type, target) = parse_probe_spec("cgroup_sock:/sys/fs/cgroup:sock_create").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::CgroupSock);
+    assert_eq!(target, "/sys/fs/cgroup:sock_create");
+}
+
+#[test]
 fn test_parse_probe_spec_cgroup_sysctl_root() {
     let (prog_type, target) = parse_probe_spec("cgroup_sysctl:/sys/fs/cgroup").unwrap();
     assert_eq!(prog_type, EbpfProgramType::CgroupSysctl);
@@ -302,6 +309,21 @@ fn test_parse_program_spec_cgroup_sysctl_is_structured() {
         }
     );
     assert_eq!(spec.to_string(), "cgroup_sysctl:/sys/fs/cgroup");
+}
+
+#[test]
+fn test_parse_program_spec_cgroup_sock_is_structured() {
+    let spec = parse_program_spec("cgroup_sock:/sys/fs/cgroup:sock_create").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::CgroupSock {
+            target: CgroupSockTarget {
+                cgroup_path: "/sys/fs/cgroup".to_string(),
+                attach_type: aya::programs::CgroupSockAttachType::SockCreate,
+            }
+        }
+    );
+    assert_eq!(spec.to_string(), "cgroup_sock:/sys/fs/cgroup:sock_create");
 }
 
 #[test]

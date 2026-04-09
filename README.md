@@ -5,7 +5,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: Write tracing logic in familiar Nushell syntax
-- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, lsm, perf_event, xdp, tc, cgroup_skb, cgroup_sysctl, cgroup_sockopt, cgroup_sock_addr, initial struct_ops object support
+- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, lsm, perf_event, xdp, tc, cgroup_skb, cgroup_sock, cgroup_sysctl, cgroup_sockopt, cgroup_sock_addr, initial struct_ops object support
 - **Aggregations**: Count by key, histograms, timing measurements
 - **Event streaming**: Real-time event output via ring buffers
 - **Map sharing**: Share data between probes with `--pin`
@@ -90,6 +90,9 @@ let id = ebpf attach 'cgroup_skb:/sys/fs/cgroup:egress' {|ctx| $ctx.packet_len |
 
 # Count sysctl reads versus writes inside a cgroup
 let id = ebpf attach 'cgroup_sysctl:/sys/fs/cgroup' {|ctx| $ctx.write | count; 'allow' }
+
+# Count socket families at cgroup socket-create time
+let id = ebpf attach 'cgroup_sock:/sys/fs/cgroup:sock_create' {|ctx| $ctx.family | count; 'allow' }
 
 # Count getsockopt option names inside a cgroup
 let id = ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| $ctx.optname | count; 'allow' }
@@ -268,9 +271,12 @@ The closure receives a context parameter with these fields:
 | `user_ip4` | IPv4 destination/source address in host byte order | cgroup_sock_addr (*4 hooks) |
 | `user_ip6` | IPv6 address as four host-order `u32` words | cgroup_sock_addr (*6 hooks) |
 | `user_port` | Requested port in host byte order | cgroup_sock_addr |
-| `family` | Kernel socket family | cgroup_sock_addr |
-| `sock_type` | Socket type | cgroup_sock_addr |
-| `protocol` | Socket protocol | cgroup_sock_addr |
+| `family` | Kernel socket family | cgroup_sock, cgroup_sock_addr |
+| `sock_type` | Socket type | cgroup_sock, cgroup_sock_addr |
+| `protocol` | Socket protocol | cgroup_sock, cgroup_sock_addr |
+| `bound_dev_if` | Bound device ifindex | cgroup_sock |
+| `mark` | Socket mark | cgroup_sock |
+| `priority` | Socket priority | cgroup_sock |
 | `msg_src_ip4` | IPv4 source address in host byte order | cgroup_sock_addr (sendmsg4, recvmsg4) |
 | `msg_src_ip6` | IPv6 source address as four host-order `u32` words | cgroup_sock_addr (sendmsg6, recvmsg6) |
 | `arg0`-`argN` | Function arguments | kprobe, uprobe, fentry, fexit |
@@ -310,6 +316,13 @@ omitting `cpu=` attaches on all online CPUs. `pid=N` scopes the event to a
 single process, and it can be combined with `cpu=N` for one-process/one-cpu
 sampling. The initial surface uses the ordinary helper-backed fields like
 `ctx.pid`, `ctx.comm`, `ctx.cpu`, and `ctx.ktime`.
+
+`cgroup_sock` currently supports `sock_create`, `sock_release`,
+`post_bind4`, and `post_bind6`. It exposes `ctx.cpu`, `ctx.ktime`,
+`ctx.family`, `ctx.sock_type`, `ctx.protocol`, `ctx.bound_dev_if`,
+`ctx.mark`, and `ctx.priority`, and closures can return `"allow"` /
+`"deny"` instead of raw `1` / `0` result codes. Address fields from the
+underlying `struct bpf_sock` are not surfaced yet.
 
 `cgroup_sock_addr` currently exposes `ctx.cpu`, `ctx.ktime`,
 `ctx.user_family`, `ctx.user_ip4`, `ctx.user_ip6`, `ctx.user_port`,

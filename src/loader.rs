@@ -11,9 +11,9 @@ use std::time::{Duration, Instant};
 
 use aya::maps::{HashMap as AyaHashMap, PerCpuHashMap, RingBuf};
 use aya::programs::{
-    CgroupAttachMode, CgroupSkb, CgroupSockAddr, CgroupSockopt, CgroupSysctl, FEntry, FExit,
-    KProbe, Lsm, PerfEvent, PerfEventScope, RawTracePoint, SchedClassifier, TracePoint, UProbe,
-    Xdp, XdpFlags,
+    CgroupAttachMode, CgroupSkb, CgroupSock, CgroupSockAddr, CgroupSockopt, CgroupSysctl, FEntry,
+    FExit, KProbe, Lsm, PerfEvent, PerfEventScope, RawTracePoint, SchedClassifier, TracePoint,
+    UProbe, Xdp, XdpFlags,
     perf_event::{PerfTypeId, SamplePolicy, perf_sw_ids},
     tc,
 };
@@ -97,7 +97,7 @@ mod libbpf;
 mod maps;
 
 pub use crate::program_spec::{
-    CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockoptTarget, PerfEventEvent,
+    CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockTarget, CgroupSockoptTarget, PerfEventEvent,
     PerfEventHardwareEvent, PerfEventSamplePolicy, PerfEventSoftwareEvent, PerfEventTarget,
     ProgramSpec, TcTarget, UprobeTarget,
 };

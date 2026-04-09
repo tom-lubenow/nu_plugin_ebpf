@@ -1620,6 +1620,30 @@ fn test_lower_cgroup_skb_action_alias_return_to_const() {
 }
 
 #[test]
+fn test_lower_cgroup_sock_action_alias_return_to_const() {
+    let hir = make_return_literal_program(HirLiteral::String(b"allow".to_vec()));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock action alias should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(matches!(
+        block.terminator,
+        MirInst::Return {
+            val: Some(MirValue::Const(1))
+        }
+    ));
+}
+
+#[test]
 fn test_lower_cgroup_sock_addr_action_alias_return_to_const() {
     let hir = make_return_literal_program(HirLiteral::String(b"deny".to_vec()));
     let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
@@ -1689,6 +1713,33 @@ fn test_lower_cgroup_sysctl_ctx_write_field() {
         inst,
         MirInst::LoadCtxField {
             field: CtxField::SysctlWrite,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_cgroup_sock_ctx_family_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("family")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock ctx.family should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Family,
             ..
         }
     )));

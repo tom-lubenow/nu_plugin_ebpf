@@ -24,6 +24,23 @@ fn section_name_for_program(
                 ))),
             }
         }
+        EbpfProgramType::CgroupSock => {
+            let (_path, attach_type) = target.rsplit_once(':').ok_or_else(|| {
+                CompileError::InvalidProgram(format!(
+                    "invalid cgroup_sock target '{}': expected cgroup_path:sock_create|sock_release|post_bind4|post_bind6",
+                    target
+                ))
+            })?;
+            match attach_type {
+                "sock_create" | "sock_release" | "post_bind4" | "post_bind6" => {
+                    Ok(format!("cgroup/{attach_type}"))
+                }
+                other => Err(CompileError::InvalidProgram(format!(
+                    "invalid cgroup_sock attach type '{}': expected sock_create, sock_release, post_bind4, or post_bind6",
+                    other
+                ))),
+            }
+        }
         EbpfProgramType::CgroupSockAddr => {
             let (_path, attach_type) = target.rsplit_once(':').ok_or_else(|| {
                 CompileError::InvalidProgram(format!(

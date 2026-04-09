@@ -1227,6 +1227,9 @@ impl<'a> HirToMirLowering<'a> {
             "family" => CtxField::Family,
             "sock_type" | "type" => CtxField::SockType,
             "protocol" => CtxField::Protocol,
+            "bound_dev_if" => CtxField::BoundDevIf,
+            "mark" => CtxField::SockMark,
+            "priority" => CtxField::SockPriority,
             "msg_src_ip4" => CtxField::MsgSrcIp4,
             "msg_src_ip6" => CtxField::MsgSrcIp6,
             "write" => CtxField::SysctlWrite,
@@ -4575,6 +4578,9 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::Family
             | CtxField::SockType
             | CtxField::Protocol
+            | CtxField::BoundDevIf
+            | CtxField::SockMark
+            | CtxField::SockPriority
             | CtxField::MsgSrcIp4
             | CtxField::SysctlWrite
             | CtxField::SysctlFilePos => (MirType::U32, Some(MirType::U32)),

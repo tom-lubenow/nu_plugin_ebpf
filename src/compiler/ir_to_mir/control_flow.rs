@@ -77,6 +77,7 @@ impl<'a> HirToMirLowering<'a> {
                 _ => None,
             },
             EbpfProgramType::CgroupSkb
+            | EbpfProgramType::CgroupSock
             | EbpfProgramType::CgroupSysctl
             | EbpfProgramType::CgroupSockopt
             | EbpfProgramType::CgroupSockAddr => match alias.as_str() {

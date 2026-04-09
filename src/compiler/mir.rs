@@ -424,6 +424,12 @@ pub enum CtxField {
     SockType,
     /// bpf_sock_addr::protocol
     Protocol,
+    /// bpf_sock::bound_dev_if
+    BoundDevIf,
+    /// bpf_sock::mark
+    SockMark,
+    /// bpf_sock::priority
+    SockPriority,
     /// bpf_sock_addr::msg_src_ip4 (normalized to host byte order)
     MsgSrcIp4,
     /// bpf_sock_addr::msg_src_ip6[4] (normalized to host-byte-order u32 words)
@@ -475,6 +481,9 @@ impl CtxField {
             CtxField::Family => "family".to_string(),
             CtxField::SockType => "sock_type".to_string(),
             CtxField::Protocol => "protocol".to_string(),
+            CtxField::BoundDevIf => "bound_dev_if".to_string(),
+            CtxField::SockMark => "mark".to_string(),
+            CtxField::SockPriority => "priority".to_string(),
             CtxField::MsgSrcIp4 => "msg_src_ip4".to_string(),
             CtxField::MsgSrcIp6 => "msg_src_ip6".to_string(),
             CtxField::SysctlWrite => "write".to_string(),
