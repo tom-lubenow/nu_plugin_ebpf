@@ -13,7 +13,7 @@ use aya::maps::{HashMap as AyaHashMap, PerCpuHashMap, RingBuf};
 use aya::programs::{
     CgroupAttachMode, CgroupDevice, CgroupSkb, CgroupSock, CgroupSockAddr, CgroupSockopt,
     CgroupSysctl, FEntry, FExit, KProbe, Lsm, PerfEvent, PerfEventScope, RawTracePoint,
-    SchedClassifier, SkLookup, SockOps, TracePoint, UProbe, Xdp, XdpFlags,
+    SchedClassifier, SkLookup, SockOps, SocketFilter, TracePoint, UProbe, Xdp, XdpFlags,
     perf_event::{PerfTypeId, SamplePolicy, perf_sw_ids},
     tc,
 };
@@ -99,8 +99,8 @@ mod maps;
 pub use crate::program_spec::{
     CgroupDeviceTarget, CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockTarget,
     CgroupSockoptTarget, PerfEventEvent, PerfEventHardwareEvent, PerfEventSamplePolicy,
-    PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, SkLookupTarget, SockOpsTarget, TcTarget,
-    UprobeTarget,
+    PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, SkLookupTarget, SockOpsTarget,
+    SocketFilterTarget, TcTarget, UprobeTarget,
 };
 pub use targets::{parse_probe_spec, parse_program_spec};
 
@@ -116,6 +116,8 @@ pub struct ActiveProbe {
     aya_ebpf: Option<Ebpf>,
     /// The loaded libbpf-backed struct_ops runtime handle.
     struct_ops: Option<LibbpfStructOpsHandle>,
+    /// Loader-owned UDP socket kept open for socket_filter attachments.
+    owned_udp_socket: Option<std::net::UdpSocket>,
     /// Whether this probe has a ring buffer map for output
     has_ringbuf: bool,
     /// Whether this probe has a counter map (hash or per-CPU hash, integer keys)
@@ -158,6 +160,7 @@ impl std::fmt::Debug for ActiveProbe {
                     "none"
                 },
             )
+            .field("has_udp_socket", &self.owned_udp_socket.is_some())
             .field("has_ringbuf", &self.has_ringbuf)
             .field("has_counter_map", &self.has_counter_map)
             .field("has_string_counter_map", &self.has_string_counter_map)

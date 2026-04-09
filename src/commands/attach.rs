@@ -1948,6 +1948,7 @@ Supported attach types:
   - uprobe, uretprobe
   - lsm
   - perf_event
+  - socket_filter
   - xdp, tc
   - cgroup_skb
   - cgroup_device
@@ -2001,7 +2002,9 @@ Context parameter syntax (recommended):
     Note: XDP closures can return action aliases like `pass`, `drop`,
     `tx`, and `redirect`, and TC closures can return aliases like `ok`,
     `shot`, `pipe`, and `redirect`. cgroup_skb closures can return
-    `allow` or `deny`. Raw numeric return codes still work. Packet reads currently support scalar byte access
+    `allow` or `deny`. socket_filter currently uses raw numeric return
+    values: return `0` to drop or a positive snapshot length to keep the
+    packet. Raw numeric return codes still work. Packet reads currently support scalar byte access
     through `get`/indexing, direct `u16be`/`u32be` cell-path scalar loads,
     and typed header views `eth`, `ipv4`, `udp`, and `tcp`. Those views also
     support `payload` stepping: `eth.payload` skips Ethernet and a single
@@ -2025,6 +2028,18 @@ Context parameter syntax (recommended):
     or `perf_event:hardware:cpu-cycles`, with optional selectors `cpu=N`,
     `pid=N`, `period=N`, or `freq=N`. Omitting the sample policy defaults
     to `period=1000000`, and omitting `cpu=` attaches on all online CPUs.
+
+  socket_filter targets:
+    {|ctx| $ctx.cpu }     - Get current CPU ID
+    {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.packet_len } - Get packet length from `skb->len`
+    {|ctx| $ctx.data }    - Get packet data pointer
+    {|ctx| $ctx.data_end } - Get packet end pointer
+    {|ctx| $ctx.ingress_ifindex } - Get the skb ifindex
+    Note: the initial socket_filter surface uses targets like
+    `socket_filter:udp4:127.0.0.1:31337`, which create and hold open a
+    bound UDP4 receive socket while the program is attached. Return values
+    are raw snapshot lengths: `0` drops the packet, positive values keep it.
 
   lsm targets:
     {|ctx| $ctx.pid }    - Get current thread ID at hook time
@@ -2276,7 +2291,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', or 'sk_lookup:/proc/self/ns/net').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'socket_filter:udp4:127.0.0.1:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', or 'sk_lookup:/proc/self/ns/net').",
             )
             .required(
                 "body",
@@ -2321,6 +2336,7 @@ Requirements:
             "uretprobe",
             "userspace",
             "perf_event",
+            "socket_filter",
             "xdp",
             "tc",
             "cgroup_skb",
@@ -2370,6 +2386,11 @@ Requirements:
             Example {
                 example: "ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.cpu | count; 0 }",
                 description: "Count software cpu-clock samples by CPU",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'socket_filter:udp4:127.0.0.1:31337' {|ctx| $ctx.packet_len | count; $ctx.packet_len }",
+                description: "Count loopback UDP packet lengths on a bound socket_filter receive socket",
                 result: None,
             },
             Example {

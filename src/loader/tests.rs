@@ -147,6 +147,13 @@ fn test_parse_probe_spec_perf_event() {
 }
 
 #[test]
+fn test_parse_probe_spec_socket_filter_udp4() {
+    let (prog_type, target) = parse_probe_spec("socket_filter:udp4:127.0.0.1:31337").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::SocketFilter);
+    assert_eq!(target, "udp4:127.0.0.1:31337");
+}
+
+#[test]
 fn test_parse_program_spec_perf_event_is_structured() {
     let spec = parse_program_spec("perf_event:software:task-clock:cpu=0:pid=123:freq=99").unwrap();
     assert_eq!(
@@ -285,6 +292,22 @@ fn test_parse_probe_spec_sk_lookup_root_netns() {
     let (prog_type, target) = parse_probe_spec("sk_lookup:/proc/self/ns/net").unwrap();
     assert_eq!(prog_type, EbpfProgramType::SkLookup);
     assert_eq!(target, "/proc/self/ns/net");
+}
+
+#[test]
+fn test_parse_program_spec_socket_filter_is_structured() {
+    let spec = parse_program_spec("socket_filter:udp4:127.0.0.1:31337").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::SocketFilter {
+            target: crate::program_spec::SocketFilterTarget {
+                socket_kind: crate::program_spec::SocketFilterSocketKind::Udp4,
+                bind_ip: "127.0.0.1".to_string(),
+                bind_port: 31337,
+            }
+        }
+    );
+    assert_eq!(spec.to_string(), "socket_filter:udp4:127.0.0.1:31337");
 }
 
 #[test]

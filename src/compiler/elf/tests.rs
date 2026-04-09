@@ -47,6 +47,21 @@ fn test_xdp_section_name() {
 }
 
 #[test]
+fn test_socket_filter_section_name() {
+    let prog = EbpfProgram::from_bytecode(
+        EbpfProgramType::SocketFilter,
+        "udp4:127.0.0.1:31337",
+        "test",
+        vec![],
+    );
+    assert_eq!(
+        prog.section_name()
+            .expect("socket_filter section name should build"),
+        "socket"
+    );
+}
+
+#[test]
 fn test_tc_section_name() {
     let prog = EbpfProgram::from_bytecode(EbpfProgramType::Tc, "lo:ingress", "test", vec![]);
     assert_eq!(
@@ -110,6 +125,21 @@ fn test_program_type_metadata_for_sk_lookup() {
     assert_eq!(info.retval_access, ProgramValueAccess::None);
     assert!(info.supports_cpu_ctx_field);
     assert!(info.supports_timestamp_ctx_field);
+    assert!(info.supports_ingress_ifindex_ctx_field);
+}
+
+#[test]
+fn test_program_type_metadata_for_socket_filter() {
+    let info = EbpfProgramType::SocketFilter.info();
+    assert_eq!(info.canonical_prefix, "socket_filter");
+    assert_eq!(info.attach_kind, ProgramAttachKind::SocketFilter);
+    assert_eq!(info.target_kind, ProgramTargetKind::SocketFilterTarget);
+    assert_eq!(info.arg_access, ProgramValueAccess::None);
+    assert_eq!(info.retval_access, ProgramValueAccess::None);
+    assert!(info.supports_cpu_ctx_field);
+    assert!(info.supports_timestamp_ctx_field);
+    assert!(info.supports_packet_len_ctx_field);
+    assert!(info.supports_packet_data_ctx_fields);
     assert!(info.supports_ingress_ifindex_ctx_field);
 }
 
@@ -201,6 +231,10 @@ fn test_program_type_supports_raw_tracepoint_alias() {
     assert_eq!(
         EbpfProgramType::from_spec_prefix("xdp"),
         Some(EbpfProgramType::Xdp)
+    );
+    assert_eq!(
+        EbpfProgramType::from_spec_prefix("sock_filter"),
+        Some(EbpfProgramType::SocketFilter)
     );
     assert_eq!(
         EbpfProgramType::from_spec_prefix("tc"),
@@ -1437,6 +1471,18 @@ fn test_probe_context_allows_sock_addr_fields_on_cgroup_sock_addr() {
     assert!(ctx.ctx_field_access_error(&CtxField::Family).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::SockType).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Protocol).is_none());
+}
+
+#[test]
+fn test_probe_context_allows_socket_filter_packet_fields() {
+    let ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::IngressIfindex)
+            .is_none()
+    );
 }
 
 #[test]

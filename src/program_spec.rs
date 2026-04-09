@@ -147,6 +147,42 @@ impl SockOpsTarget {
     }
 }
 
+/// Supported socket kinds for the initial socket_filter surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SocketFilterSocketKind {
+    Udp4,
+}
+
+impl SocketFilterSocketKind {
+    pub fn name(&self) -> &'static str {
+        match self {
+            SocketFilterSocketKind::Udp4 => "udp4",
+        }
+    }
+}
+
+/// Parsed socket_filter target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SocketFilterTarget {
+    /// Bound socket kind.
+    pub socket_kind: SocketFilterSocketKind,
+    /// Local IPv4 bind address.
+    pub bind_ip: String,
+    /// Local UDP port.
+    pub bind_port: u16,
+}
+
+impl SocketFilterTarget {
+    pub fn target_string(&self) -> String {
+        format!(
+            "{}:{}:{}",
+            self.socket_kind.name(),
+            self.bind_ip,
+            self.bind_port
+        )
+    }
+}
+
 /// Parsed cgroup_sock_addr target information.
 #[derive(Debug, Clone)]
 pub struct CgroupSockAddrTarget {
@@ -378,6 +414,7 @@ pub enum ProgramSpec {
     Uretprobe { target: UprobeTarget },
     Xdp { interface: String },
     PerfEvent { target: PerfEventTarget },
+    SocketFilter { target: SocketFilterTarget },
     SkLookup { target: SkLookupTarget },
     CgroupDevice { target: CgroupDeviceTarget },
     SockOps { target: SockOpsTarget },
@@ -405,6 +442,7 @@ impl ProgramSpec {
             }
             ProgramSpec::Xdp { interface } => interface.clone(),
             ProgramSpec::PerfEvent { target } => target.target_string(),
+            ProgramSpec::SocketFilter { target } => target.target_string(),
             ProgramSpec::SkLookup { target } => target.target_string(),
             ProgramSpec::CgroupDevice { target } => target.target_string(),
             ProgramSpec::SockOps { target } => target.target_string(),

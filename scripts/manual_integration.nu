@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 54
+const TOTAL_STEPS = 55
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -110,6 +110,15 @@ except OSError:
     pass
 s.close()
 ' out+err> /dev/null
+}
+
+def trigger-udp-loopback [port: int] {
+    ^python3 -c 'import socket, sys
+port = int(sys.argv[1])
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.sendto(b"nu_plugin_ebpf", ("127.0.0.1", port))
+s.close()
+' ($port | into string) out+err> /dev/null
 }
 
 def trigger-cpu-work [] {
@@ -695,7 +704,14 @@ step 48 "sk_lookup root netns local_port counter" {
     } { trigger-loopback-connect } "sk_lookup local_port counter"
 }
 
-step 49 "sched_ext_ops dry-run name-only object" {
+step 49 "socket_filter udp4 loopback packet length counter" {
+    count-at-least-one "socket_filter:udp4:127.0.0.1:41337" {|ctx|
+        $ctx.packet_len | count
+        $ctx.packet_len
+    } { trigger-udp-loopback 41337 } "socket_filter packet length counter"
+}
+
+step 50 "sched_ext_ops dry-run name-only object" {
     let code = ([
         'ebpf attach --dry-run "struct_ops:sched_ext_ops" {'
         '    name: "nu.demo_1"'
@@ -710,7 +726,7 @@ step 49 "sched_ext_ops dry-run name-only object" {
     $result
 }
 
-step 50 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
+step 51 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
     let code = ([
         'ebpf attach --dry-run "struct_ops:sched_ext_ops" {'
         '    name: "nu.demo_1"'
@@ -738,7 +754,7 @@ step 50 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
     $result
 }
 
-step 51 "tcp_congestion_ops live attach and detach" {
+step 52 "tcp_congestion_ops live attach and detach" {
     let code = ([
         'let id = (ebpf attach "struct_ops:tcp_congestion_ops" {'
         '    name: "nu_demo"'
@@ -761,7 +777,7 @@ step 51 "tcp_congestion_ops live attach and detach" {
     $id
 }
 
-step 52 "lsm file_open dry-run" {
+step 53 "lsm file_open dry-run" {
     let code = ([
         'ebpf attach --dry-run "lsm:file_open" {|ctx| $ctx.arg0.f_flags | count; 0 } | describe'
     ] | str join (char newline))
@@ -774,14 +790,14 @@ step 52 "lsm file_open dry-run" {
     $result
 }
 
-step 53 "perf_event software cpu-clock counter" {
+step 54 "perf_event software cpu-clock counter" {
     count-at-least-one "perf_event:software:cpu-clock:period=100000" {|ctx|
         $ctx.cpu | count
         0
     } { trigger-cpu-work } "perf_event cpu-clock counter"
 }
 
-step 54 "verify no leaked probes" {
+step 55 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

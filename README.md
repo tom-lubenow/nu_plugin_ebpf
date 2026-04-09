@@ -5,7 +5,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: Write tracing logic in familiar Nushell syntax
-- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, lsm, perf_event, xdp, tc, cgroup_skb, cgroup_device, cgroup_sock, sock_ops, cgroup_sysctl, cgroup_sockopt, cgroup_sock_addr, sk_lookup, initial struct_ops object support
+- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, lsm, perf_event, socket_filter, xdp, tc, cgroup_skb, cgroup_device, cgroup_sock, sock_ops, cgroup_sysctl, cgroup_sockopt, cgroup_sock_addr, sk_lookup, initial struct_ops object support
 - **Aggregations**: Count by key, histograms, timing measurements
 - **Event streaming**: Real-time event output via ring buffers
 - **Map sharing**: Share data between probes with `--pin`
@@ -78,6 +78,9 @@ ebpf attach --dry-run 'lsm:file_open' {|ctx| $ctx.arg0.f_flags | count; 0 }
 
 # Count software cpu-clock samples by CPU
 let id = ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.cpu | count; 0 }
+
+# Count loopback UDP packets by packet length on a bound socket_filter receive socket
+let id = ebpf attach 'socket_filter:udp4:127.0.0.1:31337' {|ctx| $ctx.packet_len | count; $ctx.packet_len }
 
 # Count loopback packets by packet length via XDP, then pass them through
 let id = ebpf attach 'xdp:lo' {|ctx| $ctx.packet_len | count; 'pass' }
@@ -269,10 +272,10 @@ The closure receives a context parameter with these fields:
 | `comm` | Process name (16 bytes) | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
 | `cpu` | CPU ID | All |
 | `ktime` | Kernel timestamp (ns) | All |
-| `packet_len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs) | xdp, tc, cgroup_skb |
-| `data` | Packet data pointer | xdp, tc, cgroup_skb |
-| `data_end` | Packet end pointer | xdp, tc, cgroup_skb |
-| `ingress_ifindex` | Ingress interface index | xdp, tc, cgroup_skb, sk_lookup |
+| `packet_len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs) | xdp, socket_filter, tc, cgroup_skb |
+| `data` | Packet data pointer | xdp, socket_filter, tc, cgroup_skb |
+| `data_end` | Packet end pointer | xdp, socket_filter, tc, cgroup_skb |
+| `ingress_ifindex` | Ingress interface index | xdp, socket_filter, tc, cgroup_skb, sk_lookup |
 | `access_type` | Encoded cgroup device access type | cgroup_device |
 | `major` | Requested device major number | cgroup_device |
 | `minor` | Requested device minor number | cgroup_device |
@@ -306,8 +309,9 @@ The closure receives a context parameter with these fields:
 
 Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/format`.
 
-`xdp` and `tc` both expose `ctx.cpu`, `ctx.ktime`, `ctx.packet_len`,
-`ctx.ingress_ifindex`, and raw packet pointers `ctx.data` and `ctx.data_end`.
+`xdp`, `socket_filter`, and `tc` all expose `ctx.cpu`, `ctx.ktime`,
+`ctx.packet_len`, `ctx.ingress_ifindex`, and raw packet pointers `ctx.data`
+and `ctx.data_end`.
 Scalar packet byte reads work through normal Nushell indexing such as
 `($ctx.data | get 0)`, and fixed-width big-endian scalars can be read directly
 through cell paths such as `$ctx.data.u16be.6` or `$ctx.data.u32be.0`. These
@@ -318,7 +322,11 @@ and `tcp` are also available, for example `$ctx.data.eth.ethertype` or
 `$ctx.data.eth.payload.ipv4.payload` skips a runtime-sized IPv4 header using
 the IHL nibble, and `$ctx.data.eth.payload.ipv4.payload.tcp.payload` skips a
 runtime-sized TCP header using the data offset. `xdp` additionally exposes `ctx.ifindex`,
-`ctx.rx_queue_index`, and `ctx.egress_ifindex`. Variable header lengths, VLAN
+`ctx.rx_queue_index`, and `ctx.egress_ifindex`. The initial `socket_filter`
+surface uses targets like `socket_filter:udp4:127.0.0.1:31337`, which create
+and keep open a bound UDP4 receive socket while attached. `socket_filter`
+return values are raw snapshot lengths: return `0` to drop the packet or a
+positive value to keep it. Variable header lengths, VLAN
 options parsing, deeper TCP option parsing, stacked VLAN tags, and named
 packet-program action helpers are still not modeled, but compile-time action
 aliases are available in return position. XDP closures can return strings like

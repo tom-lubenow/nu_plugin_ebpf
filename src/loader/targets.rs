@@ -5,13 +5,14 @@ use crate::program_spec::{
     CgroupDeviceTarget, CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockTarget,
     CgroupSockoptTarget, DEFAULT_PERF_EVENT_PERIOD, PerfEventEvent, PerfEventHardwareEvent,
     PerfEventSamplePolicy, PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, SkLookupTarget,
-    SockOpsTarget, TcTarget, UprobeTarget,
+    SockOpsTarget, SocketFilterSocketKind, SocketFilterTarget, TcTarget, UprobeTarget,
 };
 use aya::programs::{
     CgroupSkbAttachType, CgroupSockAddrAttachType, CgroupSockAttachType, CgroupSockoptAttachType,
     TcAttachType,
 };
 use aya::util::online_cpus;
+use std::net::Ipv4Addr;
 use std::path::Path;
 
 impl UprobeTarget {
@@ -292,6 +293,64 @@ impl SockOpsTarget {
 
         Ok(Self {
             cgroup_path: target.to_string(),
+        })
+    }
+}
+
+impl SocketFilterTarget {
+    /// Parse a socket_filter target string of the form `udp4:127.0.0.1:31337`.
+    pub fn parse(target: &str) -> Result<Self, LoadError> {
+        let mut parts = target.split(':');
+        let socket_kind = parts.next().ok_or_else(|| {
+            LoadError::Load(format!(
+                "Invalid socket_filter target: {target}. Expected format: udp4:IP:PORT"
+            ))
+        })?;
+        let bind_ip = parts.next().ok_or_else(|| {
+            LoadError::Load(format!(
+                "Invalid socket_filter target: {target}. Expected format: udp4:IP:PORT"
+            ))
+        })?;
+        let bind_port = parts.next().ok_or_else(|| {
+            LoadError::Load(format!(
+                "Invalid socket_filter target: {target}. Expected format: udp4:IP:PORT"
+            ))
+        })?;
+
+        if parts.next().is_some() {
+            return Err(LoadError::Load(format!(
+                "Invalid socket_filter target: {target}. Expected format: udp4:IP:PORT"
+            )));
+        }
+
+        let socket_kind = match socket_kind {
+            "udp4" => SocketFilterSocketKind::Udp4,
+            _ => {
+                return Err(LoadError::Load(format!(
+                    "Unsupported socket_filter socket kind: {socket_kind}. Expected udp4"
+                )));
+            }
+        };
+
+        bind_ip.parse::<Ipv4Addr>().map_err(|e| {
+            LoadError::Load(format!(
+                "Invalid socket_filter IPv4 bind address '{bind_ip}': {e}"
+            ))
+        })?;
+
+        let bind_port = bind_port.parse::<u16>().map_err(|e| {
+            LoadError::Load(format!("Invalid socket_filter port '{bind_port}': {e}"))
+        })?;
+        if bind_port == 0 {
+            return Err(LoadError::Load(
+                "socket_filter port must be non-zero".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            socket_kind,
+            bind_ip: bind_ip.to_string(),
+            bind_port,
         })
     }
 }
@@ -681,6 +740,11 @@ fn validate_sk_lookup_target(target: &str) -> Result<(), LoadError> {
     Ok(())
 }
 
+fn validate_socket_filter_target(target: &str) -> Result<(), LoadError> {
+    SocketFilterTarget::parse(target)?;
+    Ok(())
+}
+
 fn validate_target_for_program_type(
     prog_type: EbpfProgramType,
     target: &str,
@@ -734,6 +798,7 @@ fn validate_target_for_program_type(
             }
             Ok(())
         }
+        ProgramTargetKind::SocketFilterTarget => validate_socket_filter_target(target),
         ProgramTargetKind::NetworkNamespacePath => validate_sk_lookup_target(target),
         ProgramTargetKind::TrafficControlInterface => validate_tc_target(target),
         ProgramTargetKind::CgroupPathAttachType => validate_cgroup_skb_target(target),
@@ -776,6 +841,7 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `uretprobe:/path/to/binary:function_name`
 /// - `xdp:interface`
 /// - `perf_event:software:cpu-clock[:cpu=N][:pid=N][:period=N|freq=N]`
+/// - `socket_filter:udp4:127.0.0.1:31337`
 /// - `sk_lookup:/proc/self/ns/net`
 /// - `cgroup_device:/path/to/cgroup`
 /// - `sock_ops:/path/to/cgroup`
@@ -850,6 +916,9 @@ pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
         }),
         EbpfProgramType::PerfEvent => Ok(ProgramSpec::PerfEvent {
             target: PerfEventTarget::parse(target)?,
+        }),
+        EbpfProgramType::SocketFilter => Ok(ProgramSpec::SocketFilter {
+            target: SocketFilterTarget::parse(target)?,
         }),
         EbpfProgramType::SkLookup => Ok(ProgramSpec::SkLookup {
             target: SkLookupTarget::parse(target)?,

@@ -523,6 +523,8 @@ pub enum EbpfProgramType {
     Xdp,
     /// Perf event program attached to software or hardware perf counters
     PerfEvent,
+    /// Socket filter program attached to a socket
+    SocketFilter,
     /// Cgroup device program attached to a cgroup device hook
     CgroupDevice,
     /// Socket lookup program attached to a network namespace
@@ -559,6 +561,7 @@ impl EbpfProgramType {
             EbpfProgramType::Lsm => &LSM_INFO,
             EbpfProgramType::Xdp => &XDP_INFO,
             EbpfProgramType::PerfEvent => &PERF_EVENT_INFO,
+            EbpfProgramType::SocketFilter => &SOCKET_FILTER_INFO,
             EbpfProgramType::CgroupDevice => &CGROUP_DEVICE_INFO,
             EbpfProgramType::SkLookup => &SK_LOOKUP_INFO,
             EbpfProgramType::SockOps => &SOCK_OPS_INFO,
@@ -589,6 +592,7 @@ impl EbpfProgramType {
             EbpfProgramType::Lsm,
             EbpfProgramType::Xdp,
             EbpfProgramType::PerfEvent,
+            EbpfProgramType::SocketFilter,
             EbpfProgramType::CgroupDevice,
             EbpfProgramType::SkLookup,
             EbpfProgramType::SockOps,
@@ -736,6 +740,7 @@ impl ProgramSpec {
             ProgramSpec::Uretprobe { .. } => EbpfProgramType::Uretprobe,
             ProgramSpec::Xdp { .. } => EbpfProgramType::Xdp,
             ProgramSpec::PerfEvent { .. } => EbpfProgramType::PerfEvent,
+            ProgramSpec::SocketFilter { .. } => EbpfProgramType::SocketFilter,
             ProgramSpec::CgroupDevice { .. } => EbpfProgramType::CgroupDevice,
             ProgramSpec::SkLookup { .. } => EbpfProgramType::SkLookup,
             ProgramSpec::SockOps { .. } => EbpfProgramType::SockOps,
@@ -898,7 +903,7 @@ impl ProbeContext {
                 )
             } else {
                 format!(
-                    "ctx.{} is only available on packet-context programs (xdp, tc, cgroup_skb)",
+                    "ctx.{} is only available on packet-context programs (xdp, socket_filter, tc, cgroup_skb)",
                     field.display_name()
                 )
             }
@@ -1124,6 +1129,7 @@ pub enum ProgramAttachKind {
     Lsm,
     Xdp,
     PerfEvent,
+    SocketFilter,
     CgroupDevice,
     SkLookup,
     SockOps,
@@ -1145,6 +1151,7 @@ pub enum ProgramTargetKind {
     UserFunction,
     NetworkInterface,
     PerfEventTarget,
+    SocketFilterTarget,
     NetworkNamespacePath,
     TrafficControlInterface,
     CgroupPathAttachType,
@@ -1336,6 +1343,7 @@ const URETPROBE_SPEC_ALIASES: &[&str] = &["uretprobe"];
 const LSM_SPEC_ALIASES: &[&str] = &["lsm"];
 const XDP_SPEC_ALIASES: &[&str] = &["xdp"];
 const PERF_EVENT_SPEC_ALIASES: &[&str] = &["perf_event"];
+const SOCKET_FILTER_SPEC_ALIASES: &[&str] = &["socket_filter", "sock_filter"];
 const CGROUP_DEVICE_SPEC_ALIASES: &[&str] = &["cgroup_device"];
 const SK_LOOKUP_SPEC_ALIASES: &[&str] = &["sk_lookup"];
 const SOCK_OPS_SPEC_ALIASES: &[&str] = &["sock_ops", "sockops"];
@@ -1666,6 +1674,33 @@ const PERF_EVENT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     is_userspace: false,
 };
 
+const SOCKET_FILTER_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::SocketFilter,
+    canonical_prefix: "socket_filter",
+    spec_aliases: SOCKET_FILTER_SPEC_ALIASES,
+    section_prefix: "socket",
+    section_uses_target: false,
+    attach_kind: ProgramAttachKind::SocketFilter,
+    target_kind: ProgramTargetKind::SocketFilterTarget,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+    supports_task_ctx_fields: false,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    packet_context_kind: Some(PacketContextKind::SkBuff),
+    supports_packet_len_ctx_field: true,
+    supports_packet_data_ctx_fields: true,
+    supports_ingress_ifindex_ctx_field: true,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
+    supports_xdp_md_ctx_fields: false,
+    supports_stack_ctx_fields: false,
+    supports_tracepoint_fields: false,
+    is_userspace: false,
+};
+
 const CGROUP_DEVICE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::CgroupDevice,
     canonical_prefix: "cgroup_device",
@@ -1956,6 +1991,8 @@ const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "uretprobe",
     "perf_event",
     "xdp",
+    "socket_filter",
+    "sock_filter",
     "cgroup_device",
     "sk_lookup",
     "sock_ops",
