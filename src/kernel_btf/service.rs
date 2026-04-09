@@ -242,6 +242,10 @@ pub struct KernelBtf {
 }
 
 impl KernelBtf {
+    fn lsm_hook_function_name(hook_name: &str) -> String {
+        format!("bpf_lsm_{hook_name}")
+    }
+
     const TRAMPOLINE_POINTER_TYPE_DEPTH: usize = 2;
 
     const KERNEL_BTF_PATH: &str = "/sys/kernel/btf/vmlinux";
@@ -458,6 +462,15 @@ impl KernelBtf {
         )))
     }
 
+    /// Resolve a typed trampoline argument slot for an LSM hook.
+    pub fn lsm_hook_arg(
+        &self,
+        hook_name: &str,
+        arg_idx: usize,
+    ) -> Result<Option<TrampolineValueSpec>, BtfError> {
+        self.function_trampoline_arg(&Self::lsm_hook_function_name(hook_name), arg_idx)
+    }
+
     /// Resolve a typed trampoline argument slot for a `struct_ops` callback.
     ///
     /// Returns `Ok(None)` when the callback exists but does not have that argument.
@@ -525,6 +538,15 @@ impl KernelBtf {
             ))
         })?;
         Self::type_info_from_btf_type(&btf, &param_ty, &raw_type_sizes).map(Some)
+    }
+
+    /// Resolve the exact kernel-BTF type for an LSM hook argument.
+    pub fn lsm_hook_arg_type_info(
+        &self,
+        hook_name: &str,
+        arg_idx: usize,
+    ) -> Result<Option<TypeInfo>, BtfError> {
+        self.function_trampoline_arg_type_info(&Self::lsm_hook_function_name(hook_name), arg_idx)
     }
 
     /// Resolve the exact kernel-BTF type for a `struct_ops` callback argument.
@@ -711,6 +733,25 @@ impl KernelBtf {
         Ok(())
     }
 
+    /// Validate that an LSM hook target is attachable.
+    pub fn validate_lsm_hook_target(&self, hook_name: &str) -> Result<(), BtfError> {
+        let function_name = Self::lsm_hook_function_name(hook_name);
+        let layout = self.function_trampoline_layout(&function_name)?;
+        for (idx, arg) in layout.args.iter().enumerate() {
+            if arg.value.is_none() {
+                return Err(BtfError::KernelBtfError(format!(
+                    "lsm target '{}' uses unsupported argument {}: {}",
+                    hook_name,
+                    idx,
+                    arg.unsupported_reason
+                        .as_deref()
+                        .unwrap_or("unknown layout")
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// Validate that a function target is attachable via an fexit trampoline.
     pub fn validate_fexit_target(&self, function_name: &str) -> Result<(), BtfError> {
         let layout = self.function_trampoline_layout(function_name)?;
@@ -789,6 +830,20 @@ impl KernelBtf {
         let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
         self.resolve_trampoline_field_projection(&btf, param.type_id, field_path, &raw_type_sizes)
             .map(Some)
+    }
+
+    /// Resolve a named field path within an LSM hook argument.
+    pub fn lsm_hook_arg_field(
+        &self,
+        hook_name: &str,
+        arg_idx: usize,
+        field_path: &[TrampolineFieldSelector],
+    ) -> Result<Option<TrampolineFieldProjection>, BtfError> {
+        self.function_trampoline_arg_field(
+            &Self::lsm_hook_function_name(hook_name),
+            arg_idx,
+            field_path,
+        )
     }
 
     /// Resolve a named field path within a `struct_ops` callback argument.
@@ -4839,5 +4894,13 @@ format:
         let parsed = parse_function_return_type_ids_from_raw_btf(&raw)
             .expect("expected return-type map from raw BTF");
         assert_eq!(parsed.get(&1).copied(), Some(0));
+    }
+
+    #[test]
+    fn test_lsm_hook_arg_type_info_file_open() {
+        let arg = KernelBtf::get()
+            .lsm_hook_arg_type_info("file_open", 0)
+            .expect("expected file_open arg0 type info");
+        assert!(arg.is_some(), "expected file_open arg0 to exist");
     }
 }

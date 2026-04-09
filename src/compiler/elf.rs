@@ -517,6 +517,8 @@ pub enum EbpfProgramType {
     Uprobe,
     /// User-space return probe (uretprobe)
     Uretprobe,
+    /// Linux security module hook program
+    Lsm,
     /// XDP program attached to a network interface
     Xdp,
     /// Perf event program attached to software or hardware perf counters
@@ -542,6 +544,7 @@ impl EbpfProgramType {
             EbpfProgramType::RawTracepoint => &RAW_TRACEPOINT_INFO,
             EbpfProgramType::Uprobe => &UPROBE_INFO,
             EbpfProgramType::Uretprobe => &URETPROBE_INFO,
+            EbpfProgramType::Lsm => &LSM_INFO,
             EbpfProgramType::Xdp => &XDP_INFO,
             EbpfProgramType::PerfEvent => &PERF_EVENT_INFO,
             EbpfProgramType::Tc => &TC_INFO,
@@ -565,6 +568,7 @@ impl EbpfProgramType {
             EbpfProgramType::RawTracepoint,
             EbpfProgramType::Uprobe,
             EbpfProgramType::Uretprobe,
+            EbpfProgramType::Lsm,
             EbpfProgramType::Xdp,
             EbpfProgramType::PerfEvent,
             EbpfProgramType::Tc,
@@ -701,6 +705,7 @@ impl ProgramSpec {
             ProgramSpec::Kretprobe { .. } => EbpfProgramType::Kretprobe,
             ProgramSpec::Fentry { .. } => EbpfProgramType::Fentry,
             ProgramSpec::Fexit { .. } => EbpfProgramType::Fexit,
+            ProgramSpec::Lsm { .. } => EbpfProgramType::Lsm,
             ProgramSpec::Tracepoint { .. } => EbpfProgramType::Tracepoint,
             ProgramSpec::RawTracepoint { .. } => EbpfProgramType::RawTracepoint,
             ProgramSpec::Uprobe { .. } => EbpfProgramType::Uprobe,
@@ -987,6 +992,7 @@ pub enum ProgramAttachKind {
     RawTracepoint,
     Uprobe,
     Uretprobe,
+    Lsm,
     Xdp,
     PerfEvent,
     Tc,
@@ -998,6 +1004,7 @@ pub enum ProgramAttachKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProgramTargetKind {
     KernelFunction,
+    LsmHook,
     Tracepoint,
     RawTracepoint,
     UserFunction,
@@ -1020,6 +1027,7 @@ pub enum KernelTargetValidationKind {
     SymbolOnly,
     FentryTrampoline,
     FexitTrampoline,
+    LsmHook,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1186,6 +1194,7 @@ const TRACEPOINT_SPEC_ALIASES: &[&str] = &["tracepoint"];
 const RAW_TRACEPOINT_SPEC_ALIASES: &[&str] = &["raw_tracepoint", "raw_tp"];
 const UPROBE_SPEC_ALIASES: &[&str] = &["uprobe"];
 const URETPROBE_SPEC_ALIASES: &[&str] = &["uretprobe"];
+const LSM_SPEC_ALIASES: &[&str] = &["lsm"];
 const XDP_SPEC_ALIASES: &[&str] = &["xdp"];
 const PERF_EVENT_SPEC_ALIASES: &[&str] = &["perf_event"];
 const TC_SPEC_ALIASES: &[&str] = &["tc"];
@@ -1431,6 +1440,33 @@ const URETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     is_userspace: true,
 };
 
+const LSM_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::Lsm,
+    canonical_prefix: "lsm",
+    spec_aliases: LSM_SPEC_ALIASES,
+    section_prefix: "lsm",
+    section_uses_target: true,
+    attach_kind: ProgramAttachKind::Lsm,
+    target_kind: ProgramTargetKind::LsmHook,
+    kernel_target_validation: Some(KernelTargetValidationKind::LsmHook),
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
+    arg_access: ProgramValueAccess::Trampoline,
+    retval_access: ProgramValueAccess::None,
+    supports_task_ctx_fields: true,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    packet_context_kind: None,
+    supports_packet_len_ctx_field: false,
+    supports_packet_data_ctx_fields: false,
+    supports_ingress_ifindex_ctx_field: false,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
+    supports_xdp_md_ctx_fields: false,
+    supports_stack_ctx_fields: true,
+    supports_tracepoint_fields: false,
+    is_userspace: false,
+};
+
 const XDP_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Xdp,
     canonical_prefix: "xdp",
@@ -1605,11 +1641,13 @@ const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "kretprobe",
     "fentry",
     "fexit",
+    "lsm",
     "tracepoint",
     "raw_tracepoint",
     "raw_tp",
     "uprobe",
     "uretprobe",
+    "perf_event",
     "xdp",
     "tc",
     "cgroup_skb",

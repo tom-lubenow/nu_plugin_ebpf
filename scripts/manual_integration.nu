@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 47
+const TOTAL_STEPS = 48
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -676,14 +676,27 @@ step 45 "tcp_congestion_ops live attach and detach" {
     $id
 }
 
-step 46 "perf_event software cpu-clock counter" {
+step 46 "lsm file_open dry-run" {
+    let code = ([
+        'ebpf attach --dry-run "lsm:file_open" {|ctx| $ctx.arg0.f_flags | count; 0 } | describe'
+    ] | str join (char newline))
+    let result = (run-nu-with-plugin $plugin_bin $code | str trim)
+
+    if $result != "binary" {
+        fail $"expected lsm:file_open dry-run to return binary, got ($result)"
+    }
+
+    $result
+}
+
+step 47 "perf_event software cpu-clock counter" {
     count-at-least-one "perf_event:software:cpu-clock:period=100000" {|ctx|
         $ctx.cpu | count
         0
     } { trigger-cpu-work } "perf_event cpu-clock counter"
 }
 
-step 47 "verify no leaked probes" {
+step 48 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

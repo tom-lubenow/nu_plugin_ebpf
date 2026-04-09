@@ -2313,6 +2313,53 @@ fn test_lower_fentry_pointer_root_scalar_field_projection() {
 }
 
 #[test]
+fn test_lower_lsm_pointer_root_field_projection() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("arg0"),
+            string_member("f_path"),
+            string_member("dentry"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "file_open");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("lsm pointer-root field projection should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Arg(0),
+                    slot: None,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::CallHelper {
+                    helper,
+                    ..
+                } if *helper == BpfHelper::ProbeReadKernel as u32
+            )))
+    );
+}
+
+#[test]
 fn test_lower_fentry_pointer_hop_scalar_field_projection() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![

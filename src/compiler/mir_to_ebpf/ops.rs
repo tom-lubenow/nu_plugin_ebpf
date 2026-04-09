@@ -678,6 +678,20 @@ impl<'a> MirToEbpfCompiler<'a> {
                                         ))
                                     })?
                             }
+                            EbpfProgramType::Lsm => KernelBtf::get()
+                                .lsm_hook_arg(&ctx.target, n)
+                                .map_err(|e| {
+                                    CompileError::UnsupportedInstruction(format!(
+                                        "failed to resolve ctx.arg{} for lsm:{}: {}",
+                                        n, ctx.target, e
+                                    ))
+                                })?
+                                .ok_or_else(|| {
+                                    CompileError::UnsupportedInstruction(format!(
+                                        "ctx.arg{} is not available on lsm:{}",
+                                        n, ctx.target
+                                    ))
+                                })?,
                             _ => KernelBtf::get()
                                 .function_trampoline_arg(&ctx.target, n)
                                 .map_err(|e| {

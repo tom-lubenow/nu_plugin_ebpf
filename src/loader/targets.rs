@@ -419,6 +419,7 @@ fn validate_trampoline_target(
     let result = match validation {
         KernelTargetValidationKind::FentryTrampoline => btf.validate_fentry_target(func_name),
         KernelTargetValidationKind::FexitTrampoline => btf.validate_fexit_target(func_name),
+        KernelTargetValidationKind::LsmHook => btf.validate_lsm_hook_target(func_name),
         KernelTargetValidationKind::SymbolOnly => return Ok(()),
     };
 
@@ -511,6 +512,20 @@ fn validate_target_for_program_type(
             }
             Ok(())
         }
+        ProgramTargetKind::LsmHook => {
+            if target.is_empty() {
+                return Err(LoadError::Load(
+                    "LSM hook target cannot be empty".to_string(),
+                ));
+            }
+            KernelBtf::get()
+                .validate_lsm_hook_target(target)
+                .map_err(|e| LoadError::UnsupportedTrampolineTarget {
+                    probe_type: prog_type.canonical_prefix().to_string(),
+                    target: target.to_string(),
+                    reason: e.to_string(),
+                })
+        }
         ProgramTargetKind::Tracepoint => validate_tracepoint_target(target),
         ProgramTargetKind::RawTracepoint => Ok(()),
         ProgramTargetKind::UserFunction => {
@@ -563,6 +578,7 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `kretprobe:function_name`
 /// - `fentry:function_name`
 /// - `fexit:function_name`
+/// - `lsm:hook_name`
 /// - `tracepoint:category/name`
 /// - `raw_tracepoint:name` or `raw_tp:name`
 /// - `uprobe:/path/to/binary:function_name`
@@ -604,6 +620,9 @@ pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
         }),
         EbpfProgramType::Fexit => Ok(ProgramSpec::Fexit {
             function: target.to_string(),
+        }),
+        EbpfProgramType::Lsm => Ok(ProgramSpec::Lsm {
+            hook: target.to_string(),
         }),
         EbpfProgramType::Tracepoint => {
             let (category, name) = target.split_once('/').ok_or_else(|| {

@@ -575,6 +575,51 @@ fn test_infer_fentry_pointer_arg_matches_kernel_btf_address_space() {
 }
 
 #[test]
+fn test_infer_lsm_pointer_arg_matches_kernel_btf_address_space() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::Arg(0),
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::Lsm, "file_open");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+    let expected_user_space = match KernelBtf::get().lsm_hook_arg("file_open", 0).unwrap() {
+        Some(spec) => match spec.kind {
+            TrampolineValueKind::Pointer { user_space } => user_space,
+            other => {
+                panic!("Expected pointer trampoline arg for lsm:file_open arg0, got {other:?}")
+            }
+        },
+        None => panic!("Expected lsm:file_open arg0 to exist"),
+    };
+
+    match types.get(&v0) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(
+                *address_space,
+                if expected_user_space {
+                    AddressSpace::User
+                } else {
+                    AddressSpace::Kernel
+                }
+            );
+        }
+        other => panic!(
+            "Expected pointer for lsm:file_open ctx.arg0, got {:?}",
+            other
+        ),
+    }
+}
+
+#[test]
 fn test_infer_fentry_aggregate_arg_is_stack_backed_byte_array() {
     let (func_name, arg_idx, _size_bytes) = find_aggregate_fentry_arg_candidate();
     let mut func = make_test_function();

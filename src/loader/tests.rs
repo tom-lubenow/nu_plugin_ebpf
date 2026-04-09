@@ -3,8 +3,8 @@ use crate::compiler::mir::MapKind;
 use crate::compiler::{
     CounterKeySchema, CounterKeySchemaField, EbpfObject, EbpfProgramType, MapRef, MirType,
 };
-use crate::program_spec::DEFAULT_PERF_EVENT_PERIOD;
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
+use crate::program_spec::DEFAULT_PERF_EVENT_PERIOD;
 use std::collections::HashMap;
 
 #[test]
@@ -257,6 +257,25 @@ fn test_parse_probe_spec_cgroup_sock_addr_connect4() {
     let (prog_type, target) = parse_probe_spec("cgroup_sock_addr:/sys/fs/cgroup:connect4").unwrap();
     assert_eq!(prog_type, EbpfProgramType::CgroupSockAddr);
     assert_eq!(target, "/sys/fs/cgroup:connect4");
+}
+
+#[test]
+fn test_parse_probe_spec_lsm_file_open() {
+    let (prog_type, target) = parse_probe_spec("lsm:file_open").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::Lsm);
+    assert_eq!(target, "file_open");
+}
+
+#[test]
+fn test_parse_program_spec_lsm_is_structured() {
+    let spec = parse_program_spec("lsm:file_open").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::Lsm {
+            hook: "file_open".to_string(),
+        }
+    );
+    assert_eq!(spec.to_string(), "lsm:file_open");
 }
 
 #[test]

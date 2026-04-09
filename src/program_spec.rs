@@ -267,6 +267,7 @@ pub enum ProgramSpec {
     Kretprobe { function: String },
     Fentry { function: String },
     Fexit { function: String },
+    Lsm { hook: String },
     Tracepoint { category: String, name: String },
     RawTracepoint { name: String },
     Uprobe { target: UprobeTarget },
@@ -286,6 +287,7 @@ impl ProgramSpec {
             | ProgramSpec::Kretprobe { function }
             | ProgramSpec::Fentry { function }
             | ProgramSpec::Fexit { function } => function.clone(),
+            ProgramSpec::Lsm { hook } => hook.clone(),
             ProgramSpec::Tracepoint { category, name } => format!("{category}/{name}"),
             ProgramSpec::RawTracepoint { name } => name.clone(),
             ProgramSpec::Uprobe { target } | ProgramSpec::Uretprobe { target } => {

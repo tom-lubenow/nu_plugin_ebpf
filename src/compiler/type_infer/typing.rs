@@ -180,6 +180,14 @@ impl<'a> TypeInference<'a> {
                         ))
                     })?
             }
+            EbpfProgramType::Lsm => KernelBtf::get()
+                .lsm_hook_arg_type_info(&ctx.target, idx as usize)
+                .map_err(|e| {
+                    TypeError::new(format!(
+                        "failed to resolve ctx.arg{} for lsm:{}: {}",
+                        idx, ctx.target, e
+                    ))
+                })?,
             _ => KernelBtf::get()
                 .function_trampoline_arg_type_info(&ctx.target, idx as usize)
                 .map_err(|e| {
@@ -299,6 +307,14 @@ impl<'a> TypeInference<'a> {
                                     ))
                                 })?
                         }
+                        EbpfProgramType::Lsm => KernelBtf::get()
+                            .lsm_hook_arg(&ctx.target, *idx as usize)
+                            .map_err(|e| {
+                                TypeError::new(format!(
+                                    "failed to resolve ctx.arg{} for lsm:{}: {}",
+                                    idx, ctx.target, e
+                                ))
+                            })?,
                         _ => KernelBtf::get()
                             .function_trampoline_arg(&ctx.target, *idx as usize)
                             .map_err(|e| {

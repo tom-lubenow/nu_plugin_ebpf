@@ -207,10 +207,16 @@ fn recover_ctx_field_hint(
         CtxField::Arg(idx) => {
             let ctx = probe_ctx?;
             if ctx.probe_type.uses_btf_trampoline() {
-                let type_info = KernelBtf::get()
-                    .function_trampoline_arg_type_info(&ctx.target, *idx as usize)
-                    .ok()
-                    .flatten()?;
+                let type_info = match ctx.probe_type {
+                    crate::compiler::EbpfProgramType::Lsm => KernelBtf::get()
+                        .lsm_hook_arg_type_info(&ctx.target, *idx as usize)
+                        .ok()
+                        .flatten()?,
+                    _ => KernelBtf::get()
+                        .function_trampoline_arg_type_info(&ctx.target, *idx as usize)
+                        .ok()
+                        .flatten()?,
+                };
                 runtime_trampoline_root_type(&type_info)
             } else if ctx.is_userspace() {
                 Some(pointer_hint(AddressSpace::User))

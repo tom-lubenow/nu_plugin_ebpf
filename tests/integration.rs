@@ -293,6 +293,23 @@ mod linux_tests {
         }
     }
 
+    /// Test parsing lsm specification
+    #[test]
+    fn test_parse_lsm_spec() {
+        let result = parse_probe_spec("lsm:file_open");
+
+        match result {
+            Ok((prog_type, target)) => {
+                assert!(
+                    format!("{:?}", prog_type).contains("Lsm"),
+                    "Expected Lsm type"
+                );
+                assert_eq!(target, "file_open");
+            }
+            Err(e) => panic!("Unexpected error: {:?}", e),
+        }
+    }
+
     /// Test parsing invalid probe specification (no colon)
     #[test]
     fn test_parse_invalid_spec_no_colon() {

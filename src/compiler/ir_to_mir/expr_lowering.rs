@@ -1381,6 +1381,20 @@ impl<'a> HirToMirLowering<'a> {
                                 ))
                             })?
                     }
+                    EbpfProgramType::Lsm => KernelBtf::get()
+                        .lsm_hook_arg(&ctx.target, *idx as usize)
+                        .map_err(|e| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "failed to resolve ctx.arg{} for lsm:{}: {}",
+                                idx, ctx.target, e
+                            ))
+                        })?
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "ctx.arg{} is not available on lsm:{}",
+                                idx, ctx.target
+                            ))
+                        })?,
                     _ => KernelBtf::get()
                         .function_trampoline_arg(&ctx.target, *idx as usize)
                         .map_err(|e| {
@@ -1748,6 +1762,14 @@ impl<'a> HirToMirLowering<'a> {
                                 ))
                             })
                     }
+                    EbpfProgramType::Lsm => KernelBtf::get()
+                        .lsm_hook_arg_type_info(&ctx.target, *idx as usize)
+                        .map_err(|e| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "failed to resolve ctx.arg{} type for lsm:{}: {}",
+                                idx, ctx.target, e
+                            ))
+                        }),
                     _ => KernelBtf::get()
                         .function_trampoline_arg_type_info(&ctx.target, *idx as usize)
                         .map_err(|e| {
@@ -4349,6 +4371,20 @@ impl<'a> HirToMirLowering<'a> {
                                 ))
                             })?
                     }
+                    EbpfProgramType::Lsm => KernelBtf::get()
+                        .lsm_hook_arg_field(&ctx.target, *idx as usize, &nested_segments)
+                        .map_err(|e| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "failed to resolve ctx.arg{}.{} for lsm:{}: {}",
+                                idx, path_desc, ctx.target, e
+                            ))
+                        })?
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "ctx.arg{} is not available on lsm:{}",
+                                idx, ctx.target
+                            ))
+                        })?,
                     _ => KernelBtf::get()
                         .function_trampoline_arg_field(
                             &ctx.target,

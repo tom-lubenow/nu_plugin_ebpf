@@ -1946,6 +1946,7 @@ Supported attach types:
   - fentry, fexit
   - tracepoint, raw_tracepoint
   - uprobe, uretprobe
+  - lsm
   - perf_event
   - xdp, tc
   - cgroup_skb
@@ -2018,6 +2019,16 @@ Context parameter syntax (recommended):
     or `perf_event:hardware:cpu-cycles`, with optional selectors `cpu=N`,
     `pid=N`, `period=N`, or `freq=N`. Omitting the sample policy defaults
     to `period=1000000`, and omitting `cpu=` attaches on all online CPUs.
+
+  lsm targets:
+    {|ctx| $ctx.pid }    - Get current thread ID at hook time
+    {|ctx| $ctx.comm }   - Get current command name at hook time
+    {|ctx| $ctx.arg0 }   - Get the first BTF-typed LSM hook argument
+    {|ctx| $ctx.arg0.f_flags } - Project through BTF-backed LSM hook arguments
+    Note: initial LSM support uses `lsm:<hook_name>` targets such as
+    `lsm:file_open`. Live loading requires a kernel with BPF LSM enabled;
+    `--dry-run` is the safest way to validate object construction and BTF
+    argument access on a development machine.
 
   cgroup_sock_addr fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
@@ -2258,6 +2269,11 @@ Requirements:
             Example {
                 example: "ebpf attach -s 'fexit:ksys_read' {|ctx| $ctx.retval | emit } | first 5",
                 description: "Capture the first 5 fexit return values using BTF-backed trampolines",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach --dry-run 'lsm:file_open' {|ctx| $ctx.arg0.f_flags | count; 0 }",
+                description: "Dry-run an LSM file_open hook using BTF-backed hook arguments",
                 result: None,
             },
             Example {

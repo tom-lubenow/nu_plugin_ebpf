@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 
 use aya::maps::{HashMap as AyaHashMap, PerCpuHashMap, RingBuf};
 use aya::programs::{
-    CgroupAttachMode, CgroupSkb, CgroupSockAddr, FEntry, FExit, KProbe, PerfEvent, PerfEventScope,
-    RawTracePoint, SchedClassifier, TracePoint, UProbe, Xdp, XdpFlags,
+    CgroupAttachMode, CgroupSkb, CgroupSockAddr, FEntry, FExit, KProbe, Lsm, PerfEvent,
+    PerfEventScope, RawTracePoint, SchedClassifier, TracePoint, UProbe, Xdp, XdpFlags,
     perf_event::{PerfTypeId, SamplePolicy, perf_sw_ids},
     tc,
 };

@@ -191,6 +191,18 @@ impl EbpfState {
                         ))
                     })?;
             }
+            ProgramAttachKind::Lsm => {
+                let btf = Btf::from_sys_fs().map_err(|e| {
+                    LoadError::Load(format!("Failed to load kernel BTF for lsm: {e}"))
+                })?;
+                let lsm: &mut Lsm = prog
+                    .try_into()
+                    .map_err(|e| LoadError::Load(format!("Failed to convert to Lsm: {e}")))?;
+                lsm.load(&program.target, &btf)
+                    .map_err(|e| LoadError::Load(format!("Failed to load lsm: {e}")))?;
+                lsm.attach()
+                    .map_err(|e| LoadError::Attach(format!("Failed to attach lsm: {e}")))?;
+            }
             ProgramAttachKind::Xdp => {
                 let xdp: &mut Xdp = prog
                     .try_into()
