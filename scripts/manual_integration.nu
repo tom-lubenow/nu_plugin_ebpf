@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 46
+const TOTAL_STEPS = 47
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -110,6 +110,10 @@ except OSError:
     pass
 s.close()
 ' out+err> /dev/null
+}
+
+def trigger-cpu-work [] {
+    ^sh -lc 'dd if=/dev/zero of=/dev/null bs=1M count=64 status=none' | ignore
 }
 
 def wait-for-counter-rows [id, label: string] {
@@ -672,7 +676,14 @@ step 45 "tcp_congestion_ops live attach and detach" {
     $id
 }
 
-step 46 "verify no leaked probes" {
+step 46 "perf_event software cpu-clock counter" {
+    count-at-least-one "perf_event:software:cpu-clock:period=100000" {|ctx|
+        $ctx.cpu | count
+        0
+    } { trigger-cpu-work } "perf_event cpu-clock counter"
+}
+
+step 47 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

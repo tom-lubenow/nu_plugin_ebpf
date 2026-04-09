@@ -39,7 +39,8 @@ pub mod vcc;
 pub mod verifier_types;
 
 pub use crate::program_spec::{
-    CgroupSkbTarget, CgroupSockAddrTarget, ProgramSpec, TcTarget, UprobeTarget,
+    CgroupSkbTarget, CgroupSockAddrTarget, PerfEventSamplePolicy, PerfEventSoftwareEvent,
+    PerfEventTarget, ProgramSpec, TcTarget, UprobeTarget,
 };
 pub use elf::{
     BpfFieldType, BpfMapDef, BssGlobal, CompiledStructOpsCallback, CounterKeySchema,

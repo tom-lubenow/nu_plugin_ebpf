@@ -11,9 +11,12 @@ use std::time::{Duration, Instant};
 
 use aya::maps::{HashMap as AyaHashMap, PerCpuHashMap, RingBuf};
 use aya::programs::{
-    CgroupAttachMode, CgroupSkb, CgroupSockAddr, FEntry, FExit, KProbe, RawTracePoint,
-    SchedClassifier, TracePoint, UProbe, Xdp, XdpFlags, tc,
+    CgroupAttachMode, CgroupSkb, CgroupSockAddr, FEntry, FExit, KProbe, PerfEvent, PerfEventScope,
+    RawTracePoint, SchedClassifier, TracePoint, UProbe, Xdp, XdpFlags,
+    perf_event::{PerfTypeId, SamplePolicy, perf_sw_ids},
+    tc,
 };
+use aya::util::online_cpus;
 use aya::{Btf, Ebpf, EbpfLoader};
 use thiserror::Error;
 
@@ -93,7 +96,8 @@ mod libbpf;
 mod maps;
 
 pub use crate::program_spec::{
-    CgroupSkbTarget, CgroupSockAddrTarget, ProgramSpec, TcTarget, UprobeTarget,
+    CgroupSkbTarget, CgroupSockAddrTarget, PerfEventSamplePolicy, PerfEventSoftwareEvent,
+    PerfEventTarget, ProgramSpec, TcTarget, UprobeTarget,
 };
 pub use targets::{parse_probe_spec, parse_program_spec};
 

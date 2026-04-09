@@ -5,7 +5,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: Write tracing logic in familiar Nushell syntax
-- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, xdp, tc, cgroup_skb, cgroup_sock_addr, initial struct_ops object support
+- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, perf_event, xdp, tc, cgroup_skb, cgroup_sock_addr, initial struct_ops object support
 - **Aggregations**: Count by key, histograms, timing measurements
 - **Event streaming**: Real-time event output via ring buffers
 - **Map sharing**: Share data between probes with `--pin`
@@ -72,6 +72,9 @@ ebpf attach -s 'fentry:do_sys_openat2' {|ctx| $ctx.arg2.flags | emit } | first 1
 
 # Capture the first ksys_read return value
 ebpf attach -s 'fexit:ksys_read' {|ctx| $ctx.retval | emit } | first 1
+
+# Count software cpu-clock samples by CPU
+let id = ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.cpu | count; 0 }
 
 # Count loopback packets by packet length via XDP, then pass them through
 let id = ebpf attach 'xdp:lo' {|ctx| $ctx.packet_len | count; 'pass' }
@@ -284,6 +287,14 @@ packet-program action helpers are still not modeled, but compile-time action
 aliases are available in return position. XDP closures can return strings like
 `"pass"` / `"drop"`, and TC closures can return strings like `"ok"` /
 `"shot"`. Raw numeric return codes still work.
+
+`perf_event` currently supports software `cpu-clock` and `task-clock` events
+through specs like `perf_event:software:cpu-clock` or
+`perf_event:software:task-clock:freq=99`. Optional selectors `cpu=N`,
+`period=N`, and `freq=N` are supported; omitting the sample policy defaults to
+`period=1000000`, and omitting `cpu=` attaches on all online CPUs. The initial
+surface uses the ordinary helper-backed fields like `ctx.pid`, `ctx.comm`,
+`ctx.cpu`, and `ctx.ktime`.
 
 `cgroup_sock_addr` currently exposes `ctx.cpu`, `ctx.ktime`,
 `ctx.user_family`, `ctx.user_ip4`, `ctx.user_ip6`, `ctx.user_port`,

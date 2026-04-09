@@ -6,7 +6,8 @@
 #[cfg(target_os = "linux")]
 mod linux_tests {
     use nu_plugin_ebpf::loader::{
-        LoadError, ProgramSpec, UprobeTarget, parse_probe_spec, parse_program_spec,
+        LoadError, PerfEventSamplePolicy, PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec,
+        UprobeTarget, parse_probe_spec, parse_program_spec,
     };
 
     /// Test parsing valid kprobe specification
@@ -127,6 +128,25 @@ mod linux_tests {
 
         match result {
             Ok(ProgramSpec::Xdp { interface }) => assert_eq!(interface, "lo"),
+            other => panic!("Unexpected result: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_structured_perf_event_spec() {
+        let result = parse_program_spec("perf_event:software:cpu-clock:period=100000");
+
+        match result {
+            Ok(ProgramSpec::PerfEvent { target }) => {
+                assert_eq!(
+                    target,
+                    PerfEventTarget {
+                        event: PerfEventSoftwareEvent::CpuClock,
+                        cpu: None,
+                        sample_policy: PerfEventSamplePolicy::Period(100000),
+                    }
+                );
+            }
             other => panic!("Unexpected result: {:?}", other),
         }
     }

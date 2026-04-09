@@ -126,6 +126,70 @@ impl PartialEq for CgroupSockAddrTarget {
 
 impl Eq for CgroupSockAddrTarget {}
 
+pub const DEFAULT_PERF_EVENT_PERIOD: u64 = 1_000_000;
+
+/// Supported software perf events for the initial perf_event program surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PerfEventSoftwareEvent {
+    CpuClock,
+    TaskClock,
+}
+
+impl PerfEventSoftwareEvent {
+    pub fn name(&self) -> &'static str {
+        match self {
+            PerfEventSoftwareEvent::CpuClock => "cpu-clock",
+            PerfEventSoftwareEvent::TaskClock => "task-clock",
+        }
+    }
+}
+
+/// Sample policy for perf_event programs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PerfEventSamplePolicy {
+    Period(u64),
+    Frequency(u64),
+}
+
+impl PerfEventSamplePolicy {
+    pub fn is_default(&self) -> bool {
+        matches!(
+            self,
+            PerfEventSamplePolicy::Period(DEFAULT_PERF_EVENT_PERIOD)
+        )
+    }
+}
+
+/// Parsed perf_event target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PerfEventTarget {
+    /// Software event name.
+    pub event: PerfEventSoftwareEvent,
+    /// Optional CPU selector. `None` means attach on all online CPUs.
+    pub cpu: Option<u32>,
+    /// Perf sampling policy.
+    pub sample_policy: PerfEventSamplePolicy,
+}
+
+impl PerfEventTarget {
+    pub fn target_string(&self) -> String {
+        let mut target = format!("software:{}", self.event.name());
+        if let Some(cpu) = self.cpu {
+            target.push_str(&format!(":cpu={cpu}"));
+        }
+        match self.sample_policy {
+            PerfEventSamplePolicy::Period(period) if period != DEFAULT_PERF_EVENT_PERIOD => {
+                target.push_str(&format!(":period={period}"));
+            }
+            PerfEventSamplePolicy::Frequency(freq) => {
+                target.push_str(&format!(":freq={freq}"));
+            }
+            _ => {}
+        }
+        target
+    }
+}
+
 /// Parsed program specification with structured target metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProgramSpec {
@@ -138,6 +202,7 @@ pub enum ProgramSpec {
     Uprobe { target: UprobeTarget },
     Uretprobe { target: UprobeTarget },
     Xdp { interface: String },
+    PerfEvent { target: PerfEventTarget },
     Tc { target: TcTarget },
     CgroupSkb { target: CgroupSkbTarget },
     CgroupSockAddr { target: CgroupSockAddrTarget },
@@ -157,6 +222,7 @@ impl ProgramSpec {
                 target.target_string()
             }
             ProgramSpec::Xdp { interface } => interface.clone(),
+            ProgramSpec::PerfEvent { target } => target.target_string(),
             ProgramSpec::Tc { target } => target.target_string(),
             ProgramSpec::CgroupSkb { target } => target.target_string(),
             ProgramSpec::CgroupSockAddr { target } => target.target_string(),

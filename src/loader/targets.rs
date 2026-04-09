@@ -2,7 +2,8 @@ use super::LoadError;
 use crate::compiler::{EbpfProgramType, KernelTargetValidationKind, ProgramTargetKind};
 use crate::kernel_btf::{FunctionCheckResult, KernelBtf};
 use crate::program_spec::{
-    CgroupSkbTarget, CgroupSockAddrTarget, ProgramSpec, TcTarget, UprobeTarget,
+    CgroupSkbTarget, CgroupSockAddrTarget, DEFAULT_PERF_EVENT_PERIOD, PerfEventSamplePolicy,
+    PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, TcTarget, UprobeTarget,
 };
 use aya::programs::{CgroupSkbAttachType, CgroupSockAddrAttachType, TcAttachType};
 use std::path::Path;
@@ -178,6 +179,109 @@ impl CgroupSockAddrTarget {
     }
 }
 
+impl PerfEventTarget {
+    /// Parse a perf_event target string of the form `software:cpu-clock[:cpu=0][:period=1000000]`.
+    pub fn parse(target: &str) -> Result<Self, LoadError> {
+        let mut parts = target.split(':');
+        let source = parts.next().ok_or_else(|| {
+            LoadError::Load(format!(
+                "Invalid perf_event target: {target}. Expected format: software:cpu-clock[:cpu=N][:period=N|freq=N]"
+            ))
+        })?;
+        let event_name = parts.next().ok_or_else(|| {
+            LoadError::Load(format!(
+                "Invalid perf_event target: {target}. Expected format: software:cpu-clock[:cpu=N][:period=N|freq=N]"
+            ))
+        })?;
+
+        if source != "software" {
+            return Err(LoadError::Load(format!(
+                "Unsupported perf_event source: {source}. Initial support only covers software:cpu-clock and software:task-clock"
+            )));
+        }
+
+        let event = match event_name {
+            "cpu-clock" => PerfEventSoftwareEvent::CpuClock,
+            "task-clock" => PerfEventSoftwareEvent::TaskClock,
+            _ => {
+                return Err(LoadError::Load(format!(
+                    "Unsupported perf_event software event: {event_name}. Expected cpu-clock or task-clock"
+                )));
+            }
+        };
+
+        let mut cpu = None;
+        let mut sample_policy = PerfEventSamplePolicy::Period(DEFAULT_PERF_EVENT_PERIOD);
+
+        for option in parts {
+            if let Some(raw_cpu) = option.strip_prefix("cpu=") {
+                if cpu.is_some() {
+                    return Err(LoadError::Load(
+                        "perf_event target cannot specify cpu more than once".to_string(),
+                    ));
+                }
+                cpu = Some(raw_cpu.parse::<u32>().map_err(|_| {
+                    LoadError::Load(format!("Invalid perf_event cpu selector: {raw_cpu}"))
+                })?);
+                continue;
+            }
+
+            if let Some(raw_period) = option.strip_prefix("period=") {
+                let period = raw_period.parse::<u64>().map_err(|_| {
+                    LoadError::Load(format!("Invalid perf_event period: {raw_period}"))
+                })?;
+                if period == 0 {
+                    return Err(LoadError::Load(
+                        "perf_event period must be greater than zero".to_string(),
+                    ));
+                }
+                match sample_policy {
+                    PerfEventSamplePolicy::Period(v) if v == DEFAULT_PERF_EVENT_PERIOD => {
+                        sample_policy = PerfEventSamplePolicy::Period(period);
+                    }
+                    _ => {
+                        return Err(LoadError::Load(
+                            "perf_event target cannot specify both period and freq".to_string(),
+                        ));
+                    }
+                }
+                continue;
+            }
+
+            if let Some(raw_freq) = option.strip_prefix("freq=") {
+                let freq = raw_freq.parse::<u64>().map_err(|_| {
+                    LoadError::Load(format!("Invalid perf_event frequency: {raw_freq}"))
+                })?;
+                if freq == 0 {
+                    return Err(LoadError::Load(
+                        "perf_event frequency must be greater than zero".to_string(),
+                    ));
+                }
+                if !matches!(
+                    sample_policy,
+                    PerfEventSamplePolicy::Period(v) if v == DEFAULT_PERF_EVENT_PERIOD
+                ) {
+                    return Err(LoadError::Load(
+                        "perf_event target cannot specify both period and freq".to_string(),
+                    ));
+                }
+                sample_policy = PerfEventSamplePolicy::Frequency(freq);
+                continue;
+            }
+
+            return Err(LoadError::Load(format!(
+                "Unrecognized perf_event selector: {option}. Expected cpu=N, period=N, or freq=N"
+            )));
+        }
+
+        Ok(Self {
+            event,
+            cpu,
+            sample_policy,
+        })
+    }
+}
+
 /// Parse a hex or decimal offset string
 fn parse_offset(s: &str) -> Result<u64, LoadError> {
     if s.starts_with("0x") || s.starts_with("0X") {
@@ -349,6 +453,10 @@ fn validate_target_for_program_type(
             Ok(())
         }
         ProgramTargetKind::NetworkInterface => validate_network_interface_target(target),
+        ProgramTargetKind::PerfEventTarget => {
+            PerfEventTarget::parse(target)?;
+            Ok(())
+        }
         ProgramTargetKind::TrafficControlInterface => validate_tc_target(target),
         ProgramTargetKind::CgroupPathAttachType => validate_cgroup_skb_target(target),
         ProgramTargetKind::CgroupPathSockAddrAttachType => validate_cgroup_sock_addr_target(target),
@@ -385,6 +493,7 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `uprobe:/path/to/binary:function_name`
 /// - `uretprobe:/path/to/binary:function_name`
 /// - `xdp:interface`
+/// - `perf_event:software:cpu-clock[:cpu=N][:period=N|freq=N]`
 /// - `tc:interface:ingress`
 /// - `tc:interface:egress`
 /// - `cgroup_skb:/path/to/cgroup:ingress`
@@ -443,6 +552,9 @@ pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
         }),
         EbpfProgramType::Xdp => Ok(ProgramSpec::Xdp {
             interface: target.to_string(),
+        }),
+        EbpfProgramType::PerfEvent => Ok(ProgramSpec::PerfEvent {
+            target: PerfEventTarget::parse(target)?,
         }),
         EbpfProgramType::Tc => Ok(ProgramSpec::Tc {
             target: TcTarget::parse(target)?,

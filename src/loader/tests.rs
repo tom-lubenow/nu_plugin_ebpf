@@ -139,6 +139,32 @@ fn test_parse_probe_spec_xdp() {
 }
 
 #[test]
+fn test_parse_probe_spec_perf_event() {
+    let (prog_type, target) = parse_probe_spec("perf_event:software:cpu-clock").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::PerfEvent);
+    assert_eq!(target, "software:cpu-clock");
+}
+
+#[test]
+fn test_parse_program_spec_perf_event_is_structured() {
+    let spec = parse_program_spec("perf_event:software:task-clock:cpu=0:freq=99").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::PerfEvent {
+            target: PerfEventTarget {
+                event: PerfEventSoftwareEvent::TaskClock,
+                cpu: Some(0),
+                sample_policy: PerfEventSamplePolicy::Frequency(99),
+            }
+        }
+    );
+    assert_eq!(
+        spec.to_string(),
+        "perf_event:software:task-clock:cpu=0:freq=99"
+    );
+}
+
+#[test]
 fn test_parse_probe_spec_tc_ingress() {
     let (prog_type, target) = parse_probe_spec("tc:lo:ingress").unwrap();
     assert_eq!(prog_type, EbpfProgramType::Tc);
@@ -200,6 +226,15 @@ fn test_parse_probe_spec_rejects_unknown_tc_interface() {
 fn test_parse_probe_spec_rejects_invalid_tc_direction() {
     let err = parse_probe_spec("tc:lo:sideways").expect_err("expected invalid tc direction");
     assert!(matches!(err, LoadError::Load(msg) if msg.contains("Invalid tc attach direction")));
+}
+
+#[test]
+fn test_parse_probe_spec_rejects_invalid_perf_event_selector() {
+    let err = parse_probe_spec("perf_event:software:cpu-clock:mode=fast")
+        .expect_err("expected invalid perf_event selector");
+    assert!(
+        matches!(err, LoadError::Load(msg) if msg.contains("Unrecognized perf_event selector"))
+    );
 }
 
 #[test]

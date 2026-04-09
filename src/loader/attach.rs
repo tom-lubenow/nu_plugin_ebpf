@@ -199,6 +199,50 @@ impl EbpfState {
                 xdp.attach(&program.target, XdpFlags::SKB_MODE)
                     .map_err(|e| LoadError::Attach(format!("Failed to attach xdp: {e}")))?;
             }
+            ProgramAttachKind::PerfEvent => {
+                let target = PerfEventTarget::parse(&program.target)?;
+                let perf_event: &mut PerfEvent = prog
+                    .try_into()
+                    .map_err(|e| LoadError::Load(format!("Failed to convert to PerfEvent: {e}")))?;
+                perf_event.load().map_err(|e| {
+                    LoadError::Load(format!("Failed to load perf_event program: {e}"))
+                })?;
+
+                let perf_config = match target.event {
+                    PerfEventSoftwareEvent::CpuClock => perf_sw_ids::PERF_COUNT_SW_CPU_CLOCK as u64,
+                    PerfEventSoftwareEvent::TaskClock => {
+                        perf_sw_ids::PERF_COUNT_SW_TASK_CLOCK as u64
+                    }
+                };
+                let sample_policy = match target.sample_policy {
+                    PerfEventSamplePolicy::Period(period) => SamplePolicy::Period(period),
+                    PerfEventSamplePolicy::Frequency(freq) => SamplePolicy::Frequency(freq),
+                };
+
+                let cpus = if let Some(cpu) = target.cpu {
+                    vec![cpu]
+                } else {
+                    online_cpus().map_err(|(_, e)| {
+                        LoadError::Attach(format!("Failed to enumerate online CPUs: {e}"))
+                    })?
+                };
+
+                for cpu in cpus {
+                    perf_event
+                        .attach(
+                            PerfTypeId::Software,
+                            perf_config,
+                            PerfEventScope::AllProcessesOneCpu { cpu },
+                            sample_policy.clone(),
+                            true,
+                        )
+                        .map_err(|e| {
+                            LoadError::Attach(format!(
+                                "Failed to attach perf_event on cpu {cpu}: {e}"
+                            ))
+                        })?;
+                }
+            }
             ProgramAttachKind::Tc => {
                 let target = TcTarget::parse(&program.target)?;
                 let classifier: &mut SchedClassifier = prog.try_into().map_err(|e| {

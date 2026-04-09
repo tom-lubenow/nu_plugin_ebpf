@@ -1946,6 +1946,7 @@ Supported attach types:
   - fentry, fexit
   - tracepoint, raw_tracepoint
   - uprobe, uretprobe
+  - perf_event
   - xdp, tc
   - cgroup_skb
   - cgroup_sock_addr
@@ -2001,6 +2002,17 @@ Context parameter syntax (recommended):
     `tcp.payload` uses the runtime data offset. IPv4/TCP options are skipped
     correctly by those payload steps, but deeper option parsing and stacked
     VLAN tags are still not modeled.
+
+  perf_event targets:
+    {|ctx| $ctx.cpu }    - Get current CPU ID for the sampled event
+    {|ctx| $ctx.ktime }  - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.pid }    - Get current thread ID at sample time
+    {|ctx| $ctx.comm }   - Get current command name at sample time
+    Note: initial perf_event support covers software `cpu-clock` and
+    `task-clock` events through specs like `perf_event:software:cpu-clock`,
+    with optional selectors `cpu=N`, `period=N`, or `freq=N`. Omitting the
+    sample policy defaults to `period=1000000`, and omitting `cpu=` attaches
+    on all online CPUs.
 
   cgroup_sock_addr fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
@@ -2207,6 +2219,7 @@ Requirements:
             "uprobe",
             "uretprobe",
             "userspace",
+            "perf_event",
             "xdp",
             "tc",
             "cgroup_skb",
@@ -2240,6 +2253,11 @@ Requirements:
             Example {
                 example: "ebpf attach -s 'fexit:ksys_read' {|ctx| $ctx.retval | emit } | first 5",
                 description: "Capture the first 5 fexit return values using BTF-backed trampolines",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.cpu | count; 0 }",
+                description: "Count software cpu-clock samples by CPU",
                 result: None,
             },
             Example {

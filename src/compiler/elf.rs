@@ -519,6 +519,8 @@ pub enum EbpfProgramType {
     Uretprobe,
     /// XDP program attached to a network interface
     Xdp,
+    /// Perf event program attached to software or hardware perf counters
+    PerfEvent,
     /// Traffic-control classifier attached to an interface ingress/egress hook
     Tc,
     /// Cgroup socket-buffer program attached to a cgroup ingress/egress hook
@@ -541,6 +543,7 @@ impl EbpfProgramType {
             EbpfProgramType::Uprobe => &UPROBE_INFO,
             EbpfProgramType::Uretprobe => &URETPROBE_INFO,
             EbpfProgramType::Xdp => &XDP_INFO,
+            EbpfProgramType::PerfEvent => &PERF_EVENT_INFO,
             EbpfProgramType::Tc => &TC_INFO,
             EbpfProgramType::CgroupSkb => &CGROUP_SKB_INFO,
             EbpfProgramType::CgroupSockAddr => &CGROUP_SOCK_ADDR_INFO,
@@ -563,6 +566,7 @@ impl EbpfProgramType {
             EbpfProgramType::Uprobe,
             EbpfProgramType::Uretprobe,
             EbpfProgramType::Xdp,
+            EbpfProgramType::PerfEvent,
             EbpfProgramType::Tc,
             EbpfProgramType::CgroupSkb,
             EbpfProgramType::CgroupSockAddr,
@@ -702,6 +706,7 @@ impl ProgramSpec {
             ProgramSpec::Uprobe { .. } => EbpfProgramType::Uprobe,
             ProgramSpec::Uretprobe { .. } => EbpfProgramType::Uretprobe,
             ProgramSpec::Xdp { .. } => EbpfProgramType::Xdp,
+            ProgramSpec::PerfEvent { .. } => EbpfProgramType::PerfEvent,
             ProgramSpec::Tc { .. } => EbpfProgramType::Tc,
             ProgramSpec::CgroupSkb { .. } => EbpfProgramType::CgroupSkb,
             ProgramSpec::CgroupSockAddr { .. } => EbpfProgramType::CgroupSockAddr,
@@ -983,6 +988,7 @@ pub enum ProgramAttachKind {
     Uprobe,
     Uretprobe,
     Xdp,
+    PerfEvent,
     Tc,
     CgroupSkb,
     CgroupSockAddr,
@@ -996,6 +1002,7 @@ pub enum ProgramTargetKind {
     RawTracepoint,
     UserFunction,
     NetworkInterface,
+    PerfEventTarget,
     TrafficControlInterface,
     CgroupPathAttachType,
     CgroupPathSockAddrAttachType,
@@ -1180,6 +1187,7 @@ const RAW_TRACEPOINT_SPEC_ALIASES: &[&str] = &["raw_tracepoint", "raw_tp"];
 const UPROBE_SPEC_ALIASES: &[&str] = &["uprobe"];
 const URETPROBE_SPEC_ALIASES: &[&str] = &["uretprobe"];
 const XDP_SPEC_ALIASES: &[&str] = &["xdp"];
+const PERF_EVENT_SPEC_ALIASES: &[&str] = &["perf_event"];
 const TC_SPEC_ALIASES: &[&str] = &["tc"];
 const CGROUP_SKB_SPEC_ALIASES: &[&str] = &["cgroup_skb"];
 const CGROUP_SOCK_ADDR_SPEC_ALIASES: &[&str] = &["cgroup_sock_addr"];
@@ -1446,6 +1454,33 @@ const XDP_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_egress_ifindex_ctx_field: true,
     supports_xdp_md_ctx_fields: true,
     supports_stack_ctx_fields: false,
+    supports_tracepoint_fields: false,
+    is_userspace: false,
+};
+
+const PERF_EVENT_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::PerfEvent,
+    canonical_prefix: "perf_event",
+    spec_aliases: PERF_EVENT_SPEC_ALIASES,
+    section_prefix: "perf_event",
+    section_uses_target: false,
+    attach_kind: ProgramAttachKind::PerfEvent,
+    target_kind: ProgramTargetKind::PerfEventTarget,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+    supports_task_ctx_fields: true,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    packet_context_kind: None,
+    supports_packet_len_ctx_field: false,
+    supports_packet_data_ctx_fields: false,
+    supports_ingress_ifindex_ctx_field: false,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
+    supports_xdp_md_ctx_fields: false,
+    supports_stack_ctx_fields: true,
     supports_tracepoint_fields: false,
     is_userspace: false,
 };
