@@ -6,6 +6,7 @@ use crate::program_spec::{
     PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, TcTarget, UprobeTarget,
 };
 use aya::programs::{CgroupSkbAttachType, CgroupSockAddrAttachType, TcAttachType};
+use aya::util::online_cpus;
 use std::path::Path;
 
 impl UprobeTarget {
@@ -196,16 +197,21 @@ impl PerfEventTarget {
 
         if source != "software" {
             return Err(LoadError::Load(format!(
-                "Unsupported perf_event source: {source}. Initial support only covers software:cpu-clock and software:task-clock"
+                "Unsupported perf_event source: {source}. Initial support only covers software perf events"
             )));
         }
 
         let event = match event_name {
             "cpu-clock" => PerfEventSoftwareEvent::CpuClock,
             "task-clock" => PerfEventSoftwareEvent::TaskClock,
+            "context-switches" => PerfEventSoftwareEvent::ContextSwitches,
+            "cpu-migrations" => PerfEventSoftwareEvent::CpuMigrations,
+            "page-faults" => PerfEventSoftwareEvent::PageFaults,
+            "minor-faults" => PerfEventSoftwareEvent::MinorFaults,
+            "major-faults" => PerfEventSoftwareEvent::MajorFaults,
             _ => {
                 return Err(LoadError::Load(format!(
-                    "Unsupported perf_event software event: {event_name}. Expected cpu-clock or task-clock"
+                    "Unsupported perf_event software event: {event_name}. Expected one of cpu-clock, task-clock, context-switches, cpu-migrations, page-faults, minor-faults, major-faults"
                 )));
             }
         };
@@ -454,7 +460,17 @@ fn validate_target_for_program_type(
         }
         ProgramTargetKind::NetworkInterface => validate_network_interface_target(target),
         ProgramTargetKind::PerfEventTarget => {
-            PerfEventTarget::parse(target)?;
+            let parsed = PerfEventTarget::parse(target)?;
+            if let Some(cpu) = parsed.cpu {
+                let online = online_cpus().map_err(|(_, e)| {
+                    LoadError::Load(format!("Failed to enumerate online CPUs: {e}"))
+                })?;
+                if !online.contains(&cpu) {
+                    return Err(LoadError::Load(format!(
+                        "perf_event cpu selector {cpu} is not currently online"
+                    )));
+                }
+            }
             Ok(())
         }
         ProgramTargetKind::TrafficControlInterface => validate_tc_target(target),

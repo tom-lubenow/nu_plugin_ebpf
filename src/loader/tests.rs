@@ -165,6 +165,25 @@ fn test_parse_program_spec_perf_event_is_structured() {
 }
 
 #[test]
+fn test_parse_program_spec_perf_event_page_faults_is_structured() {
+    let spec = parse_program_spec("perf_event:software:page-faults:period=4096").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::PerfEvent {
+            target: PerfEventTarget {
+                event: PerfEventSoftwareEvent::PageFaults,
+                cpu: None,
+                sample_policy: PerfEventSamplePolicy::Period(4096),
+            }
+        }
+    );
+    assert_eq!(
+        spec.to_string(),
+        "perf_event:software:page-faults:period=4096"
+    );
+}
+
+#[test]
 fn test_parse_probe_spec_tc_ingress() {
     let (prog_type, target) = parse_probe_spec("tc:lo:ingress").unwrap();
     assert_eq!(prog_type, EbpfProgramType::Tc);
@@ -235,6 +254,13 @@ fn test_parse_probe_spec_rejects_invalid_perf_event_selector() {
     assert!(
         matches!(err, LoadError::Load(msg) if msg.contains("Unrecognized perf_event selector"))
     );
+}
+
+#[test]
+fn test_parse_probe_spec_rejects_offline_perf_event_cpu() {
+    let err = parse_probe_spec("perf_event:software:cpu-clock:cpu=999999")
+        .expect_err("expected offline perf_event cpu rejection");
+    assert!(matches!(err, LoadError::Load(msg) if msg.contains("not currently online")));
 }
 
 #[test]

@@ -2008,11 +2008,12 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.ktime }  - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.pid }    - Get current thread ID at sample time
     {|ctx| $ctx.comm }   - Get current command name at sample time
-    Note: initial perf_event support covers software `cpu-clock` and
-    `task-clock` events through specs like `perf_event:software:cpu-clock`,
-    with optional selectors `cpu=N`, `period=N`, or `freq=N`. Omitting the
-    sample policy defaults to `period=1000000`, and omitting `cpu=` attaches
-    on all online CPUs.
+    Note: initial perf_event support covers software `cpu-clock`,
+    `task-clock`, `context-switches`, `cpu-migrations`, `page-faults`,
+    `minor-faults`, and `major-faults` through specs like
+    `perf_event:software:cpu-clock`, with optional selectors `cpu=N`,
+    `period=N`, or `freq=N`. Omitting the sample policy defaults to
+    `period=1000000`, and omitting `cpu=` attaches on all online CPUs.
 
   cgroup_sock_addr fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

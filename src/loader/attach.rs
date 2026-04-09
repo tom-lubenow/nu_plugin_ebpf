@@ -213,6 +213,21 @@ impl EbpfState {
                     PerfEventSoftwareEvent::TaskClock => {
                         perf_sw_ids::PERF_COUNT_SW_TASK_CLOCK as u64
                     }
+                    PerfEventSoftwareEvent::ContextSwitches => {
+                        perf_sw_ids::PERF_COUNT_SW_CONTEXT_SWITCHES as u64
+                    }
+                    PerfEventSoftwareEvent::CpuMigrations => {
+                        perf_sw_ids::PERF_COUNT_SW_CPU_MIGRATIONS as u64
+                    }
+                    PerfEventSoftwareEvent::PageFaults => {
+                        perf_sw_ids::PERF_COUNT_SW_PAGE_FAULTS as u64
+                    }
+                    PerfEventSoftwareEvent::MinorFaults => {
+                        perf_sw_ids::PERF_COUNT_SW_PAGE_FAULTS_MIN as u64
+                    }
+                    PerfEventSoftwareEvent::MajorFaults => {
+                        perf_sw_ids::PERF_COUNT_SW_PAGE_FAULTS_MAJ as u64
+                    }
                 };
                 let sample_policy = match target.sample_policy {
                     PerfEventSamplePolicy::Period(period) => SamplePolicy::Period(period),

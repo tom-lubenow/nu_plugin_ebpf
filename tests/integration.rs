@@ -152,6 +152,25 @@ mod linux_tests {
     }
 
     #[test]
+    fn test_parse_structured_perf_event_context_switches_spec() {
+        let result = parse_program_spec("perf_event:software:context-switches");
+
+        match result {
+            Ok(ProgramSpec::PerfEvent { target }) => {
+                assert_eq!(
+                    target,
+                    PerfEventTarget {
+                        event: PerfEventSoftwareEvent::ContextSwitches,
+                        cpu: None,
+                        sample_policy: PerfEventSamplePolicy::Period(1_000_000),
+                    }
+                );
+            }
+            other => panic!("Unexpected result: {:?}", other),
+        }
+    }
+
+    #[test]
     fn test_parse_structured_struct_ops_spec() {
         let result = parse_program_spec("struct_ops:file");
 

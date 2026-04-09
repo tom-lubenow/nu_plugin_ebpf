@@ -288,8 +288,9 @@ aliases are available in return position. XDP closures can return strings like
 `"pass"` / `"drop"`, and TC closures can return strings like `"ok"` /
 `"shot"`. Raw numeric return codes still work.
 
-`perf_event` currently supports software `cpu-clock` and `task-clock` events
-through specs like `perf_event:software:cpu-clock` or
+`perf_event` currently supports software `cpu-clock`, `task-clock`,
+`context-switches`, `cpu-migrations`, `page-faults`, `minor-faults`, and
+`major-faults` through specs like `perf_event:software:cpu-clock` or
 `perf_event:software:task-clock:freq=99`. Optional selectors `cpu=N`,
 `period=N`, and `freq=N` are supported; omitting the sample policy defaults to
 `period=1000000`, and omitting `cpu=` attaches on all online CPUs. The initial

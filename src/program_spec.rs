@@ -133,6 +133,11 @@ pub const DEFAULT_PERF_EVENT_PERIOD: u64 = 1_000_000;
 pub enum PerfEventSoftwareEvent {
     CpuClock,
     TaskClock,
+    ContextSwitches,
+    CpuMigrations,
+    PageFaults,
+    MinorFaults,
+    MajorFaults,
 }
 
 impl PerfEventSoftwareEvent {
@@ -140,6 +145,11 @@ impl PerfEventSoftwareEvent {
         match self {
             PerfEventSoftwareEvent::CpuClock => "cpu-clock",
             PerfEventSoftwareEvent::TaskClock => "task-clock",
+            PerfEventSoftwareEvent::ContextSwitches => "context-switches",
+            PerfEventSoftwareEvent::CpuMigrations => "cpu-migrations",
+            PerfEventSoftwareEvent::PageFaults => "page-faults",
+            PerfEventSoftwareEvent::MinorFaults => "minor-faults",
+            PerfEventSoftwareEvent::MajorFaults => "major-faults",
         }
     }
 }
