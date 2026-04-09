@@ -14,9 +14,15 @@ impl<'a> TypeInference<'a> {
         Some(ctx.target.as_str())
     }
 
+    fn sched_ext_callback_is_sleepable(callback: &str) -> bool {
+        super::super::elf::struct_ops_callback_is_sleepable("sched_ext_ops", callback)
+    }
+
     fn sched_ext_kfunc_allowed_callbacks(kfunc: &str) -> Option<&'static [&'static str]> {
         match kfunc {
-            "scx_bpf_dispatch_nr_slots" | "scx_bpf_dsq_move_to_local" => Some(&["dispatch"]),
+            "scx_bpf_dispatch_nr_slots"
+            | "scx_bpf_dsq_move_to_local"
+            | "scx_bpf_dispatch_cancel" => Some(&["dispatch"]),
             "scx_bpf_reenqueue_local" => Some(&["cpu_release"]),
             "scx_bpf_select_cpu_dfl" => Some(&["select_cpu"]),
             "scx_bpf_select_cpu_and" => Some(&["select_cpu", "enqueue"]),
@@ -47,6 +53,14 @@ impl<'a> TypeInference<'a> {
         let Some(active_callback) = self.active_sched_ext_callback() else {
             return;
         };
+        if kfunc == "scx_bpf_create_dsq" && !Self::sched_ext_callback_is_sleepable(active_callback)
+        {
+            errors.push(TypeError::new(format!(
+                "kfunc '{}' is only valid in sleepable sched_ext_ops callbacks, not sched_ext_ops.{}",
+                kfunc, active_callback
+            )));
+            return;
+        }
         let Some(allowed_callbacks) = Self::sched_ext_kfunc_allowed_callbacks(kfunc) else {
             return;
         };

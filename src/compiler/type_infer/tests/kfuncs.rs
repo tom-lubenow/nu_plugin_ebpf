@@ -78,6 +78,47 @@ fn test_type_error_sched_ext_dispatch_only_kfunc_rejected_in_select_cpu() {
 }
 
 #[test]
+fn test_sched_ext_dispatch_cancel_allowed_in_dispatch() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_dispatch_cancel".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    infer_in_sched_ext_callback(&func, "dispatch")
+        .expect("dispatch_cancel should be accepted in sched_ext_ops.dispatch");
+}
+
+#[test]
+fn test_type_error_sched_ext_dispatch_cancel_rejected_in_enqueue() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_dispatch_cancel".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let errs = infer_in_sched_ext_callback(&func, "enqueue")
+        .expect_err("dispatch_cancel should be rejected outside sched_ext_ops.dispatch");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "kfunc 'scx_bpf_dispatch_cancel' is only valid in sched_ext_ops.dispatch, not sched_ext_ops.enqueue"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_sched_ext_cpu_release_only_kfunc_allowed_in_cpu_release() {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();
@@ -399,6 +440,67 @@ fn test_sched_ext_select_cpu_and_with_cpumask_release_allowed_in_select_cpu() {
 
     infer_in_sched_ext_callback(&func, "select_cpu").expect(
         "select_cpu_and with cpumask release should be accepted in sched_ext_ops.select_cpu",
+    );
+}
+
+#[test]
+fn test_sched_ext_create_dsq_allowed_in_sleepable_init() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let dsq_id = func.alloc_vreg();
+    let node = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: dsq_id,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: node,
+        src: MirValue::Const(-1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_create_dsq".to_string(),
+        btf_id: None,
+        args: vec![dsq_id, node],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    infer_in_sched_ext_callback(&func, "init")
+        .expect("create_dsq should be accepted in sleepable sched_ext_ops.init");
+}
+
+#[test]
+fn test_type_error_sched_ext_create_dsq_rejected_in_dispatch() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let dsq_id = func.alloc_vreg();
+    let node = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: dsq_id,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: node,
+        src: MirValue::Const(-1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_create_dsq".to_string(),
+        btf_id: None,
+        args: vec![dsq_id, node],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let errs = infer_in_sched_ext_callback(&func, "dispatch")
+        .expect_err("create_dsq should be rejected outside sleepable sched_ext_ops callbacks");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "kfunc 'scx_bpf_create_dsq' is only valid in sleepable sched_ext_ops callbacks, not sched_ext_ops.dispatch"
+        )),
+        "unexpected errors: {:?}",
+        errs
     );
 }
 
