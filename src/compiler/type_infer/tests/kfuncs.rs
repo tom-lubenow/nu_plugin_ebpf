@@ -37,6 +37,106 @@ fn test_type_error_unknown_kfunc_signature() {
 }
 
 #[test]
+fn test_scx_bpf_kick_cpu_allows_zero_flags() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let cpu = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: cpu,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_kick_cpu".to_string(),
+        btf_id: None,
+        args: vec![cpu, flags],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    ti.infer(&func)
+        .expect("scx_bpf_kick_cpu should allow zero flags");
+}
+
+#[test]
+fn test_type_error_scx_bpf_kick_cpu_rejects_idle_preempt_combination() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let cpu = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: cpu,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(3),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_kick_cpu".to_string(),
+        btf_id: None,
+        args: vec![cpu, flags],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("SCX_KICK_IDLE | SCX_KICK_PREEMPT should be rejected");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "kfunc 'scx_bpf_kick_cpu' arg1 cannot combine SCX_KICK_IDLE with SCX_KICK_PREEMPT or SCX_KICK_WAIT"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_scx_bpf_kick_cpu_rejects_idle_wait_combination() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let cpu = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: cpu,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(5),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_kick_cpu".to_string(),
+        btf_id: None,
+        args: vec![cpu, flags],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("SCX_KICK_IDLE | SCX_KICK_WAIT should be rejected");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "kfunc 'scx_bpf_kick_cpu' arg1 cannot combine SCX_KICK_IDLE with SCX_KICK_PREEMPT or SCX_KICK_WAIT"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_sched_ext_dispatch_only_kfunc_allowed_in_dispatch() {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();

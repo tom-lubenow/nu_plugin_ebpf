@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel_btf::KernelBtf;
 
 impl<'a> TypeInference<'a> {
     pub(super) fn mir_type_for_vreg(&self, vreg: VReg, types: &HashMap<VReg, MirType>) -> MirType {
@@ -205,6 +206,36 @@ impl<'a> TypeInference<'a> {
             }
             _ => None,
         }
+    }
+
+    fn known_const_vreg(
+        &self,
+        vreg: VReg,
+        value_ranges: &HashMap<VReg, ValueRange>,
+    ) -> Option<i64> {
+        match self.value_range_for(&MirValue::VReg(vreg), value_ranges) {
+            ValueRange::Known { min, max } if min == max => Some(min),
+            _ => None,
+        }
+    }
+
+    fn sched_ext_kick_flag_bits() -> (i64, i64, i64) {
+        let mut idle = None;
+        let mut preempt = None;
+        let mut wait = None;
+
+        if let Ok(info) = KernelBtf::get().kernel_named_enum_info("scx_kick_flags") {
+            for (name, value) in info.entries {
+                match name.as_str() {
+                    "SCX_KICK_IDLE" => idle = Some(value),
+                    "SCX_KICK_PREEMPT" => preempt = Some(value),
+                    "SCX_KICK_WAIT" => wait = Some(value),
+                    _ => {}
+                }
+            }
+        }
+
+        (idle.unwrap_or(1), preempt.unwrap_or(2), wait.unwrap_or(4))
     }
 
     pub(super) fn validate_helper_semantics(
@@ -612,6 +643,22 @@ impl<'a> TypeInference<'a> {
                     "kfunc '{}' arg{} must be known constant",
                     kfunc, idx
                 )));
+            }
+        }
+
+        if kfunc == "scx_bpf_kick_cpu"
+            && let Some(flags) = args
+                .get(1)
+                .and_then(|vreg| self.known_const_vreg(*vreg, value_ranges))
+        {
+            let (kick_idle, kick_preempt, kick_wait) = Self::sched_ext_kick_flag_bits();
+            let uses_idle = flags & kick_idle != 0;
+            let uses_preempt = flags & kick_preempt != 0;
+            let uses_wait = flags & kick_wait != 0;
+            if uses_idle && (uses_preempt || uses_wait) {
+                errors.push(TypeError::new(
+                    "kfunc 'scx_bpf_kick_cpu' arg1 cannot combine SCX_KICK_IDLE with SCX_KICK_PREEMPT or SCX_KICK_WAIT",
+                ));
             }
         }
     }
