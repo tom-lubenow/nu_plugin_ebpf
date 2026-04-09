@@ -169,6 +169,121 @@ impl<'a> HirToMirLowering<'a> {
         self.reg_metadata.remove(&reg.get());
     }
 
+    pub(super) fn clear_source_var(&mut self, reg: RegId) {
+        if let Some(meta) = self.reg_metadata.get_mut(&reg.get()) {
+            meta.source_var = None;
+        }
+    }
+
+    pub(super) fn direct_scalar_var_out_arg_type(
+        &self,
+        reg: RegId,
+        vreg: VReg,
+        fixed_size: usize,
+    ) -> Option<MirType> {
+        let ty = self
+            .get_metadata(reg)
+            .and_then(|meta| meta.field_type.clone())
+            .or_else(|| self.vreg_type_hints.get(&vreg).cloned())?;
+        let exact_match = match &ty {
+            MirType::Bool => fixed_size == 1,
+            MirType::I8 | MirType::U8 => fixed_size == 1,
+            MirType::I16 | MirType::U16 => fixed_size == 2,
+            MirType::I32 | MirType::U32 => fixed_size == 4,
+            MirType::I64 | MirType::U64 => fixed_size == 8,
+            _ => false,
+        };
+        exact_match.then_some(ty)
+    }
+
+    pub(super) fn write_back_direct_scalar_var(
+        &mut self,
+        var_id: VarId,
+        scalar_ty: MirType,
+        value_vreg: VReg,
+    ) -> Result<(), CompileError> {
+        if let Some(global) = self.annotated_mut_globals.get(&var_id).cloned() {
+            if global.ty != scalar_ty
+                || global.list_max_len.is_some()
+                || global.string_slot_len.is_some()
+            {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "kfunc out-arg write-back for annotated mutable variable {} requires matching scalar global storage",
+                    var_id.get()
+                )));
+            }
+            let global_ptr = self.func.alloc_vreg();
+            self.emit(MirInst::LoadGlobal {
+                dst: global_ptr,
+                symbol: global.symbol.clone(),
+                ty: global.ty.clone(),
+            });
+            self.vreg_type_hints.insert(
+                global_ptr,
+                MirType::Ptr {
+                    pointee: Box::new(global.ty.clone()),
+                    address_space: crate::compiler::mir::AddressSpace::Map,
+                },
+            );
+            self.emit(MirInst::Store {
+                ptr: global_ptr,
+                offset: 0,
+                val: MirValue::VReg(value_vreg),
+                ty: scalar_ty,
+            });
+            return Ok(());
+        }
+
+        if let Some(global) = self.mutable_capture_globals.get(&var_id).cloned() {
+            if global.ty != scalar_ty
+                || global.list_max_len.is_some()
+                || global.string_slot_len.is_some()
+            {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "kfunc out-arg write-back for captured variable {} requires matching scalar global storage",
+                    var_id.get()
+                )));
+            }
+            let global_ptr = self.func.alloc_vreg();
+            self.emit(MirInst::LoadGlobal {
+                dst: global_ptr,
+                symbol: global.symbol.clone(),
+                ty: global.ty.clone(),
+            });
+            self.vreg_type_hints.insert(
+                global_ptr,
+                MirType::Ptr {
+                    pointee: Box::new(global.ty.clone()),
+                    address_space: crate::compiler::mir::AddressSpace::Map,
+                },
+            );
+            self.emit(MirInst::Store {
+                ptr: global_ptr,
+                offset: 0,
+                val: MirValue::VReg(value_vreg),
+                ty: scalar_ty,
+            });
+            return Ok(());
+        }
+
+        let preserved = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: preserved,
+            src: MirValue::VReg(value_vreg),
+        });
+        self.vreg_type_hints.insert(preserved, scalar_ty.clone());
+        self.var_mappings.insert(var_id, preserved);
+        self.var_metadata.insert(
+            var_id,
+            RegMetadata {
+                field_type: Some(scalar_ty),
+                source_var: Some(var_id),
+                ..Default::default()
+            },
+        );
+        Ok(())
+    }
+
     /// Get the current block being built
     pub(super) fn current_block_mut(&mut self) -> &mut BasicBlock {
         self.func.block_mut(self.current_block)

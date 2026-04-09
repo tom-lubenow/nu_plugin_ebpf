@@ -229,8 +229,11 @@ impl<'a> HirToMirLowering<'a> {
                 dst: dst_vreg,
                 src: MirValue::VReg(param_vreg),
             });
-            if let Some(meta) = self.var_metadata.get(&var_id).cloned() {
+            if let Some(mut meta) = self.var_metadata.get(&var_id).cloned() {
+                meta.source_var = Some(var_id);
                 self.reg_metadata.insert(dst.get(), meta);
+            } else {
+                self.get_or_create_metadata(dst).source_var = Some(var_id);
             }
             if let Some(ty) = self.vreg_type_hints.get(&param_vreg).cloned() {
                 self.vreg_type_hints.insert(dst_vreg, ty);
@@ -253,11 +256,13 @@ impl<'a> HirToMirLowering<'a> {
             if let Some(semantics) = self.annotated_mut_global_semantics.get(&var_id).cloned() {
                 self.get_or_create_metadata(dst).annotated_semantics = Some(semantics);
             }
+            self.get_or_create_metadata(dst).source_var = Some(var_id);
             return Ok(());
         }
 
         if let Some(global) = self.mutable_capture_globals.get(&var_id).cloned() {
             self.load_mutable_global_value(dst, dst_vreg, &global)?;
+            self.get_or_create_metadata(dst).source_var = Some(var_id);
             return Ok(());
         }
 

@@ -1,9 +1,19 @@
 use super::*;
 use crate::compiler::ProgramIntrinsic;
-use crate::compiler::instruction::KfuncSignature;
+use crate::compiler::instruction::{
+    KfuncSignature, kfunc_pointer_arg_fixed_size, kfunc_pointer_arg_requires_stack_slot_base,
+};
 use crate::compiler::mir::{
     AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, STRING_COUNTER_MAP_NAME,
 };
+
+#[derive(Debug, Clone)]
+struct ScalarKfuncOutArgWriteback {
+    slot: StackSlotId,
+    source_var: VarId,
+    scalar_ty: MirType,
+    original_arg_vreg: VReg,
+}
 
 impl<'a> HirToMirLowering<'a> {
     fn aggregate_call_value_type<'b>(ty: &'b MirType) -> Option<&'b MirType> {
@@ -101,6 +111,104 @@ impl<'a> HirToMirLowering<'a> {
 
     fn reset_call_result_metadata(&mut self, reg: RegId) {
         *self.get_or_create_metadata(reg) = RegMetadata::default();
+    }
+
+    fn materialize_scalar_kfunc_out_arg(
+        &mut self,
+        kfunc: &str,
+        arg_idx: usize,
+        arg_vreg: VReg,
+        arg_reg: Option<RegId>,
+    ) -> Result<(VReg, Option<ScalarKfuncOutArgWriteback>), CompileError> {
+        let Some(arg_reg) = arg_reg else {
+            return Ok((arg_vreg, None));
+        };
+        if matches!(
+            self.vreg_type_hints.get(&arg_vreg),
+            Some(MirType::Ptr { .. })
+        ) {
+            return Ok((arg_vreg, None));
+        }
+
+        if !kfunc_pointer_arg_requires_stack_slot_base(kfunc, arg_idx) {
+            return Ok((arg_vreg, None));
+        }
+
+        let Some(source_var) = self.get_metadata(arg_reg).and_then(|meta| meta.source_var) else {
+            return Ok((arg_vreg, None));
+        };
+        let Some(fixed_size) = kfunc_pointer_arg_fixed_size(kfunc, arg_idx) else {
+            return Ok((arg_vreg, None));
+        };
+        let Some(scalar_ty) = self.direct_scalar_var_out_arg_type(arg_reg, arg_vreg, fixed_size)
+        else {
+            return Ok((arg_vreg, None));
+        };
+
+        let slot = self.func.alloc_stack_slot(
+            align_to_eight(fixed_size.max(scalar_ty.size())),
+            8,
+            StackSlotKind::Local,
+        );
+        self.record_stack_slot_type(slot, scalar_ty.clone());
+        self.emit(MirInst::StoreSlot {
+            slot,
+            offset: 0,
+            val: MirValue::VReg(arg_vreg),
+            ty: scalar_ty.clone(),
+        });
+
+        let ptr_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: ptr_vreg,
+            src: MirValue::StackSlot(slot),
+        });
+        self.vreg_type_hints.insert(
+            ptr_vreg,
+            MirType::Ptr {
+                pointee: Box::new(scalar_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        Ok((
+            ptr_vreg,
+            Some(ScalarKfuncOutArgWriteback {
+                slot,
+                source_var,
+                scalar_ty,
+                original_arg_vreg: arg_vreg,
+            }),
+        ))
+    }
+
+    fn write_back_scalar_kfunc_out_args(
+        &mut self,
+        writebacks: Vec<ScalarKfuncOutArgWriteback>,
+    ) -> Result<(), CompileError> {
+        for writeback in writebacks {
+            let reloaded_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::LoadSlot {
+                dst: reloaded_vreg,
+                slot: writeback.slot,
+                offset: 0,
+                ty: writeback.scalar_ty.clone(),
+            });
+            self.vreg_type_hints
+                .insert(reloaded_vreg, writeback.scalar_ty.clone());
+            self.emit(MirInst::Copy {
+                dst: writeback.original_arg_vreg,
+                src: MirValue::VReg(reloaded_vreg),
+            });
+            self.vreg_type_hints
+                .insert(writeback.original_arg_vreg, writeback.scalar_ty.clone());
+            self.write_back_direct_scalar_var(
+                writeback.source_var,
+                writeback.scalar_ty,
+                reloaded_vreg,
+            )?;
+        }
+        Ok(())
     }
 
     fn validate_intrinsic_support(&self, intrinsic: ProgramIntrinsic) -> Result<(), CompileError> {
@@ -511,13 +619,13 @@ impl<'a> HirToMirLowering<'a> {
                     .map(|sig| sig.max_args == 0)
                     .unwrap_or(false);
                 if let Some(input) = self.pipeline_input {
-                    args.push(input);
+                    args.push((input, self.pipeline_input_reg));
                 } else if src_dst_had_value && !is_known_zero_arg {
-                    args.push(dst_vreg);
+                    args.push((dst_vreg, Some(src_dst)));
                 }
 
-                for (arg_vreg, _) in self.positional_args.iter().skip(1) {
-                    args.push(*arg_vreg);
+                for (arg_vreg, arg_reg) in self.positional_args.iter().skip(1) {
+                    args.push((*arg_vreg, Some(*arg_reg)));
                 }
 
                 if args.len() > 5 {
@@ -526,12 +634,24 @@ impl<'a> HirToMirLowering<'a> {
                     ));
                 }
 
+                let mut call_args = Vec::with_capacity(args.len());
+                let mut writebacks = Vec::new();
+                for (idx, (arg_vreg, arg_reg)) in args.into_iter().enumerate() {
+                    let (call_arg_vreg, writeback) =
+                        self.materialize_scalar_kfunc_out_arg(&kfunc, idx, arg_vreg, arg_reg)?;
+                    call_args.push(call_arg_vreg);
+                    if let Some(writeback) = writeback {
+                        writebacks.push(writeback);
+                    }
+                }
+
                 self.emit(MirInst::CallKfunc {
                     dst: dst_vreg,
                     kfunc,
                     btf_id,
-                    args,
+                    args: call_args,
                 });
+                self.write_back_scalar_kfunc_out_args(writebacks)?;
             }
 
             "map-get" => {

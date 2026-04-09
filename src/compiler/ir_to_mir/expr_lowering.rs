@@ -1123,6 +1123,7 @@ impl<'a> HirToMirLowering<'a> {
             lhs: MirValue::VReg(lhs_vreg),
             rhs: MirValue::VReg(rhs_vreg),
         });
+        self.clear_source_var(lhs_dst);
 
         Ok(())
     }
@@ -4218,6 +4219,7 @@ impl<'a> HirToMirLowering<'a> {
             meta.is_context = false;
             meta.field_type = Some(projected_ty);
             meta.annotated_semantics = projected_semantics;
+            meta.source_var = None;
             return Ok(());
         }
 
@@ -4253,6 +4255,7 @@ impl<'a> HirToMirLowering<'a> {
                 let meta = self.get_or_create_metadata(src_dst);
                 meta.is_context = false;
                 meta.field_type = Some(projected_ty);
+                meta.source_var = None;
                 return Ok(());
             }
 
@@ -4296,6 +4299,7 @@ impl<'a> HirToMirLowering<'a> {
                 let meta = self.get_or_create_metadata(src_dst);
                 meta.is_context = false;
                 meta.field_type = Some(projected_ty);
+                meta.source_var = None;
                 return Ok(());
             }
             let nested_segments: Vec<TrampolineFieldSelector> = remaining_members
@@ -4436,6 +4440,7 @@ impl<'a> HirToMirLowering<'a> {
             let meta = self.get_or_create_metadata(src_dst);
             meta.is_context = false;
             meta.field_type = Some(projected_ty);
+            meta.source_var = None;
             return Ok(());
         }
 
@@ -4576,6 +4581,7 @@ impl<'a> HirToMirLowering<'a> {
         let meta = self.get_or_create_metadata(src_dst);
         meta.is_context = false;
         meta.field_type = Some(field_type);
+        meta.source_var = None;
 
         Ok(())
     }

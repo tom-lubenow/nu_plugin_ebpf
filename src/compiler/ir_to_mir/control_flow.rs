@@ -262,6 +262,7 @@ impl<'a> HirToMirLowering<'a> {
                     op: crate::compiler::mir::UnaryOpKind::Not,
                     src: MirValue::VReg(vreg),
                 });
+                self.clear_source_var(*src_dst);
             }
 
             // === Field Access ===

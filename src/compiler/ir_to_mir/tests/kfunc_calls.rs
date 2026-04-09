@@ -422,3 +422,251 @@ fn test_kfunc_call_zero_arg_chain_does_not_reuse_src_dst() {
     assert_eq!(calls[0].1.len(), 0, "lock call should remain zero-arg");
     assert_eq!(calls[1].1.len(), 0, "unlock call should remain zero-arg");
 }
+
+#[test]
+fn test_kfunc_call_materializes_direct_variable_backed_named_out_arg() {
+    use crate::compiler::mir::AddressSpace;
+    use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
+    use nu_protocol::{DeclId, RegId, VarId};
+    use std::sync::Arc;
+
+    let kfunc_name = b"scx_bpf_select_cpu_dfl";
+    let data: Arc<[u8]> = kfunc_name.to_vec().into();
+
+    let main_ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadLiteral {
+                dst: RegId::new(0),
+                lit: Literal::Bool(false),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(80),
+                src: RegId::new(0),
+            },
+            Instruction::Drain { src: RegId::new(0) },
+            Instruction::Drop { src: RegId::new(0) },
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::String(DataSlice {
+                    start: 0,
+                    len: kfunc_name.len() as u32,
+                }),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(2),
+                lit: Literal::Int(1),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(3),
+                lit: Literal::Int(2),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(4),
+                lit: Literal::Int(3),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(5),
+                var_id: VarId::new(80),
+            },
+            Instruction::PushPositional { src: RegId::new(1) },
+            Instruction::PushPositional { src: RegId::new(2) },
+            Instruction::PushPositional { src: RegId::new(3) },
+            Instruction::PushPositional { src: RegId::new(4) },
+            Instruction::PushPositional { src: RegId::new(5) },
+            Instruction::Call {
+                decl_id: DeclId::new(42),
+                src_dst: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(6),
+                var_id: VarId::new(80),
+            },
+            Instruction::Return { src: RegId::new(6) },
+        ],
+        spans: vec![],
+        data,
+        ast: vec![],
+        comments: vec![],
+        register_count: 7,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(
+        HirFunction::from_ir_block(main_ir).unwrap(),
+        HashMap::new(),
+        vec![],
+        None,
+    );
+
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "kfunc-call".to_string());
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("kfunc-call lowering should succeed");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    let call_idx = block
+        .instructions
+        .iter()
+        .position(|inst| matches!(inst, MirInst::CallKfunc { .. }))
+        .expect("expected lowered kfunc call");
+    let call_args = match &block.instructions[call_idx] {
+        MirInst::CallKfunc { args, .. } => args,
+        _ => unreachable!(),
+    };
+    assert_eq!(call_args.len(), 4, "expected four explicit kfunc arguments");
+    assert!(matches!(
+        result.type_hints.main.get(&call_args[3]),
+        Some(MirType::Ptr {
+            address_space: AddressSpace::Stack,
+            ..
+        })
+    ));
+    assert!(
+        block.instructions[..call_idx].iter().any(|inst| matches!(
+            inst,
+            MirInst::StoreSlot {
+                ty: MirType::Bool,
+                ..
+            }
+        )),
+        "expected direct variable bool out-arg to be materialized into a stack slot"
+    );
+    assert!(
+        block.instructions[call_idx + 1..]
+            .iter()
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadSlot {
+                    ty: MirType::Bool,
+                    ..
+                }
+            )),
+        "expected named out-arg to be reloaded from the stack slot after the kfunc call"
+    );
+}
+
+#[test]
+fn test_kfunc_call_does_not_materialize_derived_named_out_arg() {
+    use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
+    use nu_protocol::{DeclId, RegId, VarId};
+    use std::sync::Arc;
+
+    let kfunc_name = b"scx_bpf_select_cpu_dfl";
+    let data: Arc<[u8]> = kfunc_name.to_vec().into();
+
+    let main_ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadLiteral {
+                dst: RegId::new(0),
+                lit: Literal::Bool(false),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(80),
+                src: RegId::new(0),
+            },
+            Instruction::Drain { src: RegId::new(0) },
+            Instruction::Drop { src: RegId::new(0) },
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::String(DataSlice {
+                    start: 0,
+                    len: kfunc_name.len() as u32,
+                }),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(2),
+                lit: Literal::Int(1),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(3),
+                lit: Literal::Int(2),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(4),
+                lit: Literal::Int(3),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(5),
+                var_id: VarId::new(80),
+            },
+            Instruction::Not {
+                src_dst: RegId::new(5),
+            },
+            Instruction::PushPositional { src: RegId::new(1) },
+            Instruction::PushPositional { src: RegId::new(2) },
+            Instruction::PushPositional { src: RegId::new(3) },
+            Instruction::PushPositional { src: RegId::new(4) },
+            Instruction::PushPositional { src: RegId::new(5) },
+            Instruction::Call {
+                decl_id: DeclId::new(42),
+                src_dst: RegId::new(0),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data,
+        ast: vec![],
+        comments: vec![],
+        register_count: 6,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(
+        HirFunction::from_ir_block(main_ir).unwrap(),
+        HashMap::new(),
+        vec![],
+        None,
+    );
+
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "kfunc-call".to_string());
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("kfunc-call lowering should succeed");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    let call_idx = block
+        .instructions
+        .iter()
+        .position(|inst| matches!(inst, MirInst::CallKfunc { .. }))
+        .expect("expected lowered kfunc call");
+    let call_args = match &block.instructions[call_idx] {
+        MirInst::CallKfunc { args, .. } => args,
+        _ => unreachable!(),
+    };
+    assert_eq!(call_args.len(), 4, "expected four explicit kfunc arguments");
+    assert!(
+        !matches!(
+            result.type_hints.main.get(&call_args[3]),
+            Some(MirType::Ptr { .. })
+        ),
+        "derived values should not be treated as direct writable variable storage"
+    );
+    assert!(
+        !block.instructions[..call_idx].iter().any(|inst| matches!(
+            inst,
+            MirInst::StoreSlot {
+                ty: MirType::Bool,
+                ..
+            }
+        )),
+        "derived values should not be materialized into writable out-arg stack slots"
+    );
+}
