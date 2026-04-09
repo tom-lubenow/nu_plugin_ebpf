@@ -100,6 +100,26 @@ ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
     name: 'nu_demo'
 }
 
+# sched_ext select_cpu callbacks can use named BTF args through ctx.arg.<name>.
+# This dry-run example shows the safe cpumask acquire/use/release pattern:
+# acquire a referenced cpumask, null-check it, use it, and always release it.
+ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
+    name: 'nu_demo'
+    select_cpu: {|ctx|
+        let p = $ctx.arg.p
+        let prev = $ctx.arg.prev_cpu
+        let wake = $ctx.arg.wake_flags
+        let mask = (kfunc-call 'scx_bpf_get_online_cpumask')
+        if $mask != 0 {
+            let cpu = (kfunc-call 'scx_bpf_select_cpu_and' $p $prev $wake $mask 0)
+            kfunc-call 'scx_bpf_put_cpumask' $mask
+            $cpu
+        } else {
+            $prev
+        }
+    }
+}
+
 # Live sched_ext registration is gated behind an explicit opt-in because a buggy
 # scheduler can make the host unstable. Prefer dry-run on the host and use a VM
 # or disposable environment for real sched_ext loads.

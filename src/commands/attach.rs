@@ -2087,6 +2087,11 @@ Requirements:
                 description: "Build a struct_ops object from constant value fields and optional callback closures without loading it",
                 result: None,
             },
+            Example {
+                example: "ebpf attach --dry-run 'struct_ops:sched_ext_ops' { name: 'nu_demo', select_cpu: {|ctx| let p = $ctx.arg.p; let prev = $ctx.arg.prev_cpu; let wake = $ctx.arg.wake_flags; let mask = (kfunc-call \"scx_bpf_get_online_cpumask\"); if $mask != 0 { let cpu = (kfunc-call \"scx_bpf_select_cpu_and\" $p $prev $wake $mask 0); kfunc-call \"scx_bpf_put_cpumask\" $mask; $cpu } else { $prev } } }",
+                description: "Dry-run a sched_ext select_cpu callback with the safe cpumask acquire/use/release pattern",
+                result: None,
+            },
         ]
     }
 

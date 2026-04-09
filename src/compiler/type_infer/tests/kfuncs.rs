@@ -327,6 +327,84 @@ fn test_type_error_sched_ext_select_cpu_and_rejected_in_dispatch() {
 }
 
 #[test]
+fn test_sched_ext_select_cpu_and_with_cpumask_release_allowed_in_select_cpu() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let prev_cpu = func.alloc_vreg();
+    let wake_flags = func.alloc_vreg();
+    let cpumask = func.alloc_vreg();
+    let has_mask = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let cpu = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+    let use_mask = func.alloc_block();
+    let done = func.alloc_block();
+
+    let entry = func.block_mut(BlockId(0));
+    entry.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    entry.instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    entry.instructions.push(MirInst::Copy {
+        dst: prev_cpu,
+        src: MirValue::Const(0),
+    });
+    entry.instructions.push(MirInst::Copy {
+        dst: wake_flags,
+        src: MirValue::Const(0),
+    });
+    entry.instructions.push(MirInst::CallKfunc {
+        dst: cpumask,
+        kfunc: "scx_bpf_get_online_cpumask".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    entry.instructions.push(MirInst::BinOp {
+        dst: has_mask,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(cpumask),
+        rhs: MirValue::Const(0),
+    });
+    entry.terminator = MirInst::Branch {
+        cond: has_mask,
+        if_true: use_mask,
+        if_false: done,
+    };
+
+    let use_mask_block = func.block_mut(use_mask);
+    use_mask_block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    use_mask_block.instructions.push(MirInst::CallKfunc {
+        dst: cpu,
+        kfunc: "scx_bpf_select_cpu_and".to_string(),
+        btf_id: None,
+        args: vec![task, prev_cpu, wake_flags, cpumask, flags],
+    });
+    use_mask_block.instructions.push(MirInst::CallKfunc {
+        dst: release_ret,
+        kfunc: "scx_bpf_put_cpumask".to_string(),
+        btf_id: None,
+        args: vec![cpumask],
+    });
+    use_mask_block.terminator = MirInst::Jump { target: done };
+
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    infer_in_sched_ext_callback(&func, "select_cpu").expect(
+        "select_cpu_and with cpumask release should be accepted in sched_ext_ops.select_cpu",
+    );
+}
+
+#[test]
 fn test_type_error_kfunc_pointer_argument_required() {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();

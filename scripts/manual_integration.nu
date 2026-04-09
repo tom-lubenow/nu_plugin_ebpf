@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 45
+const TOTAL_STEPS = 46
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -621,7 +621,35 @@ step 43 "sched_ext_ops dry-run name-only object" {
     $result
 }
 
-step 44 "tcp_congestion_ops live attach and detach" {
+step 44 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
+    let code = ([
+        'ebpf attach --dry-run "struct_ops:sched_ext_ops" {'
+        '    name: "nu.demo_1"'
+        '    select_cpu: {|ctx|'
+        '        let p = $ctx.arg.p'
+        '        let prev = $ctx.arg.prev_cpu'
+        '        let wake = $ctx.arg.wake_flags'
+        '        let mask = (kfunc-call "scx_bpf_get_online_cpumask")'
+        '        if $mask != 0 {'
+        '            let cpu = (kfunc-call "scx_bpf_select_cpu_and" $p $prev $wake $mask 0)'
+        '            kfunc-call "scx_bpf_put_cpumask" $mask'
+        '            $cpu'
+        '        } else {'
+        '            $prev'
+        '        }'
+        '    }'
+        '} | describe'
+    ] | str join (char newline))
+    let result = (run-nu-with-plugin $plugin_bin $code | str trim)
+
+    if $result != "binary" {
+        fail $"expected sched_ext select_cpu dry-run to return binary, got ($result)"
+    }
+
+    $result
+}
+
+step 45 "tcp_congestion_ops live attach and detach" {
     let code = ([
         'let id = (ebpf attach "struct_ops:tcp_congestion_ops" {'
         '    name: "nu_demo"'
@@ -644,7 +672,7 @@ step 44 "tcp_congestion_ops live attach and detach" {
     $id
 }
 
-step 45 "verify no leaked probes" {
+step 46 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

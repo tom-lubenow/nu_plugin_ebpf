@@ -1584,7 +1584,12 @@ fn test_lower_default_step_range_iterate_emits_loop_header_start() {
                 ..
             }
         )
-    }) || matches!(exit_block.terminator, MirInst::Return { val: Some(MirValue::Const(0)) });
+    }) || matches!(
+        exit_block.terminator,
+        MirInst::Return {
+            val: Some(MirValue::Const(0))
+        }
+    );
     assert!(
         exit_initializes_result,
         "expected exit edge to initialize the loop result register"
