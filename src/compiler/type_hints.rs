@@ -192,6 +192,9 @@ fn recover_ctx_field_hint(
         | CtxField::RemotePort
         | CtxField::LocalIp4
         | CtxField::LocalPort
+        | CtxField::DeviceAccessType
+        | CtxField::DeviceMajor
+        | CtxField::DeviceMinor
         | CtxField::SockOp
         | CtxField::IsFullsock
         | CtxField::SockOpsCbFlags

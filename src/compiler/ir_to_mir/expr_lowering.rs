@@ -1315,6 +1315,9 @@ impl<'a> HirToMirLowering<'a> {
             self.probe_ctx.map(|ctx| ctx.probe_type),
             field_name.as_str(),
         ) {
+            (Some(EbpfProgramType::CgroupDevice), "access_type") => CtxField::DeviceAccessType,
+            (Some(EbpfProgramType::CgroupDevice), "major") => CtxField::DeviceMajor,
+            (Some(EbpfProgramType::CgroupDevice), "minor") => CtxField::DeviceMinor,
             (Some(EbpfProgramType::SockOps), "op") => CtxField::SockOp,
             (Some(EbpfProgramType::SockOps), "is_fullsock") => CtxField::IsFullsock,
             (Some(EbpfProgramType::SockOps), "cb_flags") => CtxField::SockOpsCbFlags,
@@ -4611,6 +4614,9 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::RemotePort
             | CtxField::LocalIp4
             | CtxField::LocalPort
+            | CtxField::DeviceAccessType
+            | CtxField::DeviceMajor
+            | CtxField::DeviceMinor
             | CtxField::SockOp
             | CtxField::IsFullsock
             | CtxField::SockOpsCbFlags

@@ -77,6 +77,7 @@ impl<'a> HirToMirLowering<'a> {
                 _ => None,
             },
             EbpfProgramType::CgroupSkb
+            | EbpfProgramType::CgroupDevice
             | EbpfProgramType::CgroupSock
             | EbpfProgramType::CgroupSysctl
             | EbpfProgramType::CgroupSockopt

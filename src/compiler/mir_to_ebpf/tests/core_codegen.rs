@@ -1101,6 +1101,46 @@ fn test_compile_sock_ops_remote_port_load_uses_be16_normalize() {
 }
 
 #[test]
+fn test_compile_cgroup_device_access_type_load_uses_first_word_offset() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupDevice, "/sys/fs/cgroup");
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::LoadCtxField {
+            dst,
+            field: CtxField::DeviceAccessType,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_LDX | opcode::BPF_W | opcode::BPF_MEM
+            && insn.src_reg == EbpfReg::R9.as_u8()
+            && insn.offset == 0
+    }));
+}
+
+#[test]
 fn test_compile_xdp_u16be_packet_projection() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("data"), string_member("u16be"), int_member(0)],

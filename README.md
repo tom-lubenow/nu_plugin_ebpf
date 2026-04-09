@@ -5,7 +5,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: Write tracing logic in familiar Nushell syntax
-- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, lsm, perf_event, xdp, tc, cgroup_skb, cgroup_sock, sock_ops, cgroup_sysctl, cgroup_sockopt, cgroup_sock_addr, sk_lookup, initial struct_ops object support
+- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, lsm, perf_event, xdp, tc, cgroup_skb, cgroup_device, cgroup_sock, sock_ops, cgroup_sysctl, cgroup_sockopt, cgroup_sock_addr, sk_lookup, initial struct_ops object support
 - **Aggregations**: Count by key, histograms, timing measurements
 - **Event streaming**: Real-time event output via ring buffers
 - **Map sharing**: Share data between probes with `--pin`
@@ -87,6 +87,9 @@ let id = ebpf attach 'tc:lo:ingress' {|ctx| $ctx.packet_len | count; 'ok' }
 
 # Count packets on cgroup egress traffic
 let id = ebpf attach 'cgroup_skb:/sys/fs/cgroup:egress' {|ctx| $ctx.packet_len | count; 'allow' }
+
+# Count device major numbers requested inside a cgroup
+let id = ebpf attach 'cgroup_device:/sys/fs/cgroup' {|ctx| $ctx.major | count; 'allow' }
 
 # Count sysctl reads versus writes inside a cgroup
 let id = ebpf attach 'cgroup_sysctl:/sys/fs/cgroup' {|ctx| $ctx.write | count; 'allow' }
@@ -270,6 +273,9 @@ The closure receives a context parameter with these fields:
 | `data` | Packet data pointer | xdp, tc, cgroup_skb |
 | `data_end` | Packet end pointer | xdp, tc, cgroup_skb |
 | `ingress_ifindex` | Ingress interface index | xdp, tc, cgroup_skb, sk_lookup |
+| `access_type` | Encoded cgroup device access type | cgroup_device |
+| `major` | Requested device major number | cgroup_device |
+| `minor` | Requested device minor number | cgroup_device |
 | `ifindex` | XDP ingress interface index alias | xdp |
 | `rx_queue_index` | XDP receive queue index | xdp |
 | `egress_ifindex` | XDP egress interface index | xdp |
@@ -339,6 +345,12 @@ sampling. The initial surface uses the ordinary helper-backed fields like
 `ctx.mark`, and `ctx.priority`, and closures can return `"allow"` /
 `"deny"` instead of raw `1` / `0` result codes. Address fields from the
 underlying `struct bpf_sock` are not surfaced yet.
+
+`cgroup_device` currently attaches to a cgroup path such as
+`/sys/fs/cgroup`. It exposes `ctx.cpu`, `ctx.ktime`, `ctx.access_type`,
+`ctx.major`, and `ctx.minor`, and closures can return `"allow"` /
+`"deny"` instead of raw `1` / `0` result codes. `ctx.access_type` is the
+raw kernel encoding `(BPF_DEVCG_ACC_* << 16) | BPF_DEVCG_DEV_*`.
 
 `sock_ops` currently attaches to a cgroup path such as `/sys/fs/cgroup`.
 It exposes `ctx.cpu`, `ctx.ktime`, `ctx.op`, `ctx.family`,

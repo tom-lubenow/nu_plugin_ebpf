@@ -114,6 +114,18 @@ fn test_program_type_metadata_for_sk_lookup() {
 }
 
 #[test]
+fn test_program_type_metadata_for_cgroup_device() {
+    let info = EbpfProgramType::CgroupDevice.info();
+    assert_eq!(info.canonical_prefix, "cgroup_device");
+    assert_eq!(info.attach_kind, ProgramAttachKind::CgroupDevice);
+    assert_eq!(info.target_kind, ProgramTargetKind::CgroupPath);
+    assert_eq!(info.arg_access, ProgramValueAccess::None);
+    assert_eq!(info.retval_access, ProgramValueAccess::None);
+    assert!(info.supports_cpu_ctx_field);
+    assert!(info.supports_timestamp_ctx_field);
+}
+
+#[test]
 fn test_program_type_metadata_for_sock_ops() {
     let info = EbpfProgramType::SockOps.info();
     assert_eq!(info.canonical_prefix, "sock_ops");
@@ -201,6 +213,10 @@ fn test_program_type_supports_raw_tracepoint_alias() {
     assert_eq!(
         EbpfProgramType::from_spec_prefix("sock_ops"),
         Some(EbpfProgramType::SockOps)
+    );
+    assert_eq!(
+        EbpfProgramType::from_spec_prefix("cgroup_device"),
+        Some(EbpfProgramType::CgroupDevice)
     );
 }
 
@@ -1460,6 +1476,17 @@ fn test_probe_context_allows_sock_ops_fields() {
 }
 
 #[test]
+fn test_probe_context_allows_cgroup_device_fields() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupDevice, "/sys/fs/cgroup");
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::DeviceAccessType)
+            .is_none()
+    );
+    assert!(ctx.ctx_field_access_error(&CtxField::DeviceMajor).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::DeviceMinor).is_none());
+}
+
+#[test]
 fn test_probe_context_allows_ipv6_sock_addr_fields_on_ipv6_hook() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect6");
     assert!(ctx.ctx_field_access_error(&CtxField::UserIp6).is_none());
@@ -1519,6 +1546,15 @@ fn test_probe_context_rejects_sock_ops_fields_on_packet_programs() {
         .ctx_field_access_error(&CtxField::SockOp)
         .expect("expected sock_ops field access error");
     assert!(err.contains("ctx.op is only available on sock_ops programs"));
+}
+
+#[test]
+fn test_probe_context_rejects_cgroup_device_fields_on_packet_programs() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::DeviceAccessType)
+        .expect("expected cgroup_device field access error");
+    assert!(err.contains("ctx.access_type is only available on cgroup_device programs"));
 }
 
 #[test]
@@ -1634,6 +1670,23 @@ fn test_sock_ops_section_name() {
             .section_name()
             .expect("sock_ops section should build"),
         "sockops"
+    );
+}
+
+#[test]
+fn test_cgroup_device_section_name() {
+    let builder = crate::compiler::instruction::EbpfBuilder::new();
+    let program = EbpfProgram::new(
+        EbpfProgramType::CgroupDevice,
+        "/sys/fs/cgroup",
+        "main",
+        builder,
+    );
+    assert_eq!(
+        program
+            .section_name()
+            .expect("cgroup_device section should build"),
+        "cgroup/dev"
     );
 }
 

@@ -380,6 +380,30 @@ impl EbpfState {
                     .attach(netns)
                     .map_err(|e| LoadError::Attach(format!("Failed to attach sk_lookup: {e}")))?;
             }
+            ProgramAttachKind::CgroupDevice => {
+                let target = CgroupDeviceTarget::parse(&program.target)?;
+                let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
+                    if e.kind() == ErrorKind::PermissionDenied {
+                        LoadError::PermissionDenied
+                    } else {
+                        LoadError::Attach(format!(
+                            "Failed to open cgroup path {}: {e}",
+                            target.cgroup_path
+                        ))
+                    }
+                })?;
+                let cgroup_device: &mut CgroupDevice = prog.try_into().map_err(|e| {
+                    LoadError::Load(format!("Failed to convert to CgroupDevice: {e}"))
+                })?;
+                cgroup_device
+                    .load()
+                    .map_err(|e| LoadError::Load(format!("Failed to load cgroup_device: {e}")))?;
+                cgroup_device
+                    .attach(cgroup, CgroupAttachMode::Single)
+                    .map_err(|e| {
+                        LoadError::Attach(format!("Failed to attach cgroup_device: {e}"))
+                    })?;
+            }
             ProgramAttachKind::SockOps => {
                 let target = SockOpsTarget::parse(&program.target)?;
                 let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {

@@ -1950,6 +1950,7 @@ Supported attach types:
   - perf_event
   - xdp, tc
   - cgroup_skb
+  - cgroup_device
   - cgroup_sock
   - sock_ops
   - cgroup_sysctl
@@ -2056,6 +2057,16 @@ Context parameter syntax (recommended):
     raw `1`/`0` result codes. Initial support covers `sock_create`,
     `sock_release`, `post_bind4`, and `post_bind6` with the scalar fields
     above; address fields are not surfaced yet.
+
+  cgroup_device fields:
+    {|ctx| $ctx.cpu }     - Get current CPU ID
+    {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.access_type } - Get the encoded device access type
+    {|ctx| $ctx.major }   - Get the requested device major number
+    {|ctx| $ctx.minor }   - Get the requested device minor number
+    Note: cgroup_device closures can return `allow` or `deny` instead of
+    raw `1`/`0` result codes. `ctx.access_type` is the raw kernel encoding
+    `(BPF_DEVCG_ACC_* << 16) | BPF_DEVCG_DEV_*`.
 
   sock_ops fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
@@ -2265,7 +2276,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', or 'sk_lookup:/proc/self/ns/net').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', or 'sk_lookup:/proc/self/ns/net').",
             )
             .required(
                 "body",
@@ -2313,6 +2324,7 @@ Requirements:
             "xdp",
             "tc",
             "cgroup_skb",
+            "cgroup_device",
             "cgroup_sock",
             "sock_ops",
             "cgroup_sysctl",
@@ -2363,6 +2375,11 @@ Requirements:
             Example {
                 example: "ebpf attach 'cgroup_skb:/sys/fs/cgroup:egress' {|ctx| $ctx.packet_len | count; 'allow' }",
                 description: "Count packet lengths on cgroup egress traffic",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'cgroup_device:/sys/fs/cgroup' {|ctx| $ctx.major | count; 'allow' }",
+                description: "Count device major numbers requested by processes in a cgroup",
                 result: None,
             },
             Example {

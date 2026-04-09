@@ -53,6 +53,15 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 4)
     }
 
+    fn bpf_cgroup_dev_ctx_offsets() -> (i16, i16, i16) {
+        // struct bpf_cgroup_dev_ctx {
+        //     __u32 access_type;
+        //     __u32 major;
+        //     __u32 minor;
+        // };
+        (0, 4, 8)
+    }
+
     fn bpf_sockopt_offsets() -> (i16, i16, i16, i16) {
         // struct bpf_sockopt {
         //     __u64 sk;
@@ -786,6 +795,21 @@ impl<'a> MirToEbpfCompiler<'a> {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().7,
                     _ => Self::bpf_sk_lookup_offsets().7,
                 };
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::DeviceAccessType => {
+                let offset = Self::bpf_cgroup_dev_ctx_offsets().0;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::DeviceMajor => {
+                let offset = Self::bpf_cgroup_dev_ctx_offsets().1;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::DeviceMinor => {
+                let offset = Self::bpf_cgroup_dev_ctx_offsets().2;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }

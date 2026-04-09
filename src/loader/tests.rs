@@ -288,6 +288,13 @@ fn test_parse_probe_spec_sk_lookup_root_netns() {
 }
 
 #[test]
+fn test_parse_probe_spec_cgroup_device_root() {
+    let (prog_type, target) = parse_probe_spec("cgroup_device:/sys/fs/cgroup").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::CgroupDevice);
+    assert_eq!(target, "/sys/fs/cgroup");
+}
+
+#[test]
 fn test_parse_probe_spec_sock_ops_root_cgroup() {
     let (prog_type, target) = parse_probe_spec("sock_ops:/sys/fs/cgroup").unwrap();
     assert_eq!(prog_type, EbpfProgramType::SockOps);
@@ -382,6 +389,20 @@ fn test_parse_program_spec_sk_lookup_is_structured() {
         }
     );
     assert_eq!(spec.to_string(), "sk_lookup:/proc/self/ns/net");
+}
+
+#[test]
+fn test_parse_program_spec_cgroup_device_is_structured() {
+    let spec = parse_program_spec("cgroup_device:/sys/fs/cgroup").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::CgroupDevice {
+            target: crate::program_spec::CgroupDeviceTarget {
+                cgroup_path: "/sys/fs/cgroup".to_string(),
+            }
+        }
+    );
+    assert_eq!(spec.to_string(), "cgroup_device:/sys/fs/cgroup");
 }
 
 #[test]

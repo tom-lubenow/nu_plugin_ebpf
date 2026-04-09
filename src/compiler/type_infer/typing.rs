@@ -398,6 +398,9 @@ impl<'a> TypeInference<'a> {
             | CtxField::RemotePort
             | CtxField::LocalIp4
             | CtxField::LocalPort
+            | CtxField::DeviceAccessType
+            | CtxField::DeviceMajor
+            | CtxField::DeviceMinor
             | CtxField::SockOp
             | CtxField::IsFullsock
             | CtxField::SockOpsCbFlags

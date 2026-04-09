@@ -446,6 +446,12 @@ pub enum CtxField {
     LocalIp6,
     /// bpf_sk_lookup::local_port (host byte order)
     LocalPort,
+    /// bpf_cgroup_dev_ctx::access_type
+    DeviceAccessType,
+    /// bpf_cgroup_dev_ctx::major
+    DeviceMajor,
+    /// bpf_cgroup_dev_ctx::minor
+    DeviceMinor,
     /// bpf_sock_ops::op
     SockOp,
     /// bpf_sock_ops::is_fullsock
@@ -512,6 +518,9 @@ impl CtxField {
             CtxField::LocalIp4 => "local_ip4".to_string(),
             CtxField::LocalIp6 => "local_ip6".to_string(),
             CtxField::LocalPort => "local_port".to_string(),
+            CtxField::DeviceAccessType => "access_type".to_string(),
+            CtxField::DeviceMajor => "major".to_string(),
+            CtxField::DeviceMinor => "minor".to_string(),
             CtxField::SockOp => "op".to_string(),
             CtxField::IsFullsock => "is_fullsock".to_string(),
             CtxField::SockOpsCbFlags => "cb_flags".to_string(),

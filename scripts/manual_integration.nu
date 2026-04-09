@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 53
+const TOTAL_STEPS = 54
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -118,6 +118,10 @@ def trigger-cpu-work [] {
 
 def trigger-sysctl-read [] {
     open --raw /proc/sys/kernel/pid_max | str length | ignore
+}
+
+def trigger-device-read [] {
+    ^cat /dev/null | ignore
 }
 
 def trigger-socket-create [] {
@@ -640,7 +644,18 @@ step 43 "cgroup_sock root sock_create family counter" {
     }
 }
 
-step 44 "sock_ops root cgroup op counter" {
+step 44 "cgroup_device root device major counter" {
+    if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
+        print "Skipping cgroup_device smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
+    } else {
+        count-at-least-one "cgroup_device:/sys/fs/cgroup" {|ctx|
+            $ctx.major | count
+            'allow'
+        } { trigger-device-read } "cgroup_device major counter"
+    }
+}
+
+step 45 "sock_ops root cgroup op counter" {
     if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
         print "Skipping sock_ops smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
     } else {
@@ -651,7 +666,7 @@ step 44 "sock_ops root cgroup op counter" {
     }
 }
 
-step 45 "cgroup_sysctl root read/write counter" {
+step 46 "cgroup_sysctl root read/write counter" {
     if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
         print "Skipping cgroup_sysctl smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
     } else {
@@ -662,7 +677,7 @@ step 45 "cgroup_sysctl root read/write counter" {
     }
 }
 
-step 46 "cgroup_sockopt root getsockopt counter" {
+step 47 "cgroup_sockopt root getsockopt counter" {
     if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
         print "Skipping cgroup_sockopt smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
     } else {
@@ -673,14 +688,14 @@ step 46 "cgroup_sockopt root getsockopt counter" {
     }
 }
 
-step 47 "sk_lookup root netns local_port counter" {
+step 48 "sk_lookup root netns local_port counter" {
     count-at-least-one "sk_lookup:/proc/self/ns/net" {|ctx|
         $ctx.local_port | count
         'pass'
     } { trigger-loopback-connect } "sk_lookup local_port counter"
 }
 
-step 48 "sched_ext_ops dry-run name-only object" {
+step 49 "sched_ext_ops dry-run name-only object" {
     let code = ([
         'ebpf attach --dry-run "struct_ops:sched_ext_ops" {'
         '    name: "nu.demo_1"'
@@ -695,7 +710,7 @@ step 48 "sched_ext_ops dry-run name-only object" {
     $result
 }
 
-step 49 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
+step 50 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
     let code = ([
         'ebpf attach --dry-run "struct_ops:sched_ext_ops" {'
         '    name: "nu.demo_1"'
@@ -723,7 +738,7 @@ step 49 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
     $result
 }
 
-step 50 "tcp_congestion_ops live attach and detach" {
+step 51 "tcp_congestion_ops live attach and detach" {
     let code = ([
         'let id = (ebpf attach "struct_ops:tcp_congestion_ops" {'
         '    name: "nu_demo"'
@@ -746,7 +761,7 @@ step 50 "tcp_congestion_ops live attach and detach" {
     $id
 }
 
-step 51 "lsm file_open dry-run" {
+step 52 "lsm file_open dry-run" {
     let code = ([
         'ebpf attach --dry-run "lsm:file_open" {|ctx| $ctx.arg0.f_flags | count; 0 } | describe'
     ] | str join (char newline))
@@ -759,14 +774,14 @@ step 51 "lsm file_open dry-run" {
     $result
 }
 
-step 52 "perf_event software cpu-clock counter" {
+step 53 "perf_event software cpu-clock counter" {
     count-at-least-one "perf_event:software:cpu-clock:period=100000" {|ctx|
         $ctx.cpu | count
         0
     } { trigger-cpu-work } "perf_event cpu-clock counter"
 }
 
-step 53 "verify no leaked probes" {
+step 54 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

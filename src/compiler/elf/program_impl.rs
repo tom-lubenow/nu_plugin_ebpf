@@ -59,6 +59,7 @@ fn section_name_for_program(
             }
         }
         EbpfProgramType::CgroupSysctl => Ok("cgroup/sysctl".to_string()),
+        EbpfProgramType::CgroupDevice => Ok("cgroup/dev".to_string()),
         EbpfProgramType::CgroupSockopt => {
             let (_path, attach_type) = target.rsplit_once(':').ok_or_else(|| {
                 CompileError::InvalidProgram(format!(
