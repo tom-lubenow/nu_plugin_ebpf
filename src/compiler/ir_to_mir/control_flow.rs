@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::EbpfProgramType;
 
 impl<'a> HirToMirLowering<'a> {
     fn cleanup_return_src(hir: &HirFunction, target: HirBlockId) -> Option<RegId> {
@@ -40,7 +41,54 @@ impl<'a> HirToMirLowering<'a> {
         resolve_cleanup_return_src(hir, target, &mut Vec::new())
     }
 
+    fn action_alias_return_value(&self, reg: RegId) -> Option<i64> {
+        let program_type = self.probe_ctx.as_ref().map(|ctx| ctx.probe_type)?;
+        let alias = self
+            .get_metadata(reg)
+            .and_then(|meta| {
+                meta.literal_string.clone().or_else(|| {
+                    meta.constant_value.as_ref().and_then(|value| match value {
+                        Value::String { val, .. } | Value::Glob { val, .. } => Some(val.clone()),
+                        _ => None,
+                    })
+                })
+            })?
+            .to_ascii_lowercase();
+
+        match program_type {
+            EbpfProgramType::Xdp => match alias.as_str() {
+                "abort" | "aborted" => Some(0),
+                "drop" => Some(1),
+                "pass" => Some(2),
+                "tx" => Some(3),
+                "redirect" => Some(4),
+                _ => None,
+            },
+            EbpfProgramType::Tc => match alias.as_str() {
+                "ok" => Some(0),
+                "reclassify" => Some(1),
+                "shot" | "drop" => Some(2),
+                "pipe" => Some(3),
+                "stolen" => Some(4),
+                "queued" => Some(5),
+                "repeat" => Some(6),
+                "redirect" => Some(7),
+                "trap" => Some(8),
+                _ => None,
+            },
+            EbpfProgramType::CgroupSkb | EbpfProgramType::CgroupSockAddr => match alias.as_str() {
+                "deny" | "drop" | "reject" => Some(0),
+                "allow" | "pass" | "accept" | "permit" => Some(1),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     fn return_value_for_reg(&self, reg: RegId) -> MirValue {
+        if let Some(alias) = self.action_alias_return_value(reg) {
+            return MirValue::Const(alias);
+        }
         self.reg_map
             .get(&reg.get())
             .copied()
@@ -722,7 +770,7 @@ impl<'a> HirToMirLowering<'a> {
                 });
             }
             HirTerminator::Return { src } => {
-                let val = Some(MirValue::VReg(self.get_vreg(*src)));
+                let val = Some(self.return_value_for_reg(*src));
                 self.terminate(MirInst::Return { val });
             }
             HirTerminator::ReturnEarly { .. } => {

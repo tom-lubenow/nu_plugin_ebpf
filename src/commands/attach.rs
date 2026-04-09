@@ -1990,9 +1990,10 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.ifindex } - Get ingress interface index
     {|ctx| $ctx.rx_queue_index } - Get RX queue index
     {|ctx| $ctx.egress_ifindex } - Get egress interface index
-    Note: XDP closures currently need to return an explicit numeric action code
-    such as `2` (XDP_PASS). TC closures currently need to return an explicit
-    numeric classifier action code such as `0` (TC_ACT_OK). Packet reads currently support scalar byte access
+    Note: XDP closures can return action aliases like `pass`, `drop`,
+    `tx`, and `redirect`, and TC closures can return aliases like `ok`,
+    `shot`, `pipe`, and `redirect`. cgroup_skb closures can return
+    `allow` or `deny`. Raw numeric return codes still work. Packet reads currently support scalar byte access
     through `get`/indexing, direct `u16be`/`u32be` cell-path scalar loads,
     and typed header views `eth`, `ipv4`, `udp`, and `tcp`. Those views also
     support `payload` stepping: `eth.payload` skips Ethernet and a single
@@ -2013,10 +2014,10 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.protocol } - Get socket protocol
     {|ctx| $ctx.msg_src_ip4 } - Get the IPv4 source address in host byte order on sendmsg4/recvmsg4
     {|ctx| $ctx.msg_src_ip6 } - Get the IPv6 source address as four host-order u32 words on sendmsg6/recvmsg6
-    Note: cgroup_sock_addr closures currently need to return an explicit
-    numeric allow/deny code such as `1` (allow) or `0` (deny). This initial
-    slice still exposes IPv6 addresses as fixed arrays of four u32 words
-    rather than a higher-level address type.
+    Note: cgroup_sock_addr closures can return `allow` or `deny` instead of
+    raw `1`/`0` result codes. This initial slice still exposes IPv6
+    addresses as fixed arrays of four u32 words rather than a higher-level
+    address type.
 
   Function fields:
     {|ctx| $ctx.arg0 }    - Get function argument 0
@@ -2242,17 +2243,17 @@ Requirements:
                 result: None,
             },
             Example {
-                example: "ebpf attach 'cgroup_skb:/sys/fs/cgroup:egress' {|ctx| $ctx.packet_len | count; 1 }",
+                example: "ebpf attach 'cgroup_skb:/sys/fs/cgroup:egress' {|ctx| $ctx.packet_len | count; 'allow' }",
                 description: "Count packet lengths on cgroup egress traffic",
                 result: None,
             },
             Example {
-                example: "ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect4' {|ctx| $ctx.user_port | count; 1 }",
+                example: "ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect4' {|ctx| $ctx.user_port | count; 'allow' }",
                 description: "Count requested ports on cgroup connect4 hooks",
                 result: None,
             },
             Example {
-                example: "ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect6' {|ctx| ($ctx.user_ip6 | get 3) | count; 1 }",
+                example: "ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect6' {|ctx| ($ctx.user_ip6 | get 3) | count; 'allow' }",
                 description: "Count the last host-order IPv6 address word on cgroup connect6 hooks",
                 result: None,
             },

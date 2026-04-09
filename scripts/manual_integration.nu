@@ -542,14 +542,14 @@ step 35 "typed generic map schema persists across pinned programs" {
 step 36 "xdp loopback ethernet header field counter" {
     count-at-least-one "xdp:lo" {|ctx|
         $ctx.data.eth.ethertype | count
-        2
+        'pass'
     } { trigger-ping-loopback } "xdp ethernet ethertype counter"
 }
 
 step 37 "tc loopback packet length counter" {
     count-at-least-one "tc:lo:ingress" {|ctx|
         $ctx.packet_len | count
-        0
+        'ok'
     } { trigger-ping-loopback } "tc packet length counter"
 }
 
@@ -559,7 +559,7 @@ step 38 "cgroup_skb root egress packet length counter" {
     } else {
         count-at-least-one "cgroup_skb:/sys/fs/cgroup:egress" {|ctx|
             $ctx.packet_len | count
-            1
+            'allow'
         } { trigger-ping-loopback } "cgroup_skb packet length counter"
     }
 }
@@ -567,7 +567,7 @@ step 38 "cgroup_skb root egress packet length counter" {
 step 39 "xdp loopback ipv4 protocol via variable payload step" {
     count-at-least-one "xdp:lo" {|ctx|
         $ctx.data.eth.payload.ipv4.protocol | count
-        2
+        'pass'
     } { trigger-ping-loopback } "xdp ipv4 protocol counter"
 }
 
@@ -588,7 +588,7 @@ step 41 "cgroup_sock_addr root connect4 port counter" {
     } else {
         count-at-least-one "cgroup_sock_addr:/sys/fs/cgroup:connect4" {|ctx|
             $ctx.user_port | count
-            1
+            'allow'
         } { trigger-loopback-connect } "cgroup_sock_addr port counter"
     }
 }
@@ -601,7 +601,7 @@ step 42 "cgroup_sock_addr root connect6 ipv6 word counter" {
     } else {
         count-at-least-one "cgroup_sock_addr:/sys/fs/cgroup:connect6" {|ctx|
             ($ctx.user_ip6 | get 3) | count
-            1
+            'allow'
         } { trigger-loopback-connect6 } "cgroup_sock_addr ipv6 word counter"
     }
 }

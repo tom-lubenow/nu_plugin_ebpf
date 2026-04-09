@@ -74,19 +74,19 @@ ebpf attach -s 'fentry:do_sys_openat2' {|ctx| $ctx.arg2.flags | emit } | first 1
 ebpf attach -s 'fexit:ksys_read' {|ctx| $ctx.retval | emit } | first 1
 
 # Count loopback packets by packet length via XDP, then pass them through
-let id = ebpf attach 'xdp:lo' {|ctx| $ctx.packet_len | count; 2 }
+let id = ebpf attach 'xdp:lo' {|ctx| $ctx.packet_len | count; 'pass' }
 
 # Count packets at tc ingress on loopback
-let id = ebpf attach 'tc:lo:ingress' {|ctx| $ctx.packet_len | count; 0 }
+let id = ebpf attach 'tc:lo:ingress' {|ctx| $ctx.packet_len | count; 'ok' }
 
 # Count packets on cgroup egress traffic
-let id = ebpf attach 'cgroup_skb:/sys/fs/cgroup:egress' {|ctx| $ctx.packet_len | count; 1 }
+let id = ebpf attach 'cgroup_skb:/sys/fs/cgroup:egress' {|ctx| $ctx.packet_len | count; 'allow' }
 
 # Count requested ports on cgroup connect4 hooks
-let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect4' {|ctx| $ctx.user_port | count; 1 }
+let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect4' {|ctx| $ctx.user_port | count; 'allow' }
 
 # Inspect the last host-order IPv6 word on cgroup connect6 hooks
-let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect6' {|ctx| ($ctx.user_ip6 | get 3) | count; 1 }
+let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect6' {|ctx| ($ctx.user_ip6 | get 3) | count; 'allow' }
 
 # Build a struct_ops object from constant value fields and optional callback closures.
 # sched_ext_ops only requires a non-empty valid BPF object name using only
@@ -280,10 +280,10 @@ the IHL nibble, and `$ctx.data.eth.payload.ipv4.payload.tcp.payload` skips a
 runtime-sized TCP header using the data offset. `xdp` additionally exposes `ctx.ifindex`,
 `ctx.rx_queue_index`, and `ctx.egress_ifindex`. Variable header lengths, VLAN
 options parsing, deeper TCP option parsing, stacked VLAN tags, and named
-packet-program action helpers are still not modeled, so
-XDP closures currently need to return an explicit numeric action code such as
-`2` (`XDP_PASS`), and TC closures currently need to return an explicit numeric
-classifier action code such as `0` (`TC_ACT_OK`).
+packet-program action helpers are still not modeled, but compile-time action
+aliases are available in return position. XDP closures can return strings like
+`"pass"` / `"drop"`, and TC closures can return strings like `"ok"` /
+`"shot"`. Raw numeric return codes still work.
 
 `cgroup_sock_addr` currently exposes `ctx.cpu`, `ctx.ktime`,
 `ctx.user_family`, `ctx.user_ip4`, `ctx.user_ip6`, `ctx.user_port`,
@@ -291,8 +291,9 @@ classifier action code such as `0` (`TC_ACT_OK`).
 `ctx.msg_src_ip6`. The IPv4 address and port fields are normalized to host
 byte order. The IPv6 fields are exposed as fixed arrays of four host-order
 `u32` words, so ordinary Nushell indexing works, for example
-`($ctx.user_ip6 | get 3)`. Closures need to return an explicit numeric
-allow/deny result such as `1` (allow) or `0` (deny).
+`($ctx.user_ip6 | get 3)`. `cgroup_sock_addr` and `cgroup_skb` closures can
+return `"allow"` / `"deny"` instead of raw `1` / `0` codes. Numeric result
+codes still work too.
 
 `kprobe` and `uprobe` expose `ctx.arg0`-`ctx.arg5` through `pt_regs`. `fentry` and
 `fexit` resolve `ctx.argN` and `ctx.retval` through kernel BTF. Scalar and pointer

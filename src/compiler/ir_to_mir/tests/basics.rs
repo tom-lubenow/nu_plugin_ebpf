@@ -270,6 +270,26 @@ fn make_ctx_path_call_program(path: CellPath, decl_id: DeclId) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_return_literal_program(lit: HirLiteral) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data()],
+        ast: vec![None],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn find_struct_ops_named_arg_candidate() -> Option<(String, String, String, u8)> {
     for (value_type_name, callback_name, arg_name, expected_idx) in [
         ("sched_ext_ops", "select_cpu", "p", 0u8),
@@ -1525,6 +1545,102 @@ fn make_range_iterate_program(start: i64, step: HirLiteral, end: i64) -> HirProg
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+#[test]
+fn test_lower_xdp_action_alias_return_to_const() {
+    let hir = make_return_literal_program(HirLiteral::String(b"pass".to_vec()));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp action alias should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(matches!(
+        block.terminator,
+        MirInst::Return {
+            val: Some(MirValue::Const(2))
+        }
+    ));
+}
+
+#[test]
+fn test_lower_tc_action_alias_return_to_const() {
+    let hir = make_return_literal_program(HirLiteral::String(b"ok".to_vec()));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tc action alias should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(matches!(
+        block.terminator,
+        MirInst::Return {
+            val: Some(MirValue::Const(0))
+        }
+    ));
+}
+
+#[test]
+fn test_lower_cgroup_skb_action_alias_return_to_const() {
+    let hir = make_return_literal_program(HirLiteral::String(b"allow".to_vec()));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_skb action alias should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(matches!(
+        block.terminator,
+        MirInst::Return {
+            val: Some(MirValue::Const(1))
+        }
+    ));
+}
+
+#[test]
+fn test_lower_cgroup_sock_addr_action_alias_return_to_const() {
+    let hir = make_return_literal_program(HirLiteral::String(b"deny".to_vec()));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock_addr action alias should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(matches!(
+        block.terminator,
+        MirInst::Return {
+            val: Some(MirValue::Const(0))
+        }
+    ));
 }
 
 fn string_member(name: &str) -> PathMember {
