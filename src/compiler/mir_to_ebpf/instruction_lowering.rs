@@ -39,6 +39,10 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.compile_load_slot_inst(*dst, *slot, *offset, ty)?;
             }
 
+            LirInst::ListLen { dst, list } => {
+                self.compile_load_inst(*dst, *list, 0, &MirType::U64)?;
+            }
+
             LirInst::StoreSlot {
                 slot,
                 offset,
@@ -172,10 +176,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 ));
             }
 
-            LirInst::ListNew { .. }
-            | LirInst::ListPush { .. }
-            | LirInst::ListLen { .. }
-            | LirInst::ListGet { .. } => {
+            LirInst::ListNew { .. } | LirInst::ListPush { .. } | LirInst::ListGet { .. } => {
                 return Err(CompileError::UnsupportedInstruction(
                     "List operations must be lowered before codegen".into(),
                 ));

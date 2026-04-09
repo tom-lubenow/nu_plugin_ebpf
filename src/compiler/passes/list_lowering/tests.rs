@@ -58,8 +58,15 @@ fn test_list_push_is_lowered() {
     assert!(
         insts
             .iter()
-            .any(|inst| matches!(inst, MirInst::Store { .. })),
-        "ListPush lowering should emit stores"
+            .any(|inst| matches!(
+                inst,
+                MirInst::StoreSlot {
+                    slot: lowered_slot,
+                    offset,
+                    ..
+                } if *lowered_slot == slot && (*offset == 8 || *offset == 16)
+            )),
+        "ListPush lowering should emit slot stores for list elements"
     );
 }
 
@@ -192,41 +199,37 @@ fn test_run_with_type_hints_seeds_list_push_temps() {
         }),
         address_space: AddressSpace::Stack,
     };
-    let elem_ptr_ty = MirType::Ptr {
-        pointee: Box::new(MirType::I64),
-        address_space: AddressSpace::Stack,
-    };
-
-    let base_ptr = func
+    let len_vreg = func
         .blocks
         .iter()
         .flat_map(|block| block.instructions.iter())
         .find_map(|inst| match inst {
-            MirInst::Copy {
+            MirInst::ListLen {
                 dst,
-                src: MirValue::StackSlot(s),
-            } if *s == slot && *dst != list => Some(*dst),
+                list: lowered_list,
+            } if *lowered_list == list => Some(*dst),
             _ => None,
         })
-        .expect("expected rematerialized base list pointer");
-    let elem_ptr = func
+        .expect("expected lowered list push to reuse ListLen");
+    let eq_cond = func
         .blocks
         .iter()
         .flat_map(|block| block.instructions.iter())
         .find_map(|inst| match inst {
             MirInst::BinOp {
                 dst,
-                op: BinOpKind::Add,
+                op: BinOpKind::Eq,
                 lhs: MirValue::VReg(lhs),
+                rhs: MirValue::Const(0),
                 ..
-            } if *lhs == base_ptr => Some(*dst),
+            } if *lhs == len_vreg => Some(*dst),
             _ => None,
         })
-        .expect("expected element pointer add");
+        .expect("expected unrolled list push to compare the lowered length");
 
     assert_eq!(hints.get(&list), Some(&list_ptr_ty));
-    assert_eq!(hints.get(&base_ptr), Some(&list_ptr_ty));
-    assert_eq!(hints.get(&elem_ptr), Some(&elem_ptr_ty));
+    assert_eq!(hints.get(&len_vreg), Some(&MirType::U64));
+    assert_eq!(hints.get(&eq_cond), Some(&MirType::Bool));
 }
 
 #[test]

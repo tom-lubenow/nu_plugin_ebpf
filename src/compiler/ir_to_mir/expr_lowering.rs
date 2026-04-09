@@ -1013,6 +1013,10 @@ impl<'a> HirToMirLowering<'a> {
                 const MAX_LIST_CAPACITY: usize = 60;
                 let max_len = (*capacity as usize).min(MAX_LIST_CAPACITY);
                 let buffer_size = 8 + (max_len * 8); // length + elements
+                let list_ty = MirType::Array {
+                    elem: Box::new(MirType::I64),
+                    len: max_len.saturating_add(1),
+                };
 
                 let slot = self
                     .func
@@ -1025,9 +1029,17 @@ impl<'a> HirToMirLowering<'a> {
                     buffer: slot,
                     max_len,
                 });
+                self.vreg_type_hints.insert(
+                    dst_vreg,
+                    MirType::Ptr {
+                        pointee: Box::new(list_ty.clone()),
+                        address_space: AddressSpace::Stack,
+                    },
+                );
 
                 // Track the list buffer in metadata
                 let meta = self.get_or_create_metadata(dst);
+                meta.field_type = Some(list_ty);
                 meta.list_buffer = Some((slot, max_len));
             }
 

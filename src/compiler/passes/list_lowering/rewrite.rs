@@ -79,32 +79,20 @@ impl ListLowering {
 
                         let len_vreg = func.alloc_vreg();
                         let cond_vreg = func.alloc_vreg();
-                        let base_ptr = func.alloc_vreg();
-                        let offset_mul = func.alloc_vreg();
-                        let offset_add = func.alloc_vreg();
-                        let elem_ptr = func.alloc_vreg();
-                        let new_len = func.alloc_vreg();
 
                         if let Some(hints) = hints.as_mut() {
                             hints.insert(len_vreg, MirType::U64);
                             hints.insert(cond_vreg, MirType::Bool);
-                            hints.insert(base_ptr, Self::list_ptr_type(meta.max_len));
-                            hints.insert(offset_mul, MirType::U64);
-                            hints.insert(offset_add, MirType::U64);
-                            hints.insert(elem_ptr, Self::list_elem_ptr_type());
-                            hints.insert(new_len, MirType::U64);
                         }
 
                         let cont_id = Self::split_block_at(func, block_id, idx);
-                        let push_id = func.alloc_block();
+                        let dispatch_id = func.alloc_block();
 
                         {
                             let block = func.block_mut(block_id);
-                            block.instructions.push(MirInst::LoadSlot {
+                            block.instructions.push(MirInst::ListLen {
                                 dst: len_vreg,
-                                slot: meta.slot,
-                                offset: 0,
-                                ty: MirType::U64,
+                                list,
                             });
                             block.instructions.push(MirInst::BinOp {
                                 dst: cond_vreg,
@@ -114,54 +102,57 @@ impl ListLowering {
                             });
                             block.terminator = MirInst::Branch {
                                 cond: cond_vreg,
-                                if_true: push_id,
+                                if_true: dispatch_id,
                                 if_false: cont_id,
                             };
                         }
 
-                        {
-                            let block = func.block_mut(push_id);
-                            block.instructions.push(MirInst::Copy {
-                                dst: base_ptr,
-                                src: MirValue::StackSlot(meta.slot),
-                            });
-                            block.instructions.push(MirInst::BinOp {
-                                dst: offset_mul,
-                                op: BinOpKind::Mul,
-                                lhs: MirValue::VReg(len_vreg),
-                                rhs: MirValue::Const(8),
-                            });
-                            block.instructions.push(MirInst::BinOp {
-                                dst: offset_add,
-                                op: BinOpKind::Add,
-                                lhs: MirValue::VReg(offset_mul),
-                                rhs: MirValue::Const(8),
-                            });
-                            block.instructions.push(MirInst::BinOp {
-                                dst: elem_ptr,
-                                op: BinOpKind::Add,
-                                lhs: MirValue::VReg(base_ptr),
-                                rhs: MirValue::VReg(offset_add),
-                            });
-                            block.instructions.push(MirInst::Store {
-                                ptr: elem_ptr,
-                                offset: 0,
-                                val: MirValue::VReg(item),
-                                ty: MirType::I64,
-                            });
-                            block.instructions.push(MirInst::BinOp {
-                                dst: new_len,
-                                op: BinOpKind::Add,
-                                lhs: MirValue::VReg(len_vreg),
-                                rhs: MirValue::Const(1),
-                            });
-                            block.instructions.push(MirInst::StoreSlot {
-                                slot: meta.slot,
-                                offset: 0,
-                                val: MirValue::VReg(new_len),
-                                ty: MirType::U64,
-                            });
-                            block.terminator = MirInst::Jump { target: cont_id };
+                        let mut compare_block_id = dispatch_id;
+                        for idx in 0..meta.max_len {
+                            let store_block_id = func.alloc_block();
+                            {
+                                let block = func.block_mut(store_block_id);
+                                block.instructions.push(MirInst::StoreSlot {
+                                    slot: meta.slot,
+                                    offset: (8 + (idx * 8)) as i32,
+                                    val: MirValue::VReg(item),
+                                    ty: MirType::I64,
+                                });
+                                block.instructions.push(MirInst::StoreSlot {
+                                    slot: meta.slot,
+                                    offset: 0,
+                                    val: MirValue::Const((idx + 1) as i64),
+                                    ty: MirType::U64,
+                                });
+                                block.terminator = MirInst::Jump { target: cont_id };
+                            }
+
+                            if idx + 1 == meta.max_len {
+                                func.block_mut(compare_block_id).terminator =
+                                    MirInst::Jump { target: store_block_id };
+                                break;
+                            }
+
+                            let next_compare_id = func.alloc_block();
+                            let eq_cond = func.alloc_vreg();
+                            if let Some(hints) = hints.as_mut() {
+                                hints.insert(eq_cond, MirType::Bool);
+                            }
+                            {
+                                let block = func.block_mut(compare_block_id);
+                                block.instructions.push(MirInst::BinOp {
+                                    dst: eq_cond,
+                                    op: BinOpKind::Eq,
+                                    lhs: MirValue::VReg(len_vreg),
+                                    rhs: MirValue::Const(idx as i64),
+                                });
+                                block.terminator = MirInst::Branch {
+                                    cond: eq_cond,
+                                    if_true: store_block_id,
+                                    if_false: next_compare_id,
+                                };
+                            }
+                            compare_block_id = next_compare_id;
                         }
 
                         worklist.push_back(cont_id);
