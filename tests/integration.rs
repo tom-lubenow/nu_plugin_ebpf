@@ -293,6 +293,23 @@ mod linux_tests {
         }
     }
 
+    /// Test parsing cgroup_sysctl specification
+    #[test]
+    fn test_parse_cgroup_sysctl_spec() {
+        let result = parse_probe_spec("cgroup_sysctl:/sys/fs/cgroup");
+
+        match result {
+            Ok((prog_type, target)) => {
+                assert!(
+                    format!("{:?}", prog_type).contains("CgroupSysctl"),
+                    "Expected CgroupSysctl type"
+                );
+                assert_eq!(target, "/sys/fs/cgroup");
+            }
+            Err(e) => panic!("Unexpected error: {:?}", e),
+        }
+    }
+
     /// Test parsing lsm specification
     #[test]
     fn test_parse_lsm_spec() {

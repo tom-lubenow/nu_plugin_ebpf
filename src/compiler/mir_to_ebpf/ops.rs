@@ -45,6 +45,14 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 4, 8, 24, 28, 32, 36, 40, 44)
     }
 
+    fn bpf_sysctl_offsets() -> (i16, i16) {
+        // struct bpf_sysctl {
+        //     __u32 write;
+        //     __u32 file_pos;
+        // };
+        (0, 4)
+    }
+
     fn compile_ctx_u32_array_to_stack(
         &mut self,
         dst: EbpfReg,
@@ -622,6 +630,16 @@ impl<'a> MirToEbpfCompiler<'a> {
             CtxField::MsgSrcIp6 => {
                 let offset = Self::bpf_sock_addr_offsets().8;
                 self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.msg_src_ip6")?;
+            }
+            CtxField::SysctlWrite => {
+                let offset = Self::bpf_sysctl_offsets().0;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SysctlFilePos => {
+                let offset = Self::bpf_sysctl_offsets().1;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::Comm => {
                 let comm_offset = if let Some(slot) = slot {

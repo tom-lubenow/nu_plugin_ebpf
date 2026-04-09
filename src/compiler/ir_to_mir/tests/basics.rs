@@ -1643,6 +1643,57 @@ fn test_lower_cgroup_sock_addr_action_alias_return_to_const() {
     ));
 }
 
+#[test]
+fn test_lower_cgroup_sysctl_action_alias_return_to_const() {
+    let hir = make_return_literal_program(HirLiteral::String(b"allow".to_vec()));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sysctl action alias should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(matches!(
+        block.terminator,
+        MirInst::Return {
+            val: Some(MirValue::Const(1))
+        }
+    ));
+}
+
+#[test]
+fn test_lower_cgroup_sysctl_ctx_write_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("write")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sysctl ctx.write should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::SysctlWrite,
+            ..
+        }
+    )));
+}
+
 fn string_member(name: &str) -> PathMember {
     PathMember::test_string(name.to_string(), false, Casing::Sensitive)
 }

@@ -473,6 +473,23 @@ fn validate_cgroup_skb_target(target: &str) -> Result<(), LoadError> {
     Ok(())
 }
 
+fn validate_cgroup_path_target(target: &str) -> Result<(), LoadError> {
+    let cgroup_path = Path::new(target);
+
+    if !cgroup_path.exists() {
+        return Err(LoadError::Load(format!("Unknown cgroup path: {}", target)));
+    }
+
+    if !cgroup_path.is_dir() {
+        return Err(LoadError::Load(format!(
+            "cgroup target must be a directory: {}",
+            target
+        )));
+    }
+
+    Ok(())
+}
+
 fn validate_cgroup_sock_addr_target(target: &str) -> Result<(), LoadError> {
     let parsed = CgroupSockAddrTarget::parse(target)?;
     let cgroup_path = Path::new(&parsed.cgroup_path);
@@ -549,6 +566,7 @@ fn validate_target_for_program_type(
         }
         ProgramTargetKind::TrafficControlInterface => validate_tc_target(target),
         ProgramTargetKind::CgroupPathAttachType => validate_cgroup_skb_target(target),
+        ProgramTargetKind::CgroupPath => validate_cgroup_path_target(target),
         ProgramTargetKind::CgroupPathSockAddrAttachType => validate_cgroup_sock_addr_target(target),
         ProgramTargetKind::StructOpsCallback => validate_struct_ops_value_type(target),
     }
@@ -589,6 +607,7 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `tc:interface:egress`
 /// - `cgroup_skb:/path/to/cgroup:ingress`
 /// - `cgroup_skb:/path/to/cgroup:egress`
+/// - `cgroup_sysctl:/path/to/cgroup`
 /// - `cgroup_sock_addr:/path/to/cgroup:connect4`
 /// - `uprobe:/path/to/binary:0x1234` (offset-based)
 /// - `uprobe:/path/to/binary:function@PID` (PID-filtered)
@@ -655,6 +674,9 @@ pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
         }),
         EbpfProgramType::CgroupSkb => Ok(ProgramSpec::CgroupSkb {
             target: CgroupSkbTarget::parse(target)?,
+        }),
+        EbpfProgramType::CgroupSysctl => Ok(ProgramSpec::CgroupSysctl {
+            cgroup_path: target.to_string(),
         }),
         EbpfProgramType::CgroupSockAddr => Ok(ProgramSpec::CgroupSockAddr {
             target: CgroupSockAddrTarget::parse(target)?,

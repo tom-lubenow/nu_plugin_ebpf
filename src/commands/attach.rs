@@ -1950,6 +1950,7 @@ Supported attach types:
   - perf_event
   - xdp, tc
   - cgroup_skb
+  - cgroup_sysctl
   - cgroup_sock_addr
   - struct_ops
 
@@ -2029,6 +2030,14 @@ Context parameter syntax (recommended):
     `lsm:file_open`. Live loading requires a kernel with BPF LSM enabled;
     `--dry-run` is the safest way to validate object construction and BTF
     argument access on a development machine.
+
+  cgroup_sysctl fields:
+    {|ctx| $ctx.cpu }     - Get current CPU ID
+    {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.write }   - Get whether the sysctl knob is being written (`1`) or read (`0`)
+    {|ctx| $ctx.file_pos } - Get the current sysctl file position
+    Note: cgroup_sysctl closures can return `allow` or `deny` instead of
+    raw `1`/`0` result codes.
 
   cgroup_sock_addr fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
@@ -2191,7 +2200,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'cgroup_skb:/sys/fs/cgroup:egress', or 'cgroup_sock_addr:/sys/fs/cgroup:connect4').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_sysctl:/sys/fs/cgroup', or 'cgroup_sock_addr:/sys/fs/cgroup:connect4').",
             )
             .required(
                 "body",
@@ -2239,6 +2248,7 @@ Requirements:
             "xdp",
             "tc",
             "cgroup_skb",
+            "cgroup_sysctl",
             "cgroup_sock_addr",
             "struct_ops",
         ]
@@ -2284,6 +2294,11 @@ Requirements:
             Example {
                 example: "ebpf attach 'cgroup_skb:/sys/fs/cgroup:egress' {|ctx| $ctx.packet_len | count; 'allow' }",
                 description: "Count packet lengths on cgroup egress traffic",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'cgroup_sysctl:/sys/fs/cgroup' {|ctx| $ctx.write | count; 'allow' }",
+                description: "Count sysctl reads versus writes on a cgroup sysctl hook",
                 result: None,
             },
             Example {

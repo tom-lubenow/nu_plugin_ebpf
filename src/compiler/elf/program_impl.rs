@@ -41,6 +41,7 @@ fn section_name_for_program(
                 ))),
             }
         }
+        EbpfProgramType::CgroupSysctl => Ok("cgroup/sysctl".to_string()),
         _ => {
             if prog_type.info().section_uses_target {
                 Ok(format!("{}/{}", prog_type.section_prefix(), target))

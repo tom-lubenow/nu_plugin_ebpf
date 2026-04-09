@@ -390,7 +390,9 @@ impl<'a> TypeInference<'a> {
             | CtxField::Family
             | CtxField::SockType
             | CtxField::Protocol
-            | CtxField::MsgSrcIp4 => HMType::U32,
+            | CtxField::MsgSrcIp4
+            | CtxField::SysctlWrite
+            | CtxField::SysctlFilePos => HMType::U32,
 
             CtxField::UserIp6 | CtxField::MsgSrcIp6 => HMType::Ptr {
                 pointee: Box::new(HMType::Array {

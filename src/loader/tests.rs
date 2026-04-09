@@ -253,6 +253,13 @@ fn test_parse_probe_spec_cgroup_skb_egress() {
 }
 
 #[test]
+fn test_parse_probe_spec_cgroup_sysctl_root() {
+    let (prog_type, target) = parse_probe_spec("cgroup_sysctl:/sys/fs/cgroup").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::CgroupSysctl);
+    assert_eq!(target, "/sys/fs/cgroup");
+}
+
+#[test]
 fn test_parse_probe_spec_cgroup_sock_addr_connect4() {
     let (prog_type, target) = parse_probe_spec("cgroup_sock_addr:/sys/fs/cgroup:connect4").unwrap();
     assert_eq!(prog_type, EbpfProgramType::CgroupSockAddr);
@@ -276,6 +283,18 @@ fn test_parse_program_spec_lsm_is_structured() {
         }
     );
     assert_eq!(spec.to_string(), "lsm:file_open");
+}
+
+#[test]
+fn test_parse_program_spec_cgroup_sysctl_is_structured() {
+    let spec = parse_program_spec("cgroup_sysctl:/sys/fs/cgroup").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::CgroupSysctl {
+            cgroup_path: "/sys/fs/cgroup".to_string(),
+        }
+    );
+    assert_eq!(spec.to_string(), "cgroup_sysctl:/sys/fs/cgroup");
 }
 
 #[test]

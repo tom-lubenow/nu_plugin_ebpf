@@ -76,7 +76,9 @@ impl<'a> HirToMirLowering<'a> {
                 "trap" => Some(8),
                 _ => None,
             },
-            EbpfProgramType::CgroupSkb | EbpfProgramType::CgroupSockAddr => match alias.as_str() {
+            EbpfProgramType::CgroupSkb
+            | EbpfProgramType::CgroupSysctl
+            | EbpfProgramType::CgroupSockAddr => match alias.as_str() {
                 "deny" | "drop" | "reject" => Some(0),
                 "allow" | "pass" | "accept" | "permit" => Some(1),
                 _ => None,

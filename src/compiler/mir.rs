@@ -428,6 +428,10 @@ pub enum CtxField {
     MsgSrcIp4,
     /// bpf_sock_addr::msg_src_ip6[4] (normalized to host-byte-order u32 words)
     MsgSrcIp6,
+    /// bpf_sysctl::write
+    SysctlWrite,
+    /// bpf_sysctl::file_pos
+    SysctlFilePos,
     /// Function argument (kprobe/uprobe)
     Arg(u8),
     /// Return value (kretprobe/uretprobe)
@@ -465,6 +469,8 @@ impl CtxField {
             CtxField::Protocol => "protocol".to_string(),
             CtxField::MsgSrcIp4 => "msg_src_ip4".to_string(),
             CtxField::MsgSrcIp6 => "msg_src_ip6".to_string(),
+            CtxField::SysctlWrite => "write".to_string(),
+            CtxField::SysctlFilePos => "file_pos".to_string(),
             CtxField::Arg(idx) => format!("arg{}", idx),
             CtxField::RetVal => "retval".to_string(),
             CtxField::KStack => "kstack".to_string(),

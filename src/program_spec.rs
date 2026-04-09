@@ -276,6 +276,7 @@ pub enum ProgramSpec {
     PerfEvent { target: PerfEventTarget },
     Tc { target: TcTarget },
     CgroupSkb { target: CgroupSkbTarget },
+    CgroupSysctl { cgroup_path: String },
     CgroupSockAddr { target: CgroupSockAddrTarget },
     StructOps { value_type_name: String },
 }
@@ -297,6 +298,7 @@ impl ProgramSpec {
             ProgramSpec::PerfEvent { target } => target.target_string(),
             ProgramSpec::Tc { target } => target.target_string(),
             ProgramSpec::CgroupSkb { target } => target.target_string(),
+            ProgramSpec::CgroupSysctl { cgroup_path } => cgroup_path.clone(),
             ProgramSpec::CgroupSockAddr { target } => target.target_string(),
             ProgramSpec::StructOps { value_type_name } => value_type_name.clone(),
         }

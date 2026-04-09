@@ -184,7 +184,9 @@ fn recover_ctx_field_hint(
         | CtxField::Family
         | CtxField::SockType
         | CtxField::Protocol
-        | CtxField::MsgSrcIp4 => Some(MirType::U32),
+        | CtxField::MsgSrcIp4
+        | CtxField::SysctlWrite
+        | CtxField::SysctlFilePos => Some(MirType::U32),
         CtxField::UserIp6 | CtxField::MsgSrcIp6 => Some(MirType::Ptr {
             pointee: Box::new(MirType::Array {
                 elem: Box::new(MirType::U32),
