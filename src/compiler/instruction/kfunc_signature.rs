@@ -895,6 +895,12 @@ impl KfuncSignature {
                 arg_kinds: [S, S, S, S, S],
                 ret_kind: KfuncRetKind::Scalar,
             }),
+            "scx_bpf_reenqueue_local___v2" => Some(Self {
+                min_args: 0,
+                max_args: 0,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
             "scx_bpf_select_cpu_and" => Some(Self {
                 min_args: 5,
                 max_args: 5,

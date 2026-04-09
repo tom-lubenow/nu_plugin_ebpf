@@ -260,6 +260,40 @@ fn test_type_error_sched_ext_cpu_release_only_kfunc_rejected_in_dispatch() {
 }
 
 #[test]
+fn test_sched_ext_reenqueue_local_v2_allowed_in_dispatch() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_reenqueue_local___v2".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    infer_in_sched_ext_callback(&func, "dispatch")
+        .expect("reenqueue_local___v2 should be accepted in sched_ext_ops.dispatch");
+}
+
+#[test]
+fn test_sched_ext_reenqueue_local_v2_allowed_in_select_cpu() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_reenqueue_local___v2".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    infer_in_sched_ext_callback(&func, "select_cpu")
+        .expect("reenqueue_local___v2 should be accepted in sched_ext_ops.select_cpu");
+}
+
+#[test]
 fn test_sched_ext_select_cpu_dfl_allowed_in_select_cpu() {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();
