@@ -175,6 +175,39 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn bind_variable_to_src_value(
+        &mut self,
+        var_id: VarId,
+        src: RegId,
+        src_vreg: VReg,
+    ) -> Result<(), CompileError> {
+        if let Some(src_meta) = self.get_metadata(src).cloned()
+            && let Some((materialized_vreg, materialized_meta)) =
+                self.materialize_metadata_record_value(&src_meta)?
+        {
+            self.var_mappings.insert(var_id, materialized_vreg);
+            self.var_metadata.insert(var_id, materialized_meta);
+            return Ok(());
+        }
+
+        let preserved = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: preserved,
+            src: MirValue::VReg(src_vreg),
+        });
+        self.var_mappings.insert(var_id, preserved);
+        if let Some(meta) = self.get_metadata(src).cloned() {
+            self.var_metadata.insert(var_id, meta);
+        } else {
+            self.var_metadata.remove(&var_id);
+        }
+        if let Some(ty) = self.vreg_type_hints.get(&src_vreg).cloned() {
+            self.vreg_type_hints.insert(preserved, ty);
+        }
+
+        Ok(())
+    }
+
     pub(super) fn direct_scalar_var_out_arg_type(
         &self,
         reg: RegId,

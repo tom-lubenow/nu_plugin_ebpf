@@ -1270,17 +1270,21 @@ fn parse_leading_variable_declarations(
 
     let closure_block = working_set.get_block(closure_block_id);
     let mut declarations = Vec::new();
+    let mut seen_non_declaration = false;
 
     for pipeline in &closure_block.pipelines {
         let Some(first) = pipeline.elements.first() else {
             continue;
         };
         let Expr::Call(call) = &first.expr.expr else {
-            break;
+            seen_non_declaration = true;
+            continue;
         };
         let cmd_name = working_set.get_decl(call.decl_id).name();
-        if cmd_name != "mut" && cmd_name != "let" {
-            break;
+        let is_var_decl = cmd_name == "mut" || cmd_name == "let";
+        if !is_var_decl {
+            seen_non_declaration = true;
+            continue;
         }
 
         let var_expr = call.positional_nth(0).ok_or_else(|| {
@@ -1289,6 +1293,19 @@ fn parse_leading_variable_declarations(
         })?;
         let declared_type = (var_expr.ty != Type::Any).then(|| var_expr.ty.clone());
         let mutable = cmd_name == "mut";
+
+        if seen_non_declaration && mutable && declared_type.is_some() {
+            return Err(
+                LabeledError::new("Annotated mutable globals must be declared first")
+                    .with_label(
+                        "typed `mut` declarations only become compiler-managed globals when they are contiguous at the start of the attached closure",
+                        first.expr.span,
+                    )
+                    .with_help(
+                        "Move this annotated `mut` declaration above function definitions and other statements, or drop the type annotation if you only want an ordinary local variable",
+                    ),
+            );
+        }
 
         let initializer = if mutable && declared_type.is_some() {
             let init_expr = call
@@ -1308,6 +1325,10 @@ fn parse_leading_variable_declarations(
             declared_type,
             initializer,
         });
+
+        if seen_non_declaration {
+            continue;
+        }
     }
 
     Ok(declarations)
@@ -1398,7 +1419,28 @@ fn strip_leading_annotated_mut_initializer_stmts(
                     ),
             );
         };
-        cursor += rel_end + 1;
+        let store_idx = cursor + rel_end;
+        let cleanup_src = match &stmts[store_idx] {
+            HirStmt::StoreVariable { src, .. } => Some(*src),
+            _ => None,
+        };
+        cursor = store_idx + 1;
+
+        if let Some(cleanup_src) = cleanup_src {
+            while let Some(stmt) = stmts.get(cursor) {
+                match stmt {
+                    HirStmt::Drain { src } | HirStmt::Drop { src }
+                        if *src == cleanup_src =>
+                    {
+                        cursor += 1;
+                    }
+                    HirStmt::DrainIfEnd { src } if *src == cleanup_src => {
+                        cursor += 1;
+                    }
+                    _ => break,
+                }
+            }
+        }
     }
 
     if cursor > 0 {
@@ -2836,8 +2878,33 @@ mod tests {
     }
 
     #[test]
-    fn test_map_leading_annotated_mut_globals_stops_after_first_non_declaration() {
+    fn test_map_leading_annotated_mut_globals_rejects_non_leading_annotated_mut() {
         let source = "{|| 1 | count; mut state: int = 0; $state }";
+        let ir_block = IrBlock {
+            instructions: vec![Instruction::StoreVariable {
+                var_id: VarId::new(80),
+                src: RegId::new(0),
+            }],
+            spans: vec![Span::test_data()],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None],
+            comments: vec!["let".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+            .expect_err("non-leading annotated mut declarations should fail clearly");
+        assert!(
+            err.to_string()
+                .contains("Annotated mutable globals must be declared first"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_map_leading_annotated_mut_globals_ignores_non_leading_untyped_mut() {
+        let source = "{|| 1 | count; mut state = 0; $state }";
         let ir_block = IrBlock {
             instructions: vec![Instruction::StoreVariable {
                 var_id: VarId::new(80),
@@ -2853,7 +2920,7 @@ mod tests {
 
         let globals =
             super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
-                .expect("non-leading annotated mut declarations should be ignored");
+                .expect("non-leading untyped mut should remain an ordinary local");
 
         assert!(globals.is_empty());
     }
@@ -2971,6 +3038,60 @@ mod tests {
         assert!(matches!(
             &hir.main.blocks[0].stmts[0],
             HirStmt::LoadVariable { var_id, .. } if *var_id == VarId::new(99)
+        ));
+    }
+
+    #[test]
+    fn test_strip_leading_annotated_mut_initializer_stmts_removes_initializer_cleanup() {
+        let mut hir = HirProgram::new(
+            HirFunction {
+                blocks: vec![HirBlock {
+                    id: HirBlockId(0),
+                    stmts: vec![
+                        HirStmt::LoadValue {
+                            dst: RegId::new(0),
+                            val: Box::new(Value::int(1, Span::test_data())),
+                        },
+                        HirStmt::StoreVariable {
+                            var_id: VarId::new(10),
+                            src: RegId::new(0),
+                        },
+                        HirStmt::Drain { src: RegId::new(0) },
+                        HirStmt::Drop { src: RegId::new(0) },
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(1),
+                            var_id: VarId::new(10),
+                        },
+                    ],
+                    terminator: HirTerminator::Return { src: RegId::new(1) },
+                }],
+                entry: HirBlockId(0),
+                spans: vec![Span::test_data(); 5],
+                ast: vec![None; 5],
+                comments: vec![],
+                register_count: 2,
+                file_count: 0,
+            },
+            HashMap::new(),
+            vec![],
+            None,
+        );
+        hir.annotated_mut_globals = vec![crate::compiler::hir::AnnotatedMutGlobal {
+            var_id: VarId::new(10),
+            declared_type: Type::Int,
+            initial_value: Value::int(1, Span::test_data()),
+        }];
+
+        super::strip_leading_annotated_mut_initializer_stmts(&mut hir, Span::test_data())
+            .expect("leading annotated mut cleanup should strip cleanly");
+
+        assert_eq!(hir.main.blocks[0].stmts.len(), 1);
+        assert!(matches!(
+            &hir.main.blocks[0].stmts[0],
+            HirStmt::LoadVariable {
+                var_id,
+                dst: RegId { .. }
+            } if *var_id == VarId::new(10)
         ));
     }
 

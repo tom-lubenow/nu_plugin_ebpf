@@ -574,6 +574,7 @@ impl<'a> HirToMirLowering<'a> {
                             *src,
                             src_vreg,
                         )?;
+                        self.bind_variable_to_src_value(*var_id, *src, src_vreg)?;
                         return Ok(());
                     }
 
@@ -584,34 +585,13 @@ impl<'a> HirToMirLowering<'a> {
                             *src,
                             src_vreg,
                         )?;
+                        self.bind_variable_to_src_value(*var_id, *src, src_vreg)?;
                         return Ok(());
                     }
                 }
 
-                if let Some(src_meta) = self.get_metadata(*src).cloned()
-                    && let Some((materialized_vreg, materialized_meta)) =
-                        self.materialize_metadata_record_value(&src_meta)?
-                {
-                    self.var_mappings.insert(*var_id, materialized_vreg);
-                    self.var_metadata.insert(*var_id, materialized_meta);
-                    return Ok(());
-                }
-
                 let src_vreg = self.get_vreg(*src);
-                let preserved = self.func.alloc_vreg();
-                self.emit(MirInst::Copy {
-                    dst: preserved,
-                    src: MirValue::VReg(src_vreg),
-                });
-                self.var_mappings.insert(*var_id, preserved);
-                if let Some(meta) = self.get_metadata(*src).cloned() {
-                    self.var_metadata.insert(*var_id, meta);
-                } else {
-                    self.var_metadata.remove(var_id);
-                }
-                if let Some(ty) = self.vreg_type_hints.get(&src_vreg).cloned() {
-                    self.vreg_type_hints.insert(preserved, ty);
-                }
+                self.bind_variable_to_src_value(*var_id, *src, src_vreg)?;
             }
 
             HirStmt::DropVariable { var_id } => {

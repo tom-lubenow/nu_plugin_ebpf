@@ -816,6 +816,12 @@ pub struct MirFunction {
     pub maps_used: Vec<MapRef>,
     /// Parameter count (for BPF subfunction calling convention)
     pub param_count: usize,
+    /// Mutable-global symbols that semantically alias incoming parameters.
+    ///
+    /// This is used to recover "returns arg N" summaries for subfunctions that
+    /// read aliased parameters back through `LoadGlobal` to preserve non-null
+    /// global semantics.
+    pub global_param_aliases: HashMap<String, usize>,
 }
 
 /// A complete MIR program (may have subfunctions for BPF-to-BPF calls)

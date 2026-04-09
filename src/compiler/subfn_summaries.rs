@@ -78,7 +78,14 @@ fn summarize_function(
         let mut state = state_in;
 
         for inst in &block.instructions {
-            apply_alias_inst(inst, &mut state, subfunctions, summaries, visiting);
+            apply_alias_inst(
+                inst,
+                &func.global_param_aliases,
+                &mut state,
+                subfunctions,
+                summaries,
+                visiting,
+            );
         }
 
         match &block.terminator {
@@ -160,6 +167,7 @@ fn merge_alias_states(existing: &mut [AliasSource], incoming: &[AliasSource]) ->
 
 fn apply_alias_inst(
     inst: &MirInst,
+    global_param_aliases: &HashMap<String, usize>,
     state: &mut [AliasSource],
     subfunctions: &[MirFunction],
     summaries: &mut HashMap<SubfunctionId, SubfunctionReturnSummary>,
@@ -196,12 +204,19 @@ fn apply_alias_inst(
             };
             set_alias(state, *dst, alias);
         }
+        MirInst::LoadGlobal { dst, symbol, .. } => {
+            let alias = global_param_aliases
+                .get(symbol)
+                .copied()
+                .map(AliasSource::Param)
+                .unwrap_or(AliasSource::Unknown);
+            set_alias(state, *dst, alias);
+        }
         MirInst::BinOp { dst, .. }
         | MirInst::UnaryOp { dst, .. }
         | MirInst::CallHelper { dst, .. }
         | MirInst::CallKfunc { dst, .. }
         | MirInst::MapLookup { dst, .. }
-        | MirInst::LoadGlobal { dst, .. }
         | MirInst::LoadCtxField { dst, .. }
         | MirInst::ListNew { dst, .. }
         | MirInst::ListLen { dst, .. }
@@ -323,6 +338,36 @@ mod tests {
         let summaries = infer_subfunction_return_summaries(&[callee, caller]);
         assert_eq!(
             summaries.get(&SubfunctionId(1)),
+            Some(&SubfunctionReturnSummary::ReturnsArg(0))
+        );
+    }
+
+    #[test]
+    fn test_infer_return_summary_for_aliased_global_param() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 1;
+        subfn
+            .global_param_aliases
+            .insert("__nu_local_global_250".to_string(), 0);
+
+        let loaded = subfn.alloc_vreg();
+        subfn.block_mut(entry).instructions.push(MirInst::LoadGlobal {
+            dst: loaded,
+            symbol: "__nu_local_global_250".to_string(),
+            ty: crate::compiler::mir::MirType::Ptr {
+                pointee: Box::new(crate::compiler::mir::MirType::Unknown),
+                address_space: crate::compiler::mir::AddressSpace::Map,
+            },
+        });
+        subfn.block_mut(entry).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(loaded)),
+        };
+
+        let summaries = infer_subfunction_return_summaries(&[subfn]);
+        assert_eq!(
+            summaries.get(&SubfunctionId(0)),
             Some(&SubfunctionReturnSummary::ReturnsArg(0))
         );
     }

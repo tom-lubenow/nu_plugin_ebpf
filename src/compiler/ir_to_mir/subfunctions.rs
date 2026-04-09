@@ -4,6 +4,7 @@ impl<'a> HirToMirLowering<'a> {
     fn seed_subfunction_param(
         &mut self,
         vreg: VReg,
+        param_idx: usize,
         seed: Option<&SubfunctionArgSeed>,
         reg: Option<RegId>,
         var: Option<VarId>,
@@ -19,6 +20,18 @@ impl<'a> HirToMirLowering<'a> {
                 || self.mutable_capture_globals.contains_key(&source_var))
         {
             self.subfunction_global_aliases.insert(var, source_var);
+            if let Some(symbol) = self
+                .annotated_mut_globals
+                .get(&source_var)
+                .map(|global| global.symbol.clone())
+                .or_else(|| {
+                    self.mutable_capture_globals
+                        .get(&source_var)
+                        .map(|global| global.symbol.clone())
+                })
+            {
+                self.func.global_param_aliases.insert(symbol, param_idx);
+            }
         }
 
         if let Some(ty) = seed.type_hint.clone() {
@@ -119,7 +132,13 @@ impl<'a> HirToMirLowering<'a> {
                 self.var_mappings.insert(IN_VARIABLE_ID, vreg);
             }
             let seed = arg_seeds.get(next_arg_seed);
-            self.seed_subfunction_param(vreg, seed, input_reg, uses_in.then_some(IN_VARIABLE_ID));
+            self.seed_subfunction_param(
+                vreg,
+                next_arg_seed,
+                seed,
+                input_reg,
+                uses_in.then_some(IN_VARIABLE_ID),
+            );
             next_arg_seed += 1;
         }
 
@@ -130,14 +149,20 @@ impl<'a> HirToMirLowering<'a> {
                 let var_id = VarId::new(base + i);
                 self.var_mappings.insert(var_id, vreg);
                 let seed = arg_seeds.get(next_arg_seed + i);
-                self.seed_subfunction_param(vreg, seed, None, Some(var_id));
+                self.seed_subfunction_param(vreg, next_arg_seed + i, seed, None, Some(var_id));
             }
         } else {
             for (idx, var_id) in param_vars.iter().enumerate() {
                 let vreg = self.func.alloc_vreg();
                 self.var_mappings.insert(*var_id, vreg);
                 let seed = arg_seeds.get(next_arg_seed + idx);
-                self.seed_subfunction_param(vreg, seed, None, Some(*var_id));
+                self.seed_subfunction_param(
+                    vreg,
+                    next_arg_seed + idx,
+                    seed,
+                    None,
+                    Some(*var_id),
+                );
             }
             for _ in param_vars.len()..param_count {
                 let _unused = self.func.alloc_vreg();

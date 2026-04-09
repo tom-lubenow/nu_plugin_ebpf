@@ -340,11 +340,18 @@ fn test_user_function_mutating_annotated_global_param_writes_through_global() {
     signatures.insert(
         DeclId::new(1),
         UserFunctionSig {
-            params: vec![UserParam {
-                name: Some("state".into()),
-                kind: UserParamKind::Positional,
-                optional: false,
-            }],
+            params: vec![
+                UserParam {
+                    name: None,
+                    kind: UserParamKind::Input,
+                    optional: false,
+                },
+                UserParam {
+                    name: Some("state".into()),
+                    kind: UserParamKind::Positional,
+                    optional: false,
+                },
+            ],
         },
     );
 
@@ -476,11 +483,22 @@ fn test_user_function_mutating_annotated_global_param_compiles() {
         },
     );
 
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(1), "bump".to_string());
+    let hir_types = crate::compiler::hir_type_infer::infer_hir_types_with_decls(
+        &hir_program,
+        &decl_names,
+        &user_functions,
+    )
+    .expect("view-ir style program should infer HIR types");
+
+    let probe_ctx = ProbeContext::new(crate::compiler::EbpfProgramType::Kprobe, "ksys_read");
+
     let mut result = lower_hir_to_mir_with_hints(
         &hir_program,
-        None,
-        &HashMap::new(),
-        None,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
         &user_functions,
         &signatures,
     )
@@ -488,7 +506,7 @@ fn test_user_function_mutating_annotated_global_param_compiles() {
 
     optimize_with_ssa_hints(
         &mut result.program.main,
-        None,
+        Some(&probe_ctx),
         &mut result.type_hints.main,
         &result.type_hints.main_stack_slots,
         &result.type_hints.generic_map_value_types,
@@ -511,7 +529,7 @@ fn test_user_function_mutating_annotated_global_param_compiles() {
 
     compile_mir_to_ebpf_with_hints_and_globals(
         &result.program,
-        None,
+        Some(&probe_ctx),
         Some(&result.type_hints),
         result.readonly_globals,
         result.data_globals,
@@ -675,4 +693,655 @@ fn test_shadowed_user_function_mutating_annotated_global_param_compiles() {
         result.bss_globals,
     )
     .expect("shadowed annotated global user-function mutation should compile");
+}
+
+#[test]
+fn test_shadowed_user_function_mutating_annotated_record_global_param_compiles() {
+    use nu_protocol::ast::{Math, Operator, PathMember};
+    use nu_protocol::casing::Casing;
+    use nu_protocol::{DeclId, Record, RegId, Span, Type, Value, VarId};
+
+    let global_var = VarId::new(250);
+    let param_var = VarId::new(81);
+    let local_var = VarId::new(82);
+    let user_func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: param_var,
+                },
+                HirStmt::StoreVariable {
+                    var_id: local_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::Drain { src: RegId::new(0) },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: local_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![PathMember::test_string(
+                            "pid".to_string(),
+                            false,
+                            Casing::Sensitive,
+                        )],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: Operator::Math(Math::Add),
+                    rhs: RegId::new(1),
+                },
+                HirStmt::Span {
+                    src_dst: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(1),
+                    var_id: local_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![PathMember::test_string(
+                            "pid".to_string(),
+                            false,
+                            Casing::Sensitive,
+                        )],
+                    })),
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(1),
+                    path: RegId::new(2),
+                    new_value: RegId::new(0),
+                },
+                HirStmt::StoreVariable {
+                    var_id: local_var,
+                    src: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Nothing,
+                },
+                HirStmt::Drain { src: RegId::new(0) },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: local_var,
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let main_func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: global_var,
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(1),
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::StoreVariable {
+                    var_id: global_var,
+                    src: RegId::new(1),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(2),
+                    var_id: global_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![PathMember::test_string(
+                            "pid".to_string(),
+                            false,
+                            Casing::Sensitive,
+                        )],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(2),
+                    path: RegId::new(3),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let mut initial = Record::new();
+    initial.push("pid", Value::int(0, Span::test_data()));
+    initial.push("ok", Value::bool(false, Span::test_data()));
+
+    let mut hir_program = HirProgram::new(main_func, HashMap::new(), vec![], None);
+    hir_program.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Record(Box::new([
+            ("pid".to_string(), Type::Int),
+            ("ok".to_string(), Type::Bool),
+        ])),
+        initial_value: Value::record(initial, Span::test_data()),
+    }];
+
+    let mut user_functions = HashMap::new();
+    user_functions.insert(DeclId::new(1), user_func);
+
+    let mut signatures = HashMap::new();
+    signatures.insert(
+        DeclId::new(1),
+        UserFunctionSig {
+            params: vec![UserParam {
+                name: Some("state".into()),
+                kind: UserParamKind::Positional,
+                optional: false,
+            }],
+        },
+    );
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &HashMap::new(),
+        None,
+        &user_functions,
+        &signatures,
+    )
+    .expect("shadowed annotated record global user-function mutation should lower");
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        None,
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    for ((subfn, hints), stack_slots) in result
+        .program
+        .subfunctions
+        .iter_mut()
+        .zip(result.type_hints.subfunctions.iter_mut())
+        .zip(result.type_hints.subfunction_stack_slots.iter())
+    {
+        optimize_with_ssa_hints(
+            subfn,
+            None,
+            hints,
+            stack_slots,
+            &result.type_hints.generic_map_value_types,
+        );
+    }
+
+    compile_mir_to_ebpf_with_hints_and_globals(
+        &result.program,
+        None,
+        Some(&result.type_hints),
+        result.readonly_globals,
+        result.data_globals,
+        result.bss_globals,
+    )
+    .expect("shadowed annotated record global user-function mutation should compile");
+}
+
+#[test]
+fn test_user_function_returned_annotated_record_can_flow_through_local() {
+    use nu_protocol::ast::{Math, Operator, PathMember};
+    use nu_protocol::casing::Casing;
+    use nu_protocol::{DeclId, Record, RegId, Span, Type, Value, VarId};
+
+    let global_var = VarId::new(250);
+    let param_var = VarId::new(81);
+    let local_var = VarId::new(82);
+    let next_var = VarId::new(83);
+    let user_func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: param_var,
+                },
+                HirStmt::StoreVariable {
+                    var_id: local_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::Drain { src: RegId::new(0) },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: local_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![PathMember::test_string(
+                            "pid".to_string(),
+                            false,
+                            Casing::Sensitive,
+                        )],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: Operator::Math(Math::Add),
+                    rhs: RegId::new(1),
+                },
+                HirStmt::Span {
+                    src_dst: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(1),
+                    var_id: local_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![PathMember::test_string(
+                            "pid".to_string(),
+                            false,
+                            Casing::Sensitive,
+                        )],
+                    })),
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(1),
+                    path: RegId::new(2),
+                    new_value: RegId::new(0),
+                },
+                HirStmt::StoreVariable {
+                    var_id: local_var,
+                    src: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Nothing,
+                },
+                HirStmt::Drain { src: RegId::new(0) },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: local_var,
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let main_func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(1),
+                    var_id: global_var,
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(1),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::StoreVariable {
+                    var_id: next_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: next_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![PathMember::test_string(
+                            "pid".to_string(),
+                            false,
+                            Casing::Sensitive,
+                        )],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let mut initial = Record::new();
+    initial.push("pid", Value::int(0, Span::test_data()));
+    initial.push("ok", Value::bool(false, Span::test_data()));
+
+    let mut hir_program = HirProgram::new(main_func, HashMap::new(), vec![], None);
+    hir_program.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Record(Box::new([
+            ("pid".to_string(), Type::Int),
+            ("ok".to_string(), Type::Bool),
+        ])),
+        initial_value: Value::record(initial, Span::test_data()),
+    }];
+
+    let mut user_functions = HashMap::new();
+    user_functions.insert(DeclId::new(1), user_func);
+
+    let mut signatures = HashMap::new();
+    signatures.insert(
+        DeclId::new(1),
+        UserFunctionSig {
+            params: vec![UserParam {
+                name: Some("state".into()),
+                kind: UserParamKind::Positional,
+                optional: false,
+            }],
+        },
+    );
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &HashMap::new(),
+        None,
+        &user_functions,
+        &signatures,
+    )
+    .expect("returned annotated record through local should lower");
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        None,
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    for ((subfn, hints), stack_slots) in result
+        .program
+        .subfunctions
+        .iter_mut()
+        .zip(result.type_hints.subfunctions.iter_mut())
+        .zip(result.type_hints.subfunction_stack_slots.iter())
+    {
+        optimize_with_ssa_hints(
+            subfn,
+            None,
+            hints,
+            stack_slots,
+            &result.type_hints.generic_map_value_types,
+        );
+    }
+
+    compile_mir_to_ebpf_with_hints_and_globals(
+        &result.program,
+        None,
+        Some(&result.type_hints),
+        result.readonly_globals,
+        result.data_globals,
+        result.bss_globals,
+    )
+    .expect("returned annotated record through local should compile");
+}
+
+#[test]
+fn test_view_ir_style_user_function_returned_annotated_record_can_flow_through_local() {
+    use nu_protocol::ast::{CellPath, Math, Operator, PathMember};
+    use nu_protocol::casing::Casing;
+    use nu_protocol::ir::{Instruction, IrBlock, Literal, RedirectMode};
+    use nu_protocol::{DeclId, Record, RegId, Span, Type, Value, VarId};
+    use std::sync::Arc;
+
+    let user_ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(80),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(81),
+                src: RegId::new(0),
+            },
+            Instruction::Drain { src: RegId::new(0) },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(81),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::CellPath(Box::new(CellPath {
+                    members: vec![PathMember::test_string(
+                        "pid".to_string(),
+                        false,
+                        Casing::Sensitive,
+                    )],
+                })),
+            },
+            Instruction::FollowCellPath {
+                src_dst: RegId::new(0),
+                path: RegId::new(1),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::Int(1),
+            },
+            Instruction::BinaryOp {
+                lhs_dst: RegId::new(0),
+                op: Operator::Math(Math::Add),
+                rhs: RegId::new(1),
+            },
+            Instruction::Span {
+                src_dst: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(1),
+                var_id: VarId::new(81),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(2),
+                lit: Literal::CellPath(Box::new(CellPath {
+                    members: vec![PathMember::test_string(
+                        "pid".to_string(),
+                        false,
+                        Casing::Sensitive,
+                    )],
+                })),
+            },
+            Instruction::UpsertCellPath {
+                src_dst: RegId::new(1),
+                path: RegId::new(2),
+                new_value: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(81),
+                src: RegId::new(1),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(0),
+                lit: Literal::Nothing,
+            },
+            Instruction::Drain { src: RegId::new(0) },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(81),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data: Arc::from([]),
+        ast: vec![],
+        comments: vec!["".into(); 17],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let main_ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadVariable {
+                dst: RegId::new(1),
+                var_id: VarId::new(84),
+            },
+            Instruction::PushPositional { src: RegId::new(1) },
+            Instruction::RedirectOut {
+                mode: RedirectMode::Value,
+            },
+            Instruction::Call {
+                decl_id: DeclId::new(1),
+                src_dst: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(85),
+                src: RegId::new(0),
+            },
+            Instruction::Drain { src: RegId::new(0) },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(85),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::CellPath(Box::new(CellPath {
+                    members: vec![PathMember::test_string(
+                        "pid".to_string(),
+                        false,
+                        Casing::Sensitive,
+                    )],
+                })),
+            },
+            Instruction::FollowCellPath {
+                src_dst: RegId::new(0),
+                path: RegId::new(1),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data: Arc::from([]),
+        ast: vec![],
+        comments: vec!["".into(); 10],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let mut initial = Record::new();
+    initial.push("pid", Value::int(0, Span::test_data()));
+    initial.push("ok", Value::bool(false, Span::test_data()));
+
+    let mut hir_program = HirProgram::new(
+        HirFunction::from_ir_block(main_ir).unwrap(),
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    hir_program.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: VarId::new(84),
+        declared_type: Type::Record(Box::new([
+            ("pid".to_string(), Type::Int),
+            ("ok".to_string(), Type::Bool),
+        ])),
+        initial_value: Value::record(initial, Span::test_data()),
+    }];
+
+    let mut user_functions = HashMap::new();
+    user_functions.insert(DeclId::new(1), HirFunction::from_ir_block(user_ir).unwrap());
+
+    let mut signatures = HashMap::new();
+    signatures.insert(
+        DeclId::new(1),
+        UserFunctionSig {
+            params: vec![UserParam {
+                name: Some("state".into()),
+                kind: UserParamKind::Positional,
+                optional: false,
+            }],
+        },
+    );
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &HashMap::new(),
+        None,
+        &user_functions,
+        &signatures,
+    )
+    .expect("view-ir style returned annotated record through local should lower");
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        None,
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    for ((subfn, hints), stack_slots) in result
+        .program
+        .subfunctions
+        .iter_mut()
+        .zip(result.type_hints.subfunctions.iter_mut())
+        .zip(result.type_hints.subfunction_stack_slots.iter())
+    {
+        optimize_with_ssa_hints(
+            subfn,
+            None,
+            hints,
+            stack_slots,
+            &result.type_hints.generic_map_value_types,
+        );
+    }
+
+    compile_mir_to_ebpf_with_hints_and_globals(
+        &result.program,
+        None,
+        Some(&result.type_hints),
+        result.readonly_globals,
+        result.data_globals,
+        result.bss_globals,
+    )
+    .expect("view-ir style returned annotated record through local should compile");
 }

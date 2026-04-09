@@ -37,6 +37,7 @@ impl MirFunction {
             stack_slots: Vec::new(),
             maps_used: Vec::new(),
             param_count: 0,
+            global_param_aliases: HashMap::new(),
         }
     }
 

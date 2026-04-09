@@ -469,7 +469,9 @@ declaration group at the top of the closure is hoisted this way. That is now
 the preferred small-state path when plain variable syntax is enough. For
 supported annotations, the declared Nushell type is now the layout source for
 that global, so record field order comes from the annotation rather than the
-record literal initializer.
+record literal initializer. Keep those annotated `mut` declarations before
+function definitions and other top-level statements; a typed `mut` that appears
+later is not treated as a compiler-managed global.
 
 Compiler-managed named globals are still available through `global-define`,
 `global-get`, and `global-set`. These are compiler-managed per-program globals
