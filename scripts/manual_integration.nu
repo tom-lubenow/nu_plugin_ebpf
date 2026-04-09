@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 55
+const TOTAL_STEPS = 58
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -801,14 +801,40 @@ step 54 "lsm file_open dry-run" {
     $result
 }
 
-step 55 "perf_event software cpu-clock counter" {
+step 55 "lsm file_open named-arg dry-run" {
+    let code = ([
+        'ebpf attach --dry-run "lsm:file_open" {|ctx| $ctx.arg.file.f_flags | count; 0 } | describe'
+    ] | str join (char newline))
+    let result = (run-nu-with-plugin $plugin_bin $code | str trim)
+
+    if $result != "binary" {
+        fail $"expected named-arg lsm:file_open dry-run to return binary, got ($result)"
+    }
+
+    $result
+}
+
+step 56 "fentry security_file_open named-arg dry-run" {
+    let code = ([
+        'ebpf attach --dry-run "fentry:security_file_open" {|ctx| $ctx.arg.file.f_flags | count } | describe'
+    ] | str join (char newline))
+    let result = (run-nu-with-plugin $plugin_bin $code | str trim)
+
+    if $result != "binary" {
+        fail $"expected named-arg fentry:security_file_open dry-run to return binary, got ($result)"
+    }
+
+    $result
+}
+
+step 57 "perf_event software cpu-clock counter" {
     count-at-least-one "perf_event:software:cpu-clock:period=100000" {|ctx|
         $ctx.cpu | count
         0
     } { trigger-cpu-work } "perf_event cpu-clock counter"
 }
 
-step 56 "verify no leaked probes" {
+step 58 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

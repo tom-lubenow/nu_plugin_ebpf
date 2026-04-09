@@ -2361,10 +2361,11 @@ Context parameter syntax (recommended):
     or aggregate layouts
     across bindings, for example `let files = $ctx.arg0;
     $files.fdt.fd.f_inode.i_ino` or `let inode = $ctx.arg0.f_inode;
-    $inode.i_sb.s_flags`. struct_ops callbacks also expose kernel BTF
+    $inode.i_sb.s_flags`. Kernel-BTF-backed contexts also expose named
     parameter names through `ctx.arg.<name>`, for example
-    `ctx.arg.prev_cpu` or `ctx.arg.p.pid`. 16-byte byte-array/string keys such
-    as ctx.arg0.comm continue to display as strings.
+    `ctx.arg.prev_cpu`, `ctx.arg.p.pid`, or `ctx.arg.file.f_flags`.
+    16-byte byte-array/string keys such as ctx.arg0.comm continue to display
+    as strings.
     Aggregate fexit returns still depend on kernel trampoline support;
     some kernels reject struct returns entirely.
 

@@ -246,6 +246,36 @@ impl KernelBtf {
         format!("bpf_lsm_{hook_name}")
     }
 
+    fn resolve_named_function<'a>(
+        btf: &'a Btf,
+        function_name: &str,
+    ) -> Result<&'a FlattenedType, BtfError> {
+        btf.get_types()
+            .iter()
+            .find(|ty| ty.is_function && ty.name.as_deref() == Some(function_name))
+            .ok_or_else(|| BtfError::TypeNotFound(function_name.to_string()))
+    }
+
+    fn function_arg_index_by_name(
+        function_ty: &FlattenedType,
+        function_name: &str,
+        arg_name: &str,
+    ) -> Result<Option<usize>, BtfError> {
+        let Type::FunctionProto(proto) = &function_ty.base_type else {
+            return Err(BtfError::KernelBtfError(format!(
+                "function '{}' is missing a function prototype in kernel BTF",
+                function_name
+            )));
+        };
+
+        Ok(proto
+            .params
+            .iter()
+            .take_while(|param| param.type_id != 0)
+            .enumerate()
+            .find_map(|(idx, param)| (param.name.as_deref() == Some(arg_name)).then_some(idx)))
+    }
+
     const TRAMPOLINE_POINTER_TYPE_DEPTH: usize = 2;
 
     const KERNEL_BTF_PATH: &str = "/sys/kernel/btf/vmlinux";
@@ -509,11 +539,7 @@ impl KernelBtf {
         arg_idx: usize,
     ) -> Result<Option<TypeInfo>, BtfError> {
         let btf = self.load_kernel_btf_for_query()?;
-        let ty = btf
-            .get_types()
-            .iter()
-            .find(|ty| ty.is_function && ty.name.as_deref() == Some(function_name))
-            .ok_or_else(|| BtfError::TypeNotFound(function_name.to_string()))?;
+        let ty = Self::resolve_named_function(&btf, function_name)?;
         let Type::FunctionProto(proto) = &ty.base_type else {
             return Err(BtfError::KernelBtfError(format!(
                 "function '{}' is missing a function prototype in kernel BTF",
@@ -547,6 +573,35 @@ impl KernelBtf {
         arg_idx: usize,
     ) -> Result<Option<TypeInfo>, BtfError> {
         self.function_trampoline_arg_type_info(&Self::lsm_hook_function_name(hook_name), arg_idx)
+    }
+
+    /// Resolve the argument index for a named trampoline function parameter.
+    ///
+    /// Returns `Ok(None)` when the function exists but does not have a
+    /// parameter with the requested name.
+    pub fn function_trampoline_arg_index_by_name(
+        &self,
+        function_name: &str,
+        arg_name: &str,
+    ) -> Result<Option<usize>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let function_ty = Self::resolve_named_function(&btf, function_name)?;
+        Self::function_arg_index_by_name(function_ty, function_name, arg_name)
+    }
+
+    /// Resolve the argument index for a named LSM hook parameter.
+    ///
+    /// Returns `Ok(None)` when the hook exists but does not have a
+    /// parameter with the requested name.
+    pub fn lsm_hook_arg_index_by_name(
+        &self,
+        hook_name: &str,
+        arg_name: &str,
+    ) -> Result<Option<usize>, BtfError> {
+        self.function_trampoline_arg_index_by_name(
+            &Self::lsm_hook_function_name(hook_name),
+            arg_name,
+        )
     }
 
     /// Resolve the exact kernel-BTF type for a `struct_ops` callback argument.
@@ -4408,6 +4463,34 @@ format:
         None
     }
 
+    fn find_function_trampoline_named_arg_candidate() -> Option<(&'static str, &'static str, usize)>
+    {
+        for (function_name, arg_name, expected_idx) in [
+            ("security_file_open", "file", 0usize),
+            ("do_close_on_exec", "files", 0),
+        ] {
+            if matches!(
+                KernelBtf::get().function_trampoline_arg_index_by_name(function_name, arg_name),
+                Ok(Some(idx)) if idx == expected_idx
+            ) {
+                return Some((function_name, arg_name, expected_idx));
+            }
+        }
+        None
+    }
+
+    fn find_lsm_hook_named_arg_candidate() -> Option<(&'static str, &'static str, usize)> {
+        for (hook_name, arg_name, expected_idx) in [("file_open", "file", 0usize)] {
+            if matches!(
+                KernelBtf::get().lsm_hook_arg_index_by_name(hook_name, arg_name),
+                Ok(Some(idx)) if idx == expected_idx
+            ) {
+                return Some((hook_name, arg_name, expected_idx));
+            }
+        }
+        None
+    }
+
     #[test]
     fn test_struct_ops_callback_arg_type_info_resolves_candidate() {
         let Some((value_type_name, callback_name)) = find_struct_ops_callback_candidate() else {
@@ -4434,6 +4517,36 @@ format:
             .struct_ops_callback_arg_index_by_name(value_type_name, callback_name, arg_name)
             .expect("struct_ops callback arg index query should succeed")
             .expect("named struct_ops callback arg should exist");
+
+        assert_eq!(arg_idx, expected_idx);
+    }
+
+    #[test]
+    fn test_function_trampoline_arg_index_by_name_resolves_candidate() {
+        let Some((function_name, arg_name, expected_idx)) =
+            find_function_trampoline_named_arg_candidate()
+        else {
+            return;
+        };
+
+        let arg_idx = KernelBtf::get()
+            .function_trampoline_arg_index_by_name(function_name, arg_name)
+            .expect("function trampoline arg index query should succeed")
+            .expect("named function trampoline arg should exist");
+
+        assert_eq!(arg_idx, expected_idx);
+    }
+
+    #[test]
+    fn test_lsm_hook_arg_index_by_name_resolves_candidate() {
+        let Some((hook_name, arg_name, expected_idx)) = find_lsm_hook_named_arg_candidate() else {
+            return;
+        };
+
+        let arg_idx = KernelBtf::get()
+            .lsm_hook_arg_index_by_name(hook_name, arg_name)
+            .expect("lsm hook arg index query should succeed")
+            .expect("named lsm hook arg should exist");
 
         assert_eq!(arg_idx, expected_idx);
     }

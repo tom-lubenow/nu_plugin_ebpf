@@ -136,8 +136,10 @@ ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
     name: 'nu_demo'
 }
 
-# sched_ext select_cpu callbacks can use named BTF args through ctx.arg.<name>.
-# This dry-run example shows the safe cpumask acquire/use/release pattern:
+# Kernel-BTF-backed contexts also expose named parameters through
+# ctx.arg.<name>. This includes sched_ext callbacks, LSM hooks, and
+# fentry/fexit targets with BTF names. This dry-run example shows the safe
+# sched_ext cpumask acquire/use/release pattern:
 # acquire a referenced cpumask, null-check it, use it, and always release it.
 ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
     name: 'nu_demo'
@@ -443,9 +445,10 @@ so `let files = $ctx.arg0; $files.fdt.fd.f_inode.i_ino`,
 `ctx.arg0.fdt.fd.0.f_inode.i_ino`, `let fd = $ctx.arg0.fdt.fd;
 $fd.0.f_inode.i_ino`, `let idx = 0; let fd = ($ctx.arg0.fdt.fd | get $idx);
 $fd.f_inode.i_ino`, and `let inode = $ctx.arg0.f_inode; $inode.i_sb.s_flags`
-continue to type-check and lower as expected. `struct_ops` callbacks also
-expose kernel BTF parameter names through `ctx.arg.<name>`, for example
-`ctx.arg.prev_cpu` or `ctx.arg.p.pid`. 16-byte byte-array/string keys such as
+continue to type-check and lower as expected. Kernel-BTF-backed contexts also
+expose named parameter access through `ctx.arg.<name>`, for example
+`ctx.arg.prev_cpu`, `ctx.arg.p.pid`, `ctx.arg.file.f_flags`, or
+`ctx.arg.file.f_inode.i_ino`. 16-byte byte-array/string keys such as
 `ctx.arg0.comm` continue to display as strings.
 Aggregate `fexit` returns still depend on kernel trampoline support; some
 kernels reject struct returns entirely.

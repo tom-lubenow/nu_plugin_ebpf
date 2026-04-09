@@ -317,6 +317,37 @@ fn find_struct_ops_named_arg_candidate() -> Option<(String, String, String, u8)>
     None
 }
 
+fn find_function_trampoline_named_arg_candidate() -> Option<(String, String, u8)> {
+    for (function_name, arg_name, expected_idx) in [
+        ("security_file_open", "file", 0u8),
+        ("do_close_on_exec", "files", 0),
+    ] {
+        if matches!(
+            KernelBtf::get().function_trampoline_arg_index_by_name(function_name, arg_name),
+            Ok(Some(idx)) if idx == expected_idx as usize
+        ) {
+            return Some((
+                function_name.to_string(),
+                arg_name.to_string(),
+                expected_idx,
+            ));
+        }
+    }
+    None
+}
+
+fn find_lsm_named_arg_candidate() -> Option<(String, String, u8)> {
+    for (hook_name, arg_name, expected_idx) in [("file_open", "file", 0u8)] {
+        if matches!(
+            KernelBtf::get().lsm_hook_arg_index_by_name(hook_name, arg_name),
+            Ok(Some(idx)) if idx == expected_idx as usize
+        ) {
+            return Some((hook_name.to_string(), arg_name.to_string(), expected_idx));
+        }
+    }
+    None
+}
+
 fn find_struct_ops_named_pointer_projection_candidate() -> Option<(String, String, String, String)>
 {
     for (value_type_name, callback_name, arg_name, arg_idx, field_name) in
@@ -4537,6 +4568,80 @@ fn test_lower_struct_ops_named_arg_alias_nested_projection() {
                 }
             )),
         "expected named struct_ops arg alias to resolve through ctx.arg0 before nested projection"
+    );
+}
+
+#[test]
+fn test_lower_function_trampoline_named_arg_alias() {
+    let Some((function_name, arg_name, expected_idx)) =
+        find_function_trampoline_named_arg_candidate()
+    else {
+        return;
+    };
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("arg"), string_member(&arg_name)],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, &function_name);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("named BTF trampoline arg alias should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Arg(idx),
+            ..
+        } if *idx == expected_idx
+    )));
+}
+
+#[test]
+fn test_lower_lsm_named_arg_alias_nested_projection() {
+    let Some((hook_name, arg_name, expected_idx)) = find_lsm_named_arg_candidate() else {
+        return;
+    };
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("arg"),
+            string_member(&arg_name),
+            string_member("f_flags"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, &hook_name);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("named LSM arg alias nested projection should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Arg(idx),
+                    ..
+                } if *idx == expected_idx
+            )),
+        "expected named LSM arg alias to resolve through ctx.arg0 before nested projection"
     );
 }
 
