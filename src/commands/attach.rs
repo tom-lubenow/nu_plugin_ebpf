@@ -16,6 +16,7 @@ use nu_protocol::{
 };
 
 use crate::EbpfPlugin;
+use crate::compiler::mir::{MirFunction, MirInst, MirProgram};
 use crate::compiler::{
     EbpfObject, MapRef, MirCompileResult, MirType, ProbeContext, ProgramIntrinsic,
     StructOpsObjectSpec, StructOpsValueField, UserFunctionSig, UserParam, UserParamKind,
@@ -164,6 +165,7 @@ struct LeadingVariableDeclaration {
 struct CompiledClosureArtifacts {
     compile_result: MirCompileResult,
     generic_map_value_types: HashMap<MapRef, MirType>,
+    used_kfuncs: HashSet<String>,
 }
 
 fn value_to_spanned_closure(value: Value, span: Span) -> Result<Spanned<Closure>, LabeledError> {
@@ -184,6 +186,30 @@ fn value_to_spanned_closure(value: Value, span: Span) -> Result<Spanned<Closure>
             )
             .with_help("Use a closure like {|ctx| ... } for ordinary program types")),
     }
+}
+
+fn collect_used_kfuncs(program: &MirProgram) -> HashSet<String> {
+    fn collect_from_inst(inst: &MirInst, out: &mut HashSet<String>) {
+        if let MirInst::CallKfunc { kfunc, .. } = inst {
+            out.insert(kfunc.clone());
+        }
+    }
+
+    fn collect_from_function(func: &MirFunction, out: &mut HashSet<String>) {
+        for block in &func.blocks {
+            for inst in &block.instructions {
+                collect_from_inst(inst, out);
+            }
+            collect_from_inst(&block.terminator, out);
+        }
+    }
+
+    let mut out = HashSet::new();
+    collect_from_function(&program.main, &mut out);
+    for subfn in &program.subfunctions {
+        collect_from_function(subfn, &mut out);
+    }
+    out
 }
 
 fn struct_ops_value_field_from_value(
@@ -922,6 +948,77 @@ fn validate_required_struct_ops_value_fields(
     }
 }
 
+fn validate_sched_ext_callback_kfunc_requirements(
+    body: &Record,
+    callback_kfuncs: &HashMap<String, HashSet<String>>,
+    span: Span,
+) -> Result<(), LabeledError> {
+    if callback_kfuncs.is_empty() {
+        return Ok(());
+    }
+
+    let flags = match body.get("flags") {
+        Some(Value::Int { val, .. }) => u64::try_from(*val).unwrap_or(0),
+        _ => 0,
+    };
+    let keep_builtin_idle = resolve_sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE", span)?;
+    let builtin_idle_per_node = resolve_sched_ext_flag_bit("SCX_OPS_BUILTIN_IDLE_PER_NODE", span)?;
+    let builtin_idle_enabled = !matches!(body.get("update_idle"), Some(Value::Closure { .. }))
+        || (flags & keep_builtin_idle) != 0;
+    let per_node_idle_enabled = (flags & builtin_idle_per_node) != 0;
+
+    for (callback, used_kfuncs) in callback_kfuncs {
+        for kfunc in [
+            "scx_bpf_select_cpu_dfl",
+            "scx_bpf_select_cpu_and",
+            "scx_bpf_test_and_clear_cpu_idle",
+            "scx_bpf_pick_idle_cpu",
+            "scx_bpf_pick_idle_cpu_node",
+        ] {
+            if !builtin_idle_enabled && used_kfuncs.contains(kfunc) {
+                return Err(LabeledError::new("Invalid struct_ops object")
+                    .with_label(
+                        format!(
+                            "sched_ext_ops.{callback} uses '{kfunc}', but built-in idle tracking is disabled by update_idle",
+                        ),
+                        span,
+                    )
+                    .with_help(
+                        "Remove update_idle, or set SCX_OPS_KEEP_BUILTIN_IDLE to keep the built-in idle helpers available",
+                    ));
+            }
+        }
+
+        if per_node_idle_enabled && used_kfuncs.contains("scx_bpf_pick_idle_cpu") {
+            return Err(LabeledError::new("Invalid struct_ops object")
+                .with_label(
+                    format!(
+                        "sched_ext_ops.{callback} uses 'scx_bpf_pick_idle_cpu', but SCX_OPS_BUILTIN_IDLE_PER_NODE enables per-node idle masks",
+                    ),
+                    span,
+                )
+                .with_help(
+                    "Use scx_bpf_pick_idle_cpu_node when SCX_OPS_BUILTIN_IDLE_PER_NODE is set, or clear the flag to keep the flat idle mask helpers",
+                ));
+        }
+
+        if !per_node_idle_enabled && used_kfuncs.contains("scx_bpf_pick_idle_cpu_node") {
+            return Err(LabeledError::new("Invalid struct_ops object")
+                .with_label(
+                    format!(
+                        "sched_ext_ops.{callback} uses 'scx_bpf_pick_idle_cpu_node' without SCX_OPS_BUILTIN_IDLE_PER_NODE",
+                    ),
+                    span,
+                )
+                .with_help(
+                    "Set SCX_OPS_BUILTIN_IDLE_PER_NODE to enable per-node idle mask helpers, or use scx_bpf_pick_idle_cpu instead",
+                ));
+        }
+    }
+
+    Ok(())
+}
+
 fn sanitize_struct_ops_component(component: &str) -> String {
     let sanitized: String = component
         .chars()
@@ -1654,6 +1751,8 @@ fn compile_closure_with_context(
         );
     }
 
+    let used_kfuncs = collect_used_kfuncs(&mir_program);
+
     let compile_result = compile_mir_to_ebpf_with_hints_and_globals(
         &mir_program,
         Some(probe_context),
@@ -1671,6 +1770,7 @@ fn compile_closure_with_context(
     Ok(CompiledClosureArtifacts {
         compile_result,
         generic_map_value_types,
+        used_kfuncs,
     })
 }
 
@@ -1689,6 +1789,7 @@ fn compile_struct_ops_object(
         })?;
     let mut callbacks = Vec::new();
     let mut callback_fields = HashSet::new();
+    let mut callback_kfuncs = HashMap::new();
 
     for (field_name, value) in body.iter() {
         match value {
@@ -1720,6 +1821,7 @@ fn compile_struct_ops_object(
                     sanitize_struct_ops_component(field_name)
                 );
                 callback_fields.insert(field_name.to_string());
+                callback_kfuncs.insert(field_name.to_string(), compiled.used_kfuncs.clone());
                 callbacks.push(compiled.compile_result.into_struct_ops_callback(
                     field_name.as_str(),
                     callback_name,
@@ -1737,6 +1839,10 @@ fn compile_struct_ops_object(
                 spec = apply_struct_ops_value_field(spec, &mut field_path, value)?;
             }
         }
+    }
+
+    if value_type_name == "sched_ext_ops" {
+        validate_sched_ext_callback_kfunc_requirements(body, &callback_kfuncs, call_head)?;
     }
 
     validate_required_struct_ops_callbacks(value_type_name, &callback_fields, call_head)?;
@@ -3342,6 +3448,16 @@ mod tests {
         )
     }
 
+    fn sched_ext_callback_kfuncs(
+        callback: &str,
+        kfuncs: &[&str],
+    ) -> HashMap<String, HashSet<String>> {
+        HashMap::from([(
+            callback.to_string(),
+            kfuncs.iter().map(|kfunc| (*kfunc).to_string()).collect(),
+        )])
+    }
+
     #[test]
     fn test_validate_required_struct_ops_value_fields_rejects_non_int_sched_ext_flags() {
         if sched_ext_flag_masks().is_none() {
@@ -3597,6 +3713,174 @@ mod tests {
 
         super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
             .expect("sched_ext_ops update_idle with KEEP_BUILTIN_IDLE should be allowed");
+    }
+
+    #[test]
+    fn test_validate_sched_ext_callback_kfunc_requirements_rejects_builtin_idle_kfuncs_when_update_idle_disables_builtin_idle()
+     {
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push("update_idle", test_closure_value());
+        body.push("select_cpu", test_closure_value());
+
+        for kfunc in [
+            "scx_bpf_select_cpu_dfl",
+            "scx_bpf_select_cpu_and",
+            "scx_bpf_test_and_clear_cpu_idle",
+            "scx_bpf_pick_idle_cpu",
+            "scx_bpf_pick_idle_cpu_node",
+        ] {
+            let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &[kfunc]);
+            let err =
+                super::validate_sched_ext_callback_kfunc_requirements(
+                    &body,
+                    &callback_kfuncs,
+                    Span::test_data(),
+                )
+                .expect_err("builtin-idle kfunc should be rejected when update_idle disables builtin idle tracking");
+            assert!(
+                err.labels.iter().any(|label| label.text.contains(kfunc)),
+                "unexpected errors for {kfunc}: {:?}",
+                err
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_sched_ext_callback_kfunc_requirements_allows_builtin_idle_kfuncs_with_keep_builtin_idle()
+     {
+        let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
+            return;
+        };
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push("update_idle", test_closure_value());
+        body.push("select_cpu", test_closure_value());
+        body.push(
+            "flags",
+            Value::int(
+                i64::try_from(keep_builtin_idle).expect("flag bit should fit in i64"),
+                Span::test_data(),
+            ),
+        );
+
+        for kfunc in [
+            "scx_bpf_select_cpu_dfl",
+            "scx_bpf_select_cpu_and",
+            "scx_bpf_test_and_clear_cpu_idle",
+            "scx_bpf_pick_idle_cpu",
+        ] {
+            let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &[kfunc]);
+            super::validate_sched_ext_callback_kfunc_requirements(
+                &body,
+                &callback_kfuncs,
+                Span::test_data(),
+            )
+            .expect("KEEP_BUILTIN_IDLE should preserve builtin-idle kfunc availability");
+        }
+    }
+
+    #[test]
+    fn test_validate_sched_ext_callback_kfunc_requirements_rejects_pick_idle_cpu_node_without_per_node_flag()
+     {
+        let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
+            return;
+        };
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push(
+            "flags",
+            Value::int(
+                i64::try_from(keep_builtin_idle).expect("flag bit should fit in i64"),
+                Span::test_data(),
+            ),
+        );
+
+        let callback_kfuncs =
+            sched_ext_callback_kfuncs("select_cpu", &["scx_bpf_pick_idle_cpu_node"]);
+        let err = super::validate_sched_ext_callback_kfunc_requirements(
+            &body,
+            &callback_kfuncs,
+            Span::test_data(),
+        )
+        .expect_err("pick_idle_cpu_node should require SCX_OPS_BUILTIN_IDLE_PER_NODE");
+        assert!(err.labels.iter().any(|label| {
+            label
+                .text
+                .contains("uses 'scx_bpf_pick_idle_cpu_node' without SCX_OPS_BUILTIN_IDLE_PER_NODE")
+        }));
+    }
+
+    #[test]
+    fn test_validate_sched_ext_callback_kfunc_requirements_rejects_pick_idle_cpu_with_per_node_flag()
+     {
+        let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
+            return;
+        };
+        let Some(builtin_idle_per_node) = sched_ext_flag_bit("SCX_OPS_BUILTIN_IDLE_PER_NODE")
+        else {
+            return;
+        };
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push(
+            "flags",
+            Value::int(
+                i64::try_from(keep_builtin_idle | builtin_idle_per_node)
+                    .expect("flag bits should fit in i64"),
+                Span::test_data(),
+            ),
+        );
+
+        let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &["scx_bpf_pick_idle_cpu"]);
+        let err = super::validate_sched_ext_callback_kfunc_requirements(
+            &body,
+            &callback_kfuncs,
+            Span::test_data(),
+        )
+        .expect_err("pick_idle_cpu should be rejected when per-node idle masks are enabled");
+        assert!(err.labels.iter().any(|label| {
+            label
+                .text
+                .contains("uses 'scx_bpf_pick_idle_cpu', but SCX_OPS_BUILTIN_IDLE_PER_NODE enables per-node idle masks")
+        }));
+    }
+
+    #[test]
+    fn test_validate_sched_ext_callback_kfunc_requirements_allows_pick_idle_cpu_node_with_per_node_flag()
+     {
+        let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
+            return;
+        };
+        let Some(builtin_idle_per_node) = sched_ext_flag_bit("SCX_OPS_BUILTIN_IDLE_PER_NODE")
+        else {
+            return;
+        };
+
+        let mut body = Record::new();
+        body.push("name", Value::string("nu.demo_1", Span::test_data()));
+        body.push(
+            "flags",
+            Value::int(
+                i64::try_from(keep_builtin_idle | builtin_idle_per_node)
+                    .expect("flag bits should fit in i64"),
+                Span::test_data(),
+            ),
+        );
+
+        let callback_kfuncs =
+            sched_ext_callback_kfuncs("select_cpu", &["scx_bpf_pick_idle_cpu_node"]);
+        super::validate_sched_ext_callback_kfunc_requirements(
+            &body,
+            &callback_kfuncs,
+            Span::test_data(),
+        )
+        .expect(
+            "pick_idle_cpu_node should be allowed when per-node builtin idle masks are enabled",
+        );
     }
 
     #[test]
