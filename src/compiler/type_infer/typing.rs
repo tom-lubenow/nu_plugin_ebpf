@@ -394,6 +394,11 @@ impl<'a> TypeInference<'a> {
             | CtxField::SysctlWrite
             | CtxField::SysctlFilePos => HMType::U32,
 
+            CtxField::SockoptLevel
+            | CtxField::SockoptOptname
+            | CtxField::SockoptOptlen
+            | CtxField::SockoptRetval => HMType::I32,
+
             CtxField::UserIp6 | CtxField::MsgSrcIp6 => HMType::Ptr {
                 pointee: Box::new(HMType::Array {
                     elem: Box::new(HMType::U32),

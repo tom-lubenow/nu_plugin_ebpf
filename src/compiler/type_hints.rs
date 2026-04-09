@@ -187,6 +187,10 @@ fn recover_ctx_field_hint(
         | CtxField::MsgSrcIp4
         | CtxField::SysctlWrite
         | CtxField::SysctlFilePos => Some(MirType::U32),
+        CtxField::SockoptLevel
+        | CtxField::SockoptOptname
+        | CtxField::SockoptOptlen
+        | CtxField::SockoptRetval => Some(MirType::I32),
         CtxField::UserIp6 | CtxField::MsgSrcIp6 => Some(MirType::Ptr {
             pointee: Box::new(MirType::Array {
                 elem: Box::new(MirType::U32),

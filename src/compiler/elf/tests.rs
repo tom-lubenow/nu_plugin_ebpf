@@ -1416,6 +1416,36 @@ fn test_probe_context_rejects_sock_addr_fields_on_packet_programs() {
 }
 
 #[test]
+fn test_probe_context_allows_sockopt_fields_on_cgroup_sockopt_get() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockoptLevel)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockoptOptname)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockoptOptlen)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockoptRetval)
+            .is_none()
+    );
+}
+
+#[test]
+fn test_probe_context_rejects_sockopt_retval_on_cgroup_sockopt_set() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::SockoptRetval)
+        .expect("expected cgroup_sockopt:set retval rejection");
+    assert!(err.contains("cgroup_sockopt:get"));
+}
+
+#[test]
 fn test_probe_context_rejects_xdp_only_packet_fields_on_tc() {
     let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let rx_err = ctx

@@ -2,11 +2,13 @@ use super::LoadError;
 use crate::compiler::{EbpfProgramType, KernelTargetValidationKind, ProgramTargetKind};
 use crate::kernel_btf::{FunctionCheckResult, KernelBtf};
 use crate::program_spec::{
-    CgroupSkbTarget, CgroupSockAddrTarget, DEFAULT_PERF_EVENT_PERIOD, PerfEventEvent,
-    PerfEventHardwareEvent, PerfEventSamplePolicy, PerfEventSoftwareEvent, PerfEventTarget,
-    ProgramSpec, TcTarget, UprobeTarget,
+    CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockoptTarget, DEFAULT_PERF_EVENT_PERIOD,
+    PerfEventEvent, PerfEventHardwareEvent, PerfEventSamplePolicy, PerfEventSoftwareEvent,
+    PerfEventTarget, ProgramSpec, TcTarget, UprobeTarget,
 };
-use aya::programs::{CgroupSkbAttachType, CgroupSockAddrAttachType, TcAttachType};
+use aya::programs::{
+    CgroupSkbAttachType, CgroupSockAddrAttachType, CgroupSockoptAttachType, TcAttachType,
+};
 use aya::util::online_cpus;
 use std::path::Path;
 
@@ -170,6 +172,38 @@ impl CgroupSockAddrTarget {
             _ => {
                 return Err(LoadError::Load(format!(
                     "Invalid cgroup_sock_addr attach kind: {attach_kind}. Expected one of bind4, bind6, connect4, connect6, getpeername4, getpeername6, getsockname4, getsockname6, sendmsg4, sendmsg6, recvmsg4, recvmsg6"
+                )));
+            }
+        };
+
+        Ok(Self {
+            cgroup_path: cgroup_path.to_string(),
+            attach_type,
+        })
+    }
+}
+
+impl CgroupSockoptTarget {
+    /// Parse a cgroup_sockopt target string of the form `/sys/fs/cgroup:get`.
+    pub fn parse(target: &str) -> Result<Self, LoadError> {
+        let (cgroup_path, attach_kind) = target.rsplit_once(':').ok_or_else(|| {
+            LoadError::Load(format!(
+                "Invalid cgroup_sockopt target: {target}. Expected format: /path/to/cgroup:get or /path/to/cgroup:set"
+            ))
+        })?;
+
+        if cgroup_path.is_empty() {
+            return Err(LoadError::Load(
+                "cgroup_sockopt cgroup path cannot be empty".to_string(),
+            ));
+        }
+
+        let attach_type = match attach_kind {
+            "get" => CgroupSockoptAttachType::Get,
+            "set" => CgroupSockoptAttachType::Set,
+            _ => {
+                return Err(LoadError::Load(format!(
+                    "Invalid cgroup_sockopt attach kind: {attach_kind}. Expected get or set"
                 )));
             }
         };
@@ -490,6 +524,27 @@ fn validate_cgroup_path_target(target: &str) -> Result<(), LoadError> {
     Ok(())
 }
 
+fn validate_cgroup_sockopt_target(target: &str) -> Result<(), LoadError> {
+    let parsed = CgroupSockoptTarget::parse(target)?;
+    let cgroup_path = Path::new(&parsed.cgroup_path);
+
+    if !cgroup_path.exists() {
+        return Err(LoadError::Load(format!(
+            "Unknown cgroup path: {}",
+            parsed.cgroup_path
+        )));
+    }
+
+    if !cgroup_path.is_dir() {
+        return Err(LoadError::Load(format!(
+            "cgroup_sockopt target must be a directory: {}",
+            parsed.cgroup_path
+        )));
+    }
+
+    Ok(())
+}
+
 fn validate_cgroup_sock_addr_target(target: &str) -> Result<(), LoadError> {
     let parsed = CgroupSockAddrTarget::parse(target)?;
     let cgroup_path = Path::new(&parsed.cgroup_path);
@@ -567,6 +622,7 @@ fn validate_target_for_program_type(
         ProgramTargetKind::TrafficControlInterface => validate_tc_target(target),
         ProgramTargetKind::CgroupPathAttachType => validate_cgroup_skb_target(target),
         ProgramTargetKind::CgroupPath => validate_cgroup_path_target(target),
+        ProgramTargetKind::CgroupPathSockoptAttachType => validate_cgroup_sockopt_target(target),
         ProgramTargetKind::CgroupPathSockAddrAttachType => validate_cgroup_sock_addr_target(target),
         ProgramTargetKind::StructOpsCallback => validate_struct_ops_value_type(target),
     }
@@ -608,6 +664,8 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `cgroup_skb:/path/to/cgroup:ingress`
 /// - `cgroup_skb:/path/to/cgroup:egress`
 /// - `cgroup_sysctl:/path/to/cgroup`
+/// - `cgroup_sockopt:/path/to/cgroup:get`
+/// - `cgroup_sockopt:/path/to/cgroup:set`
 /// - `cgroup_sock_addr:/path/to/cgroup:connect4`
 /// - `uprobe:/path/to/binary:0x1234` (offset-based)
 /// - `uprobe:/path/to/binary:function@PID` (PID-filtered)
@@ -677,6 +735,9 @@ pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
         }),
         EbpfProgramType::CgroupSysctl => Ok(ProgramSpec::CgroupSysctl {
             cgroup_path: target.to_string(),
+        }),
+        EbpfProgramType::CgroupSockopt => Ok(ProgramSpec::CgroupSockopt {
+            target: CgroupSockoptTarget::parse(target)?,
         }),
         EbpfProgramType::CgroupSockAddr => Ok(ProgramSpec::CgroupSockAddr {
             target: CgroupSockAddrTarget::parse(target)?,

@@ -1,4 +1,6 @@
-use aya::programs::{CgroupSkbAttachType, CgroupSockAddrAttachType, TcAttachType};
+use aya::programs::{
+    CgroupSkbAttachType, CgroupSockAddrAttachType, CgroupSockoptAttachType, TcAttachType,
+};
 
 /// Parsed uprobe/uretprobe target information.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,6 +127,36 @@ impl PartialEq for CgroupSockAddrTarget {
 }
 
 impl Eq for CgroupSockAddrTarget {}
+
+/// Parsed cgroup_sockopt target information.
+#[derive(Debug, Clone)]
+pub struct CgroupSockoptTarget {
+    /// Filesystem path to the cgroup directory.
+    pub cgroup_path: String,
+    /// Attach kind.
+    pub attach_type: CgroupSockoptAttachType,
+}
+
+impl CgroupSockoptTarget {
+    pub fn attach_type_name(&self) -> &'static str {
+        match self.attach_type {
+            CgroupSockoptAttachType::Get => "get",
+            CgroupSockoptAttachType::Set => "set",
+        }
+    }
+
+    pub fn target_string(&self) -> String {
+        format!("{}:{}", self.cgroup_path, self.attach_type_name())
+    }
+}
+
+impl PartialEq for CgroupSockoptTarget {
+    fn eq(&self, other: &Self) -> bool {
+        self.cgroup_path == other.cgroup_path && self.attach_type_name() == other.attach_type_name()
+    }
+}
+
+impl Eq for CgroupSockoptTarget {}
 
 pub const DEFAULT_PERF_EVENT_PERIOD: u64 = 1_000_000;
 
@@ -277,6 +309,7 @@ pub enum ProgramSpec {
     Tc { target: TcTarget },
     CgroupSkb { target: CgroupSkbTarget },
     CgroupSysctl { cgroup_path: String },
+    CgroupSockopt { target: CgroupSockoptTarget },
     CgroupSockAddr { target: CgroupSockAddrTarget },
     StructOps { value_type_name: String },
 }
@@ -299,6 +332,7 @@ impl ProgramSpec {
             ProgramSpec::Tc { target } => target.target_string(),
             ProgramSpec::CgroupSkb { target } => target.target_string(),
             ProgramSpec::CgroupSysctl { cgroup_path } => cgroup_path.clone(),
+            ProgramSpec::CgroupSockopt { target } => target.target_string(),
             ProgramSpec::CgroupSockAddr { target } => target.target_string(),
             ProgramSpec::StructOps { value_type_name } => value_type_name.clone(),
         }

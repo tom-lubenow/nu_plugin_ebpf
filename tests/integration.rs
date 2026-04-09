@@ -310,6 +310,23 @@ mod linux_tests {
         }
     }
 
+    /// Test parsing cgroup_sockopt specification
+    #[test]
+    fn test_parse_cgroup_sockopt_spec() {
+        let result = parse_probe_spec("cgroup_sockopt:/sys/fs/cgroup:get");
+
+        match result {
+            Ok((prog_type, target)) => {
+                assert!(
+                    format!("{:?}", prog_type).contains("CgroupSockopt"),
+                    "Expected CgroupSockopt type"
+                );
+                assert_eq!(target, "/sys/fs/cgroup:get");
+            }
+            Err(e) => panic!("Unexpected error: {:?}", e),
+        }
+    }
+
     /// Test parsing lsm specification
     #[test]
     fn test_parse_lsm_spec() {

@@ -1951,6 +1951,7 @@ Supported attach types:
   - xdp, tc
   - cgroup_skb
   - cgroup_sysctl
+  - cgroup_sockopt
   - cgroup_sock_addr
   - struct_ops
 
@@ -2038,6 +2039,17 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.file_pos } - Get the current sysctl file position
     Note: cgroup_sysctl closures can return `allow` or `deny` instead of
     raw `1`/`0` result codes.
+
+  cgroup_sockopt fields:
+    {|ctx| $ctx.cpu }     - Get current CPU ID
+    {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.level }   - Get the socket-option level
+    {|ctx| $ctx.optname } - Get the socket-option name
+    {|ctx| $ctx.optlen }  - Get the socket-option length
+    {|ctx| $ctx.sockopt_retval } - Get the getsockopt return value on `cgroup_sockopt:get`
+    Note: cgroup_sockopt closures can return `allow` or `deny` instead of
+    raw `1`/`0` result codes. Initial support models the scalar fields above;
+    `optval` buffer access is not surfaced yet.
 
   cgroup_sock_addr fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
@@ -2200,7 +2212,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_sysctl:/sys/fs/cgroup', or 'cgroup_sock_addr:/sys/fs/cgroup:connect4').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', or 'cgroup_sock_addr:/sys/fs/cgroup:connect4').",
             )
             .required(
                 "body",
@@ -2249,6 +2261,7 @@ Requirements:
             "tc",
             "cgroup_skb",
             "cgroup_sysctl",
+            "cgroup_sockopt",
             "cgroup_sock_addr",
             "struct_ops",
         ]
@@ -2299,6 +2312,11 @@ Requirements:
             Example {
                 example: "ebpf attach 'cgroup_sysctl:/sys/fs/cgroup' {|ctx| $ctx.write | count; 'allow' }",
                 description: "Count sysctl reads versus writes on a cgroup sysctl hook",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| $ctx.optname | count; 'allow' }",
+                description: "Count getsockopt option names on a cgroup socket-option hook",
                 result: None,
             },
             Example {

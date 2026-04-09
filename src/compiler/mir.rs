@@ -432,6 +432,14 @@ pub enum CtxField {
     SysctlWrite,
     /// bpf_sysctl::file_pos
     SysctlFilePos,
+    /// bpf_sockopt::level
+    SockoptLevel,
+    /// bpf_sockopt::optname
+    SockoptOptname,
+    /// bpf_sockopt::optlen
+    SockoptOptlen,
+    /// bpf_sockopt::retval
+    SockoptRetval,
     /// Function argument (kprobe/uprobe)
     Arg(u8),
     /// Return value (kretprobe/uretprobe)
@@ -471,6 +479,10 @@ impl CtxField {
             CtxField::MsgSrcIp6 => "msg_src_ip6".to_string(),
             CtxField::SysctlWrite => "write".to_string(),
             CtxField::SysctlFilePos => "file_pos".to_string(),
+            CtxField::SockoptLevel => "level".to_string(),
+            CtxField::SockoptOptname => "optname".to_string(),
+            CtxField::SockoptOptlen => "optlen".to_string(),
+            CtxField::SockoptRetval => "sockopt_retval".to_string(),
             CtxField::Arg(idx) => format!("arg{}", idx),
             CtxField::RetVal => "retval".to_string(),
             CtxField::KStack => "kstack".to_string(),

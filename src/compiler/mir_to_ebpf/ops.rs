@@ -53,6 +53,19 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 4)
     }
 
+    fn bpf_sockopt_offsets() -> (i16, i16, i16, i16) {
+        // struct bpf_sockopt {
+        //     __u64 sk;
+        //     __u64 optval;
+        //     __u64 optval_end;
+        //     __s32 level;
+        //     __s32 optname;
+        //     __s32 optlen;
+        //     __s32 retval;
+        // };
+        (24, 28, 32, 36)
+    }
+
     fn compile_ctx_u32_array_to_stack(
         &mut self,
         dst: EbpfReg,
@@ -638,6 +651,26 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
             CtxField::SysctlFilePos => {
                 let offset = Self::bpf_sysctl_offsets().1;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockoptLevel => {
+                let offset = Self::bpf_sockopt_offsets().0;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockoptOptname => {
+                let offset = Self::bpf_sockopt_offsets().1;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockoptOptlen => {
+                let offset = Self::bpf_sockopt_offsets().2;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockoptRetval => {
+                let offset = Self::bpf_sockopt_offsets().3;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }

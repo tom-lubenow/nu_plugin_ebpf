@@ -42,6 +42,22 @@ fn section_name_for_program(
             }
         }
         EbpfProgramType::CgroupSysctl => Ok("cgroup/sysctl".to_string()),
+        EbpfProgramType::CgroupSockopt => {
+            let (_path, attach_type) = target.rsplit_once(':').ok_or_else(|| {
+                CompileError::InvalidProgram(format!(
+                    "invalid cgroup_sockopt target '{}': expected cgroup_path:get or cgroup_path:set",
+                    target
+                ))
+            })?;
+            match attach_type {
+                "get" => Ok("cgroup/getsockopt".to_string()),
+                "set" => Ok("cgroup/setsockopt".to_string()),
+                other => Err(CompileError::InvalidProgram(format!(
+                    "invalid cgroup_sockopt attach type '{}': expected get or set",
+                    other
+                ))),
+            }
+        }
         _ => {
             if prog_type.info().section_uses_target {
                 Ok(format!("{}/{}", prog_type.section_prefix(), target))

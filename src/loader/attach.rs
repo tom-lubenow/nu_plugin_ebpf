@@ -425,6 +425,30 @@ impl EbpfState {
                         LoadError::Attach(format!("Failed to attach cgroup_sysctl: {e}"))
                     })?;
             }
+            ProgramAttachKind::CgroupSockopt => {
+                let target = CgroupSockoptTarget::parse(&program.target)?;
+                let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
+                    if e.kind() == ErrorKind::PermissionDenied {
+                        LoadError::PermissionDenied
+                    } else {
+                        LoadError::Attach(format!(
+                            "Failed to open cgroup path {}: {e}",
+                            target.cgroup_path
+                        ))
+                    }
+                })?;
+                let cgroup_sockopt: &mut CgroupSockopt = prog.try_into().map_err(|e| {
+                    LoadError::Load(format!("Failed to convert to CgroupSockopt: {e}"))
+                })?;
+                cgroup_sockopt
+                    .load()
+                    .map_err(|e| LoadError::Load(format!("Failed to load cgroup_sockopt: {e}")))?;
+                cgroup_sockopt
+                    .attach(cgroup, CgroupAttachMode::Single)
+                    .map_err(|e| {
+                        LoadError::Attach(format!("Failed to attach cgroup_sockopt: {e}"))
+                    })?;
+            }
             ProgramAttachKind::CgroupSockAddr => {
                 let target = CgroupSockAddrTarget::parse(&program.target)?;
                 let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {

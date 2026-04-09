@@ -1231,6 +1231,10 @@ impl<'a> HirToMirLowering<'a> {
             "msg_src_ip6" => CtxField::MsgSrcIp6,
             "write" => CtxField::SysctlWrite,
             "file_pos" => CtxField::SysctlFilePos,
+            "level" => CtxField::SockoptLevel,
+            "optname" => CtxField::SockoptOptname,
+            "optlen" => CtxField::SockoptOptlen,
+            "sockopt_retval" => CtxField::SockoptRetval,
             "retval" => CtxField::RetVal,
             "kstack" => CtxField::KStack,
             "ustack" => CtxField::UStack,
@@ -4574,6 +4578,10 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::MsgSrcIp4
             | CtxField::SysctlWrite
             | CtxField::SysctlFilePos => (MirType::U32, Some(MirType::U32)),
+            CtxField::SockoptLevel
+            | CtxField::SockoptOptname
+            | CtxField::SockoptOptlen
+            | CtxField::SockoptRetval => (MirType::I32, Some(MirType::I32)),
             CtxField::Data | CtxField::DataEnd => {
                 let ptr_ty = MirType::Ptr {
                     pointee: Box::new(MirType::U8),

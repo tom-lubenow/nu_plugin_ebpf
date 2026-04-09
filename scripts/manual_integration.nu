@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 49
+const TOTAL_STEPS = 50
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -118,6 +118,14 @@ def trigger-cpu-work [] {
 
 def trigger-sysctl-read [] {
     open --raw /proc/sys/kernel/pid_max | str length | ignore
+}
+
+def trigger-sockopt-read [] {
+    ^python3 -c 'import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+s.close()
+' out+err> /dev/null
 }
 
 def wait-for-counter-rows [id, label: string] {
@@ -625,7 +633,18 @@ step 43 "cgroup_sysctl root read/write counter" {
     }
 }
 
-step 44 "sched_ext_ops dry-run name-only object" {
+step 44 "cgroup_sockopt root getsockopt counter" {
+    if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
+        print "Skipping cgroup_sockopt smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
+    } else {
+        count-at-least-one "cgroup_sockopt:/sys/fs/cgroup:get" {|ctx|
+            $ctx.optname | count
+            'allow'
+        } { trigger-sockopt-read } "cgroup_sockopt getsockopt counter"
+    }
+}
+
+step 45 "sched_ext_ops dry-run name-only object" {
     let code = ([
         'ebpf attach --dry-run "struct_ops:sched_ext_ops" {'
         '    name: "nu.demo_1"'
@@ -640,7 +659,7 @@ step 44 "sched_ext_ops dry-run name-only object" {
     $result
 }
 
-step 45 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
+step 46 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
     let code = ([
         'ebpf attach --dry-run "struct_ops:sched_ext_ops" {'
         '    name: "nu.demo_1"'
@@ -668,7 +687,7 @@ step 45 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
     $result
 }
 
-step 46 "tcp_congestion_ops live attach and detach" {
+step 47 "tcp_congestion_ops live attach and detach" {
     let code = ([
         'let id = (ebpf attach "struct_ops:tcp_congestion_ops" {'
         '    name: "nu_demo"'
@@ -691,7 +710,7 @@ step 46 "tcp_congestion_ops live attach and detach" {
     $id
 }
 
-step 47 "lsm file_open dry-run" {
+step 48 "lsm file_open dry-run" {
     let code = ([
         'ebpf attach --dry-run "lsm:file_open" {|ctx| $ctx.arg0.f_flags | count; 0 } | describe'
     ] | str join (char newline))
@@ -704,14 +723,14 @@ step 47 "lsm file_open dry-run" {
     $result
 }
 
-step 48 "perf_event software cpu-clock counter" {
+step 49 "perf_event software cpu-clock counter" {
     count-at-least-one "perf_event:software:cpu-clock:period=100000" {|ctx|
         $ctx.cpu | count
         0
     } { trigger-cpu-work } "perf_event cpu-clock counter"
 }
 
-step 49 "verify no leaked probes" {
+step 50 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"
