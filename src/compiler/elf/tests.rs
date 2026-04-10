@@ -1536,6 +1536,18 @@ fn test_probe_context_allows_sock_ops_fields() {
         ctx.ctx_field_access_error(&CtxField::SockOpsSndSsthresh)
             .is_none()
     );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockOpsSkbLen)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockOpsSkbTcpFlags)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockOpsSkbHwtstamp)
+            .is_none()
+    );
 }
 
 #[test]

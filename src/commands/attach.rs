@@ -2265,6 +2265,9 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.state }   - Get the current TCP state
     {|ctx| $ctx.rtt_min } - Get the minimum observed RTT in microseconds
     {|ctx| $ctx.snd_ssthresh } - Get the current slow-start threshold
+    {|ctx| $ctx.skb_len } - Get the total packet length when packet metadata is available
+    {|ctx| $ctx.skb_tcp_flags } - Get packet TCP flags when packet metadata is available
+    {|ctx| $ctx.skb_hwtstamp } - Get packet hardware timestamp when packet metadata is available
     Note: initial sock_ops support is read-only and uses raw integer return
     codes. Observation-only examples should return `1`. IPv6 addresses are
     exposed as fixed arrays of four host-order u32 words, for example

@@ -409,6 +409,8 @@ impl<'a> TypeInference<'a> {
             | CtxField::SockState
             | CtxField::SockOpsRttMin
             | CtxField::SockOpsSndSsthresh
+            | CtxField::SockOpsSkbLen
+            | CtxField::SockOpsSkbTcpFlags
             | CtxField::SysctlWrite
             | CtxField::SysctlFilePos => HMType::U32,
 
@@ -439,7 +441,9 @@ impl<'a> TypeInference<'a> {
                 address_space: AddressSpace::Packet,
             },
 
-            CtxField::Timestamp | CtxField::LookupCookie => HMType::U64,
+            CtxField::Timestamp | CtxField::LookupCookie | CtxField::SockOpsSkbHwtstamp => {
+                HMType::U64
+            }
 
             CtxField::Arg(idx) => {
                 if let Some(ty) = self.trampoline_arg_type(*idx).ok().flatten() {

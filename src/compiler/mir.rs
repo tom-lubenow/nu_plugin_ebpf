@@ -472,6 +472,12 @@ pub enum CtxField {
     SockOpsRttMin,
     /// bpf_sock_ops::snd_ssthresh
     SockOpsSndSsthresh,
+    /// bpf_sock_ops::skb_len
+    SockOpsSkbLen,
+    /// bpf_sock_ops::skb_tcp_flags
+    SockOpsSkbTcpFlags,
+    /// bpf_sock_ops::skb_hwtstamp
+    SockOpsSkbHwtstamp,
     /// bpf_sysctl::write
     SysctlWrite,
     /// bpf_sysctl::file_pos
@@ -547,6 +553,9 @@ impl CtxField {
             CtxField::SockState => "state".to_string(),
             CtxField::SockOpsRttMin => "rtt_min".to_string(),
             CtxField::SockOpsSndSsthresh => "snd_ssthresh".to_string(),
+            CtxField::SockOpsSkbLen => "skb_len".to_string(),
+            CtxField::SockOpsSkbTcpFlags => "skb_tcp_flags".to_string(),
+            CtxField::SockOpsSkbHwtstamp => "skb_hwtstamp".to_string(),
             CtxField::SysctlWrite => "write".to_string(),
             CtxField::SysctlFilePos => "file_pos".to_string(),
             CtxField::SockoptLevel => "level".to_string(),

@@ -1258,6 +1258,9 @@ impl<'a> HirToMirLowering<'a> {
             "file_pos" => CtxField::SysctlFilePos,
             "rtt_min" => CtxField::SockOpsRttMin,
             "snd_ssthresh" => CtxField::SockOpsSndSsthresh,
+            "skb_len" => CtxField::SockOpsSkbLen,
+            "skb_tcp_flags" => CtxField::SockOpsSkbTcpFlags,
+            "skb_hwtstamp" => CtxField::SockOpsSkbHwtstamp,
             "level" => CtxField::SockoptLevel,
             "optname" => CtxField::SockoptOptname,
             "optlen" => CtxField::SockoptOptlen,
@@ -1384,6 +1387,9 @@ impl<'a> HirToMirLowering<'a> {
             (Some(EbpfProgramType::SockOps), "state") => CtxField::SockState,
             (Some(EbpfProgramType::SockOps), "rtt_min") => CtxField::SockOpsRttMin,
             (Some(EbpfProgramType::SockOps), "snd_ssthresh") => CtxField::SockOpsSndSsthresh,
+            (Some(EbpfProgramType::SockOps), "skb_len") => CtxField::SockOpsSkbLen,
+            (Some(EbpfProgramType::SockOps), "skb_tcp_flags") => CtxField::SockOpsSkbTcpFlags,
+            (Some(EbpfProgramType::SockOps), "skb_hwtstamp") => CtxField::SockOpsSkbHwtstamp,
             _ => Self::ctx_field_from_name(field_name)?,
         };
 
@@ -4707,9 +4713,13 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::SockState
             | CtxField::SockOpsRttMin
             | CtxField::SockOpsSndSsthresh
+            | CtxField::SockOpsSkbLen
+            | CtxField::SockOpsSkbTcpFlags
             | CtxField::SysctlWrite
             | CtxField::SysctlFilePos => (MirType::U32, Some(MirType::U32)),
-            CtxField::Timestamp | CtxField::LookupCookie => (MirType::U64, Some(MirType::U64)),
+            CtxField::Timestamp | CtxField::LookupCookie | CtxField::SockOpsSkbHwtstamp => {
+                (MirType::U64, Some(MirType::U64))
+            }
             CtxField::SockoptLevel
             | CtxField::SockoptOptname
             | CtxField::SockoptOptlen

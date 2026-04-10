@@ -203,8 +203,11 @@ fn recover_ctx_field_hint(
         | CtxField::SockState
         | CtxField::SockOpsRttMin
         | CtxField::SockOpsSndSsthresh
+        | CtxField::SockOpsSkbLen
+        | CtxField::SockOpsSkbTcpFlags
         | CtxField::SysctlWrite
         | CtxField::SysctlFilePos => Some(MirType::U32),
+        CtxField::SockOpsSkbHwtstamp => Some(MirType::U64),
         CtxField::SockoptLevel
         | CtxField::SockoptOptname
         | CtxField::SockoptOptlen

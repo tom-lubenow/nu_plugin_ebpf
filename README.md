@@ -109,6 +109,9 @@ let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| ($ctx.args | get 0) | coun
 # Count current TCP congestion-window observations on loopback socket events
 let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.snd_cwnd | count; 1 }
 
+# Count sock_ops packet-length observations when packet metadata is available
+let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.skb_len | count; 1 }
+
 # Count getsockopt option names inside a cgroup
 let id = ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| $ctx.optname | count; 'allow' }
 
@@ -315,6 +318,9 @@ The closure receives a context parameter with these fields:
 | `state` | Current TCP state | sock_ops |
 | `rtt_min` | Minimum observed RTT in microseconds | sock_ops |
 | `snd_ssthresh` | Current slow-start threshold | sock_ops |
+| `skb_len` | Total packet length when packet metadata is available | sock_ops |
+| `skb_tcp_flags` | Packet TCP flags when packet metadata is available | sock_ops |
+| `skb_hwtstamp` | Packet hardware timestamp when packet metadata is available | sock_ops |
 | `msg_src_ip4` | IPv4 source address in host byte order | cgroup_sock_addr (sendmsg4, recvmsg4) |
 | `msg_src_ip6` | IPv6 source address as four host-order `u32` words | cgroup_sock_addr (sendmsg6, recvmsg6) |
 | `remote_ip4` | Remote IPv4 address in host byte order | sk_lookup, sock_ops |
@@ -392,11 +398,13 @@ It exposes `ctx.cpu`, `ctx.ktime`, `ctx.op`, `ctx.family`,
 `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`,
 `ctx.local_ip6`, `ctx.local_port`, `ctx.is_fullsock`, `ctx.snd_cwnd`,
 `ctx.srtt_us`, `ctx.cb_flags`, `ctx.state`, `ctx.rtt_min`, and
-`ctx.snd_ssthresh`. The IPv4 address and remote port fields are normalized
-to host byte order. The IPv6 fields are exposed as fixed arrays of four
-host-order `u32` words, so ordinary Nushell indexing works, for example
-`($ctx.remote_ip6 | get 3)`. This initial slice is read-only and uses raw
-integer return codes; observation-only examples should return `1`.
+`ctx.snd_ssthresh`, plus packet-metadata fields `ctx.skb_len`,
+`ctx.skb_tcp_flags`, and `ctx.skb_hwtstamp` when the callback context has
+packet data available. The IPv4 address and remote port fields are
+normalized to host byte order. The IPv6 fields are exposed as fixed arrays
+of four host-order `u32` words, so ordinary Nushell indexing works, for
+example `($ctx.remote_ip6 | get 3)`. This initial slice is read-only and
+uses raw integer return codes; observation-only examples should return `1`.
 
 `cgroup_sock_addr` currently exposes `ctx.cpu`, `ctx.ktime`,
 `ctx.user_family`, `ctx.user_ip4`, `ctx.user_ip6`, `ctx.user_port`,

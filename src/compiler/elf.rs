@@ -987,6 +987,9 @@ impl ProbeContext {
             | CtxField::SockState
             | CtxField::SockOpsRttMin
             | CtxField::SockOpsSndSsthresh
+            | CtxField::SockOpsSkbLen
+            | CtxField::SockOpsSkbTcpFlags
+            | CtxField::SockOpsSkbHwtstamp
                 if !matches!(self.probe_type, EbpfProgramType::SockOps) =>
             {
                 Some(format!(
