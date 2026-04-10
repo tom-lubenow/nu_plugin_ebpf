@@ -179,6 +179,8 @@ fn recover_ctx_field_hint(
         | CtxField::Ifindex
         | CtxField::RxQueueIndex
         | CtxField::EgressIfindex
+        | CtxField::TcIndex
+        | CtxField::SkbHash
         | CtxField::UserFamily
         | CtxField::UserIp4
         | CtxField::UserPort

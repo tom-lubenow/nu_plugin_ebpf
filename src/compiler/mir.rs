@@ -412,6 +412,10 @@ pub enum CtxField {
     RxQueueIndex,
     /// XDP egress interface index
     EgressIfindex,
+    /// skb tc_index (`__sk_buff.tc_index`)
+    TcIndex,
+    /// skb hash (`__sk_buff.hash`)
+    SkbHash,
     /// bpf_sock_addr::user_family
     UserFamily,
     /// bpf_sock_addr::user_ip4 (normalized to host byte order)
@@ -525,6 +529,8 @@ impl CtxField {
             CtxField::Ifindex => "ifindex".to_string(),
             CtxField::RxQueueIndex => "rx_queue_index".to_string(),
             CtxField::EgressIfindex => "egress_ifindex".to_string(),
+            CtxField::TcIndex => "tc_index".to_string(),
+            CtxField::SkbHash => "hash".to_string(),
             CtxField::UserFamily => "user_family".to_string(),
             CtxField::UserIp4 => "user_ip4".to_string(),
             CtxField::UserIp6 => "user_ip6".to_string(),

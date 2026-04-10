@@ -1233,6 +1233,8 @@ impl<'a> HirToMirLowering<'a> {
             "ingress_ifindex" => CtxField::IngressIfindex,
             "rx_queue_index" => CtxField::RxQueueIndex,
             "egress_ifindex" => CtxField::EgressIfindex,
+            "tc_index" => CtxField::TcIndex,
+            "hash" => CtxField::SkbHash,
             "user_family" => CtxField::UserFamily,
             "user_ip4" => CtxField::UserIp4,
             "user_ip6" => CtxField::UserIp6,
@@ -4696,6 +4698,8 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::Ifindex
             | CtxField::RxQueueIndex
             | CtxField::EgressIfindex
+            | CtxField::TcIndex
+            | CtxField::SkbHash
             | CtxField::UserFamily
             | CtxField::UserIp4
             | CtxField::UserPort

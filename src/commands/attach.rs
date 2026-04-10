@@ -2156,6 +2156,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.data_end } - Get packet end pointer
     {|ctx| $ctx.ingress_ifindex } - Get ingress interface index
     {|ctx| $ctx.ifindex } - Get the XDP ingress ifindex or skb ifindex, depending on program type
+    {|ctx| $ctx.tc_index } - Get the skb tc_index on skb-backed packet programs
+    {|ctx| $ctx.hash }    - Get the skb hash on skb-backed packet programs
     {|ctx| $ctx.mark }    - Get the skb mark on skb-backed packet programs
     {|ctx| $ctx.priority } - Get the skb priority on skb-backed packet programs
     {|ctx| ($ctx.data | get 0) } - Read the first packet byte with an auto-generated data_end guard
@@ -2308,6 +2310,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.data_end } - Get the end pointer for packet access
     {|ctx| $ctx.ingress_ifindex } - Get the ingress interface index
     {|ctx| $ctx.ifindex } - Get the skb ifindex
+    {|ctx| $ctx.tc_index } - Get the skb tc_index
+    {|ctx| $ctx.hash }    - Get the skb hash
     {|ctx| $ctx.mark }    - Get the skb mark
     {|ctx| $ctx.priority } - Get the skb priority
     {|ctx| $ctx.family }  - Get socket family
@@ -2333,6 +2337,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.data_end } - Get the end pointer for packet access
     {|ctx| $ctx.ingress_ifindex } - Get the ingress interface index
     {|ctx| $ctx.ifindex } - Get the skb ifindex
+    {|ctx| $ctx.tc_index } - Get the skb tc_index
+    {|ctx| $ctx.hash }    - Get the skb hash
     {|ctx| $ctx.mark }    - Get the skb mark
     {|ctx| $ctx.priority } - Get the skb priority
     {|ctx| $ctx.family }  - Get socket family

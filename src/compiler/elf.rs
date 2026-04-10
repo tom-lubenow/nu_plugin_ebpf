@@ -965,6 +965,14 @@ impl ProbeContext {
                     field.display_name()
                 ))
             }
+            CtxField::TcIndex | CtxField::SkbHash
+                if self.probe_type.packet_context_kind() != Some(PacketContextKind::SkBuff) =>
+            {
+                Some(format!(
+                    "ctx.{} is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
+                    field.display_name()
+                ))
+            }
             CtxField::RxQueueIndex if !self.probe_type.supports_rx_queue_index_ctx_field() => {
                 Some(packet_field_error(field))
             }

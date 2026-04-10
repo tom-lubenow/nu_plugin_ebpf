@@ -385,6 +385,8 @@ impl<'a> TypeInference<'a> {
             | CtxField::Ifindex
             | CtxField::RxQueueIndex
             | CtxField::EgressIfindex
+            | CtxField::TcIndex
+            | CtxField::SkbHash
             | CtxField::UserFamily
             | CtxField::UserIp4
             | CtxField::UserPort

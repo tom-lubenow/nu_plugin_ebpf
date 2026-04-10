@@ -15,17 +15,20 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 4, 8, 12, 16, 20)
     }
 
-    fn sk_buff_offsets() -> (i16, i16, i16, i16, i16) {
+    fn sk_buff_offsets() -> (i16, i16, i16, i16, i16, i16, i16) {
         // struct __sk_buff {
         //     __u32 len;
         //     ...
         //     __u32 ingress_ifindex;
         //     __u32 ifindex;
+        //     __u32 tc_index;
+        //     ...
+        //     __u32 hash;
         //     ...
         //     __u32 data;
         //     __u32 data_end;
         // };
-        (0, 76, 80, 36, 40)
+        (0, 76, 80, 36, 40, 44, 68)
     }
 
     fn sk_buff_mark_priority_offsets() -> (i16, i16) {
@@ -683,7 +686,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                         .push(EbpfInsn::sub64_reg(dst, EbpfReg::R0));
                 }
                 PacketContextKind::SkBuff => {
-                    let (len_offset, _, _, _, _) = Self::sk_buff_offsets();
+                    let (len_offset, _, _, _, _, _, _) = Self::sk_buff_offsets();
                     self.instructions
                         .push(EbpfInsn::ldxw(dst, EbpfReg::R9, len_offset));
                 }
@@ -781,6 +784,31 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let (_, _, _, _, _, egress_ifindex_offset) = Self::xdp_md_offsets();
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, egress_ifindex_offset));
+            }
+            CtxField::TcIndex => {
+                let tc_index_offset = match self.packet_context_kind()? {
+                    PacketContextKind::SkBuff => Self::sk_buff_offsets().5,
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.tc_index is only available on skb-backed packet programs"
+                                .to_string(),
+                        ));
+                    }
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, tc_index_offset));
+            }
+            CtxField::SkbHash => {
+                let hash_offset = match self.packet_context_kind()? {
+                    PacketContextKind::SkBuff => Self::sk_buff_offsets().6,
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.hash is only available on skb-backed packet programs".to_string(),
+                        ));
+                    }
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, hash_offset));
             }
             CtxField::UserFamily => {
                 let offset = Self::bpf_sock_addr_offsets().0;
