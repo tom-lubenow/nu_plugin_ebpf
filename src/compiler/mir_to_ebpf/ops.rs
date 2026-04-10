@@ -28,6 +28,23 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 76, 80, 36)
     }
 
+    fn sk_buff_socket_offsets() -> (i16, i16, i16, i16, i16, i16, i16) {
+        // struct __sk_buff {
+        //     ...
+        //     __u32 data;
+        //     __u32 data_end;
+        //     __u32 napi_id;
+        //     __u32 family;
+        //     __u32 remote_ip4;     // network byte order
+        //     __u32 local_ip4;      // network byte order
+        //     __u32 remote_ip6[4];  // network byte order
+        //     __u32 local_ip6[4];   // network byte order
+        //     __u32 remote_port;    // network byte order (u32)
+        //     __u32 local_port;     // host byte order
+        // };
+        (88, 92, 96, 100, 116, 132, 136)
+    }
+
     fn sk_msg_md_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16) {
         // struct sk_msg_md {
         //     __bpf_md_ptr(void *, data);
@@ -766,6 +783,9 @@ impl<'a> MirToEbpfCompiler<'a> {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().1,
                     Some(EbpfProgramType::SkLookup) => Self::bpf_sk_lookup_offsets().1,
                     Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().2,
+                    Some(EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser) => {
+                        Self::sk_buff_socket_offsets().0
+                    }
                     _ => Self::bpf_sock_addr_offsets().4,
                 };
                 self.instructions
@@ -827,6 +847,9 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().2,
                     Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().3,
+                    Some(EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser) => {
+                        Self::sk_buff_socket_offsets().1
+                    }
                     _ => Self::bpf_sk_lookup_offsets().3,
                 };
                 self.instructions
@@ -837,6 +860,9 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().4,
                     Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().5,
+                    Some(EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser) => {
+                        Self::sk_buff_socket_offsets().3
+                    }
                     _ => Self::bpf_sk_lookup_offsets().4,
                 };
                 self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.remote_ip6", true)?;
@@ -845,11 +871,16 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().6,
                     Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().7,
+                    Some(EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser) => {
+                        Self::sk_buff_socket_offsets().5
+                    }
                     _ => Self::bpf_sk_lookup_offsets().5,
                 };
                 if matches!(
                     self.probe_ctx.as_ref().map(|ctx| ctx.probe_type),
                     Some(EbpfProgramType::SkMsg)
+                        | Some(EbpfProgramType::SkSkb)
+                        | Some(EbpfProgramType::SkSkbParser)
                 ) {
                     self.instructions
                         .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
@@ -864,6 +895,9 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().3,
                     Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().4,
+                    Some(EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser) => {
+                        Self::sk_buff_socket_offsets().2
+                    }
                     _ => Self::bpf_sk_lookup_offsets().6,
                 };
                 self.instructions
@@ -874,6 +908,9 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().5,
                     Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().6,
+                    Some(EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser) => {
+                        Self::sk_buff_socket_offsets().4
+                    }
                     _ => Self::bpf_sk_lookup_offsets().7,
                 };
                 self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.local_ip6", true)?;
@@ -882,6 +919,9 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().7,
                     Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().8,
+                    Some(EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser) => {
+                        Self::sk_buff_socket_offsets().6
+                    }
                     _ => Self::bpf_sk_lookup_offsets().8,
                 };
                 self.instructions

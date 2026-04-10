@@ -2305,11 +2305,20 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.data }    - Get the packet data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet access
     {|ctx| $ctx.ingress_ifindex } - Get the ingress interface index
+    {|ctx| $ctx.family }  - Get socket family
+    {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order
+    {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words
+    {|ctx| $ctx.remote_port } - Get the remote port in host byte order
+    {|ctx| $ctx.local_ip4 } - Get the local IPv4 address in host byte order
+    {|ctx| $ctx.local_ip6 } - Get the local IPv6 address as four host-order u32 words
+    {|ctx| $ctx.local_port } - Get the local port in host byte order
     Note: initial sk_skb support targets pinned sockmap or sockhash paths such
     as `/sys/fs/bpf/demo_sockmap` and emits `sk_skb/stream_verdict` programs.
     It uses raw verdict codes but supports `pass` / `drop` aliases, and
     `ctx.data` / `ctx.data_end` use the same guarded packet access model as
-    tc and cgroup_skb.
+    tc and cgroup_skb. IPv4 addresses and the remote port are normalized to
+    host byte order, and IPv6 addresses are exposed as four host-order u32
+    words for ordinary Nushell indexing.
 
   sk_skb_parser fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
@@ -2318,10 +2327,20 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.data }    - Get the packet data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet access
     {|ctx| $ctx.ingress_ifindex } - Get the ingress interface index
+    {|ctx| $ctx.family }  - Get socket family
+    {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order
+    {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words
+    {|ctx| $ctx.remote_port } - Get the remote port in host byte order
+    {|ctx| $ctx.local_ip4 } - Get the local IPv4 address in host byte order
+    {|ctx| $ctx.local_ip6 } - Get the local IPv6 address as four host-order u32 words
+    {|ctx| $ctx.local_port } - Get the local port in host byte order
     Note: initial sk_skb_parser support targets pinned sockmap or sockhash
     paths such as `/sys/fs/bpf/demo_sockmap` and emits `sk_skb/stream_parser`
     programs. It uses raw integer parser returns rather than verdict aliases,
     so ordinary examples should return an integer such as `0` or `$ctx.packet_len`.
+    IPv4 addresses and the remote port are normalized to host byte order, and
+    IPv6 addresses are exposed as four host-order u32 words for ordinary
+    Nushell indexing.
 
   cgroup_sockopt fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
@@ -2648,12 +2667,12 @@ Requirements:
                 result: None,
             },
             Example {
-                example: "ebpf attach 'sk_skb:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.packet_len | count; 'pass' }",
+                example: "ebpf attach 'sk_skb:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.local_port | count; 'pass' }",
                 description: "Count packet lengths on a pinned sockmap or sockhash sk_skb stream-verdict hook",
                 result: None,
             },
             Example {
-                example: "ebpf attach 'sk_skb_parser:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.packet_len | count; 0 }",
+                example: "ebpf attach 'sk_skb_parser:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.local_port | count; 0 }",
                 description: "Count packet lengths on a pinned sockmap or sockhash sk_skb stream-parser hook",
                 result: None,
             },

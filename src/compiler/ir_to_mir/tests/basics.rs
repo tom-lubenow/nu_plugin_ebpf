@@ -2142,6 +2142,33 @@ fn test_lower_sk_msg_ctx_remote_ip4_field() {
 }
 
 #[test]
+fn test_lower_sk_skb_ctx_local_port_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("local_port")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_skb ctx.local_port should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::LocalPort,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_socket_filter_ctx_packet_len_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("packet_len")],

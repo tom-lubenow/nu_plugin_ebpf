@@ -971,11 +971,15 @@ impl ProbeContext {
             | CtxField::LocalPort
                 if !matches!(
                     self.probe_type,
-                    EbpfProgramType::SkLookup | EbpfProgramType::SkMsg | EbpfProgramType::SockOps
+                    EbpfProgramType::SkLookup
+                        | EbpfProgramType::SkMsg
+                        | EbpfProgramType::SkSkb
+                        | EbpfProgramType::SkSkbParser
+                        | EbpfProgramType::SockOps
                 ) =>
             {
                 Some(format!(
-                    "ctx.{} is only available on sk_lookup, sk_msg, and sock_ops programs",
+                    "ctx.{} is only available on sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs",
                     field.display_name()
                 ))
             }
@@ -1028,11 +1032,13 @@ impl ProbeContext {
                         | EbpfProgramType::CgroupSock
                         | EbpfProgramType::SkLookup
                         | EbpfProgramType::SkMsg
+                        | EbpfProgramType::SkSkb
+                        | EbpfProgramType::SkSkbParser
                         | EbpfProgramType::SockOps
                 ) =>
             {
                 Some(format!(
-                    "ctx.{} is only available on cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, and sock_ops programs",
+                    "ctx.{} is only available on cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs",
                     field.display_name()
                 ))
             }
