@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 65
+const TOTAL_STEPS = 66
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -1030,7 +1030,18 @@ step 64 "sk_skb_parser pinned sockhash live attach and detach" {
     }
 }
 
-step 65 "verify no leaked probes" {
+step 65 "sock_ops root cgroup packet first byte counter" {
+    if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
+        print "Skipping sock_ops packet-data smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
+    } else {
+        count-at-least-one "sock_ops:/sys/fs/cgroup" {|ctx|
+            ($ctx.data | get 0) | count
+            1
+        } { trigger-loopback-connect } "sock_ops packet first-byte counter"
+    }
+}
+
+step 66 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

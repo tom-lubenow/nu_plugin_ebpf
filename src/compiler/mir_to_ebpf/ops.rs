@@ -263,6 +263,16 @@ impl<'a> MirToEbpfCompiler<'a> {
         (208, 212, 216)
     }
 
+    fn bpf_sock_ops_packet_data_offsets() -> (i16, i16) {
+        // struct bpf_sock_ops {
+        //     ...
+        //     struct bpf_sock *sk;
+        //     void *skb_data;
+        //     void *skb_data_end;
+        // };
+        (192, 200)
+    }
+
     fn compile_ctx_u32_array_to_stack(
         &mut self,
         dst: EbpfReg,
@@ -784,6 +794,11 @@ impl<'a> MirToEbpfCompiler<'a> {
                     self.instructions
                         .push(EbpfInsn::ldxw(dst, EbpfReg::R9, size_offset));
                 }
+                PacketContextKind::SockOps => {
+                    let skb_len_offset = Self::bpf_sock_ops_skb_field_offsets().0;
+                    self.instructions
+                        .push(EbpfInsn::ldxw(dst, EbpfReg::R9, skb_len_offset));
+                }
             },
             CtxField::PktType => {
                 let pkt_type_offset = match self.packet_context_kind()? {
@@ -971,6 +986,11 @@ impl<'a> MirToEbpfCompiler<'a> {
                         self.instructions
                             .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, data_offset));
                     }
+                    PacketContextKind::SockOps => {
+                        let data_offset = Self::bpf_sock_ops_packet_data_offsets().0;
+                        self.instructions
+                            .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, data_offset));
+                    }
                 };
             }
             CtxField::DataEnd => {
@@ -990,6 +1010,11 @@ impl<'a> MirToEbpfCompiler<'a> {
                         self.instructions
                             .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, data_end_offset));
                     }
+                    PacketContextKind::SockOps => {
+                        let data_end_offset = Self::bpf_sock_ops_packet_data_offsets().1;
+                        self.instructions
+                            .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, data_end_offset));
+                    }
                 };
             }
             CtxField::IngressIfindex => {
@@ -1002,6 +1027,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                         PacketContextKind::SkMsg => {
                             return Err(CompileError::UnsupportedInstruction(
                                 "ctx.ingress_ifindex is not available on sk_msg programs"
+                                    .to_string(),
+                            ));
+                        }
+                        PacketContextKind::SockOps => {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "ctx.ingress_ifindex is not available on sock_ops programs"
                                     .to_string(),
                             ));
                         }

@@ -2278,6 +2278,9 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.op }      - Get the sock_ops callback opcode
     {|ctx| $ctx.args }    - Get the four sock_ops callback argument words as a fixed array
+    {|ctx| $ctx.packet_len } - Get the packet length when packet metadata is available
+    {|ctx| $ctx.data }    - Get the packet data pointer when packet metadata is available
+    {|ctx| $ctx.data_end } - Get the packet end pointer when packet metadata is available
     {|ctx| $ctx.family }  - Get socket family
     {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order
     {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words
@@ -2309,7 +2312,10 @@ Context parameter syntax (recommended):
     codes. Observation-only examples should return `1`. IPv6 addresses are
     exposed as fixed arrays of four host-order u32 words, for example
     `($ctx.remote_ip6 | get 3)`. `ctx.args` uses the same fixed-array model,
-    for example `($ctx.args | get 0)`.
+    for example `($ctx.args | get 0)`. `ctx.data` / `ctx.data_end` use the
+    same guarded packet access model as XDP and tc when packet metadata is
+    available, so forms like `($ctx.data | get 0)` are valid on packet-aware
+    sock_ops callbacks.
 
   sk_msg fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

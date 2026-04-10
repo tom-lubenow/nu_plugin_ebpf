@@ -2159,6 +2159,33 @@ fn test_lower_sock_ops_ctx_skb_len_field() {
 }
 
 #[test]
+fn test_lower_sock_ops_ctx_packet_len_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("packet_len")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sock_ops ctx.packet_len should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::PacketLen,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_sock_ops_ctx_bytes_acked_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("bytes_acked")],
@@ -2183,6 +2210,70 @@ fn test_lower_sock_ops_ctx_bytes_acked_field() {
             ..
         }
     )));
+}
+
+#[test]
+fn test_lower_sock_ops_data_byte_projection_adds_guarded_packet_load() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("data"), int_member(0)],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sock_ops data byte projection should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Data,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::DataEnd,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Le,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::U8,
+                    ..
+                }
+            )))
+    );
 }
 
 #[test]

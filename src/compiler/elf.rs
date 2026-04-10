@@ -918,7 +918,7 @@ impl ProbeContext {
                 )
             } else {
                 format!(
-                    "ctx.{} is only available on packet-context programs (xdp, socket_filter, tc, cgroup_skb)",
+                    "ctx.{} is only available on packet-context programs (xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks)",
                     field.display_name()
                 )
             }
@@ -1351,6 +1351,7 @@ pub enum PacketContextKind {
     XdpMd,
     SkBuff,
     SkMsg,
+    SockOps,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -2039,9 +2040,9 @@ const SOCK_OPS_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_task_ctx_fields: false,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
-    packet_context_kind: None,
-    supports_packet_len_ctx_field: false,
-    supports_packet_data_ctx_fields: false,
+    packet_context_kind: Some(PacketContextKind::SockOps),
+    supports_packet_len_ctx_field: true,
+    supports_packet_data_ctx_fields: true,
     supports_ingress_ifindex_ctx_field: false,
     supports_rx_queue_index_ctx_field: false,
     supports_egress_ifindex_ctx_field: false,

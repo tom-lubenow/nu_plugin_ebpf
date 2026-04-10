@@ -124,6 +124,9 @@ let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| ($ctx.snd_nxt + $ctx.bytes
 # Count sock_ops packet-length observations when packet metadata is available
 let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.skb_len | count; 1 }
 
+# Count first-byte observations from packet-aware sock_ops callbacks
+let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| ($ctx.data | get 0) | count; 1 }
+
 # Count first-byte observations on a pinned sockmap or sockhash sk_msg hook
 let id = ebpf attach 'sk_msg:/sys/fs/bpf/demo_sockmap' {|ctx| ($ctx.data | get 0) | count; 'pass' }
 
@@ -314,7 +317,7 @@ The closure receives a context parameter with these fields:
 | `cgroup_id` | Current task cgroup ID | all current program types |
 | `cpu` | CPU ID | All |
 | `ktime` | Kernel timestamp (ns) | All |
-| `packet_len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs, `size` on sk_msg) | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser |
+| `packet_len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs, `size` on sk_msg, `skb_len` on packet-aware sock_ops callbacks) | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `pkt_type` | skb pkt_type | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `queue_mapping` | skb queue_mapping | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `eth_protocol` | skb protocol / ethertype in host byte order | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
@@ -328,8 +331,8 @@ The closure receives a context parameter with these fields:
 | `gso_segs` | skb GSO segment count | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `gso_size` | skb GSO segment size | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `hwtstamp` | skb hardware timestamp | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `data` | Packet data pointer | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser |
-| `data_end` | Packet end pointer | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser |
+| `data` | Packet data pointer | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `data_end` | Packet end pointer | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `ingress_ifindex` | Ingress interface index | xdp, socket_filter, tc, cgroup_skb, sk_lookup, sk_skb, sk_skb_parser |
 | `access_type` | Encoded cgroup device access type | cgroup_device |
 | `major` | Requested device major number | cgroup_device |
