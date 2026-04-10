@@ -109,6 +109,7 @@ pub fn infer_hir_types_with_decls(
         decl_names,
         &program.captures,
         &program.annotated_mut_globals,
+        program.ctx_param,
     ) {
         Ok(types) => type_info.main = types,
         Err(mut errs) => errors.append(&mut errs),
@@ -120,6 +121,7 @@ pub fn infer_hir_types_with_decls(
             decl_names,
             &program.captures,
             &program.annotated_mut_globals,
+            None,
         ) {
             Ok(types) => {
                 type_info.closures.insert(*block_id, types);
@@ -134,6 +136,7 @@ pub fn infer_hir_types_with_decls(
             decl_names,
             &program.captures,
             &program.annotated_mut_globals,
+            None,
         ) {
             Ok(types) => {
                 type_info.decls.insert(*decl_id, types);
@@ -465,8 +468,14 @@ fn infer_function(
     decl_names: &HashMap<DeclId, String>,
     captures: &[(VarId, Value)],
     annotated_mut_globals: &[AnnotatedMutGlobal],
+    ctx_param: Option<VarId>,
 ) -> Result<HashMap<RegId, HMType>, Vec<TypeError>> {
     let mut infer = HirTypeInference::new(decl_names, captures, annotated_mut_globals);
+    if let Some(ctx_var) = ctx_param {
+        infer
+            .env
+            .insert(ctx_var, TypeScheme::mono(kernel_context_ptr_type()));
+    }
     infer.infer_function(func)?;
     Ok(infer.type_map())
 }
@@ -579,6 +588,13 @@ fn stack_record_ptr_type() -> HMType {
     HMType::Ptr {
         pointee: Box::new(HMType::I64),
         address_space: AddressSpace::Stack,
+    }
+}
+
+fn kernel_context_ptr_type() -> HMType {
+    HMType::Ptr {
+        pointee: Box::new(HMType::U8),
+        address_space: AddressSpace::Kernel,
     }
 }
 

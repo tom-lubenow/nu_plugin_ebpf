@@ -1,11 +1,11 @@
 use super::*;
 use crate::compiler::hir::{
-    AnnotatedMutGlobal, HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt,
-    HirTerminator,
+    AnnotatedMutGlobal, HirBlock, HirBlockId, HirCallArgs, HirFunction, HirLiteral, HirProgram,
+    HirStmt, HirTerminator,
 };
 use nu_protocol::ast::{CellPath, Comparison, Math, Operator, PathMember};
 use nu_protocol::casing::Casing;
-use nu_protocol::{Record, RegId, Span, Type, Value, VarId};
+use nu_protocol::{DeclId, Record, RegId, Span, Type, Value, VarId};
 
 #[test]
 fn test_let_generalization_allows_distinct_instantiations() {
@@ -174,6 +174,51 @@ fn test_record_insert_requires_string_key() {
     let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
     let decl_names = HashMap::new();
     assert!(infer_hir(&program, &decl_names).is_err());
+}
+
+#[test]
+fn test_ctx_param_is_seeded_as_pointer_for_helper_call() {
+    let ctx_var = VarId::new(80);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("bpf_msg_cork_bytes".into()),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(2),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(8),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(2), RegId::new(3)],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), Some(ctx_var));
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+
+    infer_hir(&program, &decl_names).expect("ctx param should type-check as a helper pointer arg");
 }
 
 #[test]

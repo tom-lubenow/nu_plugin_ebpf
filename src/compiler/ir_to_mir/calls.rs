@@ -1,7 +1,7 @@
 use super::*;
 use crate::compiler::ProgramIntrinsic;
 use crate::compiler::instruction::{
-    BpfHelper, HelperSignature, KfuncSignature, kfunc_pointer_arg_fixed_size,
+    BpfHelper, HelperRetKind, HelperSignature, KfuncSignature, kfunc_pointer_arg_fixed_size,
     kfunc_pointer_arg_requires_stack_slot_base,
 };
 use crate::compiler::mir::{
@@ -755,15 +755,30 @@ impl<'a> HirToMirLowering<'a> {
                     ))
                 })?;
 
+                let positional_args: Vec<_> =
+                    self.positional_args.iter().skip(1).copied().collect();
+                let has_explicit_context_arg = positional_args
+                    .iter()
+                    .any(|(_, arg_reg)| self.is_context_reg(*arg_reg));
                 let mut args = Vec::new();
                 if let Some(input) = self.pipeline_input {
-                    let arg_vreg = if self.is_context_reg(src_dst) {
-                        self.materialize_context_pointer_arg()
+                    if has_explicit_context_arg {
+                        // Real attached closures carry the program context as ambient
+                        // pipeline input. If the caller already passed `$ctx`
+                        // explicitly, don't prepend that ambient value again.
                     } else {
-                        input
-                    };
-                    args.push(MirValue::VReg(arg_vreg));
-                } else if src_dst_had_value && sig.max_args != 0 {
+                        let arg_vreg = if self
+                            .pipeline_input_reg
+                            .is_some_and(|reg| self.is_context_reg(reg))
+                        {
+                            self.materialize_context_pointer_arg()
+                        } else {
+                            input
+                        };
+                        args.push(MirValue::VReg(arg_vreg));
+                    }
+                } else if src_dst_had_value && sig.max_args != 0 && self.positional_args.len() == 1
+                {
                     let arg_vreg = if self.is_context_reg(src_dst) {
                         self.materialize_context_pointer_arg()
                     } else {
@@ -771,8 +786,6 @@ impl<'a> HirToMirLowering<'a> {
                     };
                     args.push(MirValue::VReg(arg_vreg));
                 }
-                let positional_args: Vec<_> =
-                    self.positional_args.iter().skip(1).copied().collect();
                 for (arg_vreg, arg_reg) in positional_args {
                     let helper_arg_vreg = if self.is_context_reg(arg_reg) {
                         self.materialize_context_pointer_arg()
@@ -792,6 +805,9 @@ impl<'a> HirToMirLowering<'a> {
                     helper: helper_id,
                     args,
                 });
+                if matches!(sig.ret_kind, HelperRetKind::Scalar) {
+                    self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                }
             }
 
             "map-get" => {

@@ -309,6 +309,67 @@ fn test_infer_redirect_helper_in_tc_program() {
 }
 
 #[test]
+fn test_type_error_msg_helpers_reject_non_sk_msg_programs() {
+    for helper in [BpfHelper::MsgApplyBytes, BpfHelper::MsgCorkBytes] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(8)],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected sk_msg helper to be rejected outside sk_msg");
+        assert!(errs.iter().any(|e| {
+            e.message.contains(&format!(
+                "helper '{}' is only valid in sk_msg programs",
+                helper.name()
+            ))
+        }));
+    }
+}
+
+#[test]
+fn test_infer_msg_helpers_in_sk_msg_program() {
+    for helper in [BpfHelper::MsgApplyBytes, BpfHelper::MsgCorkBytes] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(8)],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .expect("expected sk_msg helper to infer in sk_msg program");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
 fn test_type_error_redirect_peer_helper_rejects_tc_egress() {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();

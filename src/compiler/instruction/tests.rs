@@ -67,6 +67,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::GetSocketUid)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_msg_apply_bytes"),
+        Some(BpfHelper::MsgApplyBytes)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_msg_cork_bytes"),
+        Some(BpfHelper::MsgCorkBytes)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("ktime_get_boot_ns"),
         Some(BpfHelper::KtimeGetBootNs)
     ));
@@ -223,6 +231,25 @@ fn test_helper_signatures_prandom_boot_and_lirc_helpers() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signatures_msg_apply_and_cork_bytes() {
+    let sig = HelperSignature::for_id(BpfHelper::MsgApplyBytes as u32)
+        .expect("expected bpf_msg_apply_bytes helper signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::MsgCorkBytes as u32)
+        .expect("expected bpf_msg_cork_bytes helper signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 

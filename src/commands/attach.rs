@@ -2377,7 +2377,10 @@ Context parameter syntax (recommended):
     or `1`. `ctx.data` / `ctx.data_end` use the same guarded packet access
     model as XDP and tc, so forms like `($ctx.data | get 0)` are valid. IPv6
     addresses are exposed as fixed arrays of four host-order u32 words, for
-    example `($ctx.remote_ip6 | get 3)`.
+    example `($ctx.remote_ip6 | get 3)`. Modeled socket-message helpers are
+    also available through the ordinary helper surface, for example
+    `helper-call "bpf_msg_apply_bytes" $ctx 8` or
+    `helper-call "bpf_msg_cork_bytes" $ctx 8`.
 
   sk_skb fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

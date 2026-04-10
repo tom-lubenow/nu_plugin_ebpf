@@ -2,7 +2,7 @@ use super::*;
 use nu_protocol::DeclId;
 use nu_protocol::RegId;
 use nu_protocol::ir::{DataSlice, Instruction};
-use nu_protocol::{Record, Span, Value};
+use nu_protocol::{Record, Span, Value, VarId};
 use std::sync::Arc;
 
 #[test]
@@ -72,4 +72,37 @@ fn test_supports_constant_value_for_binary_and_nested_binary_record() {
         record,
         Span::test_data()
     )));
+}
+
+#[test]
+fn test_infer_ctx_param_from_leading_collect_store_pattern() {
+    let ctx_var = VarId::new(80);
+    let ir = IrBlock {
+        instructions: vec![
+            Instruction::Collect {
+                src_dst: RegId::new(0),
+            },
+            Instruction::Clone {
+                dst: RegId::new(1),
+                src: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: ctx_var,
+                src: RegId::new(1),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(2),
+                var_id: ctx_var,
+            },
+            Instruction::Return { src: RegId::new(2) },
+        ],
+        spans: vec![],
+        data: Arc::from([]),
+        ast: vec![],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    assert_eq!(infer_ctx_param(&ir), Some(ctx_var));
 }

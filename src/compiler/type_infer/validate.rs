@@ -119,6 +119,14 @@ impl<'a> TypeInference<'a> {
                     )));
                 }
             }
+            BpfHelper::MsgApplyBytes | BpfHelper::MsgCorkBytes => {
+                if ctx.probe_type != EbpfProgramType::SkMsg {
+                    errors.push(TypeError::new(format!(
+                        "helper '{}' is only valid in sk_msg programs",
+                        helper.name()
+                    )));
+                }
+            }
             _ => {}
         }
     }

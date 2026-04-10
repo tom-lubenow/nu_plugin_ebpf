@@ -21,6 +21,8 @@ impl BpfHelper {
             15 => Some(Self::GetCurrentUidGid),
             80 => Some(Self::GetCurrentCgroupId),
             16 => Some(Self::GetCurrentComm),
+            61 => Some(Self::MsgApplyBytes),
+            62 => Some(Self::MsgCorkBytes),
             46 => Some(Self::GetSocketCookie),
             47 => Some(Self::GetSocketUid),
             122 => Some(Self::GetNetnsCookie),
@@ -101,6 +103,12 @@ impl BpfHelper {
                 min_args: 2,
                 max_args: 2,
                 arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::MsgApplyBytes | BpfHelper::MsgCorkBytes => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::ProbeRead | BpfHelper::ProbeReadUser | BpfHelper::ProbeReadKernel => {
@@ -970,6 +978,28 @@ impl BpfHelper {
             BpfHelper::GetCurrentComm => HelperSemantics {
                 ptr_arg_rules: GET_CURRENT_COMM_RULES,
                 positive_size_args: &[1],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::MsgApplyBytes => HelperSemantics {
+                ptr_arg_rules: &[HelperPtrArgRule {
+                    arg_idx: 0,
+                    op: "helper msg_apply_bytes ctx",
+                    allowed: KERNEL,
+                    fixed_size: None,
+                    size_from_arg: None,
+                }],
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::MsgCorkBytes => HelperSemantics {
+                ptr_arg_rules: &[HelperPtrArgRule {
+                    arg_idx: 0,
+                    op: "helper msg_cork_bytes ctx",
+                    allowed: KERNEL,
+                    fixed_size: None,
+                    size_from_arg: None,
+                }],
+                positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::Redirect => HelperSemantics {

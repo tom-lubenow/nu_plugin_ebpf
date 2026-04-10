@@ -388,6 +388,27 @@ pub fn supports_constant_value(value: &Value) -> bool {
 /// Closure parameters are variables that are loaded but never stored to within the closure.
 /// The first such variable (by order of first load) is the context parameter.
 pub fn infer_ctx_param(ir_block: &IrBlock) -> Option<VarId> {
+    // Real Nushell closures often materialize the first parameter by collecting the
+    // incoming pipeline value, cloning it, and storing that clone into a variable
+    // before any later `LoadVariable` uses. Recognize that leading setup pattern
+    // first so attached closures can still treat `$ctx` as the real context param.
+    let mut collected_regs: HashSet<RegId> = HashSet::new();
+    for instruction in &ir_block.instructions {
+        match instruction {
+            Instruction::Collect { src_dst } => {
+                collected_regs.insert(*src_dst);
+            }
+            Instruction::Clone { dst, src } if collected_regs.contains(src) => {
+                collected_regs.insert(*dst);
+            }
+            Instruction::StoreVariable { var_id, src } if collected_regs.contains(src) => {
+                return Some(*var_id);
+            }
+            Instruction::RedirectOut { .. } | Instruction::RedirectErr { .. } => {}
+            _ => break,
+        }
+    }
+
     let mut stored_vars: HashSet<VarId> = HashSet::new();
     let mut first_loaded: Vec<VarId> = Vec::new();
 

@@ -1,7 +1,10 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
-use crate::compiler::hir::HirBlock;
+use crate::compiler::compile_mir_to_ebpf_with_hints;
+use crate::compiler::hir::{HirBlock, infer_ctx_param};
+use crate::compiler::hir_type_infer::infer_hir_types;
 use crate::compiler::instruction::BpfHelper;
+use crate::compiler::passes::optimize_with_ssa_hints;
 use nu_protocol::{DeclId, RegId, VarId};
 
 #[test]
@@ -399,6 +402,294 @@ fn test_helper_call_without_pipeline_uses_explicit_positional_args_only() {
         1,
         "helper-call should only pass explicit positional args when there is no pipeline input"
     );
+}
+
+#[test]
+fn test_helper_call_with_live_src_dst_does_not_prepend_implicit_arg_when_explicit_args_exist() {
+    use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
+    use nu_protocol::{DeclId, RegId};
+    use std::sync::Arc;
+
+    let helper_name = b"bpf_get_socket_cookie";
+    let data: Arc<[u8]> = helper_name.to_vec().into();
+
+    let main_ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadLiteral {
+                dst: RegId::new(0),
+                lit: Literal::Int(99),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::String(DataSlice {
+                    start: 0,
+                    len: helper_name.len() as u32,
+                }),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(2),
+                lit: Literal::Int(7),
+            },
+            Instruction::PushPositional { src: RegId::new(1) },
+            Instruction::PushPositional { src: RegId::new(2) },
+            Instruction::Call {
+                decl_id: DeclId::new(42),
+                src_dst: RegId::new(0),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data,
+        ast: vec![],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(
+        HirFunction::from_ir_block(main_ir).unwrap(),
+        HashMap::new(),
+        vec![],
+        None,
+    );
+
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("helper-call lowering should succeed");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    let call = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::CallHelper { helper, args, .. } => Some((helper, args)),
+            _ => None,
+        })
+        .expect("expected lowered helper call");
+
+    assert_eq!(*call.0, BpfHelper::GetSocketCookie as u32);
+    assert_eq!(
+        call.1.len(),
+        1,
+        "helper-call should not prepend a live src_dst when explicit positional args are present"
+    );
+}
+
+#[test]
+fn test_helper_call_with_explicit_ctx_arg_skips_ambient_pipeline_input() {
+    use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
+    use std::sync::Arc;
+
+    let helper_name = b"bpf_msg_cork_bytes";
+    let result_name = b"pass";
+    let mut data = Vec::new();
+    let helper_start = data.len();
+    data.extend_from_slice(helper_name);
+    data.extend_from_slice(result_name);
+    let data: Arc<[u8]> = data.into();
+    let ctx_var = VarId::new(80);
+
+    let main_ir = IrBlock {
+        instructions: vec![
+            Instruction::Collect {
+                src_dst: RegId::new(0),
+            },
+            Instruction::Clone {
+                dst: RegId::new(1),
+                src: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: ctx_var,
+                src: RegId::new(1),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::String(DataSlice {
+                    start: helper_start as u32,
+                    len: helper_name.len() as u32,
+                }),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(2),
+                var_id: ctx_var,
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(3),
+                lit: Literal::Int(8),
+            },
+            Instruction::PushPositional { src: RegId::new(1) },
+            Instruction::PushPositional { src: RegId::new(2) },
+            Instruction::PushPositional { src: RegId::new(3) },
+            Instruction::Call {
+                decl_id: DeclId::new(42),
+                src_dst: RegId::new(0),
+            },
+            Instruction::DropVariable { var_id: ctx_var },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data,
+        ast: vec![],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let ctx_param = infer_ctx_param(&main_ir);
+    let hir_program = HirProgram::new(
+        HirFunction::from_ir_block(main_ir).unwrap(),
+        HashMap::new(),
+        vec![],
+        ctx_param,
+    );
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("helper-call lowering should succeed");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    let call = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::CallHelper { helper, args, .. } => Some((helper, args)),
+            _ => None,
+        })
+        .expect("expected lowered helper call");
+
+    assert_eq!(*call.0, BpfHelper::MsgCorkBytes as u32);
+    assert_eq!(
+        call.1.len(),
+        2,
+        "helper-call should use the explicit ctx arg and scalar size only"
+    );
+}
+
+#[test]
+fn test_helper_call_exact_attach_ir_with_ctx_arg_typechecks_and_lowers() {
+    use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
+    use std::sync::Arc;
+
+    let helper_name = b"bpf_msg_cork_bytes";
+    let result_name = b"pass";
+    let mut data = Vec::new();
+    let helper_start = data.len();
+    data.extend_from_slice(helper_name);
+    let result_start = data.len();
+    data.extend_from_slice(result_name);
+    let data: Arc<[u8]> = data.into();
+    let ctx_var = VarId::new(80);
+
+    let main_ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::String(DataSlice {
+                    start: helper_start as u32,
+                    len: helper_name.len() as u32,
+                }),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(2),
+                var_id: ctx_var,
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(3),
+                lit: Literal::Int(8),
+            },
+            Instruction::PushPositional { src: RegId::new(1) },
+            Instruction::PushPositional { src: RegId::new(2) },
+            Instruction::PushPositional { src: RegId::new(3) },
+            Instruction::Call {
+                decl_id: DeclId::new(42),
+                src_dst: RegId::new(0),
+            },
+            Instruction::Drain { src: RegId::new(0) },
+            Instruction::Drop { src: RegId::new(0) },
+            Instruction::LoadLiteral {
+                dst: RegId::new(0),
+                lit: Literal::String(DataSlice {
+                    start: result_start as u32,
+                    len: result_name.len() as u32,
+                }),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data,
+        ast: vec![],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let ctx_param = infer_ctx_param(&main_ir);
+    assert_eq!(ctx_param, Some(ctx_var));
+    let hir_program = HirProgram::new(
+        HirFunction::from_ir_block(main_ir).unwrap(),
+        HashMap::new(),
+        vec![],
+        ctx_param,
+    );
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("exact attach-style helper call should type-check");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("exact attach-style helper call should lower");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    let call = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::CallHelper { helper, args, .. } => Some((helper, args)),
+            _ => None,
+        })
+        .expect("expected lowered helper call");
+
+    assert_eq!(*call.0, BpfHelper::MsgCorkBytes as u32);
+    assert_eq!(call.1.len(), 2);
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("exact attach-style helper call should compile after SSA");
 }
 
 #[test]

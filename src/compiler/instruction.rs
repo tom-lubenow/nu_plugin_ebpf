@@ -84,6 +84,10 @@ pub enum BpfHelper {
     GetCurrentCgroupId = 80,
     /// int bpf_get_current_comm(buf, size)
     GetCurrentComm = 16,
+    /// long bpf_msg_apply_bytes(msg, bytes)
+    MsgApplyBytes = 61,
+    /// long bpf_msg_cork_bytes(msg, bytes)
+    MsgCorkBytes = 62,
     /// u64 bpf_get_socket_cookie(ctx)
     GetSocketCookie = 46,
     /// u32 bpf_get_socket_uid(ctx)
@@ -195,6 +199,8 @@ impl BpfHelper {
             BpfHelper::GetCurrentUidGid => "bpf_get_current_uid_gid",
             BpfHelper::GetCurrentCgroupId => "bpf_get_current_cgroup_id",
             BpfHelper::GetCurrentComm => "bpf_get_current_comm",
+            BpfHelper::MsgApplyBytes => "bpf_msg_apply_bytes",
+            BpfHelper::MsgCorkBytes => "bpf_msg_cork_bytes",
             BpfHelper::GetSocketCookie => "bpf_get_socket_cookie",
             BpfHelper::GetSocketUid => "bpf_get_socket_uid",
             BpfHelper::GetNetnsCookie => "bpf_get_netns_cookie",
@@ -267,6 +273,8 @@ impl BpfHelper {
             "get_current_uid_gid" => Some(Self::GetCurrentUidGid),
             "get_current_cgroup_id" => Some(Self::GetCurrentCgroupId),
             "get_current_comm" => Some(Self::GetCurrentComm),
+            "msg_apply_bytes" => Some(Self::MsgApplyBytes),
+            "msg_cork_bytes" => Some(Self::MsgCorkBytes),
             "get_socket_cookie" => Some(Self::GetSocketCookie),
             "get_socket_uid" => Some(Self::GetSocketUid),
             "get_netns_cookie" => Some(Self::GetNetnsCookie),
