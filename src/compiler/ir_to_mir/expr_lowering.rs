@@ -1228,6 +1228,8 @@ impl<'a> HirToMirLowering<'a> {
             "cpu" => CtxField::Cpu,
             "ktime" | "timestamp" => CtxField::Timestamp,
             "packet_len" | "len" => CtxField::PacketLen,
+            "pkt_type" => CtxField::PktType,
+            "queue_mapping" => CtxField::QueueMapping,
             "data" => CtxField::Data,
             "data_end" => CtxField::DataEnd,
             "ingress_ifindex" => CtxField::IngressIfindex,
@@ -4694,6 +4696,8 @@ impl<'a> HirToMirLowering<'a> {
             }
             CtxField::Cpu
             | CtxField::PacketLen
+            | CtxField::PktType
+            | CtxField::QueueMapping
             | CtxField::IngressIfindex
             | CtxField::Ifindex
             | CtxField::RxQueueIndex

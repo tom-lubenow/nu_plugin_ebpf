@@ -949,6 +949,14 @@ impl ProbeContext {
             CtxField::PacketLen if !self.probe_type.supports_packet_len_ctx_field() => {
                 Some(packet_field_error(field))
             }
+            CtxField::PktType | CtxField::QueueMapping
+                if self.probe_type.packet_context_kind() != Some(PacketContextKind::SkBuff) =>
+            {
+                Some(format!(
+                    "ctx.{} is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
+                    field.display_name()
+                ))
+            }
             CtxField::Data | CtxField::DataEnd
                 if !self.probe_type.supports_packet_data_ctx_fields() =>
             {

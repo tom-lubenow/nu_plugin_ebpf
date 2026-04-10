@@ -381,6 +381,8 @@ impl<'a> TypeInference<'a> {
             | CtxField::Gid
             | CtxField::Cpu
             | CtxField::PacketLen
+            | CtxField::PktType
+            | CtxField::QueueMapping
             | CtxField::IngressIfindex
             | CtxField::Ifindex
             | CtxField::RxQueueIndex

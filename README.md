@@ -299,6 +299,8 @@ The closure receives a context parameter with these fields:
 | `cpu` | CPU ID | All |
 | `ktime` | Kernel timestamp (ns) | All |
 | `packet_len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs, `size` on sk_msg) | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser |
+| `pkt_type` | skb pkt_type | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `queue_mapping` | skb queue_mapping | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `data` | Packet data pointer | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser |
 | `data_end` | Packet end pointer | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser |
 | `ingress_ifindex` | Ingress interface index | xdp, socket_filter, tc, cgroup_skb, sk_lookup, sk_skb, sk_skb_parser |
@@ -367,8 +369,8 @@ the IHL nibble, and `$ctx.data.eth.payload.ipv4.payload.tcp.payload` skips a
 runtime-sized TCP header using the data offset. `xdp` additionally exposes `ctx.ifindex`,
 `ctx.rx_queue_index`, and `ctx.egress_ifindex`. The skb-backed packet
 contexts (`socket_filter`, `tc`, `cgroup_skb`, `sk_skb`, and
-`sk_skb_parser`) also expose `ctx.tc_index`, `ctx.hash`, `ctx.mark`, and
-`ctx.priority`. The initial `socket_filter`
+`sk_skb_parser`) also expose `ctx.pkt_type`, `ctx.queue_mapping`,
+`ctx.tc_index`, `ctx.hash`, `ctx.mark`, and `ctx.priority`. The initial `socket_filter`
 surface uses targets like `socket_filter:udp4:127.0.0.1:31337`, which create
 and keep open a bound UDP4 receive socket while attached. `socket_filter`
 return values are snapshot lengths: return `0` to drop the packet or a
@@ -458,8 +460,8 @@ work.
 `sk_skb` currently emits `sk_skb/stream_verdict` programs attached to a
 pinned sockmap or sockhash path such as `/sys/fs/bpf/demo_sockmap`. It
 exposes `ctx.cpu`, `ctx.ktime`, `ctx.packet_len`, `ctx.data`,
-`ctx.data_end`, `ctx.ingress_ifindex`, `ctx.ifindex`, `ctx.tc_index`,
-`ctx.hash`, `ctx.mark`, `ctx.priority`, `ctx.family`, `ctx.remote_ip4`,
+`ctx.pkt_type`, `ctx.queue_mapping`, `ctx.data_end`, `ctx.ingress_ifindex`,
+`ctx.ifindex`, `ctx.tc_index`, `ctx.hash`, `ctx.mark`, `ctx.priority`, `ctx.family`, `ctx.remote_ip4`,
 `ctx.remote_ip6`, `ctx.remote_port`,
 `ctx.local_ip4`, `ctx.local_ip6`, and `ctx.local_port` through the existing
 skb-backed packet model, so ordinary guarded packet reads like
@@ -472,7 +474,8 @@ return codes with `pass` / `drop` aliases.
 `sk_skb_parser` currently emits `sk_skb/stream_parser` programs attached to
 a pinned sockmap or sockhash path such as `/sys/fs/bpf/demo_sockmap`. It
 uses the same skb-backed packet context as `sk_skb`, including `ctx.family`,
-`ctx.ifindex`, `ctx.tc_index`, `ctx.hash`, `ctx.mark`, `ctx.priority`,
+`ctx.pkt_type`, `ctx.queue_mapping`, `ctx.ifindex`, `ctx.tc_index`,
+`ctx.hash`, `ctx.mark`, `ctx.priority`,
 `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`,
 `ctx.local_ip6`, and `ctx.local_port`,
 with the same host-order normalization rules for IPv4 addresses, remote

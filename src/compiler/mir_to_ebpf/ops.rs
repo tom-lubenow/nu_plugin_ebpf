@@ -31,6 +31,16 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 76, 80, 36, 40, 44, 68)
     }
 
+    fn sk_buff_packet_meta_offsets() -> (i16, i16) {
+        // struct __sk_buff {
+        //     __u32 len;
+        //     __u32 pkt_type;
+        //     __u32 mark;
+        //     __u32 queue_mapping;
+        // };
+        (4, 12)
+    }
+
     fn sk_buff_mark_priority_offsets() -> (i16, i16) {
         // struct __sk_buff {
         //     __u32 len;
@@ -696,6 +706,32 @@ impl<'a> MirToEbpfCompiler<'a> {
                         .push(EbpfInsn::ldxw(dst, EbpfReg::R9, size_offset));
                 }
             },
+            CtxField::PktType => {
+                let pkt_type_offset = match self.packet_context_kind()? {
+                    PacketContextKind::SkBuff => Self::sk_buff_packet_meta_offsets().0,
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.pkt_type is only available on skb-backed packet programs"
+                                .to_string(),
+                        ));
+                    }
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, pkt_type_offset));
+            }
+            CtxField::QueueMapping => {
+                let queue_mapping_offset = match self.packet_context_kind()? {
+                    PacketContextKind::SkBuff => Self::sk_buff_packet_meta_offsets().1,
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.queue_mapping is only available on skb-backed packet programs"
+                                .to_string(),
+                        ));
+                    }
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, queue_mapping_offset));
+            }
             CtxField::Data => {
                 match self.packet_context_kind()? {
                     PacketContextKind::XdpMd => {

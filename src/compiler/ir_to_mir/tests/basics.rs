@@ -2551,6 +2551,33 @@ fn test_lower_socket_filter_hash_field() {
 }
 
 #[test]
+fn test_lower_sk_skb_queue_mapping_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("queue_mapping")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_skb ctx.queue_mapping should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::QueueMapping,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_xdp_data_byte_projection_adds_guarded_packet_load() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("data"), int_member(0)],

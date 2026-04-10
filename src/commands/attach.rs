@@ -2152,6 +2152,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.packet_len } - Get packet length from xdp_md or __sk_buff
+    {|ctx| $ctx.pkt_type } - Get the skb pkt_type on skb-backed packet programs
+    {|ctx| $ctx.queue_mapping } - Get the skb queue_mapping on skb-backed packet programs
     {|ctx| $ctx.data }    - Get packet data pointer
     {|ctx| $ctx.data_end } - Get packet end pointer
     {|ctx| $ctx.ingress_ifindex } - Get ingress interface index
@@ -2306,6 +2308,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.packet_len } - Get total packet length in bytes
+    {|ctx| $ctx.pkt_type } - Get the skb pkt_type
+    {|ctx| $ctx.queue_mapping } - Get the skb queue_mapping
     {|ctx| $ctx.data }    - Get the packet data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet access
     {|ctx| $ctx.ingress_ifindex } - Get the ingress interface index
@@ -2333,6 +2337,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.packet_len } - Get total packet length in bytes
+    {|ctx| $ctx.pkt_type } - Get the skb pkt_type
+    {|ctx| $ctx.queue_mapping } - Get the skb queue_mapping
     {|ctx| $ctx.data }    - Get the packet data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet access
     {|ctx| $ctx.ingress_ifindex } - Get the ingress interface index

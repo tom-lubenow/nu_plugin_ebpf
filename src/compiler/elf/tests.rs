@@ -1503,6 +1503,11 @@ fn test_probe_context_allows_xdp_md_scalar_fields_on_xdp() {
 fn test_probe_context_allows_packet_fields_on_tc() {
     let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::PktType).is_none());
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::QueueMapping)
+            .is_none()
+    );
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
@@ -1523,6 +1528,11 @@ fn test_probe_context_allows_packet_fields_on_tc() {
 fn test_probe_context_allows_packet_fields_on_cgroup_skb() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress");
     assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::PktType).is_none());
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::QueueMapping)
+            .is_none()
+    );
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
@@ -1568,6 +1578,11 @@ fn test_probe_context_allows_sock_addr_fields_on_cgroup_sock_addr() {
 fn test_probe_context_allows_socket_filter_packet_fields() {
     let ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
     assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::PktType).is_none());
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::QueueMapping)
+            .is_none()
+    );
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
@@ -1620,6 +1635,11 @@ fn test_probe_context_allows_sk_msg_fields() {
 fn test_probe_context_allows_sk_skb_fields() {
     let ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
     assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::PktType).is_none());
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::QueueMapping)
+            .is_none()
+    );
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
@@ -1647,6 +1667,11 @@ fn test_probe_context_allows_sk_skb_fields() {
 fn test_probe_context_allows_sk_skb_parser_socket_fields() {
     let ctx = ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap");
     assert!(ctx.ctx_field_access_error(&CtxField::Family).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::PktType).is_none());
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::QueueMapping)
+            .is_none()
+    );
     assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::TcIndex).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::SkbHash).is_none());

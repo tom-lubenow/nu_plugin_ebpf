@@ -400,6 +400,10 @@ pub enum CtxField {
     Timestamp,
     /// XDP packet length (`data_end - data`)
     PacketLen,
+    /// skb packet type (`__sk_buff.pkt_type`)
+    PktType,
+    /// skb queue mapping (`__sk_buff.queue_mapping`)
+    QueueMapping,
     /// XDP packet data pointer
     Data,
     /// XDP packet data_end pointer
@@ -523,6 +527,8 @@ impl CtxField {
             CtxField::Cpu => "cpu".to_string(),
             CtxField::Timestamp => "timestamp".to_string(),
             CtxField::PacketLen => "packet_len".to_string(),
+            CtxField::PktType => "pkt_type".to_string(),
+            CtxField::QueueMapping => "queue_mapping".to_string(),
             CtxField::Data => "data".to_string(),
             CtxField::DataEnd => "data_end".to_string(),
             CtxField::IngressIfindex => "ingress_ifindex".to_string(),
