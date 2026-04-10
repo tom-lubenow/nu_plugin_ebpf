@@ -5,7 +5,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: Write tracing logic in familiar Nushell syntax
-- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, lsm, perf_event, socket_filter, xdp, tc, cgroup_skb, cgroup_device, cgroup_sock, sock_ops, cgroup_sysctl, cgroup_sockopt, cgroup_sock_addr, sk_lookup, initial struct_ops object support
+- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, lsm, perf_event, socket_filter, xdp, tc, cgroup_skb, cgroup_device, cgroup_sock, sock_ops, sk_msg, cgroup_sysctl, cgroup_sockopt, cgroup_sock_addr, sk_lookup, initial struct_ops object support
 - **Aggregations**: Count by key, histograms, timing measurements
 - **Event streaming**: Real-time event output via ring buffers
 - **Map sharing**: Share data between probes with `--pin`
@@ -111,6 +111,9 @@ let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.snd_cwnd | count; 1 }
 
 # Count sock_ops packet-length observations when packet metadata is available
 let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.skb_len | count; 1 }
+
+# Count message sizes on a pinned sockmap or sockhash sk_msg hook
+let id = ebpf attach 'sk_msg:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.packet_len | count; 'pass' }
 
 # Count getsockopt option names inside a cgroup
 let id = ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| $ctx.optname | count; 'allow' }
@@ -289,7 +292,7 @@ The closure receives a context parameter with these fields:
 | `comm` | Process name (16 bytes) | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
 | `cpu` | CPU ID | All |
 | `ktime` | Kernel timestamp (ns) | All |
-| `packet_len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs) | xdp, socket_filter, tc, cgroup_skb |
+| `packet_len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs, `size` on sk_msg) | xdp, socket_filter, tc, cgroup_skb, sk_msg |
 | `data` | Packet data pointer | xdp, socket_filter, tc, cgroup_skb |
 | `data_end` | Packet end pointer | xdp, socket_filter, tc, cgroup_skb |
 | `ingress_ifindex` | Ingress interface index | xdp, socket_filter, tc, cgroup_skb, sk_lookup |
@@ -303,7 +306,7 @@ The closure receives a context parameter with these fields:
 | `user_ip4` | IPv4 destination/source address in host byte order | cgroup_sock_addr (*4 hooks) |
 | `user_ip6` | IPv6 address as four host-order `u32` words | cgroup_sock_addr (*6 hooks) |
 | `user_port` | Requested port in host byte order | cgroup_sock_addr |
-| `family` | Kernel socket family | cgroup_sock, cgroup_sock_addr, sk_lookup, sock_ops |
+| `family` | Kernel socket family | cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sock_ops |
 | `sock_type` | Socket type | cgroup_sock, cgroup_sock_addr |
 | `protocol` | Socket protocol | cgroup_sock, cgroup_sock_addr, sk_lookup |
 | `bound_dev_if` | Bound device ifindex | cgroup_sock |
@@ -323,12 +326,12 @@ The closure receives a context parameter with these fields:
 | `skb_hwtstamp` | Packet hardware timestamp when packet metadata is available | sock_ops |
 | `msg_src_ip4` | IPv4 source address in host byte order | cgroup_sock_addr (sendmsg4, recvmsg4) |
 | `msg_src_ip6` | IPv6 source address as four host-order `u32` words | cgroup_sock_addr (sendmsg6, recvmsg6) |
-| `remote_ip4` | Remote IPv4 address in host byte order | sk_lookup, sock_ops |
-| `remote_ip6` | Remote IPv6 address as four host-order `u32` words | sk_lookup, sock_ops |
-| `remote_port` | Remote port in host byte order | sk_lookup, sock_ops |
-| `local_ip4` | Local IPv4 address in host byte order | sk_lookup, sock_ops |
-| `local_ip6` | Local IPv6 address as four host-order `u32` words | sk_lookup, sock_ops |
-| `local_port` | Local port in host byte order | sk_lookup, sock_ops |
+| `remote_ip4` | Remote IPv4 address in host byte order | sk_lookup, sk_msg, sock_ops |
+| `remote_ip6` | Remote IPv6 address as four host-order `u32` words | sk_lookup, sk_msg, sock_ops |
+| `remote_port` | Remote port in host byte order | sk_lookup, sk_msg, sock_ops |
+| `local_ip4` | Local IPv4 address in host byte order | sk_lookup, sk_msg, sock_ops |
+| `local_ip6` | Local IPv6 address as four host-order `u32` words | sk_lookup, sk_msg, sock_ops |
+| `local_port` | Local port in host byte order | sk_lookup, sk_msg, sock_ops |
 | `cookie` | Socket lookup cookie | sk_lookup |
 | `level` | Socket-option level | cgroup_sockopt |
 | `optname` | Socket-option name | cgroup_sockopt |
@@ -426,6 +429,17 @@ arrays of four host-order `u32` words so ordinary Nushell indexing works,
 for example `($ctx.remote_ip6 | get 3)`. `sk_lookup` closures can return
 `"pass"` / `"drop"` instead of raw `1` / `0` result codes; `"allow"` /
 `"deny"` aliases also work.
+
+`sk_msg` currently attaches to a pinned sockmap or sockhash path such as
+`/sys/fs/bpf/demo_sockmap`. It exposes `ctx.cpu`, `ctx.ktime`,
+`ctx.packet_len`, `ctx.family`, `ctx.remote_ip4`, `ctx.remote_ip6`,
+`ctx.remote_port`, `ctx.local_ip4`, `ctx.local_ip6`, and `ctx.local_port`.
+The IPv4 address and remote port fields are normalized to host byte order,
+and the IPv6 fields are exposed as fixed arrays of four host-order `u32`
+words so ordinary Nushell indexing works, for example
+`($ctx.remote_ip6 | get 3)`. This initial slice is read-only and uses raw
+integer verdict codes; `sk_msg` closures can return `"pass"` / `"drop"`
+instead of raw `1` / `0`, and `"allow"` / `"deny"` aliases also work.
 
 `kprobe` and `uprobe` expose `ctx.arg0`-`ctx.arg5` through `pt_regs`. `fentry` and
 `fexit` resolve `ctx.argN` and `ctx.retval` through kernel BTF. Scalar and pointer

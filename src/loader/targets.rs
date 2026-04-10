@@ -5,7 +5,7 @@ use crate::program_spec::{
     CgroupDeviceTarget, CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockTarget,
     CgroupSockoptTarget, DEFAULT_PERF_EVENT_PERIOD, PerfEventEvent, PerfEventHardwareEvent,
     PerfEventSamplePolicy, PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, SkLookupTarget,
-    SockOpsTarget, SocketFilterSocketKind, SocketFilterTarget, TcTarget, UprobeTarget,
+    SkMsgTarget, SockOpsTarget, SocketFilterSocketKind, SocketFilterTarget, TcTarget, UprobeTarget,
 };
 use aya::programs::{
     CgroupSkbAttachType, CgroupSockAddrAttachType, CgroupSockAttachType, CgroupSockoptAttachType,
@@ -263,6 +263,21 @@ impl SkLookupTarget {
 
         Ok(Self {
             netns_path: target.to_string(),
+        })
+    }
+}
+
+impl SkMsgTarget {
+    /// Parse an sk_msg target string of the form `/sys/fs/bpf/pinned_sockmap`.
+    pub fn parse(target: &str) -> Result<Self, LoadError> {
+        if target.is_empty() {
+            return Err(LoadError::Load(
+                "sk_msg pinned sockmap path cannot be empty".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            map_path: target.to_string(),
         })
     }
 }
@@ -740,6 +755,27 @@ fn validate_sk_lookup_target(target: &str) -> Result<(), LoadError> {
     Ok(())
 }
 
+fn validate_sk_msg_target(target: &str) -> Result<(), LoadError> {
+    let parsed = SkMsgTarget::parse(target)?;
+    let map_path = Path::new(&parsed.map_path);
+
+    if !map_path.exists() {
+        return Err(LoadError::Load(format!(
+            "Unknown pinned sockmap path: {}",
+            parsed.map_path
+        )));
+    }
+
+    if map_path.is_dir() {
+        return Err(LoadError::Load(format!(
+            "sk_msg target must be a pinned sockmap or sockhash file, not a directory: {}",
+            parsed.map_path
+        )));
+    }
+
+    Ok(())
+}
+
 fn validate_socket_filter_target(target: &str) -> Result<(), LoadError> {
     SocketFilterTarget::parse(target)?;
     Ok(())
@@ -800,6 +836,7 @@ fn validate_target_for_program_type(
         }
         ProgramTargetKind::SocketFilterTarget => validate_socket_filter_target(target),
         ProgramTargetKind::NetworkNamespacePath => validate_sk_lookup_target(target),
+        ProgramTargetKind::PinnedSockMapPath => validate_sk_msg_target(target),
         ProgramTargetKind::TrafficControlInterface => validate_tc_target(target),
         ProgramTargetKind::CgroupPathAttachType => validate_cgroup_skb_target(target),
         ProgramTargetKind::CgroupPathSockAttachType => validate_cgroup_sock_target(target),
@@ -843,6 +880,7 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `perf_event:software:cpu-clock[:cpu=N][:pid=N][:period=N|freq=N]`
 /// - `socket_filter:udp4:127.0.0.1:31337`
 /// - `sk_lookup:/proc/self/ns/net`
+/// - `sk_msg:/sys/fs/bpf/pinned_sockmap`
 /// - `cgroup_device:/path/to/cgroup`
 /// - `sock_ops:/path/to/cgroup`
 /// - `tc:interface:ingress`
@@ -922,6 +960,9 @@ pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
         }),
         EbpfProgramType::SkLookup => Ok(ProgramSpec::SkLookup {
             target: SkLookupTarget::parse(target)?,
+        }),
+        EbpfProgramType::SkMsg => Ok(ProgramSpec::SkMsg {
+            target: SkMsgTarget::parse(target)?,
         }),
         EbpfProgramType::CgroupDevice => Ok(ProgramSpec::CgroupDevice {
             target: CgroupDeviceTarget::parse(target)?,

@@ -147,6 +147,19 @@ impl SockOpsTarget {
     }
 }
 
+/// Parsed sk_msg target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkMsgTarget {
+    /// Filesystem path to a pinned sockmap or sockhash map.
+    pub map_path: String,
+}
+
+impl SkMsgTarget {
+    pub fn target_string(&self) -> String {
+        self.map_path.clone()
+    }
+}
+
 /// Supported socket kinds for the initial socket_filter surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SocketFilterSocketKind {
@@ -416,6 +429,7 @@ pub enum ProgramSpec {
     PerfEvent { target: PerfEventTarget },
     SocketFilter { target: SocketFilterTarget },
     SkLookup { target: SkLookupTarget },
+    SkMsg { target: SkMsgTarget },
     CgroupDevice { target: CgroupDeviceTarget },
     SockOps { target: SockOpsTarget },
     Tc { target: TcTarget },
@@ -444,6 +458,7 @@ impl ProgramSpec {
             ProgramSpec::PerfEvent { target } => target.target_string(),
             ProgramSpec::SocketFilter { target } => target.target_string(),
             ProgramSpec::SkLookup { target } => target.target_string(),
+            ProgramSpec::SkMsg { target } => target.target_string(),
             ProgramSpec::CgroupDevice { target } => target.target_string(),
             ProgramSpec::SockOps { target } => target.target_string(),
             ProgramSpec::Tc { target } => target.target_string(),

@@ -9,11 +9,12 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use aya::maps::{HashMap as AyaHashMap, PerCpuHashMap, RingBuf};
+use aya::maps::sock::SockMapFd;
+use aya::maps::{HashMap as AyaHashMap, MapData, MapType, PerCpuHashMap, RingBuf};
 use aya::programs::{
     CgroupAttachMode, CgroupDevice, CgroupSkb, CgroupSock, CgroupSockAddr, CgroupSockopt,
     CgroupSysctl, FEntry, FExit, KProbe, Lsm, PerfEvent, PerfEventScope, RawTracePoint,
-    SchedClassifier, SkLookup, SockOps, SocketFilter, TracePoint, UProbe, Xdp, XdpFlags,
+    SchedClassifier, SkLookup, SkMsg, SockOps, SocketFilter, TracePoint, UProbe, Xdp, XdpFlags,
     perf_event::{PerfTypeId, SamplePolicy, perf_sw_ids},
     tc,
 };
@@ -99,8 +100,8 @@ mod maps;
 pub use crate::program_spec::{
     CgroupDeviceTarget, CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockTarget,
     CgroupSockoptTarget, PerfEventEvent, PerfEventHardwareEvent, PerfEventSamplePolicy,
-    PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, SkLookupTarget, SockOpsTarget,
-    SocketFilterTarget, TcTarget, UprobeTarget,
+    PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, SkLookupTarget, SkMsgTarget,
+    SockOpsTarget, SocketFilterTarget, TcTarget, UprobeTarget,
 };
 pub use targets::{parse_probe_spec, parse_program_spec};
 

@@ -86,6 +86,21 @@ fn test_sk_lookup_section_name() {
 }
 
 #[test]
+fn test_sk_msg_section_name() {
+    let prog = EbpfProgram::from_bytecode(
+        EbpfProgramType::SkMsg,
+        "/sys/fs/bpf/demo_sockmap",
+        "test",
+        vec![],
+    );
+    assert_eq!(
+        prog.section_name()
+            .expect("sk_msg section name should build"),
+        "sk_msg"
+    );
+}
+
+#[test]
 fn test_struct_ops_section_name() {
     let prog = EbpfProgram::from_bytecode(
         EbpfProgramType::StructOps,
@@ -126,6 +141,20 @@ fn test_program_type_metadata_for_sk_lookup() {
     assert!(info.supports_cpu_ctx_field);
     assert!(info.supports_timestamp_ctx_field);
     assert!(info.supports_ingress_ifindex_ctx_field);
+}
+
+#[test]
+fn test_program_type_metadata_for_sk_msg() {
+    let info = EbpfProgramType::SkMsg.info();
+    assert_eq!(info.canonical_prefix, "sk_msg");
+    assert_eq!(info.attach_kind, ProgramAttachKind::SkMsg);
+    assert_eq!(info.target_kind, ProgramTargetKind::PinnedSockMapPath);
+    assert_eq!(info.arg_access, ProgramValueAccess::None);
+    assert_eq!(info.retval_access, ProgramValueAccess::None);
+    assert!(info.supports_cpu_ctx_field);
+    assert!(info.supports_timestamp_ctx_field);
+    assert!(info.supports_packet_len_ctx_field);
+    assert!(!info.supports_packet_data_ctx_fields);
 }
 
 #[test]
@@ -1503,6 +1532,19 @@ fn test_probe_context_allows_sk_lookup_fields() {
 }
 
 #[test]
+fn test_probe_context_allows_sk_msg_fields() {
+    let ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+    assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Family).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::RemoteIp4).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::RemoteIp6).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::RemotePort).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::LocalIp4).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::LocalIp6).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::LocalPort).is_none());
+}
+
+#[test]
 fn test_probe_context_allows_sock_ops_fields() {
     let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
     assert!(ctx.ctx_field_access_error(&CtxField::SockOp).is_none());
@@ -1621,6 +1663,15 @@ fn test_probe_context_rejects_sock_addr_fields_on_packet_programs() {
     assert!(err.contains(
         "ctx.protocol is only available on cgroup_sock, cgroup_sock_addr, and sk_lookup programs"
     ));
+}
+
+#[test]
+fn test_probe_context_rejects_packet_data_fields_on_sk_msg_programs() {
+    let ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::Data)
+        .expect("expected sk_msg ctx.data rejection");
+    assert!(err.contains("ctx.data is not available on sk_msg programs"));
 }
 
 #[test]

@@ -2024,6 +2024,60 @@ fn test_lower_sock_ops_ctx_skb_len_field() {
 }
 
 #[test]
+fn test_lower_sk_msg_ctx_packet_len_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("packet_len")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_msg ctx.packet_len should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::PacketLen,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_sk_msg_ctx_remote_ip4_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("remote_ip4")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_msg ctx.remote_ip4 should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::RemoteIp4,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_socket_filter_ctx_packet_len_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("packet_len")],

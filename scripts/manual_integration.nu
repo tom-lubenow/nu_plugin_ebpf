@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 62
+const TOTAL_STEPS = 63
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -874,7 +874,50 @@ step 61 "perf_event software cpu-clock counter" {
     } { trigger-cpu-work } "perf_event cpu-clock counter"
 }
 
-step 62 "verify no leaked probes" {
+step 62 "sk_msg pinned sockhash live attach and detach" {
+    if not ("/sys/fs/bpf" | path exists) {
+        print "Skipping sk_msg smoke: /sys/fs/bpf is not available"
+    } else if not ("/usr/sbin/bpftool" | path exists) {
+        print "Skipping sk_msg smoke: /usr/sbin/bpftool is not available"
+    } else {
+        let map_path = $"/sys/fs/bpf/nu_plugin_ebpf_skmsg_($nu.pid)"
+        try {
+            ^rm -f $map_path | ignore
+        } catch { |_| null }
+
+        let id = (try {
+            ^bpftool map create $map_path type sockhash key 4 value 4 entries 16 name nu_skmsg | ignore
+
+            let code = ([
+                'let id = (ebpf attach "sk_msg:__MAP__" {|ctx| $ctx.packet_len | count; "pass" })'
+                'if $id < 1 {'
+                '    error make { msg: $"expected positive sk_msg id, got ($id)" }'
+                '}'
+                'ebpf detach $id | ignore'
+                '$id'
+            ] | str join (char newline) | str replace "__MAP__" $map_path)
+
+            run-nu-with-plugin $plugin_bin $code | str trim | into int
+        } catch { |err|
+            try {
+                ^rm -f $map_path | ignore
+            } catch { |_| null }
+            error make $err
+        })
+
+        try {
+            ^rm -f $map_path | ignore
+        } catch { |_| null }
+
+        if $id < 1 {
+            fail $"expected positive sk_msg id, got ($id)"
+        }
+
+        $id
+    }
+}
+
+step 63 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

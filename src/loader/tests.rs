@@ -295,6 +295,15 @@ fn test_parse_probe_spec_sk_lookup_root_netns() {
 }
 
 #[test]
+fn test_parse_probe_spec_sk_msg_pinned_sockmap() {
+    let path = std::env::current_exe().unwrap();
+    let spec = format!("sk_msg:{}", path.display());
+    let (prog_type, target) = parse_probe_spec(&spec).unwrap();
+    assert_eq!(prog_type, EbpfProgramType::SkMsg);
+    assert_eq!(target, path.display().to_string());
+}
+
+#[test]
 fn test_parse_program_spec_socket_filter_is_structured() {
     let spec = parse_program_spec("socket_filter:udp4:127.0.0.1:31337").unwrap();
     assert_eq!(
@@ -412,6 +421,22 @@ fn test_parse_program_spec_sk_lookup_is_structured() {
         }
     );
     assert_eq!(spec.to_string(), "sk_lookup:/proc/self/ns/net");
+}
+
+#[test]
+fn test_parse_program_spec_sk_msg_is_structured() {
+    let path = std::env::current_exe().unwrap();
+    let spec_string = format!("sk_msg:{}", path.display());
+    let spec = parse_program_spec(&spec_string).unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::SkMsg {
+            target: SkMsgTarget {
+                map_path: path.display().to_string(),
+            }
+        }
+    );
+    assert_eq!(spec.to_string(), spec_string);
 }
 
 #[test]

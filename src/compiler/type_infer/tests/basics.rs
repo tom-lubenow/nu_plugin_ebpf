@@ -846,6 +846,58 @@ fn test_infer_sock_ops_skb_hwtstamp_field_as_u64() {
 }
 
 #[test]
+fn test_infer_sk_msg_packet_len_field_as_u32() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::PacketLen,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::U32));
+}
+
+#[test]
+fn test_infer_sk_msg_remote_ip6_field_as_stack_backed_u32_array() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::Local);
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::RemoteIp6,
+            slot: Some(slot),
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(
+        types.get(&v0),
+        Some(&MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U32),
+                len: 4,
+            }),
+            address_space: AddressSpace::Stack,
+        })
+    );
+}
+
+#[test]
 fn test_infer_socket_filter_packet_len_field_as_u32() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();

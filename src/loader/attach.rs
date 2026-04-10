@@ -406,6 +406,39 @@ impl EbpfState {
                     .attach(netns)
                     .map_err(|e| LoadError::Attach(format!("Failed to attach sk_lookup: {e}")))?;
             }
+            ProgramAttachKind::SkMsg => {
+                let target = SkMsgTarget::parse(&program.target)?;
+                let map = MapData::from_pin(&target.map_path).map_err(|e| {
+                    LoadError::Attach(format!(
+                        "Failed to open pinned sockmap {}: {e}",
+                        target.map_path
+                    ))
+                })?;
+                let map_type = map.info().and_then(|info| info.map_type()).map_err(|e| {
+                    LoadError::Attach(format!(
+                        "Failed to inspect pinned map {}: {e}",
+                        target.map_path
+                    ))
+                })?;
+                if !matches!(map_type, MapType::SockMap | MapType::SockHash) {
+                    return Err(LoadError::Attach(format!(
+                        "sk_msg target must be a pinned sockmap or sockhash, got {:?}: {}",
+                        map_type, target.map_path
+                    )));
+                }
+
+                let sock_map_fd: &SockMapFd =
+                    unsafe { &*(map.fd() as *const _ as *const SockMapFd) };
+                let sk_msg: &mut SkMsg = prog
+                    .try_into()
+                    .map_err(|e| LoadError::Load(format!("Failed to convert to SkMsg: {e}")))?;
+                sk_msg
+                    .load()
+                    .map_err(|e| LoadError::Load(format!("Failed to load sk_msg: {e}")))?;
+                sk_msg
+                    .attach(sock_map_fd)
+                    .map_err(|e| LoadError::Attach(format!("Failed to attach sk_msg: {e}")))?;
+            }
             ProgramAttachKind::CgroupDevice => {
                 let target = CgroupDeviceTarget::parse(&program.target)?;
                 let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {

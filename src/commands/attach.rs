@@ -2116,6 +2116,7 @@ Supported attach types:
   - cgroup_device
   - cgroup_sock
   - sock_ops
+  - sk_msg
   - cgroup_sysctl
   - cgroup_sockopt
   - cgroup_sock_addr
@@ -2273,6 +2274,23 @@ Context parameter syntax (recommended):
     exposed as fixed arrays of four host-order u32 words, for example
     `($ctx.remote_ip6 | get 3)`. `ctx.args` uses the same fixed-array model,
     for example `($ctx.args | get 0)`.
+
+  sk_msg fields:
+    {|ctx| $ctx.cpu }     - Get current CPU ID
+    {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.packet_len } - Get total message size in bytes
+    {|ctx| $ctx.family }  - Get socket family
+    {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order
+    {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words
+    {|ctx| $ctx.remote_port } - Get the remote port in host byte order
+    {|ctx| $ctx.local_ip4 } - Get the local IPv4 address in host byte order
+    {|ctx| $ctx.local_ip6 } - Get the local IPv6 address as four host-order u32 words
+    {|ctx| $ctx.local_port } - Get the local port in host byte order
+    Note: sk_msg programs attach to a pinned sockmap or sockhash path such as
+    `/sys/fs/bpf/demo_sockmap`. Initial sk_msg support is read-only and uses
+    raw integer verdict codes; observation-only examples should return `pass`
+    or `1`. IPv6 addresses are exposed as fixed arrays of four host-order
+    u32 words, for example `($ctx.remote_ip6 | get 3)`.
 
   cgroup_sockopt fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
@@ -2468,7 +2486,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'socket_filter:udp4:127.0.0.1:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', or 'sk_lookup:/proc/self/ns/net').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'socket_filter:udp4:127.0.0.1:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', or 'sk_lookup:/proc/self/ns/net').",
             )
             .required(
                 "body",
@@ -2520,6 +2538,7 @@ Requirements:
             "cgroup_device",
             "cgroup_sock",
             "sock_ops",
+            "sk_msg",
             "cgroup_sysctl",
             "cgroup_sockopt",
             "cgroup_sock_addr",
@@ -2588,6 +2607,11 @@ Requirements:
             Example {
                 example: "ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.op | count; 1 }",
                 description: "Count sock_ops callback opcodes on TCP socket events in a cgroup",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'sk_msg:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.packet_len | count; 'pass' }",
+                description: "Count message sizes on a pinned sockmap or sockhash sk_msg verdict hook",
                 result: None,
             },
             Example {
