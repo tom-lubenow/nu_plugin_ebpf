@@ -178,6 +178,41 @@ impl<'a> TypeInference<'a> {
         }
 
         match inst {
+            MirInst::StoreCtxField { target, val, ty } => {
+                let val_ty = self.mir_type_for_value(val, types);
+                if *ty != MirType::U32 {
+                    errors.push(TypeError::new(format!(
+                        "writable context fields currently require a u32 store, got {:?}",
+                        ty
+                    )));
+                }
+                if !matches!(
+                    val_ty,
+                    MirType::Bool
+                        | MirType::I8
+                        | MirType::U8
+                        | MirType::I16
+                        | MirType::U16
+                        | MirType::I32
+                        | MirType::U32
+                        | MirType::I64
+                        | MirType::U64
+                ) {
+                    errors.push(TypeError::new(format!(
+                        "writable context fields require an integer-compatible scalar value, got {:?}",
+                        val_ty
+                    )));
+                }
+                if !matches!(
+                    self.probe_ctx.as_ref().map(|ctx| ctx.probe_type),
+                    Some(EbpfProgramType::SockOps)
+                ) {
+                    errors.push(TypeError::new(format!(
+                        "context store target {:?} is only supported on sock_ops programs",
+                        target
+                    )));
+                }
+            }
             MirInst::BinOp { op, lhs, rhs, .. } => {
                 let lhs_ty = self.mir_type_for_value(lhs, types);
                 let rhs_ty = self.mir_type_for_value(rhs, types);

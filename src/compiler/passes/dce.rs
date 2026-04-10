@@ -115,6 +115,7 @@ fn has_side_effects(inst: &MirInst) -> bool {
         // Side effects - cannot be removed
         MirInst::Store { .. }
         | MirInst::StoreSlot { .. }
+        | MirInst::StoreCtxField { .. }
         | MirInst::RecordStore { .. }
         | MirInst::ListNew { .. }
         | MirInst::ListPush { .. }

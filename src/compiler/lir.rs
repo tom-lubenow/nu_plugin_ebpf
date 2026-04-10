@@ -9,8 +9,8 @@ use std::fmt;
 
 use super::instruction::EbpfReg;
 use super::mir::{
-    BinOpKind, BlockId, CtxField, MapRef, MirType, MirValue, RecordFieldDef, StackSlot,
-    StackSlotId, StackSlotKind, StringAppendType, SubfunctionId, UnaryOpKind, VReg,
+    BinOpKind, BlockId, CtxField, CtxStoreTarget, MapRef, MirType, MirValue, RecordFieldDef,
+    StackSlot, StackSlotId, StackSlotKind, StringAppendType, SubfunctionId, UnaryOpKind, VReg,
 };
 
 /// A complete LIR program
@@ -272,6 +272,11 @@ pub enum LirInst {
         field: CtxField,
         slot: Option<StackSlotId>,
     },
+    StoreCtxField {
+        target: CtxStoreTarget,
+        val: MirValue,
+        ty: MirType,
+    },
     ReadStr {
         dst: StackSlotId,
         ptr: VReg,
@@ -445,6 +450,7 @@ impl LirInst {
                 }
             }
             LirInst::LoadCtxField { .. } => {}
+            LirInst::StoreCtxField { val, .. } => add_value(&mut uses, val),
             LirInst::ReadStr { ptr, .. } => uses.push(*ptr),
             LirInst::StrCmp { .. } => {}
             LirInst::RecordStore { val, .. } => add_value(&mut uses, val),

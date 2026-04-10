@@ -69,6 +69,7 @@ impl MirInst {
                 }
             }
             MirInst::LoadCtxField { .. } => {}
+            MirInst::StoreCtxField { val, .. } => visit_value!(val),
             MirInst::ReadStr { ptr, .. } => f(ptr),
             MirInst::StrCmp { .. } => {}
             MirInst::RecordStore { val, .. } => visit_value!(val),
@@ -198,6 +199,7 @@ impl MirInst {
                 }
             }
             MirInst::LoadCtxField { .. } => {}
+            MirInst::StoreCtxField { val, .. } => add_value(&mut uses, val),
             MirInst::ReadStr { ptr, .. } => uses.push(*ptr),
             MirInst::StrCmp { .. } => {}
             MirInst::RecordStore { val, .. } => add_value(&mut uses, val),

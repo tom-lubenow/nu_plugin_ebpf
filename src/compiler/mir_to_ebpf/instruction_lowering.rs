@@ -64,6 +64,10 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.compile_load_ctx_field_inst(*dst, field, *slot)?;
             }
 
+            LirInst::StoreCtxField { target, val, ty } => {
+                self.compile_store_ctx_field_inst(target, val, ty)?;
+            }
+
             LirInst::EmitEvent { data, size } => {
                 self.compile_emit_event_inst(*data, *size)?;
             }

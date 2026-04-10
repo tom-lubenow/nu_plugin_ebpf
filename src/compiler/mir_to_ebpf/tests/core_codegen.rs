@@ -4,7 +4,7 @@ use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
 use crate::compiler::ir_to_mir::lower_hir_to_mir_with_hints;
-use crate::compiler::mir::MirInst;
+use crate::compiler::mir::{CtxStoreTarget, MirInst};
 use crate::compiler::{EbpfProgram, compile_mir_to_ebpf_with_hints_and_readonly_globals};
 use crate::compiler::{EbpfProgramType, ProbeContext};
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
@@ -2414,6 +2414,94 @@ fn test_compile_cgroup_device_access_type_load_uses_first_word_offset() {
         insn.opcode == opcode::BPF_LDX | opcode::BPF_W | opcode::BPF_MEM
             && insn.src_reg == EbpfReg::R9.as_u8()
             && insn.offset == 0
+    }));
+}
+
+#[test]
+fn test_compile_sock_ops_reply_store_uses_union_offset() {
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let value = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(LirInst::Copy {
+        dst: value,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::StoreCtxField {
+            target: CtxStoreTarget::SockOpsReply,
+            val: MirValue::VReg(value),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::Const(1)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_STX | opcode::BPF_W | opcode::BPF_MEM
+            && insn.dst_reg == EbpfReg::R9.as_u8()
+            && insn.offset == 4
+    }));
+}
+
+#[test]
+fn test_compile_sock_ops_replylong_store_uses_indexed_union_offset() {
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let value = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(LirInst::Copy {
+        dst: value,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::StoreCtxField {
+            target: CtxStoreTarget::SockOpsReplyLong(2),
+            val: MirValue::VReg(value),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::Const(1)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_STX | opcode::BPF_W | opcode::BPF_MEM
+            && insn.dst_reg == EbpfReg::R9.as_u8()
+            && insn.offset == 12
     }));
 }
 

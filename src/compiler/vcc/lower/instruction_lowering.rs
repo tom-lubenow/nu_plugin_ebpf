@@ -390,6 +390,10 @@ impl<'a> VccLowerer<'a> {
                         .or_insert(VccReg(dst.0));
                 }
             }
+            MirInst::StoreCtxField { val, .. } => {
+                let value = self.lower_value(val, out);
+                out.push(VccInst::AssertScalar { value });
+            }
             MirInst::StrCmp { dst, lhs, rhs, len } => {
                 if *len > 0 {
                     let lhs_base = self.stack_addr_temp(*lhs, out);

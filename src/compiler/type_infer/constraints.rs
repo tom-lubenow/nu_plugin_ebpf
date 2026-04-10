@@ -42,6 +42,12 @@ impl<'a> TypeInference<'a> {
                 self.constrain(dst_ty, expected, "load_slot");
             }
 
+            MirInst::StoreCtxField { val, ty, .. } => {
+                let val_ty = self.value_type(val);
+                let expected = HMType::from_mir_type(ty);
+                self.constrain(val_ty, expected, "store_ctx_field");
+            }
+
             MirInst::BinOp { dst, op, lhs, rhs } => {
                 let dst_ty = self.vreg_type(*dst);
                 let lhs_ty = self.value_type(lhs);

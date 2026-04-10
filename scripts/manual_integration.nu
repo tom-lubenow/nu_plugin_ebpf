@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 67
+const TOTAL_STEPS = 68
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -1065,7 +1065,20 @@ step 66 "sock_ops root cgroup packet first byte counter" {
     }
 }
 
-step 67 "verify no leaked probes" {
+step 67 "sock_ops root cgroup reply assignment counter" {
+    if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
+        print "Skipping sock_ops reply smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
+    } else {
+        count-at-least-one "sock_ops:/sys/fs/cgroup" {|ctx|
+            mut ctx = $ctx
+            $ctx.reply = 1
+            $ctx.op | count
+            1
+        } { trigger-loopback-connect } "sock_ops reply assignment counter"
+    }
+}
+
+step 68 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

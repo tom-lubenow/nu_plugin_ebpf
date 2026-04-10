@@ -3,6 +3,7 @@ use crate::compiler::elf::PacketContextKind;
 use crate::compiler::hir::AnnotatedMutGlobal;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
+use crate::compiler::mir::CtxStoreTarget;
 use crate::compiler::mir::StructField;
 use crate::compiler::mir::UnaryOpKind;
 use crate::compiler::{EbpfProgramType, ProgramValueAccess};
@@ -1561,6 +1562,108 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         Ok((field, 1))
+    }
+
+    fn resolve_ctx_store_target_from_path(
+        &self,
+        path: &CellPath,
+    ) -> Result<CtxStoreTarget, CompileError> {
+        let path_desc = Self::typed_value_path_desc(&path.members);
+        let Some(ctx) = self.probe_ctx else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' requires probe context",
+                path_desc
+            )));
+        };
+        if ctx.probe_type != EbpfProgramType::SockOps {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' is only supported for sock_ops reply fields",
+                path_desc
+            )));
+        }
+
+        match path.members.as_slice() {
+            [PathMember::String { val, .. }] if val == "reply" => Ok(CtxStoreTarget::SockOpsReply),
+            [
+                PathMember::String { val, .. },
+                PathMember::Int { val: index, .. },
+            ] if val == "replylong" => {
+                let index = u8::try_from(*index).map_err(|_| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "ctx.replylong index must be in 0..=3, got {}",
+                        index
+                    ))
+                })?;
+                if index >= 4 {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "ctx.replylong index must be in 0..=3, got {}",
+                        index
+                    )));
+                }
+                Ok(CtxStoreTarget::SockOpsReplyLong(index))
+            }
+            [PathMember::String { val, .. }] if val == "replylong" => {
+                Err(CompileError::UnsupportedInstruction(
+                    "ctx.replylong assignment requires a fixed index, e.g. $ctx.replylong.0 = ..."
+                        .into(),
+                ))
+            }
+            _ => Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' is only supported for sock_ops reply and replylong.<0-3>",
+                path_desc
+            ))),
+        }
+    }
+
+    fn lower_context_upsert_cell_path(
+        &mut self,
+        src_dst: RegId,
+        path: &CellPath,
+        new_value: RegId,
+    ) -> Result<(), CompileError> {
+        let target = self.resolve_ctx_store_target_from_path(path)?;
+        let new_value_vreg = self.get_vreg(new_value);
+        let new_value_runtime_ty = self
+            .typed_value_runtime_type(new_value, new_value_vreg)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "context cell path update '.{} = ...' requires type information for the new value",
+                    Self::typed_value_path_desc(&path.members)
+                ))
+            })?;
+        let stored_vreg = match new_value_runtime_ty {
+            MirType::Bool
+            | MirType::I8
+            | MirType::U8
+            | MirType::I16
+            | MirType::U16
+            | MirType::I32
+            | MirType::U32
+            | MirType::I64
+            | MirType::U64 => {
+                let widened = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(widened, MirType::U32);
+                self.emit(MirInst::Copy {
+                    dst: widened,
+                    src: MirValue::VReg(new_value_vreg),
+                });
+                widened
+            }
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "context cell path update '.{} = ...' requires a u32-compatible scalar value",
+                    Self::typed_value_path_desc(&path.members)
+                )));
+            }
+        };
+        self.emit(MirInst::StoreCtxField {
+            target,
+            val: MirValue::VReg(stored_vreg),
+            ty: MirType::U32,
+        });
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.is_context = true;
+        Ok(())
     }
 
     fn trampoline_field_selector(
@@ -5065,6 +5168,10 @@ impl<'a> HirToMirLowering<'a> {
             return Err(CompileError::UnsupportedInstruction(
                 "Empty cell path is not supported".into(),
             ));
+        }
+
+        if self.is_context_reg(src_dst) {
+            return self.lower_context_upsert_cell_path(src_dst, &path, new_value);
         }
 
         let path_desc = Self::typed_value_path_desc(&path.members);

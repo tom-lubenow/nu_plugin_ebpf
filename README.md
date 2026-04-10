@@ -118,6 +118,9 @@ let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.op | count; 1 }
 # Inspect the first sock_ops argument word through the normal fixed-array path
 let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| ($ctx.args | get 0) | count; 1 }
 
+# Write the raw sock_ops reply word through ordinary assignment
+let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| mut ctx = $ctx; $ctx.reply = 1; $ctx.op | count; 1 }
+
 # Count current TCP congestion-window observations on loopback socket events
 let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.snd_cwnd | count; 1 }
 
@@ -491,8 +494,13 @@ It exposes `ctx.cpu`, `ctx.ktime`, `ctx.op`, `ctx.family`,
 callback context has packet data available. The IPv4 address and remote
 port fields are normalized to host byte order. The IPv6 fields are exposed as fixed arrays
 of four host-order `u32` words, so ordinary Nushell indexing works, for
-example `($ctx.remote_ip6 | get 3)`. This initial slice is read-only and
-uses raw integer return codes; observation-only examples should return `1`.
+example `($ctx.remote_ip6 | get 3)`. `ctx.reply` and `ctx.replylong.<0-3>`
+are writable raw `u32` words and can be assigned with ordinary Nushell
+cell-path updates after shadowing the immutable closure parameter as mutable,
+for example `mut ctx = $ctx; $ctx.reply = 1` or
+`mut ctx = $ctx; $ctx.replylong.0 = 7`.
+sock_ops uses raw integer return codes; observation-only examples should
+return `1`.
 
 `cgroup_sock_addr` currently exposes `ctx.cpu`, `ctx.ktime`,
 `ctx.user_family`, `ctx.user_ip4`, `ctx.user_ip6`, `ctx.user_port`,

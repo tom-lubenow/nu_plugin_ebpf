@@ -2281,6 +2281,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.op }      - Get the sock_ops callback opcode
     {|ctx| $ctx.args }    - Get the four sock_ops callback argument words as a fixed array
+    {|ctx| mut ctx = $ctx; $ctx.reply = 1; 1 } - Write the raw sock_ops reply word through ordinary assignment
+    {|ctx| mut ctx = $ctx; $ctx.replylong.0 = 7; 1 } - Write a raw replylong u32 word through ordinary assignment
     {|ctx| $ctx.packet_len } - Get the packet length when packet metadata is available
     {|ctx| $ctx.data }    - Get the packet data pointer when packet metadata is available
     {|ctx| $ctx.data_end } - Get the packet end pointer when packet metadata is available
@@ -2322,8 +2324,10 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.skb_len } - Get the total packet length when packet metadata is available
     {|ctx| $ctx.skb_tcp_flags } - Get packet TCP flags when packet metadata is available
     {|ctx| $ctx.skb_hwtstamp } - Get packet hardware timestamp when packet metadata is available
-    Note: initial sock_ops support is read-only and uses raw integer return
-    codes. Observation-only examples should return `1`. IPv6 addresses are
+    Note: sock_ops uses raw integer return codes. Observation-only examples
+    should return `1`. `ctx.reply` and `ctx.replylong.<0-3>` are writable raw
+    `u32` words after shadowing the immutable closure parameter as mutable, for
+    example `mut ctx = $ctx; $ctx.reply = 1`. IPv6 addresses are
     exposed as fixed arrays of four host-order u32 words, for example
     `($ctx.remote_ip6 | get 3)`. `ctx.args` uses the same fixed-array model,
     for example `($ctx.args | get 0)`. `ctx.data` / `ctx.data_end` use the

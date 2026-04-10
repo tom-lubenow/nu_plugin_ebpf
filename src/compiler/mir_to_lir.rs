@@ -384,6 +384,13 @@ fn lower_inst(
                 slot: *slot,
             });
         }
+        MirInst::StoreCtxField { target, val, ty } => {
+            out.push(LirInst::StoreCtxField {
+                target: target.clone(),
+                val: val.clone(),
+                ty: ty.clone(),
+            });
+        }
         MirInst::ReadStr {
             dst,
             ptr,

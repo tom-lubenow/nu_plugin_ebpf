@@ -220,7 +220,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 20, 24, 28, 32, 48, 64, 68, 72, 84, 88)
     }
 
-    fn bpf_sock_ops_args_offset() -> i16 {
+    pub(super) fn bpf_sock_ops_args_offset() -> i16 {
         4
     }
 

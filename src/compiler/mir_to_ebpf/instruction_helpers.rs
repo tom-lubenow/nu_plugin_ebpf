@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::mir::AddressSpace;
+use crate::compiler::mir::CtxStoreTarget;
 
 impl<'a> MirToEbpfCompiler<'a> {
     fn validate_counter_key_operand(&self, map_name: &str, key: VReg) -> Result<(), CompileError> {
@@ -61,6 +62,44 @@ impl<'a> MirToEbpfCompiler<'a> {
     ) -> Result<(), CompileError> {
         let dst_reg = self.alloc_dst_reg(dst)?;
         self.compile_load_ctx_field(dst_reg, field, slot)
+    }
+
+    pub(super) fn compile_store_ctx_field_inst(
+        &mut self,
+        target: &CtxStoreTarget,
+        val: &MirValue,
+        ty: &MirType,
+    ) -> Result<(), CompileError> {
+        if !matches!(
+            self.probe_ctx.map(|ctx| ctx.probe_type),
+            Some(EbpfProgramType::SockOps)
+        ) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "writable context field {:?} is only supported on sock_ops programs",
+                target
+            )));
+        }
+        let size = ty.size();
+        if size != 4 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "writable context fields currently require a 4-byte scalar store, got {:?}",
+                ty
+            )));
+        }
+        let offset = match target {
+            CtxStoreTarget::SockOpsReply => Self::bpf_sock_ops_args_offset(),
+            CtxStoreTarget::SockOpsReplyLong(index) => {
+                Self::bpf_sock_ops_args_offset()
+                    + i16::from(*index).checked_mul(4).ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "sock_ops replylong index overflowed".into(),
+                        )
+                    })?
+            }
+        };
+        let val_reg = self.value_to_reg(val)?;
+        self.emit_store(EbpfReg::R9, offset, val_reg, size)?;
+        Ok(())
     }
 
     pub(super) fn compile_emit_event_inst(

@@ -690,6 +690,19 @@ impl CtxField {
     }
 }
 
+/// Writable context-field targets.
+///
+/// This is intentionally narrower than `CtxField`: some context values are
+/// readable but not writable, and some writable semantics do not map cleanly
+/// to the read-side surface.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum CtxStoreTarget {
+    /// `bpf_sock_ops.reply`
+    SockOpsReply,
+    /// `bpf_sock_ops.replylong[idx]`
+    SockOpsReplyLong(u8),
+}
+
 /// MIR instruction
 #[derive(Debug, Clone)]
 pub enum MirInst {
@@ -812,6 +825,13 @@ pub enum MirInst {
         field: CtxField,
         /// Optional stack slot backing the field (for stack-based ctx data like comm)
         slot: Option<StackSlotId>,
+    },
+
+    /// Store a writable context field
+    StoreCtxField {
+        target: CtxStoreTarget,
+        val: MirValue,
+        ty: MirType,
     },
 
     // String operations

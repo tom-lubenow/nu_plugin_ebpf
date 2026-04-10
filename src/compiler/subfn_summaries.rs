@@ -230,6 +230,7 @@ fn apply_alias_inst(
         }
         MirInst::Store { .. }
         | MirInst::StoreSlot { .. }
+        | MirInst::StoreCtxField { .. }
         | MirInst::ReadStr { .. }
         | MirInst::EmitEvent { .. }
         | MirInst::EmitRecord { .. }
