@@ -131,6 +131,20 @@ impl EbpfState {
                     .attach()
                     .map_err(|e| LoadError::Attach(format!("Failed to attach fexit: {e}")))?;
             }
+            ProgramAttachKind::TpBtf => {
+                let btf = Btf::from_sys_fs().map_err(|e| {
+                    LoadError::Load(format!("Failed to load kernel BTF for tp_btf: {e}"))
+                })?;
+                let tp_btf: &mut BtfTracePoint = prog.try_into().map_err(|e| {
+                    LoadError::Load(format!("Failed to convert to BtfTracePoint: {e}"))
+                })?;
+                tp_btf
+                    .load(&program.target, &btf)
+                    .map_err(|e| LoadError::Load(format!("Failed to load tp_btf: {e}")))?;
+                tp_btf
+                    .attach()
+                    .map_err(|e| LoadError::Attach(format!("Failed to attach tp_btf: {e}")))?;
+            }
             ProgramAttachKind::Tracepoint => {
                 // Tracepoint target format: "category/name" (e.g., "syscalls/sys_enter_openat")
                 let parts: Vec<&str> = program.target.splitn(2, '/').collect();

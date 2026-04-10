@@ -841,6 +841,18 @@ fn validate_target_for_program_type(
                     reason: e.to_string(),
                 })
         }
+        ProgramTargetKind::BtfTracepoint => {
+            if target.is_empty() {
+                return Err(LoadError::Load("tp_btf target cannot be empty".to_string()));
+            }
+            KernelBtf::get()
+                .validate_tp_btf_target(target)
+                .map_err(|e| LoadError::UnsupportedTrampolineTarget {
+                    probe_type: prog_type.canonical_prefix().to_string(),
+                    target: target.to_string(),
+                    reason: e.to_string(),
+                })
+        }
         ProgramTargetKind::Tracepoint => validate_tracepoint_target(target),
         ProgramTargetKind::RawTracepoint => Ok(()),
         ProgramTargetKind::UserFunction => {
@@ -953,6 +965,9 @@ pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
         }),
         EbpfProgramType::Fexit => Ok(ProgramSpec::Fexit {
             function: target.to_string(),
+        }),
+        EbpfProgramType::TpBtf => Ok(ProgramSpec::TpBtf {
+            name: target.to_string(),
         }),
         EbpfProgramType::Lsm => Ok(ProgramSpec::Lsm {
             hook: target.to_string(),

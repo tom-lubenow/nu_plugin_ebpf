@@ -1466,6 +1466,14 @@ impl<'a> HirToMirLowering<'a> {
                             ))
                         })?
                 }
+                EbpfProgramType::TpBtf => KernelBtf::get()
+                    .tp_btf_arg_index_by_name(&ctx.target, arg_name)
+                    .map_err(|e| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "failed to resolve ctx.arg.{} for tp_btf:{}: {}",
+                            arg_name, ctx.target, e
+                        ))
+                    })?,
                 EbpfProgramType::Lsm => KernelBtf::get()
                     .lsm_hook_arg_index_by_name(&ctx.target, arg_name)
                     .map_err(|e| {
@@ -1499,6 +1507,7 @@ impl<'a> HirToMirLowering<'a> {
                             .unwrap_or("<unknown>");
                         format!("struct_ops {}.{}", value_type_name, ctx.target)
                     }
+                    EbpfProgramType::TpBtf => format!("tp_btf:{}", ctx.target),
                     EbpfProgramType::Lsm => format!("lsm:{}", ctx.target),
                     _ => format!("{}:{}", ctx.probe_type.section_prefix(), ctx.target),
                 };
@@ -1759,6 +1768,20 @@ impl<'a> HirToMirLowering<'a> {
                                 ))
                             })?
                     }
+                    EbpfProgramType::TpBtf => KernelBtf::get()
+                        .tp_btf_arg(&ctx.target, *idx as usize)
+                        .map_err(|e| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "failed to resolve ctx.arg{} for tp_btf:{}: {}",
+                                idx, ctx.target, e
+                            ))
+                        })?
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "ctx.arg{} is not available on tp_btf:{}",
+                                idx, ctx.target
+                            ))
+                        })?,
                     EbpfProgramType::Lsm => KernelBtf::get()
                         .lsm_hook_arg(&ctx.target, *idx as usize)
                         .map_err(|e| {
@@ -2140,6 +2163,14 @@ impl<'a> HirToMirLowering<'a> {
                                 ))
                             })
                     }
+                    EbpfProgramType::TpBtf => KernelBtf::get()
+                        .tp_btf_arg_type_info(&ctx.target, *idx as usize)
+                        .map_err(|e| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "failed to resolve ctx.arg{} type for tp_btf:{}: {}",
+                                idx, ctx.target, e
+                            ))
+                        }),
                     EbpfProgramType::Lsm => KernelBtf::get()
                         .lsm_hook_arg_type_info(&ctx.target, *idx as usize)
                         .map_err(|e| {
@@ -4845,6 +4876,20 @@ impl<'a> HirToMirLowering<'a> {
                                 ))
                             })?
                     }
+                    EbpfProgramType::TpBtf => KernelBtf::get()
+                        .tp_btf_arg_field(&ctx.target, *idx as usize, &nested_segments)
+                        .map_err(|e| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "failed to resolve ctx.arg{}.{} for tp_btf:{}: {}",
+                                idx, path_desc, ctx.target, e
+                            ))
+                        })?
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "ctx.arg{} is not available on tp_btf:{}",
+                                idx, ctx.target
+                            ))
+                        })?,
                     EbpfProgramType::Lsm => KernelBtf::get()
                         .lsm_hook_arg_field(&ctx.target, *idx as usize, &nested_segments)
                         .map_err(|e| {

@@ -126,6 +126,49 @@ fn test_parse_probe_spec_fexit() {
 }
 
 #[test]
+fn test_parse_probe_spec_tp_btf() {
+    let result = parse_probe_spec("tp_btf:sys_enter");
+
+    match result {
+        Ok((prog_type, target)) => {
+            assert_eq!(prog_type, EbpfProgramType::TpBtf);
+            assert_eq!(target, "sys_enter");
+        }
+        Err(LoadError::UnsupportedTrampolineTarget {
+            probe_type, target, ..
+        }) => {
+            assert_eq!(probe_type, "tp_btf");
+            assert_eq!(target, "sys_enter");
+        }
+        Err(e) => panic!("Unexpected error: {:?}", e),
+    }
+}
+
+#[test]
+fn test_parse_program_spec_tp_btf_is_structured() {
+    let result = parse_program_spec("tp_btf:sys_enter");
+
+    match result {
+        Ok(spec) => {
+            assert_eq!(
+                spec,
+                ProgramSpec::TpBtf {
+                    name: "sys_enter".to_string(),
+                }
+            );
+            assert_eq!(spec.to_string(), "tp_btf:sys_enter");
+        }
+        Err(LoadError::UnsupportedTrampolineTarget {
+            probe_type, target, ..
+        }) => {
+            assert_eq!(probe_type, "tp_btf");
+            assert_eq!(target, "sys_enter");
+        }
+        Err(e) => panic!("Unexpected error: {:?}", e),
+    }
+}
+
+#[test]
 fn test_parse_probe_spec_raw_tracepoint_alias() {
     let (prog_type, target) = parse_probe_spec("raw_tp:sys_enter").unwrap();
     assert_eq!(prog_type, EbpfProgramType::RawTracepoint);

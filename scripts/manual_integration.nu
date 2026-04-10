@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 71
+const TOTAL_STEPS = 72
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -1125,7 +1125,14 @@ step 70 "map-push dry-run queue generic map" {
     $result
 }
 
-step 71 "verify no leaked probes" {
+step 71 "tp_btf sys_enter trampoline arg" {
+    count-at-least-one "tp_btf:sys_enter" {|ctx|
+        $ctx.arg1.orig_ax | count
+        0
+    } { trigger-true } "tp_btf sys_enter counter"
+}
+
+step 72 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

@@ -12,10 +12,10 @@ use std::time::{Duration, Instant};
 use aya::maps::sock::SockMapFd;
 use aya::maps::{HashMap as AyaHashMap, MapData, MapType, PerCpuHashMap, RingBuf};
 use aya::programs::{
-    CgroupAttachMode, CgroupDevice, CgroupSkb, CgroupSock, CgroupSockAddr, CgroupSockopt,
-    CgroupSysctl, FEntry, FExit, KProbe, Lsm, PerfEvent, PerfEventScope, RawTracePoint,
-    SchedClassifier, SkLookup, SkMsg, SkSkb, SockOps, SocketFilter, TracePoint, UProbe, Xdp,
-    XdpFlags,
+    BtfTracePoint, CgroupAttachMode, CgroupDevice, CgroupSkb, CgroupSock, CgroupSockAddr,
+    CgroupSockopt, CgroupSysctl, FEntry, FExit, KProbe, Lsm, PerfEvent, PerfEventScope,
+    RawTracePoint, SchedClassifier, SkLookup, SkMsg, SkSkb, SockOps, SocketFilter, TracePoint,
+    UProbe, Xdp, XdpFlags,
     perf_event::{PerfTypeId, SamplePolicy, perf_sw_ids},
     tc,
 };

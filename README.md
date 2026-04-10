@@ -5,7 +5,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: Write tracing logic in familiar Nushell syntax
-- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, lsm, perf_event, socket_filter, xdp, tc, cgroup_skb, cgroup_device, cgroup_sock, sock_ops, sk_msg, sk_skb, sk_skb_parser, cgroup_sysctl, cgroup_sockopt, cgroup_sock_addr, sk_lookup, initial struct_ops object support
+- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tp_btf, tracepoint, uprobe, uretprobe, lsm, perf_event, socket_filter, xdp, tc, cgroup_skb, cgroup_device, cgroup_sock, sock_ops, sk_msg, sk_skb, sk_skb_parser, cgroup_sysctl, cgroup_sockopt, cgroup_sock_addr, sk_lookup, initial struct_ops object support
 - **Aggregations**: Count by key, histograms, timing measurements
 - **Event streaming**: Real-time event output via ring buffers
 - **Map sharing**: Share data between probes with `--pin`
@@ -13,7 +13,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Requirements
 
 - Linux kernel 4.18+ for the basic tracing paths
-- Linux kernel 5.5+ with `/sys/kernel/btf/vmlinux` for `fentry` and `fexit`
+- Linux kernel 5.5+ with `/sys/kernel/btf/vmlinux` for `fentry`, `fexit`, and `tp_btf`
 - Rust 2024 edition
 - Root access or CAP_BPF capability
 
@@ -72,6 +72,9 @@ ebpf attach -s 'fentry:do_sys_openat2' {|ctx| $ctx.arg2.flags | emit } | first 1
 
 # Capture the first ksys_read return value
 ebpf attach -s 'fexit:ksys_read' {|ctx| $ctx.retval | emit } | first 1
+
+# Count syscalls through a BTF-enabled raw tracepoint
+ebpf attach 'tp_btf:sys_enter' {|ctx| $ctx.arg1.orig_ax | count; 0 }
 
 # Dry-run an LSM file_open hook using BTF-backed hook arguments
 ebpf attach --dry-run 'lsm:file_open' {|ctx| $ctx.arg0.f_flags | count; 0 }
@@ -414,7 +417,7 @@ Typed `ctx.sk` currently exposes `bound_dev_if`, `family`, `type`, `protocol`, `
 | `optval` | Kernel pointer to the sockopt buffer | cgroup_sockopt |
 | `optval_end` | Kernel pointer to the end of the sockopt buffer | cgroup_sockopt |
 | `sockopt_retval` | Getsockopt return value on `get` hooks | cgroup_sockopt |
-| `arg0`-`argN` | Function arguments | kprobe, uprobe, fentry, fexit |
+| `arg0`-`argN` | Function arguments | kprobe, uprobe, fentry, fexit, tp_btf |
 | `retval` | Return value | kretprobe, uretprobe, fexit |
 
 Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/format`.
@@ -574,8 +577,9 @@ ports, and IPv6 word arrays. Its return contract is a raw integer parser
 result rather than a verdict alias surface, so ordinary examples should
 return `0` or another integer length.
 
-`kprobe` and `uprobe` expose `ctx.arg0`-`ctx.arg5` through `pt_regs`. `fentry` and
-`fexit` resolve `ctx.argN` and `ctx.retval` through kernel BTF. Scalar and pointer
+`kprobe` and `uprobe` expose `ctx.arg0`-`ctx.arg5` through `pt_regs`. `fentry`,
+`fexit`, and `tp_btf` resolve `ctx.argN` through kernel BTF, and `fexit` also
+exposes `ctx.retval`. Scalar and pointer
 trampoline values work directly. By-value trampoline args and pointer-backed
 trampoline args/returns can project scalar/pointer fields such as
 `ctx.arg0.some_field`; pointer-backed projections are lowered through

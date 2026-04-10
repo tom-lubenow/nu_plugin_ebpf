@@ -199,6 +199,14 @@ impl<'a> TypeInference<'a> {
                         ))
                     })?
             }
+            EbpfProgramType::TpBtf => KernelBtf::get()
+                .tp_btf_arg_type_info(&ctx.target, idx as usize)
+                .map_err(|e| {
+                    TypeError::new(format!(
+                        "failed to resolve ctx.arg{} for tp_btf:{}: {}",
+                        idx, ctx.target, e
+                    ))
+                })?,
             EbpfProgramType::Lsm => KernelBtf::get()
                 .lsm_hook_arg_type_info(&ctx.target, idx as usize)
                 .map_err(|e| {
@@ -230,6 +238,9 @@ impl<'a> TypeInference<'a> {
                             .unwrap_or("<unknown>"),
                         ctx.target
                     ),
+                    EbpfProgramType::TpBtf => {
+                        format!("ctx.arg{} is not available on tp_btf:{}", idx, ctx.target)
+                    }
                     _ => format!(
                         "ctx.arg{} is not available on {}:{}",
                         idx,
@@ -326,6 +337,14 @@ impl<'a> TypeInference<'a> {
                                     ))
                                 })?
                         }
+                        EbpfProgramType::TpBtf => KernelBtf::get()
+                            .tp_btf_arg(&ctx.target, *idx as usize)
+                            .map_err(|e| {
+                                TypeError::new(format!(
+                                    "failed to resolve ctx.arg{} for tp_btf:{}: {}",
+                                    idx, ctx.target, e
+                                ))
+                            })?,
                         EbpfProgramType::Lsm => KernelBtf::get()
                             .lsm_hook_arg(&ctx.target, *idx as usize)
                             .map_err(|e| {
@@ -356,6 +375,9 @@ impl<'a> TypeInference<'a> {
                                     .unwrap_or("<unknown>"),
                                 ctx.target
                             ),
+                            EbpfProgramType::TpBtf => {
+                                format!("ctx.arg{} is not available on tp_btf:{}", idx, ctx.target)
+                            }
                             _ => format!(
                                 "ctx.arg{} is not available on {}:{}",
                                 idx,

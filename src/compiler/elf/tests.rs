@@ -38,6 +38,16 @@ fn test_fentry_section_name() {
 }
 
 #[test]
+fn test_tp_btf_section_name() {
+    let prog = EbpfProgram::from_bytecode(EbpfProgramType::TpBtf, "sys_enter", "test", vec![]);
+    assert_eq!(
+        prog.section_name()
+            .expect("tp_btf section name should build"),
+        "tp_btf/sys_enter"
+    );
+}
+
+#[test]
 fn test_xdp_section_name() {
     let prog = EbpfProgram::from_bytecode(EbpfProgramType::Xdp, "lo", "test", vec![]);
     assert_eq!(
@@ -128,6 +138,19 @@ fn test_program_type_metadata_for_fexit() {
     assert_eq!(info.arg_access, ProgramValueAccess::Trampoline);
     assert_eq!(info.retval_access, ProgramValueAccess::Trampoline);
     assert!(!info.is_userspace);
+}
+
+#[test]
+fn test_program_type_metadata_for_tp_btf() {
+    let info = EbpfProgramType::TpBtf.info();
+    assert_eq!(info.canonical_prefix, "tp_btf");
+    assert_eq!(info.attach_kind, ProgramAttachKind::TpBtf);
+    assert_eq!(info.target_kind, ProgramTargetKind::BtfTracepoint);
+    assert_eq!(info.arg_access, ProgramValueAccess::Trampoline);
+    assert_eq!(info.retval_access, ProgramValueAccess::None);
+    assert!(info.supports_task_ctx_fields);
+    assert!(info.supports_cpu_ctx_field);
+    assert!(info.supports_timestamp_ctx_field);
 }
 
 #[test]
@@ -1473,6 +1496,12 @@ fn test_probe_context_rejects_tracepoint_field_on_raw_tracepoint() {
 #[test]
 fn test_probe_context_allows_arg_on_fentry() {
     let ctx = ProbeContext::new(EbpfProgramType::Fentry, "ksys_read");
+    assert!(ctx.ctx_field_access_error(&CtxField::Arg(0)).is_none());
+}
+
+#[test]
+fn test_probe_context_allows_arg_on_tp_btf() {
+    let ctx = ProbeContext::new(EbpfProgramType::TpBtf, "sys_enter");
     assert!(ctx.ctx_field_access_error(&CtxField::Arg(0)).is_none());
 }
 

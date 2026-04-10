@@ -535,6 +535,8 @@ pub enum EbpfProgramType {
     Fentry,
     /// BTF function exit probe (fexit)
     Fexit,
+    /// BTF-enabled raw tracepoint (`tp_btf`)
+    TpBtf,
     /// Tracepoint
     Tracepoint,
     /// Raw tracepoint
@@ -586,6 +588,7 @@ impl EbpfProgramType {
             EbpfProgramType::Kretprobe => &KRETPROBE_INFO,
             EbpfProgramType::Fentry => &FENTRY_INFO,
             EbpfProgramType::Fexit => &FEXIT_INFO,
+            EbpfProgramType::TpBtf => &TP_BTF_INFO,
             EbpfProgramType::Tracepoint => &TRACEPOINT_INFO,
             EbpfProgramType::RawTracepoint => &RAW_TRACEPOINT_INFO,
             EbpfProgramType::Uprobe => &UPROBE_INFO,
@@ -620,6 +623,7 @@ impl EbpfProgramType {
             EbpfProgramType::Kretprobe,
             EbpfProgramType::Fentry,
             EbpfProgramType::Fexit,
+            EbpfProgramType::TpBtf,
             EbpfProgramType::Tracepoint,
             EbpfProgramType::RawTracepoint,
             EbpfProgramType::Uprobe,
@@ -771,6 +775,7 @@ impl ProgramSpec {
             ProgramSpec::Kretprobe { .. } => EbpfProgramType::Kretprobe,
             ProgramSpec::Fentry { .. } => EbpfProgramType::Fentry,
             ProgramSpec::Fexit { .. } => EbpfProgramType::Fexit,
+            ProgramSpec::TpBtf { .. } => EbpfProgramType::TpBtf,
             ProgramSpec::Lsm { .. } => EbpfProgramType::Lsm,
             ProgramSpec::Tracepoint { .. } => EbpfProgramType::Tracepoint,
             ProgramSpec::RawTracepoint { .. } => EbpfProgramType::RawTracepoint,
@@ -1339,6 +1344,7 @@ pub enum ProgramAttachKind {
     Kretprobe,
     Fentry,
     Fexit,
+    TpBtf,
     Tracepoint,
     RawTracepoint,
     Uprobe,
@@ -1365,6 +1371,7 @@ pub enum ProgramAttachKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProgramTargetKind {
     KernelFunction,
+    BtfTracepoint,
     LsmHook,
     Tracepoint,
     RawTracepoint,
@@ -1569,6 +1576,7 @@ const KPROBE_SPEC_ALIASES: &[&str] = &["kprobe"];
 const KRETPROBE_SPEC_ALIASES: &[&str] = &["kretprobe"];
 const FENTRY_SPEC_ALIASES: &[&str] = &["fentry"];
 const FEXIT_SPEC_ALIASES: &[&str] = &["fexit"];
+const TP_BTF_SPEC_ALIASES: &[&str] = &["tp_btf"];
 const TRACEPOINT_SPEC_ALIASES: &[&str] = &["tracepoint"];
 const RAW_TRACEPOINT_SPEC_ALIASES: &[&str] = &["raw_tracepoint", "raw_tp"];
 const UPROBE_SPEC_ALIASES: &[&str] = &["uprobe"];
@@ -1708,6 +1716,33 @@ const FEXIT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::Trampoline,
+    supports_task_ctx_fields: true,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    packet_context_kind: None,
+    supports_packet_len_ctx_field: false,
+    supports_packet_data_ctx_fields: false,
+    supports_ingress_ifindex_ctx_field: false,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
+    supports_xdp_md_ctx_fields: false,
+    supports_stack_ctx_fields: true,
+    supports_tracepoint_fields: false,
+    is_userspace: false,
+};
+
+const TP_BTF_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::TpBtf,
+    canonical_prefix: "tp_btf",
+    spec_aliases: TP_BTF_SPEC_ALIASES,
+    section_prefix: "tp_btf",
+    section_uses_target: true,
+    attach_kind: ProgramAttachKind::TpBtf,
+    target_kind: ProgramTargetKind::BtfTracepoint,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
+    arg_access: ProgramValueAccess::Trampoline,
+    retval_access: ProgramValueAccess::None,
     supports_task_ctx_fields: true,
     supports_cpu_ctx_field: true,
     supports_timestamp_ctx_field: true,
@@ -2303,6 +2338,7 @@ const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "kretprobe",
     "fentry",
     "fexit",
+    "tp_btf",
     "lsm",
     "tracepoint",
     "raw_tracepoint",

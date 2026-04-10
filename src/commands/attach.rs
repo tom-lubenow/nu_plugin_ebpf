@@ -2105,7 +2105,7 @@ the probe point is hit.
 
 Supported attach types:
   - kprobe, kretprobe
-  - fentry, fexit
+  - fentry, fexit, tp_btf
   - tracepoint, raw_tracepoint
   - uprobe, uretprobe
   - lsm
@@ -2501,7 +2501,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.arg1 }    - Get function argument 1
     {|ctx| $ctx.retval }  - Get return value (kretprobe/uretprobe/fexit)
 
-    Note: kprobe/uprobe expose pt_regs-style ctx.arg0-5. fentry/fexit use
+    Note: kprobe/uprobe expose pt_regs-style ctx.arg0-5. fentry/fexit/tp_btf use
     kernel BTF. Scalar/pointer trampoline args and returns work directly.
     By-value trampoline args and pointer-backed trampoline args/returns
     support scalar/pointer field projection like ctx.arg0.some_field.
@@ -2683,6 +2683,7 @@ Requirements:
             "kprobe",
             "fentry",
             "fexit",
+            "tp_btf",
             "tracepoint",
             "uprobe",
             "uretprobe",
@@ -2731,6 +2732,11 @@ Requirements:
             Example {
                 example: "ebpf attach -s 'fexit:ksys_read' {|ctx| $ctx.retval | emit } | first 5",
                 description: "Capture the first 5 fexit return values using BTF-backed trampolines",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach --dry-run 'tp_btf:sys_enter' {|ctx| $ctx.arg1.orig_ax | count; 0 }",
+                description: "Dry-run a BTF-enabled raw tracepoint using typed trampoline args",
                 result: None,
             },
             Example {

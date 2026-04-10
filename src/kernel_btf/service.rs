@@ -246,14 +246,31 @@ impl KernelBtf {
         format!("bpf_lsm_{hook_name}")
     }
 
-    fn resolve_named_function<'a>(
+    fn tp_btf_type_name(tracepoint_name: &str) -> String {
+        format!("btf_trace_{tracepoint_name}")
+    }
+
+    fn resolve_named_trampoline_callable<'a>(
         btf: &'a Btf,
-        function_name: &str,
+        callable_name: &str,
     ) -> Result<&'a FlattenedType, BtfError> {
-        btf.get_types()
+        if let Some(ty) = btf
+            .get_types()
             .iter()
-            .find(|ty| ty.is_function && ty.name.as_deref() == Some(function_name))
-            .ok_or_else(|| BtfError::TypeNotFound(function_name.to_string()))
+            .find(|ty| ty.is_function && ty.name.as_deref() == Some(callable_name))
+        {
+            return Ok(ty);
+        }
+        let ty = btf
+            .get_type_by_name(callable_name)
+            .map_err(|_| BtfError::TypeNotFound(callable_name.to_string()))?;
+        if !matches!(ty.base_type, Type::FunctionProto(_)) {
+            return Err(BtfError::KernelBtfError(format!(
+                "callable '{}' is missing a function prototype in kernel BTF",
+                callable_name
+            )));
+        }
+        Ok(ty)
     }
 
     fn function_arg_index_by_name(
@@ -501,6 +518,17 @@ impl KernelBtf {
         self.function_trampoline_arg(&Self::lsm_hook_function_name(hook_name), arg_idx)
     }
 
+    /// Resolve a typed trampoline argument slot for a `tp_btf` tracepoint.
+    ///
+    /// Returns `Ok(None)` when the tracepoint exists but does not have that argument.
+    pub fn tp_btf_arg(
+        &self,
+        tracepoint_name: &str,
+        arg_idx: usize,
+    ) -> Result<Option<TrampolineValueSpec>, BtfError> {
+        self.function_trampoline_arg(&Self::tp_btf_type_name(tracepoint_name), arg_idx)
+    }
+
     /// Resolve a typed trampoline argument slot for a `struct_ops` callback.
     ///
     /// Returns `Ok(None)` when the callback exists but does not have that argument.
@@ -539,7 +567,7 @@ impl KernelBtf {
         arg_idx: usize,
     ) -> Result<Option<TypeInfo>, BtfError> {
         let btf = self.load_kernel_btf_for_query()?;
-        let ty = Self::resolve_named_function(&btf, function_name)?;
+        let ty = Self::resolve_named_trampoline_callable(&btf, function_name)?;
         let Type::FunctionProto(proto) = &ty.base_type else {
             return Err(BtfError::KernelBtfError(format!(
                 "function '{}' is missing a function prototype in kernel BTF",
@@ -575,6 +603,15 @@ impl KernelBtf {
         self.function_trampoline_arg_type_info(&Self::lsm_hook_function_name(hook_name), arg_idx)
     }
 
+    /// Resolve the exact kernel-BTF type for a `tp_btf` tracepoint argument.
+    pub fn tp_btf_arg_type_info(
+        &self,
+        tracepoint_name: &str,
+        arg_idx: usize,
+    ) -> Result<Option<TypeInfo>, BtfError> {
+        self.function_trampoline_arg_type_info(&Self::tp_btf_type_name(tracepoint_name), arg_idx)
+    }
+
     /// Resolve the argument index for a named trampoline function parameter.
     ///
     /// Returns `Ok(None)` when the function exists but does not have a
@@ -585,7 +622,7 @@ impl KernelBtf {
         arg_name: &str,
     ) -> Result<Option<usize>, BtfError> {
         let btf = self.load_kernel_btf_for_query()?;
-        let function_ty = Self::resolve_named_function(&btf, function_name)?;
+        let function_ty = Self::resolve_named_trampoline_callable(&btf, function_name)?;
         Self::function_arg_index_by_name(function_ty, function_name, arg_name)
     }
 
@@ -600,6 +637,18 @@ impl KernelBtf {
     ) -> Result<Option<usize>, BtfError> {
         self.function_trampoline_arg_index_by_name(
             &Self::lsm_hook_function_name(hook_name),
+            arg_name,
+        )
+    }
+
+    /// Resolve the argument index for a named `tp_btf` parameter.
+    pub fn tp_btf_arg_index_by_name(
+        &self,
+        tracepoint_name: &str,
+        arg_name: &str,
+    ) -> Result<Option<usize>, BtfError> {
+        self.function_trampoline_arg_index_by_name(
+            &Self::tp_btf_type_name(tracepoint_name),
             arg_name,
         )
     }
@@ -748,11 +797,7 @@ impl KernelBtf {
     ) -> Result<Option<TypeInfo>, BtfError> {
         let btf = self.load_kernel_btf_for_query()?;
         let function_ret_type_ids = self.load_kfunc_return_type_id_map().unwrap_or_default();
-        let ty = btf
-            .get_types()
-            .iter()
-            .find(|ty| ty.is_function && ty.name.as_deref() == Some(function_name))
-            .ok_or_else(|| BtfError::TypeNotFound(function_name.to_string()))?;
+        let ty = Self::resolve_named_trampoline_callable(&btf, function_name)?;
         let Some(ret_type_id) = function_ret_type_ids.get(&ty.type_id).copied() else {
             return Ok(None);
         };
@@ -778,6 +823,25 @@ impl KernelBtf {
                 return Err(BtfError::KernelBtfError(format!(
                     "fentry target '{}' uses unsupported trampoline argument {}: {}",
                     function_name,
+                    idx,
+                    arg.unsupported_reason
+                        .as_deref()
+                        .unwrap_or("unknown layout")
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Validate that a `tp_btf` target is attachable.
+    pub fn validate_tp_btf_target(&self, tracepoint_name: &str) -> Result<(), BtfError> {
+        let callable_name = Self::tp_btf_type_name(tracepoint_name);
+        let layout = self.function_trampoline_layout(&callable_name)?;
+        for (idx, arg) in layout.args.iter().enumerate() {
+            if arg.value.is_none() {
+                return Err(BtfError::KernelBtfError(format!(
+                    "tp_btf target '{}' uses unsupported argument {}: {}",
+                    tracepoint_name,
                     idx,
                     arg.unsupported_reason
                         .as_deref()
@@ -861,11 +925,7 @@ impl KernelBtf {
         field_path: &[TrampolineFieldSelector],
     ) -> Result<Option<TrampolineFieldProjection>, BtfError> {
         let btf = self.load_kernel_btf_for_query()?;
-        let ty = btf
-            .get_types()
-            .iter()
-            .find(|ty| ty.is_function && ty.name.as_deref() == Some(function_name))
-            .ok_or_else(|| BtfError::TypeNotFound(function_name.to_string()))?;
+        let ty = Self::resolve_named_trampoline_callable(&btf, function_name)?;
         let Type::FunctionProto(proto) = &ty.base_type else {
             return Err(BtfError::KernelBtfError(format!(
                 "function '{}' is missing a function prototype in kernel BTF",
@@ -896,6 +956,20 @@ impl KernelBtf {
     ) -> Result<Option<TrampolineFieldProjection>, BtfError> {
         self.function_trampoline_arg_field(
             &Self::lsm_hook_function_name(hook_name),
+            arg_idx,
+            field_path,
+        )
+    }
+
+    /// Resolve a named field path within a `tp_btf` tracepoint argument.
+    pub fn tp_btf_arg_field(
+        &self,
+        tracepoint_name: &str,
+        arg_idx: usize,
+        field_path: &[TrampolineFieldSelector],
+    ) -> Result<Option<TrampolineFieldProjection>, BtfError> {
+        self.function_trampoline_arg_field(
+            &Self::tp_btf_type_name(tracepoint_name),
             arg_idx,
             field_path,
         )
@@ -945,11 +1019,7 @@ impl KernelBtf {
     ) -> Result<Option<TrampolineFieldProjection>, BtfError> {
         let btf = self.load_kernel_btf_for_query()?;
         let function_ret_type_ids = self.load_kfunc_return_type_id_map().unwrap_or_default();
-        let ty = btf
-            .get_types()
-            .iter()
-            .find(|ty| ty.is_function && ty.name.as_deref() == Some(function_name))
-            .ok_or_else(|| BtfError::TypeNotFound(function_name.to_string()))?;
+        let ty = Self::resolve_named_trampoline_callable(&btf, function_name)?;
         let Some(ret_type_id) = function_ret_type_ids.get(&ty.type_id).copied() else {
             return Ok(None);
         };
@@ -1066,11 +1136,7 @@ impl KernelBtf {
     ) -> Result<TrampolineFunctionLayout, BtfError> {
         let btf = self.load_kernel_btf_for_query()?;
         let function_ret_type_ids = self.load_kfunc_return_type_id_map().unwrap_or_default();
-        let ty = btf
-            .get_types()
-            .iter()
-            .find(|ty| ty.is_function && ty.name.as_deref() == Some(function_name))
-            .ok_or_else(|| BtfError::TypeNotFound(function_name.to_string()))?;
+        let ty = Self::resolve_named_trampoline_callable(&btf, function_name)?;
         let Type::FunctionProto(proto) = &ty.base_type else {
             return Err(BtfError::KernelBtfError(format!(
                 "function '{}' is missing a function prototype in kernel BTF",
