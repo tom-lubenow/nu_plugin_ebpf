@@ -130,6 +130,41 @@ impl<'a> HirToMirLowering<'a> {
         )))
     }
 
+    fn validate_socket_projection_members(
+        &self,
+        members: &[PathMember],
+    ) -> Result<(), CompileError> {
+        let Some(ctx) = self.probe_ctx else {
+            return Ok(());
+        };
+        if !matches!(ctx.probe_type, EbpfProgramType::CgroupSock) {
+            return Ok(());
+        }
+
+        let Some(PathMember::String { val, .. }) = members.first() else {
+            return Ok(());
+        };
+
+        let requires_post_bind = matches!(
+            val.as_str(),
+            "src_ip4" | "src_ip6" | "src_port" | "dst_port" | "dst_ip4" | "dst_ip6"
+        );
+        if !requires_post_bind {
+            return Ok(());
+        }
+
+        let is_post_bind =
+            ctx.target.ends_with(":post_bind4") || ctx.target.ends_with(":post_bind6");
+        if is_post_bind {
+            return Ok(());
+        }
+
+        Err(CompileError::UnsupportedInstruction(format!(
+            "ctx.sk.{} is only available on cgroup_sock post_bind4/post_bind6 hooks",
+            val
+        )))
+    }
+
     fn mutable_string_global_repr(value: &Value) -> Option<(MirType, Vec<u8>, usize)> {
         let bytes = match value {
             Value::String { val, .. } => Some(val.as_bytes()),
@@ -4503,6 +4538,7 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             if matches!(ctx_field, CtxField::Socket) {
+                self.validate_socket_projection_members(remaining_members)?;
                 let base_ty = MirType::Ptr {
                     pointee: Box::new(Self::synthetic_bpf_sock_type()),
                     address_space: AddressSpace::Kernel,

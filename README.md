@@ -468,7 +468,9 @@ sampling. The initial surface uses the ordinary helper-backed fields like
 `ctx.mark`, and `ctx.priority`, and closures can return `"allow"` /
 `"deny"` instead of raw `1` / `0` result codes. It also exposes a typed
 `ctx.sk` pointer for ordinary socket projection such as `$ctx.sk.family`,
-`$ctx.sk.src_port`, `$ctx.sk.state`, or `$ctx.sk.mark`.
+`$ctx.sk.src_port`, `$ctx.sk.state`, or `$ctx.sk.mark`. On
+`cgroup_sock`, the socket-address projection fields such as
+`$ctx.sk.src_port` are only available on `post_bind4` / `post_bind6`.
 
 `cgroup_device` currently attaches to a cgroup path such as
 `/sys/fs/cgroup`. It exposes `ctx.cpu`, `ctx.ktime`, `ctx.access_type`,

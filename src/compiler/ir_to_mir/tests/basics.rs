@@ -1841,6 +1841,59 @@ fn test_lower_cgroup_sock_ctx_socket_family_field() {
 }
 
 #[test]
+fn test_lower_cgroup_sock_post_bind_ctx_socket_src_port_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("sk"), string_member("src_port")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock post_bind4 ctx.sk.src_port should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Socket,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_cgroup_sock_create_ctx_socket_src_port_rejected() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("sk"), string_member("src_port")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("cgroup_sock sock_create ctx.sk.src_port should be rejected");
+
+    let msg = err.to_string();
+    assert!(
+        msg.contains(
+            "ctx.sk.src_port is only available on cgroup_sock post_bind4/post_bind6 hooks"
+        ),
+        "unexpected error: {msg}"
+    );
+}
+
+#[test]
 fn test_lower_sk_msg_ctx_socket_state_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("sk"), string_member("state")],

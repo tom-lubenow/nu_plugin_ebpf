@@ -2262,7 +2262,9 @@ Context parameter syntax (recommended):
     Note: cgroup_sock closures can return `allow` or `deny` instead of
     raw `1`/`0` result codes. Initial support covers `sock_create`,
     `sock_release`, `post_bind4`, and `post_bind6` with the scalar fields
-    above; address fields are not surfaced yet.
+    above. On `cgroup_sock`, socket-address projection fields through
+    `ctx.sk` such as `ctx.sk.src_port` are only available on `post_bind4`
+    and `post_bind6`.
 
   cgroup_device fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
