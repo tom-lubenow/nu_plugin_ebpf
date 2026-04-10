@@ -55,6 +55,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::Redirect)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_redirect_peer"),
+        Some(BpfHelper::RedirectPeer)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("ktime_get_boot_ns"),
         Some(BpfHelper::KtimeGetBootNs)
     ));
@@ -208,6 +212,17 @@ fn test_helper_signatures_prandom_boot_and_lirc_helpers() {
 fn test_helper_signature_redirect() {
     let sig = HelperSignature::for_id(BpfHelper::Redirect as u32)
         .expect("expected bpf_redirect helper signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signature_redirect_peer() {
+    let sig = HelperSignature::for_id(BpfHelper::RedirectPeer as u32)
+        .expect("expected bpf_redirect_peer helper signature");
     assert_eq!(sig.min_args, 2);
     assert_eq!(sig.max_args, 2);
     assert_eq!(sig.arg_kind(0), HelperArgKind::Scalar);

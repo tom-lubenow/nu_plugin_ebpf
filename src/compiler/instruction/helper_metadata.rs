@@ -14,6 +14,7 @@ impl BpfHelper {
             7 => Some(Self::GetPrandomU32),
             8 => Some(Self::GetSmpProcessorId),
             23 => Some(Self::Redirect),
+            155 => Some(Self::RedirectPeer),
             12 => Some(Self::TailCall),
             14 => Some(Self::GetCurrentPidTgid),
             15 => Some(Self::GetCurrentUidGid),
@@ -121,6 +122,12 @@ impl BpfHelper {
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::Redirect => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::RedirectPeer => HelperSignature {
                 min_args: 2,
                 max_args: 2,
                 arg_kinds: [S, S, S, S, S],
@@ -944,6 +951,11 @@ impl BpfHelper {
                 ringbuf_record_arg0: false,
             },
             BpfHelper::Redirect => HelperSemantics {
+                ptr_arg_rules: &[],
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::RedirectPeer => HelperSemantics {
                 ptr_arg_rules: &[],
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,

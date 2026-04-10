@@ -391,6 +391,20 @@ impl<'a> TypeInference<'a> {
                 ));
             }
         }
+
+        if matches!(helper, BpfHelper::RedirectPeer) {
+            let flags_ok = args.get(1).is_some_and(|value| {
+                matches!(
+                    self.value_range_for(value, value_ranges),
+                    ValueRange::Known { min: 0, max: 0 }
+                )
+            });
+            if !flags_ok {
+                errors.push(TypeError::new(
+                    "helper 'bpf_redirect_peer' requires arg1 = 0",
+                ));
+            }
+        }
     }
 
     pub(super) fn validate_kfunc_semantics(

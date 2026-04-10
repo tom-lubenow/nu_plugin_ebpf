@@ -70,6 +70,8 @@ pub enum BpfHelper {
     GetSmpProcessorId = 8,
     /// long bpf_redirect(ifindex, flags)
     Redirect = 23,
+    /// long bpf_redirect_peer(ifindex, flags)
+    RedirectPeer = 155,
     /// long bpf_tail_call(ctx, prog_array_map, index)
     TailCall = 12,
     /// u64 bpf_get_current_pid_tgid(void)
@@ -182,6 +184,7 @@ impl BpfHelper {
             BpfHelper::GetPrandomU32 => "bpf_get_prandom_u32",
             BpfHelper::GetSmpProcessorId => "bpf_get_smp_processor_id",
             BpfHelper::Redirect => "bpf_redirect",
+            BpfHelper::RedirectPeer => "bpf_redirect_peer",
             BpfHelper::TailCall => "bpf_tail_call",
             BpfHelper::GetCurrentPidTgid => "bpf_get_current_pid_tgid",
             BpfHelper::GetCurrentUidGid => "bpf_get_current_uid_gid",
@@ -251,6 +254,7 @@ impl BpfHelper {
             "get_prandom_u32" => Some(Self::GetPrandomU32),
             "get_smp_processor_id" => Some(Self::GetSmpProcessorId),
             "redirect" => Some(Self::Redirect),
+            "redirect_peer" => Some(Self::RedirectPeer),
             "tail_call" => Some(Self::TailCall),
             "get_current_pid_tgid" => Some(Self::GetCurrentPidTgid),
             "get_current_uid_gid" => Some(Self::GetCurrentUidGid),

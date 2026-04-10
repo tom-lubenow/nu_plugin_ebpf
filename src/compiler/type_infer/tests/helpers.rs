@@ -309,6 +309,72 @@ fn test_infer_redirect_helper_in_tc_program() {
 }
 
 #[test]
+fn test_type_error_redirect_peer_helper_rejects_tc_egress() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RedirectPeer as u32,
+        args: vec![MirValue::Const(1), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_redirect_peer to be rejected on tc egress");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect_peer' is only valid in tc ingress programs")
+    }));
+}
+
+#[test]
+fn test_type_error_redirect_peer_helper_requires_zero_flags() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RedirectPeer as u32,
+        args: vec![MirValue::Const(1), MirValue::Const(1)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_redirect_peer flags to require zero");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect_peer' requires arg1 = 0")
+    }));
+}
+
+#[test]
+fn test_infer_redirect_peer_helper_in_tc_ingress_program() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RedirectPeer as u32,
+        args: vec![MirValue::Const(1), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected tc ingress bpf_redirect_peer helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
 fn test_type_error_helper_get_current_comm_rejects_small_stack_slot() {
     let mut func = make_test_function();
     let buf_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
