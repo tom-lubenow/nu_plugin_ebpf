@@ -13,7 +13,7 @@ use aya::programs::{
     TcAttachType,
 };
 use aya::util::online_cpus;
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::Path;
 
 impl UprobeTarget {
@@ -329,45 +329,56 @@ impl SockOpsTarget {
 }
 
 impl SocketFilterTarget {
-    /// Parse a socket_filter target string of the form `udp4:127.0.0.1:31337`.
+    /// Parse a socket_filter target string of the form `udp4:127.0.0.1:31337`
+    /// or `udp6:[::1]:31337`.
     pub fn parse(target: &str) -> Result<Self, LoadError> {
-        let mut parts = target.split(':');
-        let socket_kind = parts.next().ok_or_else(|| {
+        const EXPECTED: &str = "udp4:IP:PORT or udp6:[IPV6]:PORT";
+        let (socket_kind, rest) = target.split_once(':').ok_or_else(|| {
             LoadError::Load(format!(
-                "Invalid socket_filter target: {target}. Expected format: udp4:IP:PORT"
+                "Invalid socket_filter target: {target}. Expected format: {EXPECTED}"
             ))
         })?;
-        let bind_ip = parts.next().ok_or_else(|| {
+        let (bind_ip, bind_port) = rest.rsplit_once(':').ok_or_else(|| {
             LoadError::Load(format!(
-                "Invalid socket_filter target: {target}. Expected format: udp4:IP:PORT"
+                "Invalid socket_filter target: {target}. Expected format: {EXPECTED}"
             ))
         })?;
-        let bind_port = parts.next().ok_or_else(|| {
-            LoadError::Load(format!(
-                "Invalid socket_filter target: {target}. Expected format: udp4:IP:PORT"
-            ))
-        })?;
-
-        if parts.next().is_some() {
-            return Err(LoadError::Load(format!(
-                "Invalid socket_filter target: {target}. Expected format: udp4:IP:PORT"
-            )));
-        }
 
         let socket_kind = match socket_kind {
             "udp4" => SocketFilterSocketKind::Udp4,
+            "udp6" => SocketFilterSocketKind::Udp6,
             _ => {
                 return Err(LoadError::Load(format!(
-                    "Unsupported socket_filter socket kind: {socket_kind}. Expected udp4"
+                    "Unsupported socket_filter socket kind: {socket_kind}. Expected udp4 or udp6"
                 )));
             }
         };
 
-        bind_ip.parse::<Ipv4Addr>().map_err(|e| {
-            LoadError::Load(format!(
-                "Invalid socket_filter IPv4 bind address '{bind_ip}': {e}"
-            ))
-        })?;
+        let bind_ip = match socket_kind {
+            SocketFilterSocketKind::Udp4 => {
+                bind_ip.parse::<Ipv4Addr>().map_err(|e| {
+                    LoadError::Load(format!(
+                        "Invalid socket_filter IPv4 bind address '{bind_ip}': {e}"
+                    ))
+                })?;
+                bind_ip.to_string()
+            }
+            SocketFilterSocketKind::Udp6 => {
+                let inner = bind_ip.strip_prefix('[').and_then(|s| s.strip_suffix(']')).ok_or_else(
+                    || {
+                        LoadError::Load(format!(
+                            "Invalid socket_filter IPv6 bind address '{bind_ip}': expected brackets like [::1]"
+                        ))
+                    },
+                )?;
+                inner.parse::<Ipv6Addr>().map_err(|e| {
+                    LoadError::Load(format!(
+                        "Invalid socket_filter IPv6 bind address '{inner}': {e}"
+                    ))
+                })?;
+                inner.to_string()
+            }
+        };
 
         let bind_port = bind_port.parse::<u16>().map_err(|e| {
             LoadError::Load(format!("Invalid socket_filter port '{bind_port}': {e}"))
@@ -380,7 +391,7 @@ impl SocketFilterTarget {
 
         Ok(Self {
             socket_kind,
-            bind_ip: bind_ip.to_string(),
+            bind_ip,
             bind_port,
         })
     }
