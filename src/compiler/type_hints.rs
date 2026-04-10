@@ -216,14 +216,14 @@ fn synthetic_bpf_sock_type() -> MirType {
             StructField {
                 name: "state".to_string(),
                 ty: MirType::U32,
-                offset: 68,
+                offset: 72,
                 synthetic: false,
                 bitfield: None,
             },
             StructField {
                 name: "rx_queue_mapping".to_string(),
                 ty: MirType::I32,
-                offset: 72,
+                offset: 76,
                 synthetic: false,
                 bitfield: None,
             },
@@ -698,6 +698,25 @@ pub(crate) fn recover_optimized_mir_type_hints(
 mod tests {
     use super::*;
     use crate::compiler::mir::StackSlotKind;
+
+    #[test]
+    fn test_synthetic_bpf_sock_type_uses_uapi_offsets() {
+        let MirType::Struct { fields, .. } = synthetic_bpf_sock_type() else {
+            panic!("synthetic_bpf_sock_type should return a struct");
+        };
+
+        assert!(fields.iter().any(|field| field.name == "src_port"
+            && field.ty == MirType::U32
+            && field.offset == 44));
+        assert!(
+            fields.iter().any(|field| field.name == "state"
+                && field.ty == MirType::U32
+                && field.offset == 72)
+        );
+        assert!(fields.iter().any(|field| field.name == "rx_queue_mapping"
+            && field.ty == MirType::I32
+            && field.offset == 76));
+    }
 
     #[test]
     fn test_recover_optimized_function_type_hints_overrides_stale_hint_chain() {

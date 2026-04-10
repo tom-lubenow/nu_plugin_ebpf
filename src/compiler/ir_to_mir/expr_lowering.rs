@@ -85,14 +85,14 @@ impl<'a> HirToMirLowering<'a> {
                 StructField {
                     name: "state".to_string(),
                     ty: MirType::U32,
-                    offset: 68,
+                    offset: 72,
                     synthetic: false,
                     bitfield: None,
                 },
                 StructField {
                     name: "rx_queue_mapping".to_string(),
                     ty: MirType::I32,
-                    offset: 72,
+                    offset: 76,
                     synthetic: false,
                     bitfield: None,
                 },
