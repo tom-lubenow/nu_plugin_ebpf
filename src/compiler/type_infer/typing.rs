@@ -540,6 +540,7 @@ impl<'a> TypeInference<'a> {
             | CtxField::SockOpsBytesReceived
             | CtxField::SockOpsBytesAcked
             | CtxField::SockOpsSkbHwtstamp => HMType::U64,
+            CtxField::SocketUid => HMType::U32,
 
             CtxField::Arg(idx) => {
                 if let Some(ty) = self.trampoline_arg_type(*idx).ok().flatten() {

@@ -1388,6 +1388,7 @@ impl<'a> HirToMirLowering<'a> {
             "value" => CtxField::LircValue,
             "mode" => CtxField::LircMode,
             "socket_cookie" => CtxField::SocketCookie,
+            "socket_uid" => CtxField::SocketUid,
             "netns_cookie" => CtxField::NetnsCookie,
             "args" => CtxField::SockOpsArgs,
             "snd_cwnd" => CtxField::SockOpsSndCwnd,
@@ -5197,6 +5198,7 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::SockOpsBytesReceived
             | CtxField::SockOpsBytesAcked
             | CtxField::SockOpsSkbHwtstamp => (MirType::U64, Some(MirType::U64)),
+            CtxField::SocketUid => (MirType::U32, Some(MirType::U32)),
             CtxField::SockoptLevel
             | CtxField::SockoptOptname
             | CtxField::SockoptOptlen

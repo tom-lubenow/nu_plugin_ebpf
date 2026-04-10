@@ -1749,6 +1749,12 @@ fn test_probe_context_allows_socket_cookie_on_sock_ops() {
 }
 
 #[test]
+fn test_probe_context_allows_socket_uid_on_tc() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    assert!(ctx.ctx_field_access_error(&CtxField::SocketUid).is_none());
+}
+
+#[test]
 fn test_probe_context_allows_packet_data_fields_on_sock_ops() {
     let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
     assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
@@ -1789,6 +1795,17 @@ fn test_probe_context_rejects_netns_cookie_on_sk_lookup() {
         .expect("expected netns_cookie field access error");
     assert!(err.contains(
         "ctx.netns_cookie is only available on socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_msg, and sock_ops programs"
+    ));
+}
+
+#[test]
+fn test_probe_context_rejects_socket_uid_on_sk_lookup() {
+    let ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::SocketUid)
+        .expect("expected socket_uid field access error");
+    assert!(err.contains(
+        "ctx.socket_uid is only available on socket_filter, tc, cgroup_skb, and sk_skb programs"
     ));
 }
 

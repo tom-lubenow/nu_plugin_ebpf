@@ -367,6 +367,7 @@ fn recover_ctx_field_hint(
         | CtxField::LookupCookie
         | CtxField::SocketCookie
         | CtxField::NetnsCookie => Some(MirType::U64),
+        CtxField::SocketUid => Some(MirType::U32),
         CtxField::Comm => Some(MirType::Ptr {
             pointee: Box::new(MirType::Array {
                 elem: Box::new(MirType::U8),

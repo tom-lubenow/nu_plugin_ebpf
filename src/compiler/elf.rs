@@ -1130,6 +1130,20 @@ impl ProbeContext {
                     field.display_name()
                 ))
             }
+            CtxField::SocketUid
+                if !matches!(
+                    self.probe_type,
+                    EbpfProgramType::SocketFilter
+                        | EbpfProgramType::Tc
+                        | EbpfProgramType::CgroupSkb
+                        | EbpfProgramType::SkSkb
+                ) =>
+            {
+                Some(format!(
+                    "ctx.{} is only available on socket_filter, tc, cgroup_skb, and sk_skb programs",
+                    field.display_name()
+                ))
+            }
             CtxField::NetnsCookie
                 if !matches!(
                     self.probe_type,

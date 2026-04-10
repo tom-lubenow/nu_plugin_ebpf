@@ -1623,6 +1623,50 @@ fn test_compile_sk_msg_netns_cookie_load_calls_helper() {
 }
 
 #[test]
+fn test_compile_socket_filter_socket_uid_load_calls_helper() {
+    let ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::LoadCtxField {
+            dst,
+            field: CtxField::SocketUid,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_ALU64 | opcode::BPF_MOV | opcode::BPF_X
+            && insn.dst_reg == EbpfReg::R1.as_u8()
+            && insn.src_reg == EbpfReg::R9.as_u8()
+    }));
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_JMP | opcode::BPF_CALL
+            && insn.imm == BpfHelper::GetSocketUid as i32
+    }));
+}
+
+#[test]
 fn test_compile_kprobe_cgroup_id_load_calls_helper() {
     let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
 

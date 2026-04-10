@@ -63,6 +63,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::RedirectPeer)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_get_socket_uid"),
+        Some(BpfHelper::GetSocketUid)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("ktime_get_boot_ns"),
         Some(BpfHelper::KtimeGetBootNs)
     ));
@@ -146,6 +150,16 @@ fn test_helper_signature_map_queue_helpers() {
 fn test_helper_signature_get_socket_cookie() {
     let sig = HelperSignature::for_id(BpfHelper::GetSocketCookie as u32)
         .expect("expected bpf_get_socket_cookie helper signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signature_get_socket_uid() {
+    let sig = HelperSignature::for_id(BpfHelper::GetSocketUid as u32)
+        .expect("expected bpf_get_socket_uid helper signature");
     assert_eq!(sig.min_args, 1);
     assert_eq!(sig.max_args, 1);
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);

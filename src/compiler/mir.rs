@@ -496,6 +496,8 @@ pub enum CtxField {
     LircMode,
     /// Stable kernel socket cookie for supported socket-backed contexts
     SocketCookie,
+    /// Owner UID of the socket associated with the current skb
+    SocketUid,
     /// Stable kernel network-namespace cookie for supported socket-backed contexts
     NetnsCookie,
     /// bpf_cgroup_dev_ctx::access_type
@@ -652,6 +654,7 @@ impl CtxField {
             CtxField::LircValue => "value".to_string(),
             CtxField::LircMode => "mode".to_string(),
             CtxField::SocketCookie => "socket_cookie".to_string(),
+            CtxField::SocketUid => "socket_uid".to_string(),
             CtxField::NetnsCookie => "netns_cookie".to_string(),
             CtxField::DeviceAccessType => "access_type".to_string(),
             CtxField::DeviceMajor => "major".to_string(),

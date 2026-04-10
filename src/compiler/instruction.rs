@@ -86,6 +86,8 @@ pub enum BpfHelper {
     GetCurrentComm = 16,
     /// u64 bpf_get_socket_cookie(ctx)
     GetSocketCookie = 46,
+    /// u32 bpf_get_socket_uid(ctx)
+    GetSocketUid = 47,
     /// u64 bpf_get_netns_cookie(ctx)
     GetNetnsCookie = 122,
     /// u64 bpf_ktime_get_boot_ns(void)
@@ -194,6 +196,7 @@ impl BpfHelper {
             BpfHelper::GetCurrentCgroupId => "bpf_get_current_cgroup_id",
             BpfHelper::GetCurrentComm => "bpf_get_current_comm",
             BpfHelper::GetSocketCookie => "bpf_get_socket_cookie",
+            BpfHelper::GetSocketUid => "bpf_get_socket_uid",
             BpfHelper::GetNetnsCookie => "bpf_get_netns_cookie",
             BpfHelper::KtimeGetBootNs => "bpf_ktime_get_boot_ns",
             BpfHelper::PerfEventOutput => "bpf_perf_event_output",
@@ -265,6 +268,7 @@ impl BpfHelper {
             "get_current_cgroup_id" => Some(Self::GetCurrentCgroupId),
             "get_current_comm" => Some(Self::GetCurrentComm),
             "get_socket_cookie" => Some(Self::GetSocketCookie),
+            "get_socket_uid" => Some(Self::GetSocketUid),
             "get_netns_cookie" => Some(Self::GetNetnsCookie),
             "ktime_get_boot_ns" => Some(Self::KtimeGetBootNs),
             "perf_event_output" => Some(Self::PerfEventOutput),

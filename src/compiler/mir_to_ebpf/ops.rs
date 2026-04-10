@@ -789,6 +789,14 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }
+            CtxField::SocketUid => {
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R9));
+                self.instructions
+                    .push(EbpfInsn::call(BpfHelper::GetSocketUid));
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
+            }
             CtxField::NetnsCookie => {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R9));

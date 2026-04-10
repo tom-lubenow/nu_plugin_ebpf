@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 72
+const TOTAL_STEPS = 73
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -1132,7 +1132,14 @@ step 71 "tp_btf sys_enter trampoline arg" {
     } { trigger-true } "tp_btf sys_enter counter"
 }
 
-step 72 "verify no leaked probes" {
+step 72 "tc loopback socket_uid counter" {
+    count-at-least-one "tc:lo:ingress" {|ctx|
+        $ctx.socket_uid | count
+        'ok'
+    } { trigger-ping-loopback } "tc socket_uid counter"
+}
+
+step 73 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"
