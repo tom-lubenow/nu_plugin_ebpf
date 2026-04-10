@@ -1086,6 +1086,46 @@ fn test_compile_sk_skb_remote_port_load_uses_be32_normalize() {
 }
 
 #[test]
+fn test_compile_socket_filter_mark_load_uses_u32_ctx_word() {
+    let ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::LoadCtxField {
+            dst,
+            field: CtxField::SockMark,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_LDX | opcode::BPF_W | opcode::BPF_MEM
+            && insn.src_reg == EbpfReg::R9.as_u8()
+            && insn.offset == 8
+    }));
+}
+
+#[test]
 fn test_compile_sk_lookup_protocol_load_uses_u32_ctx_word() {
     let ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
 

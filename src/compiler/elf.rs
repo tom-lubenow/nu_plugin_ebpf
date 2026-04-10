@@ -1055,11 +1055,19 @@ impl ProbeContext {
                     field.display_name()
                 ))
             }
-            CtxField::BoundDevIf | CtxField::SockMark | CtxField::SockPriority
-                if !matches!(self.probe_type, EbpfProgramType::CgroupSock) =>
+            CtxField::BoundDevIf if !matches!(self.probe_type, EbpfProgramType::CgroupSock) =>
             {
                 Some(format!(
                     "ctx.{} is only available on cgroup_sock programs",
+                    field.display_name()
+                ))
+            }
+            CtxField::SockMark | CtxField::SockPriority
+                if !matches!(self.probe_type, EbpfProgramType::CgroupSock)
+                    && self.probe_type.packet_context_kind() != Some(PacketContextKind::SkBuff) =>
+            {
+                Some(format!(
+                    "ctx.{} is only available on cgroup_sock, socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
                     field.display_name()
                 ))
             }

@@ -2155,6 +2155,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.data }    - Get packet data pointer
     {|ctx| $ctx.data_end } - Get packet end pointer
     {|ctx| $ctx.ingress_ifindex } - Get ingress interface index
+    {|ctx| $ctx.mark }    - Get the skb mark on skb-backed packet programs
+    {|ctx| $ctx.priority } - Get the skb priority on skb-backed packet programs
     {|ctx| ($ctx.data | get 0) } - Read the first packet byte with an auto-generated data_end guard
     {|ctx| $ctx.data.u16be.6 } - Read a big-endian 16-bit packet scalar (here: bytes 12..13)
     {|ctx| $ctx.data.eth.ethertype } - Read the Ethernet ethertype through a typed packet header view
@@ -2305,6 +2307,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.data }    - Get the packet data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet access
     {|ctx| $ctx.ingress_ifindex } - Get the ingress interface index
+    {|ctx| $ctx.mark }    - Get the skb mark
+    {|ctx| $ctx.priority } - Get the skb priority
     {|ctx| $ctx.family }  - Get socket family
     {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order
     {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words
@@ -2327,6 +2331,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.data }    - Get the packet data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet access
     {|ctx| $ctx.ingress_ifindex } - Get the ingress interface index
+    {|ctx| $ctx.mark }    - Get the skb mark
+    {|ctx| $ctx.priority } - Get the skb priority
     {|ctx| $ctx.family }  - Get socket family
     {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order
     {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words

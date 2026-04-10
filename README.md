@@ -316,8 +316,8 @@ The closure receives a context parameter with these fields:
 | `sock_type` | Socket type | cgroup_sock, cgroup_sock_addr |
 | `protocol` | Socket protocol | cgroup_sock, cgroup_sock_addr, sk_lookup |
 | `bound_dev_if` | Bound device ifindex | cgroup_sock |
-| `mark` | Socket mark | cgroup_sock |
-| `priority` | Socket priority | cgroup_sock |
+| `mark` | Socket or skb mark | cgroup_sock, socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `priority` | Socket or skb priority | cgroup_sock, socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `op` | sock_ops callback opcode | sock_ops |
 | `args` | sock_ops callback argument words as four host-order `u32` values | sock_ops |
 | `is_fullsock` | Whether the context has a full socket | sock_ops |
@@ -363,7 +363,9 @@ and `tcp` are also available, for example `$ctx.data.eth.ethertype` or
 `$ctx.data.eth.payload.ipv4.payload` skips a runtime-sized IPv4 header using
 the IHL nibble, and `$ctx.data.eth.payload.ipv4.payload.tcp.payload` skips a
 runtime-sized TCP header using the data offset. `xdp` additionally exposes `ctx.ifindex`,
-`ctx.rx_queue_index`, and `ctx.egress_ifindex`. The initial `socket_filter`
+`ctx.rx_queue_index`, and `ctx.egress_ifindex`. The skb-backed packet
+contexts (`socket_filter`, `tc`, `cgroup_skb`, `sk_skb`, and
+`sk_skb_parser`) also expose `ctx.mark` and `ctx.priority`. The initial `socket_filter`
 surface uses targets like `socket_filter:udp4:127.0.0.1:31337`, which create
 and keep open a bound UDP4 receive socket while attached. `socket_filter`
 return values are snapshot lengths: return `0` to drop the packet or a
@@ -453,23 +455,25 @@ work.
 `sk_skb` currently emits `sk_skb/stream_verdict` programs attached to a
 pinned sockmap or sockhash path such as `/sys/fs/bpf/demo_sockmap`. It
 exposes `ctx.cpu`, `ctx.ktime`, `ctx.packet_len`, `ctx.data`,
-`ctx.data_end`, `ctx.ingress_ifindex`, `ctx.family`, `ctx.remote_ip4`,
-`ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`, `ctx.local_ip6`, and
-`ctx.local_port` through the existing skb-backed packet model, so ordinary
-guarded packet reads like `($ctx.data | get 0)` work. The IPv4 address and
-remote port fields are normalized to host byte order, and the IPv6 fields are
-exposed as fixed arrays of four host-order `u32` words so ordinary Nushell
-indexing works, for example `($ctx.remote_ip6 | get 3)`. This initial slice
-uses verdict-style return codes with `pass` / `drop` aliases.
+`ctx.data_end`, `ctx.ingress_ifindex`, `ctx.mark`, `ctx.priority`,
+`ctx.family`, `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`,
+`ctx.local_ip4`, `ctx.local_ip6`, and `ctx.local_port` through the existing
+skb-backed packet model, so ordinary guarded packet reads like
+`($ctx.data | get 0)` work. The IPv4 address and remote port fields are
+normalized to host byte order, and the IPv6 fields are exposed as fixed
+arrays of four host-order `u32` words so ordinary Nushell indexing works, for
+example `($ctx.remote_ip6 | get 3)`. This initial slice uses verdict-style
+return codes with `pass` / `drop` aliases.
 
 `sk_skb_parser` currently emits `sk_skb/stream_parser` programs attached to
 a pinned sockmap or sockhash path such as `/sys/fs/bpf/demo_sockmap`. It
 uses the same skb-backed packet context as `sk_skb`, including `ctx.family`,
-`ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`,
-`ctx.local_ip6`, and `ctx.local_port`, with the same host-order normalization
-rules for IPv4 addresses, remote ports, and IPv6 word arrays. Its return
-contract is a raw integer parser result rather than a verdict alias surface,
-so ordinary examples should return `0` or another integer length.
+`ctx.mark`, `ctx.priority`, `ctx.remote_ip4`, `ctx.remote_ip6`,
+`ctx.remote_port`, `ctx.local_ip4`, `ctx.local_ip6`, and `ctx.local_port`,
+with the same host-order normalization rules for IPv4 addresses, remote
+ports, and IPv6 word arrays. Its return contract is a raw integer parser
+result rather than a verdict alias surface, so ordinary examples should
+return `0` or another integer length.
 
 `kprobe` and `uprobe` expose `ctx.arg0`-`ctx.arg5` through `pt_regs`. `fentry` and
 `fexit` resolve `ctx.argN` and `ctx.retval` through kernel BTF. Scalar and pointer

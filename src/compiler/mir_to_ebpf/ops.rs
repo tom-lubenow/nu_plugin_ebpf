@@ -28,6 +28,17 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 76, 80, 36)
     }
 
+    fn sk_buff_mark_priority_offsets() -> (i16, i16) {
+        // struct __sk_buff {
+        //     __u32 len;
+        //     __u32 pkt_type;
+        //     __u32 mark;
+        //     ...
+        //     __u32 priority;
+        // };
+        (8, 32)
+    }
+
     fn sk_buff_socket_offsets() -> (i16, i16, i16, i16, i16, i16, i16) {
         // struct __sk_buff {
         //     ...
@@ -818,12 +829,42 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::SockMark => {
-                let offset = Self::bpf_sock_offsets().4;
+                let offset = if matches!(
+                    self.probe_ctx.as_ref().map(|ctx| ctx.probe_type),
+                    Some(EbpfProgramType::CgroupSock)
+                ) {
+                    Self::bpf_sock_offsets().4
+                } else {
+                    match self.packet_context_kind()? {
+                        PacketContextKind::SkBuff => Self::sk_buff_mark_priority_offsets().0,
+                        _ => {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "ctx.mark is only available on cgroup_sock and skb-backed packet programs"
+                                    .to_string(),
+                            ));
+                        }
+                    }
+                };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::SockPriority => {
-                let offset = Self::bpf_sock_offsets().5;
+                let offset = if matches!(
+                    self.probe_ctx.as_ref().map(|ctx| ctx.probe_type),
+                    Some(EbpfProgramType::CgroupSock)
+                ) {
+                    Self::bpf_sock_offsets().5
+                } else {
+                    match self.packet_context_kind()? {
+                        PacketContextKind::SkBuff => Self::sk_buff_mark_priority_offsets().1,
+                        _ => {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "ctx.priority is only available on cgroup_sock and skb-backed packet programs"
+                                    .to_string(),
+                            ));
+                        }
+                    }
+                };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
