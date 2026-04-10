@@ -1118,6 +1118,7 @@ impl ProbeContext {
                     EbpfProgramType::SocketFilter
                         | EbpfProgramType::Tc
                         | EbpfProgramType::CgroupSkb
+                        | EbpfProgramType::CgroupSock
                         | EbpfProgramType::CgroupSockAddr
                         | EbpfProgramType::SkSkb
                         | EbpfProgramType::SkSkbParser
@@ -1125,7 +1126,7 @@ impl ProbeContext {
                 ) =>
             {
                 Some(format!(
-                    "ctx.{} is only available on skb-backed packet programs, cgroup_sock_addr, and sock_ops programs",
+                    "ctx.{} is only available on skb-backed packet programs, cgroup_sock, cgroup_sock_addr, and sock_ops programs",
                     field.display_name()
                 ))
             }

@@ -2277,6 +2277,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.bound_dev_if } - Get the bound device ifindex
     {|ctx| $ctx.mark }    - Get the socket mark
     {|ctx| $ctx.priority } - Get the socket priority
+    {|ctx| $ctx.socket_cookie } - Get the stable socket cookie for the current socket context
     {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie for the current socket context
     Note: cgroup_sock closures can return `allow` or `deny` instead of
     raw `1`/`0` result codes. Initial support covers `sock_create`,

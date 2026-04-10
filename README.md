@@ -355,7 +355,7 @@ The closure receives a context parameter with these fields:
 | `ifindex` | Interface index (`xdp_md.ingress_ifindex` on XDP, `__sk_buff.ifindex` on skb-backed packet programs) | xdp, socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `tc_index` | skb tc_index | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `hash` | skb hash | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `socket_cookie` | Stable kernel socket cookie, or `0` when an skb has no known socket | socket_filter, tc, cgroup_skb, cgroup_sock_addr, sk_skb, sk_skb_parser, sock_ops |
+| `socket_cookie` | Stable kernel socket cookie, or `0` when an skb has no known socket | socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_skb, sk_skb_parser, sock_ops |
 | `netns_cookie` | Stable kernel network-namespace cookie | socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_msg, sock_ops |
 | `rx_queue_index` | XDP receive queue index | xdp |
 | `egress_ifindex` | XDP egress interface index | xdp |
@@ -479,11 +479,11 @@ sampling. The initial surface uses the ordinary helper-backed fields like
 `cgroup_sock` currently supports `sock_create`, `sock_release`,
 `post_bind4`, and `post_bind6`. It exposes `ctx.cpu`, `ctx.ktime`,
 `ctx.family`, `ctx.sock_type`, `ctx.protocol`, `ctx.bound_dev_if`,
-`ctx.mark`, and `ctx.priority`, and closures can return `"allow"` /
-`"deny"` instead of raw `1` / `0` result codes. It also exposes a typed
-`ctx.sk` pointer for ordinary socket projection such as `$ctx.sk.family`,
-`$ctx.sk.src_port`, `$ctx.sk.dst_port`, `$ctx.sk.state`, or `$ctx.sk.mark`. On
-`cgroup_sock`, the socket-address projection fields such as
+`ctx.mark`, `ctx.priority`, `ctx.socket_cookie`, and `ctx.netns_cookie`,
+and closures can return `"allow"` / `"deny"` instead of raw `1` / `0`
+result codes. It also exposes a typed `ctx.sk` pointer for ordinary socket
+projection such as `$ctx.sk.family`, `$ctx.sk.src_port`, `$ctx.sk.dst_port`,
+`$ctx.sk.state`, or `$ctx.sk.mark`. On `cgroup_sock`, the socket-address projection fields such as
 `$ctx.sk.src_port` and `$ctx.sk.dst_port` are only available on
 `post_bind4` / `post_bind6`.
 
