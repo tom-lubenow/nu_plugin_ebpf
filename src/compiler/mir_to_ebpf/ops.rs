@@ -286,7 +286,6 @@ impl<'a> MirToEbpfCompiler<'a> {
     fn bpf_sock_ops_packet_data_offsets() -> (i16, i16) {
         // struct bpf_sock_ops {
         //     ...
-        //     struct bpf_sock *sk;
         //     void *skb_data;
         //     void *skb_data_end;
         // };

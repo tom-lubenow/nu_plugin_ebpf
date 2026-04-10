@@ -2251,7 +2251,7 @@ Context parameter syntax (recommended):
   cgroup_sock fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
-    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer
+    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include family, type, protocol, mark, priority, src_port, state, and rx_queue_mapping)
     {|ctx| $ctx.family }  - Get socket family
     {|ctx| $ctx.sock_type } - Get socket type
     {|ctx| $ctx.protocol } - Get socket protocol
@@ -2335,7 +2335,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.packet_len } - Get total message size in bytes
     {|ctx| $ctx.data }    - Get the packet/message data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet/message access
-    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer
+    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include family, type, protocol, mark, priority, src_port, state, and rx_queue_mapping)
     {|ctx| $ctx.family }  - Get socket family
     {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order
     {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words
@@ -2435,7 +2435,7 @@ Context parameter syntax (recommended):
   cgroup_sockopt fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
-    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer
+    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include family, type, protocol, mark, priority, src_port, state, and rx_queue_mapping)
     {|ctx| $ctx.level }   - Get the socket-option level
     {|ctx| $ctx.optname } - Get the socket-option name
     {|ctx| $ctx.optlen }  - Get the socket-option length
@@ -2472,7 +2472,7 @@ Context parameter syntax (recommended):
   sk_lookup fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
-    {|ctx| $ctx.sk.bound_dev_if } - Project the selected socket through a typed bpf_sock pointer
+    {|ctx| $ctx.sk.bound_dev_if } - Project the selected socket through a typed bpf_sock pointer (fields include family, type, protocol, mark, priority, src_port, state, and rx_queue_mapping)
     {|ctx| $ctx.family }  - Get socket family
     {|ctx| $ctx.protocol } - Get IP protocol
     {|ctx| $ctx.cookie }  - Get the socket lookup cookie

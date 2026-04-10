@@ -14,6 +14,9 @@ impl<'a> TypeInference<'a> {
                 ("protocol".to_string(), HMType::U32),
                 ("mark".to_string(), HMType::U32),
                 ("priority".to_string(), HMType::U32),
+                ("src_port".to_string(), HMType::U32),
+                ("state".to_string(), HMType::U32),
+                ("rx_queue_mapping".to_string(), HMType::I32),
             ],
         }
     }
