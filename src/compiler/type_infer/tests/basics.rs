@@ -731,6 +731,27 @@ fn test_infer_sk_lookup_local_port_field_as_u32() {
 }
 
 #[test]
+fn test_infer_sk_lookup_cookie_field_as_u64() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::LookupCookie,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::U64));
+}
+
+#[test]
 fn test_infer_sk_lookup_remote_ip6_field_as_stack_backed_u32_array() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();

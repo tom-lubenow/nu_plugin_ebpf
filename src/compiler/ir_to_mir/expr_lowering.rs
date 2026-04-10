@@ -1250,6 +1250,7 @@ impl<'a> HirToMirLowering<'a> {
             "local_ip4" => CtxField::LocalIp4,
             "local_ip6" => CtxField::LocalIp6,
             "local_port" => CtxField::LocalPort,
+            "cookie" => CtxField::LookupCookie,
             "args" => CtxField::SockOpsArgs,
             "write" => CtxField::SysctlWrite,
             "file_pos" => CtxField::SysctlFilePos,
@@ -4696,6 +4697,7 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::SockState
             | CtxField::SysctlWrite
             | CtxField::SysctlFilePos => (MirType::U32, Some(MirType::U32)),
+            CtxField::Timestamp | CtxField::LookupCookie => (MirType::U64, Some(MirType::U64)),
             CtxField::SockoptLevel
             | CtxField::SockoptOptname
             | CtxField::SockoptOptlen
@@ -4714,7 +4716,6 @@ impl<'a> HirToMirLowering<'a> {
                 };
                 (ptr_ty.clone(), Some(ptr_ty))
             }
-            CtxField::Timestamp => (MirType::U64, Some(MirType::U64)),
             _ => precise_trampoline_types
                 .map(|(semantic_ty, runtime_ty)| (semantic_ty, Some(runtime_ty)))
                 .unwrap_or_else(|| match trampoline_value_spec.map(|spec| spec.kind) {

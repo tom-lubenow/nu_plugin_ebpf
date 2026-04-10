@@ -435,7 +435,7 @@ impl<'a> TypeInference<'a> {
                 address_space: AddressSpace::Packet,
             },
 
-            CtxField::Timestamp => HMType::U64,
+            CtxField::Timestamp | CtxField::LookupCookie => HMType::U64,
 
             CtxField::Arg(idx) => {
                 if let Some(ty) = self.trampoline_arg_type(*idx).ok().flatten() {

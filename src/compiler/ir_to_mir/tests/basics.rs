@@ -1889,6 +1889,33 @@ fn test_lower_sk_lookup_ctx_local_port_field() {
 }
 
 #[test]
+fn test_lower_sk_lookup_ctx_cookie_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("cookie")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_lookup ctx.cookie should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::LookupCookie,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_sock_ops_ctx_op_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("op")],

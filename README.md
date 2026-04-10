@@ -121,6 +121,9 @@ let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect6' {|ctx| ($ctx.use
 # Count socket-lookup hits by local destination port in the current netns
 let id = ebpf attach 'sk_lookup:/proc/self/ns/net' {|ctx| $ctx.local_port | count; 'pass' }
 
+# Count socket-lookup hits by lookup cookie in the current netns
+let id = ebpf attach 'sk_lookup:/proc/self/ns/net' {|ctx| $ctx.cookie | count; 'pass' }
+
 # Build a struct_ops object from constant value fields and optional callback closures.
 # sched_ext_ops only requires a non-empty valid BPF object name using only
 # [A-Za-z0-9_.]. Additional callbacks are optional. If you set `flags`,
@@ -313,6 +316,7 @@ The closure receives a context parameter with these fields:
 | `local_ip4` | Local IPv4 address in host byte order | sk_lookup, sock_ops |
 | `local_ip6` | Local IPv6 address as four host-order `u32` words | sk_lookup, sock_ops |
 | `local_port` | Local port in host byte order | sk_lookup, sock_ops |
+| `cookie` | Socket lookup cookie | sk_lookup |
 | `level` | Socket-option level | cgroup_sockopt |
 | `optname` | Socket-option name | cgroup_sockopt |
 | `optlen` | Socket-option length | cgroup_sockopt |
@@ -398,7 +402,7 @@ codes still work too.
 
 `sk_lookup` currently attaches to a network-namespace path such as
 `/proc/self/ns/net`. It exposes `ctx.cpu`, `ctx.ktime`, `ctx.family`,
-`ctx.protocol`, `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`,
+`ctx.protocol`, `ctx.cookie`, `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`,
 `ctx.local_ip4`, `ctx.local_ip6`, `ctx.local_port`, and
 `ctx.ingress_ifindex`. The IPv4 address and remote port fields are
 normalized to host byte order, and the IPv6 fields are exposed as fixed

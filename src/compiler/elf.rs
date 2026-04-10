@@ -964,6 +964,12 @@ impl ProbeContext {
                     field.display_name()
                 ))
             }
+            CtxField::LookupCookie if !matches!(self.probe_type, EbpfProgramType::SkLookup) => {
+                Some(format!(
+                    "ctx.{} is only available on sk_lookup programs",
+                    field.display_name()
+                ))
+            }
             CtxField::DeviceAccessType | CtxField::DeviceMajor | CtxField::DeviceMinor
                 if !matches!(self.probe_type, EbpfProgramType::CgroupDevice) =>
             {

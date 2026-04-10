@@ -446,6 +446,8 @@ pub enum CtxField {
     LocalIp6,
     /// bpf_sk_lookup::local_port (host byte order)
     LocalPort,
+    /// bpf_sk_lookup::cookie
+    LookupCookie,
     /// bpf_cgroup_dev_ctx::access_type
     DeviceAccessType,
     /// bpf_cgroup_dev_ctx::major
@@ -524,6 +526,7 @@ impl CtxField {
             CtxField::LocalIp4 => "local_ip4".to_string(),
             CtxField::LocalIp6 => "local_ip6".to_string(),
             CtxField::LocalPort => "local_port".to_string(),
+            CtxField::LookupCookie => "cookie".to_string(),
             CtxField::DeviceAccessType => "access_type".to_string(),
             CtxField::DeviceMajor => "major".to_string(),
             CtxField::DeviceMinor => "minor".to_string(),

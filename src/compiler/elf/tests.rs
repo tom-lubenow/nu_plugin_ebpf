@@ -1523,6 +1523,15 @@ fn test_probe_context_allows_sock_ops_fields() {
 }
 
 #[test]
+fn test_probe_context_allows_sk_lookup_cookie_field() {
+    let ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::LookupCookie)
+            .is_none()
+    );
+}
+
+#[test]
 fn test_probe_context_allows_cgroup_device_fields() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupDevice, "/sys/fs/cgroup");
     assert!(

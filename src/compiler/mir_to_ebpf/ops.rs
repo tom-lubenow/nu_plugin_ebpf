@@ -87,7 +87,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 4, 8, 12, 16, 20)
     }
 
-    fn bpf_sk_lookup_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16) {
+    fn bpf_sk_lookup_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16) {
         // struct bpf_sk_lookup {
         //     union { struct bpf_sock *sk; __u64 cookie; };
         //     __u32 family;
@@ -101,7 +101,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         //     __u32 local_port;     // host byte order
         //     __u32 ingress_ifindex;
         // };
-        (8, 12, 16, 20, 36, 40, 44, 60, 64)
+        (0, 8, 12, 16, 20, 36, 40, 44, 60, 64)
     }
 
     fn bpf_sock_ops_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16, i16) {
@@ -641,7 +641,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             CtxField::IngressIfindex => {
                 let ingress_ifindex_offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type)
                 {
-                    Some(EbpfProgramType::SkLookup) => Self::bpf_sk_lookup_offsets().8,
+                    Some(EbpfProgramType::SkLookup) => Self::bpf_sk_lookup_offsets().9,
                     _ => match self.packet_context_kind()? {
                         PacketContextKind::XdpMd => Self::xdp_md_offsets().3,
                         PacketContextKind::SkBuff => Self::sk_buff_offsets().3,
@@ -693,6 +693,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::CgroupSock) => Self::bpf_sock_offsets().1,
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().1,
+                    Some(EbpfProgramType::SkLookup) => Self::bpf_sk_lookup_offsets().1,
                     _ => Self::bpf_sock_addr_offsets().4,
                 };
                 self.instructions
@@ -711,13 +712,10 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::Protocol => {
-                let offset = if matches!(
-                    self.probe_ctx.as_ref().map(|ctx| ctx.probe_type),
-                    Some(EbpfProgramType::CgroupSock)
-                ) {
-                    Self::bpf_sock_offsets().3
-                } else {
-                    Self::bpf_sock_addr_offsets().6
+                let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
+                    Some(EbpfProgramType::CgroupSock) => Self::bpf_sock_offsets().3,
+                    Some(EbpfProgramType::SkLookup) => Self::bpf_sk_lookup_offsets().2,
+                    _ => Self::bpf_sock_addr_offsets().6,
                 };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
@@ -756,7 +754,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             CtxField::RemoteIp4 => {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().2,
-                    _ => Self::bpf_sk_lookup_offsets().2,
+                    _ => Self::bpf_sk_lookup_offsets().3,
                 };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
@@ -765,14 +763,14 @@ impl<'a> MirToEbpfCompiler<'a> {
             CtxField::RemoteIp6 => {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().4,
-                    _ => Self::bpf_sk_lookup_offsets().3,
+                    _ => Self::bpf_sk_lookup_offsets().4,
                 };
                 self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.remote_ip6", true)?;
             }
             CtxField::RemotePort => {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().6,
-                    _ => Self::bpf_sk_lookup_offsets().4,
+                    _ => Self::bpf_sk_lookup_offsets().5,
                 };
                 self.instructions
                     .push(EbpfInsn::ldxh(dst, EbpfReg::R9, offset));
@@ -781,7 +779,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             CtxField::LocalIp4 => {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().3,
-                    _ => Self::bpf_sk_lookup_offsets().5,
+                    _ => Self::bpf_sk_lookup_offsets().6,
                 };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
@@ -790,17 +788,24 @@ impl<'a> MirToEbpfCompiler<'a> {
             CtxField::LocalIp6 => {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().5,
-                    _ => Self::bpf_sk_lookup_offsets().6,
+                    _ => Self::bpf_sk_lookup_offsets().7,
                 };
                 self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.local_ip6", true)?;
             }
             CtxField::LocalPort => {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().7,
-                    _ => Self::bpf_sk_lookup_offsets().7,
+                    _ => Self::bpf_sk_lookup_offsets().8,
                 };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::LookupCookie => {
+                self.instructions.push(EbpfInsn::ldxdw(
+                    dst,
+                    EbpfReg::R9,
+                    Self::bpf_sk_lookup_offsets().0,
+                ));
             }
             CtxField::DeviceAccessType => {
                 let offset = Self::bpf_cgroup_dev_ctx_offsets().0;

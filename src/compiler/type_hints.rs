@@ -224,7 +224,7 @@ fn recover_ctx_field_hint(
             pointee: Box::new(MirType::U8),
             address_space: AddressSpace::Packet,
         }),
-        CtxField::Timestamp => Some(MirType::U64),
+        CtxField::Timestamp | CtxField::LookupCookie => Some(MirType::U64),
         CtxField::Comm => Some(MirType::Ptr {
             pointee: Box::new(MirType::Array {
                 elem: Box::new(MirType::U8),

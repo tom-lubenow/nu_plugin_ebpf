@@ -2303,6 +2303,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.family }  - Get socket family
     {|ctx| $ctx.protocol } - Get IP protocol
+    {|ctx| $ctx.cookie }  - Get the socket lookup cookie
     {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order
     {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words
     {|ctx| $ctx.remote_port } - Get the remote port in host byte order
