@@ -52,6 +52,14 @@ impl<'a> MirToEbpfCompiler<'a> {
         (16, 20, 24, 28)
     }
 
+    fn sk_buff_cb_offset() -> i16 {
+        // struct __sk_buff {
+        //     ...
+        //     __u32 cb[5];
+        // };
+        48
+    }
+
     fn sk_buff_extended_meta_offsets() -> (i16, i16, i16, i16, i16, i16) {
         // struct __sk_buff {
         //     ...
@@ -813,6 +821,17 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::ldxh(dst, EbpfReg::R9, vlan_proto_offset));
                 self.instructions.push(EbpfInsn::end16_to_be(dst));
+            }
+            CtxField::SkbCb => {
+                let cb_offset = match self.packet_context_kind()? {
+                    PacketContextKind::SkBuff => Self::sk_buff_cb_offset(),
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.cb is only available on skb-backed packet programs".to_string(),
+                        ));
+                    }
+                };
+                self.compile_ctx_u32_array_to_stack(dst, slot, cb_offset, 5, "ctx.cb", false)?;
             }
             CtxField::TcClassid => {
                 let tc_classid_offset = match self.packet_context_kind()? {

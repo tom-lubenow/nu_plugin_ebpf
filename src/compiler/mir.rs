@@ -412,6 +412,8 @@ pub enum CtxField {
     VlanTci,
     /// skb VLAN protocol / ethertype (normalized to host byte order)
     VlanProto,
+    /// skb cb[5]
+    SkbCb,
     /// skb tc_classid (`__sk_buff.tc_classid`)
     TcClassid,
     /// skb napi_id (`__sk_buff.napi_id`)
@@ -553,6 +555,7 @@ impl CtxField {
             CtxField::VlanPresent => "vlan_present".to_string(),
             CtxField::VlanTci => "vlan_tci".to_string(),
             CtxField::VlanProto => "vlan_proto".to_string(),
+            CtxField::SkbCb => "cb".to_string(),
             CtxField::TcClassid => "tc_classid".to_string(),
             CtxField::NapiId => "napi_id".to_string(),
             CtxField::WireLen => "wire_len".to_string(),

@@ -2632,6 +2632,40 @@ fn test_lower_socket_filter_vlan_proto_field() {
 }
 
 #[test]
+fn test_lower_socket_filter_cb_index_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("cb"), int_member(0)],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("socket_filter ctx.cb[0] should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::SkbCb,
+            ..
+        }
+    )));
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Load {
+            ty: MirType::U32,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_xdp_data_byte_projection_adds_guarded_packet_load() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("data"), int_member(0)],

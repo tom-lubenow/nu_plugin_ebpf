@@ -17,6 +17,7 @@ impl<'a> VccLowerer<'a> {
             CtxField::VlanPresent => "vlan_present".to_string(),
             CtxField::VlanTci => "vlan_tci".to_string(),
             CtxField::VlanProto => "vlan_proto".to_string(),
+            CtxField::SkbCb => "cb".to_string(),
             CtxField::TcClassid => "tc_classid".to_string(),
             CtxField::NapiId => "napi_id".to_string(),
             CtxField::WireLen => "wire_len".to_string(),

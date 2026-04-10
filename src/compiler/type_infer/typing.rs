@@ -449,6 +449,13 @@ impl<'a> TypeInference<'a> {
                 }),
                 address_space: AddressSpace::Stack,
             },
+            CtxField::SkbCb => HMType::Ptr {
+                pointee: Box::new(HMType::Array {
+                    elem: Box::new(HMType::U32),
+                    len: 5,
+                }),
+                address_space: AddressSpace::Stack,
+            },
 
             CtxField::Data | CtxField::DataEnd => HMType::Ptr {
                 pointee: Box::new(HMType::U8),

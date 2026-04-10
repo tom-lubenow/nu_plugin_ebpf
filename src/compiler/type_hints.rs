@@ -241,6 +241,13 @@ fn recover_ctx_field_hint(
             }),
             address_space: AddressSpace::Stack,
         }),
+        CtxField::SkbCb => Some(MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U32),
+                len: 5,
+            }),
+            address_space: AddressSpace::Stack,
+        }),
         CtxField::Data | CtxField::DataEnd => Some(MirType::Ptr {
             pointee: Box::new(MirType::U8),
             address_space: AddressSpace::Packet,

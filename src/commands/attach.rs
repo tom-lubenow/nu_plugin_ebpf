@@ -2158,6 +2158,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.vlan_present } - Get whether skb VLAN metadata is present on skb-backed packet programs
     {|ctx| $ctx.vlan_tci } - Get the skb VLAN TCI on skb-backed packet programs
     {|ctx| $ctx.vlan_proto } - Get the skb VLAN ethertype in host byte order on skb-backed packet programs
+    {|ctx| $ctx.cb } - Get the skb cb words as a fixed array on skb-backed packet programs
     {|ctx| $ctx.tc_classid } - Get the skb tc_classid on skb-backed packet programs
     {|ctx| $ctx.napi_id } - Get the skb napi_id on skb-backed packet programs
     {|ctx| $ctx.wire_len } - Get the skb wire_len on skb-backed packet programs
@@ -2324,6 +2325,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.vlan_present } - Get whether skb VLAN metadata is present
     {|ctx| $ctx.vlan_tci } - Get the skb VLAN TCI
     {|ctx| $ctx.vlan_proto } - Get the skb VLAN ethertype in host byte order
+    {|ctx| $ctx.cb } - Get the skb cb words as a fixed array
     {|ctx| $ctx.tc_classid } - Get the skb tc_classid
     {|ctx| $ctx.napi_id } - Get the skb napi_id
     {|ctx| $ctx.wire_len } - Get the skb wire_len
@@ -2363,6 +2365,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.vlan_present } - Get whether skb VLAN metadata is present
     {|ctx| $ctx.vlan_tci } - Get the skb VLAN TCI
     {|ctx| $ctx.vlan_proto } - Get the skb VLAN ethertype in host byte order
+    {|ctx| $ctx.cb } - Get the skb cb words as a fixed array
     {|ctx| $ctx.tc_classid } - Get the skb tc_classid
     {|ctx| $ctx.napi_id } - Get the skb napi_id
     {|ctx| $ctx.wire_len } - Get the skb wire_len

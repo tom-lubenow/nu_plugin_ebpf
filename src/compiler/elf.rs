@@ -955,6 +955,7 @@ impl ProbeContext {
             | CtxField::VlanPresent
             | CtxField::VlanTci
             | CtxField::VlanProto
+            | CtxField::SkbCb
             | CtxField::TcClassid
             | CtxField::NapiId
             | CtxField::WireLen
