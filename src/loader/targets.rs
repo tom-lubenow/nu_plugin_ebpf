@@ -982,6 +982,9 @@ pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
         EbpfProgramType::SkSkb => Ok(ProgramSpec::SkSkb {
             target: SkSkbTarget::parse(target)?,
         }),
+        EbpfProgramType::SkSkbParser => Ok(ProgramSpec::SkSkbParser {
+            target: SkSkbTarget::parse(target)?,
+        }),
         EbpfProgramType::CgroupDevice => Ok(ProgramSpec::CgroupDevice {
             target: CgroupDeviceTarget::parse(target)?,
         }),

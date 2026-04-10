@@ -5,7 +5,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: Write tracing logic in familiar Nushell syntax
-- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, lsm, perf_event, socket_filter, xdp, tc, cgroup_skb, cgroup_device, cgroup_sock, sock_ops, sk_msg, sk_skb, cgroup_sysctl, cgroup_sockopt, cgroup_sock_addr, sk_lookup, initial struct_ops object support
+- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, lsm, perf_event, socket_filter, xdp, tc, cgroup_skb, cgroup_device, cgroup_sock, sock_ops, sk_msg, sk_skb, sk_skb_parser, cgroup_sysctl, cgroup_sockopt, cgroup_sock_addr, sk_lookup, initial struct_ops object support
 - **Aggregations**: Count by key, histograms, timing measurements
 - **Event streaming**: Real-time event output via ring buffers
 - **Map sharing**: Share data between probes with `--pin`
@@ -117,6 +117,9 @@ let id = ebpf attach 'sk_msg:/sys/fs/bpf/demo_sockmap' {|ctx| ($ctx.data | get 0
 
 # Count packet lengths on a pinned sockmap or sockhash sk_skb stream-verdict hook
 let id = ebpf attach 'sk_skb:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.packet_len | count; 'pass' }
+
+# Count packet lengths on a pinned sockmap or sockhash sk_skb stream-parser hook
+let id = ebpf attach 'sk_skb_parser:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.packet_len | count; 0 }
 
 # Count getsockopt option names inside a cgroup
 let id = ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| $ctx.optname | count; 'allow' }
@@ -454,6 +457,12 @@ exposes `ctx.cpu`, `ctx.ktime`, `ctx.packet_len`, `ctx.data`,
 packet model, so ordinary guarded packet reads like `($ctx.data | get 0)`
 work. This initial slice uses verdict-style return codes with `pass` /
 `drop` aliases.
+
+`sk_skb_parser` currently emits `sk_skb/stream_parser` programs attached to
+a pinned sockmap or sockhash path such as `/sys/fs/bpf/demo_sockmap`. It
+uses the same skb-backed packet context as `sk_skb`, but its return contract
+is a raw integer parser result rather than a verdict alias surface, so
+ordinary examples should return `0` or another integer length.
 
 `kprobe` and `uprobe` expose `ctx.arg0`-`ctx.arg5` through `pt_regs`. `fentry` and
 `fexit` resolve `ctx.argN` and `ctx.retval` through kernel BTF. Scalar and pointer

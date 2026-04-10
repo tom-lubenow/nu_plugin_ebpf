@@ -166,10 +166,33 @@ fn test_sk_skb_section_name() {
 }
 
 #[test]
+fn test_sk_skb_parser_section_name() {
+    assert_eq!(
+        EbpfProgramType::SkSkbParser.section_prefix(),
+        "sk_skb/stream_parser"
+    );
+}
+
+#[test]
 fn test_program_type_metadata_for_sk_skb() {
     let info = EbpfProgramType::SkSkb.info();
     assert_eq!(info.canonical_prefix, "sk_skb");
     assert_eq!(info.attach_kind, ProgramAttachKind::SkSkb);
+    assert_eq!(info.target_kind, ProgramTargetKind::PinnedSockMapPath);
+    assert_eq!(info.arg_access, ProgramValueAccess::None);
+    assert_eq!(info.retval_access, ProgramValueAccess::None);
+    assert!(info.supports_cpu_ctx_field);
+    assert!(info.supports_timestamp_ctx_field);
+    assert!(info.supports_packet_len_ctx_field);
+    assert!(info.supports_packet_data_ctx_fields);
+    assert!(info.supports_ingress_ifindex_ctx_field);
+}
+
+#[test]
+fn test_program_type_metadata_for_sk_skb_parser() {
+    let info = EbpfProgramType::SkSkbParser.info();
+    assert_eq!(info.canonical_prefix, "sk_skb_parser");
+    assert_eq!(info.attach_kind, ProgramAttachKind::SkSkbParser);
     assert_eq!(info.target_kind, ProgramTargetKind::PinnedSockMapPath);
     assert_eq!(info.arg_access, ProgramValueAccess::None);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
