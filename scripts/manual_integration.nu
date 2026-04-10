@@ -925,6 +925,8 @@ step 63 "sk_msg pinned sockhash live attach and detach" {
                 'ebpf attach --dry-run "sk_msg:__MAP__" {|ctx|'
                 '    helper-call "bpf_msg_cork_bytes" $ctx 8'
                 '    helper-call "bpf_msg_apply_bytes" $ctx 8'
+                '    helper-call "bpf_msg_pull_data" $ctx 0 8 0'
+                '    helper-call "bpf_msg_push_data" $ctx 0 8 0'
                 '    "pass"'
                 '} | describe'
             ] | str join (char newline) | str replace "__MAP__" $map_path)

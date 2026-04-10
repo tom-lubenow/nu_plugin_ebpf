@@ -88,6 +88,8 @@ pub enum BpfHelper {
     MsgApplyBytes = 61,
     /// long bpf_msg_cork_bytes(msg, bytes)
     MsgCorkBytes = 62,
+    /// long bpf_msg_pull_data(msg, start, end, flags)
+    MsgPullData = 63,
     /// u64 bpf_get_socket_cookie(ctx)
     GetSocketCookie = 46,
     /// u32 bpf_get_socket_uid(ctx)
@@ -112,6 +114,8 @@ pub enum BpfHelper {
     MapPopElem = 88,
     /// long bpf_map_peek_elem(map, value)
     MapPeekElem = 89,
+    /// long bpf_msg_push_data(msg, start, len, flags)
+    MsgPushData = 90,
     /// struct bpf_sock *bpf_sk_fullsock(sk)
     SkFullsock = 95,
     /// long bpf_rc_repeat(ctx)
@@ -201,6 +205,7 @@ impl BpfHelper {
             BpfHelper::GetCurrentComm => "bpf_get_current_comm",
             BpfHelper::MsgApplyBytes => "bpf_msg_apply_bytes",
             BpfHelper::MsgCorkBytes => "bpf_msg_cork_bytes",
+            BpfHelper::MsgPullData => "bpf_msg_pull_data",
             BpfHelper::GetSocketCookie => "bpf_get_socket_cookie",
             BpfHelper::GetSocketUid => "bpf_get_socket_uid",
             BpfHelper::GetNetnsCookie => "bpf_get_netns_cookie",
@@ -213,6 +218,7 @@ impl BpfHelper {
             BpfHelper::MapPushElem => "bpf_map_push_elem",
             BpfHelper::MapPopElem => "bpf_map_pop_elem",
             BpfHelper::MapPeekElem => "bpf_map_peek_elem",
+            BpfHelper::MsgPushData => "bpf_msg_push_data",
             BpfHelper::RcRepeat => "bpf_rc_repeat",
             BpfHelper::RcKeydown => "bpf_rc_keydown",
             BpfHelper::RcPointerRel => "bpf_rc_pointer_rel",
@@ -275,6 +281,7 @@ impl BpfHelper {
             "get_current_comm" => Some(Self::GetCurrentComm),
             "msg_apply_bytes" => Some(Self::MsgApplyBytes),
             "msg_cork_bytes" => Some(Self::MsgCorkBytes),
+            "msg_pull_data" => Some(Self::MsgPullData),
             "get_socket_cookie" => Some(Self::GetSocketCookie),
             "get_socket_uid" => Some(Self::GetSocketUid),
             "get_netns_cookie" => Some(Self::GetNetnsCookie),
@@ -287,6 +294,7 @@ impl BpfHelper {
             "map_push_elem" => Some(Self::MapPushElem),
             "map_pop_elem" => Some(Self::MapPopElem),
             "map_peek_elem" => Some(Self::MapPeekElem),
+            "msg_push_data" => Some(Self::MsgPushData),
             "rc_repeat" => Some(Self::RcRepeat),
             "rc_keydown" => Some(Self::RcKeydown),
             "rc_pointer_rel" => Some(Self::RcPointerRel),

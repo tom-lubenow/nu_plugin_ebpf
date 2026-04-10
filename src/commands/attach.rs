@@ -2380,7 +2380,9 @@ Context parameter syntax (recommended):
     example `($ctx.remote_ip6 | get 3)`. Modeled socket-message helpers are
     also available through the ordinary helper surface, for example
     `helper-call "bpf_msg_apply_bytes" $ctx 8` or
-    `helper-call "bpf_msg_cork_bytes" $ctx 8`.
+    `helper-call "bpf_msg_cork_bytes" $ctx 8`, plus range/data reshaping
+    helpers such as `helper-call "bpf_msg_pull_data" $ctx 0 8 0` and
+    `helper-call "bpf_msg_push_data" $ctx 0 8 0`.
 
   sk_skb fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

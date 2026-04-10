@@ -23,6 +23,7 @@ impl BpfHelper {
             16 => Some(Self::GetCurrentComm),
             61 => Some(Self::MsgApplyBytes),
             62 => Some(Self::MsgCorkBytes),
+            63 => Some(Self::MsgPullData),
             46 => Some(Self::GetSocketCookie),
             47 => Some(Self::GetSocketUid),
             122 => Some(Self::GetNetnsCookie),
@@ -35,6 +36,7 @@ impl BpfHelper {
             87 => Some(Self::MapPushElem),
             88 => Some(Self::MapPopElem),
             89 => Some(Self::MapPeekElem),
+            90 => Some(Self::MsgPushData),
             77 => Some(Self::RcRepeat),
             78 => Some(Self::RcKeydown),
             92 => Some(Self::RcPointerRel),
@@ -108,6 +110,12 @@ impl BpfHelper {
             BpfHelper::MsgApplyBytes | BpfHelper::MsgCorkBytes => HelperSignature {
                 min_args: 2,
                 max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::MsgPullData | BpfHelper::MsgPushData => HelperSignature {
+                min_args: 4,
+                max_args: 4,
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
@@ -995,6 +1003,28 @@ impl BpfHelper {
                 ptr_arg_rules: &[HelperPtrArgRule {
                     arg_idx: 0,
                     op: "helper msg_cork_bytes ctx",
+                    allowed: KERNEL,
+                    fixed_size: None,
+                    size_from_arg: None,
+                }],
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::MsgPullData => HelperSemantics {
+                ptr_arg_rules: &[HelperPtrArgRule {
+                    arg_idx: 0,
+                    op: "helper msg_pull_data ctx",
+                    allowed: KERNEL,
+                    fixed_size: None,
+                    size_from_arg: None,
+                }],
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::MsgPushData => HelperSemantics {
+                ptr_arg_rules: &[HelperPtrArgRule {
+                    arg_idx: 0,
+                    op: "helper msg_push_data ctx",
                     allowed: KERNEL,
                     fixed_size: None,
                     size_from_arg: None,

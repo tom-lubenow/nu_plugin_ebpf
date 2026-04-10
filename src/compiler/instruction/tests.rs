@@ -75,6 +75,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::MsgCorkBytes)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_msg_pull_data"),
+        Some(BpfHelper::MsgPullData)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_msg_push_data"),
+        Some(BpfHelper::MsgPushData)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("ktime_get_boot_ns"),
         Some(BpfHelper::KtimeGetBootNs)
     ));
@@ -250,6 +258,29 @@ fn test_helper_signatures_msg_apply_and_cork_bytes() {
     assert_eq!(sig.max_args, 2);
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signatures_msg_pull_and_push_data() {
+    let sig = HelperSignature::for_id(BpfHelper::MsgPullData as u32)
+        .expect("expected bpf_msg_pull_data helper signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::MsgPushData as u32)
+        .expect("expected bpf_msg_push_data helper signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 

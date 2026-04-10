@@ -310,7 +310,18 @@ fn test_infer_redirect_helper_in_tc_program() {
 
 #[test]
 fn test_type_error_msg_helpers_reject_non_sk_msg_programs() {
-    for helper in [BpfHelper::MsgApplyBytes, BpfHelper::MsgCorkBytes] {
+    for (helper, args) in [
+        (BpfHelper::MsgApplyBytes, vec![MirValue::Const(8)]),
+        (BpfHelper::MsgCorkBytes, vec![MirValue::Const(8)]),
+        (
+            BpfHelper::MsgPullData,
+            vec![MirValue::Const(0), MirValue::Const(8), MirValue::Const(0)],
+        ),
+        (
+            BpfHelper::MsgPushData,
+            vec![MirValue::Const(0), MirValue::Const(8), MirValue::Const(0)],
+        ),
+    ] {
         let mut func = make_test_function();
         let ctx = func.alloc_vreg();
         let dst = func.alloc_vreg();
@@ -323,7 +334,9 @@ fn test_type_error_msg_helpers_reject_non_sk_msg_programs() {
         block.instructions.push(MirInst::CallHelper {
             dst,
             helper: helper as u32,
-            args: vec![MirValue::VReg(ctx), MirValue::Const(8)],
+            args: std::iter::once(MirValue::VReg(ctx))
+                .chain(args.into_iter())
+                .collect(),
         });
         block.terminator = MirInst::Return { val: None };
 
@@ -343,7 +356,18 @@ fn test_type_error_msg_helpers_reject_non_sk_msg_programs() {
 
 #[test]
 fn test_infer_msg_helpers_in_sk_msg_program() {
-    for helper in [BpfHelper::MsgApplyBytes, BpfHelper::MsgCorkBytes] {
+    for (helper, args) in [
+        (BpfHelper::MsgApplyBytes, vec![MirValue::Const(8)]),
+        (BpfHelper::MsgCorkBytes, vec![MirValue::Const(8)]),
+        (
+            BpfHelper::MsgPullData,
+            vec![MirValue::Const(0), MirValue::Const(8), MirValue::Const(0)],
+        ),
+        (
+            BpfHelper::MsgPushData,
+            vec![MirValue::Const(0), MirValue::Const(8), MirValue::Const(0)],
+        ),
+    ] {
         let mut func = make_test_function();
         let ctx = func.alloc_vreg();
         let dst = func.alloc_vreg();
@@ -356,7 +380,9 @@ fn test_infer_msg_helpers_in_sk_msg_program() {
         block.instructions.push(MirInst::CallHelper {
             dst,
             helper: helper as u32,
-            args: vec![MirValue::VReg(ctx), MirValue::Const(8)],
+            args: std::iter::once(MirValue::VReg(ctx))
+                .chain(args.into_iter())
+                .collect(),
         });
         block.terminator = MirInst::Return { val: None };
 
