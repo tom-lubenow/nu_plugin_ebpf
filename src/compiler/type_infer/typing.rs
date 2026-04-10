@@ -490,6 +490,7 @@ impl<'a> TypeInference<'a> {
             CtxField::Timestamp
             | CtxField::LookupCookie
             | CtxField::SocketCookie
+            | CtxField::NetnsCookie
             | CtxField::Hwtstamp
             | CtxField::SockOpsBytesReceived
             | CtxField::SockOpsBytesAcked

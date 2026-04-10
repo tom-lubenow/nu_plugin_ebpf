@@ -17,6 +17,7 @@ impl BpfHelper {
             15 => Some(Self::GetCurrentUidGid),
             16 => Some(Self::GetCurrentComm),
             46 => Some(Self::GetSocketCookie),
+            122 => Some(Self::GetNetnsCookie),
             25 => Some(Self::PerfEventOutput),
             27 => Some(Self::GetStackId),
             84 => Some(Self::SkLookupTcp),
@@ -110,6 +111,12 @@ impl BpfHelper {
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::GetSocketCookie => HelperSignature {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::GetNetnsCookie => HelperSignature {
                 min_args: 1,
                 max_args: 1,
                 arg_kinds: [P, S, S, S, S],
@@ -898,6 +905,17 @@ impl BpfHelper {
                 ptr_arg_rules: &[HelperPtrArgRule {
                     arg_idx: 0,
                     op: "helper get_socket_cookie ctx",
+                    allowed: KERNEL,
+                    fixed_size: None,
+                    size_from_arg: None,
+                }],
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::GetNetnsCookie => HelperSemantics {
+                ptr_arg_rules: &[HelperPtrArgRule {
+                    arg_idx: 0,
+                    op: "helper get_netns_cookie ctx",
                     allowed: KERNEL,
                     fixed_size: None,
                     size_from_arg: None,

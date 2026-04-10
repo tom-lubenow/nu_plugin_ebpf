@@ -1679,6 +1679,23 @@ fn test_probe_context_allows_socket_cookie_on_sock_ops() {
 }
 
 #[test]
+fn test_probe_context_allows_netns_cookie_on_sk_msg() {
+    let ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+    assert!(ctx.ctx_field_access_error(&CtxField::NetnsCookie).is_none());
+}
+
+#[test]
+fn test_probe_context_rejects_netns_cookie_on_sk_lookup() {
+    let ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::NetnsCookie)
+        .expect("expected netns_cookie field access error");
+    assert!(err.contains(
+        "ctx.netns_cookie is only available on socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_msg, and sock_ops programs"
+    ));
+}
+
+#[test]
 fn test_probe_context_allows_sk_msg_fields() {
     let ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
     assert!(ctx.ctx_field_access_error(&CtxField::Socket).is_none());

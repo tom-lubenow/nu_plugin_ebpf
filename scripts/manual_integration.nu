@@ -898,7 +898,7 @@ step 62 "sk_msg pinned sockhash live attach and detach" {
             }
 
             let live_code = ([
-                'let id = (ebpf attach "sk_msg:__MAP__" {|ctx| $ctx.packet_len | count; "pass" })'
+                'let id = (ebpf attach "sk_msg:__MAP__" {|ctx| $ctx.netns_cookie | count; "pass" })'
                 'if $id < 1 {'
                 '    error make { msg: $"expected positive sk_msg id, got ($id)" }'
                 '}'

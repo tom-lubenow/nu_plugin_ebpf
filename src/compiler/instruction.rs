@@ -76,6 +76,8 @@ pub enum BpfHelper {
     GetCurrentComm = 16,
     /// u64 bpf_get_socket_cookie(ctx)
     GetSocketCookie = 46,
+    /// u64 bpf_get_netns_cookie(ctx)
+    GetNetnsCookie = 122,
     /// int bpf_perf_event_output(ctx, map, flags, data, size)
     PerfEventOutput = 25,
     /// long bpf_get_stackid(ctx, map, flags)

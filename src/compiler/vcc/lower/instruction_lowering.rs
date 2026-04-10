@@ -53,6 +53,7 @@ impl<'a> VccLowerer<'a> {
             CtxField::LocalPort => "local_port".to_string(),
             CtxField::LookupCookie => "cookie".to_string(),
             CtxField::SocketCookie => "socket_cookie".to_string(),
+            CtxField::NetnsCookie => "netns_cookie".to_string(),
             CtxField::DeviceAccessType => "access_type".to_string(),
             CtxField::DeviceMajor => "major".to_string(),
             CtxField::DeviceMinor => "minor".to_string(),

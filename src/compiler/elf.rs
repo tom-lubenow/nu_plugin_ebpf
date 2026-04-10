@@ -1056,6 +1056,24 @@ impl ProbeContext {
                     field.display_name()
                 ))
             }
+            CtxField::NetnsCookie
+                if !matches!(
+                    self.probe_type,
+                    EbpfProgramType::SocketFilter
+                        | EbpfProgramType::Tc
+                        | EbpfProgramType::CgroupSkb
+                        | EbpfProgramType::CgroupSock
+                        | EbpfProgramType::CgroupSockopt
+                        | EbpfProgramType::CgroupSockAddr
+                        | EbpfProgramType::SkMsg
+                        | EbpfProgramType::SockOps
+                ) =>
+            {
+                Some(format!(
+                    "ctx.{} is only available on socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_msg, and sock_ops programs",
+                    field.display_name()
+                ))
+            }
             CtxField::DeviceAccessType | CtxField::DeviceMajor | CtxField::DeviceMinor
                 if !matches!(self.probe_type, EbpfProgramType::CgroupDevice) =>
             {

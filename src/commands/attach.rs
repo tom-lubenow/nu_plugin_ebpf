@@ -2172,6 +2172,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.tc_index } - Get the skb tc_index on skb-backed packet programs
     {|ctx| $ctx.hash }    - Get the skb hash on skb-backed packet programs
     {|ctx| $ctx.socket_cookie } - Get the stable socket cookie on supported socket-backed contexts
+    {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie on supported socket-backed contexts
     {|ctx| $ctx.mark }    - Get the skb mark on skb-backed packet programs
     {|ctx| $ctx.priority } - Get the skb priority on skb-backed packet programs
     {|ctx| ($ctx.data | get 0) } - Read the first packet byte with an auto-generated data_end guard
@@ -2253,6 +2254,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.bound_dev_if } - Get the bound device ifindex
     {|ctx| $ctx.mark }    - Get the socket mark
     {|ctx| $ctx.priority } - Get the socket priority
+    {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie for the current socket context
     Note: cgroup_sock closures can return `allow` or `deny` instead of
     raw `1`/`0` result codes. Initial support covers `sock_create`,
     `sock_release`, `post_bind4`, and `post_bind6` with the scalar fields
@@ -2281,6 +2283,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.local_ip6 } - Get the local IPv6 address as four host-order u32 words
     {|ctx| $ctx.local_port } - Get the local port in host byte order
     {|ctx| $ctx.socket_cookie } - Get the stable socket cookie for the current sock_ops context
+    {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie for the current sock_ops context
     {|ctx| $ctx.is_fullsock } - Get whether the context has a full socket
     {|ctx| $ctx.snd_cwnd } - Get the current sending congestion window
     {|ctx| $ctx.srtt_us }  - Get the smoothed RTT in microseconds shifted by 3
@@ -2319,6 +2322,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.local_ip4 } - Get the local IPv4 address in host byte order
     {|ctx| $ctx.local_ip6 } - Get the local IPv6 address as four host-order u32 words
     {|ctx| $ctx.local_port } - Get the local port in host byte order
+    {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie for the current sk_msg context
     Note: sk_msg programs attach to a pinned sockmap or sockhash path such as
     `/sys/fs/bpf/demo_sockmap`. Initial sk_msg support is read-only and uses
     raw integer verdict codes; observation-only examples should return `pass`
@@ -2417,6 +2421,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.optval }  - Get the kernel pointer to the sockopt buffer
     {|ctx| $ctx.optval_end } - Get the end pointer for the sockopt buffer
     {|ctx| $ctx.sockopt_retval } - Get the getsockopt return value on `cgroup_sockopt:get`
+    {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie for the current socket context
     Note: cgroup_sockopt closures can return `allow` or `deny` instead of
     raw `1`/`0` result codes. `optval` / `optval_end` are surfaced as kernel
     pointers, so existing pointer reads like `($ctx.optval | get 0)` or
@@ -2428,6 +2433,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.socket_cookie } - Get the stable socket cookie for the current socket context
+    {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie for the current socket context
     {|ctx| $ctx.user_family } - Get userspace-requested socket family
     {|ctx| $ctx.user_ip4 } - Get the IPv4 destination/source address in host byte order on *4 hooks
     {|ctx| $ctx.user_ip6 } - Get the IPv6 destination/source address as four host-order u32 words on *6 hooks

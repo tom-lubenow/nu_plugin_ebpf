@@ -82,6 +82,9 @@ let id = ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.c
 # Count loopback UDP packets by stable socket cookie on a bound socket_filter receive socket
 let id = ebpf attach 'socket_filter:udp4:127.0.0.1:31337' {|ctx| $ctx.socket_cookie | count; 'pass' }
 
+# Count sockmap verdict events by network-namespace cookie
+let id = ebpf attach 'sk_msg:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.netns_cookie | count; 'pass' }
+
 # Count loopback packets by packet length via XDP, then pass them through
 let id = ebpf attach 'xdp:lo' {|ctx| $ctx.packet_len | count; 'pass' }
 
@@ -328,6 +331,7 @@ The closure receives a context parameter with these fields:
 | `tc_index` | skb tc_index | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `hash` | skb hash | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `socket_cookie` | Stable kernel socket cookie, or `0` when an skb has no known socket | socket_filter, tc, cgroup_skb, cgroup_sock_addr, sk_skb, sk_skb_parser, sock_ops |
+| `netns_cookie` | Stable kernel network-namespace cookie | socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_msg, sock_ops |
 | `rx_queue_index` | XDP receive queue index | xdp |
 | `egress_ifindex` | XDP egress interface index | xdp |
 | `user_family` | Userspace-requested socket family | cgroup_sock_addr |
