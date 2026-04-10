@@ -423,6 +423,12 @@ impl<'a> TypeInference<'a> {
             | CtxField::SockState
             | CtxField::SockOpsRttMin
             | CtxField::SockOpsSndSsthresh
+            | CtxField::SockOpsRcvNxt
+            | CtxField::SockOpsSndNxt
+            | CtxField::SockOpsSndUna
+            | CtxField::SockOpsPacketsOut
+            | CtxField::SockOpsRetransOut
+            | CtxField::SockOpsTotalRetrans
             | CtxField::SockOpsSkbLen
             | CtxField::SockOpsSkbTcpFlags
             | CtxField::SysctlWrite
@@ -465,6 +471,8 @@ impl<'a> TypeInference<'a> {
             CtxField::Timestamp
             | CtxField::LookupCookie
             | CtxField::Hwtstamp
+            | CtxField::SockOpsBytesReceived
+            | CtxField::SockOpsBytesAcked
             | CtxField::SockOpsSkbHwtstamp => HMType::U64,
 
             CtxField::Arg(idx) => {

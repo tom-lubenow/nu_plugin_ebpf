@@ -1997,6 +1997,33 @@ fn test_lower_sock_ops_ctx_snd_cwnd_field() {
 }
 
 #[test]
+fn test_lower_sock_ops_ctx_snd_nxt_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("snd_nxt")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sock_ops ctx.snd_nxt should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::SockOpsSndNxt,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_sock_ops_ctx_skb_len_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("skb_len")],
@@ -2018,6 +2045,33 @@ fn test_lower_sock_ops_ctx_skb_len_field() {
         inst,
         MirInst::LoadCtxField {
             field: CtxField::SockOpsSkbLen,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_sock_ops_ctx_bytes_acked_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("bytes_acked")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sock_ops ctx.bytes_acked should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::SockOpsBytesAcked,
             ..
         }
     )));

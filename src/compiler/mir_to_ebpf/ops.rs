@@ -232,6 +232,23 @@ impl<'a> MirToEbpfCompiler<'a> {
         (76, 80, 92, 96)
     }
 
+    fn bpf_sock_ops_progress_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16) {
+        // struct bpf_sock_ops {
+        //     ...
+        //     __u32 rcv_nxt;
+        //     __u32 snd_nxt;
+        //     __u32 snd_una;
+        //     ...
+        //     __u32 packets_out;
+        //     __u32 retrans_out;
+        //     __u32 total_retrans;
+        //     ...
+        //     __u64 bytes_received;
+        //     __u64 bytes_acked;
+        // };
+        (100, 104, 108, 128, 132, 136, 168, 176)
+    }
+
     fn bpf_sock_ops_skb_field_offsets() -> (i16, i16, i16) {
         // struct bpf_sock_ops {
         //     ...
@@ -1289,6 +1306,46 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = Self::bpf_sock_ops_tcp_field_offsets().3;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsRcvNxt => {
+                let offset = Self::bpf_sock_ops_progress_offsets().0;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsSndNxt => {
+                let offset = Self::bpf_sock_ops_progress_offsets().1;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsSndUna => {
+                let offset = Self::bpf_sock_ops_progress_offsets().2;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsPacketsOut => {
+                let offset = Self::bpf_sock_ops_progress_offsets().3;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsRetransOut => {
+                let offset = Self::bpf_sock_ops_progress_offsets().4;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsTotalRetrans => {
+                let offset = Self::bpf_sock_ops_progress_offsets().5;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsBytesReceived => {
+                let offset = Self::bpf_sock_ops_progress_offsets().6;
+                self.instructions
+                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsBytesAcked => {
+                let offset = Self::bpf_sock_ops_progress_offsets().7;
+                self.instructions
+                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
             }
             CtxField::SockOpsSkbLen => {
                 let offset = Self::bpf_sock_ops_skb_field_offsets().0;

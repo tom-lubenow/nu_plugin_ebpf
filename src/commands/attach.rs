@@ -2285,6 +2285,14 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.state }   - Get the current TCP state
     {|ctx| $ctx.rtt_min } - Get the minimum observed RTT in microseconds
     {|ctx| $ctx.snd_ssthresh } - Get the current slow-start threshold
+    {|ctx| $ctx.rcv_nxt } - Get the next expected receive sequence number
+    {|ctx| $ctx.snd_nxt } - Get the next send sequence number
+    {|ctx| $ctx.snd_una } - Get the oldest unacknowledged send sequence number
+    {|ctx| $ctx.packets_out } - Get the number of outstanding packets
+    {|ctx| $ctx.retrans_out } - Get the number of retransmitted outstanding packets
+    {|ctx| $ctx.total_retrans } - Get the total retransmission count
+    {|ctx| $ctx.bytes_received } - Get the total received byte count
+    {|ctx| $ctx.bytes_acked } - Get the total acknowledged byte count
     {|ctx| $ctx.skb_len } - Get the total packet length when packet metadata is available
     {|ctx| $ctx.skb_tcp_flags } - Get packet TCP flags when packet metadata is available
     {|ctx| $ctx.skb_hwtstamp } - Get packet hardware timestamp when packet metadata is available

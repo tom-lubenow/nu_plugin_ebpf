@@ -1274,6 +1274,14 @@ impl<'a> HirToMirLowering<'a> {
             "file_pos" => CtxField::SysctlFilePos,
             "rtt_min" => CtxField::SockOpsRttMin,
             "snd_ssthresh" => CtxField::SockOpsSndSsthresh,
+            "rcv_nxt" => CtxField::SockOpsRcvNxt,
+            "snd_nxt" => CtxField::SockOpsSndNxt,
+            "snd_una" => CtxField::SockOpsSndUna,
+            "packets_out" => CtxField::SockOpsPacketsOut,
+            "retrans_out" => CtxField::SockOpsRetransOut,
+            "total_retrans" => CtxField::SockOpsTotalRetrans,
+            "bytes_received" => CtxField::SockOpsBytesReceived,
+            "bytes_acked" => CtxField::SockOpsBytesAcked,
             "skb_len" => CtxField::SockOpsSkbLen,
             "skb_tcp_flags" => CtxField::SockOpsSkbTcpFlags,
             "skb_hwtstamp" => CtxField::SockOpsSkbHwtstamp,
@@ -1409,6 +1417,14 @@ impl<'a> HirToMirLowering<'a> {
             (Some(EbpfProgramType::SockOps), "state") => CtxField::SockState,
             (Some(EbpfProgramType::SockOps), "rtt_min") => CtxField::SockOpsRttMin,
             (Some(EbpfProgramType::SockOps), "snd_ssthresh") => CtxField::SockOpsSndSsthresh,
+            (Some(EbpfProgramType::SockOps), "rcv_nxt") => CtxField::SockOpsRcvNxt,
+            (Some(EbpfProgramType::SockOps), "snd_nxt") => CtxField::SockOpsSndNxt,
+            (Some(EbpfProgramType::SockOps), "snd_una") => CtxField::SockOpsSndUna,
+            (Some(EbpfProgramType::SockOps), "packets_out") => CtxField::SockOpsPacketsOut,
+            (Some(EbpfProgramType::SockOps), "retrans_out") => CtxField::SockOpsRetransOut,
+            (Some(EbpfProgramType::SockOps), "total_retrans") => CtxField::SockOpsTotalRetrans,
+            (Some(EbpfProgramType::SockOps), "bytes_received") => CtxField::SockOpsBytesReceived,
+            (Some(EbpfProgramType::SockOps), "bytes_acked") => CtxField::SockOpsBytesAcked,
             (Some(EbpfProgramType::SockOps), "skb_len") => CtxField::SockOpsSkbLen,
             (Some(EbpfProgramType::SockOps), "skb_tcp_flags") => CtxField::SockOpsSkbTcpFlags,
             (Some(EbpfProgramType::SockOps), "skb_hwtstamp") => CtxField::SockOpsSkbHwtstamp,
@@ -4773,14 +4789,22 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::SockState
             | CtxField::SockOpsRttMin
             | CtxField::SockOpsSndSsthresh
+            | CtxField::SockOpsRcvNxt
+            | CtxField::SockOpsSndNxt
+            | CtxField::SockOpsSndUna
+            | CtxField::SockOpsPacketsOut
+            | CtxField::SockOpsRetransOut
+            | CtxField::SockOpsTotalRetrans
             | CtxField::SockOpsSkbLen
             | CtxField::SockOpsSkbTcpFlags
             | CtxField::SysctlWrite
             | CtxField::SysctlFilePos => (MirType::U32, Some(MirType::U32)),
             CtxField::Hwtstamp => (MirType::U64, Some(MirType::U64)),
-            CtxField::Timestamp | CtxField::LookupCookie | CtxField::SockOpsSkbHwtstamp => {
-                (MirType::U64, Some(MirType::U64))
-            }
+            CtxField::Timestamp
+            | CtxField::LookupCookie
+            | CtxField::SockOpsBytesReceived
+            | CtxField::SockOpsBytesAcked
+            | CtxField::SockOpsSkbHwtstamp => (MirType::U64, Some(MirType::U64)),
             CtxField::SockoptLevel
             | CtxField::SockoptOptname
             | CtxField::SockoptOptlen

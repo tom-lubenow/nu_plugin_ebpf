@@ -504,6 +504,22 @@ pub enum CtxField {
     SockOpsRttMin,
     /// bpf_sock_ops::snd_ssthresh
     SockOpsSndSsthresh,
+    /// bpf_sock_ops::rcv_nxt
+    SockOpsRcvNxt,
+    /// bpf_sock_ops::snd_nxt
+    SockOpsSndNxt,
+    /// bpf_sock_ops::snd_una
+    SockOpsSndUna,
+    /// bpf_sock_ops::packets_out
+    SockOpsPacketsOut,
+    /// bpf_sock_ops::retrans_out
+    SockOpsRetransOut,
+    /// bpf_sock_ops::total_retrans
+    SockOpsTotalRetrans,
+    /// bpf_sock_ops::bytes_received
+    SockOpsBytesReceived,
+    /// bpf_sock_ops::bytes_acked
+    SockOpsBytesAcked,
     /// bpf_sock_ops::skb_len
     SockOpsSkbLen,
     /// bpf_sock_ops::skb_tcp_flags
@@ -601,6 +617,14 @@ impl CtxField {
             CtxField::SockState => "state".to_string(),
             CtxField::SockOpsRttMin => "rtt_min".to_string(),
             CtxField::SockOpsSndSsthresh => "snd_ssthresh".to_string(),
+            CtxField::SockOpsRcvNxt => "rcv_nxt".to_string(),
+            CtxField::SockOpsSndNxt => "snd_nxt".to_string(),
+            CtxField::SockOpsSndUna => "snd_una".to_string(),
+            CtxField::SockOpsPacketsOut => "packets_out".to_string(),
+            CtxField::SockOpsRetransOut => "retrans_out".to_string(),
+            CtxField::SockOpsTotalRetrans => "total_retrans".to_string(),
+            CtxField::SockOpsBytesReceived => "bytes_received".to_string(),
+            CtxField::SockOpsBytesAcked => "bytes_acked".to_string(),
             CtxField::SockOpsSkbLen => "skb_len".to_string(),
             CtxField::SockOpsSkbTcpFlags => "skb_tcp_flags".to_string(),
             CtxField::SockOpsSkbHwtstamp => "skb_hwtstamp".to_string(),

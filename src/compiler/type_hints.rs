@@ -217,11 +217,20 @@ fn recover_ctx_field_hint(
         | CtxField::SockState
         | CtxField::SockOpsRttMin
         | CtxField::SockOpsSndSsthresh
+        | CtxField::SockOpsRcvNxt
+        | CtxField::SockOpsSndNxt
+        | CtxField::SockOpsSndUna
+        | CtxField::SockOpsPacketsOut
+        | CtxField::SockOpsRetransOut
+        | CtxField::SockOpsTotalRetrans
         | CtxField::SockOpsSkbLen
         | CtxField::SockOpsSkbTcpFlags
         | CtxField::SysctlWrite
         | CtxField::SysctlFilePos => Some(MirType::U32),
-        CtxField::Hwtstamp | CtxField::SockOpsSkbHwtstamp => Some(MirType::U64),
+        CtxField::Hwtstamp
+        | CtxField::SockOpsSkbHwtstamp
+        | CtxField::SockOpsBytesReceived
+        | CtxField::SockOpsBytesAcked => Some(MirType::U64),
         CtxField::SockoptLevel
         | CtxField::SockoptOptname
         | CtxField::SockoptOptlen

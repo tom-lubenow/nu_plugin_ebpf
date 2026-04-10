@@ -1042,6 +1042,14 @@ impl ProbeContext {
             | CtxField::SockState
             | CtxField::SockOpsRttMin
             | CtxField::SockOpsSndSsthresh
+            | CtxField::SockOpsRcvNxt
+            | CtxField::SockOpsSndNxt
+            | CtxField::SockOpsSndUna
+            | CtxField::SockOpsPacketsOut
+            | CtxField::SockOpsRetransOut
+            | CtxField::SockOpsTotalRetrans
+            | CtxField::SockOpsBytesReceived
+            | CtxField::SockOpsBytesAcked
             | CtxField::SockOpsSkbLen
             | CtxField::SockOpsSkbTcpFlags
             | CtxField::SockOpsSkbHwtstamp

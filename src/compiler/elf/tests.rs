@@ -1773,6 +1773,38 @@ fn test_probe_context_allows_sock_ops_fields() {
             .is_none()
     );
     assert!(
+        ctx.ctx_field_access_error(&CtxField::SockOpsRcvNxt)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockOpsSndNxt)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockOpsSndUna)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockOpsPacketsOut)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockOpsRetransOut)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockOpsTotalRetrans)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockOpsBytesReceived)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockOpsBytesAcked)
+            .is_none()
+    );
+    assert!(
         ctx.ctx_field_access_error(&CtxField::SockOpsSkbLen)
             .is_none()
     );

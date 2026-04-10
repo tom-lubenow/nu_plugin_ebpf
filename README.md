@@ -109,6 +109,9 @@ let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| ($ctx.args | get 0) | coun
 # Count current TCP congestion-window observations on loopback socket events
 let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.snd_cwnd | count; 1 }
 
+# Count sock_ops TCP progress counters on loopback socket events
+let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| ($ctx.snd_nxt + $ctx.bytes_acked) | count; 1 }
+
 # Count sock_ops packet-length observations when packet metadata is available
 let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.skb_len | count; 1 }
 
@@ -342,6 +345,14 @@ The closure receives a context parameter with these fields:
 | `state` | Current TCP state | sock_ops |
 | `rtt_min` | Minimum observed RTT in microseconds | sock_ops |
 | `snd_ssthresh` | Current slow-start threshold | sock_ops |
+| `rcv_nxt` | Next expected receive sequence number | sock_ops |
+| `snd_nxt` | Next send sequence number | sock_ops |
+| `snd_una` | Oldest unacknowledged send sequence number | sock_ops |
+| `packets_out` | Number of outstanding packets | sock_ops |
+| `retrans_out` | Number of retransmitted outstanding packets | sock_ops |
+| `total_retrans` | Total retransmission count | sock_ops |
+| `bytes_received` | Total received byte count | sock_ops |
+| `bytes_acked` | Total acknowledged byte count | sock_ops |
 | `skb_len` | Total packet length when packet metadata is available | sock_ops |
 | `skb_tcp_flags` | Packet TCP flags when packet metadata is available | sock_ops |
 | `skb_hwtstamp` | Packet hardware timestamp when packet metadata is available | sock_ops |
@@ -430,10 +441,12 @@ It exposes `ctx.cpu`, `ctx.ktime`, `ctx.op`, `ctx.family`,
 `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`,
 `ctx.local_ip6`, `ctx.local_port`, `ctx.is_fullsock`, `ctx.snd_cwnd`,
 `ctx.srtt_us`, `ctx.cb_flags`, `ctx.state`, `ctx.rtt_min`, and
-`ctx.snd_ssthresh`, plus packet-metadata fields `ctx.skb_len`,
-`ctx.skb_tcp_flags`, and `ctx.skb_hwtstamp` when the callback context has
-packet data available. The IPv4 address and remote port fields are
-normalized to host byte order. The IPv6 fields are exposed as fixed arrays
+`ctx.snd_ssthresh`, `ctx.rcv_nxt`, `ctx.snd_nxt`, `ctx.snd_una`,
+`ctx.packets_out`, `ctx.retrans_out`, `ctx.total_retrans`,
+`ctx.bytes_received`, and `ctx.bytes_acked`, plus packet-metadata fields
+`ctx.skb_len`, `ctx.skb_tcp_flags`, and `ctx.skb_hwtstamp` when the
+callback context has packet data available. The IPv4 address and remote
+port fields are normalized to host byte order. The IPv6 fields are exposed as fixed arrays
 of four host-order `u32` words, so ordinary Nushell indexing works, for
 example `($ctx.remote_ip6 | get 3)`. This initial slice is read-only and
 uses raw integer return codes; observation-only examples should return `1`.

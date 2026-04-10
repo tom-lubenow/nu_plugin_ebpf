@@ -691,7 +691,7 @@ step 47 "sock_ops root cgroup snd_cwnd counter" {
         print "Skipping sock_ops snd_cwnd smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
     } else {
         count-at-least-one "sock_ops:/sys/fs/cgroup" {|ctx|
-            $ctx.snd_cwnd | count
+            ($ctx.snd_cwnd + $ctx.snd_nxt + $ctx.snd_una + $ctx.packets_out + $ctx.retrans_out + $ctx.total_retrans) | count
             1
         } { trigger-loopback-connect } "sock_ops snd_cwnd counter"
     }
@@ -702,7 +702,7 @@ step 48 "sock_ops root cgroup skb_len counter" {
         print "Skipping sock_ops skb_len smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
     } else {
         count-at-least-one "sock_ops:/sys/fs/cgroup" {|ctx|
-            $ctx.skb_len | count
+            ($ctx.skb_len + ($ctx.bytes_received mod 1024) + ($ctx.bytes_acked mod 1024)) | count
             1
         } { trigger-loopback-connect } "sock_ops skb_len counter"
     }
