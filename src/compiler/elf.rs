@@ -577,6 +577,8 @@ pub enum EbpfProgramType {
     CgroupSockopt,
     /// Cgroup socket-address program attached to a cgroup socket-address hook
     CgroupSockAddr,
+    /// LIRC mode2 decoder program attached to a lirc device
+    LircMode2,
     /// Struct-ops callback program emitted into a `struct_ops/*` section.
     StructOps,
 }
@@ -609,6 +611,7 @@ impl EbpfProgramType {
             EbpfProgramType::CgroupSysctl => &CGROUP_SYSCTL_INFO,
             EbpfProgramType::CgroupSockopt => &CGROUP_SOCKOPT_INFO,
             EbpfProgramType::CgroupSockAddr => &CGROUP_SOCK_ADDR_INFO,
+            EbpfProgramType::LircMode2 => &LIRC_MODE2_INFO,
             EbpfProgramType::StructOps => &STRUCT_OPS_INFO,
         }
     }
@@ -644,6 +647,7 @@ impl EbpfProgramType {
             EbpfProgramType::CgroupSysctl,
             EbpfProgramType::CgroupSockopt,
             EbpfProgramType::CgroupSockAddr,
+            EbpfProgramType::LircMode2,
             EbpfProgramType::StructOps,
         ]
         .into_iter()
@@ -796,6 +800,7 @@ impl ProgramSpec {
             ProgramSpec::CgroupSysctl { .. } => EbpfProgramType::CgroupSysctl,
             ProgramSpec::CgroupSockopt { .. } => EbpfProgramType::CgroupSockopt,
             ProgramSpec::CgroupSockAddr { .. } => EbpfProgramType::CgroupSockAddr,
+            ProgramSpec::LircMode2 { .. } => EbpfProgramType::LircMode2,
             ProgramSpec::StructOps { .. } => EbpfProgramType::StructOps,
         }
     }
@@ -1004,6 +1009,7 @@ impl ProbeContext {
                         | EbpfProgramType::CgroupSysctl
                         | EbpfProgramType::CgroupSockopt
                         | EbpfProgramType::CgroupSockAddr
+                        | EbpfProgramType::LircMode2
                         | EbpfProgramType::StructOps
                 ) =>
             {
@@ -1306,6 +1312,14 @@ impl ProbeContext {
             CtxField::SockoptRetval if !self.cgroup_sockopt_is_get() => Some(
                 "ctx.sockopt_retval is only available on cgroup_sockopt:get hooks".to_string(),
             ),
+            CtxField::LircSample | CtxField::LircValue | CtxField::LircMode
+                if !matches!(self.probe_type, EbpfProgramType::LircMode2) =>
+            {
+                Some(format!(
+                    "ctx.{} is only available on lirc_mode2 programs",
+                    field.display_name()
+                ))
+            }
             CtxField::Arg(_) if !self.probe_type.supports_ctx_args() => Some(format!(
                 "ctx.{} is only available on function probes with argument access (kprobe, uprobe, fentry, fexit)",
                 field.display_name()
@@ -1365,6 +1379,7 @@ pub enum ProgramAttachKind {
     CgroupSysctl,
     CgroupSockopt,
     CgroupSockAddr,
+    LircMode2,
     StructOps,
 }
 
@@ -1387,6 +1402,7 @@ pub enum ProgramTargetKind {
     CgroupPath,
     CgroupPathSockoptAttachType,
     CgroupPathSockAddrAttachType,
+    LircDevicePath,
     StructOpsCallback,
 }
 
@@ -1597,6 +1613,7 @@ const CGROUP_SOCK_SPEC_ALIASES: &[&str] = &["cgroup_sock"];
 const CGROUP_SYSCTL_SPEC_ALIASES: &[&str] = &["cgroup_sysctl"];
 const CGROUP_SOCKOPT_SPEC_ALIASES: &[&str] = &["cgroup_sockopt"];
 const CGROUP_SOCK_ADDR_SPEC_ALIASES: &[&str] = &["cgroup_sock_addr"];
+const LIRC_MODE2_SPEC_ALIASES: &[&str] = &["lirc_mode2"];
 const STRUCT_OPS_SPEC_ALIASES: &[&str] = &["struct_ops"];
 const DEFAULT_PROBE_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::Emit,
@@ -2298,6 +2315,33 @@ const CGROUP_SOCK_ADDR_INFO: ProgramTypeInfo = ProgramTypeInfo {
     is_userspace: false,
 };
 
+const LIRC_MODE2_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::LircMode2,
+    canonical_prefix: "lirc_mode2",
+    spec_aliases: LIRC_MODE2_SPEC_ALIASES,
+    section_prefix: "lirc_mode2",
+    section_uses_target: false,
+    attach_kind: ProgramAttachKind::LircMode2,
+    target_kind: ProgramTargetKind::LircDevicePath,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+    supports_task_ctx_fields: false,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    packet_context_kind: None,
+    supports_packet_len_ctx_field: false,
+    supports_packet_data_ctx_fields: false,
+    supports_ingress_ifindex_ctx_field: false,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
+    supports_xdp_md_ctx_fields: false,
+    supports_stack_ctx_fields: false,
+    supports_tracepoint_fields: false,
+    is_userspace: false,
+};
+
 const STRUCT_OPS_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::Globals,
     ProgramCapability::GenericMaps,
@@ -2362,6 +2406,7 @@ const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "cgroup_sysctl",
     "cgroup_sockopt",
     "cgroup_sock_addr",
+    "lirc_mode2",
     "struct_ops",
 ];
 

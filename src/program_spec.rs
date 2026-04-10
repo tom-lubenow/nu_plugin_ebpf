@@ -299,6 +299,19 @@ impl SkLookupTarget {
     }
 }
 
+/// Parsed lirc_mode2 target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LircMode2Target {
+    /// Filesystem path to the lirc device.
+    pub device_path: String,
+}
+
+impl LircMode2Target {
+    pub fn target_string(&self) -> String {
+        self.device_path.clone()
+    }
+}
+
 pub const DEFAULT_PERF_EVENT_PERIOD: u64 = 1_000_000;
 
 /// Supported software perf events for the initial perf_event program surface.
@@ -461,6 +474,7 @@ pub enum ProgramSpec {
     CgroupSysctl { cgroup_path: String },
     CgroupSockopt { target: CgroupSockoptTarget },
     CgroupSockAddr { target: CgroupSockAddrTarget },
+    LircMode2 { target: LircMode2Target },
     StructOps { value_type_name: String },
 }
 
@@ -493,6 +507,7 @@ impl ProgramSpec {
             ProgramSpec::CgroupSysctl { cgroup_path } => cgroup_path.clone(),
             ProgramSpec::CgroupSockopt { target } => target.target_string(),
             ProgramSpec::CgroupSockAddr { target } => target.target_string(),
+            ProgramSpec::LircMode2 { target } => target.target_string(),
             ProgramSpec::StructOps { value_type_name } => value_type_name.clone(),
         }
     }

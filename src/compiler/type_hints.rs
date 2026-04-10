@@ -285,6 +285,9 @@ fn recover_ctx_field_hint(
         | CtxField::RemotePort
         | CtxField::LocalIp4
         | CtxField::LocalPort
+        | CtxField::LircSample
+        | CtxField::LircValue
+        | CtxField::LircMode
         | CtxField::DeviceAccessType
         | CtxField::DeviceMajor
         | CtxField::DeviceMinor

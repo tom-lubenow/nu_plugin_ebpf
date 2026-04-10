@@ -1343,6 +1343,19 @@ impl<'a> MirToEbpfCompiler<'a> {
                     Self::bpf_sk_lookup_offsets().0,
                 ));
             }
+            CtxField::LircSample => {
+                self.instructions.push(EbpfInsn::ldxw(dst, EbpfReg::R9, 0));
+            }
+            CtxField::LircValue => {
+                self.instructions.push(EbpfInsn::ldxw(dst, EbpfReg::R9, 0));
+                self.instructions
+                    .push(EbpfInsn::and32_imm(dst, 0x00ff_ffff));
+            }
+            CtxField::LircMode => {
+                self.instructions.push(EbpfInsn::ldxw(dst, EbpfReg::R9, 0));
+                self.instructions
+                    .push(EbpfInsn::and32_imm(dst, 0xff00_0000u32 as i32));
+            }
             CtxField::DeviceAccessType => {
                 let offset = Self::bpf_cgroup_dev_ctx_offsets().0;
                 self.instructions

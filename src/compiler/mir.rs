@@ -486,6 +486,12 @@ pub enum CtxField {
     LocalPort,
     /// bpf_sk_lookup::cookie
     LookupCookie,
+    /// lirc mode2 raw sample word
+    LircSample,
+    /// lirc mode2 low 24-bit payload value
+    LircValue,
+    /// lirc mode2 high-byte event kind mask
+    LircMode,
     /// Stable kernel socket cookie for supported socket-backed contexts
     SocketCookie,
     /// Stable kernel network-namespace cookie for supported socket-backed contexts
@@ -639,6 +645,9 @@ impl CtxField {
             CtxField::LocalIp6 => "local_ip6".to_string(),
             CtxField::LocalPort => "local_port".to_string(),
             CtxField::LookupCookie => "cookie".to_string(),
+            CtxField::LircSample => "sample".to_string(),
+            CtxField::LircValue => "value".to_string(),
+            CtxField::LircMode => "mode".to_string(),
             CtxField::SocketCookie => "socket_cookie".to_string(),
             CtxField::NetnsCookie => "netns_cookie".to_string(),
             CtxField::DeviceAccessType => "access_type".to_string(),

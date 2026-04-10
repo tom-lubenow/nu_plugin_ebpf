@@ -731,6 +731,26 @@ impl EbpfState {
                         LoadError::Attach(format!("Failed to attach cgroup_sock_addr: {e}"))
                     })?;
             }
+            ProgramAttachKind::LircMode2 => {
+                let target = LircMode2Target::parse(&program.target)?;
+                let device = std::fs::File::open(&target.device_path).map_err(|e| {
+                    if e.kind() == ErrorKind::PermissionDenied {
+                        LoadError::PermissionDenied
+                    } else {
+                        LoadError::Attach(format!(
+                            "Failed to open lirc device {}: {e}",
+                            target.device_path
+                        ))
+                    }
+                })?;
+                let lirc: &mut LircMode2 = prog
+                    .try_into()
+                    .map_err(|e| LoadError::Load(format!("Failed to convert to LircMode2: {e}")))?;
+                lirc.load()
+                    .map_err(|e| LoadError::Load(format!("Failed to load lirc_mode2: {e}")))?;
+                lirc.attach(&device)
+                    .map_err(|e| LoadError::Attach(format!("Failed to attach lirc_mode2: {e}")))?;
+            }
             ProgramAttachKind::StructOps => {
                 return Err(LoadError::Load(
                     "struct_ops callbacks are not directly attachable; emit them through a struct_ops object instead"

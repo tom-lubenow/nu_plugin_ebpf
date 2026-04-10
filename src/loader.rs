@@ -13,7 +13,7 @@ use aya::maps::sock::SockMapFd;
 use aya::maps::{HashMap as AyaHashMap, MapData, MapType, PerCpuHashMap, RingBuf};
 use aya::programs::{
     BtfTracePoint, CgroupAttachMode, CgroupDevice, CgroupSkb, CgroupSock, CgroupSockAddr,
-    CgroupSockopt, CgroupSysctl, FEntry, FExit, KProbe, Lsm, PerfEvent, PerfEventScope,
+    CgroupSockopt, CgroupSysctl, FEntry, FExit, KProbe, LircMode2, Lsm, PerfEvent, PerfEventScope,
     RawTracePoint, SchedClassifier, SkLookup, SkMsg, SkSkb, SockOps, SocketFilter, TracePoint,
     UProbe, Xdp, XdpFlags,
     perf_event::{PerfTypeId, SamplePolicy, perf_sw_ids},
@@ -100,9 +100,9 @@ mod maps;
 
 pub use crate::program_spec::{
     CgroupDeviceTarget, CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockTarget,
-    CgroupSockoptTarget, PerfEventEvent, PerfEventHardwareEvent, PerfEventSamplePolicy,
-    PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, SkLookupTarget, SkMsgTarget, SkSkbTarget,
-    SockOpsTarget, SocketFilterTarget, TcTarget, UprobeTarget,
+    CgroupSockoptTarget, LircMode2Target, PerfEventEvent, PerfEventHardwareEvent,
+    PerfEventSamplePolicy, PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, SkLookupTarget,
+    SkMsgTarget, SkSkbTarget, SockOpsTarget, SocketFilterTarget, TcTarget, UprobeTarget,
 };
 pub use targets::{parse_probe_spec, parse_program_spec};
 

@@ -3,10 +3,10 @@ use crate::compiler::{EbpfProgramType, KernelTargetValidationKind, ProgramTarget
 use crate::kernel_btf::{FunctionCheckResult, KernelBtf};
 use crate::program_spec::{
     CgroupDeviceTarget, CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockTarget,
-    CgroupSockoptTarget, DEFAULT_PERF_EVENT_PERIOD, PerfEventEvent, PerfEventHardwareEvent,
-    PerfEventSamplePolicy, PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, SkLookupTarget,
-    SkMsgTarget, SkSkbTarget, SockOpsTarget, SocketFilterSocketKind, SocketFilterTarget, TcTarget,
-    UprobeTarget,
+    CgroupSockoptTarget, DEFAULT_PERF_EVENT_PERIOD, LircMode2Target, PerfEventEvent,
+    PerfEventHardwareEvent, PerfEventSamplePolicy, PerfEventSoftwareEvent, PerfEventTarget,
+    ProgramSpec, SkLookupTarget, SkMsgTarget, SkSkbTarget, SockOpsTarget, SocketFilterSocketKind,
+    SocketFilterTarget, TcTarget, UprobeTarget,
 };
 use aya::programs::{
     CgroupSkbAttachType, CgroupSockAddrAttachType, CgroupSockAttachType, CgroupSockoptAttachType,
@@ -14,6 +14,7 @@ use aya::programs::{
 };
 use aya::util::online_cpus;
 use std::net::{Ipv4Addr, Ipv6Addr};
+use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
 
 impl UprobeTarget {
@@ -264,6 +265,21 @@ impl SkLookupTarget {
 
         Ok(Self {
             netns_path: target.to_string(),
+        })
+    }
+}
+
+impl LircMode2Target {
+    /// Parse a lirc_mode2 target string of the form `/dev/lirc0`.
+    pub fn parse(target: &str) -> Result<Self, LoadError> {
+        if target.is_empty() {
+            return Err(LoadError::Load(
+                "lirc_mode2 device path cannot be empty".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            device_path: target.to_string(),
         })
     }
 }
@@ -809,6 +825,40 @@ fn validate_socket_filter_target(target: &str) -> Result<(), LoadError> {
     Ok(())
 }
 
+fn validate_lirc_mode2_target(target: &str) -> Result<(), LoadError> {
+    let parsed = LircMode2Target::parse(target)?;
+    let device_path = Path::new(&parsed.device_path);
+
+    if !device_path.exists() {
+        return Err(LoadError::Load(format!(
+            "Unknown lirc device path: {}",
+            parsed.device_path
+        )));
+    }
+
+    if device_path.is_dir() {
+        return Err(LoadError::Load(format!(
+            "lirc_mode2 target must be a device file, not a directory: {}",
+            parsed.device_path
+        )));
+    }
+
+    let metadata = std::fs::metadata(device_path).map_err(|e| {
+        LoadError::Load(format!(
+            "Failed to inspect lirc_mode2 target {}: {}",
+            parsed.device_path, e
+        ))
+    })?;
+    if !metadata.file_type().is_char_device() {
+        return Err(LoadError::Load(format!(
+            "lirc_mode2 target must be a character device: {}",
+            parsed.device_path
+        )));
+    }
+
+    Ok(())
+}
+
 fn validate_target_for_program_type(
     prog_type: EbpfProgramType,
     target: &str,
@@ -883,6 +933,7 @@ fn validate_target_for_program_type(
         ProgramTargetKind::CgroupPath => validate_cgroup_path_target(target),
         ProgramTargetKind::CgroupPathSockoptAttachType => validate_cgroup_sockopt_target(target),
         ProgramTargetKind::CgroupPathSockAddrAttachType => validate_cgroup_sock_addr_target(target),
+        ProgramTargetKind::LircDevicePath => validate_lirc_mode2_target(target),
         ProgramTargetKind::StructOpsCallback => validate_struct_ops_value_type(target),
     }
 }
@@ -935,6 +986,7 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `cgroup_sockopt:/path/to/cgroup:get`
 /// - `cgroup_sockopt:/path/to/cgroup:set`
 /// - `cgroup_sock_addr:/path/to/cgroup:connect4`
+/// - `lirc_mode2:/dev/lirc0`
 /// - `uprobe:/path/to/binary:0x1234` (offset-based)
 /// - `uprobe:/path/to/binary:function@PID` (PID-filtered)
 pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
@@ -1036,6 +1088,9 @@ pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
         }),
         EbpfProgramType::CgroupSockAddr => Ok(ProgramSpec::CgroupSockAddr {
             target: CgroupSockAddrTarget::parse(target)?,
+        }),
+        EbpfProgramType::LircMode2 => Ok(ProgramSpec::LircMode2 {
+            target: LircMode2Target::parse(target)?,
         }),
         EbpfProgramType::StructOps => Ok(ProgramSpec::StructOps {
             value_type_name: target.to_string(),

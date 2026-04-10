@@ -57,6 +57,16 @@ fn test_xdp_section_name() {
 }
 
 #[test]
+fn test_lirc_mode2_section_name() {
+    let prog = EbpfProgram::from_bytecode(EbpfProgramType::LircMode2, "/dev/lirc0", "test", vec![]);
+    assert_eq!(
+        prog.section_name()
+            .expect("lirc_mode2 section name should build"),
+        "lirc_mode2"
+    );
+}
+
+#[test]
 fn test_socket_filter_section_name() {
     let prog = EbpfProgram::from_bytecode(
         EbpfProgramType::SocketFilter,
@@ -164,6 +174,18 @@ fn test_program_type_metadata_for_sk_lookup() {
     assert!(info.supports_cpu_ctx_field);
     assert!(info.supports_timestamp_ctx_field);
     assert!(info.supports_ingress_ifindex_ctx_field);
+}
+
+#[test]
+fn test_program_type_metadata_for_lirc_mode2() {
+    let info = EbpfProgramType::LircMode2.info();
+    assert_eq!(info.canonical_prefix, "lirc_mode2");
+    assert_eq!(info.attach_kind, ProgramAttachKind::LircMode2);
+    assert_eq!(info.target_kind, ProgramTargetKind::LircDevicePath);
+    assert_eq!(info.arg_access, ProgramValueAccess::None);
+    assert_eq!(info.retval_access, ProgramValueAccess::None);
+    assert!(info.supports_cpu_ctx_field);
+    assert!(info.supports_timestamp_ctx_field);
 }
 
 #[test]
@@ -1947,6 +1969,14 @@ fn test_probe_context_allows_sk_lookup_cookie_field() {
         ctx.ctx_field_access_error(&CtxField::LookupCookie)
             .is_none()
     );
+}
+
+#[test]
+fn test_probe_context_allows_lirc_mode2_fields() {
+    let ctx = ProbeContext::new(EbpfProgramType::LircMode2, "/dev/lirc0");
+    assert!(ctx.ctx_field_access_error(&CtxField::LircSample).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::LircValue).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::LircMode).is_none());
 }
 
 #[test]

@@ -1384,6 +1384,9 @@ impl<'a> HirToMirLowering<'a> {
             "local_ip6" => CtxField::LocalIp6,
             "local_port" => CtxField::LocalPort,
             "cookie" => CtxField::LookupCookie,
+            "sample" | "raw" => CtxField::LircSample,
+            "value" => CtxField::LircValue,
+            "mode" => CtxField::LircMode,
             "socket_cookie" => CtxField::SocketCookie,
             "netns_cookie" => CtxField::NetnsCookie,
             "args" => CtxField::SockOpsArgs,
@@ -5141,6 +5144,9 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::RemotePort
             | CtxField::LocalIp4
             | CtxField::LocalPort
+            | CtxField::LircSample
+            | CtxField::LircValue
+            | CtxField::LircMode
             | CtxField::DeviceAccessType
             | CtxField::DeviceMajor
             | CtxField::DeviceMinor

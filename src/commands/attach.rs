@@ -2123,6 +2123,7 @@ Supported attach types:
   - cgroup_sockopt
   - cgroup_sock_addr
   - sk_lookup
+  - lirc_mode2
   - struct_ops
 
 Body forms:
@@ -2229,6 +2230,18 @@ Context parameter syntax (recommended):
     Return values are snapshot lengths: `0` drops the packet,
     positive values keep it, and aliases like `pass` / `keep` expand to
     `ctx.packet_len`.
+
+  lirc_mode2 fields:
+    {|ctx| $ctx.cpu }     - Get current CPU ID
+    {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.sample }  - Get the raw LIRC mode2 sample word
+    {|ctx| $ctx.raw }     - Alias for the raw LIRC mode2 sample word
+    {|ctx| $ctx.value }   - Get the low 24-bit LIRC payload value
+    {|ctx| $ctx.mode }    - Get the high-byte LIRC event kind mask
+    Note: lirc_mode2 targets use device paths such as `/dev/lirc0`. The
+    initial surface is read-only and exposes the raw mode2 sample layout,
+    where `ctx.mode` corresponds to constants like `LIRC_MODE2_PULSE` and
+    `ctx.value` is the low 24-bit duration/frequency payload.
 
   lsm targets:
     {|ctx| $ctx.pid }    - Get current thread ID at hook time
@@ -2643,7 +2656,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', or 'sk_lookup:/proc/self/ns/net').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
             )
             .required(
                 "body",
@@ -2703,6 +2716,7 @@ Requirements:
             "cgroup_sockopt",
             "cgroup_sock_addr",
             "sk_lookup",
+            "lirc_mode2",
             "struct_ops",
         ]
     }
@@ -2822,6 +2836,11 @@ Requirements:
             Example {
                 example: "ebpf attach 'sk_lookup:/proc/self/ns/net' {|ctx| $ctx.local_port | count; 'pass' }",
                 description: "Count local ports seen by socket lookup in the current network namespace",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach --dry-run 'lirc_mode2:/dev/lirc0' {|ctx| $ctx.value | count; 0 }",
+                description: "Dry-run a lirc_mode2 decoder using the raw mode2 sample context",
                 result: None,
             },
             Example {

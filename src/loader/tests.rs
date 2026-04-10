@@ -471,6 +471,13 @@ fn test_parse_probe_spec_lsm_file_open() {
 }
 
 #[test]
+fn test_parse_probe_spec_lirc_mode2_dev_null() {
+    let (prog_type, target) = parse_probe_spec("lirc_mode2:/dev/null").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::LircMode2);
+    assert_eq!(target, "/dev/null");
+}
+
+#[test]
 fn test_parse_program_spec_lsm_is_structured() {
     let spec = parse_program_spec("lsm:file_open").unwrap();
     assert_eq!(
@@ -551,6 +558,20 @@ fn test_parse_program_spec_sk_lookup_is_structured() {
         }
     );
     assert_eq!(spec.to_string(), "sk_lookup:/proc/self/ns/net");
+}
+
+#[test]
+fn test_parse_program_spec_lirc_mode2_is_structured() {
+    let spec = parse_program_spec("lirc_mode2:/dev/null").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::LircMode2 {
+            target: crate::program_spec::LircMode2Target {
+                device_path: "/dev/null".to_string(),
+            }
+        }
+    );
+    assert_eq!(spec.to_string(), "lirc_mode2:/dev/null");
 }
 
 #[test]
