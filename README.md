@@ -154,6 +154,9 @@ let id = ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| $ctx.sk.family |
 # Inspect the first byte of the getsockopt buffer through ctx.optval
 let id = ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| ($ctx.optval | get 0) | count; 'allow' }
 
+# Override the getsockopt return value through ordinary assignment
+let id = ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| mut ctx = $ctx; $ctx.sockopt_retval = 0; 'allow' }
+
 # Count requested ports on cgroup connect4 hooks
 let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect4' {|ctx| $ctx.user_port | count; 'allow' }
 

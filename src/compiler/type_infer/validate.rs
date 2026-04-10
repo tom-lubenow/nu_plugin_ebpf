@@ -1,6 +1,7 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
 use crate::compiler::instruction::unknown_kfunc_signature_message;
+use crate::compiler::mir::CtxStoreTarget;
 
 impl<'a> TypeInference<'a> {
     fn active_sched_ext_callback(&self) -> Option<&str> {
@@ -180,12 +181,6 @@ impl<'a> TypeInference<'a> {
         match inst {
             MirInst::StoreCtxField { target, val, ty } => {
                 let val_ty = self.mir_type_for_value(val, types);
-                if *ty != MirType::U32 {
-                    errors.push(TypeError::new(format!(
-                        "writable context fields currently require a u32 store, got {:?}",
-                        ty
-                    )));
-                }
                 if !matches!(
                     val_ty,
                     MirType::Bool
@@ -203,14 +198,42 @@ impl<'a> TypeInference<'a> {
                         val_ty
                     )));
                 }
-                if !matches!(
-                    self.probe_ctx.as_ref().map(|ctx| ctx.probe_type),
-                    Some(EbpfProgramType::SockOps)
-                ) {
-                    errors.push(TypeError::new(format!(
-                        "context store target {:?} is only supported on sock_ops programs",
-                        target
-                    )));
+                match target {
+                    CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
+                        if *ty != MirType::U32 {
+                            errors.push(TypeError::new(format!(
+                                "writable sock_ops reply fields require a u32 store, got {:?}",
+                                ty
+                            )));
+                        }
+                        if !matches!(
+                            self.probe_ctx.as_ref().map(|ctx| ctx.probe_type),
+                            Some(EbpfProgramType::SockOps)
+                        ) {
+                            errors.push(TypeError::new(format!(
+                                "context store target {:?} is only supported on sock_ops programs",
+                                target
+                            )));
+                        }
+                    }
+                    CtxStoreTarget::SockoptRetval => {
+                        if *ty != MirType::I32 {
+                            errors.push(TypeError::new(format!(
+                                "writable cgroup_sockopt retval requires an i32 store, got {:?}",
+                                ty
+                            )));
+                        }
+                        let Some(ctx) = self.probe_ctx.as_ref() else {
+                            errors.push(TypeError::new(
+                                "writable sockopt_retval requires cgroup_sockopt:get context"
+                                    .to_string(),
+                            ));
+                            return;
+                        };
+                        if let Err(err) = ctx.validate_ctx_field_access(&CtxField::SockoptRetval) {
+                            errors.push(TypeError::new(err.to_string()));
+                        }
+                    }
                 }
             }
             MirInst::BinOp { op, lhs, rhs, .. } => {

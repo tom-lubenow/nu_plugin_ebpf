@@ -1575,19 +1575,17 @@ impl<'a> HirToMirLowering<'a> {
                 path_desc
             )));
         };
-        if ctx.probe_type != EbpfProgramType::SockOps {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "context cell path update '.{} = ...' is only supported for sock_ops reply fields",
-                path_desc
-            )));
-        }
-
-        match path.members.as_slice() {
-            [PathMember::String { val, .. }] if val == "reply" => Ok(CtxStoreTarget::SockOpsReply),
-            [
-                PathMember::String { val, .. },
-                PathMember::Int { val: index, .. },
-            ] if val == "replylong" => {
+        match (ctx.probe_type, path.members.as_slice()) {
+            (EbpfProgramType::SockOps, [PathMember::String { val, .. }]) if val == "reply" => {
+                Ok(CtxStoreTarget::SockOpsReply)
+            }
+            (
+                EbpfProgramType::SockOps,
+                [
+                    PathMember::String { val, .. },
+                    PathMember::Int { val: index, .. },
+                ],
+            ) if val == "replylong" => {
                 let index = u8::try_from(*index).map_err(|_| {
                     CompileError::UnsupportedInstruction(format!(
                         "ctx.replylong index must be in 0..=3, got {}",
@@ -1602,16 +1600,29 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 Ok(CtxStoreTarget::SockOpsReplyLong(index))
             }
-            [PathMember::String { val, .. }] if val == "replylong" => {
+            (EbpfProgramType::SockOps, [PathMember::String { val, .. }]) if val == "replylong" => {
                 Err(CompileError::UnsupportedInstruction(
                     "ctx.replylong assignment requires a fixed index, e.g. $ctx.replylong.0 = ..."
                         .into(),
                 ))
             }
+            (EbpfProgramType::CgroupSockopt, [PathMember::String { val, .. }])
+                if val == "sockopt_retval" =>
+            {
+                ctx.validate_ctx_field_access(&CtxField::SockoptRetval)?;
+                Ok(CtxStoreTarget::SockoptRetval)
+            }
             _ => Err(CompileError::UnsupportedInstruction(format!(
-                "context cell path update '.{} = ...' is only supported for sock_ops reply and replylong.<0-3>",
+                "context cell path update '.{} = ...' is only supported for sock_ops reply fields and cgroup_sockopt:get sockopt_retval",
                 path_desc
             ))),
+        }
+    }
+
+    fn ctx_store_target_type(target: &CtxStoreTarget) -> MirType {
+        match target {
+            CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => MirType::U32,
+            CtxStoreTarget::SockoptRetval => MirType::I32,
         }
     }
 
@@ -1631,6 +1642,7 @@ impl<'a> HirToMirLowering<'a> {
                     Self::typed_value_path_desc(&path.members)
                 ))
             })?;
+        let target_ty = Self::ctx_store_target_type(&target);
         let stored_vreg = match new_value_runtime_ty {
             MirType::Bool
             | MirType::I8
@@ -1642,7 +1654,7 @@ impl<'a> HirToMirLowering<'a> {
             | MirType::I64
             | MirType::U64 => {
                 let widened = self.func.alloc_vreg();
-                self.vreg_type_hints.insert(widened, MirType::U32);
+                self.vreg_type_hints.insert(widened, target_ty.clone());
                 self.emit(MirInst::Copy {
                     dst: widened,
                     src: MirValue::VReg(new_value_vreg),
@@ -1651,7 +1663,7 @@ impl<'a> HirToMirLowering<'a> {
             }
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "context cell path update '.{} = ...' requires a u32-compatible scalar value",
+                    "context cell path update '.{} = ...' requires an integer-compatible scalar value",
                     Self::typed_value_path_desc(&path.members)
                 )));
             }
@@ -1659,7 +1671,7 @@ impl<'a> HirToMirLowering<'a> {
         self.emit(MirInst::StoreCtxField {
             target,
             val: MirValue::VReg(stored_vreg),
-            ty: MirType::U32,
+            ty: target_ty,
         });
         let meta = self.get_or_create_metadata(src_dst);
         meta.is_context = true;

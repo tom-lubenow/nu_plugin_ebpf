@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 68
+const TOTAL_STEPS = 69
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -1078,7 +1078,24 @@ step 67 "sock_ops root cgroup reply assignment counter" {
     }
 }
 
-step 68 "verify no leaked probes" {
+step 68 "cgroup_sockopt dry-run retval assignment" {
+    let code = ([
+        'ebpf attach --dry-run "cgroup_sockopt:/sys/fs/cgroup:get" {|ctx|'
+        '    mut ctx = $ctx'
+        '    $ctx.sockopt_retval = 0'
+        '    "allow"'
+        '} | describe'
+    ] | str join (char newline))
+    let result = (run-nu-with-plugin $plugin_bin $code | str trim)
+
+    if $result != "binary" {
+        fail $"expected cgroup_sockopt retval assignment dry-run to return binary, got ($result)"
+    }
+
+    $result
+}
+
+step 69 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

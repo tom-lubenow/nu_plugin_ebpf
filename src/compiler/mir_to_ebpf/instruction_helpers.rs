@@ -70,15 +70,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         val: &MirValue,
         ty: &MirType,
     ) -> Result<(), CompileError> {
-        if !matches!(
-            self.probe_ctx.map(|ctx| ctx.probe_type),
-            Some(EbpfProgramType::SockOps)
-        ) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "writable context field {:?} is only supported on sock_ops programs",
-                target
-            )));
-        }
         let size = ty.size();
         if size != 4 {
             return Err(CompileError::UnsupportedInstruction(format!(
@@ -87,14 +78,43 @@ impl<'a> MirToEbpfCompiler<'a> {
             )));
         }
         let offset = match target {
-            CtxStoreTarget::SockOpsReply => Self::bpf_sock_ops_args_offset(),
+            CtxStoreTarget::SockOpsReply => {
+                if !matches!(
+                    self.probe_ctx.map(|ctx| ctx.probe_type),
+                    Some(EbpfProgramType::SockOps)
+                ) {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "writable sock_ops reply fields are only supported on sock_ops programs"
+                            .into(),
+                    ));
+                }
+                Self::bpf_sock_ops_args_offset()
+            }
             CtxStoreTarget::SockOpsReplyLong(index) => {
+                if !matches!(
+                    self.probe_ctx.map(|ctx| ctx.probe_type),
+                    Some(EbpfProgramType::SockOps)
+                ) {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "writable sock_ops reply fields are only supported on sock_ops programs"
+                            .into(),
+                    ));
+                }
                 Self::bpf_sock_ops_args_offset()
                     + i16::from(*index).checked_mul(4).ok_or_else(|| {
                         CompileError::UnsupportedInstruction(
                             "sock_ops replylong index overflowed".into(),
                         )
                     })?
+            }
+            CtxStoreTarget::SockoptRetval => {
+                let Some(ctx) = self.probe_ctx else {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "writable sockopt_retval requires cgroup_sockopt:get probe context".into(),
+                    ));
+                };
+                ctx.validate_ctx_field_access(&CtxField::SockoptRetval)?;
+                Self::bpf_sockopt_offsets().5
             }
         };
         let val_reg = self.value_to_reg(val)?;

@@ -701,6 +701,8 @@ pub enum CtxStoreTarget {
     SockOpsReply,
     /// `bpf_sock_ops.replylong[idx]`
     SockOpsReplyLong(u8),
+    /// `bpf_sockopt.retval`
+    SockoptRetval,
 }
 
 /// MIR instruction

@@ -159,7 +159,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 4, 8)
     }
 
-    fn bpf_sockopt_offsets() -> (i16, i16, i16, i16, i16, i16) {
+    pub(super) fn bpf_sockopt_offsets() -> (i16, i16, i16, i16, i16, i16) {
         // struct bpf_sockopt {
         //     __u64 sk;
         //     __u64 optval;
