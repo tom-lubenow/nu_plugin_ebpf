@@ -2147,10 +2147,12 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.gid }     - Get group ID
     {|ctx| $ctx.comm }    - Get process command name (first 16 bytes)
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.cgroup_id } - Get the current task cgroup ID
 
   Packet-context fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.cgroup_id } - Get the current task cgroup ID
     {|ctx| $ctx.packet_len } - Get packet length from xdp_md or __sk_buff
     {|ctx| $ctx.pkt_type } - Get the skb pkt_type on skb-backed packet programs
     {|ctx| $ctx.queue_mapping } - Get the skb queue_mapping on skb-backed packet programs

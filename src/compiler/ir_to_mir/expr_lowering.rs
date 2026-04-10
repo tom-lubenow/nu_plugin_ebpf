@@ -1278,6 +1278,7 @@ impl<'a> HirToMirLowering<'a> {
             "comm" => CtxField::Comm,
             "cpu" => CtxField::Cpu,
             "ktime" | "timestamp" => CtxField::Timestamp,
+            "cgroup_id" => CtxField::CgroupId,
             "packet_len" | "len" => CtxField::PacketLen,
             "pkt_type" => CtxField::PktType,
             "queue_mapping" => CtxField::QueueMapping,
@@ -4827,6 +4828,7 @@ impl<'a> HirToMirLowering<'a> {
             CtxField::Pid | CtxField::Tid | CtxField::Uid | CtxField::Gid => {
                 (MirType::I32, Some(MirType::I32))
             }
+            CtxField::CgroupId => (MirType::U64, Some(MirType::U64)),
             CtxField::Cpu
             | CtxField::PacketLen
             | CtxField::PktType

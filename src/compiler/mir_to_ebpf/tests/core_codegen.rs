@@ -1623,6 +1623,45 @@ fn test_compile_sk_msg_netns_cookie_load_calls_helper() {
 }
 
 #[test]
+fn test_compile_kprobe_cgroup_id_load_calls_helper() {
+    let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::LoadCtxField {
+            dst,
+            field: CtxField::CgroupId,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_JMP | opcode::BPF_CALL
+            && insn.imm == BpfHelper::GetCurrentCgroupId as i32
+    }));
+}
+
+#[test]
 fn test_compile_sk_lookup_socket_load_uses_ctx_pointer_word() {
     let ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
 

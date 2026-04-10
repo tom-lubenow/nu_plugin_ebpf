@@ -1685,6 +1685,12 @@ fn test_probe_context_allows_netns_cookie_on_sk_msg() {
 }
 
 #[test]
+fn test_probe_context_allows_cgroup_id_on_xdp() {
+    let ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    assert!(ctx.ctx_field_access_error(&CtxField::CgroupId).is_none());
+}
+
+#[test]
 fn test_probe_context_rejects_netns_cookie_on_sk_lookup() {
     let ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
     let err = ctx

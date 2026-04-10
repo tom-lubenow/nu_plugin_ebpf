@@ -15,6 +15,7 @@ impl BpfHelper {
             12 => Some(Self::TailCall),
             14 => Some(Self::GetCurrentPidTgid),
             15 => Some(Self::GetCurrentUidGid),
+            80 => Some(Self::GetCurrentCgroupId),
             16 => Some(Self::GetCurrentComm),
             46 => Some(Self::GetSocketCookie),
             122 => Some(Self::GetNetnsCookie),
@@ -104,7 +105,8 @@ impl BpfHelper {
             BpfHelper::KtimeGetNs
             | BpfHelper::GetSmpProcessorId
             | BpfHelper::GetCurrentPidTgid
-            | BpfHelper::GetCurrentUidGid => HelperSignature {
+            | BpfHelper::GetCurrentUidGid
+            | BpfHelper::GetCurrentCgroupId => HelperSignature {
                 min_args: 0,
                 max_args: 0,
                 arg_kinds: [S, S, S, S, S],

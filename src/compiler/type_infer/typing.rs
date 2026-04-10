@@ -488,6 +488,7 @@ impl<'a> TypeInference<'a> {
             },
 
             CtxField::Timestamp
+            | CtxField::CgroupId
             | CtxField::LookupCookie
             | CtxField::SocketCookie
             | CtxField::NetnsCookie

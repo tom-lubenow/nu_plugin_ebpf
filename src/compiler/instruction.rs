@@ -72,6 +72,8 @@ pub enum BpfHelper {
     GetCurrentPidTgid = 14,
     /// u64 bpf_get_current_uid_gid(void)
     GetCurrentUidGid = 15,
+    /// u64 bpf_get_current_cgroup_id(void)
+    GetCurrentCgroupId = 80,
     /// int bpf_get_current_comm(buf, size)
     GetCurrentComm = 16,
     /// u64 bpf_get_socket_cookie(ctx)

@@ -10,6 +10,7 @@ impl<'a> VccLowerer<'a> {
             CtxField::Comm => "comm".to_string(),
             CtxField::Cpu => "cpu".to_string(),
             CtxField::Timestamp => "timestamp".to_string(),
+            CtxField::CgroupId => "cgroup_id".to_string(),
             CtxField::PacketLen => "packet_len".to_string(),
             CtxField::PktType => "pkt_type".to_string(),
             CtxField::QueueMapping => "queue_mapping".to_string(),

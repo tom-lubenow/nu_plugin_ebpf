@@ -82,6 +82,9 @@ let id = ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.c
 # Count loopback UDP packets by stable socket cookie on a bound socket_filter receive socket
 let id = ebpf attach 'socket_filter:udp4:127.0.0.1:31337' {|ctx| $ctx.socket_cookie | count; 'pass' }
 
+# Count syscalls by current cgroup ID
+let id = ebpf attach 'kprobe:ksys_read' {|ctx| $ctx.cgroup_id | count }
+
 # Count loopback UDPv6 packets by length on a bound socket_filter receive socket
 let id = ebpf attach 'socket_filter:udp6:[::1]:31337' {|ctx| $ctx.packet_len | count; 'pass' }
 
@@ -308,6 +311,7 @@ The closure receives a context parameter with these fields:
 | `uid` | User ID | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
 | `gid` | Group ID | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
 | `comm` | Process name (16 bytes) | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
+| `cgroup_id` | Current task cgroup ID | all current program types |
 | `cpu` | CPU ID | All |
 | `ktime` | Kernel timestamp (ns) | All |
 | `packet_len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs, `size` on sk_msg) | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser |

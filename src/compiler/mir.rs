@@ -398,6 +398,8 @@ pub enum CtxField {
     Cpu,
     /// Timestamp (nanoseconds)
     Timestamp,
+    /// Current task cgroup ID
+    CgroupId,
     /// XDP packet length (`data_end - data`)
     PacketLen,
     /// skb packet type (`__sk_buff.pkt_type`)
@@ -570,6 +572,7 @@ impl CtxField {
             CtxField::Comm => "comm".to_string(),
             CtxField::Cpu => "cpu".to_string(),
             CtxField::Timestamp => "timestamp".to_string(),
+            CtxField::CgroupId => "cgroup_id".to_string(),
             CtxField::PacketLen => "packet_len".to_string(),
             CtxField::PktType => "pkt_type".to_string(),
             CtxField::QueueMapping => "queue_mapping".to_string(),

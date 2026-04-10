@@ -946,6 +946,42 @@ impl ProbeContext {
                     self.probe_type.canonical_prefix()
                 ),
             ),
+            CtxField::CgroupId
+                if !matches!(
+                    self.probe_type,
+                    EbpfProgramType::Kprobe
+                        | EbpfProgramType::Kretprobe
+                        | EbpfProgramType::Fentry
+                        | EbpfProgramType::Fexit
+                        | EbpfProgramType::Tracepoint
+                        | EbpfProgramType::RawTracepoint
+                        | EbpfProgramType::Uprobe
+                        | EbpfProgramType::Uretprobe
+                        | EbpfProgramType::Lsm
+                        | EbpfProgramType::Xdp
+                        | EbpfProgramType::PerfEvent
+                        | EbpfProgramType::SocketFilter
+                        | EbpfProgramType::CgroupDevice
+                        | EbpfProgramType::SkLookup
+                        | EbpfProgramType::SkMsg
+                        | EbpfProgramType::SkSkb
+                        | EbpfProgramType::SkSkbParser
+                        | EbpfProgramType::SockOps
+                        | EbpfProgramType::Tc
+                        | EbpfProgramType::CgroupSkb
+                        | EbpfProgramType::CgroupSock
+                        | EbpfProgramType::CgroupSysctl
+                        | EbpfProgramType::CgroupSockopt
+                        | EbpfProgramType::CgroupSockAddr
+                        | EbpfProgramType::StructOps
+                ) =>
+            {
+                Some(format!(
+                    "ctx.{} is not available on {} programs",
+                    field.display_name(),
+                    self.probe_type.canonical_prefix()
+                ))
+            }
             CtxField::PacketLen if !self.probe_type.supports_packet_len_ctx_field() => {
                 Some(packet_field_error(field))
             }

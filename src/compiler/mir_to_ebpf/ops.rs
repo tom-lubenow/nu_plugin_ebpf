@@ -742,6 +742,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }
+            CtxField::CgroupId => {
+                self.instructions
+                    .push(EbpfInsn::call(BpfHelper::GetCurrentCgroupId));
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
+            }
             CtxField::SocketCookie => {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R9));

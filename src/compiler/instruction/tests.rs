@@ -122,6 +122,15 @@ fn test_helper_signature_get_netns_cookie() {
 }
 
 #[test]
+fn test_helper_signature_get_current_cgroup_id() {
+    let sig = HelperSignature::for_id(BpfHelper::GetCurrentCgroupId as u32)
+        .expect("expected bpf_get_current_cgroup_id helper signature");
+    assert_eq!(sig.min_args, 0);
+    assert_eq!(sig.max_args, 0);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
 fn test_helper_signature_sk_storage_helpers() {
     let sig = HelperSignature::for_id(BpfHelper::SkStorageGet as u32)
         .expect("expected bpf_sk_storage_get helper signature");

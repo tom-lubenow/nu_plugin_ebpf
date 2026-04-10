@@ -2412,6 +2412,33 @@ fn test_lower_sk_msg_ctx_netns_cookie_field() {
 }
 
 #[test]
+fn test_lower_kprobe_ctx_cgroup_id_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("cgroup_id")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("kprobe ctx.cgroup_id should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::CgroupId,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_socket_filter_ctx_mark_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("mark")],

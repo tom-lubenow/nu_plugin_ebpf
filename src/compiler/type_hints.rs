@@ -317,6 +317,7 @@ fn recover_ctx_field_hint(
             address_space: AddressSpace::Packet,
         }),
         CtxField::Timestamp
+        | CtxField::CgroupId
         | CtxField::LookupCookie
         | CtxField::SocketCookie
         | CtxField::NetnsCookie => Some(MirType::U64),
