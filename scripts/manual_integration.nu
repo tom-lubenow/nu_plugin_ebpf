@@ -736,14 +736,14 @@ step 49 "cgroup_sysctl root read/write counter" {
     }
 }
 
-step 50 "cgroup_sockopt root getsockopt socket family/state/src_port counter" {
+step 50 "cgroup_sockopt root getsockopt socket family/state/port counter" {
     if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
         print "Skipping cgroup_sockopt smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
     } else {
         count-at-least-one "cgroup_sockopt:/sys/fs/cgroup:get" {|ctx|
-            ($ctx.sk.family + $ctx.sk.src_port + ($ctx.sk.state mod 1024)) | count
+            ($ctx.sk.family + $ctx.sk.src_port + $ctx.sk.dst_port + ($ctx.sk.state mod 1024)) | count
             'allow'
-        } { trigger-sockopt-read } "cgroup_sockopt getsockopt socket family/state/src_port counter"
+        } { trigger-sockopt-read } "cgroup_sockopt getsockopt socket family/state/port counter"
     }
 }
 
@@ -913,7 +913,7 @@ step 63 "sk_msg pinned sockhash live attach and detach" {
             ^bpftool map create $map_path type sockhash key 4 value 4 entries 16 name nu_skmsg | ignore
 
             let dry_run_code = ([
-                'ebpf attach --dry-run "sk_msg:__MAP__" {|ctx| ($ctx.sk.family + $ctx.sk.src_port + ($ctx.sk.state mod 1024)) | count; "pass" } | describe'
+                'ebpf attach --dry-run "sk_msg:__MAP__" {|ctx| ($ctx.sk.family + $ctx.sk.src_port + $ctx.sk.dst_port + ($ctx.sk.state mod 1024)) | count; "pass" } | describe'
             ] | str join (char newline) | str replace "__MAP__" $map_path)
 
             let describe = (run-nu-with-plugin $plugin_bin $dry_run_code | str trim)

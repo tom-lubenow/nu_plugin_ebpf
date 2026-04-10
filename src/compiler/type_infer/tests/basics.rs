@@ -1145,6 +1145,11 @@ fn test_infer_sk_msg_socket_field_includes_extended_metadata() {
     assert!(
         fields
             .iter()
+            .any(|field| field.name == "dst_port" && field.ty == MirType::U16)
+    );
+    assert!(
+        fields
+            .iter()
             .any(|field| field.name == "state" && field.ty == MirType::U32)
     );
     assert!(

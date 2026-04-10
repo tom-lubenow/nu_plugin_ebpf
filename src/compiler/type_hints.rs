@@ -214,6 +214,13 @@ fn synthetic_bpf_sock_type() -> MirType {
                 bitfield: None,
             },
             StructField {
+                name: "dst_port".to_string(),
+                ty: MirType::U16,
+                offset: 48,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
                 name: "state".to_string(),
                 ty: MirType::U32,
                 offset: 72,
@@ -708,6 +715,9 @@ mod tests {
         assert!(fields.iter().any(|field| field.name == "src_port"
             && field.ty == MirType::U32
             && field.offset == 44));
+        assert!(fields.iter().any(|field| field.name == "dst_port"
+            && field.ty == MirType::U16
+            && field.offset == 48));
         assert!(
             fields.iter().any(|field| field.name == "state"
                 && field.ty == MirType::U32

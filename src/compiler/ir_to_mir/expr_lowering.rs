@@ -83,6 +83,13 @@ impl<'a> HirToMirLowering<'a> {
                     bitfield: None,
                 },
                 StructField {
+                    name: "dst_port".to_string(),
+                    ty: MirType::U16,
+                    offset: 48,
+                    synthetic: false,
+                    bitfield: None,
+                },
+                StructField {
                     name: "state".to_string(),
                     ty: MirType::U32,
                     offset: 72,
