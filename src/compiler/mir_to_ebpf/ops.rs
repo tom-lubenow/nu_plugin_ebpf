@@ -41,6 +41,17 @@ impl<'a> MirToEbpfCompiler<'a> {
         (4, 12)
     }
 
+    fn sk_buff_vlan_offsets() -> (i16, i16, i16, i16) {
+        // struct __sk_buff {
+        //     ...
+        //     __u32 protocol;      // stored in network byte order
+        //     __u32 vlan_present;
+        //     __u32 vlan_tci;
+        //     __u32 vlan_proto;    // stored in network byte order
+        // };
+        (16, 20, 24, 28)
+    }
+
     fn sk_buff_extended_meta_offsets() -> (i16, i16, i16, i16, i16, i16) {
         // struct __sk_buff {
         //     ...
@@ -748,6 +759,60 @@ impl<'a> MirToEbpfCompiler<'a> {
                 };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, queue_mapping_offset));
+            }
+            CtxField::EthProtocol => {
+                let protocol_offset = match self.packet_context_kind()? {
+                    PacketContextKind::SkBuff => Self::sk_buff_vlan_offsets().0,
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.eth_protocol is only available on skb-backed packet programs"
+                                .to_string(),
+                        ));
+                    }
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxh(dst, EbpfReg::R9, protocol_offset));
+                self.instructions.push(EbpfInsn::end16_to_be(dst));
+            }
+            CtxField::VlanPresent => {
+                let vlan_present_offset = match self.packet_context_kind()? {
+                    PacketContextKind::SkBuff => Self::sk_buff_vlan_offsets().1,
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.vlan_present is only available on skb-backed packet programs"
+                                .to_string(),
+                        ));
+                    }
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, vlan_present_offset));
+            }
+            CtxField::VlanTci => {
+                let vlan_tci_offset = match self.packet_context_kind()? {
+                    PacketContextKind::SkBuff => Self::sk_buff_vlan_offsets().2,
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.vlan_tci is only available on skb-backed packet programs"
+                                .to_string(),
+                        ));
+                    }
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, vlan_tci_offset));
+            }
+            CtxField::VlanProto => {
+                let vlan_proto_offset = match self.packet_context_kind()? {
+                    PacketContextKind::SkBuff => Self::sk_buff_vlan_offsets().3,
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.vlan_proto is only available on skb-backed packet programs"
+                                .to_string(),
+                        ));
+                    }
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxh(dst, EbpfReg::R9, vlan_proto_offset));
+                self.instructions.push(EbpfInsn::end16_to_be(dst));
             }
             CtxField::TcClassid => {
                 let tc_classid_offset = match self.packet_context_kind()? {

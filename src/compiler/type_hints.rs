@@ -177,6 +177,10 @@ fn recover_ctx_field_hint(
         | CtxField::PacketLen
         | CtxField::PktType
         | CtxField::QueueMapping
+        | CtxField::EthProtocol
+        | CtxField::VlanPresent
+        | CtxField::VlanTci
+        | CtxField::VlanProto
         | CtxField::TcClassid
         | CtxField::NapiId
         | CtxField::WireLen

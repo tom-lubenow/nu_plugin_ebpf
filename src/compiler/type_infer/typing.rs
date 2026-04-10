@@ -383,6 +383,10 @@ impl<'a> TypeInference<'a> {
             | CtxField::PacketLen
             | CtxField::PktType
             | CtxField::QueueMapping
+            | CtxField::EthProtocol
+            | CtxField::VlanPresent
+            | CtxField::VlanTci
+            | CtxField::VlanProto
             | CtxField::TcClassid
             | CtxField::NapiId
             | CtxField::WireLen

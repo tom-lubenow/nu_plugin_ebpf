@@ -2154,6 +2154,10 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.packet_len } - Get packet length from xdp_md or __sk_buff
     {|ctx| $ctx.pkt_type } - Get the skb pkt_type on skb-backed packet programs
     {|ctx| $ctx.queue_mapping } - Get the skb queue_mapping on skb-backed packet programs
+    {|ctx| $ctx.eth_protocol } - Get the skb protocol / ethertype in host byte order on skb-backed packet programs
+    {|ctx| $ctx.vlan_present } - Get whether skb VLAN metadata is present on skb-backed packet programs
+    {|ctx| $ctx.vlan_tci } - Get the skb VLAN TCI on skb-backed packet programs
+    {|ctx| $ctx.vlan_proto } - Get the skb VLAN ethertype in host byte order on skb-backed packet programs
     {|ctx| $ctx.tc_classid } - Get the skb tc_classid on skb-backed packet programs
     {|ctx| $ctx.napi_id } - Get the skb napi_id on skb-backed packet programs
     {|ctx| $ctx.wire_len } - Get the skb wire_len on skb-backed packet programs
@@ -2316,6 +2320,10 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.packet_len } - Get total packet length in bytes
     {|ctx| $ctx.pkt_type } - Get the skb pkt_type
     {|ctx| $ctx.queue_mapping } - Get the skb queue_mapping
+    {|ctx| $ctx.eth_protocol } - Get the skb protocol / ethertype in host byte order
+    {|ctx| $ctx.vlan_present } - Get whether skb VLAN metadata is present
+    {|ctx| $ctx.vlan_tci } - Get the skb VLAN TCI
+    {|ctx| $ctx.vlan_proto } - Get the skb VLAN ethertype in host byte order
     {|ctx| $ctx.tc_classid } - Get the skb tc_classid
     {|ctx| $ctx.napi_id } - Get the skb napi_id
     {|ctx| $ctx.wire_len } - Get the skb wire_len
@@ -2351,6 +2359,10 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.packet_len } - Get total packet length in bytes
     {|ctx| $ctx.pkt_type } - Get the skb pkt_type
     {|ctx| $ctx.queue_mapping } - Get the skb queue_mapping
+    {|ctx| $ctx.eth_protocol } - Get the skb protocol / ethertype in host byte order
+    {|ctx| $ctx.vlan_present } - Get whether skb VLAN metadata is present
+    {|ctx| $ctx.vlan_tci } - Get the skb VLAN TCI
+    {|ctx| $ctx.vlan_proto } - Get the skb VLAN ethertype in host byte order
     {|ctx| $ctx.tc_classid } - Get the skb tc_classid
     {|ctx| $ctx.napi_id } - Get the skb napi_id
     {|ctx| $ctx.wire_len } - Get the skb wire_len

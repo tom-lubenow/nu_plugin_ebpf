@@ -404,6 +404,14 @@ pub enum CtxField {
     PktType,
     /// skb queue mapping (`__sk_buff.queue_mapping`)
     QueueMapping,
+    /// skb protocol / ethertype (normalized to host byte order)
+    EthProtocol,
+    /// skb VLAN presence flag (`__sk_buff.vlan_present`)
+    VlanPresent,
+    /// skb VLAN TCI (`__sk_buff.vlan_tci`)
+    VlanTci,
+    /// skb VLAN protocol / ethertype (normalized to host byte order)
+    VlanProto,
     /// skb tc_classid (`__sk_buff.tc_classid`)
     TcClassid,
     /// skb napi_id (`__sk_buff.napi_id`)
@@ -541,6 +549,10 @@ impl CtxField {
             CtxField::PacketLen => "packet_len".to_string(),
             CtxField::PktType => "pkt_type".to_string(),
             CtxField::QueueMapping => "queue_mapping".to_string(),
+            CtxField::EthProtocol => "eth_protocol".to_string(),
+            CtxField::VlanPresent => "vlan_present".to_string(),
+            CtxField::VlanTci => "vlan_tci".to_string(),
+            CtxField::VlanProto => "vlan_proto".to_string(),
             CtxField::TcClassid => "tc_classid".to_string(),
             CtxField::NapiId => "napi_id".to_string(),
             CtxField::WireLen => "wire_len".to_string(),

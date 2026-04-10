@@ -301,6 +301,10 @@ The closure receives a context parameter with these fields:
 | `packet_len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs, `size` on sk_msg) | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser |
 | `pkt_type` | skb pkt_type | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `queue_mapping` | skb queue_mapping | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `eth_protocol` | skb protocol / ethertype in host byte order | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `vlan_present` | Whether skb VLAN metadata is present | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `vlan_tci` | skb VLAN TCI | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `vlan_proto` | skb VLAN ethertype in host byte order | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `tc_classid` | skb tc_classid | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `napi_id` | skb napi_id | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `wire_len` | skb wire_len | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
@@ -376,9 +380,11 @@ runtime-sized TCP header using the data offset. `xdp` additionally exposes `ctx.
 `ctx.rx_queue_index`, and `ctx.egress_ifindex`. The skb-backed packet
 contexts (`socket_filter`, `tc`, `cgroup_skb`, `sk_skb`, and
 `sk_skb_parser`) also expose `ctx.pkt_type`, `ctx.queue_mapping`,
+`ctx.eth_protocol`, `ctx.vlan_present`, `ctx.vlan_tci`, `ctx.vlan_proto`,
 `ctx.tc_classid`, `ctx.napi_id`, `ctx.wire_len`, `ctx.gso_segs`,
 `ctx.gso_size`, `ctx.hwtstamp`, `ctx.tc_index`, `ctx.hash`, `ctx.mark`,
-and `ctx.priority`. The initial `socket_filter`
+and `ctx.priority`. `ctx.eth_protocol` and `ctx.vlan_proto` are
+normalized to host byte order. The initial `socket_filter`
 surface uses targets like `socket_filter:udp4:127.0.0.1:31337`, which create
 and keep open a bound UDP4 receive socket while attached. `socket_filter`
 return values are snapshot lengths: return `0` to drop the packet or a
@@ -468,8 +474,9 @@ work.
 `sk_skb` currently emits `sk_skb/stream_verdict` programs attached to a
 pinned sockmap or sockhash path such as `/sys/fs/bpf/demo_sockmap`. It
 exposes `ctx.cpu`, `ctx.ktime`, `ctx.packet_len`, `ctx.data`,
-`ctx.pkt_type`, `ctx.queue_mapping`, `ctx.tc_classid`, `ctx.napi_id`,
-`ctx.wire_len`, `ctx.gso_segs`, `ctx.gso_size`, `ctx.hwtstamp`,
+`ctx.pkt_type`, `ctx.queue_mapping`, `ctx.eth_protocol`,
+`ctx.vlan_present`, `ctx.vlan_tci`, `ctx.vlan_proto`, `ctx.tc_classid`,
+`ctx.napi_id`, `ctx.wire_len`, `ctx.gso_segs`, `ctx.gso_size`, `ctx.hwtstamp`,
 `ctx.data_end`, `ctx.ingress_ifindex`, `ctx.ifindex`, `ctx.tc_index`,
 `ctx.hash`, `ctx.mark`, `ctx.priority`, `ctx.family`, `ctx.remote_ip4`,
 `ctx.remote_ip6`, `ctx.remote_port`,
@@ -484,8 +491,9 @@ return codes with `pass` / `drop` aliases.
 `sk_skb_parser` currently emits `sk_skb/stream_parser` programs attached to
 a pinned sockmap or sockhash path such as `/sys/fs/bpf/demo_sockmap`. It
 uses the same skb-backed packet context as `sk_skb`, including `ctx.family`,
-`ctx.pkt_type`, `ctx.queue_mapping`, `ctx.tc_classid`, `ctx.napi_id`,
-`ctx.wire_len`, `ctx.gso_segs`, `ctx.gso_size`, `ctx.hwtstamp`,
+`ctx.pkt_type`, `ctx.queue_mapping`, `ctx.eth_protocol`,
+`ctx.vlan_present`, `ctx.vlan_tci`, `ctx.vlan_proto`, `ctx.tc_classid`,
+`ctx.napi_id`, `ctx.wire_len`, `ctx.gso_segs`, `ctx.gso_size`, `ctx.hwtstamp`,
 `ctx.ifindex`, `ctx.tc_index`, `ctx.hash`, `ctx.mark`, `ctx.priority`,
 `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`,
 `ctx.local_ip6`, and `ctx.local_port`,

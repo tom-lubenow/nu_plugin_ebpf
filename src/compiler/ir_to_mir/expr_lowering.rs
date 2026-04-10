@@ -1230,6 +1230,10 @@ impl<'a> HirToMirLowering<'a> {
             "packet_len" | "len" => CtxField::PacketLen,
             "pkt_type" => CtxField::PktType,
             "queue_mapping" => CtxField::QueueMapping,
+            "eth_protocol" => CtxField::EthProtocol,
+            "vlan_present" => CtxField::VlanPresent,
+            "vlan_tci" => CtxField::VlanTci,
+            "vlan_proto" => CtxField::VlanProto,
             "tc_classid" => CtxField::TcClassid,
             "napi_id" => CtxField::NapiId,
             "wire_len" => CtxField::WireLen,
@@ -4704,6 +4708,10 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::PacketLen
             | CtxField::PktType
             | CtxField::QueueMapping
+            | CtxField::EthProtocol
+            | CtxField::VlanPresent
+            | CtxField::VlanTci
+            | CtxField::VlanProto
             | CtxField::TcClassid
             | CtxField::NapiId
             | CtxField::WireLen
