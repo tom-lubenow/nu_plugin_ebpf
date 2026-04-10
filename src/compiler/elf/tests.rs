@@ -1574,6 +1574,7 @@ fn test_probe_context_allows_packet_fields_on_cgroup_skb() {
 #[test]
 fn test_probe_context_allows_sock_fields_on_cgroup_sock() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+    assert!(ctx.ctx_field_access_error(&CtxField::Socket).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Family).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::SockType).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Protocol).is_none());

@@ -367,7 +367,7 @@ The closure receives a context parameter with these fields:
 | `local_ip4` | Local IPv4 address in host byte order | sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `local_ip6` | Local IPv6 address as four host-order `u32` words | sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `local_port` | Local port in host byte order | sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
-| `sk` | Typed `bpf_sock *` pointer for socket projection such as `$ctx.sk.family` or `$ctx.sk.bound_dev_if` | sk_lookup, sk_msg |
+| `sk` | Typed `bpf_sock *` pointer for socket projection such as `$ctx.sk.family` or `$ctx.sk.bound_dev_if` | cgroup_sock, sk_lookup, sk_msg |
 | `cookie` | Socket lookup cookie | sk_lookup |
 | `level` | Socket-option level | cgroup_sockopt |
 | `optname` | Socket-option name | cgroup_sockopt |
@@ -431,8 +431,9 @@ sampling. The initial surface uses the ordinary helper-backed fields like
 `post_bind4`, and `post_bind6`. It exposes `ctx.cpu`, `ctx.ktime`,
 `ctx.family`, `ctx.sock_type`, `ctx.protocol`, `ctx.bound_dev_if`,
 `ctx.mark`, and `ctx.priority`, and closures can return `"allow"` /
-`"deny"` instead of raw `1` / `0` result codes. Address fields from the
-underlying `struct bpf_sock` are not surfaced yet.
+`"deny"` instead of raw `1` / `0` result codes. It also exposes a typed
+`ctx.sk` pointer for ordinary socket projection such as `$ctx.sk.family`
+or `$ctx.sk.mark`.
 
 `cgroup_device` currently attaches to a cgroup path such as
 `/sys/fs/cgroup`. It exposes `ctx.cpu`, `ctx.ktime`, `ctx.access_type`,

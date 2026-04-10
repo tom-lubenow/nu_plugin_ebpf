@@ -2245,6 +2245,7 @@ Context parameter syntax (recommended):
   cgroup_sock fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer
     {|ctx| $ctx.family }  - Get socket family
     {|ctx| $ctx.sock_type } - Get socket type
     {|ctx| $ctx.protocol } - Get socket protocol

@@ -647,7 +647,7 @@ step 43 "cgroup_sock root sock_create family counter" {
         print "Skipping cgroup_sock smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
     } else {
         count-at-least-one "cgroup_sock:/sys/fs/cgroup:sock_create" {|ctx|
-            $ctx.family | count
+            $ctx.sk.family | count
             'allow'
         } { trigger-socket-create } "cgroup_sock family counter"
     }

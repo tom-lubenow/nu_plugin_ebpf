@@ -1020,10 +1020,13 @@ impl ProbeContext {
                 ))
             }
             CtxField::Socket
-                if !matches!(self.probe_type, EbpfProgramType::SkLookup | EbpfProgramType::SkMsg) =>
+                if !matches!(
+                    self.probe_type,
+                    EbpfProgramType::CgroupSock | EbpfProgramType::SkLookup | EbpfProgramType::SkMsg
+                ) =>
             {
                 Some(format!(
-                    "ctx.{} is only available on sk_lookup and sk_msg programs",
+                    "ctx.{} is only available on cgroup_sock, sk_lookup, and sk_msg programs",
                     field.display_name()
                 ))
             }
