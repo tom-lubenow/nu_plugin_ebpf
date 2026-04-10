@@ -3182,6 +3182,50 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn resolve_typed_value_projection_path(
+        current_ty: &MirType,
+        members: &[PathMember],
+        path_desc: &str,
+    ) -> Result<TypedProjectionStep, CompileError> {
+        let mut offset = 0usize;
+        let mut ty = current_ty.clone();
+        let mut final_step = None;
+
+        for (idx, member) in members.iter().enumerate() {
+            let step = Self::resolve_typed_value_projection_step(&ty, member, path_desc)?;
+            if idx + 1 != members.len() && step.bitfield.is_some() {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "typed field path '{}' cannot traverse through bitfield member '{}'",
+                    path_desc,
+                    match member {
+                        PathMember::String { val, .. } => val.as_str(),
+                        PathMember::Int { .. } => "<index>",
+                    }
+                )));
+            }
+            offset = offset.checked_add(step.offset).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "typed field path '{}' offset overflowed",
+                    path_desc
+                ))
+            })?;
+            ty = step.ty.clone();
+            final_step = Some(TypedProjectionStep {
+                offset,
+                ty: step.ty,
+                bitfield: step.bitfield,
+                packet_big_endian: step.packet_big_endian,
+            });
+        }
+
+        final_step.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "typed field path '{}' cannot be empty",
+                path_desc
+            ))
+        })
+    }
+
     fn resolve_pointer_sequence_index_step(
         current_ty: &MirType,
         index: usize,
@@ -5187,12 +5231,6 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let path_desc = Self::typed_value_path_desc(&path.members);
-        if path.members.len() != 1 {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "cell path update '.{} = ...' is only supported for a single flat field on a materialized aggregate value",
-                path_desc
-            )));
-        }
 
         let base_vreg = self.get_vreg(src_dst);
         let base_runtime_ty = self
@@ -5214,11 +5252,8 @@ impl<'a> HirToMirLowering<'a> {
             )));
         };
 
-        let projection = Self::resolve_typed_value_projection_step(
-            pointee.as_ref(),
-            &path.members[0],
-            &path_desc,
-        )?;
+        let projection =
+            Self::resolve_typed_value_projection_path(pointee.as_ref(), &path.members, &path_desc)?;
         let projected_semantics = self
             .get_metadata(src_dst)
             .and_then(|m| m.annotated_semantics.clone())

@@ -1829,6 +1829,268 @@ fn test_view_ir_style_user_function_returned_annotated_list_record_can_flow_thro
 }
 
 #[test]
+fn test_view_ir_style_user_function_returned_nested_annotated_list_record_can_flow_through_local() {
+    use nu_protocol::ast::{CellPath, PathMember};
+    use nu_protocol::casing::Casing;
+    use nu_protocol::ir::{Instruction, IrBlock, Literal, RedirectMode};
+    use nu_protocol::{DeclId, Record, RegId, Span, Type, Value, VarId};
+    use std::sync::Arc;
+
+    let user_ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(80),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(81),
+                src: RegId::new(0),
+            },
+            Instruction::Drain { src: RegId::new(0) },
+            Instruction::LoadLiteral {
+                dst: RegId::new(0),
+                lit: Literal::List { capacity: 2 },
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::Int(33),
+            },
+            Instruction::ListPush {
+                src_dst: RegId::new(0),
+                item: RegId::new(1),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::Int(44),
+            },
+            Instruction::ListPush {
+                src_dst: RegId::new(0),
+                item: RegId::new(1),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(1),
+                var_id: VarId::new(81),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(2),
+                lit: Literal::CellPath(Box::new(CellPath {
+                    members: vec![
+                        PathMember::test_string("nested".to_string(), false, Casing::Sensitive),
+                        PathMember::test_string("vals".to_string(), false, Casing::Sensitive),
+                    ],
+                })),
+            },
+            Instruction::UpsertCellPath {
+                src_dst: RegId::new(1),
+                path: RegId::new(2),
+                new_value: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(81),
+                src: RegId::new(1),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(0),
+                lit: Literal::Nothing,
+            },
+            Instruction::Drain { src: RegId::new(0) },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(81),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data: Arc::from([]),
+        ast: vec![],
+        comments: vec!["".into(); 16],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let main_ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadVariable {
+                dst: RegId::new(1),
+                var_id: VarId::new(84),
+            },
+            Instruction::PushPositional { src: RegId::new(1) },
+            Instruction::RedirectOut {
+                mode: RedirectMode::Value,
+            },
+            Instruction::Call {
+                decl_id: DeclId::new(1),
+                src_dst: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(85),
+                src: RegId::new(0),
+            },
+            Instruction::Drain { src: RegId::new(0) },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(85),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::CellPath(Box::new(CellPath {
+                    members: vec![
+                        PathMember::test_string("nested".to_string(), false, Casing::Sensitive),
+                        PathMember::test_string("vals".to_string(), false, Casing::Sensitive),
+                    ],
+                })),
+            },
+            Instruction::FollowCellPath {
+                src_dst: RegId::new(0),
+                path: RegId::new(1),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::Int(1),
+            },
+            Instruction::PushPositional { src: RegId::new(1) },
+            Instruction::RedirectOut {
+                mode: RedirectMode::Value,
+            },
+            Instruction::Call {
+                decl_id: DeclId::new(2),
+                src_dst: RegId::new(0),
+            },
+            Instruction::Drain { src: RegId::new(0) },
+            Instruction::LoadLiteral {
+                dst: RegId::new(0),
+                lit: Literal::Int(0),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data: Arc::from([]),
+        ast: vec![],
+        comments: vec!["".into(); 16],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let mut nested = Record::new();
+    nested.push(
+        "vals",
+        Value::list(
+            vec![
+                Value::int(11, Span::test_data()),
+                Value::int(22, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+    let mut initial = Record::new();
+    initial.push("nested", Value::record(nested, Span::test_data()));
+
+    let mut hir_program = HirProgram::new(
+        HirFunction::from_ir_block(main_ir).unwrap(),
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    hir_program.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: VarId::new(84),
+        declared_type: Type::Record(Box::new([(
+            "nested".to_string(),
+            Type::Record(Box::new([(
+                "vals".to_string(),
+                Type::List(Box::new(Type::Int)),
+            )])),
+        )])),
+        initial_value: Value::record(initial, Span::test_data()),
+    }];
+
+    let mut user_functions = HashMap::new();
+    user_functions.insert(DeclId::new(1), HirFunction::from_ir_block(user_ir).unwrap());
+
+    let mut signatures = HashMap::new();
+    signatures.insert(
+        DeclId::new(1),
+        UserFunctionSig {
+            params: vec![UserParam {
+                name: Some("state".into()),
+                kind: UserParamKind::Positional,
+                optional: false,
+            }],
+        },
+    );
+    signatures.insert(
+        DeclId::new(2),
+        UserFunctionSig {
+            params: vec![
+                UserParam {
+                    name: None,
+                    kind: UserParamKind::Input,
+                    optional: false,
+                },
+                UserParam {
+                    name: Some("index".into()),
+                    kind: UserParamKind::Positional,
+                    optional: false,
+                },
+            ],
+        },
+    );
+
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(1), "bump".to_string());
+    decl_names.insert(DeclId::new(2), "get".to_string());
+    let hir_types = crate::compiler::hir_type_infer::infer_hir_types_with_decls(
+        &hir_program,
+        &decl_names,
+        &user_functions,
+    )
+    .expect("view-ir style nested list-record program should infer HIR types");
+    let probe_ctx = ProbeContext::new(crate::compiler::EbpfProgramType::Kprobe, "ksys_read");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &user_functions,
+        &signatures,
+    )
+    .expect("view-ir style returned nested annotated list record through local should lower");
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    for ((subfn, hints), stack_slots) in result
+        .program
+        .subfunctions
+        .iter_mut()
+        .zip(result.type_hints.subfunctions.iter_mut())
+        .zip(result.type_hints.subfunction_stack_slots.iter())
+    {
+        optimize_with_ssa_hints(
+            subfn,
+            None,
+            hints,
+            stack_slots,
+            &result.type_hints.generic_map_value_types,
+        );
+    }
+
+    compile_mir_to_ebpf_with_hints_and_globals(
+        &result.program,
+        Some(&probe_ctx),
+        Some(&result.type_hints),
+        result.readonly_globals,
+        result.data_globals,
+        result.bss_globals,
+    )
+    .expect("view-ir style returned nested annotated list record through local should compile");
+}
+
+#[test]
 fn test_view_ir_style_user_function_constant_string_return_can_flow_through_local() {
     use nu_protocol::ir::{Instruction, IrBlock, Literal, RedirectMode};
     use nu_protocol::{DeclId, RegId};
