@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 63
+const TOTAL_STEPS = 64
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -926,7 +926,59 @@ step 62 "sk_msg pinned sockhash live attach and detach" {
     }
 }
 
-step 63 "verify no leaked probes" {
+step 63 "sk_skb pinned sockhash live attach and detach" {
+    if not ("/sys/fs/bpf" | path exists) {
+        print "Skipping sk_skb smoke: /sys/fs/bpf is not available"
+    } else if not ("/usr/sbin/bpftool" | path exists) {
+        print "Skipping sk_skb smoke: /usr/sbin/bpftool is not available"
+    } else {
+        let map_path = $"/sys/fs/bpf/nu_plugin_ebpf_skskb_($nu.pid)"
+        try {
+            ^rm -f $map_path | ignore
+        } catch { |_| null }
+
+        let id = (try {
+            ^bpftool map create $map_path type sockhash key 4 value 4 entries 16 name nu_skskb | ignore
+
+            let dry_run_code = ([
+                'ebpf attach --dry-run "sk_skb:__MAP__" {|ctx| ($ctx.data | get 0) | count; "pass" } | describe'
+            ] | str join (char newline) | str replace "__MAP__" $map_path)
+
+            let describe = (run-nu-with-plugin $plugin_bin $dry_run_code | str trim)
+            if $describe != "binary" {
+                error make { msg: $"expected sk_skb dry-run describe to be 'binary', got ($describe)" }
+            }
+
+            let live_code = ([
+                'let id = (ebpf attach "sk_skb:__MAP__" {|ctx| $ctx.packet_len | count; "pass" })'
+                'if $id < 1 {'
+                '    error make { msg: $"expected positive sk_skb id, got ($id)" }'
+                '}'
+                'ebpf detach $id | ignore'
+                '$id'
+            ] | str join (char newline) | str replace "__MAP__" $map_path)
+
+            run-nu-with-plugin $plugin_bin $live_code | str trim | into int
+        } catch { |err|
+            try {
+                ^rm -f $map_path | ignore
+            } catch { |_| null }
+            error make $err
+        })
+
+        try {
+            ^rm -f $map_path | ignore
+        } catch { |_| null }
+
+        if $id < 1 {
+            fail $"expected positive sk_skb id, got ($id)"
+        }
+
+        $id
+    }
+}
+
+step 64 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

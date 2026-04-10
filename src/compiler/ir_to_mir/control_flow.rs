@@ -96,6 +96,7 @@ impl<'a> HirToMirLowering<'a> {
             | EbpfProgramType::CgroupSockopt
             | EbpfProgramType::CgroupSockAddr
             | EbpfProgramType::SkLookup
+            | EbpfProgramType::SkSkb
             | EbpfProgramType::SkMsg => match alias.as_str() {
                 "deny" | "drop" | "reject" => Some(ActionAliasReturn::Const(0)),
                 "allow" | "pass" | "accept" | "permit" => Some(ActionAliasReturn::Const(1)),

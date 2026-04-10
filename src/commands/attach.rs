@@ -2117,6 +2117,7 @@ Supported attach types:
   - cgroup_sock
   - sock_ops
   - sk_msg
+  - sk_skb
   - cgroup_sysctl
   - cgroup_sockopt
   - cgroup_sock_addr
@@ -2295,6 +2296,19 @@ Context parameter syntax (recommended):
     model as XDP and tc, so forms like `($ctx.data | get 0)` are valid. IPv6
     addresses are exposed as fixed arrays of four host-order u32 words, for
     example `($ctx.remote_ip6 | get 3)`.
+
+  sk_skb fields:
+    {|ctx| $ctx.cpu }     - Get current CPU ID
+    {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.packet_len } - Get total packet length in bytes
+    {|ctx| $ctx.data }    - Get the packet data pointer
+    {|ctx| $ctx.data_end } - Get the end pointer for packet access
+    {|ctx| $ctx.ingress_ifindex } - Get the ingress interface index
+    Note: initial sk_skb support targets pinned sockmap or sockhash paths such
+    as `/sys/fs/bpf/demo_sockmap` and emits `sk_skb/stream_verdict` programs.
+    It uses raw verdict codes but supports `pass` / `drop` aliases, and
+    `ctx.data` / `ctx.data_end` use the same guarded packet access model as
+    tc and cgroup_skb.
 
   cgroup_sockopt fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
@@ -2490,7 +2504,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'socket_filter:udp4:127.0.0.1:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', or 'sk_lookup:/proc/self/ns/net').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'socket_filter:udp4:127.0.0.1:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', or 'sk_lookup:/proc/self/ns/net').",
             )
             .required(
                 "body",
@@ -2543,6 +2557,7 @@ Requirements:
             "cgroup_sock",
             "sock_ops",
             "sk_msg",
+            "sk_skb",
             "cgroup_sysctl",
             "cgroup_sockopt",
             "cgroup_sock_addr",
@@ -2616,6 +2631,11 @@ Requirements:
             Example {
                 example: "ebpf attach 'sk_msg:/sys/fs/bpf/demo_sockmap' {|ctx| ($ctx.data | get 0) | count; 'pass' }",
                 description: "Count first-byte observations on a pinned sockmap or sockhash sk_msg verdict hook",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'sk_skb:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.packet_len | count; 'pass' }",
+                description: "Count packet lengths on a pinned sockmap or sockhash sk_skb stream-verdict hook",
                 result: None,
             },
             Example {

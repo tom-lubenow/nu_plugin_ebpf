@@ -5,7 +5,8 @@ use crate::program_spec::{
     CgroupDeviceTarget, CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockTarget,
     CgroupSockoptTarget, DEFAULT_PERF_EVENT_PERIOD, PerfEventEvent, PerfEventHardwareEvent,
     PerfEventSamplePolicy, PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, SkLookupTarget,
-    SkMsgTarget, SockOpsTarget, SocketFilterSocketKind, SocketFilterTarget, TcTarget, UprobeTarget,
+    SkMsgTarget, SkSkbTarget, SockOpsTarget, SocketFilterSocketKind, SocketFilterTarget, TcTarget,
+    UprobeTarget,
 };
 use aya::programs::{
     CgroupSkbAttachType, CgroupSockAddrAttachType, CgroupSockAttachType, CgroupSockoptAttachType,
@@ -273,6 +274,21 @@ impl SkMsgTarget {
         if target.is_empty() {
             return Err(LoadError::Load(
                 "sk_msg pinned sockmap path cannot be empty".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            map_path: target.to_string(),
+        })
+    }
+}
+
+impl SkSkbTarget {
+    /// Parse an sk_skb target string of the form `/sys/fs/bpf/pinned_sockmap`.
+    pub fn parse(target: &str) -> Result<Self, LoadError> {
+        if target.is_empty() {
+            return Err(LoadError::Load(
+                "sk_skb pinned sockmap path cannot be empty".to_string(),
             ));
         }
 
@@ -755,21 +771,20 @@ fn validate_sk_lookup_target(target: &str) -> Result<(), LoadError> {
     Ok(())
 }
 
-fn validate_sk_msg_target(target: &str) -> Result<(), LoadError> {
-    let parsed = SkMsgTarget::parse(target)?;
-    let map_path = Path::new(&parsed.map_path);
+fn validate_pinned_sockmap_target(target: &str) -> Result<(), LoadError> {
+    let map_path = Path::new(target);
 
     if !map_path.exists() {
         return Err(LoadError::Load(format!(
             "Unknown pinned sockmap path: {}",
-            parsed.map_path
+            target
         )));
     }
 
     if map_path.is_dir() {
         return Err(LoadError::Load(format!(
-            "sk_msg target must be a pinned sockmap or sockhash file, not a directory: {}",
-            parsed.map_path
+            "target must be a pinned sockmap or sockhash file, not a directory: {}",
+            target
         )));
     }
 
@@ -836,7 +851,7 @@ fn validate_target_for_program_type(
         }
         ProgramTargetKind::SocketFilterTarget => validate_socket_filter_target(target),
         ProgramTargetKind::NetworkNamespacePath => validate_sk_lookup_target(target),
-        ProgramTargetKind::PinnedSockMapPath => validate_sk_msg_target(target),
+        ProgramTargetKind::PinnedSockMapPath => validate_pinned_sockmap_target(target),
         ProgramTargetKind::TrafficControlInterface => validate_tc_target(target),
         ProgramTargetKind::CgroupPathAttachType => validate_cgroup_skb_target(target),
         ProgramTargetKind::CgroupPathSockAttachType => validate_cgroup_sock_target(target),
@@ -963,6 +978,9 @@ pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
         }),
         EbpfProgramType::SkMsg => Ok(ProgramSpec::SkMsg {
             target: SkMsgTarget::parse(target)?,
+        }),
+        EbpfProgramType::SkSkb => Ok(ProgramSpec::SkSkb {
+            target: SkSkbTarget::parse(target)?,
         }),
         EbpfProgramType::CgroupDevice => Ok(ProgramSpec::CgroupDevice {
             target: CgroupDeviceTarget::parse(target)?,

@@ -14,7 +14,8 @@ use aya::maps::{HashMap as AyaHashMap, MapData, MapType, PerCpuHashMap, RingBuf}
 use aya::programs::{
     CgroupAttachMode, CgroupDevice, CgroupSkb, CgroupSock, CgroupSockAddr, CgroupSockopt,
     CgroupSysctl, FEntry, FExit, KProbe, Lsm, PerfEvent, PerfEventScope, RawTracePoint,
-    SchedClassifier, SkLookup, SkMsg, SockOps, SocketFilter, TracePoint, UProbe, Xdp, XdpFlags,
+    SchedClassifier, SkLookup, SkMsg, SkSkb, SockOps, SocketFilter, TracePoint, UProbe, Xdp,
+    XdpFlags,
     perf_event::{PerfTypeId, SamplePolicy, perf_sw_ids},
     tc,
 };
@@ -100,7 +101,7 @@ mod maps;
 pub use crate::program_spec::{
     CgroupDeviceTarget, CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockTarget,
     CgroupSockoptTarget, PerfEventEvent, PerfEventHardwareEvent, PerfEventSamplePolicy,
-    PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, SkLookupTarget, SkMsgTarget,
+    PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, SkLookupTarget, SkMsgTarget, SkSkbTarget,
     SockOpsTarget, SocketFilterTarget, TcTarget, UprobeTarget,
 };
 pub use targets::{parse_probe_spec, parse_program_spec};

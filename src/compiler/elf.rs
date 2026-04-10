@@ -531,6 +531,8 @@ pub enum EbpfProgramType {
     SkLookup,
     /// Socket message verdict program attached to a pinned sockmap or sockhash
     SkMsg,
+    /// Socket-to-socket-buffer stream verdict program attached to a pinned sockmap or sockhash
+    SkSkb,
     /// Sock-ops program attached to a cgroup
     SockOps,
     /// Traffic-control classifier attached to an interface ingress/egress hook
@@ -567,6 +569,7 @@ impl EbpfProgramType {
             EbpfProgramType::CgroupDevice => &CGROUP_DEVICE_INFO,
             EbpfProgramType::SkLookup => &SK_LOOKUP_INFO,
             EbpfProgramType::SkMsg => &SK_MSG_INFO,
+            EbpfProgramType::SkSkb => &SK_SKB_INFO,
             EbpfProgramType::SockOps => &SOCK_OPS_INFO,
             EbpfProgramType::Tc => &TC_INFO,
             EbpfProgramType::CgroupSkb => &CGROUP_SKB_INFO,
@@ -599,6 +602,7 @@ impl EbpfProgramType {
             EbpfProgramType::CgroupDevice,
             EbpfProgramType::SkLookup,
             EbpfProgramType::SkMsg,
+            EbpfProgramType::SkSkb,
             EbpfProgramType::SockOps,
             EbpfProgramType::Tc,
             EbpfProgramType::CgroupSkb,
@@ -748,6 +752,7 @@ impl ProgramSpec {
             ProgramSpec::CgroupDevice { .. } => EbpfProgramType::CgroupDevice,
             ProgramSpec::SkLookup { .. } => EbpfProgramType::SkLookup,
             ProgramSpec::SkMsg { .. } => EbpfProgramType::SkMsg,
+            ProgramSpec::SkSkb { .. } => EbpfProgramType::SkSkb,
             ProgramSpec::SockOps { .. } => EbpfProgramType::SockOps,
             ProgramSpec::Tc { .. } => EbpfProgramType::Tc,
             ProgramSpec::CgroupSkb { .. } => EbpfProgramType::CgroupSkb,
@@ -1160,6 +1165,7 @@ pub enum ProgramAttachKind {
     CgroupDevice,
     SkLookup,
     SkMsg,
+    SkSkb,
     SockOps,
     Tc,
     CgroupSkb,
@@ -1377,6 +1383,7 @@ const SOCKET_FILTER_SPEC_ALIASES: &[&str] = &["socket_filter", "sock_filter"];
 const CGROUP_DEVICE_SPEC_ALIASES: &[&str] = &["cgroup_device"];
 const SK_LOOKUP_SPEC_ALIASES: &[&str] = &["sk_lookup"];
 const SK_MSG_SPEC_ALIASES: &[&str] = &["sk_msg"];
+const SK_SKB_SPEC_ALIASES: &[&str] = &["sk_skb"];
 const SOCK_OPS_SPEC_ALIASES: &[&str] = &["sock_ops", "sockops"];
 const TC_SPEC_ALIASES: &[&str] = &["tc"];
 const CGROUP_SKB_SPEC_ALIASES: &[&str] = &["cgroup_skb"];
@@ -1813,6 +1820,33 @@ const SK_MSG_INFO: ProgramTypeInfo = ProgramTypeInfo {
     is_userspace: false,
 };
 
+const SK_SKB_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::SkSkb,
+    canonical_prefix: "sk_skb",
+    spec_aliases: SK_SKB_SPEC_ALIASES,
+    section_prefix: "sk_skb/stream_verdict",
+    section_uses_target: false,
+    attach_kind: ProgramAttachKind::SkSkb,
+    target_kind: ProgramTargetKind::PinnedSockMapPath,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+    supports_task_ctx_fields: false,
+    supports_cpu_ctx_field: true,
+    supports_timestamp_ctx_field: true,
+    packet_context_kind: Some(PacketContextKind::SkBuff),
+    supports_packet_len_ctx_field: true,
+    supports_packet_data_ctx_fields: true,
+    supports_ingress_ifindex_ctx_field: true,
+    supports_rx_queue_index_ctx_field: false,
+    supports_egress_ifindex_ctx_field: false,
+    supports_xdp_md_ctx_fields: false,
+    supports_stack_ctx_fields: false,
+    supports_tracepoint_fields: false,
+    is_userspace: false,
+};
+
 const SOCK_OPS_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::SockOps,
     canonical_prefix: "sock_ops",
@@ -2054,6 +2088,7 @@ const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "cgroup_device",
     "sk_lookup",
     "sk_msg",
+    "sk_skb",
     "sock_ops",
     "sockops",
     "tc",

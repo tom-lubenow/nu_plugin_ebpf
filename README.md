@@ -5,7 +5,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: Write tracing logic in familiar Nushell syntax
-- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, lsm, perf_event, socket_filter, xdp, tc, cgroup_skb, cgroup_device, cgroup_sock, sock_ops, sk_msg, cgroup_sysctl, cgroup_sockopt, cgroup_sock_addr, sk_lookup, initial struct_ops object support
+- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tracepoint, uprobe, uretprobe, lsm, perf_event, socket_filter, xdp, tc, cgroup_skb, cgroup_device, cgroup_sock, sock_ops, sk_msg, sk_skb, cgroup_sysctl, cgroup_sockopt, cgroup_sock_addr, sk_lookup, initial struct_ops object support
 - **Aggregations**: Count by key, histograms, timing measurements
 - **Event streaming**: Real-time event output via ring buffers
 - **Map sharing**: Share data between probes with `--pin`
@@ -114,6 +114,9 @@ let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.skb_len | count; 1 }
 
 # Count first-byte observations on a pinned sockmap or sockhash sk_msg hook
 let id = ebpf attach 'sk_msg:/sys/fs/bpf/demo_sockmap' {|ctx| ($ctx.data | get 0) | count; 'pass' }
+
+# Count packet lengths on a pinned sockmap or sockhash sk_skb stream-verdict hook
+let id = ebpf attach 'sk_skb:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.packet_len | count; 'pass' }
 
 # Count getsockopt option names inside a cgroup
 let id = ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| $ctx.optname | count; 'allow' }
@@ -292,10 +295,10 @@ The closure receives a context parameter with these fields:
 | `comm` | Process name (16 bytes) | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
 | `cpu` | CPU ID | All |
 | `ktime` | Kernel timestamp (ns) | All |
-| `packet_len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs, `size` on sk_msg) | xdp, socket_filter, tc, cgroup_skb, sk_msg |
-| `data` | Packet data pointer | xdp, socket_filter, tc, cgroup_skb, sk_msg |
-| `data_end` | Packet end pointer | xdp, socket_filter, tc, cgroup_skb, sk_msg |
-| `ingress_ifindex` | Ingress interface index | xdp, socket_filter, tc, cgroup_skb, sk_lookup |
+| `packet_len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs, `size` on sk_msg) | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb |
+| `data` | Packet data pointer | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb |
+| `data_end` | Packet end pointer | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb |
+| `ingress_ifindex` | Ingress interface index | xdp, socket_filter, tc, cgroup_skb, sk_lookup, sk_skb |
 | `access_type` | Encoded cgroup device access type | cgroup_device |
 | `major` | Requested device major number | cgroup_device |
 | `minor` | Requested device minor number | cgroup_device |
@@ -443,6 +446,14 @@ for example `($ctx.remote_ip6 | get 3)`. This initial slice is read-only and
 uses raw integer verdict codes; `sk_msg` closures can return `"pass"` /
 `"drop"` instead of raw `1` / `0`, and `"allow"` / `"deny"` aliases also
 work.
+
+`sk_skb` currently emits `sk_skb/stream_verdict` programs attached to a
+pinned sockmap or sockhash path such as `/sys/fs/bpf/demo_sockmap`. It
+exposes `ctx.cpu`, `ctx.ktime`, `ctx.packet_len`, `ctx.data`,
+`ctx.data_end`, and `ctx.ingress_ifindex` through the existing skb-backed
+packet model, so ordinary guarded packet reads like `($ctx.data | get 0)`
+work. This initial slice uses verdict-style return codes with `pass` /
+`drop` aliases.
 
 `kprobe` and `uprobe` expose `ctx.arg0`-`ctx.arg5` through `pt_regs`. `fentry` and
 `fexit` resolve `ctx.argN` and `ctx.retval` through kernel BTF. Scalar and pointer
