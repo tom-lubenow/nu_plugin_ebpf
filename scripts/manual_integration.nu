@@ -755,11 +755,11 @@ step 53 "sk_lookup root netns cookie counter" {
     } { trigger-loopback-connect } "sk_lookup cookie counter"
 }
 
-step 54 "socket_filter udp4 loopback packet length counter" {
+step 54 "socket_filter udp4 loopback socket cookie counter" {
     count-at-least-one "socket_filter:udp4:127.0.0.1:41337" {|ctx|
-        $ctx.packet_len | count
+        $ctx.socket_cookie | count
         'pass'
-    } { trigger-udp-loopback 41337 } "socket_filter packet length counter"
+    } { trigger-udp-loopback 41337 } "socket_filter socket cookie counter"
 }
 
 step 55 "sched_ext_ops dry-run name-only object" {

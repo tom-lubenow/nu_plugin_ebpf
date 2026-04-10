@@ -1039,6 +1039,23 @@ impl ProbeContext {
                     field.display_name()
                 ))
             }
+            CtxField::SocketCookie
+                if !matches!(
+                    self.probe_type,
+                    EbpfProgramType::SocketFilter
+                        | EbpfProgramType::Tc
+                        | EbpfProgramType::CgroupSkb
+                        | EbpfProgramType::CgroupSockAddr
+                        | EbpfProgramType::SkSkb
+                        | EbpfProgramType::SkSkbParser
+                        | EbpfProgramType::SockOps
+                ) =>
+            {
+                Some(format!(
+                    "ctx.{} is only available on skb-backed packet programs, cgroup_sock_addr, and sock_ops programs",
+                    field.display_name()
+                ))
+            }
             CtxField::DeviceAccessType | CtxField::DeviceMajor | CtxField::DeviceMinor
                 if !matches!(self.probe_type, EbpfProgramType::CgroupDevice) =>
             {

@@ -16,6 +16,7 @@ impl BpfHelper {
             14 => Some(Self::GetCurrentPidTgid),
             15 => Some(Self::GetCurrentUidGid),
             16 => Some(Self::GetCurrentComm),
+            46 => Some(Self::GetSocketCookie),
             25 => Some(Self::PerfEventOutput),
             27 => Some(Self::GetStackId),
             84 => Some(Self::SkLookupTcp),
@@ -106,6 +107,12 @@ impl BpfHelper {
                 min_args: 0,
                 max_args: 0,
                 arg_kinds: [S, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::GetSocketCookie => HelperSignature {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::TracePrintk => HelperSignature {
@@ -885,6 +892,17 @@ impl BpfHelper {
             BpfHelper::GetCurrentComm => HelperSemantics {
                 ptr_arg_rules: GET_CURRENT_COMM_RULES,
                 positive_size_args: &[1],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::GetSocketCookie => HelperSemantics {
+                ptr_arg_rules: &[HelperPtrArgRule {
+                    arg_idx: 0,
+                    op: "helper get_socket_cookie ctx",
+                    allowed: KERNEL,
+                    fixed_size: None,
+                    size_from_arg: None,
+                }],
+                positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::TracePrintk => HelperSemantics {

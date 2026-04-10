@@ -482,6 +482,8 @@ pub enum CtxField {
     LocalPort,
     /// bpf_sk_lookup::cookie
     LookupCookie,
+    /// Stable kernel socket cookie for supported socket-backed contexts
+    SocketCookie,
     /// bpf_cgroup_dev_ctx::access_type
     DeviceAccessType,
     /// bpf_cgroup_dev_ctx::major
@@ -608,6 +610,7 @@ impl CtxField {
             CtxField::LocalIp6 => "local_ip6".to_string(),
             CtxField::LocalPort => "local_port".to_string(),
             CtxField::LookupCookie => "cookie".to_string(),
+            CtxField::SocketCookie => "socket_cookie".to_string(),
             CtxField::DeviceAccessType => "access_type".to_string(),
             CtxField::DeviceMajor => "major".to_string(),
             CtxField::DeviceMinor => "minor".to_string(),

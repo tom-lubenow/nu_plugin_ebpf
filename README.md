@@ -79,8 +79,8 @@ ebpf attach --dry-run 'lsm:file_open' {|ctx| $ctx.arg0.f_flags | count; 0 }
 # Count software cpu-clock samples by CPU
 let id = ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.cpu | count; 0 }
 
-# Count loopback UDP packets by packet length on a bound socket_filter receive socket
-let id = ebpf attach 'socket_filter:udp4:127.0.0.1:31337' {|ctx| $ctx.packet_len | count; 'pass' }
+# Count loopback UDP packets by stable socket cookie on a bound socket_filter receive socket
+let id = ebpf attach 'socket_filter:udp4:127.0.0.1:31337' {|ctx| $ctx.socket_cookie | count; 'pass' }
 
 # Count loopback packets by packet length via XDP, then pass them through
 let id = ebpf attach 'xdp:lo' {|ctx| $ctx.packet_len | count; 'pass' }
@@ -327,6 +327,7 @@ The closure receives a context parameter with these fields:
 | `ifindex` | Interface index (`xdp_md.ingress_ifindex` on XDP, `__sk_buff.ifindex` on skb-backed packet programs) | xdp, socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `tc_index` | skb tc_index | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `hash` | skb hash | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `socket_cookie` | Stable kernel socket cookie, or `0` when an skb has no known socket | socket_filter, tc, cgroup_skb, cgroup_sock_addr, sk_skb, sk_skb_parser, sock_ops |
 | `rx_queue_index` | XDP receive queue index | xdp |
 | `egress_ifindex` | XDP egress interface index | xdp |
 | `user_family` | Userspace-requested socket family | cgroup_sock_addr |

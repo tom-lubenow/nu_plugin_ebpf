@@ -2358,6 +2358,33 @@ fn test_lower_socket_filter_ctx_packet_len_field() {
 }
 
 #[test]
+fn test_lower_socket_filter_ctx_socket_cookie_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("socket_cookie")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("socket_filter ctx.socket_cookie should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::SocketCookie,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_socket_filter_ctx_mark_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("mark")],

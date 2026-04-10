@@ -1319,6 +1319,7 @@ impl<'a> HirToMirLowering<'a> {
             "local_ip6" => CtxField::LocalIp6,
             "local_port" => CtxField::LocalPort,
             "cookie" => CtxField::LookupCookie,
+            "socket_cookie" => CtxField::SocketCookie,
             "args" => CtxField::SockOpsArgs,
             "snd_cwnd" => CtxField::SockOpsSndCwnd,
             "srtt_us" => CtxField::SockOpsSrttUs,
@@ -4892,6 +4893,7 @@ impl<'a> HirToMirLowering<'a> {
             CtxField::Hwtstamp => (MirType::U64, Some(MirType::U64)),
             CtxField::Timestamp
             | CtxField::LookupCookie
+            | CtxField::SocketCookie
             | CtxField::SockOpsBytesReceived
             | CtxField::SockOpsBytesAcked
             | CtxField::SockOpsSkbHwtstamp => (MirType::U64, Some(MirType::U64)),

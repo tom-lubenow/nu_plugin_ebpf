@@ -1645,6 +1645,10 @@ fn test_probe_context_allows_socket_filter_packet_fields() {
         ctx.ctx_field_access_error(&CtxField::IngressIfindex)
             .is_none()
     );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SocketCookie)
+            .is_none()
+    );
 }
 
 #[test]
@@ -1661,6 +1665,15 @@ fn test_probe_context_allows_sk_lookup_fields() {
     assert!(ctx.ctx_field_access_error(&CtxField::LocalPort).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::IngressIfindex)
+            .is_none()
+    );
+}
+
+#[test]
+fn test_probe_context_allows_socket_cookie_on_sock_ops() {
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SocketCookie)
             .is_none()
     );
 }

@@ -742,6 +742,14 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }
+            CtxField::SocketCookie => {
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R9));
+                self.instructions
+                    .push(EbpfInsn::call(BpfHelper::GetSocketCookie));
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
+            }
             CtxField::PacketLen => match self.packet_context_kind()? {
                 PacketContextKind::XdpMd => {
                     let (data_offset, data_end_offset, _, _, _, _) = Self::xdp_md_offsets();

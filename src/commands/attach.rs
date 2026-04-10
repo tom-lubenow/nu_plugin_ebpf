@@ -2171,6 +2171,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.ifindex } - Get the XDP ingress ifindex or skb ifindex, depending on program type
     {|ctx| $ctx.tc_index } - Get the skb tc_index on skb-backed packet programs
     {|ctx| $ctx.hash }    - Get the skb hash on skb-backed packet programs
+    {|ctx| $ctx.socket_cookie } - Get the stable socket cookie on supported socket-backed contexts
     {|ctx| $ctx.mark }    - Get the skb mark on skb-backed packet programs
     {|ctx| $ctx.priority } - Get the skb priority on skb-backed packet programs
     {|ctx| ($ctx.data | get 0) } - Read the first packet byte with an auto-generated data_end guard
@@ -2279,6 +2280,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.local_ip4 } - Get the local IPv4 address in host byte order
     {|ctx| $ctx.local_ip6 } - Get the local IPv6 address as four host-order u32 words
     {|ctx| $ctx.local_port } - Get the local port in host byte order
+    {|ctx| $ctx.socket_cookie } - Get the stable socket cookie for the current sock_ops context
     {|ctx| $ctx.is_fullsock } - Get whether the context has a full socket
     {|ctx| $ctx.snd_cwnd } - Get the current sending congestion window
     {|ctx| $ctx.srtt_us }  - Get the smoothed RTT in microseconds shifted by 3
@@ -2425,6 +2427,7 @@ Context parameter syntax (recommended):
   cgroup_sock_addr fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.socket_cookie } - Get the stable socket cookie for the current socket context
     {|ctx| $ctx.user_family } - Get userspace-requested socket family
     {|ctx| $ctx.user_ip4 } - Get the IPv4 destination/source address in host byte order on *4 hooks
     {|ctx| $ctx.user_ip6 } - Get the IPv6 destination/source address as four host-order u32 words on *6 hooks

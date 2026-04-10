@@ -1127,6 +1127,27 @@ fn test_infer_socket_filter_packet_len_field_as_u32() {
 }
 
 #[test]
+fn test_infer_socket_filter_socket_cookie_field_as_u64() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::SocketCookie,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::U64));
+}
+
+#[test]
 fn test_infer_socket_filter_mark_field_as_u32() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();

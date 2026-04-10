@@ -102,6 +102,16 @@ fn test_helper_signature_map_queue_helpers() {
 }
 
 #[test]
+fn test_helper_signature_get_socket_cookie() {
+    let sig = HelperSignature::for_id(BpfHelper::GetSocketCookie as u32)
+        .expect("expected bpf_get_socket_cookie helper signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
 fn test_helper_signature_sk_storage_helpers() {
     let sig = HelperSignature::for_id(BpfHelper::SkStorageGet as u32)
         .expect("expected bpf_sk_storage_get helper signature");
