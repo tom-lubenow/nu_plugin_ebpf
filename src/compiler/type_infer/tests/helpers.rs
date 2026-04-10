@@ -375,6 +375,115 @@ fn test_infer_redirect_peer_helper_in_tc_ingress_program() {
 }
 
 #[test]
+fn test_type_error_redirect_neigh_helper_rejects_non_tc_programs() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RedirectNeigh as u32,
+        args: vec![
+            MirValue::Const(1),
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_redirect_neigh to be rejected outside tc");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect_neigh' is only valid in tc programs")
+    }));
+}
+
+#[test]
+fn test_type_error_redirect_neigh_helper_requires_zero_flags() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RedirectNeigh as u32,
+        args: vec![
+            MirValue::Const(1),
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::Const(1),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_redirect_neigh flags to require zero");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect_neigh' requires arg3 = 0")
+    }));
+}
+
+#[test]
+fn test_type_error_redirect_neigh_helper_requires_zero_plen_for_null_params() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RedirectNeigh as u32,
+        args: vec![
+            MirValue::Const(1),
+            MirValue::Const(0),
+            MirValue::Const(4),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected null params to require plen zero");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect_neigh' requires arg2 = 0 when arg1 is null")
+    }));
+}
+
+#[test]
+fn test_infer_redirect_neigh_helper_in_tc_program() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RedirectNeigh as u32,
+        args: vec![
+            MirValue::Const(1),
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected tc bpf_redirect_neigh helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
 fn test_type_error_helper_get_current_comm_rejects_small_stack_slot() {
     let mut func = make_test_function();
     let buf_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);

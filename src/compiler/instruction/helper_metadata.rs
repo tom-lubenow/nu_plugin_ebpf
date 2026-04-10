@@ -14,6 +14,7 @@ impl BpfHelper {
             7 => Some(Self::GetPrandomU32),
             8 => Some(Self::GetSmpProcessorId),
             23 => Some(Self::Redirect),
+            152 => Some(Self::RedirectNeigh),
             155 => Some(Self::RedirectPeer),
             12 => Some(Self::TailCall),
             14 => Some(Self::GetCurrentPidTgid),
@@ -125,6 +126,12 @@ impl BpfHelper {
                 min_args: 2,
                 max_args: 2,
                 arg_kinds: [S, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::RedirectNeigh => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [S, P, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::RedirectPeer => HelperSignature {
@@ -547,6 +554,14 @@ impl BpfHelper {
             },
         ];
 
+        const REDIRECT_NEIGH_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 1,
+            op: "helper redirect_neigh params",
+            allowed: STACK_ONLY,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
         const PERF_EVENT_OUTPUT_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -952,6 +967,11 @@ impl BpfHelper {
             },
             BpfHelper::Redirect => HelperSemantics {
                 ptr_arg_rules: &[],
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::RedirectNeigh => HelperSemantics {
+                ptr_arg_rules: REDIRECT_NEIGH_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

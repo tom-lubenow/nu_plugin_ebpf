@@ -55,6 +55,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::Redirect)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_redirect_neigh"),
+        Some(BpfHelper::RedirectNeigh)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_redirect_peer"),
         Some(BpfHelper::RedirectPeer)
     ));
@@ -216,6 +220,19 @@ fn test_helper_signature_redirect() {
     assert_eq!(sig.max_args, 2);
     assert_eq!(sig.arg_kind(0), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signature_redirect_neigh() {
+    let sig = HelperSignature::for_id(BpfHelper::RedirectNeigh as u32)
+        .expect("expected bpf_redirect_neigh helper signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 

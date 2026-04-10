@@ -2194,7 +2194,9 @@ Context parameter syntax (recommended):
     returning `ctx.packet_len`. `helper-call "bpf_redirect" IFINDEX FLAGS`
     is also type-checked on XDP/TC paths; XDP requires `FLAGS = 0`.
     `helper-call "bpf_redirect_peer" IFINDEX FLAGS` is modeled on
-    `tc:...:ingress` and also requires `FLAGS = 0`. Raw numeric return
+    `tc:...:ingress` and also requires `FLAGS = 0`.
+    `helper-call "bpf_redirect_neigh" IFINDEX 0 0 0` is modeled on tc
+    paths for the default neighbor-resolution form. Raw numeric return
     codes still work. Packet reads currently support scalar byte access
     through `get`/indexing, direct `u16be`/`u32be` cell-path scalar loads,
     and typed header views `eth`, `ipv4`, `udp`, and `tcp`. Those views also

@@ -103,6 +103,14 @@ impl<'a> TypeInference<'a> {
                     )));
                 }
             }
+            BpfHelper::RedirectNeigh => {
+                if ctx.probe_type != EbpfProgramType::Tc {
+                    errors.push(TypeError::new(format!(
+                        "helper '{}' is only valid in tc programs",
+                        helper.name()
+                    )));
+                }
+            }
             BpfHelper::RedirectPeer => {
                 if !(ctx.probe_type == EbpfProgramType::Tc && ctx.target.ends_with(":ingress")) {
                     errors.push(TypeError::new(format!(

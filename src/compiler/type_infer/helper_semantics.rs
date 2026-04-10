@@ -122,6 +122,7 @@ impl<'a> TypeInference<'a> {
         matches!(
             (BpfHelper::from_u32(helper_id), arg_idx),
             (Some(BpfHelper::KptrXchg), 1)
+                | (Some(BpfHelper::RedirectNeigh), 1)
                 | (Some(BpfHelper::SkAssign), 1)
                 | (Some(BpfHelper::SkStorageGet), 2)
                 | (Some(BpfHelper::InodeStorageGet), 2)
@@ -388,6 +389,37 @@ impl<'a> TypeInference<'a> {
             if !flags_ok {
                 errors.push(TypeError::new(
                     "helper 'bpf_redirect' requires arg1 = 0 in xdp programs",
+                ));
+            }
+        }
+
+        if matches!(helper, BpfHelper::RedirectNeigh) {
+            let params_is_null = args.get(1).is_some_and(|value| {
+                matches!(
+                    self.value_range_for(value, value_ranges),
+                    ValueRange::Known { min: 0, max: 0 }
+                )
+            });
+            let plen_is_zero = args.get(2).is_some_and(|value| {
+                matches!(
+                    self.value_range_for(value, value_ranges),
+                    ValueRange::Known { min: 0, max: 0 }
+                )
+            });
+            let flags_ok = args.get(3).is_some_and(|value| {
+                matches!(
+                    self.value_range_for(value, value_ranges),
+                    ValueRange::Known { min: 0, max: 0 }
+                )
+            });
+            if params_is_null && !plen_is_zero {
+                errors.push(TypeError::new(
+                    "helper 'bpf_redirect_neigh' requires arg2 = 0 when arg1 is null",
+                ));
+            }
+            if !flags_ok {
+                errors.push(TypeError::new(
+                    "helper 'bpf_redirect_neigh' requires arg3 = 0",
                 ));
             }
         }

@@ -459,7 +459,8 @@ aliases are available in return position. XDP closures can return strings like
 "bpf_redirect" IFINDEX FLAGS` is now type-checked on XDP/TC paths; XDP
 requires `FLAGS = 0`. On `tc:...:ingress`, `helper-call
 "bpf_redirect_peer" IFINDEX FLAGS` is also modeled and requires
-`FLAGS = 0`.
+`FLAGS = 0`. TC programs also support the default-neighbor form of
+`helper-call "bpf_redirect_neigh" IFINDEX 0 0 0`.
 
 `perf_event` currently supports software `cpu-clock`, `task-clock`,
 `context-switches`, `cpu-migrations`, `page-faults`, `minor-faults`, and

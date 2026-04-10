@@ -42,6 +42,7 @@ pub(in crate::compiler::verifier_types) fn helper_pointer_arg_allows_const_zero(
     matches!(
         (BpfHelper::from_u32(helper_id), arg_idx),
         (Some(BpfHelper::KptrXchg), 1)
+            | (Some(BpfHelper::RedirectNeigh), 1)
             | (Some(BpfHelper::SkAssign), 1)
             | (Some(BpfHelper::SkStorageGet), 2)
             | (Some(BpfHelper::InodeStorageGet), 2)
