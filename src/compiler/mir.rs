@@ -404,6 +404,18 @@ pub enum CtxField {
     PktType,
     /// skb queue mapping (`__sk_buff.queue_mapping`)
     QueueMapping,
+    /// skb tc_classid (`__sk_buff.tc_classid`)
+    TcClassid,
+    /// skb napi_id (`__sk_buff.napi_id`)
+    NapiId,
+    /// skb wire_len (`__sk_buff.wire_len`)
+    WireLen,
+    /// skb gso_segs (`__sk_buff.gso_segs`)
+    GsoSegs,
+    /// skb gso_size (`__sk_buff.gso_size`)
+    GsoSize,
+    /// skb hwtstamp (`__sk_buff.hwtstamp`)
+    Hwtstamp,
     /// XDP packet data pointer
     Data,
     /// XDP packet data_end pointer
@@ -529,6 +541,12 @@ impl CtxField {
             CtxField::PacketLen => "packet_len".to_string(),
             CtxField::PktType => "pkt_type".to_string(),
             CtxField::QueueMapping => "queue_mapping".to_string(),
+            CtxField::TcClassid => "tc_classid".to_string(),
+            CtxField::NapiId => "napi_id".to_string(),
+            CtxField::WireLen => "wire_len".to_string(),
+            CtxField::GsoSegs => "gso_segs".to_string(),
+            CtxField::GsoSize => "gso_size".to_string(),
+            CtxField::Hwtstamp => "hwtstamp".to_string(),
             CtxField::Data => "data".to_string(),
             CtxField::DataEnd => "data_end".to_string(),
             CtxField::IngressIfindex => "ingress_ifindex".to_string(),

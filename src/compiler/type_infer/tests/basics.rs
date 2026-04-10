@@ -1061,6 +1061,27 @@ fn test_infer_socket_filter_pkt_type_field_as_u32() {
 }
 
 #[test]
+fn test_infer_socket_filter_hwtstamp_field_as_u64() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::Hwtstamp,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::U64));
+}
+
+#[test]
 fn test_infer_sock_ops_remote_ip6_field_as_stack_backed_u32_array() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();

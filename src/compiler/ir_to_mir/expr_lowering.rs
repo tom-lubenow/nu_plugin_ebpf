@@ -1230,6 +1230,12 @@ impl<'a> HirToMirLowering<'a> {
             "packet_len" | "len" => CtxField::PacketLen,
             "pkt_type" => CtxField::PktType,
             "queue_mapping" => CtxField::QueueMapping,
+            "tc_classid" => CtxField::TcClassid,
+            "napi_id" => CtxField::NapiId,
+            "wire_len" => CtxField::WireLen,
+            "gso_segs" => CtxField::GsoSegs,
+            "gso_size" => CtxField::GsoSize,
+            "hwtstamp" => CtxField::Hwtstamp,
             "data" => CtxField::Data,
             "data_end" => CtxField::DataEnd,
             "ingress_ifindex" => CtxField::IngressIfindex,
@@ -4698,6 +4704,11 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::PacketLen
             | CtxField::PktType
             | CtxField::QueueMapping
+            | CtxField::TcClassid
+            | CtxField::NapiId
+            | CtxField::WireLen
+            | CtxField::GsoSegs
+            | CtxField::GsoSize
             | CtxField::IngressIfindex
             | CtxField::Ifindex
             | CtxField::RxQueueIndex
@@ -4733,6 +4744,7 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::SockOpsSkbTcpFlags
             | CtxField::SysctlWrite
             | CtxField::SysctlFilePos => (MirType::U32, Some(MirType::U32)),
+            CtxField::Hwtstamp => (MirType::U64, Some(MirType::U64)),
             CtxField::Timestamp | CtxField::LookupCookie | CtxField::SockOpsSkbHwtstamp => {
                 (MirType::U64, Some(MirType::U64))
             }

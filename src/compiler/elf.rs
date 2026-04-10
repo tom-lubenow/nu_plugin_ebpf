@@ -949,7 +949,14 @@ impl ProbeContext {
             CtxField::PacketLen if !self.probe_type.supports_packet_len_ctx_field() => {
                 Some(packet_field_error(field))
             }
-            CtxField::PktType | CtxField::QueueMapping
+            CtxField::PktType
+            | CtxField::QueueMapping
+            | CtxField::TcClassid
+            | CtxField::NapiId
+            | CtxField::WireLen
+            | CtxField::GsoSegs
+            | CtxField::GsoSize
+            | CtxField::Hwtstamp
                 if self.probe_type.packet_context_kind() != Some(PacketContextKind::SkBuff) =>
             {
                 Some(format!(

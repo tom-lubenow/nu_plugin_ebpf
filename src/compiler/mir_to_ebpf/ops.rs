@@ -41,6 +41,23 @@ impl<'a> MirToEbpfCompiler<'a> {
         (4, 12)
     }
 
+    fn sk_buff_extended_meta_offsets() -> (i16, i16, i16, i16, i16, i16) {
+        // struct __sk_buff {
+        //     ...
+        //     __u32 tc_classid;
+        //     ...
+        //     __u32 napi_id;
+        //     ...
+        //     __u32 wire_len;
+        //     __u32 gso_segs;
+        //     ...
+        //     __u32 gso_size;
+        //     ...
+        //     __u64 hwtstamp;
+        // };
+        (72, 84, 160, 164, 176, 184)
+    }
+
     fn sk_buff_mark_priority_offsets() -> (i16, i16) {
         // struct __sk_buff {
         //     __u32 len;
@@ -731,6 +748,84 @@ impl<'a> MirToEbpfCompiler<'a> {
                 };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, queue_mapping_offset));
+            }
+            CtxField::TcClassid => {
+                let tc_classid_offset = match self.packet_context_kind()? {
+                    PacketContextKind::SkBuff => Self::sk_buff_extended_meta_offsets().0,
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.tc_classid is only available on skb-backed packet programs"
+                                .to_string(),
+                        ));
+                    }
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, tc_classid_offset));
+            }
+            CtxField::NapiId => {
+                let napi_id_offset = match self.packet_context_kind()? {
+                    PacketContextKind::SkBuff => Self::sk_buff_extended_meta_offsets().1,
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.napi_id is only available on skb-backed packet programs"
+                                .to_string(),
+                        ));
+                    }
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, napi_id_offset));
+            }
+            CtxField::WireLen => {
+                let wire_len_offset = match self.packet_context_kind()? {
+                    PacketContextKind::SkBuff => Self::sk_buff_extended_meta_offsets().2,
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.wire_len is only available on skb-backed packet programs"
+                                .to_string(),
+                        ));
+                    }
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, wire_len_offset));
+            }
+            CtxField::GsoSegs => {
+                let gso_segs_offset = match self.packet_context_kind()? {
+                    PacketContextKind::SkBuff => Self::sk_buff_extended_meta_offsets().3,
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.gso_segs is only available on skb-backed packet programs"
+                                .to_string(),
+                        ));
+                    }
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, gso_segs_offset));
+            }
+            CtxField::GsoSize => {
+                let gso_size_offset = match self.packet_context_kind()? {
+                    PacketContextKind::SkBuff => Self::sk_buff_extended_meta_offsets().4,
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.gso_size is only available on skb-backed packet programs"
+                                .to_string(),
+                        ));
+                    }
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, gso_size_offset));
+            }
+            CtxField::Hwtstamp => {
+                let hwtstamp_offset = match self.packet_context_kind()? {
+                    PacketContextKind::SkBuff => Self::sk_buff_extended_meta_offsets().5,
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.hwtstamp is only available on skb-backed packet programs"
+                                .to_string(),
+                        ));
+                    }
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, hwtstamp_offset));
             }
             CtxField::Data => {
                 match self.packet_context_kind()? {

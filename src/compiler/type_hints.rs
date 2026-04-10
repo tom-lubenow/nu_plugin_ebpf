@@ -177,6 +177,11 @@ fn recover_ctx_field_hint(
         | CtxField::PacketLen
         | CtxField::PktType
         | CtxField::QueueMapping
+        | CtxField::TcClassid
+        | CtxField::NapiId
+        | CtxField::WireLen
+        | CtxField::GsoSegs
+        | CtxField::GsoSize
         | CtxField::IngressIfindex
         | CtxField::Ifindex
         | CtxField::RxQueueIndex
@@ -212,7 +217,7 @@ fn recover_ctx_field_hint(
         | CtxField::SockOpsSkbTcpFlags
         | CtxField::SysctlWrite
         | CtxField::SysctlFilePos => Some(MirType::U32),
-        CtxField::SockOpsSkbHwtstamp => Some(MirType::U64),
+        CtxField::Hwtstamp | CtxField::SockOpsSkbHwtstamp => Some(MirType::U64),
         CtxField::SockoptLevel
         | CtxField::SockoptOptname
         | CtxField::SockoptOptlen

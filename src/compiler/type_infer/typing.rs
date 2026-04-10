@@ -383,6 +383,11 @@ impl<'a> TypeInference<'a> {
             | CtxField::PacketLen
             | CtxField::PktType
             | CtxField::QueueMapping
+            | CtxField::TcClassid
+            | CtxField::NapiId
+            | CtxField::WireLen
+            | CtxField::GsoSegs
+            | CtxField::GsoSize
             | CtxField::IngressIfindex
             | CtxField::Ifindex
             | CtxField::RxQueueIndex
@@ -446,9 +451,10 @@ impl<'a> TypeInference<'a> {
                 address_space: AddressSpace::Packet,
             },
 
-            CtxField::Timestamp | CtxField::LookupCookie | CtxField::SockOpsSkbHwtstamp => {
-                HMType::U64
-            }
+            CtxField::Timestamp
+            | CtxField::LookupCookie
+            | CtxField::Hwtstamp
+            | CtxField::SockOpsSkbHwtstamp => HMType::U64,
 
             CtxField::Arg(idx) => {
                 if let Some(ty) = self.trampoline_arg_type(*idx).ok().flatten() {

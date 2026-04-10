@@ -2578,6 +2578,33 @@ fn test_lower_sk_skb_queue_mapping_field() {
 }
 
 #[test]
+fn test_lower_socket_filter_napi_id_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("napi_id")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("socket_filter ctx.napi_id should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::NapiId,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_xdp_data_byte_projection_adds_guarded_packet_load() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("data"), int_member(0)],

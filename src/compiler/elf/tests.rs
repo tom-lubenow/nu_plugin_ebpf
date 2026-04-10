@@ -1508,6 +1508,12 @@ fn test_probe_context_allows_packet_fields_on_tc() {
         ctx.ctx_field_access_error(&CtxField::QueueMapping)
             .is_none()
     );
+    assert!(ctx.ctx_field_access_error(&CtxField::TcClassid).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::NapiId).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::WireLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Hwtstamp).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
@@ -1533,6 +1539,12 @@ fn test_probe_context_allows_packet_fields_on_cgroup_skb() {
         ctx.ctx_field_access_error(&CtxField::QueueMapping)
             .is_none()
     );
+    assert!(ctx.ctx_field_access_error(&CtxField::TcClassid).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::NapiId).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::WireLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Hwtstamp).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
@@ -1583,6 +1595,12 @@ fn test_probe_context_allows_socket_filter_packet_fields() {
         ctx.ctx_field_access_error(&CtxField::QueueMapping)
             .is_none()
     );
+    assert!(ctx.ctx_field_access_error(&CtxField::TcClassid).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::NapiId).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::WireLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Hwtstamp).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
@@ -1640,6 +1658,12 @@ fn test_probe_context_allows_sk_skb_fields() {
         ctx.ctx_field_access_error(&CtxField::QueueMapping)
             .is_none()
     );
+    assert!(ctx.ctx_field_access_error(&CtxField::TcClassid).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::NapiId).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::WireLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Hwtstamp).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
@@ -1672,6 +1696,12 @@ fn test_probe_context_allows_sk_skb_parser_socket_fields() {
         ctx.ctx_field_access_error(&CtxField::QueueMapping)
             .is_none()
     );
+    assert!(ctx.ctx_field_access_error(&CtxField::TcClassid).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::NapiId).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::WireLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Hwtstamp).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::TcIndex).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::SkbHash).is_none());

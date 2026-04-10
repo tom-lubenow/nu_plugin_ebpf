@@ -2154,6 +2154,12 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.packet_len } - Get packet length from xdp_md or __sk_buff
     {|ctx| $ctx.pkt_type } - Get the skb pkt_type on skb-backed packet programs
     {|ctx| $ctx.queue_mapping } - Get the skb queue_mapping on skb-backed packet programs
+    {|ctx| $ctx.tc_classid } - Get the skb tc_classid on skb-backed packet programs
+    {|ctx| $ctx.napi_id } - Get the skb napi_id on skb-backed packet programs
+    {|ctx| $ctx.wire_len } - Get the skb wire_len on skb-backed packet programs
+    {|ctx| $ctx.gso_segs } - Get the skb gso_segs on skb-backed packet programs
+    {|ctx| $ctx.gso_size } - Get the skb gso_size on skb-backed packet programs
+    {|ctx| $ctx.hwtstamp } - Get the skb hardware timestamp on skb-backed packet programs
     {|ctx| $ctx.data }    - Get packet data pointer
     {|ctx| $ctx.data_end } - Get packet end pointer
     {|ctx| $ctx.ingress_ifindex } - Get ingress interface index
@@ -2310,6 +2316,12 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.packet_len } - Get total packet length in bytes
     {|ctx| $ctx.pkt_type } - Get the skb pkt_type
     {|ctx| $ctx.queue_mapping } - Get the skb queue_mapping
+    {|ctx| $ctx.tc_classid } - Get the skb tc_classid
+    {|ctx| $ctx.napi_id } - Get the skb napi_id
+    {|ctx| $ctx.wire_len } - Get the skb wire_len
+    {|ctx| $ctx.gso_segs } - Get the skb gso_segs
+    {|ctx| $ctx.gso_size } - Get the skb gso_size
+    {|ctx| $ctx.hwtstamp } - Get the skb hardware timestamp
     {|ctx| $ctx.data }    - Get the packet data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet access
     {|ctx| $ctx.ingress_ifindex } - Get the ingress interface index
@@ -2339,6 +2351,12 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.packet_len } - Get total packet length in bytes
     {|ctx| $ctx.pkt_type } - Get the skb pkt_type
     {|ctx| $ctx.queue_mapping } - Get the skb queue_mapping
+    {|ctx| $ctx.tc_classid } - Get the skb tc_classid
+    {|ctx| $ctx.napi_id } - Get the skb napi_id
+    {|ctx| $ctx.wire_len } - Get the skb wire_len
+    {|ctx| $ctx.gso_segs } - Get the skb gso_segs
+    {|ctx| $ctx.gso_size } - Get the skb gso_size
+    {|ctx| $ctx.hwtstamp } - Get the skb hardware timestamp
     {|ctx| $ctx.data }    - Get the packet data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet access
     {|ctx| $ctx.ingress_ifindex } - Get the ingress interface index
