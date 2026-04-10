@@ -176,6 +176,7 @@ fn recover_ctx_field_hint(
         | CtxField::Cpu
         | CtxField::PacketLen
         | CtxField::IngressIfindex
+        | CtxField::Ifindex
         | CtxField::RxQueueIndex
         | CtxField::EgressIfindex
         | CtxField::UserFamily

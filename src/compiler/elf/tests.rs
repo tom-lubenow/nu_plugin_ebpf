@@ -1505,6 +1505,7 @@ fn test_probe_context_allows_packet_fields_on_tc() {
     assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::SockMark).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::SockPriority)
@@ -1522,6 +1523,7 @@ fn test_probe_context_allows_packet_fields_on_cgroup_skb() {
     assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::SockMark).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::SockPriority)
@@ -1564,6 +1566,7 @@ fn test_probe_context_allows_socket_filter_packet_fields() {
     assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::SockMark).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::SockPriority)
@@ -1613,6 +1616,7 @@ fn test_probe_context_allows_sk_skb_fields() {
     assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::SockMark).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::SockPriority)
@@ -1635,6 +1639,7 @@ fn test_probe_context_allows_sk_skb_fields() {
 fn test_probe_context_allows_sk_skb_parser_socket_fields() {
     let ctx = ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap");
     assert!(ctx.ctx_field_access_error(&CtxField::Family).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::SockMark).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::SockPriority)

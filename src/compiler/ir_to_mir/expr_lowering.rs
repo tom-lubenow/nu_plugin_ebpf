@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::elf::PacketContextKind;
 use crate::compiler::hir::AnnotatedMutGlobal;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
@@ -1229,7 +1230,7 @@ impl<'a> HirToMirLowering<'a> {
             "packet_len" | "len" => CtxField::PacketLen,
             "data" => CtxField::Data,
             "data_end" => CtxField::DataEnd,
-            "ifindex" | "ingress_ifindex" => CtxField::IngressIfindex,
+            "ingress_ifindex" => CtxField::IngressIfindex,
             "rx_queue_index" => CtxField::RxQueueIndex,
             "egress_ifindex" => CtxField::EgressIfindex,
             "user_family" => CtxField::UserFamily,
@@ -1376,6 +1377,12 @@ impl<'a> HirToMirLowering<'a> {
             self.probe_ctx.map(|ctx| ctx.probe_type),
             field_name.as_str(),
         ) {
+            (Some(EbpfProgramType::Xdp), "ifindex") => CtxField::IngressIfindex,
+            (Some(probe_type), "ifindex")
+                if probe_type.packet_context_kind() == Some(PacketContextKind::SkBuff) =>
+            {
+                CtxField::Ifindex
+            }
             (Some(EbpfProgramType::CgroupDevice), "access_type") => CtxField::DeviceAccessType,
             (Some(EbpfProgramType::CgroupDevice), "major") => CtxField::DeviceMajor,
             (Some(EbpfProgramType::CgroupDevice), "minor") => CtxField::DeviceMinor,
@@ -4686,6 +4693,7 @@ impl<'a> HirToMirLowering<'a> {
             CtxField::Cpu
             | CtxField::PacketLen
             | CtxField::IngressIfindex
+            | CtxField::Ifindex
             | CtxField::RxQueueIndex
             | CtxField::EgressIfindex
             | CtxField::UserFamily

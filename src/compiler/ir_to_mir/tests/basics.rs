@@ -2497,6 +2497,33 @@ fn test_lower_xdp_ifindex_alias_to_ingress_ifindex() {
 }
 
 #[test]
+fn test_lower_sk_skb_ifindex_field_to_real_ifindex() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("ifindex")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_skb ifindex should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Ifindex,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_xdp_data_byte_projection_adds_guarded_packet_load() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("data"), int_member(0)],

@@ -14,6 +14,7 @@ impl<'a> VccLowerer<'a> {
             CtxField::Data => "data".to_string(),
             CtxField::DataEnd => "data_end".to_string(),
             CtxField::IngressIfindex => "ingress_ifindex".to_string(),
+            CtxField::Ifindex => "ifindex".to_string(),
             CtxField::RxQueueIndex => "rx_queue_index".to_string(),
             CtxField::EgressIfindex => "egress_ifindex".to_string(),
             CtxField::UserFamily => "user_family".to_string(),

@@ -2155,6 +2155,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.data }    - Get packet data pointer
     {|ctx| $ctx.data_end } - Get packet end pointer
     {|ctx| $ctx.ingress_ifindex } - Get ingress interface index
+    {|ctx| $ctx.ifindex } - Get the XDP ingress ifindex or skb ifindex, depending on program type
     {|ctx| $ctx.mark }    - Get the skb mark on skb-backed packet programs
     {|ctx| $ctx.priority } - Get the skb priority on skb-backed packet programs
     {|ctx| ($ctx.data | get 0) } - Read the first packet byte with an auto-generated data_end guard
@@ -2163,7 +2164,6 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.data.eth.payload.ipv4.protocol } - Step past Ethernet or a single VLAN tag, then parse IPv4
     {|ctx| $ctx.data.eth.payload.ipv4.payload.tcp.payload.0 } - Step through variable IPv4/TCP headers and read the first TCP payload byte
     XDP-only extras:
-    {|ctx| $ctx.ifindex } - Get ingress interface index
     {|ctx| $ctx.rx_queue_index } - Get RX queue index
     {|ctx| $ctx.egress_ifindex } - Get egress interface index
     Note: XDP closures can return action aliases like `pass`, `drop`,
@@ -2307,6 +2307,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.data }    - Get the packet data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet access
     {|ctx| $ctx.ingress_ifindex } - Get the ingress interface index
+    {|ctx| $ctx.ifindex } - Get the skb ifindex
     {|ctx| $ctx.mark }    - Get the skb mark
     {|ctx| $ctx.priority } - Get the skb priority
     {|ctx| $ctx.family }  - Get socket family
@@ -2331,6 +2332,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.data }    - Get the packet data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet access
     {|ctx| $ctx.ingress_ifindex } - Get the ingress interface index
+    {|ctx| $ctx.ifindex } - Get the skb ifindex
     {|ctx| $ctx.mark }    - Get the skb mark
     {|ctx| $ctx.priority } - Get the skb priority
     {|ctx| $ctx.family }  - Get socket family

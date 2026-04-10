@@ -305,7 +305,7 @@ The closure receives a context parameter with these fields:
 | `access_type` | Encoded cgroup device access type | cgroup_device |
 | `major` | Requested device major number | cgroup_device |
 | `minor` | Requested device minor number | cgroup_device |
-| `ifindex` | XDP ingress interface index alias | xdp |
+| `ifindex` | Interface index (`xdp_md.ingress_ifindex` on XDP, `__sk_buff.ifindex` on skb-backed packet programs) | xdp, socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `rx_queue_index` | XDP receive queue index | xdp |
 | `egress_ifindex` | XDP egress interface index | xdp |
 | `user_family` | Userspace-requested socket family | cgroup_sock_addr |
@@ -350,9 +350,9 @@ The closure receives a context parameter with these fields:
 
 Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/format`.
 
-`xdp`, `socket_filter`, and `tc` all expose `ctx.cpu`, `ctx.ktime`,
-`ctx.packet_len`, `ctx.ingress_ifindex`, and raw packet pointers `ctx.data`
-and `ctx.data_end`.
+`xdp`, `socket_filter`, `tc`, and `cgroup_skb` all expose `ctx.cpu`,
+`ctx.ktime`, `ctx.packet_len`, `ctx.ingress_ifindex`, `ctx.ifindex`, and
+raw packet pointers `ctx.data` and `ctx.data_end`.
 Scalar packet byte reads work through normal Nushell indexing such as
 `($ctx.data | get 0)`, and fixed-width big-endian scalars can be read directly
 through cell paths such as `$ctx.data.u16be.6` or `$ctx.data.u32be.0`. These
@@ -455,7 +455,7 @@ work.
 `sk_skb` currently emits `sk_skb/stream_verdict` programs attached to a
 pinned sockmap or sockhash path such as `/sys/fs/bpf/demo_sockmap`. It
 exposes `ctx.cpu`, `ctx.ktime`, `ctx.packet_len`, `ctx.data`,
-`ctx.data_end`, `ctx.ingress_ifindex`, `ctx.mark`, `ctx.priority`,
+`ctx.data_end`, `ctx.ingress_ifindex`, `ctx.ifindex`, `ctx.mark`, `ctx.priority`,
 `ctx.family`, `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`,
 `ctx.local_ip4`, `ctx.local_ip6`, and `ctx.local_port` through the existing
 skb-backed packet model, so ordinary guarded packet reads like
@@ -468,7 +468,7 @@ return codes with `pass` / `drop` aliases.
 `sk_skb_parser` currently emits `sk_skb/stream_parser` programs attached to
 a pinned sockmap or sockhash path such as `/sys/fs/bpf/demo_sockmap`. It
 uses the same skb-backed packet context as `sk_skb`, including `ctx.family`,
-`ctx.mark`, `ctx.priority`, `ctx.remote_ip4`, `ctx.remote_ip6`,
+`ctx.ifindex`, `ctx.mark`, `ctx.priority`, `ctx.remote_ip4`, `ctx.remote_ip6`,
 `ctx.remote_port`, `ctx.local_ip4`, `ctx.local_ip6`, and `ctx.local_port`,
 with the same host-order normalization rules for IPv4 addresses, remote
 ports, and IPv6 word arrays. Its return contract is a raw integer parser

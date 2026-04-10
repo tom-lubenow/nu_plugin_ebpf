@@ -382,6 +382,7 @@ impl<'a> TypeInference<'a> {
             | CtxField::Cpu
             | CtxField::PacketLen
             | CtxField::IngressIfindex
+            | CtxField::Ifindex
             | CtxField::RxQueueIndex
             | CtxField::EgressIfindex
             | CtxField::UserFamily

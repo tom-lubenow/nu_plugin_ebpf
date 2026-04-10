@@ -406,6 +406,8 @@ pub enum CtxField {
     DataEnd,
     /// XDP ingress interface index
     IngressIfindex,
+    /// skb ifindex (`__sk_buff.ifindex`)
+    Ifindex,
     /// XDP receive queue index
     RxQueueIndex,
     /// XDP egress interface index
@@ -520,6 +522,7 @@ impl CtxField {
             CtxField::Data => "data".to_string(),
             CtxField::DataEnd => "data_end".to_string(),
             CtxField::IngressIfindex => "ingress_ifindex".to_string(),
+            CtxField::Ifindex => "ifindex".to_string(),
             CtxField::RxQueueIndex => "rx_queue_index".to_string(),
             CtxField::EgressIfindex => "egress_ifindex".to_string(),
             CtxField::UserFamily => "user_family".to_string(),

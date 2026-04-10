@@ -15,7 +15,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 4, 8, 12, 16, 20)
     }
 
-    fn sk_buff_offsets() -> (i16, i16, i16, i16) {
+    fn sk_buff_offsets() -> (i16, i16, i16, i16, i16) {
         // struct __sk_buff {
         //     __u32 len;
         //     ...
@@ -25,7 +25,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         //     __u32 data;
         //     __u32 data_end;
         // };
-        (0, 76, 80, 36)
+        (0, 76, 80, 36, 40)
     }
 
     fn sk_buff_mark_priority_offsets() -> (i16, i16) {
@@ -683,7 +683,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                         .push(EbpfInsn::sub64_reg(dst, EbpfReg::R0));
                 }
                 PacketContextKind::SkBuff => {
-                    let (len_offset, _, _, _) = Self::sk_buff_offsets();
+                    let (len_offset, _, _, _, _) = Self::sk_buff_offsets();
                     self.instructions
                         .push(EbpfInsn::ldxw(dst, EbpfReg::R9, len_offset));
                 }
@@ -748,6 +748,19 @@ impl<'a> MirToEbpfCompiler<'a> {
                 };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, ingress_ifindex_offset));
+            }
+            CtxField::Ifindex => {
+                let ifindex_offset = match self.packet_context_kind()? {
+                    PacketContextKind::SkBuff => Self::sk_buff_offsets().4,
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.ifindex is only available on skb-backed packet programs"
+                                .to_string(),
+                        ));
+                    }
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, ifindex_offset));
             }
             CtxField::RxQueueIndex => {
                 let PacketContextKind::XdpMd = self.packet_context_kind()? else {
