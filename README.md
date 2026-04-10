@@ -118,6 +118,9 @@ let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.skb_len | count; 1 }
 # Count first-byte observations on a pinned sockmap or sockhash sk_msg hook
 let id = ebpf attach 'sk_msg:/sys/fs/bpf/demo_sockmap' {|ctx| ($ctx.data | get 0) | count; 'pass' }
 
+# Project the current sk_msg socket through the typed bpf_sock view
+let id = ebpf attach 'sk_msg:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.sk.family | count; 'pass' }
+
 # Count local ports on a pinned sockmap or sockhash sk_skb stream-verdict hook
 let id = ebpf attach 'sk_skb:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.local_port | count; 'pass' }
 
@@ -364,6 +367,7 @@ The closure receives a context parameter with these fields:
 | `local_ip4` | Local IPv4 address in host byte order | sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `local_ip6` | Local IPv6 address as four host-order `u32` words | sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `local_port` | Local port in host byte order | sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `sk` | Typed `bpf_sock *` pointer for socket projection such as `$ctx.sk.family` or `$ctx.sk.bound_dev_if` | sk_lookup, sk_msg |
 | `cookie` | Socket lookup cookie | sk_lookup |
 | `level` | Socket-option level | cgroup_sockopt |
 | `optname` | Socket-option name | cgroup_sockopt |
@@ -464,8 +468,9 @@ codes still work too.
 `sk_lookup` currently attaches to a network-namespace path such as
 `/proc/self/ns/net`. It exposes `ctx.cpu`, `ctx.ktime`, `ctx.family`,
 `ctx.protocol`, `ctx.cookie`, `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`,
-`ctx.local_ip4`, `ctx.local_ip6`, `ctx.local_port`, and
-`ctx.ingress_ifindex`. The IPv4 address and remote port fields are
+`ctx.local_ip4`, `ctx.local_ip6`, `ctx.local_port`, `ctx.ingress_ifindex`,
+and a typed `ctx.sk` pointer for socket projection such as
+`$ctx.sk.bound_dev_if` or `$ctx.sk.mark`. The IPv4 address and remote port fields are
 normalized to host byte order, and the IPv6 fields are exposed as fixed
 arrays of four host-order `u32` words so ordinary Nushell indexing works,
 for example `($ctx.remote_ip6 | get 3)`. `sk_lookup` closures can return
@@ -476,8 +481,8 @@ for example `($ctx.remote_ip6 | get 3)`. `sk_lookup` closures can return
 `/sys/fs/bpf/demo_sockmap`. It exposes `ctx.cpu`, `ctx.ktime`,
 `ctx.packet_len`, `ctx.data`, `ctx.data_end`, `ctx.family`, `ctx.remote_ip4`,
 `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`, `ctx.local_ip6`, and
-`ctx.local_port`. `ctx.data` / `ctx.data_end` use the same guarded packet
-access model as XDP and tc, so ordinary byte/scalar reads like
+`ctx.local_port`, plus a typed `ctx.sk` pointer for socket projection such as
+`$ctx.sk.family` or `$ctx.sk.priority`. `ctx.data` / `ctx.data_end` use the same guarded packet access model as XDP and tc, so ordinary byte/scalar reads like
 `($ctx.data | get 0)` work. The IPv4 address and remote port fields are
 normalized to host byte order, and the IPv6 fields are exposed as fixed
 arrays of four host-order `u32` words so ordinary Nushell indexing works,

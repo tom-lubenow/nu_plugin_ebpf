@@ -39,6 +39,7 @@ impl<'a> VccLowerer<'a> {
             CtxField::Family => "family".to_string(),
             CtxField::SockType => "sock_type".to_string(),
             CtxField::Protocol => "protocol".to_string(),
+            CtxField::Socket => "sk".to_string(),
             CtxField::BoundDevIf => "bound_dev_if".to_string(),
             CtxField::SockMark => "mark".to_string(),
             CtxField::SockPriority => "priority".to_string(),

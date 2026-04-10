@@ -3,6 +3,21 @@ use crate::compiler::{EbpfProgramType, ProgramValueAccess};
 use crate::kernel_btf::{KernelBtf, TypeInfo};
 
 impl<'a> TypeInference<'a> {
+    fn synthetic_bpf_sock_hm_type() -> HMType {
+        HMType::Struct {
+            name: Some("bpf_sock".to_string()),
+            kernel_btf_type_id: None,
+            fields: vec![
+                ("bound_dev_if".to_string(), HMType::U32),
+                ("family".to_string(), HMType::U32),
+                ("type".to_string(), HMType::U32),
+                ("protocol".to_string(), HMType::U32),
+                ("mark".to_string(), HMType::U32),
+                ("priority".to_string(), HMType::U32),
+            ],
+        }
+    }
+
     fn byte_array_mir_type(size: usize) -> Option<MirType> {
         if size == 0 {
             return None;
@@ -438,6 +453,10 @@ impl<'a> TypeInference<'a> {
             | CtxField::SockoptOptname
             | CtxField::SockoptOptlen
             | CtxField::SockoptRetval => HMType::I32,
+            CtxField::Socket => HMType::Ptr {
+                pointee: Box::new(Self::synthetic_bpf_sock_hm_type()),
+                address_space: AddressSpace::Kernel,
+            },
 
             CtxField::SockoptOptval | CtxField::SockoptOptvalEnd => HMType::Ptr {
                 pointee: Box::new(HMType::U8),

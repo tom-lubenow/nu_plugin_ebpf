@@ -1916,6 +1916,60 @@ fn test_lower_sk_lookup_ctx_cookie_field() {
 }
 
 #[test]
+fn test_lower_sk_lookup_ctx_socket_bound_dev_if_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("sk"), string_member("bound_dev_if")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_lookup ctx.sk.bound_dev_if should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Socket,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_sk_msg_ctx_socket_family_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("sk"), string_member("family")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_msg ctx.sk.family should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Socket,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_sock_ops_ctx_op_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("op")],

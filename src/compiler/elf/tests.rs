@@ -1635,6 +1635,7 @@ fn test_probe_context_allows_socket_filter_packet_fields() {
 #[test]
 fn test_probe_context_allows_sk_lookup_fields() {
     let ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    assert!(ctx.ctx_field_access_error(&CtxField::Socket).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Family).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Protocol).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::RemoteIp4).is_none());
@@ -1652,6 +1653,7 @@ fn test_probe_context_allows_sk_lookup_fields() {
 #[test]
 fn test_probe_context_allows_sk_msg_fields() {
     let ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+    assert!(ctx.ctx_field_access_error(&CtxField::Socket).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());

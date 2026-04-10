@@ -121,6 +121,10 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 8, 16, 20, 24, 28, 44, 60, 64, 68)
     }
 
+    fn sk_msg_md_sock_offset() -> i16 {
+        72
+    }
+
     fn bpf_sock_addr_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16) {
         // struct bpf_sock_addr {
         //     __u32 user_family;
@@ -1095,6 +1099,19 @@ impl<'a> MirToEbpfCompiler<'a> {
                 };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::Socket => {
+                let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
+                    Some(EbpfProgramType::SkLookup) => Self::bpf_sk_lookup_offsets().0,
+                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_sock_offset(),
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.sk is only available on sk_lookup and sk_msg programs".to_string(),
+                        ));
+                    }
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
             }
             CtxField::BoundDevIf => {
                 let offset = Self::bpf_sock_offsets().0;

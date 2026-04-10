@@ -28,6 +28,57 @@ enum PacketPayloadStepKind {
 }
 
 impl<'a> HirToMirLowering<'a> {
+    fn synthetic_bpf_sock_type() -> MirType {
+        MirType::Struct {
+            name: Some("bpf_sock".to_string()),
+            kernel_btf_type_id: None,
+            fields: vec![
+                StructField {
+                    name: "bound_dev_if".to_string(),
+                    ty: MirType::U32,
+                    offset: 0,
+                    synthetic: false,
+                    bitfield: None,
+                },
+                StructField {
+                    name: "family".to_string(),
+                    ty: MirType::U32,
+                    offset: 4,
+                    synthetic: false,
+                    bitfield: None,
+                },
+                StructField {
+                    name: "type".to_string(),
+                    ty: MirType::U32,
+                    offset: 8,
+                    synthetic: false,
+                    bitfield: None,
+                },
+                StructField {
+                    name: "protocol".to_string(),
+                    ty: MirType::U32,
+                    offset: 12,
+                    synthetic: false,
+                    bitfield: None,
+                },
+                StructField {
+                    name: "mark".to_string(),
+                    ty: MirType::U32,
+                    offset: 16,
+                    synthetic: false,
+                    bitfield: None,
+                },
+                StructField {
+                    name: "priority".to_string(),
+                    ty: MirType::U32,
+                    offset: 20,
+                    synthetic: false,
+                    bitfield: None,
+                },
+            ],
+        }
+    }
+
     fn mutable_numeric_list_global_repr(
         values: &[Value],
     ) -> Result<Option<(MirType, Vec<u8>, usize)>, CompileError> {
@@ -1255,6 +1306,7 @@ impl<'a> HirToMirLowering<'a> {
             "family" => CtxField::Family,
             "sock_type" | "type" => CtxField::SockType,
             "protocol" => CtxField::Protocol,
+            "sk" => CtxField::Socket,
             "bound_dev_if" => CtxField::BoundDevIf,
             "mark" => CtxField::SockMark,
             "priority" => CtxField::SockPriority,
@@ -4415,6 +4467,34 @@ impl<'a> HirToMirLowering<'a> {
                 return Ok(());
             }
 
+            if matches!(ctx_field, CtxField::Socket) {
+                let base_ty = MirType::Ptr {
+                    pointee: Box::new(Self::synthetic_bpf_sock_type()),
+                    address_space: AddressSpace::Kernel,
+                };
+                let base_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::LoadCtxField {
+                    dst: base_vreg,
+                    field: ctx_field.clone(),
+                    slot: None,
+                });
+                self.vreg_type_hints.insert(base_vreg, base_ty.clone());
+                let projected_ty = self.lower_typed_value_projection(
+                    src_dst,
+                    dst_vreg,
+                    base_vreg,
+                    &base_ty,
+                    remaining_members,
+                    &Self::typed_value_path_desc(&path.members),
+                    None,
+                )?;
+                let meta = self.get_or_create_metadata(src_dst);
+                meta.is_context = false;
+                meta.field_type = Some(projected_ty);
+                meta.source_var = None;
+                return Ok(());
+            }
+
             let ctx = self.probe_ctx.ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
                     "nested ctx field access requires probe context".into(),
@@ -4799,6 +4879,16 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::SockOpsSkbTcpFlags
             | CtxField::SysctlWrite
             | CtxField::SysctlFilePos => (MirType::U32, Some(MirType::U32)),
+            CtxField::Socket => (
+                MirType::Ptr {
+                    pointee: Box::new(Self::synthetic_bpf_sock_type()),
+                    address_space: AddressSpace::Kernel,
+                },
+                Some(MirType::Ptr {
+                    pointee: Box::new(Self::synthetic_bpf_sock_type()),
+                    address_space: AddressSpace::Kernel,
+                }),
+            ),
             CtxField::Hwtstamp => (MirType::U64, Some(MirType::U64)),
             CtxField::Timestamp
             | CtxField::LookupCookie

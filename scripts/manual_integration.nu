@@ -889,7 +889,7 @@ step 62 "sk_msg pinned sockhash live attach and detach" {
             ^bpftool map create $map_path type sockhash key 4 value 4 entries 16 name nu_skmsg | ignore
 
             let dry_run_code = ([
-                'ebpf attach --dry-run "sk_msg:__MAP__" {|ctx| ($ctx.data | get 0) | count; "pass" } | describe'
+                'ebpf attach --dry-run "sk_msg:__MAP__" {|ctx| $ctx.sk.family | count; "pass" } | describe'
             ] | str join (char newline) | str replace "__MAP__" $map_path)
 
             let describe = (run-nu-with-plugin $plugin_bin $dry_run_code | str trim)

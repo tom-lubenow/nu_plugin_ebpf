@@ -159,6 +159,57 @@ fn runtime_trampoline_root_type(type_info: &TypeInfo) -> Option<MirType> {
     }
 }
 
+fn synthetic_bpf_sock_type() -> MirType {
+    MirType::Struct {
+        name: Some("bpf_sock".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![
+            StructField {
+                name: "bound_dev_if".to_string(),
+                ty: MirType::U32,
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "family".to_string(),
+                ty: MirType::U32,
+                offset: 4,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "type".to_string(),
+                ty: MirType::U32,
+                offset: 8,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "protocol".to_string(),
+                ty: MirType::U32,
+                offset: 12,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "mark".to_string(),
+                ty: MirType::U32,
+                offset: 16,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "priority".to_string(),
+                ty: MirType::U32,
+                offset: 20,
+                synthetic: false,
+                bitfield: None,
+            },
+        ],
+    }
+}
+
 fn recover_ctx_field_hint(
     probe_ctx: Option<&ProbeContext>,
     field: &CtxField,
@@ -235,6 +286,10 @@ fn recover_ctx_field_hint(
         | CtxField::SockoptOptname
         | CtxField::SockoptOptlen
         | CtxField::SockoptRetval => Some(MirType::I32),
+        CtxField::Socket => Some(MirType::Ptr {
+            pointee: Box::new(synthetic_bpf_sock_type()),
+            address_space: AddressSpace::Kernel,
+        }),
         CtxField::SockoptOptval | CtxField::SockoptOptvalEnd => Some(MirType::Ptr {
             pointee: Box::new(MirType::U8),
             address_space: AddressSpace::Kernel,

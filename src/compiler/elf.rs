@@ -1019,6 +1019,14 @@ impl ProbeContext {
                     field.display_name()
                 ))
             }
+            CtxField::Socket
+                if !matches!(self.probe_type, EbpfProgramType::SkLookup | EbpfProgramType::SkMsg) =>
+            {
+                Some(format!(
+                    "ctx.{} is only available on sk_lookup and sk_msg programs",
+                    field.display_name()
+                ))
+            }
             CtxField::LookupCookie if !matches!(self.probe_type, EbpfProgramType::SkLookup) => {
                 Some(format!(
                     "ctx.{} is only available on sk_lookup programs",

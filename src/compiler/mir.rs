@@ -456,6 +456,8 @@ pub enum CtxField {
     SockType,
     /// bpf_sock_addr::protocol
     Protocol,
+    /// current bpf_sock pointer on sk_lookup/sk_msg
+    Socket,
     /// bpf_sock::bound_dev_if
     BoundDevIf,
     /// bpf_sock::mark
@@ -593,6 +595,7 @@ impl CtxField {
             CtxField::Family => "family".to_string(),
             CtxField::SockType => "sock_type".to_string(),
             CtxField::Protocol => "protocol".to_string(),
+            CtxField::Socket => "sk".to_string(),
             CtxField::BoundDevIf => "bound_dev_if".to_string(),
             CtxField::SockMark => "mark".to_string(),
             CtxField::SockPriority => "priority".to_string(),
