@@ -2408,6 +2408,7 @@ Context parameter syntax (recommended):
   cgroup_sockopt fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer
     {|ctx| $ctx.level }   - Get the socket-option level
     {|ctx| $ctx.optname } - Get the socket-option name
     {|ctx| $ctx.optlen }  - Get the socket-option length
@@ -2417,7 +2418,9 @@ Context parameter syntax (recommended):
     Note: cgroup_sockopt closures can return `allow` or `deny` instead of
     raw `1`/`0` result codes. `optval` / `optval_end` are surfaced as kernel
     pointers, so existing pointer reads like `($ctx.optval | get 0)` or
-    `read-kernel-str` can inspect buffer contents.
+    `read-kernel-str` can inspect buffer contents. `ctx.sk` uses the same
+    typed `bpf_sock` projection model as `cgroup_sock`, `sk_lookup`, and
+    `sk_msg`.
 
   cgroup_sock_addr fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

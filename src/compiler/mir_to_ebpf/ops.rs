@@ -1107,11 +1107,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                             .push(EbpfInsn::mov64_reg(dst, EbpfReg::R9));
                         return Ok(());
                     }
+                    Some(EbpfProgramType::CgroupSockopt) => Self::bpf_sockopt_offsets().0,
                     Some(EbpfProgramType::SkLookup) => Self::bpf_sk_lookup_offsets().0,
                     Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_sock_offset(),
                     _ => {
                         return Err(CompileError::UnsupportedInstruction(
-                            "ctx.sk is only available on cgroup_sock, sk_lookup, and sk_msg programs".to_string(),
+                            "ctx.sk is only available on cgroup_sock, cgroup_sockopt, sk_lookup, and sk_msg programs".to_string(),
                         ));
                     }
                 };

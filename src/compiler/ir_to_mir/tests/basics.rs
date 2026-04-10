@@ -1865,6 +1865,33 @@ fn test_lower_cgroup_sockopt_action_alias_return_to_const() {
 }
 
 #[test]
+fn test_lower_cgroup_sockopt_ctx_socket_family_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("sk"), string_member("family")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sockopt ctx.sk.family should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Socket,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_sk_lookup_action_alias_return_to_const() {
     let hir = make_return_literal_program(HirLiteral::String(b"pass".to_vec()));
     let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");

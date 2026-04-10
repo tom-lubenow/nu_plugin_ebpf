@@ -719,14 +719,14 @@ step 49 "cgroup_sysctl root read/write counter" {
     }
 }
 
-step 50 "cgroup_sockopt root getsockopt counter" {
+step 50 "cgroup_sockopt root getsockopt socket family counter" {
     if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
         print "Skipping cgroup_sockopt smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
     } else {
         count-at-least-one "cgroup_sockopt:/sys/fs/cgroup:get" {|ctx|
-            $ctx.optname | count
+            $ctx.sk.family | count
             'allow'
-        } { trigger-sockopt-read } "cgroup_sockopt getsockopt counter"
+        } { trigger-sockopt-read } "cgroup_sockopt getsockopt socket family counter"
     }
 }
 

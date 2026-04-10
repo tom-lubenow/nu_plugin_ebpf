@@ -1598,6 +1598,20 @@ fn test_probe_context_allows_sock_addr_fields_on_cgroup_sock_addr() {
 }
 
 #[test]
+fn test_probe_context_allows_socket_field_on_cgroup_sockopt() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+    assert!(ctx.ctx_field_access_error(&CtxField::Socket).is_none());
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockoptLevel)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockoptOptname)
+            .is_none()
+    );
+}
+
+#[test]
 fn test_probe_context_allows_socket_filter_packet_fields() {
     let ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
     assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());

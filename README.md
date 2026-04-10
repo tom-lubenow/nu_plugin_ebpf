@@ -127,8 +127,8 @@ let id = ebpf attach 'sk_skb:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.local_port | 
 # Count local ports on a pinned sockmap or sockhash sk_skb stream-parser hook
 let id = ebpf attach 'sk_skb_parser:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.local_port | count; 0 }
 
-# Count getsockopt option names inside a cgroup
-let id = ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| $ctx.optname | count; 'allow' }
+# Project the current cgroup_sockopt socket through the typed bpf_sock view
+let id = ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| $ctx.sk.family | count; 'allow' }
 
 # Inspect the first byte of the getsockopt buffer through ctx.optval
 let id = ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| ($ctx.optval | get 0) | count; 'allow' }
@@ -367,7 +367,7 @@ The closure receives a context parameter with these fields:
 | `local_ip4` | Local IPv4 address in host byte order | sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `local_ip6` | Local IPv6 address as four host-order `u32` words | sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `local_port` | Local port in host byte order | sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
-| `sk` | Typed `bpf_sock *` pointer for socket projection such as `$ctx.sk.family` or `$ctx.sk.bound_dev_if` | cgroup_sock, sk_lookup, sk_msg |
+| `sk` | Typed `bpf_sock *` pointer for socket projection such as `$ctx.sk.family` or `$ctx.sk.bound_dev_if` | cgroup_sock, cgroup_sockopt, sk_lookup, sk_msg |
 | `cookie` | Socket lookup cookie | sk_lookup |
 | `level` | Socket-option level | cgroup_sockopt |
 | `optname` | Socket-option name | cgroup_sockopt |
