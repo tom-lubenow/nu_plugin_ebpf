@@ -33,6 +33,23 @@ fn test_call_helper() {
 }
 
 #[test]
+fn test_bpf_helper_name_roundtrip() {
+    assert_eq!(
+        BpfHelper::GetCurrentPidTgid.name(),
+        "bpf_get_current_pid_tgid"
+    );
+    assert!(matches!(
+        BpfHelper::from_name("bpf_get_current_pid_tgid"),
+        Some(BpfHelper::GetCurrentPidTgid)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("get_current_pid_tgid"),
+        Some(BpfHelper::GetCurrentPidTgid)
+    ));
+    assert!(BpfHelper::from_name("bpf_not_a_real_helper").is_none());
+}
+
+#[test]
 fn test_call_kfunc() {
     let insn = EbpfInsn::call_kfunc(1234);
     let bytes = insn.encode();

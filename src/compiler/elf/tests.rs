@@ -332,6 +332,10 @@ fn test_program_type_supports_raw_tracepoint_alias() {
 #[test]
 fn test_program_intrinsic_command_registry() {
     assert_eq!(
+        ProgramIntrinsic::from_command_name("helper-call"),
+        Some(ProgramIntrinsic::HelperCall)
+    );
+    assert_eq!(
         ProgramIntrinsic::from_command_name("map-get"),
         Some(ProgramIntrinsic::MapGet)
     );
@@ -345,6 +349,10 @@ fn test_program_intrinsic_command_registry() {
         ProgramCapability::ReadKernelString
     );
     assert_eq!(
+        ProgramIntrinsic::HelperCall.required_capability(),
+        ProgramCapability::HelperCalls
+    );
+    assert_eq!(
         ProgramIntrinsic::GlobalGet.required_capability(),
         ProgramCapability::Globals
     );
@@ -353,14 +361,17 @@ fn test_program_intrinsic_command_registry() {
 #[test]
 fn test_program_type_supports_probe_intrinsics() {
     assert!(EbpfProgramType::Tracepoint.supports_intrinsic(ProgramIntrinsic::Emit));
+    assert!(EbpfProgramType::Fentry.supports_intrinsic(ProgramIntrinsic::HelperCall));
     assert!(EbpfProgramType::Fentry.supports_intrinsic(ProgramIntrinsic::KfuncCall));
 }
 
 #[test]
 fn test_program_type_supports_probe_capabilities() {
     assert!(EbpfProgramType::Tracepoint.supports_capability(ProgramCapability::Emit));
+    assert!(EbpfProgramType::Fentry.supports_capability(ProgramCapability::HelperCalls));
     assert!(EbpfProgramType::Fentry.supports_capability(ProgramCapability::KfuncCalls));
     assert!(EbpfProgramType::Kprobe.supports_capability(ProgramCapability::StackTraces));
+    assert!(EbpfProgramType::Xdp.supports_capability(ProgramCapability::HelperCalls));
     assert!(EbpfProgramType::Xdp.supports_capability(ProgramCapability::Globals));
     assert!(!EbpfProgramType::Xdp.supports_capability(ProgramCapability::ReadUserString));
 }

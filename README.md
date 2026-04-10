@@ -720,6 +720,8 @@ materialized.
 | `stop-timer` | Calculate elapsed time |
 | `read-str` | Read string from user memory (`--max-len` to cap, default 128) |
 | `read-kernel-str` | Read string from kernel memory (`--max-len` to cap, default 128) |
+| `helper-call` | Call a modeled BPF helper by name, such as `bpf_get_current_pid_tgid` |
+| `kfunc-call` | Call a typed kernel kfunc by name, resolved from kernel BTF when possible |
 | `global-define` | Declare a named compiler-managed program global; `--zero` uses a runtime exemplar, `--type` declares a zero-initialized scalar, `bytes:N`, `string:N`, `list:i64:N`, or flat `record{field:type,...}` global directly |
 | `global-get` | Load a named compiler-managed program global |
 | `global-set` | Store the pipeline input into a named compiler-managed program global |

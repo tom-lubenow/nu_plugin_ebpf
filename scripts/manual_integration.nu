@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 69
+const TOTAL_STEPS = 70
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -1095,7 +1095,22 @@ step 68 "cgroup_sockopt dry-run retval assignment" {
     $result
 }
 
-step 69 "verify no leaked probes" {
+step 69 "helper-call dry-run current pid helper" {
+    let result = (
+        run-nu-with-plugin
+            $plugin_bin
+            'ebpf attach --dry-run "kprobe:ksys_read" {|| helper-call "bpf_get_current_pid_tgid" | count } | describe'
+        | str trim
+    )
+
+    if $result != "binary" {
+        fail $"expected helper-call dry-run to return binary, got ($result)"
+    }
+
+    $result
+}
+
+step 70 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

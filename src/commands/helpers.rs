@@ -8,6 +8,7 @@
 //! - stop-timer: Stop timer and return elapsed nanoseconds
 //! - read-str: Read string from userspace memory pointer
 //! - read-kernel-str: Read string from kernel memory pointer
+//! - helper-call: Invoke a modeled BPF helper by name
 //! - kfunc-call: Invoke a typed kernel kfunc by name
 //! - global-define / global-get / global-set: Named compiler-managed per-program globals
 //! - map-get / map-put / map-delete: Generic BPF map operations
@@ -183,6 +184,58 @@ data structures. For most cases, use read-str instead."#
             Value::string("<kernel string>", call.head),
             None,
         ))
+    }
+}
+
+#[derive(Clone)]
+pub struct HelperCall;
+
+impl PluginCommand for HelperCall {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "helper-call"
+    }
+
+    fn description(&self) -> &str {
+        "Call a modeled BPF helper by name from an eBPF closure."
+    }
+
+    fn extra_description(&self) -> &str {
+        r#"Advanced helper for invoking modeled BPF helpers by name.
+The first positional argument must be a literal helper name such as
+`bpf_get_current_pid_tgid` or `bpf_get_socket_cookie`. If the helper takes
+arguments, pipeline input becomes arg0 when present."#
+    }
+
+    fn signature(&self) -> Signature {
+        Signature::build("helper-call")
+            .input_output_types(vec![(Type::Any, Type::Any), (Type::Nothing, Type::Any)])
+            .required("name", SyntaxShape::String, "BPF helper symbol name")
+            .rest(
+                "args",
+                SyntaxShape::Any,
+                "Additional helper arguments (up to 5 total with pipeline input)",
+            )
+            .category(Category::Experimental)
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "ebpf attach --dry-run 'kprobe:ksys_read' {|| helper-call bpf_get_current_pid_tgid | count }",
+            description: "Call a zero-arg BPF helper and feed its result into a counter",
+            result: None,
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        _input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        Ok(PipelineData::Value(Value::int(0, call.head), None))
     }
 }
 

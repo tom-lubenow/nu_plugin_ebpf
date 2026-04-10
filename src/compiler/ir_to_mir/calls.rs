@@ -1,7 +1,8 @@
 use super::*;
 use crate::compiler::ProgramIntrinsic;
 use crate::compiler::instruction::{
-    KfuncSignature, kfunc_pointer_arg_fixed_size, kfunc_pointer_arg_requires_stack_slot_base,
+    BpfHelper, HelperSignature, KfuncSignature, kfunc_pointer_arg_fixed_size,
+    kfunc_pointer_arg_requires_stack_slot_base,
 };
 use crate::compiler::mir::{
     AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, STRING_COUNTER_MAP_NAME,
@@ -667,6 +668,57 @@ impl<'a> HirToMirLowering<'a> {
                     args: call_args,
                 });
                 self.write_back_scalar_kfunc_out_args(writebacks)?;
+            }
+
+            "helper-call" => {
+                if !self.named_flags.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "helper-call does not accept flags".into(),
+                    ));
+                }
+                self.require_only_named_args("helper-call", &[])?;
+
+                let (_, name_reg) = self.positional_args.first().copied().ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "helper-call requires a literal helper name as the first positional argument"
+                            .into(),
+                    )
+                })?;
+                let helper_name = self.literal_string_arg(name_reg, "helper-call")?;
+                let helper = BpfHelper::from_name(&helper_name).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "helper-call does not support helper '{}'",
+                        helper_name
+                    ))
+                })?;
+                let helper_id = helper as u32;
+                let sig = HelperSignature::for_id(helper_id).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "helper-call does not have a modeled signature for '{}'",
+                        helper.name()
+                    ))
+                })?;
+
+                let mut args = Vec::new();
+                if let Some(input) = self.pipeline_input {
+                    args.push(MirValue::VReg(input));
+                } else if src_dst_had_value && sig.max_args != 0 {
+                    args.push(MirValue::VReg(dst_vreg));
+                }
+                for (arg_vreg, _) in self.positional_args.iter().skip(1) {
+                    args.push(MirValue::VReg(*arg_vreg));
+                }
+                if args.len() > 5 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "BPF helper calls support at most 5 arguments".into(),
+                    ));
+                }
+
+                self.emit(MirInst::CallHelper {
+                    dst: dst_vreg,
+                    helper: helper_id,
+                    args,
+                });
             }
 
             "map-get" => {

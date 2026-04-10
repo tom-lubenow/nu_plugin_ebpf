@@ -2581,6 +2581,7 @@ Timing commands:
   stop-timer        - Calculate elapsed nanoseconds since start-timer
 
 Advanced commands:
+  helper-call       - Call a modeled BPF helper by name
   kfunc-call        - Call a typed kernel kfunc by name (optional --btf-id)
 
 Flags:
@@ -2824,6 +2825,11 @@ Requirements:
             Example {
                 example: "ebpf attach --dry-run 'struct_ops:sched_ext_ops' { name: 'nu_demo', select_cpu: {|ctx| let p = $ctx.arg.p; let prev = $ctx.arg.prev_cpu; let wake = $ctx.arg.wake_flags; let mask = (kfunc-call \"scx_bpf_get_online_cpumask\"); if $mask != 0 { let cpu = (kfunc-call \"scx_bpf_select_cpu_and\" $p $prev $wake $mask 0); kfunc-call \"scx_bpf_put_cpumask\" $mask; $cpu } else { $prev } } }",
                 description: "Dry-run a sched_ext select_cpu callback with the safe cpumask acquire/use/release pattern",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach --dry-run 'kprobe:ksys_read' {|| helper-call 'bpf_get_current_pid_tgid' | count }",
+                description: "Dry-run a closure that calls a modeled BPF helper by name",
                 result: None,
             },
         ]

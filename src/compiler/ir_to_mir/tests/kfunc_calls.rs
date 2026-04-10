@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::instruction::BpfHelper;
 
 #[test]
 fn test_kfunc_call_lowers_with_explicit_btf_id() {
@@ -173,6 +174,159 @@ fn test_kfunc_call_without_pipeline_does_not_inject_src_dst() {
         call.len(),
         1,
         "only explicit positional arg should be passed"
+    );
+}
+
+#[test]
+fn test_helper_call_zero_arg_does_not_inject_src_dst() {
+    use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
+    use nu_protocol::{DeclId, RegId};
+    use std::sync::Arc;
+
+    let helper_name = b"bpf_get_current_pid_tgid";
+    let data: Arc<[u8]> = helper_name.to_vec().into();
+
+    let main_ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadLiteral {
+                dst: RegId::new(0),
+                lit: Literal::Int(99),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::String(DataSlice {
+                    start: 0,
+                    len: helper_name.len() as u32,
+                }),
+            },
+            Instruction::PushPositional { src: RegId::new(1) },
+            Instruction::Call {
+                decl_id: DeclId::new(42),
+                src_dst: RegId::new(0),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data,
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(
+        HirFunction::from_ir_block(main_ir).unwrap(),
+        HashMap::new(),
+        vec![],
+        None,
+    );
+
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("helper-call lowering should succeed");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    let call = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::CallHelper { helper, args, .. } => Some((helper, args)),
+            _ => None,
+        })
+        .expect("expected lowered helper call");
+
+    assert_eq!(*call.0, BpfHelper::GetCurrentPidTgid as u32);
+    assert_eq!(
+        call.1.len(),
+        0,
+        "zero-arg helper should not inherit src_dst"
+    );
+}
+
+#[test]
+fn test_helper_call_without_pipeline_uses_explicit_positional_args_only() {
+    use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
+    use nu_protocol::{DeclId, RegId};
+    use std::sync::Arc;
+
+    let helper_name = b"bpf_get_socket_cookie";
+    let data: Arc<[u8]> = helper_name.to_vec().into();
+
+    let main_ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::String(DataSlice {
+                    start: 0,
+                    len: helper_name.len() as u32,
+                }),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(2),
+                lit: Literal::Int(7),
+            },
+            Instruction::PushPositional { src: RegId::new(1) },
+            Instruction::PushPositional { src: RegId::new(2) },
+            Instruction::Call {
+                decl_id: DeclId::new(42),
+                src_dst: RegId::new(0),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data,
+        ast: vec![],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(
+        HirFunction::from_ir_block(main_ir).unwrap(),
+        HashMap::new(),
+        vec![],
+        None,
+    );
+
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("helper-call lowering should succeed");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    let call = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::CallHelper { helper, args, .. } => Some((helper, args)),
+            _ => None,
+        })
+        .expect("expected lowered helper call");
+
+    assert_eq!(*call.0, BpfHelper::GetSocketCookie as u32);
+    assert_eq!(
+        call.1.len(),
+        1,
+        "helper-call should only pass explicit positional args when there is no pipeline input"
     );
 }
 
