@@ -79,7 +79,7 @@ impl EbpfState {
             .program_mut(&program.name)
             .ok_or_else(|| LoadError::ProgramNotFound(program.name.clone()))?;
 
-        let mut owned_udp_socket = None;
+        let mut owned_socket = None;
 
         // Attach based on program type
         match program.prog_type.attach_kind() {
@@ -362,27 +362,56 @@ impl EbpfState {
             }
             ProgramAttachKind::SocketFilter => {
                 let target = SocketFilterTarget::parse(&program.target)?;
-                let socket = std::net::UdpSocket::bind((target.bind_ip.as_str(), target.bind_port))
-                    .map_err(|e| {
-                        if e.kind() == ErrorKind::PermissionDenied {
-                            LoadError::PermissionDenied
-                        } else {
-                            LoadError::Attach(format!(
-                                "Failed to bind UDP socket {}:{} for socket_filter: {e}",
-                                target.bind_ip, target.bind_port
-                            ))
-                        }
-                    })?;
                 let socket_filter: &mut SocketFilter = prog.try_into().map_err(|e| {
                     LoadError::Load(format!("Failed to convert to SocketFilter: {e}"))
                 })?;
                 socket_filter
                     .load()
                     .map_err(|e| LoadError::Load(format!("Failed to load socket_filter: {e}")))?;
-                socket_filter.attach(&socket).map_err(|e| {
-                    LoadError::Attach(format!("Failed to attach socket_filter: {e}"))
-                })?;
-                owned_udp_socket = Some(socket);
+                match target.socket_kind {
+                    crate::program_spec::SocketFilterSocketKind::Udp4
+                    | crate::program_spec::SocketFilterSocketKind::Udp6 => {
+                        let socket = std::net::UdpSocket::bind((
+                            target.bind_ip.as_str(),
+                            target.bind_port,
+                        ))
+                        .map_err(|e| {
+                            if e.kind() == ErrorKind::PermissionDenied {
+                                LoadError::PermissionDenied
+                            } else {
+                                LoadError::Attach(format!(
+                                    "Failed to bind UDP socket {}:{} for socket_filter: {e}",
+                                    target.bind_ip, target.bind_port
+                                ))
+                            }
+                        })?;
+                        socket_filter.attach(&socket).map_err(|e| {
+                            LoadError::Attach(format!("Failed to attach socket_filter: {e}"))
+                        })?;
+                        owned_socket = Some(OwnedSocket::Udp(socket));
+                    }
+                    crate::program_spec::SocketFilterSocketKind::Tcp4
+                    | crate::program_spec::SocketFilterSocketKind::Tcp6 => {
+                        let listener = std::net::TcpListener::bind((
+                            target.bind_ip.as_str(),
+                            target.bind_port,
+                        ))
+                        .map_err(|e| {
+                            if e.kind() == ErrorKind::PermissionDenied {
+                                LoadError::PermissionDenied
+                            } else {
+                                LoadError::Attach(format!(
+                                    "Failed to bind TCP listener {}:{} for socket_filter: {e}",
+                                    target.bind_ip, target.bind_port
+                                ))
+                            }
+                        })?;
+                        socket_filter.attach(&listener).map_err(|e| {
+                            LoadError::Attach(format!("Failed to attach socket_filter: {e}"))
+                        })?;
+                        owned_socket = Some(OwnedSocket::TcpListener(listener));
+                    }
+                }
             }
             ProgramAttachKind::SkLookup => {
                 let target = SkLookupTarget::parse(&program.target)?;
@@ -744,7 +773,7 @@ impl EbpfState {
             attached_at: Instant::now(),
             aya_ebpf: Some(ebpf),
             struct_ops: None,
-            owned_udp_socket,
+            owned_socket,
             has_ringbuf,
             has_counter_map,
             has_string_counter_map,
@@ -790,7 +819,7 @@ impl EbpfState {
             attached_at: Instant::now(),
             aya_ebpf: None,
             struct_ops: Some(handle),
-            owned_udp_socket: None,
+            owned_socket: None,
             has_ringbuf: false,
             has_counter_map: false,
             has_string_counter_map: false,

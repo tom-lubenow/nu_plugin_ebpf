@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 66
+const TOTAL_STEPS = 67
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -98,6 +98,10 @@ def trigger-ping-loopback [] {
 
 def trigger-loopback-connect [] {
     ^bash -lc 'exec 3<>/dev/tcp/127.0.0.1/1 || true' out+err> /dev/null
+}
+
+def trigger-loopback-connect-port [port: int] {
+    ^bash -lc $"exec 3<>/dev/tcp/127.0.0.1/($port) || true" out+err> /dev/null
 }
 
 def trigger-loopback-connect6 [] {
@@ -775,7 +779,14 @@ step 54 "socket_filter udp4 loopback socket cookie counter" {
     } { trigger-udp-loopback 41337 } "socket_filter socket cookie counter"
 }
 
-step 55 "sched_ext_ops dry-run name-only object" {
+step 55 "socket_filter tcp4 loopback packet length counter" {
+    count-at-least-one "socket_filter:tcp4:127.0.0.1:41338" {|ctx|
+        $ctx.packet_len | count
+        'pass'
+    } { trigger-loopback-connect-port 41338 } "socket_filter tcp4 packet length counter"
+}
+
+step 56 "sched_ext_ops dry-run name-only object" {
     let code = ([
         'ebpf attach --dry-run "struct_ops:sched_ext_ops" {'
         '    name: "nu.demo_1"'
@@ -790,7 +801,7 @@ step 55 "sched_ext_ops dry-run name-only object" {
     $result
 }
 
-step 56 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
+step 57 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
     let code = ([
         'ebpf attach --dry-run "struct_ops:sched_ext_ops" {'
         '    name: "nu.demo_1"'
@@ -818,7 +829,7 @@ step 56 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
     $result
 }
 
-step 57 "tcp_congestion_ops live attach and detach" {
+step 58 "tcp_congestion_ops live attach and detach" {
     let code = ([
         'let id = (ebpf attach "struct_ops:tcp_congestion_ops" {'
         '    name: "nu_demo"'
@@ -841,7 +852,7 @@ step 57 "tcp_congestion_ops live attach and detach" {
     $id
 }
 
-step 58 "lsm file_open dry-run" {
+step 59 "lsm file_open dry-run" {
     let code = ([
         'ebpf attach --dry-run "lsm:file_open" {|ctx| $ctx.arg0.f_flags | count; 0 } | describe'
     ] | str join (char newline))
@@ -854,7 +865,7 @@ step 58 "lsm file_open dry-run" {
     $result
 }
 
-step 59 "lsm file_open named-arg dry-run" {
+step 60 "lsm file_open named-arg dry-run" {
     let code = ([
         'ebpf attach --dry-run "lsm:file_open" {|ctx| $ctx.arg.file.f_flags | count; 0 } | describe'
     ] | str join (char newline))
@@ -867,7 +878,7 @@ step 59 "lsm file_open named-arg dry-run" {
     $result
 }
 
-step 60 "fentry security_file_open named-arg dry-run" {
+step 61 "fentry security_file_open named-arg dry-run" {
     let code = ([
         'ebpf attach --dry-run "fentry:security_file_open" {|ctx| $ctx.arg.file.f_flags | count } | describe'
     ] | str join (char newline))
@@ -880,14 +891,14 @@ step 60 "fentry security_file_open named-arg dry-run" {
     $result
 }
 
-step 61 "perf_event software cpu-clock counter" {
+step 62 "perf_event software cpu-clock counter" {
     count-at-least-one "perf_event:software:cpu-clock:period=100000" {|ctx|
         $ctx.cpu | count
         0
     } { trigger-cpu-work } "perf_event cpu-clock counter"
 }
 
-step 62 "sk_msg pinned sockhash live attach and detach" {
+step 63 "sk_msg pinned sockhash live attach and detach" {
     if not ("/sys/fs/bpf" | path exists) {
         print "Skipping sk_msg smoke: /sys/fs/bpf is not available"
     } else if not ("/usr/sbin/bpftool" | path exists) {
@@ -939,7 +950,7 @@ step 62 "sk_msg pinned sockhash live attach and detach" {
     }
 }
 
-step 63 "sk_skb pinned sockhash live attach and detach" {
+step 64 "sk_skb pinned sockhash live attach and detach" {
     if not ("/sys/fs/bpf" | path exists) {
         print "Skipping sk_skb smoke: /sys/fs/bpf is not available"
     } else if not ("/usr/sbin/bpftool" | path exists) {
@@ -991,7 +1002,7 @@ step 63 "sk_skb pinned sockhash live attach and detach" {
     }
 }
 
-step 64 "sk_skb_parser pinned sockhash live attach and detach" {
+step 65 "sk_skb_parser pinned sockhash live attach and detach" {
     if not ("/sys/fs/bpf" | path exists) {
         print "Skipping sk_skb_parser smoke: /sys/fs/bpf is not available"
     } else if not ("/usr/sbin/bpftool" | path exists) {
@@ -1043,7 +1054,7 @@ step 64 "sk_skb_parser pinned sockhash live attach and detach" {
     }
 }
 
-step 65 "sock_ops root cgroup packet first byte counter" {
+step 66 "sock_ops root cgroup packet first byte counter" {
     if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
         print "Skipping sock_ops packet-data smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
     } else {
@@ -1054,7 +1065,7 @@ step 65 "sock_ops root cgroup packet first byte counter" {
     }
 }
 
-step 66 "verify no leaked probes" {
+step 67 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

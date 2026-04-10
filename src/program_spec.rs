@@ -178,6 +178,8 @@ impl SkSkbTarget {
 pub enum SocketFilterSocketKind {
     Udp4,
     Udp6,
+    Tcp4,
+    Tcp6,
 }
 
 impl SocketFilterSocketKind {
@@ -185,6 +187,8 @@ impl SocketFilterSocketKind {
         match self {
             SocketFilterSocketKind::Udp4 => "udp4",
             SocketFilterSocketKind::Udp6 => "udp6",
+            SocketFilterSocketKind::Tcp4 => "tcp4",
+            SocketFilterSocketKind::Tcp6 => "tcp6",
         }
     }
 }
@@ -203,8 +207,10 @@ pub struct SocketFilterTarget {
 impl SocketFilterTarget {
     pub fn target_string(&self) -> String {
         let bind_ip = match self.socket_kind {
-            SocketFilterSocketKind::Udp4 => self.bind_ip.clone(),
-            SocketFilterSocketKind::Udp6 => format!("[{}]", self.bind_ip),
+            SocketFilterSocketKind::Udp4 | SocketFilterSocketKind::Tcp4 => self.bind_ip.clone(),
+            SocketFilterSocketKind::Udp6 | SocketFilterSocketKind::Tcp6 => {
+                format!("[{}]", self.bind_ip)
+            }
         };
         format!("{}:{}:{}", self.socket_kind.name(), bind_ip, self.bind_port)
     }

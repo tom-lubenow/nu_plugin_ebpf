@@ -88,6 +88,9 @@ let id = ebpf attach 'kprobe:ksys_read' {|ctx| $ctx.cgroup_id | count }
 # Count loopback UDPv6 packets by length on a bound socket_filter receive socket
 let id = ebpf attach 'socket_filter:udp6:[::1]:31337' {|ctx| $ctx.packet_len | count; 'pass' }
 
+# Count loopback TCP packets by length on a bound socket_filter listener
+let id = ebpf attach 'socket_filter:tcp4:127.0.0.1:31337' {|ctx| $ctx.packet_len | count; 'pass' }
+
 # Count sockmap verdict events by network-namespace cookie
 let id = ebpf attach 'sk_msg:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.netns_cookie | count; 'pass' }
 
@@ -428,9 +431,10 @@ contexts (`socket_filter`, `tc`, `cgroup_skb`, `sk_skb`, and
 and `ctx.priority`. `ctx.eth_protocol` and `ctx.vlan_proto` are
 normalized to host byte order, and `ctx.cb` follows the same fixed-array
 model as `ctx.args`. The initial `socket_filter`
-surface uses targets like `socket_filter:udp4:127.0.0.1:31337` and
-`socket_filter:udp6:[::1]:31337`, which create and keep open a bound UDP
-receive socket while attached. `socket_filter`
+surface uses targets like `socket_filter:udp4:127.0.0.1:31337`,
+`socket_filter:udp6:[::1]:31337`, `socket_filter:tcp4:127.0.0.1:31337`,
+and `socket_filter:tcp6:[::1]:31337`, which create and keep open a bound
+socket while attached. `socket_filter`
 return values are snapshot lengths: return `0` to drop the packet or a
 positive value to keep it, and aliases like `"pass"` / `"keep"` expand to
 `ctx.packet_len`. Variable header lengths, VLAN

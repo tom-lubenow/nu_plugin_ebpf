@@ -106,6 +106,12 @@ pub use crate::program_spec::{
 };
 pub use targets::{parse_probe_spec, parse_program_spec};
 
+#[allow(dead_code)]
+enum OwnedSocket {
+    Udp(std::net::UdpSocket),
+    TcpListener(std::net::TcpListener),
+}
+
 /// Information about an active probe
 pub struct ActiveProbe {
     /// Unique probe ID
@@ -118,8 +124,8 @@ pub struct ActiveProbe {
     aya_ebpf: Option<Ebpf>,
     /// The loaded libbpf-backed struct_ops runtime handle.
     struct_ops: Option<LibbpfStructOpsHandle>,
-    /// Loader-owned UDP socket kept open for socket_filter attachments.
-    owned_udp_socket: Option<std::net::UdpSocket>,
+    /// Loader-owned socket kept open for socket_filter attachments.
+    owned_socket: Option<OwnedSocket>,
     /// Whether this probe has a ring buffer map for output
     has_ringbuf: bool,
     /// Whether this probe has a counter map (hash or per-CPU hash, integer keys)
@@ -162,7 +168,7 @@ impl std::fmt::Debug for ActiveProbe {
                     "none"
                 },
             )
-            .field("has_udp_socket", &self.owned_udp_socket.is_some())
+            .field("has_socket", &self.owned_socket.is_some())
             .field("has_ringbuf", &self.has_ringbuf)
             .field("has_counter_map", &self.has_counter_map)
             .field("has_string_counter_map", &self.has_string_counter_map)

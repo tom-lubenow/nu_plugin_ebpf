@@ -329,10 +329,10 @@ impl SockOpsTarget {
 }
 
 impl SocketFilterTarget {
-    /// Parse a socket_filter target string of the form `udp4:127.0.0.1:31337`
-    /// or `udp6:[::1]:31337`.
+    /// Parse a socket_filter target string of the form `udp4:127.0.0.1:31337`,
+    /// `udp6:[::1]:31337`, `tcp4:127.0.0.1:31337`, or `tcp6:[::1]:31337`.
     pub fn parse(target: &str) -> Result<Self, LoadError> {
-        const EXPECTED: &str = "udp4:IP:PORT or udp6:[IPV6]:PORT";
+        const EXPECTED: &str = "udp4:IP:PORT, udp6:[IPV6]:PORT, tcp4:IP:PORT, or tcp6:[IPV6]:PORT";
         let (socket_kind, rest) = target.split_once(':').ok_or_else(|| {
             LoadError::Load(format!(
                 "Invalid socket_filter target: {target}. Expected format: {EXPECTED}"
@@ -347,15 +347,17 @@ impl SocketFilterTarget {
         let socket_kind = match socket_kind {
             "udp4" => SocketFilterSocketKind::Udp4,
             "udp6" => SocketFilterSocketKind::Udp6,
+            "tcp4" => SocketFilterSocketKind::Tcp4,
+            "tcp6" => SocketFilterSocketKind::Tcp6,
             _ => {
                 return Err(LoadError::Load(format!(
-                    "Unsupported socket_filter socket kind: {socket_kind}. Expected udp4 or udp6"
+                    "Unsupported socket_filter socket kind: {socket_kind}. Expected udp4, udp6, tcp4, or tcp6"
                 )));
             }
         };
 
         let bind_ip = match socket_kind {
-            SocketFilterSocketKind::Udp4 => {
+            SocketFilterSocketKind::Udp4 | SocketFilterSocketKind::Tcp4 => {
                 bind_ip.parse::<Ipv4Addr>().map_err(|e| {
                     LoadError::Load(format!(
                         "Invalid socket_filter IPv4 bind address '{bind_ip}': {e}"
@@ -363,7 +365,7 @@ impl SocketFilterTarget {
                 })?;
                 bind_ip.to_string()
             }
-            SocketFilterSocketKind::Udp6 => {
+            SocketFilterSocketKind::Udp6 | SocketFilterSocketKind::Tcp6 => {
                 let inner = bind_ip.strip_prefix('[').and_then(|s| s.strip_suffix(']')).ok_or_else(
                     || {
                         LoadError::Load(format!(

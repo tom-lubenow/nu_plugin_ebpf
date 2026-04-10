@@ -2223,9 +2223,10 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.data_end } - Get packet end pointer
     {|ctx| $ctx.ingress_ifindex } - Get the skb ifindex
     Note: the initial socket_filter surface uses targets like
-    `socket_filter:udp4:127.0.0.1:31337` or `socket_filter:udp6:[::1]:31337`,
-    which create and hold open a bound UDP receive socket while the program
-    is attached. Return values are snapshot lengths: `0` drops the packet,
+    `socket_filter:udp4:127.0.0.1:31337`, `socket_filter:udp6:[::1]:31337`,
+    `socket_filter:tcp4:127.0.0.1:31337`, or `socket_filter:tcp6:[::1]:31337`,
+    which create and hold open a bound socket while the program is attached.
+    Return values are snapshot lengths: `0` drops the packet,
     positive values keep it, and aliases like `pass` / `keep` expand to
     `ctx.packet_len`.
 
@@ -2632,7 +2633,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', or 'sk_lookup:/proc/self/ns/net').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', or 'sk_lookup:/proc/self/ns/net').",
             )
             .required(
                 "body",
@@ -2740,6 +2741,11 @@ Requirements:
             Example {
                 example: "ebpf attach 'socket_filter:udp6:[::1]:31337' {|ctx| $ctx.packet_len | count; 'pass' }",
                 description: "Count loopback UDPv6 packet lengths on a bound socket_filter receive socket",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'socket_filter:tcp4:127.0.0.1:31337' {|ctx| $ctx.packet_len | count; 'pass' }",
+                description: "Count loopback TCP packet lengths on a bound socket_filter listener",
                 result: None,
             },
             Example {
