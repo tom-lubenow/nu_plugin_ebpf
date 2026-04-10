@@ -328,6 +328,10 @@ fn recover_ctx_field_hint(
         | CtxField::SockoptOptname
         | CtxField::SockoptOptlen
         | CtxField::SockoptRetval => Some(MirType::I32),
+        CtxField::Context => Some(MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        }),
         CtxField::Socket => Some(MirType::Ptr {
             pointee: Box::new(synthetic_bpf_sock_type()),
             address_space: AddressSpace::Kernel,

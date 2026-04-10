@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::mir::AddressSpace;
 
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn named_program_global_symbol(name: &str) -> String {
@@ -162,6 +163,23 @@ impl<'a> HirToMirLowering<'a> {
                 .or_insert_with(|| hint.clone());
         }
         vreg
+    }
+
+    pub(super) fn materialize_context_pointer_arg(&mut self) -> VReg {
+        let ctx_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::LoadCtxField {
+            dst: ctx_vreg,
+            field: CtxField::Context,
+            slot: None,
+        });
+        self.vreg_type_hints.insert(
+            ctx_vreg,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        ctx_vreg
     }
 
     pub(super) fn invalidate_reg_value(&mut self, reg: RegId) {

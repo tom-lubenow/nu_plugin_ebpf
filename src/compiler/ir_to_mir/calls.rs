@@ -757,12 +757,29 @@ impl<'a> HirToMirLowering<'a> {
 
                 let mut args = Vec::new();
                 if let Some(input) = self.pipeline_input {
-                    args.push(MirValue::VReg(input));
+                    let arg_vreg = if self.is_context_reg(src_dst) {
+                        self.materialize_context_pointer_arg()
+                    } else {
+                        input
+                    };
+                    args.push(MirValue::VReg(arg_vreg));
                 } else if src_dst_had_value && sig.max_args != 0 {
-                    args.push(MirValue::VReg(dst_vreg));
+                    let arg_vreg = if self.is_context_reg(src_dst) {
+                        self.materialize_context_pointer_arg()
+                    } else {
+                        dst_vreg
+                    };
+                    args.push(MirValue::VReg(arg_vreg));
                 }
-                for (arg_vreg, _) in self.positional_args.iter().skip(1) {
-                    args.push(MirValue::VReg(*arg_vreg));
+                let positional_args: Vec<_> =
+                    self.positional_args.iter().skip(1).copied().collect();
+                for (arg_vreg, arg_reg) in positional_args {
+                    let helper_arg_vreg = if self.is_context_reg(arg_reg) {
+                        self.materialize_context_pointer_arg()
+                    } else {
+                        arg_vreg
+                    };
+                    args.push(MirValue::VReg(helper_arg_vreg));
                 }
                 if args.len() > 5 {
                     return Err(CompileError::UnsupportedInstruction(

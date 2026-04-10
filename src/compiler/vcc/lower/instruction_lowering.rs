@@ -3,6 +3,7 @@ use super::*;
 impl<'a> VccLowerer<'a> {
     fn ctx_field_key(field: &CtxField) -> String {
         match field {
+            CtxField::Context => "ctx".to_string(),
             CtxField::Pid => "pid".to_string(),
             CtxField::Tid => "tid".to_string(),
             CtxField::Uid => "uid".to_string(),
@@ -378,6 +379,12 @@ impl<'a> VccLowerer<'a> {
                             }
                             _ => {}
                         }
+                    }
+                    if matches!(field, CtxField::Context)
+                        && let VccValueType::Ptr(ref mut info) = ty
+                    {
+                        info.space = VccAddrSpace::Context;
+                        info.nullability = VccNullability::NonNull;
                     }
                     out.push(VccInst::Assume {
                         dst: VccReg(dst.0),

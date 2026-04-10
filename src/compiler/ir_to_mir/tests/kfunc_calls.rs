@@ -1,5 +1,8 @@
 use super::*;
+use crate::compiler::EbpfProgramType;
+use crate::compiler::hir::HirBlock;
 use crate::compiler::instruction::BpfHelper;
+use nu_protocol::{DeclId, RegId, VarId};
 
 #[test]
 fn test_kfunc_call_lowers_with_explicit_btf_id() {
@@ -99,6 +102,74 @@ fn test_kfunc_call_lowers_with_explicit_btf_id() {
     assert_eq!(call.0, "bpf_cgroup_ancestor");
     assert_eq!(*call.1, Some(4242));
     assert_eq!(call.2.len(), 2, "pipeline input + 1 positional arg");
+}
+
+#[test]
+fn test_helper_call_with_ctx_variable_lowers_real_context_pointer() {
+    let ctx_var = VarId::new(7);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"bpf_get_socket_cookie".to_vec()),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(2),
+                    var_id: ctx_var,
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(2)],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("helper-call with raw ctx should lower");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Context,
+            ..
+        }
+    )));
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::GetSocketCookie as u32 && args.len() == 1
+    )));
 }
 
 #[test]

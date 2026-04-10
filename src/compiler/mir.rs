@@ -386,6 +386,8 @@ pub enum UnaryOpKind {
 /// Context field access
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CtxField {
+    /// Raw program context pointer
+    Context,
     /// Process ID
     Pid,
     /// Thread ID
@@ -595,6 +597,7 @@ pub enum CtxField {
 impl CtxField {
     pub fn display_name(&self) -> String {
         match self {
+            CtxField::Context => "ctx".to_string(),
             CtxField::Pid => "pid".to_string(),
             CtxField::Tid => "tid".to_string(),
             CtxField::Uid => "uid".to_string(),

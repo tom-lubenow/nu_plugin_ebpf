@@ -416,6 +416,10 @@ impl<'a> TypeInference<'a> {
 
     pub(super) fn ctx_field_type(&mut self, field: &CtxField) -> HMType {
         match field {
+            CtxField::Context => HMType::Ptr {
+                pointee: Box::new(HMType::U8),
+                address_space: AddressSpace::Kernel,
+            },
             CtxField::Pid
             | CtxField::Tid
             | CtxField::Uid

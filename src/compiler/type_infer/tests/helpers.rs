@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::EbpfProgramType;
 
 #[test]
 fn test_subfn_polymorphic_id() {
@@ -147,6 +148,43 @@ fn test_type_error_helper_pointer_argument_required() {
         .infer(&func)
         .expect_err("expected pointer-argument helper type error");
     assert!(errs.iter().any(|e| e.message.contains("expects pointer")));
+}
+
+#[test]
+fn test_infer_helper_ctx_argument_from_context_pointer_load() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetSocketCookie as u32,
+        args: vec![MirValue::VReg(ctx)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected helper ctx argument from LoadCtxField::Context to infer");
+
+    match types.get(&ctx) {
+        Some(MirType::Ptr {
+            pointee,
+            address_space,
+        }) => {
+            assert_eq!(*address_space, AddressSpace::Kernel);
+            assert_eq!(pointee.as_ref(), &MirType::U8);
+        }
+        other => panic!("expected kernel context pointer type, got {:?}", other),
+    }
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
 }
 
 #[test]

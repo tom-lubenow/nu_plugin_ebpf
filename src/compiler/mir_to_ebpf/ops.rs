@@ -727,6 +727,10 @@ impl<'a> MirToEbpfCompiler<'a> {
         }
 
         match field {
+            CtxField::Context => {
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R9));
+            }
             CtxField::Pid => {
                 // bpf_get_current_pid_tgid() returns (tgid << 32) | pid
                 // Lower 32 bits = thread ID (what Linux calls PID)

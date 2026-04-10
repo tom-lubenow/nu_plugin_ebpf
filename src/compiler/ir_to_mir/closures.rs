@@ -1,5 +1,4 @@
 use super::*;
-
 impl<'a> HirToMirLowering<'a> {
     fn captured_value(&self, var_id: nu_protocol::VarId) -> Option<&Value> {
         self.captures

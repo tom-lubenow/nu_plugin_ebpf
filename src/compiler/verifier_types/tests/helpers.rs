@@ -83,6 +83,44 @@ fn test_verify_mir_rejects_more_than_five_params() {
 }
 
 #[test]
+fn test_verify_mir_accepts_helper_context_argument_from_ctx_pointer_load() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetSocketCookie as u32,
+            args: vec![MirValue::VReg(ctx)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types)
+        .expect("expected bare ctx pointer load to satisfy helper context argument");
+}
+
+#[test]
 fn test_verify_mir_rejects_subfn_calls_with_more_than_five_args() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

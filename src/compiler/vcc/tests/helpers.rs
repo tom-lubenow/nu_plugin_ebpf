@@ -170,6 +170,42 @@ fn test_verify_mir_helper_ringbuf_reserve_submit_ok() {
 }
 
 #[test]
+fn test_verify_mir_accepts_helper_context_argument_from_ctx_pointer_load() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetSocketCookie as u32,
+            args: vec![MirValue::VReg(ctx)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types)
+        .expect("expected bare ctx pointer load to satisfy helper context argument");
+}
+
+#[test]
 fn test_verify_mir_for_program_rejects_missing_tail_call_capability() {
     const LIMITED_CAPABILITIES: &[ProgramCapability] = &[ProgramCapability::Emit];
 

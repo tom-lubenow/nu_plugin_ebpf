@@ -195,6 +195,23 @@ pub(super) fn apply_load_ctx_field_inst(
             _ => {}
         }
     }
+    if matches!(field, CtxField::Context)
+        && let VerifierType::Ptr {
+            space,
+            bounds,
+            ringbuf_ref,
+            kfunc_ref,
+            ..
+        } = ty
+    {
+        ty = VerifierType::Ptr {
+            space,
+            nullability: Nullability::NonNull,
+            bounds,
+            ringbuf_ref,
+            kfunc_ref,
+        };
+    }
     state.set_with_range(dst, ty, scalar_value_range_for_type(types, dst));
     state.set_ctx_field_source(dst, Some(field.clone()));
 }
