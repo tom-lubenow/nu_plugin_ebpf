@@ -127,6 +127,18 @@ impl<'a> MirToEbpfCompiler<'a> {
         4
     }
 
+    fn bpf_sock_ops_tcp_field_offsets() -> (i16, i16, i16, i16) {
+        // struct bpf_sock_ops {
+        //     ...
+        //     __u32 snd_cwnd;
+        //     __u32 srtt_us;
+        //     ...
+        //     __u32 rtt_min;
+        //     __u32 snd_ssthresh;
+        // };
+        (76, 80, 92, 96)
+    }
+
     fn compile_ctx_u32_array_to_stack(
         &mut self,
         dst: EbpfReg,
@@ -836,6 +848,16 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
+            CtxField::SockOpsSndCwnd => {
+                let offset = Self::bpf_sock_ops_tcp_field_offsets().0;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsSrttUs => {
+                let offset = Self::bpf_sock_ops_tcp_field_offsets().1;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
             CtxField::SockOpsCbFlags => {
                 let offset = Self::bpf_sock_ops_offsets().9;
                 self.instructions
@@ -843,6 +865,16 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
             CtxField::SockState => {
                 let offset = Self::bpf_sock_ops_offsets().10;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsRttMin => {
+                let offset = Self::bpf_sock_ops_tcp_field_offsets().2;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsSndSsthresh => {
+                let offset = Self::bpf_sock_ops_tcp_field_offsets().3;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }

@@ -2259,8 +2259,12 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.local_ip6 } - Get the local IPv6 address as four host-order u32 words
     {|ctx| $ctx.local_port } - Get the local port in host byte order
     {|ctx| $ctx.is_fullsock } - Get whether the context has a full socket
+    {|ctx| $ctx.snd_cwnd } - Get the current sending congestion window
+    {|ctx| $ctx.srtt_us }  - Get the smoothed RTT in microseconds shifted by 3
     {|ctx| $ctx.cb_flags } - Get requested sock_ops callback flags
     {|ctx| $ctx.state }   - Get the current TCP state
+    {|ctx| $ctx.rtt_min } - Get the minimum observed RTT in microseconds
+    {|ctx| $ctx.snd_ssthresh } - Get the current slow-start threshold
     Note: initial sock_ops support is read-only and uses raw integer return
     codes. Observation-only examples should return `1`. IPv6 addresses are
     exposed as fixed arrays of four host-order u32 words, for example

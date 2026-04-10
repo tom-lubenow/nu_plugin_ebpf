@@ -1252,8 +1252,12 @@ impl<'a> HirToMirLowering<'a> {
             "local_port" => CtxField::LocalPort,
             "cookie" => CtxField::LookupCookie,
             "args" => CtxField::SockOpsArgs,
+            "snd_cwnd" => CtxField::SockOpsSndCwnd,
+            "srtt_us" => CtxField::SockOpsSrttUs,
             "write" => CtxField::SysctlWrite,
             "file_pos" => CtxField::SysctlFilePos,
+            "rtt_min" => CtxField::SockOpsRttMin,
+            "snd_ssthresh" => CtxField::SockOpsSndSsthresh,
             "level" => CtxField::SockoptLevel,
             "optname" => CtxField::SockoptOptname,
             "optlen" => CtxField::SockoptOptlen,
@@ -1374,8 +1378,12 @@ impl<'a> HirToMirLowering<'a> {
             (Some(EbpfProgramType::CgroupDevice), "minor") => CtxField::DeviceMinor,
             (Some(EbpfProgramType::SockOps), "op") => CtxField::SockOp,
             (Some(EbpfProgramType::SockOps), "is_fullsock") => CtxField::IsFullsock,
+            (Some(EbpfProgramType::SockOps), "snd_cwnd") => CtxField::SockOpsSndCwnd,
+            (Some(EbpfProgramType::SockOps), "srtt_us") => CtxField::SockOpsSrttUs,
             (Some(EbpfProgramType::SockOps), "cb_flags") => CtxField::SockOpsCbFlags,
             (Some(EbpfProgramType::SockOps), "state") => CtxField::SockState,
+            (Some(EbpfProgramType::SockOps), "rtt_min") => CtxField::SockOpsRttMin,
+            (Some(EbpfProgramType::SockOps), "snd_ssthresh") => CtxField::SockOpsSndSsthresh,
             _ => Self::ctx_field_from_name(field_name)?,
         };
 
@@ -4693,8 +4701,12 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::DeviceMinor
             | CtxField::SockOp
             | CtxField::IsFullsock
+            | CtxField::SockOpsSndCwnd
+            | CtxField::SockOpsSrttUs
             | CtxField::SockOpsCbFlags
             | CtxField::SockState
+            | CtxField::SockOpsRttMin
+            | CtxField::SockOpsSndSsthresh
             | CtxField::SysctlWrite
             | CtxField::SysctlFilePos => (MirType::U32, Some(MirType::U32)),
             CtxField::Timestamp | CtxField::LookupCookie => (MirType::U64, Some(MirType::U64)),

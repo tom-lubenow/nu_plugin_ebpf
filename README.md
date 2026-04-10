@@ -106,6 +106,9 @@ let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.op | count; 1 }
 # Inspect the first sock_ops argument word through the normal fixed-array path
 let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| ($ctx.args | get 0) | count; 1 }
 
+# Count current TCP congestion-window observations on loopback socket events
+let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.snd_cwnd | count; 1 }
+
 # Count getsockopt option names inside a cgroup
 let id = ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| $ctx.optname | count; 'allow' }
 
@@ -306,8 +309,12 @@ The closure receives a context parameter with these fields:
 | `op` | sock_ops callback opcode | sock_ops |
 | `args` | sock_ops callback argument words as four host-order `u32` values | sock_ops |
 | `is_fullsock` | Whether the context has a full socket | sock_ops |
+| `snd_cwnd` | Current sending congestion window | sock_ops |
+| `srtt_us` | Smoothed RTT in microseconds shifted by 3 | sock_ops |
 | `cb_flags` | Requested sock_ops callback flags | sock_ops |
 | `state` | Current TCP state | sock_ops |
+| `rtt_min` | Minimum observed RTT in microseconds | sock_ops |
+| `snd_ssthresh` | Current slow-start threshold | sock_ops |
 | `msg_src_ip4` | IPv4 source address in host byte order | cgroup_sock_addr (sendmsg4, recvmsg4) |
 | `msg_src_ip6` | IPv6 source address as four host-order `u32` words | cgroup_sock_addr (sendmsg6, recvmsg6) |
 | `remote_ip4` | Remote IPv4 address in host byte order | sk_lookup, sock_ops |
@@ -383,9 +390,10 @@ raw kernel encoding `(BPF_DEVCG_ACC_* << 16) | BPF_DEVCG_DEV_*`.
 `sock_ops` currently attaches to a cgroup path such as `/sys/fs/cgroup`.
 It exposes `ctx.cpu`, `ctx.ktime`, `ctx.op`, `ctx.family`,
 `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`,
-`ctx.local_ip6`, `ctx.local_port`, `ctx.is_fullsock`, `ctx.cb_flags`,
-and `ctx.state`. The IPv4 address and remote port fields are normalized to
-host byte order. The IPv6 fields are exposed as fixed arrays of four
+`ctx.local_ip6`, `ctx.local_port`, `ctx.is_fullsock`, `ctx.snd_cwnd`,
+`ctx.srtt_us`, `ctx.cb_flags`, `ctx.state`, `ctx.rtt_min`, and
+`ctx.snd_ssthresh`. The IPv4 address and remote port fields are normalized
+to host byte order. The IPv6 fields are exposed as fixed arrays of four
 host-order `u32` words, so ordinary Nushell indexing works, for example
 `($ctx.remote_ip6 | get 3)`. This initial slice is read-only and uses raw
 integer return codes; observation-only examples should return `1`.

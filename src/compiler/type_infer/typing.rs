@@ -403,8 +403,12 @@ impl<'a> TypeInference<'a> {
             | CtxField::DeviceMinor
             | CtxField::SockOp
             | CtxField::IsFullsock
+            | CtxField::SockOpsSndCwnd
+            | CtxField::SockOpsSrttUs
             | CtxField::SockOpsCbFlags
             | CtxField::SockState
+            | CtxField::SockOpsRttMin
+            | CtxField::SockOpsSndSsthresh
             | CtxField::SysctlWrite
             | CtxField::SysctlFilePos => HMType::U32,
 

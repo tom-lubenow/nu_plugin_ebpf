@@ -197,8 +197,12 @@ fn recover_ctx_field_hint(
         | CtxField::DeviceMinor
         | CtxField::SockOp
         | CtxField::IsFullsock
+        | CtxField::SockOpsSndCwnd
+        | CtxField::SockOpsSrttUs
         | CtxField::SockOpsCbFlags
         | CtxField::SockState
+        | CtxField::SockOpsRttMin
+        | CtxField::SockOpsSndSsthresh
         | CtxField::SysctlWrite
         | CtxField::SysctlFilePos => Some(MirType::U32),
         CtxField::SockoptLevel

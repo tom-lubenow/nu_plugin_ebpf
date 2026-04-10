@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 60
+const TOTAL_STEPS = 61
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -686,7 +686,18 @@ step 46 "sock_ops root cgroup args[0] counter" {
     }
 }
 
-step 47 "cgroup_sysctl root read/write counter" {
+step 47 "sock_ops root cgroup snd_cwnd counter" {
+    if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
+        print "Skipping sock_ops snd_cwnd smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
+    } else {
+        count-at-least-one "sock_ops:/sys/fs/cgroup" {|ctx|
+            $ctx.snd_cwnd | count
+            1
+        } { trigger-loopback-connect } "sock_ops snd_cwnd counter"
+    }
+}
+
+step 48 "cgroup_sysctl root read/write counter" {
     if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
         print "Skipping cgroup_sysctl smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
     } else {
@@ -697,7 +708,7 @@ step 47 "cgroup_sysctl root read/write counter" {
     }
 }
 
-step 48 "cgroup_sockopt root getsockopt counter" {
+step 49 "cgroup_sockopt root getsockopt counter" {
     if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
         print "Skipping cgroup_sockopt smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
     } else {
@@ -708,7 +719,7 @@ step 48 "cgroup_sockopt root getsockopt counter" {
     }
 }
 
-step 49 "cgroup_sockopt root getsockopt buffer first byte" {
+step 50 "cgroup_sockopt root getsockopt buffer first byte" {
     if not ("/sys/fs/cgroup/cgroup.controllers" | path exists) {
         print "Skipping cgroup_sockopt optval smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
     } else {
@@ -719,28 +730,28 @@ step 49 "cgroup_sockopt root getsockopt buffer first byte" {
     }
 }
 
-step 50 "sk_lookup root netns local_port counter" {
+step 51 "sk_lookup root netns local_port counter" {
     count-at-least-one "sk_lookup:/proc/self/ns/net" {|ctx|
         $ctx.local_port | count
         'pass'
     } { trigger-loopback-connect } "sk_lookup local_port counter"
 }
 
-step 51 "sk_lookup root netns cookie counter" {
+step 52 "sk_lookup root netns cookie counter" {
     count-at-least-one "sk_lookup:/proc/self/ns/net" {|ctx|
         $ctx.cookie | count
         'pass'
     } { trigger-loopback-connect } "sk_lookup cookie counter"
 }
 
-step 52 "socket_filter udp4 loopback packet length counter" {
+step 53 "socket_filter udp4 loopback packet length counter" {
     count-at-least-one "socket_filter:udp4:127.0.0.1:41337" {|ctx|
         $ctx.packet_len | count
         'pass'
     } { trigger-udp-loopback 41337 } "socket_filter packet length counter"
 }
 
-step 53 "sched_ext_ops dry-run name-only object" {
+step 54 "sched_ext_ops dry-run name-only object" {
     let code = ([
         'ebpf attach --dry-run "struct_ops:sched_ext_ops" {'
         '    name: "nu.demo_1"'
@@ -755,7 +766,7 @@ step 53 "sched_ext_ops dry-run name-only object" {
     $result
 }
 
-step 54 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
+step 55 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
     let code = ([
         'ebpf attach --dry-run "struct_ops:sched_ext_ops" {'
         '    name: "nu.demo_1"'
@@ -783,7 +794,7 @@ step 54 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
     $result
 }
 
-step 55 "tcp_congestion_ops live attach and detach" {
+step 56 "tcp_congestion_ops live attach and detach" {
     let code = ([
         'let id = (ebpf attach "struct_ops:tcp_congestion_ops" {'
         '    name: "nu_demo"'
@@ -806,7 +817,7 @@ step 55 "tcp_congestion_ops live attach and detach" {
     $id
 }
 
-step 56 "lsm file_open dry-run" {
+step 57 "lsm file_open dry-run" {
     let code = ([
         'ebpf attach --dry-run "lsm:file_open" {|ctx| $ctx.arg0.f_flags | count; 0 } | describe'
     ] | str join (char newline))
@@ -819,7 +830,7 @@ step 56 "lsm file_open dry-run" {
     $result
 }
 
-step 57 "lsm file_open named-arg dry-run" {
+step 58 "lsm file_open named-arg dry-run" {
     let code = ([
         'ebpf attach --dry-run "lsm:file_open" {|ctx| $ctx.arg.file.f_flags | count; 0 } | describe'
     ] | str join (char newline))
@@ -832,7 +843,7 @@ step 57 "lsm file_open named-arg dry-run" {
     $result
 }
 
-step 58 "fentry security_file_open named-arg dry-run" {
+step 59 "fentry security_file_open named-arg dry-run" {
     let code = ([
         'ebpf attach --dry-run "fentry:security_file_open" {|ctx| $ctx.arg.file.f_flags | count } | describe'
     ] | str join (char newline))
@@ -845,14 +856,14 @@ step 58 "fentry security_file_open named-arg dry-run" {
     $result
 }
 
-step 59 "perf_event software cpu-clock counter" {
+step 60 "perf_event software cpu-clock counter" {
     count-at-least-one "perf_event:software:cpu-clock:period=100000" {|ctx|
         $ctx.cpu | count
         0
     } { trigger-cpu-work } "perf_event cpu-clock counter"
 }
 
-step 60 "verify no leaked probes" {
+step 61 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

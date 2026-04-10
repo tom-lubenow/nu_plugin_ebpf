@@ -1516,10 +1516,26 @@ fn test_probe_context_allows_sock_ops_fields() {
     assert!(ctx.ctx_field_access_error(&CtxField::LocalPort).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::IsFullsock).is_none());
     assert!(
+        ctx.ctx_field_access_error(&CtxField::SockOpsSndCwnd)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockOpsSrttUs)
+            .is_none()
+    );
+    assert!(
         ctx.ctx_field_access_error(&CtxField::SockOpsCbFlags)
             .is_none()
     );
     assert!(ctx.ctx_field_access_error(&CtxField::SockState).is_none());
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockOpsRttMin)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockOpsSndSsthresh)
+            .is_none()
+    );
 }
 
 #[test]

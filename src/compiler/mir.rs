@@ -460,10 +460,18 @@ pub enum CtxField {
     SockOpsArgs,
     /// bpf_sock_ops::is_fullsock
     IsFullsock,
+    /// bpf_sock_ops::snd_cwnd
+    SockOpsSndCwnd,
+    /// bpf_sock_ops::srtt_us
+    SockOpsSrttUs,
     /// bpf_sock_ops::bpf_sock_ops_cb_flags
     SockOpsCbFlags,
     /// bpf_sock_ops::state
     SockState,
+    /// bpf_sock_ops::rtt_min
+    SockOpsRttMin,
+    /// bpf_sock_ops::snd_ssthresh
+    SockOpsSndSsthresh,
     /// bpf_sysctl::write
     SysctlWrite,
     /// bpf_sysctl::file_pos
@@ -533,8 +541,12 @@ impl CtxField {
             CtxField::SockOp => "op".to_string(),
             CtxField::SockOpsArgs => "args".to_string(),
             CtxField::IsFullsock => "is_fullsock".to_string(),
+            CtxField::SockOpsSndCwnd => "snd_cwnd".to_string(),
+            CtxField::SockOpsSrttUs => "srtt_us".to_string(),
             CtxField::SockOpsCbFlags => "cb_flags".to_string(),
             CtxField::SockState => "state".to_string(),
+            CtxField::SockOpsRttMin => "rtt_min".to_string(),
+            CtxField::SockOpsSndSsthresh => "snd_ssthresh".to_string(),
             CtxField::SysctlWrite => "write".to_string(),
             CtxField::SysctlFilePos => "file_pos".to_string(),
             CtxField::SockoptLevel => "level".to_string(),
