@@ -95,6 +95,14 @@ impl<'a> TypeInference<'a> {
                     )));
                 }
             }
+            BpfHelper::Redirect => {
+                if !matches!(ctx.probe_type, EbpfProgramType::Xdp | EbpfProgramType::Tc) {
+                    errors.push(TypeError::new(format!(
+                        "helper '{}' is only valid in xdp and tc programs",
+                        helper.name()
+                    )));
+                }
+            }
             _ => {}
         }
     }

@@ -243,6 +243,72 @@ fn test_infer_lirc_helper_ctx_argument_in_lirc_mode2_program() {
 }
 
 #[test]
+fn test_type_error_redirect_helper_rejects_non_packet_programs() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::Redirect as u32,
+        args: vec![MirValue::Const(1), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_redirect to be rejected on non-xdp/tc programs");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect' is only valid in xdp and tc programs")
+    }));
+}
+
+#[test]
+fn test_type_error_redirect_helper_requires_zero_flags_in_xdp() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::Redirect as u32,
+        args: vec![MirValue::Const(1), MirValue::Const(1)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected xdp bpf_redirect flags to require zero");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect' requires arg1 = 0 in xdp programs")
+    }));
+}
+
+#[test]
+fn test_infer_redirect_helper_in_tc_program() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::Redirect as u32,
+        args: vec![MirValue::Const(1), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected tc bpf_redirect helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
 fn test_type_error_helper_get_current_comm_rejects_small_stack_slot() {
     let mut func = make_test_function();
     let buf_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);

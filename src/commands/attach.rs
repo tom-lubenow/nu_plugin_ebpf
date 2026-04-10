@@ -2191,7 +2191,8 @@ Context parameter syntax (recommended):
     `shot`, `pipe`, and `redirect`. cgroup_skb closures can return
     `allow` or `deny`. socket_filter closures can return `drop` / `deny`
     for `0`, or `pass` / `keep` / `allow` to snapshot the full packet by
-    returning `ctx.packet_len`. Raw numeric return codes still work. Packet reads currently support scalar byte access
+    returning `ctx.packet_len`. `helper-call "bpf_redirect" IFINDEX FLAGS`
+    is also type-checked on XDP/TC paths; XDP requires `FLAGS = 0`. Raw numeric return codes still work. Packet reads currently support scalar byte access
     through `get`/indexing, direct `u16be`/`u32be` cell-path scalar loads,
     and typed header views `eth`, `ipv4`, `udp`, and `tcp`. Those views also
     support `payload` stepping: `eth.payload` skips Ethernet and a single

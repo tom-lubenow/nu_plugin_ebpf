@@ -455,7 +455,9 @@ options parsing, deeper TCP option parsing, stacked VLAN tags, and named
 packet-program action helpers are still not modeled, but compile-time action
 aliases are available in return position. XDP closures can return strings like
 `"pass"` / `"drop"`, and TC closures can return strings like `"ok"` /
-`"shot"`. Raw numeric return codes still work.
+`"shot"`. Raw numeric return codes still work, and `helper-call
+"bpf_redirect" IFINDEX FLAGS` is now type-checked on XDP/TC paths; XDP
+requires `FLAGS = 0`.
 
 `perf_event` currently supports software `cpu-clock`, `task-clock`,
 `context-switches`, `cpu-migrations`, `page-faults`, `minor-faults`, and

@@ -13,6 +13,7 @@ impl BpfHelper {
             6 => Some(Self::TracePrintk),
             7 => Some(Self::GetPrandomU32),
             8 => Some(Self::GetSmpProcessorId),
+            23 => Some(Self::Redirect),
             12 => Some(Self::TailCall),
             14 => Some(Self::GetCurrentPidTgid),
             15 => Some(Self::GetCurrentUidGid),
@@ -116,6 +117,12 @@ impl BpfHelper {
             | BpfHelper::GetCurrentCgroupId => HelperSignature {
                 min_args: 0,
                 max_args: 0,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::Redirect => HelperSignature {
+                min_args: 2,
+                max_args: 2,
                 arg_kinds: [S, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
@@ -934,6 +941,11 @@ impl BpfHelper {
             BpfHelper::GetCurrentComm => HelperSemantics {
                 ptr_arg_rules: GET_CURRENT_COMM_RULES,
                 positive_size_args: &[1],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::Redirect => HelperSemantics {
+                ptr_arg_rules: &[],
+                positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::GetSocketCookie => HelperSemantics {
