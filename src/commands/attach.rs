@@ -2300,9 +2300,20 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.rcv_nxt } - Get the next expected receive sequence number
     {|ctx| $ctx.snd_nxt } - Get the next send sequence number
     {|ctx| $ctx.snd_una } - Get the oldest unacknowledged send sequence number
+    {|ctx| $ctx.mss_cache } - Get the current cached MSS
+    {|ctx| $ctx.ecn_flags } - Get the current ECN/TCP option flags
+    {|ctx| $ctx.rate_delivered } - Get the recent delivered-packet rate sample numerator
+    {|ctx| $ctx.rate_interval_us } - Get the delivery-rate sampling interval in microseconds
     {|ctx| $ctx.packets_out } - Get the number of outstanding packets
     {|ctx| $ctx.retrans_out } - Get the number of retransmitted outstanding packets
     {|ctx| $ctx.total_retrans } - Get the total retransmission count
+    {|ctx| $ctx.segs_in } - Get the total inbound segment count
+    {|ctx| $ctx.data_segs_in } - Get the total inbound data-segment count
+    {|ctx| $ctx.segs_out } - Get the total outbound segment count
+    {|ctx| $ctx.data_segs_out } - Get the total outbound data-segment count
+    {|ctx| $ctx.lost_out } - Get the current lost-out packet estimate
+    {|ctx| $ctx.sacked_out } - Get the current SACKed-out packet estimate
+    {|ctx| $ctx.sk_txhash } - Get the socket transmit hash
     {|ctx| $ctx.bytes_received } - Get the total received byte count
     {|ctx| $ctx.bytes_acked } - Get the total acknowledged byte count
     {|ctx| $ctx.skb_len } - Get the total packet length when packet metadata is available

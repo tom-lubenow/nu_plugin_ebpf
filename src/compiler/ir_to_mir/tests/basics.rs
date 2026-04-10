@@ -2213,6 +2213,33 @@ fn test_lower_sock_ops_ctx_bytes_acked_field() {
 }
 
 #[test]
+fn test_lower_sock_ops_ctx_mss_cache_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("mss_cache")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sock_ops ctx.mss_cache should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::SockOpsMssCache,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_sock_ops_data_byte_projection_adds_guarded_packet_load() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("data"), int_member(0)],

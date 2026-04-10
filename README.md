@@ -119,7 +119,7 @@ let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| ($ctx.args | get 0) | coun
 let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.snd_cwnd | count; 1 }
 
 # Count sock_ops TCP progress counters on loopback socket events
-let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| ($ctx.snd_nxt + $ctx.bytes_acked) | count; 1 }
+let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| ($ctx.snd_nxt + $ctx.bytes_acked + $ctx.mss_cache + $ctx.segs_out) | count; 1 }
 
 # Count sock_ops packet-length observations when packet metadata is available
 let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.skb_len | count; 1 }
@@ -366,9 +366,20 @@ The closure receives a context parameter with these fields:
 | `rcv_nxt` | Next expected receive sequence number | sock_ops |
 | `snd_nxt` | Next send sequence number | sock_ops |
 | `snd_una` | Oldest unacknowledged send sequence number | sock_ops |
+| `mss_cache` | Current cached MSS | sock_ops |
+| `ecn_flags` | Current ECN/TCP option flags | sock_ops |
+| `rate_delivered` | Recently delivered packet count used for rate sampling | sock_ops |
+| `rate_interval_us` | Delivery-rate sampling interval in microseconds | sock_ops |
 | `packets_out` | Number of outstanding packets | sock_ops |
 | `retrans_out` | Number of retransmitted outstanding packets | sock_ops |
 | `total_retrans` | Total retransmission count | sock_ops |
+| `segs_in` | Total inbound segment count | sock_ops |
+| `data_segs_in` | Total inbound data-segment count | sock_ops |
+| `segs_out` | Total outbound segment count | sock_ops |
+| `data_segs_out` | Total outbound data-segment count | sock_ops |
+| `lost_out` | Current lost-out packet estimate | sock_ops |
+| `sacked_out` | Current SACKed-out packet estimate | sock_ops |
+| `sk_txhash` | Socket transmit hash | sock_ops |
 | `bytes_received` | Total received byte count | sock_ops |
 | `bytes_acked` | Total acknowledged byte count | sock_ops |
 | `skb_len` | Total packet length when packet metadata is available | sock_ops |

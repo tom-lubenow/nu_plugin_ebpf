@@ -1130,9 +1130,20 @@ impl ProbeContext {
             | CtxField::SockOpsRcvNxt
             | CtxField::SockOpsSndNxt
             | CtxField::SockOpsSndUna
+            | CtxField::SockOpsMssCache
+            | CtxField::SockOpsEcnFlags
+            | CtxField::SockOpsRateDelivered
+            | CtxField::SockOpsRateIntervalUs
             | CtxField::SockOpsPacketsOut
             | CtxField::SockOpsRetransOut
             | CtxField::SockOpsTotalRetrans
+            | CtxField::SockOpsSegsIn
+            | CtxField::SockOpsDataSegsIn
+            | CtxField::SockOpsSegsOut
+            | CtxField::SockOpsDataSegsOut
+            | CtxField::SockOpsLostOut
+            | CtxField::SockOpsSackedOut
+            | CtxField::SockOpsSkTxhash
             | CtxField::SockOpsBytesReceived
             | CtxField::SockOpsBytesAcked
             | CtxField::SockOpsSkbLen

@@ -969,6 +969,27 @@ fn test_infer_sock_ops_bytes_acked_field_as_u64() {
 }
 
 #[test]
+fn test_infer_sock_ops_mss_cache_field_as_u32() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::SockOpsMssCache,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::U32));
+}
+
+#[test]
 fn test_infer_sock_ops_packet_len_field_as_u32() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();

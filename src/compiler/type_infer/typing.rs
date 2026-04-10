@@ -441,9 +441,20 @@ impl<'a> TypeInference<'a> {
             | CtxField::SockOpsRcvNxt
             | CtxField::SockOpsSndNxt
             | CtxField::SockOpsSndUna
+            | CtxField::SockOpsMssCache
+            | CtxField::SockOpsEcnFlags
+            | CtxField::SockOpsRateDelivered
+            | CtxField::SockOpsRateIntervalUs
             | CtxField::SockOpsPacketsOut
             | CtxField::SockOpsRetransOut
             | CtxField::SockOpsTotalRetrans
+            | CtxField::SockOpsSegsIn
+            | CtxField::SockOpsDataSegsIn
+            | CtxField::SockOpsSegsOut
+            | CtxField::SockOpsDataSegsOut
+            | CtxField::SockOpsLostOut
+            | CtxField::SockOpsSackedOut
+            | CtxField::SockOpsSkTxhash
             | CtxField::SockOpsSkbLen
             | CtxField::SockOpsSkbTcpFlags
             | CtxField::SysctlWrite

@@ -253,6 +253,26 @@ impl<'a> MirToEbpfCompiler<'a> {
         (100, 104, 108, 128, 132, 136, 168, 176)
     }
 
+    fn bpf_sock_ops_extra_metric_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16, i16)
+    {
+        // struct bpf_sock_ops {
+        //     ...
+        //     __u32 mss_cache;
+        //     __u32 ecn_flags;
+        //     __u32 rate_delivered;
+        //     __u32 rate_interval_us;
+        //     ...
+        //     __u32 segs_in;
+        //     __u32 data_segs_in;
+        //     __u32 segs_out;
+        //     __u32 data_segs_out;
+        //     __u32 lost_out;
+        //     __u32 sacked_out;
+        //     __u32 sk_txhash;
+        // };
+        (112, 116, 120, 124, 140, 144, 148, 152, 156, 160, 164)
+    }
+
     fn bpf_sock_ops_skb_field_offsets() -> (i16, i16, i16) {
         // struct bpf_sock_ops {
         //     ...
@@ -1398,6 +1418,26 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
+            CtxField::SockOpsMssCache => {
+                let offset = Self::bpf_sock_ops_extra_metric_offsets().0;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsEcnFlags => {
+                let offset = Self::bpf_sock_ops_extra_metric_offsets().1;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsRateDelivered => {
+                let offset = Self::bpf_sock_ops_extra_metric_offsets().2;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsRateIntervalUs => {
+                let offset = Self::bpf_sock_ops_extra_metric_offsets().3;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
             CtxField::SockOpsPacketsOut => {
                 let offset = Self::bpf_sock_ops_progress_offsets().3;
                 self.instructions
@@ -1410,6 +1450,41 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
             CtxField::SockOpsTotalRetrans => {
                 let offset = Self::bpf_sock_ops_progress_offsets().5;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsSegsIn => {
+                let offset = Self::bpf_sock_ops_extra_metric_offsets().4;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsDataSegsIn => {
+                let offset = Self::bpf_sock_ops_extra_metric_offsets().5;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsSegsOut => {
+                let offset = Self::bpf_sock_ops_extra_metric_offsets().6;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsDataSegsOut => {
+                let offset = Self::bpf_sock_ops_extra_metric_offsets().7;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsLostOut => {
+                let offset = Self::bpf_sock_ops_extra_metric_offsets().8;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsSackedOut => {
+                let offset = Self::bpf_sock_ops_extra_metric_offsets().9;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsSkTxhash => {
+                let offset = Self::bpf_sock_ops_extra_metric_offsets().10;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }

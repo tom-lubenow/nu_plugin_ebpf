@@ -1475,9 +1475,20 @@ impl<'a> HirToMirLowering<'a> {
             (Some(EbpfProgramType::SockOps), "rcv_nxt") => CtxField::SockOpsRcvNxt,
             (Some(EbpfProgramType::SockOps), "snd_nxt") => CtxField::SockOpsSndNxt,
             (Some(EbpfProgramType::SockOps), "snd_una") => CtxField::SockOpsSndUna,
+            (Some(EbpfProgramType::SockOps), "mss_cache") => CtxField::SockOpsMssCache,
+            (Some(EbpfProgramType::SockOps), "ecn_flags") => CtxField::SockOpsEcnFlags,
+            (Some(EbpfProgramType::SockOps), "rate_delivered") => CtxField::SockOpsRateDelivered,
+            (Some(EbpfProgramType::SockOps), "rate_interval_us") => CtxField::SockOpsRateIntervalUs,
             (Some(EbpfProgramType::SockOps), "packets_out") => CtxField::SockOpsPacketsOut,
             (Some(EbpfProgramType::SockOps), "retrans_out") => CtxField::SockOpsRetransOut,
             (Some(EbpfProgramType::SockOps), "total_retrans") => CtxField::SockOpsTotalRetrans,
+            (Some(EbpfProgramType::SockOps), "segs_in") => CtxField::SockOpsSegsIn,
+            (Some(EbpfProgramType::SockOps), "data_segs_in") => CtxField::SockOpsDataSegsIn,
+            (Some(EbpfProgramType::SockOps), "segs_out") => CtxField::SockOpsSegsOut,
+            (Some(EbpfProgramType::SockOps), "data_segs_out") => CtxField::SockOpsDataSegsOut,
+            (Some(EbpfProgramType::SockOps), "lost_out") => CtxField::SockOpsLostOut,
+            (Some(EbpfProgramType::SockOps), "sacked_out") => CtxField::SockOpsSackedOut,
+            (Some(EbpfProgramType::SockOps), "sk_txhash") => CtxField::SockOpsSkTxhash,
             (Some(EbpfProgramType::SockOps), "bytes_received") => CtxField::SockOpsBytesReceived,
             (Some(EbpfProgramType::SockOps), "bytes_acked") => CtxField::SockOpsBytesAcked,
             (Some(EbpfProgramType::SockOps), "skb_len") => CtxField::SockOpsSkbLen,
@@ -4876,9 +4887,20 @@ impl<'a> HirToMirLowering<'a> {
             | CtxField::SockOpsRcvNxt
             | CtxField::SockOpsSndNxt
             | CtxField::SockOpsSndUna
+            | CtxField::SockOpsMssCache
+            | CtxField::SockOpsEcnFlags
+            | CtxField::SockOpsRateDelivered
+            | CtxField::SockOpsRateIntervalUs
             | CtxField::SockOpsPacketsOut
             | CtxField::SockOpsRetransOut
             | CtxField::SockOpsTotalRetrans
+            | CtxField::SockOpsSegsIn
+            | CtxField::SockOpsDataSegsIn
+            | CtxField::SockOpsSegsOut
+            | CtxField::SockOpsDataSegsOut
+            | CtxField::SockOpsLostOut
+            | CtxField::SockOpsSackedOut
+            | CtxField::SockOpsSkTxhash
             | CtxField::SockOpsSkbLen
             | CtxField::SockOpsSkbTcpFlags
             | CtxField::SysctlWrite

@@ -691,7 +691,20 @@ step 47 "sock_ops root cgroup snd_cwnd counter" {
         print "Skipping sock_ops snd_cwnd smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
     } else {
         count-at-least-one "sock_ops:/sys/fs/cgroup" {|ctx|
-            ($ctx.snd_cwnd + $ctx.snd_nxt + $ctx.snd_una + $ctx.packets_out + $ctx.retrans_out + $ctx.total_retrans) | count
+            ($ctx.snd_cwnd
+                + $ctx.snd_nxt
+                + $ctx.snd_una
+                + $ctx.mss_cache
+                + $ctx.rate_delivered
+                + $ctx.rate_interval_us
+                + $ctx.packets_out
+                + $ctx.retrans_out
+                + $ctx.total_retrans
+                + $ctx.segs_out
+                + $ctx.data_segs_out
+                + $ctx.lost_out
+                + $ctx.sacked_out
+                + $ctx.sk_txhash) | count
             1
         } { trigger-loopback-connect } "sock_ops snd_cwnd counter"
     }

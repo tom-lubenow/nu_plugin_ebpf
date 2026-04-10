@@ -1687,6 +1687,19 @@ fn test_probe_context_allows_packet_data_fields_on_sock_ops() {
 }
 
 #[test]
+fn test_probe_context_allows_extra_metric_fields_on_sock_ops() {
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockOpsMssCache)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SockOpsSkTxhash)
+            .is_none()
+    );
+}
+
+#[test]
 fn test_probe_context_allows_netns_cookie_on_sk_msg() {
     let ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
     assert!(ctx.ctx_field_access_error(&CtxField::NetnsCookie).is_none());

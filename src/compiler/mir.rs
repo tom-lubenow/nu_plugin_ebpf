@@ -518,12 +518,34 @@ pub enum CtxField {
     SockOpsSndNxt,
     /// bpf_sock_ops::snd_una
     SockOpsSndUna,
+    /// bpf_sock_ops::mss_cache
+    SockOpsMssCache,
+    /// bpf_sock_ops::ecn_flags
+    SockOpsEcnFlags,
+    /// bpf_sock_ops::rate_delivered
+    SockOpsRateDelivered,
+    /// bpf_sock_ops::rate_interval_us
+    SockOpsRateIntervalUs,
     /// bpf_sock_ops::packets_out
     SockOpsPacketsOut,
     /// bpf_sock_ops::retrans_out
     SockOpsRetransOut,
     /// bpf_sock_ops::total_retrans
     SockOpsTotalRetrans,
+    /// bpf_sock_ops::segs_in
+    SockOpsSegsIn,
+    /// bpf_sock_ops::data_segs_in
+    SockOpsDataSegsIn,
+    /// bpf_sock_ops::segs_out
+    SockOpsSegsOut,
+    /// bpf_sock_ops::data_segs_out
+    SockOpsDataSegsOut,
+    /// bpf_sock_ops::lost_out
+    SockOpsLostOut,
+    /// bpf_sock_ops::sacked_out
+    SockOpsSackedOut,
+    /// bpf_sock_ops::sk_txhash
+    SockOpsSkTxhash,
     /// bpf_sock_ops::bytes_received
     SockOpsBytesReceived,
     /// bpf_sock_ops::bytes_acked
@@ -632,9 +654,20 @@ impl CtxField {
             CtxField::SockOpsRcvNxt => "rcv_nxt".to_string(),
             CtxField::SockOpsSndNxt => "snd_nxt".to_string(),
             CtxField::SockOpsSndUna => "snd_una".to_string(),
+            CtxField::SockOpsMssCache => "mss_cache".to_string(),
+            CtxField::SockOpsEcnFlags => "ecn_flags".to_string(),
+            CtxField::SockOpsRateDelivered => "rate_delivered".to_string(),
+            CtxField::SockOpsRateIntervalUs => "rate_interval_us".to_string(),
             CtxField::SockOpsPacketsOut => "packets_out".to_string(),
             CtxField::SockOpsRetransOut => "retrans_out".to_string(),
             CtxField::SockOpsTotalRetrans => "total_retrans".to_string(),
+            CtxField::SockOpsSegsIn => "segs_in".to_string(),
+            CtxField::SockOpsDataSegsIn => "data_segs_in".to_string(),
+            CtxField::SockOpsSegsOut => "segs_out".to_string(),
+            CtxField::SockOpsDataSegsOut => "data_segs_out".to_string(),
+            CtxField::SockOpsLostOut => "lost_out".to_string(),
+            CtxField::SockOpsSackedOut => "sacked_out".to_string(),
+            CtxField::SockOpsSkTxhash => "sk_txhash".to_string(),
             CtxField::SockOpsBytesReceived => "bytes_received".to_string(),
             CtxField::SockOpsBytesAcked => "bytes_acked".to_string(),
             CtxField::SockOpsSkbLen => "skb_len".to_string(),
