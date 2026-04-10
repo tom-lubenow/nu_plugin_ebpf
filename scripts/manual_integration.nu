@@ -888,7 +888,16 @@ step 62 "sk_msg pinned sockhash live attach and detach" {
         let id = (try {
             ^bpftool map create $map_path type sockhash key 4 value 4 entries 16 name nu_skmsg | ignore
 
-            let code = ([
+            let dry_run_code = ([
+                'ebpf attach --dry-run "sk_msg:__MAP__" {|ctx| ($ctx.data | get 0) | count; "pass" } | describe'
+            ] | str join (char newline) | str replace "__MAP__" $map_path)
+
+            let describe = (run-nu-with-plugin $plugin_bin $dry_run_code | str trim)
+            if $describe != "binary" {
+                error make { msg: $"expected sk_msg dry-run describe to be 'binary', got ($describe)" }
+            }
+
+            let live_code = ([
                 'let id = (ebpf attach "sk_msg:__MAP__" {|ctx| $ctx.packet_len | count; "pass" })'
                 'if $id < 1 {'
                 '    error make { msg: $"expected positive sk_msg id, got ($id)" }'
@@ -897,7 +906,7 @@ step 62 "sk_msg pinned sockhash live attach and detach" {
                 '$id'
             ] | str join (char newline) | str replace "__MAP__" $map_path)
 
-            run-nu-with-plugin $plugin_bin $code | str trim | into int
+            run-nu-with-plugin $plugin_bin $live_code | str trim | into int
         } catch { |err|
             try {
                 ^rm -f $map_path | ignore

@@ -154,7 +154,7 @@ fn test_program_type_metadata_for_sk_msg() {
     assert!(info.supports_cpu_ctx_field);
     assert!(info.supports_timestamp_ctx_field);
     assert!(info.supports_packet_len_ctx_field);
-    assert!(!info.supports_packet_data_ctx_fields);
+    assert!(info.supports_packet_data_ctx_fields);
 }
 
 #[test]
@@ -1535,6 +1535,8 @@ fn test_probe_context_allows_sk_lookup_fields() {
 fn test_probe_context_allows_sk_msg_fields() {
     let ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
     assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Family).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::RemoteIp4).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::RemoteIp6).is_none());
@@ -1663,15 +1665,6 @@ fn test_probe_context_rejects_sock_addr_fields_on_packet_programs() {
     assert!(err.contains(
         "ctx.protocol is only available on cgroup_sock, cgroup_sock_addr, and sk_lookup programs"
     ));
-}
-
-#[test]
-fn test_probe_context_rejects_packet_data_fields_on_sk_msg_programs() {
-    let ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
-    let err = ctx
-        .ctx_field_access_error(&CtxField::Data)
-        .expect("expected sk_msg ctx.data rejection");
-    assert!(err.contains("ctx.data is not available on sk_msg programs"));
 }
 
 #[test]

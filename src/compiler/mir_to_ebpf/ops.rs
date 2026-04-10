@@ -28,7 +28,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 76, 80, 36)
     }
 
-    fn sk_msg_md_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16) {
+    fn sk_msg_md_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16) {
         // struct sk_msg_md {
         //     __bpf_md_ptr(void *, data);
         //     __bpf_md_ptr(void *, data_end);
@@ -41,7 +41,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         //     __u32 local_port;     // host byte order
         //     __u32 size;
         // };
-        (16, 20, 24, 28, 44, 60, 64, 68)
+        (0, 8, 16, 20, 24, 28, 44, 60, 64, 68)
     }
 
     fn bpf_sock_addr_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16) {
@@ -660,36 +660,48 @@ impl<'a> MirToEbpfCompiler<'a> {
                         .push(EbpfInsn::ldxw(dst, EbpfReg::R9, len_offset));
                 }
                 PacketContextKind::SkMsg => {
-                    let (_, _, _, _, _, _, _, size_offset) = Self::sk_msg_md_offsets();
+                    let (_, _, _, _, _, _, _, _, _, size_offset) = Self::sk_msg_md_offsets();
                     self.instructions
                         .push(EbpfInsn::ldxw(dst, EbpfReg::R9, size_offset));
                 }
             },
             CtxField::Data => {
-                let data_offset = match self.packet_context_kind()? {
-                    PacketContextKind::XdpMd => Self::xdp_md_offsets().0,
-                    PacketContextKind::SkBuff => Self::sk_buff_offsets().1,
+                match self.packet_context_kind()? {
+                    PacketContextKind::XdpMd => {
+                        let data_offset = Self::xdp_md_offsets().0;
+                        self.instructions
+                            .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_offset));
+                    }
+                    PacketContextKind::SkBuff => {
+                        let data_offset = Self::sk_buff_offsets().1;
+                        self.instructions
+                            .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_offset));
+                    }
                     PacketContextKind::SkMsg => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.data is not available on sk_msg programs".to_string(),
-                        ));
+                        let data_offset = Self::sk_msg_md_offsets().0;
+                        self.instructions
+                            .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, data_offset));
                     }
                 };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_offset));
             }
             CtxField::DataEnd => {
-                let data_end_offset = match self.packet_context_kind()? {
-                    PacketContextKind::XdpMd => Self::xdp_md_offsets().1,
-                    PacketContextKind::SkBuff => Self::sk_buff_offsets().2,
+                match self.packet_context_kind()? {
+                    PacketContextKind::XdpMd => {
+                        let data_end_offset = Self::xdp_md_offsets().1;
+                        self.instructions
+                            .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_end_offset));
+                    }
+                    PacketContextKind::SkBuff => {
+                        let data_end_offset = Self::sk_buff_offsets().2;
+                        self.instructions
+                            .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_end_offset));
+                    }
                     PacketContextKind::SkMsg => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.data_end is not available on sk_msg programs".to_string(),
-                        ));
+                        let data_end_offset = Self::sk_msg_md_offsets().1;
+                        self.instructions
+                            .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, data_end_offset));
                     }
                 };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_end_offset));
             }
             CtxField::IngressIfindex => {
                 let ingress_ifindex_offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type)
@@ -753,7 +765,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                     Some(EbpfProgramType::CgroupSock) => Self::bpf_sock_offsets().1,
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().1,
                     Some(EbpfProgramType::SkLookup) => Self::bpf_sk_lookup_offsets().1,
-                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().0,
+                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().2,
                     _ => Self::bpf_sock_addr_offsets().4,
                 };
                 self.instructions
@@ -814,7 +826,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             CtxField::RemoteIp4 => {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().2,
-                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().1,
+                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().3,
                     _ => Self::bpf_sk_lookup_offsets().3,
                 };
                 self.instructions
@@ -824,7 +836,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             CtxField::RemoteIp6 => {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().4,
-                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().3,
+                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().5,
                     _ => Self::bpf_sk_lookup_offsets().4,
                 };
                 self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.remote_ip6", true)?;
@@ -832,7 +844,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             CtxField::RemotePort => {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().6,
-                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().5,
+                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().7,
                     _ => Self::bpf_sk_lookup_offsets().5,
                 };
                 if matches!(
@@ -851,7 +863,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             CtxField::LocalIp4 => {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().3,
-                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().2,
+                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().4,
                     _ => Self::bpf_sk_lookup_offsets().6,
                 };
                 self.instructions
@@ -861,7 +873,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             CtxField::LocalIp6 => {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().5,
-                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().4,
+                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().6,
                     _ => Self::bpf_sk_lookup_offsets().7,
                 };
                 self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.local_ip6", true)?;
@@ -869,7 +881,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             CtxField::LocalPort => {
                 let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
                     Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().7,
-                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().6,
+                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().8,
                     _ => Self::bpf_sk_lookup_offsets().8,
                 };
                 self.instructions

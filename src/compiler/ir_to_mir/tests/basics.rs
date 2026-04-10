@@ -2051,6 +2051,70 @@ fn test_lower_sk_msg_ctx_packet_len_field() {
 }
 
 #[test]
+fn test_lower_sk_msg_data_byte_projection_adds_guarded_packet_load() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("data"), int_member(0)],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_msg data byte projection should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Data,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::DataEnd,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Le,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::U8,
+                    ..
+                }
+            )))
+    );
+}
+
+#[test]
 fn test_lower_sk_msg_ctx_remote_ip4_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("remote_ip4")],

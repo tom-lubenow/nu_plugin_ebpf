@@ -1803,7 +1803,7 @@ const SK_MSG_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_timestamp_ctx_field: true,
     packet_context_kind: Some(PacketContextKind::SkMsg),
     supports_packet_len_ctx_field: true,
-    supports_packet_data_ctx_fields: false,
+    supports_packet_data_ctx_fields: true,
     supports_ingress_ifindex_ctx_field: false,
     supports_rx_queue_index_ctx_field: false,
     supports_egress_ifindex_ctx_field: false,

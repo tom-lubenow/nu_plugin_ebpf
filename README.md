@@ -112,8 +112,8 @@ let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.snd_cwnd | count; 1 }
 # Count sock_ops packet-length observations when packet metadata is available
 let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.skb_len | count; 1 }
 
-# Count message sizes on a pinned sockmap or sockhash sk_msg hook
-let id = ebpf attach 'sk_msg:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.packet_len | count; 'pass' }
+# Count first-byte observations on a pinned sockmap or sockhash sk_msg hook
+let id = ebpf attach 'sk_msg:/sys/fs/bpf/demo_sockmap' {|ctx| ($ctx.data | get 0) | count; 'pass' }
 
 # Count getsockopt option names inside a cgroup
 let id = ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| $ctx.optname | count; 'allow' }
@@ -293,8 +293,8 @@ The closure receives a context parameter with these fields:
 | `cpu` | CPU ID | All |
 | `ktime` | Kernel timestamp (ns) | All |
 | `packet_len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs, `size` on sk_msg) | xdp, socket_filter, tc, cgroup_skb, sk_msg |
-| `data` | Packet data pointer | xdp, socket_filter, tc, cgroup_skb |
-| `data_end` | Packet end pointer | xdp, socket_filter, tc, cgroup_skb |
+| `data` | Packet data pointer | xdp, socket_filter, tc, cgroup_skb, sk_msg |
+| `data_end` | Packet end pointer | xdp, socket_filter, tc, cgroup_skb, sk_msg |
 | `ingress_ifindex` | Ingress interface index | xdp, socket_filter, tc, cgroup_skb, sk_lookup |
 | `access_type` | Encoded cgroup device access type | cgroup_device |
 | `major` | Requested device major number | cgroup_device |
@@ -432,14 +432,17 @@ for example `($ctx.remote_ip6 | get 3)`. `sk_lookup` closures can return
 
 `sk_msg` currently attaches to a pinned sockmap or sockhash path such as
 `/sys/fs/bpf/demo_sockmap`. It exposes `ctx.cpu`, `ctx.ktime`,
-`ctx.packet_len`, `ctx.family`, `ctx.remote_ip4`, `ctx.remote_ip6`,
-`ctx.remote_port`, `ctx.local_ip4`, `ctx.local_ip6`, and `ctx.local_port`.
-The IPv4 address and remote port fields are normalized to host byte order,
-and the IPv6 fields are exposed as fixed arrays of four host-order `u32`
-words so ordinary Nushell indexing works, for example
-`($ctx.remote_ip6 | get 3)`. This initial slice is read-only and uses raw
-integer verdict codes; `sk_msg` closures can return `"pass"` / `"drop"`
-instead of raw `1` / `0`, and `"allow"` / `"deny"` aliases also work.
+`ctx.packet_len`, `ctx.data`, `ctx.data_end`, `ctx.family`, `ctx.remote_ip4`,
+`ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`, `ctx.local_ip6`, and
+`ctx.local_port`. `ctx.data` / `ctx.data_end` use the same guarded packet
+access model as XDP and tc, so ordinary byte/scalar reads like
+`($ctx.data | get 0)` work. The IPv4 address and remote port fields are
+normalized to host byte order, and the IPv6 fields are exposed as fixed
+arrays of four host-order `u32` words so ordinary Nushell indexing works,
+for example `($ctx.remote_ip6 | get 3)`. This initial slice is read-only and
+uses raw integer verdict codes; `sk_msg` closures can return `"pass"` /
+`"drop"` instead of raw `1` / `0`, and `"allow"` / `"deny"` aliases also
+work.
 
 `kprobe` and `uprobe` expose `ctx.arg0`-`ctx.arg5` through `pt_regs`. `fentry` and
 `fexit` resolve `ctx.argN` and `ctx.retval` through kernel BTF. Scalar and pointer
