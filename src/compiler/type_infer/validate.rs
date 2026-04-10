@@ -79,6 +79,26 @@ impl<'a> TypeInference<'a> {
         )));
     }
 
+    fn validate_helper_program_context(&self, helper_id: u32, errors: &mut Vec<TypeError>) {
+        let Some(helper) = BpfHelper::from_u32(helper_id) else {
+            return;
+        };
+        let Some(ctx) = self.probe_ctx.as_ref() else {
+            return;
+        };
+        match helper {
+            BpfHelper::RcRepeat | BpfHelper::RcKeydown | BpfHelper::RcPointerRel => {
+                if ctx.probe_type != EbpfProgramType::LircMode2 {
+                    errors.push(TypeError::new(format!(
+                        "helper '{}' is only valid in lirc_mode2 programs",
+                        helper.name()
+                    )));
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub(super) fn required_program_capability(inst: &MirInst) -> Option<ProgramCapability> {
         match inst {
             MirInst::ReadStr {
@@ -703,6 +723,7 @@ impl<'a> TypeInference<'a> {
             }
 
             MirInst::CallHelper { helper, args, .. } => {
+                self.validate_helper_program_context(*helper, errors);
                 if let Some(sig) = HelperSignature::for_id(*helper) {
                     if args.len() < sig.min_args || args.len() > sig.max_args {
                         errors.push(TypeError::new(format!(

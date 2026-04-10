@@ -46,6 +46,18 @@ fn test_bpf_helper_name_roundtrip() {
         BpfHelper::from_name("get_current_pid_tgid"),
         Some(BpfHelper::GetCurrentPidTgid)
     ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_get_prandom_u32"),
+        Some(BpfHelper::GetPrandomU32)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("ktime_get_boot_ns"),
+        Some(BpfHelper::KtimeGetBootNs)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("rc_repeat"),
+        Some(BpfHelper::RcRepeat)
+    ));
     assert!(BpfHelper::from_name("bpf_not_a_real_helper").is_none());
 }
 
@@ -144,6 +156,47 @@ fn test_helper_signature_get_current_cgroup_id() {
         .expect("expected bpf_get_current_cgroup_id helper signature");
     assert_eq!(sig.min_args, 0);
     assert_eq!(sig.max_args, 0);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signatures_prandom_boot_and_lirc_helpers() {
+    let sig = HelperSignature::for_id(BpfHelper::GetPrandomU32 as u32)
+        .expect("expected bpf_get_prandom_u32 helper signature");
+    assert_eq!(sig.min_args, 0);
+    assert_eq!(sig.max_args, 0);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::KtimeGetBootNs as u32)
+        .expect("expected bpf_ktime_get_boot_ns helper signature");
+    assert_eq!(sig.min_args, 0);
+    assert_eq!(sig.max_args, 0);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::RcRepeat as u32)
+        .expect("expected bpf_rc_repeat helper signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::RcKeydown as u32)
+        .expect("expected bpf_rc_keydown helper signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::RcPointerRel as u32)
+        .expect("expected bpf_rc_pointer_rel helper signature");
+    assert_eq!(sig.min_args, 3);
+    assert_eq!(sig.max_args, 3);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 

@@ -11,6 +11,7 @@ impl BpfHelper {
             113 => Some(Self::ProbeReadKernel),
             5 => Some(Self::KtimeGetNs),
             6 => Some(Self::TracePrintk),
+            7 => Some(Self::GetPrandomU32),
             8 => Some(Self::GetSmpProcessorId),
             12 => Some(Self::TailCall),
             14 => Some(Self::GetCurrentPidTgid),
@@ -19,6 +20,7 @@ impl BpfHelper {
             16 => Some(Self::GetCurrentComm),
             46 => Some(Self::GetSocketCookie),
             122 => Some(Self::GetNetnsCookie),
+            125 => Some(Self::KtimeGetBootNs),
             25 => Some(Self::PerfEventOutput),
             27 => Some(Self::GetStackId),
             84 => Some(Self::SkLookupTcp),
@@ -27,6 +29,9 @@ impl BpfHelper {
             87 => Some(Self::MapPushElem),
             88 => Some(Self::MapPopElem),
             89 => Some(Self::MapPeekElem),
+            77 => Some(Self::RcRepeat),
+            78 => Some(Self::RcKeydown),
+            92 => Some(Self::RcPointerRel),
             95 => Some(Self::SkFullsock),
             96 => Some(Self::TcpSock),
             98 => Some(Self::GetListenerSock),
@@ -103,6 +108,8 @@ impl BpfHelper {
                 }
             }
             BpfHelper::KtimeGetNs
+            | BpfHelper::KtimeGetBootNs
+            | BpfHelper::GetPrandomU32
             | BpfHelper::GetSmpProcessorId
             | BpfHelper::GetCurrentPidTgid
             | BpfHelper::GetCurrentUidGid
@@ -121,6 +128,24 @@ impl BpfHelper {
             BpfHelper::GetNetnsCookie => HelperSignature {
                 min_args: 1,
                 max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::RcRepeat => HelperSignature {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::RcKeydown => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::RcPointerRel => HelperSignature {
+                min_args: 3,
+                max_args: 3,
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
@@ -850,6 +875,14 @@ impl BpfHelper {
             size_from_arg: None,
         }];
 
+        const LIRC_CTX_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper lirc ctx",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
         const KPTR_XCHG_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -925,6 +958,13 @@ impl BpfHelper {
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
+            BpfHelper::RcRepeat | BpfHelper::RcKeydown | BpfHelper::RcPointerRel => {
+                HelperSemantics {
+                    ptr_arg_rules: LIRC_CTX_RULES,
+                    positive_size_args: &[],
+                    ringbuf_record_arg0: false,
+                }
+            }
             BpfHelper::TracePrintk => HelperSemantics {
                 ptr_arg_rules: TRACE_PRINTK_RULES,
                 positive_size_args: &[1],

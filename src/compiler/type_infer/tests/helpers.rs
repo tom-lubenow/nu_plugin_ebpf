@@ -188,6 +188,61 @@ fn test_infer_helper_ctx_argument_from_context_pointer_load() {
 }
 
 #[test]
+fn test_type_error_lirc_helpers_reject_non_lirc_programs() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RcRepeat as u32,
+        args: vec![MirValue::VReg(ctx)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected lirc helper to be rejected on non-lirc programs");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_rc_repeat' is only valid in lirc_mode2 programs")
+    }));
+}
+
+#[test]
+fn test_infer_lirc_helper_ctx_argument_in_lirc_mode2_program() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RcRepeat as u32,
+        args: vec![MirValue::VReg(ctx)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LircMode2, "/dev/lirc0");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected lirc helper to infer in lirc_mode2 program");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
 fn test_type_error_helper_get_current_comm_rejects_small_stack_slot() {
     let mut func = make_test_function();
     let buf_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);

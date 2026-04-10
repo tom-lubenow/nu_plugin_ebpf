@@ -64,6 +64,8 @@ pub enum BpfHelper {
     KtimeGetNs = 5,
     /// int bpf_trace_printk(fmt, fmt_size, ...)
     TracePrintk = 6,
+    /// u32 bpf_get_prandom_u32(void)
+    GetPrandomU32 = 7,
     /// u32 bpf_get_smp_processor_id(void)
     GetSmpProcessorId = 8,
     /// long bpf_tail_call(ctx, prog_array_map, index)
@@ -80,6 +82,8 @@ pub enum BpfHelper {
     GetSocketCookie = 46,
     /// u64 bpf_get_netns_cookie(ctx)
     GetNetnsCookie = 122,
+    /// u64 bpf_ktime_get_boot_ns(void)
+    KtimeGetBootNs = 125,
     /// int bpf_perf_event_output(ctx, map, flags, data, size)
     PerfEventOutput = 25,
     /// long bpf_get_stackid(ctx, map, flags)
@@ -98,6 +102,12 @@ pub enum BpfHelper {
     MapPeekElem = 89,
     /// struct bpf_sock *bpf_sk_fullsock(sk)
     SkFullsock = 95,
+    /// long bpf_rc_repeat(ctx)
+    RcRepeat = 77,
+    /// long bpf_rc_keydown(ctx, protocol, scancode, toggle)
+    RcKeydown = 78,
+    /// long bpf_rc_pointer_rel(ctx, rel_x, rel_y)
+    RcPointerRel = 92,
     /// struct bpf_tcp_sock *bpf_tcp_sock(sk)
     TcpSock = 96,
     /// struct bpf_sock *bpf_get_listener_sock(sk)
@@ -167,6 +177,7 @@ impl BpfHelper {
             BpfHelper::ProbeReadKernel => "bpf_probe_read_kernel",
             BpfHelper::KtimeGetNs => "bpf_ktime_get_ns",
             BpfHelper::TracePrintk => "bpf_trace_printk",
+            BpfHelper::GetPrandomU32 => "bpf_get_prandom_u32",
             BpfHelper::GetSmpProcessorId => "bpf_get_smp_processor_id",
             BpfHelper::TailCall => "bpf_tail_call",
             BpfHelper::GetCurrentPidTgid => "bpf_get_current_pid_tgid",
@@ -175,6 +186,7 @@ impl BpfHelper {
             BpfHelper::GetCurrentComm => "bpf_get_current_comm",
             BpfHelper::GetSocketCookie => "bpf_get_socket_cookie",
             BpfHelper::GetNetnsCookie => "bpf_get_netns_cookie",
+            BpfHelper::KtimeGetBootNs => "bpf_ktime_get_boot_ns",
             BpfHelper::PerfEventOutput => "bpf_perf_event_output",
             BpfHelper::GetStackId => "bpf_get_stackid",
             BpfHelper::SkLookupTcp => "bpf_sk_lookup_tcp",
@@ -183,6 +195,9 @@ impl BpfHelper {
             BpfHelper::MapPushElem => "bpf_map_push_elem",
             BpfHelper::MapPopElem => "bpf_map_pop_elem",
             BpfHelper::MapPeekElem => "bpf_map_peek_elem",
+            BpfHelper::RcRepeat => "bpf_rc_repeat",
+            BpfHelper::RcKeydown => "bpf_rc_keydown",
+            BpfHelper::RcPointerRel => "bpf_rc_pointer_rel",
             BpfHelper::SkFullsock => "bpf_sk_fullsock",
             BpfHelper::TcpSock => "bpf_tcp_sock",
             BpfHelper::GetListenerSock => "bpf_get_listener_sock",
@@ -230,6 +245,7 @@ impl BpfHelper {
             "probe_read_kernel" => Some(Self::ProbeReadKernel),
             "ktime_get_ns" => Some(Self::KtimeGetNs),
             "trace_printk" => Some(Self::TracePrintk),
+            "get_prandom_u32" => Some(Self::GetPrandomU32),
             "get_smp_processor_id" => Some(Self::GetSmpProcessorId),
             "tail_call" => Some(Self::TailCall),
             "get_current_pid_tgid" => Some(Self::GetCurrentPidTgid),
@@ -238,6 +254,7 @@ impl BpfHelper {
             "get_current_comm" => Some(Self::GetCurrentComm),
             "get_socket_cookie" => Some(Self::GetSocketCookie),
             "get_netns_cookie" => Some(Self::GetNetnsCookie),
+            "ktime_get_boot_ns" => Some(Self::KtimeGetBootNs),
             "perf_event_output" => Some(Self::PerfEventOutput),
             "get_stackid" => Some(Self::GetStackId),
             "sk_lookup_tcp" => Some(Self::SkLookupTcp),
@@ -246,6 +263,9 @@ impl BpfHelper {
             "map_push_elem" => Some(Self::MapPushElem),
             "map_pop_elem" => Some(Self::MapPopElem),
             "map_peek_elem" => Some(Self::MapPeekElem),
+            "rc_repeat" => Some(Self::RcRepeat),
+            "rc_keydown" => Some(Self::RcKeydown),
+            "rc_pointer_rel" => Some(Self::RcPointerRel),
             "sk_fullsock" => Some(Self::SkFullsock),
             "tcp_sock" => Some(Self::TcpSock),
             "get_listener_sock" => Some(Self::GetListenerSock),
