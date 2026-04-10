@@ -34,6 +34,7 @@ pub fn call_clobbers(inst: &MirInst) -> &'static [EbpfReg] {
             | MirInst::LoadGlobal { .. }
             | MirInst::MapUpdate { .. }
             | MirInst::MapDelete { .. }
+            | MirInst::MapPush { .. }
             | MirInst::EmitEvent { .. }
             | MirInst::EmitRecord { .. }
             | MirInst::ReadStr { .. }

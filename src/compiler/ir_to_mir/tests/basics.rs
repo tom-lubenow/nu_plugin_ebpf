@@ -888,6 +888,63 @@ fn make_map_put_program(map_put_decl: DeclId, flags: i64, kind: &str) -> HirProg
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_map_push_program(map_push_decl: DeclId, flags: i64, kind: &str) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("pid")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(b"recent_pids".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(kind.as_bytes().to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(flags),
+                },
+                HirStmt::Call {
+                    decl_id: map_push_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        named: vec![
+                            (b"kind".to_vec(), RegId::new(3)),
+                            (b"flags".to_vec(), RegId::new(4)),
+                        ],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 8],
+        ast: vec![None; 8],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_map_copy_projection_program(
     map_put_decl: DeclId,
     map_get_decl: DeclId,
@@ -5462,6 +5519,69 @@ fn test_lower_map_put_respects_lpm_trie_kind() {
 }
 
 #[test]
+fn test_lower_map_push_respects_queue_kind_and_flags() {
+    let hir = make_map_push_program(DeclId::new(42), 1, "queue");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-push".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("queue map-push should lower");
+
+    let push = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::MapPush { map, val, flags } if map.name == "recent_pids" => {
+                Some((map.kind, *val, *flags))
+            }
+            _ => None,
+        })
+        .expect("expected generic map push");
+    assert_eq!(push.0, MapKind::Queue);
+    assert_eq!(push.2, 1);
+}
+
+#[test]
+fn test_lower_map_push_respects_stack_kind() {
+    let hir = make_map_push_program(DeclId::new(42), 0, "stack");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-push".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("stack map-push should lower");
+
+    let kind = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::MapPush { map, .. } if map.name == "recent_pids" => Some(map.kind),
+            _ => None,
+        })
+        .expect("expected generic map push");
+    assert_eq!(kind, MapKind::Stack);
+}
+
+#[test]
 fn test_lower_map_put_of_map_get_root_preserves_copied_map_schema() {
     let hir = make_map_copy_projection_program(DeclId::new(42), DeclId::new(43), DeclId::new(44));
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
@@ -5545,6 +5665,56 @@ fn test_lower_map_delete_rejects_array_kind() {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(msg.contains("map delete is not supported for array map kind"));
             assert!(msg.contains("Array"));
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
+fn test_lower_map_put_rejects_queue_kind() {
+    let hir = make_map_put_program(DeclId::new(42), 0, "queue");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-put".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("queue map-put should be rejected during lowering");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("map-put is not supported for map kind"));
+            assert!(msg.contains("Queue"));
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
+fn test_lower_map_delete_rejects_queue_kind() {
+    let hir = make_map_delete_program(DeclId::new(42), "queue");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-delete".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("queue map-delete should be rejected during lowering");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("map delete is not supported for map kind"));
+            assert!(msg.contains("Queue"));
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }

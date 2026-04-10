@@ -278,6 +278,8 @@ impl<'a> MirToEbpfCompiler<'a> {
                 | MapKind::PerCpuHash
                 | MapKind::PerCpuArray
                 | MapKind::LruPerCpuHash
+                | MapKind::Queue
+                | MapKind::Stack
         )
     }
 
@@ -396,20 +398,29 @@ impl<'a> MirToEbpfCompiler<'a> {
         value_reg: EbpfReg,
         layout: MapOperandLayout,
     ) -> Result<(), CompileError> {
+        self.setup_map_value_arg_in_reg(value_reg, layout, EbpfReg::R3)
+    }
+
+    fn setup_map_value_arg_in_reg(
+        &mut self,
+        value_reg: EbpfReg,
+        layout: MapOperandLayout,
+        dst_reg: EbpfReg,
+    ) -> Result<(), CompileError> {
         match layout {
             MapOperandLayout::Pointer { .. } => {
-                if value_reg != EbpfReg::R3 {
+                if value_reg != dst_reg {
                     self.instructions
-                        .push(EbpfInsn::mov64_reg(EbpfReg::R3, value_reg));
+                        .push(EbpfInsn::mov64_reg(dst_reg, value_reg));
                 }
             }
             MapOperandLayout::Scalar { size } => {
                 let value_offset = self.allocate_stack_temp(size)?;
                 self.emit_store_scalar_to_stack(value_reg, value_offset, size)?;
                 self.instructions
-                    .push(EbpfInsn::mov64_reg(EbpfReg::R3, EbpfReg::R10));
+                    .push(EbpfInsn::mov64_reg(dst_reg, EbpfReg::R10));
                 self.instructions
-                    .push(EbpfInsn::add64_imm(EbpfReg::R3, value_offset as i32));
+                    .push(EbpfInsn::add64_imm(dst_reg, value_offset as i32));
             }
         }
         Ok(())
@@ -432,7 +443,9 @@ impl<'a> MirToEbpfCompiler<'a> {
         }
 
         let mut inferred_key_size = key_size.max(1) as u32;
-        if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
+        if matches!(map.kind, MapKind::Queue | MapKind::Stack) {
+            inferred_key_size = 0;
+        } else if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
             inferred_key_size = 4;
         }
         let (inferred_value_size, defaulted) = match value_size {
@@ -499,6 +512,8 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapKind::LruPerCpuHash => {
                 BpfMapDef::lru_per_cpu_hash(spec.key_size, spec.value_size, max_entries)
             }
+            MapKind::Queue => BpfMapDef::queue(spec.value_size, max_entries),
+            MapKind::Stack => BpfMapDef::stack(spec.value_size, max_entries),
             other => {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "map kind {:?} is not supported for generic map operations",
@@ -592,6 +607,40 @@ impl<'a> MirToEbpfCompiler<'a> {
         self.emit_map_fd_load(EbpfReg::R1, &map.name);
         self.instructions
             .push(EbpfInsn::call(BpfHelper::MapDeleteElem));
+        Ok(())
+    }
+
+    pub(super) fn compile_generic_map_push(
+        &mut self,
+        map: &crate::compiler::mir::MapRef,
+        val: VReg,
+        val_reg: EbpfReg,
+        flags: u64,
+    ) -> Result<(), CompileError> {
+        if !matches!(map.kind, MapKind::Queue | MapKind::Stack) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map-push requires queue or stack map kind, got {:?} for '{}'",
+                map.kind, map.name
+            )));
+        }
+        let val_layout = self.map_operand_layout(val, "map value", 8)?;
+        let value_size = match val_layout {
+            MapOperandLayout::Pointer { size } | MapOperandLayout::Scalar { size } => size,
+        };
+        self.register_generic_map_spec(map, 0, Some(value_size))?;
+        if flags > i32::MAX as u64 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map push flags {} exceed supported 32-bit immediate range",
+                flags
+            )));
+        }
+
+        self.setup_map_value_arg_in_reg(val_reg, val_layout, EbpfReg::R2)?;
+        self.instructions
+            .push(EbpfInsn::mov64_imm(EbpfReg::R3, flags as i32));
+        self.emit_map_fd_load(EbpfReg::R1, &map.name);
+        self.instructions
+            .push(EbpfInsn::call(BpfHelper::MapPushElem));
         Ok(())
     }
 }

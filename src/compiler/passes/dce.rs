@@ -125,6 +125,7 @@ fn has_side_effects(inst: &MirInst) -> bool {
         | MirInst::MapLookup { .. }
         | MirInst::MapUpdate { .. }
         | MirInst::MapDelete { .. }
+        | MirInst::MapPush { .. }
         | MirInst::EmitEvent { .. }
         | MirInst::EmitRecord { .. }
         | MirInst::ReadStr { .. }

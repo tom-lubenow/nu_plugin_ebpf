@@ -63,6 +63,8 @@ pub enum MapKind {
     PerCpuHash,
     PerCpuArray,
     LruPerCpuHash,
+    Queue,
+    Stack,
     RingBuf,
     StackTrace,
     ProgArray,
@@ -797,6 +799,9 @@ pub enum MirInst {
 
     /// Map delete
     MapDelete { map: MapRef, key: VReg },
+
+    /// Queue/stack push
+    MapPush { map: MapRef, val: VReg, flags: u64 },
 
     /// Histogram aggregation - computes log2 bucket and increments counter
     Histogram {

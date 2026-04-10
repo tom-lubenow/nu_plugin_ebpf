@@ -623,8 +623,8 @@ expose named parameter access through `ctx.arg.<name>`, for example
 `ctx.arg0.comm` continue to display as strings.
 Aggregate `fexit` returns still depend on kernel trampoline support; some
 kernels reject struct returns entirely.
-Generic named maps are also available through `map-get`, `map-put`, and
-`map-delete`. `map-get` returns a maybe-null map-value pointer. When a prior
+Generic named maps are also available through `map-get`, `map-put`,
+`map-delete`, and `map-push`. `map-get` returns a maybe-null map-value pointer. When a prior
 typed `map-put` established the value layout in the same closure, projections
 like `let entry = ($ctx.pid | map-get seen_paths --kind hash); if $entry != 0
 { $entry.dentry.d_flags }` lower through that preserved map-value schema, and
@@ -676,8 +676,10 @@ write is a compile-time constant the global is initialized from it, otherwise
 it starts zeroed. They are best suited for small per-program state without the
 overhead of an explicit map. Like the current mutable-capture path, they only
 support values with a truthful fixed layout.
-Generic map `--kind` now supports `hash`, `array`, `lpm-trie`, `lru-hash`,
-`per-cpu-hash`, `per-cpu-array`, and `lru-per-cpu-hash`.
+Generic map `--kind` now supports `hash`, `array`, `queue`, `stack`,
+`lpm-trie`, `lru-hash`, `per-cpu-hash`, `per-cpu-array`, and
+`lru-per-cpu-hash`.
+`queue` and `stack` use `map-push` instead of `map-put` / `map-get`.
 `lpm-trie` uses the kernel's raw trie-key layout, so the key bytes must
 already begin with a `u32` prefix length followed by the trie payload.
 
@@ -728,6 +730,7 @@ materialized.
 | `map-get` | Look up a value pointer in a named generic map |
 | `map-put` | Insert or update a value in a named generic map |
 | `map-delete` | Delete a key from a named generic map |
+| `map-push` | Push the pipeline input into a named queue or stack map |
 
 ## Discovering Tracepoints
 

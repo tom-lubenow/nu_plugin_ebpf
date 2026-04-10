@@ -251,6 +251,11 @@ pub enum LirInst {
         map: MapRef,
         key: VReg,
     },
+    MapPush {
+        map: MapRef,
+        val: VReg,
+        flags: u64,
+    },
 
     Histogram {
         value: VReg,
@@ -440,6 +445,7 @@ impl LirInst {
                 uses.push(*val);
             }
             LirInst::MapDelete { key, .. } => uses.push(*key),
+            LirInst::MapPush { val, .. } => uses.push(*val),
             LirInst::Histogram { value, .. } => uses.push(*value),
             LirInst::StartTimer => {}
             LirInst::StopTimer { .. } => {}
@@ -513,6 +519,7 @@ impl LirInst {
                 | LirInst::MapLookup { .. }
                 | LirInst::MapUpdate { .. }
                 | LirInst::MapDelete { .. }
+                | LirInst::MapPush { .. }
                 | LirInst::EmitEvent { .. }
                 | LirInst::EmitRecord { .. }
                 | LirInst::ReadStr { .. }

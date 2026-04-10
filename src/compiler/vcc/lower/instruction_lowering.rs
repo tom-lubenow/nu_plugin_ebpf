@@ -542,6 +542,36 @@ impl<'a> VccLowerer<'a> {
                 }
                 self.verify_map_key(&map.name, *key, out)?;
             }
+            MirInst::MapPush { map, val, flags } => {
+                if !supports_generic_map_kind(map.kind) {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!(
+                            "map operations do not support map kind {:?} for '{}'",
+                            map.kind, map.name
+                        ),
+                    ));
+                }
+                if !matches!(map.kind, MapKind::Queue | MapKind::Stack) {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!(
+                            "map-push requires queue or stack map kind, got {:?} for '{}'",
+                            map.kind, map.name
+                        ),
+                    ));
+                }
+                if *flags > i32::MAX as u64 {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!(
+                            "map push flags {} exceed supported 32-bit immediate range",
+                            flags
+                        ),
+                    ));
+                }
+                self.verify_map_value(*val, out)?;
+            }
             MirInst::EmitEvent { data, size } => {
                 if let Some(MirType::Ptr { pointee, .. }) = self.types.get(data) {
                     let access_size = match pointee.as_ref() {

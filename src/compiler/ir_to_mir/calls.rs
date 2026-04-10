@@ -59,6 +59,8 @@ impl<'a> HirToMirLowering<'a> {
         match kind {
             "hash" => Some(MapKind::Hash),
             "array" => Some(MapKind::Array),
+            "queue" => Some(MapKind::Queue),
+            "stack" => Some(MapKind::Stack),
             "lpm-trie" | "lpm_trie" | "lpmtrie" => Some(MapKind::LpmTrie),
             "lru-hash" | "lru_hash" | "lruhash" => Some(MapKind::LruHash),
             "per-cpu-hash" | "percpu-hash" | "per_cpu_hash" => Some(MapKind::PerCpuHash),
@@ -77,9 +79,29 @@ impl<'a> HirToMirLowering<'a> {
         let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
         Self::parse_generic_map_kind(&kind).ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must be one of: hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash"
+                "{context} --kind must be one of: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash"
             ))
         })
+    }
+
+    fn required_queue_stack_map_kind_arg(&self, context: &str) -> Result<MapKind, CompileError> {
+        let Some((_, reg)) = self.named_args.get("kind") else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} requires --kind queue or --kind stack"
+            )));
+        };
+        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+        match Self::parse_generic_map_kind(&kind) {
+            Some(MapKind::Queue) => Ok(MapKind::Queue),
+            Some(MapKind::Stack) => Ok(MapKind::Stack),
+            Some(other) => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} requires --kind queue or --kind stack, got {:?}",
+                other
+            ))),
+            None => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind must be one of: queue, stack"
+            ))),
+        }
     }
 
     fn validate_generic_map_name(&self, map_name: &str, context: &str) -> Result<(), CompileError> {
@@ -107,6 +129,40 @@ impl<'a> HirToMirLowering<'a> {
         if matches!(map_kind, MapKind::Array | MapKind::PerCpuArray) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map delete is not supported for array map kind {:?} ('{}')",
+                map_kind, map_name
+            )));
+        }
+        if matches!(map_kind, MapKind::Queue | MapKind::Stack) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map delete is not supported for map kind {:?} ('{}')",
+                map_kind, map_name
+            )));
+        }
+        Ok(())
+    }
+
+    fn validate_generic_map_lookup_kind(
+        &self,
+        map_kind: MapKind,
+        map_name: &str,
+    ) -> Result<(), CompileError> {
+        if matches!(map_kind, MapKind::Queue | MapKind::Stack) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map-get is not supported for map kind {:?} ('{}'); use map-push and future queue/stack-specific operations instead",
+                map_kind, map_name
+            )));
+        }
+        Ok(())
+    }
+
+    fn validate_generic_map_update_kind(
+        &self,
+        map_kind: MapKind,
+        map_name: &str,
+    ) -> Result<(), CompileError> {
+        if matches!(map_kind, MapKind::Queue | MapKind::Stack) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map-put is not supported for map kind {:?} ('{}'); use map-push instead",
                 map_kind, map_name
             )));
         }
@@ -743,6 +799,7 @@ impl<'a> HirToMirLowering<'a> {
                 let map_name = self.literal_string_arg(map_reg, "map-get")?;
                 self.validate_generic_map_name(&map_name, "map-get")?;
                 let map_kind = self.generic_map_kind_arg("map-get")?;
+                self.validate_generic_map_lookup_kind(map_kind, &map_name)?;
                 let map_ref = MapRef {
                     name: map_name.clone(),
                     kind: map_kind,
@@ -807,6 +864,7 @@ impl<'a> HirToMirLowering<'a> {
                 let map_name = self.literal_string_arg(map_reg, "map-put")?;
                 self.validate_generic_map_name(&map_name, "map-put")?;
                 let map_kind = self.generic_map_kind_arg("map-put")?;
+                self.validate_generic_map_update_kind(map_kind, &map_name)?;
                 let map_ref = MapRef {
                     name: map_name.clone(),
                     kind: map_kind,
@@ -874,6 +932,63 @@ impl<'a> HirToMirLowering<'a> {
                     self.register_named_map_value_type(&map_ref, &stored_value_ty);
                 }
 
+                self.emit(MirInst::Copy {
+                    dst: dst_vreg,
+                    src: MirValue::Const(0),
+                });
+                self.reset_call_result_metadata(src_dst);
+            }
+
+            "map-push" => {
+                if !self.named_flags.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "map-push does not accept flags".into(),
+                    ));
+                }
+                self.require_only_named_args("map-push", &["kind", "flags"])?;
+
+                let (_, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "map-push requires a literal map name as the first positional argument"
+                            .into(),
+                    )
+                })?;
+                let map_name = self.literal_string_arg(map_reg, "map-push")?;
+                self.validate_generic_map_name(&map_name, "map-push")?;
+                let map_kind = self.required_queue_stack_map_kind_arg("map-push")?;
+                let map_ref = MapRef {
+                    name: map_name,
+                    kind: map_kind,
+                };
+                let flags = if let Some((_, reg)) = self.named_args.get("flags") {
+                    let raw = self
+                        .get_metadata(*reg)
+                        .and_then(|m| m.literal_int)
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "map-push --flags must be a compile-time integer literal".into(),
+                            )
+                        })?;
+                    u64::try_from(raw).map_err(|_| {
+                        CompileError::UnsupportedInstruction("map-push --flags must be >= 0".into())
+                    })?
+                } else {
+                    0
+                };
+                let value_vreg = self
+                    .pipeline_input
+                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "map-push requires a value from pipeline input".into(),
+                        )
+                    })?;
+
+                self.emit(MirInst::MapPush {
+                    map: map_ref,
+                    val: value_vreg,
+                    flags,
+                });
                 self.emit(MirInst::Copy {
                     dst: dst_vreg,
                     src: MirValue::Const(0),

@@ -40,6 +40,8 @@ pub enum BpfMapType {
     LruHash = 9,
     LruPerCpuHash = 10,
     LpmTrie = 11,
+    Queue = 22,
+    Stack = 23,
     StackTrace = 7,
     RingBuf = 27,
 }
@@ -145,6 +147,30 @@ impl BpfMapDef {
         Self {
             map_type: BpfMapType::LruPerCpuHash as u32,
             key_size,
+            value_size,
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a generic queue map definition.
+    pub fn queue(value_size: u32, max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::Queue as u32,
+            key_size: 0,
+            value_size,
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a generic stack map definition.
+    pub fn stack(value_size: u32, max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::Stack as u32,
+            key_size: 0,
             value_size,
             max_entries,
             map_flags: 0,
@@ -1397,6 +1423,7 @@ pub enum ProgramIntrinsic {
     MapGet,
     MapPut,
     MapDelete,
+    MapPush,
 }
 
 impl ProgramIntrinsic {
@@ -1421,6 +1448,7 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::MapGet => "map-get",
             ProgramIntrinsic::MapPut => "map-put",
             ProgramIntrinsic::MapDelete => "map-delete",
+            ProgramIntrinsic::MapPush => "map-push",
         }
     }
 
@@ -1441,6 +1469,7 @@ impl ProgramIntrinsic {
             "map-get" => Some(ProgramIntrinsic::MapGet),
             "map-put" => Some(ProgramIntrinsic::MapPut),
             "map-delete" => Some(ProgramIntrinsic::MapDelete),
+            "map-push" => Some(ProgramIntrinsic::MapPush),
             _ => None,
         }
     }
@@ -1458,9 +1487,10 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::GlobalDefine
             | ProgramIntrinsic::GlobalGet
             | ProgramIntrinsic::GlobalSet => ProgramCapability::Globals,
-            ProgramIntrinsic::MapGet | ProgramIntrinsic::MapPut | ProgramIntrinsic::MapDelete => {
-                ProgramCapability::GenericMaps
-            }
+            ProgramIntrinsic::MapGet
+            | ProgramIntrinsic::MapPut
+            | ProgramIntrinsic::MapDelete
+            | ProgramIntrinsic::MapPush => ProgramCapability::GenericMaps,
         }
     }
 
@@ -2315,6 +2345,7 @@ const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[
     ProgramIntrinsic::MapGet,
     ProgramIntrinsic::MapPut,
     ProgramIntrinsic::MapDelete,
+    ProgramIntrinsic::MapPush,
 ];
 
 /// One program section within an eBPF ELF object.

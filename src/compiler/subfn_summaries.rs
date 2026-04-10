@@ -236,6 +236,7 @@ fn apply_alias_inst(
         | MirInst::EmitRecord { .. }
         | MirInst::MapUpdate { .. }
         | MirInst::MapDelete { .. }
+        | MirInst::MapPush { .. }
         | MirInst::Histogram { .. }
         | MirInst::StartTimer
         | MirInst::TailCall { .. }

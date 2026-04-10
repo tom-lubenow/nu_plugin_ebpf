@@ -340,6 +340,10 @@ fn test_program_intrinsic_command_registry() {
         Some(ProgramIntrinsic::MapGet)
     );
     assert_eq!(
+        ProgramIntrinsic::from_command_name("map-push"),
+        Some(ProgramIntrinsic::MapPush)
+    );
+    assert_eq!(
         ProgramIntrinsic::from_command_name("global-set"),
         Some(ProgramIntrinsic::GlobalSet)
     );
@@ -355,6 +359,10 @@ fn test_program_intrinsic_command_registry() {
     assert_eq!(
         ProgramIntrinsic::GlobalGet.required_capability(),
         ProgramCapability::Globals
+    );
+    assert_eq!(
+        ProgramIntrinsic::MapPush.required_capability(),
+        ProgramCapability::GenericMaps
     );
 }
 

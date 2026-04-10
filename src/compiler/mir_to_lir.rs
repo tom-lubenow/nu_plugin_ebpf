@@ -363,6 +363,13 @@ fn lower_inst(
                 key: *key,
             });
         }
+        MirInst::MapPush { map, val, flags } => {
+            out.push(LirInst::MapPush {
+                map: map.clone(),
+                val: *val,
+                flags: *flags,
+            });
+        }
         MirInst::Histogram { value } => out.push(LirInst::Histogram { value: *value }),
         MirInst::StartTimer => out.push(LirInst::StartTimer),
         MirInst::StopTimer { dst } => out.push(LirInst::StopTimer { dst: *dst }),

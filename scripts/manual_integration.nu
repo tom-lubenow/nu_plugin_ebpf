@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 70
+const TOTAL_STEPS = 71
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -1110,7 +1110,22 @@ step 69 "helper-call dry-run current pid helper" {
     $result
 }
 
-step 70 "verify no leaked probes" {
+step 70 "map-push dry-run queue generic map" {
+    let result = (
+        run-nu-with-plugin
+            $plugin_bin
+            'ebpf attach --dry-run "kprobe:ksys_read" {|ctx| $ctx.pid | map-push recent_pids --kind queue } | describe'
+        | str trim
+    )
+
+    if $result != "binary" {
+        fail $"expected map-push dry-run to return binary, got ($result)"
+    }
+
+    $result
+}
+
+step 71 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

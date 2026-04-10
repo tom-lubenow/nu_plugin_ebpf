@@ -98,7 +98,8 @@ impl<'a> TypeInference<'a> {
             MirInst::TailCall { .. } => Some(ProgramCapability::TailCalls),
             MirInst::MapLookup { map, .. }
             | MirInst::MapUpdate { map, .. }
-            | MirInst::MapDelete { map, .. } => match map.name.as_str() {
+            | MirInst::MapDelete { map, .. }
+            | MirInst::MapPush { map, .. } => match map.name.as_str() {
                 COUNTER_MAP_NAME | STRING_COUNTER_MAP_NAME | BYTES_COUNTER_MAP_NAME => {
                     Some(ProgramCapability::Counters)
                 }
@@ -511,6 +512,11 @@ impl<'a> TypeInference<'a> {
                         "map delete is not supported for array map kind {:?} ('{}')",
                         map.kind, map.name
                     )));
+                } else if matches!(map.kind, MapKind::Queue | MapKind::Stack) {
+                    errors.push(TypeError::new(format!(
+                        "map delete is not supported for map kind {:?} ('{}')",
+                        map.kind, map.name
+                    )));
                 }
                 let key_ty = self.mir_type_for_vreg(*key, types);
                 if map.name == STRING_COUNTER_MAP_NAME || map.name == BYTES_COUNTER_MAP_NAME {
@@ -534,6 +540,26 @@ impl<'a> TypeInference<'a> {
                             map.name, key_ty
                         ))),
                     }
+                }
+            }
+
+            MirInst::MapPush { map, val, .. } => {
+                if !matches!(map.kind, MapKind::Queue | MapKind::Stack) {
+                    errors.push(TypeError::new(format!(
+                        "map-push requires queue or stack map kind, got {:?} for '{}'",
+                        map.kind, map.name
+                    )));
+                }
+
+                let val_ty = self.mir_type_for_vreg(*val, types);
+                match val_ty {
+                    MirType::Ptr { address_space, .. }
+                        if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {}
+                    _ if Self::mir_is_numeric(&val_ty) => {}
+                    _ => errors.push(TypeError::new(format!(
+                        "map '{}' value expects numeric or stack/map pointer, got {:?}",
+                        map.name, val_ty
+                    ))),
                 }
             }
 

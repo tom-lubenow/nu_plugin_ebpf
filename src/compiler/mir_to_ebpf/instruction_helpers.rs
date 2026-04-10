@@ -211,6 +211,16 @@ impl<'a> MirToEbpfCompiler<'a> {
         self.compile_generic_map_delete(map, key, key_reg)
     }
 
+    pub(super) fn compile_map_push_inst(
+        &mut self,
+        map: &crate::compiler::mir::MapRef,
+        val: VReg,
+        flags: u64,
+    ) -> Result<(), CompileError> {
+        let val_reg = self.ensure_reg(val)?;
+        self.compile_generic_map_push(map, val, val_reg, flags)
+    }
+
     pub(super) fn compile_read_str_inst(
         &mut self,
         dst: StackSlotId,

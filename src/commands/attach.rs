@@ -2583,6 +2583,7 @@ Timing commands:
 Advanced commands:
   helper-call       - Call a modeled BPF helper by name
   kfunc-call        - Call a typed kernel kfunc by name (optional --btf-id)
+  map-push          - Push into a named queue or stack map (--kind queue|stack)
 
 Flags:
   --stream (-s)     Stream events in real-time. The command blocks and yields

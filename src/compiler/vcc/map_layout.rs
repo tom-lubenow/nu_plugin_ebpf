@@ -22,6 +22,8 @@ fn supports_generic_map_kind(kind: MapKind) -> bool {
             | MapKind::PerCpuHash
             | MapKind::PerCpuArray
             | MapKind::LruPerCpuHash
+            | MapKind::Queue
+            | MapKind::Stack
     )
 }
 
@@ -146,7 +148,9 @@ fn register_generic_map_layout_spec(
     }
 
     let mut inferred_key_size = key_size.max(1) as u32;
-    if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
+    if matches!(map.kind, MapKind::Queue | MapKind::Stack) {
+        inferred_key_size = 0;
+    } else if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
         inferred_key_size = 4;
     }
     let (inferred_value_size, defaulted) = match value_size {
@@ -260,6 +264,21 @@ fn check_generic_map_layout_constraints(
                         continue;
                     };
                     register_generic_map_layout_spec(map, key_size, None, &mut specs, &mut errors);
+                }
+                MirInst::MapPush { map, val, .. } => {
+                    check_counter_map_kind(map, &mut counter_kinds, &mut errors);
+                    let Some(value_size) =
+                        infer_map_operand_size(*val, "map value", types, &mut errors)
+                    else {
+                        continue;
+                    };
+                    register_generic_map_layout_spec(
+                        map,
+                        0,
+                        Some(value_size),
+                        &mut specs,
+                        &mut errors,
+                    );
                 }
                 _ => {}
             }

@@ -11,7 +11,7 @@
 //! - helper-call: Invoke a modeled BPF helper by name
 //! - kfunc-call: Invoke a typed kernel kfunc by name
 //! - global-define / global-get / global-set: Named compiler-managed per-program globals
-//! - map-get / map-put / map-delete: Generic BPF map operations
+//! - map-get / map-put / map-delete / map-push: Generic BPF map operations
 
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
 use nu_protocol::{
@@ -346,7 +346,7 @@ Example:
             .named(
                 "kind",
                 SyntaxShape::String,
-                "Map kind: hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash)",
+                "Map kind: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash; queue/stack are not valid for map-get)",
                 None,
             )
             .category(Category::Experimental)
@@ -607,7 +607,7 @@ leading `u32` prefix length followed by the trie payload bytes."#
             .named(
                 "kind",
                 SyntaxShape::String,
-                "Map kind: hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash)",
+                "Map kind: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash; queue/stack use map-push instead)",
                 None,
             )
             .named(
@@ -675,7 +675,7 @@ Example:
             .named(
                 "kind",
                 SyntaxShape::String,
-                "Map kind: hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash)",
+                "Map kind: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash; queue/stack are not valid for map-delete)",
                 None,
             )
             .category(Category::Experimental)
@@ -685,6 +685,67 @@ Example:
         vec![Example {
             example: "ebpf attach 'kprobe:sys_read' {|ctx| $ctx.pid | map-delete seen_paths --kind hash }",
             description: "Delete the current PID from a named hash map",
+            result: None,
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        _input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        Ok(PipelineData::Value(Value::int(0, call.head), None))
+    }
+}
+
+#[derive(Clone)]
+pub struct MapPush;
+
+impl PluginCommand for MapPush {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "map-push"
+    }
+
+    fn description(&self) -> &str {
+        "Push a value into a named queue or stack BPF map."
+    }
+
+    fn extra_description(&self) -> &str {
+        r#"Pushes the pipeline input into a named queue or stack map. Use
+`--kind queue` for FIFO behavior or `--kind stack` for LIFO behavior. Unlike
+`map-put`, queue/stack maps do not take an explicit key.
+
+Example:
+  $ctx.pid | map-push recent_pids --kind queue"#
+    }
+
+    fn signature(&self) -> Signature {
+        Signature::build("map-push")
+            .input_output_types(vec![(Type::Any, Type::Int), (Type::Nothing, Type::Int)])
+            .required("name", SyntaxShape::String, "Map name")
+            .named(
+                "kind",
+                SyntaxShape::String,
+                "Map kind: queue or stack (required)",
+                None,
+            )
+            .named(
+                "flags",
+                SyntaxShape::Int,
+                "Raw bpf_map_push_elem flags (default 0)",
+                None,
+            )
+            .category(Category::Experimental)
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "ebpf attach --dry-run 'kprobe:ksys_read' {|ctx| $ctx.pid | map-push recent_pids --kind queue }",
+            description: "Push the current PID into a named queue map",
             result: None,
         }]
     }

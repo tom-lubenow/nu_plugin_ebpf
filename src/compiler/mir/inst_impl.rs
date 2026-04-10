@@ -59,6 +59,7 @@ impl MirInst {
                 f(val);
             }
             MirInst::MapDelete { key, .. } => f(key),
+            MirInst::MapPush { val, .. } => f(val),
             MirInst::Histogram { value, .. } => f(value),
             MirInst::StartTimer => {}
             MirInst::StopTimer { .. } => {}
@@ -189,6 +190,7 @@ impl MirInst {
                 uses.push(*val);
             }
             MirInst::MapDelete { key, .. } => uses.push(*key),
+            MirInst::MapPush { val, .. } => uses.push(*val),
             MirInst::Histogram { value, .. } => uses.push(*value),
             MirInst::StartTimer => {}
             MirInst::StopTimer { .. } => {}

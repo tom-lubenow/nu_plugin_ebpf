@@ -97,6 +97,10 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.compile_map_delete_inst(map, *key)?;
             }
 
+            LirInst::MapPush { map, val, flags } => {
+                self.compile_map_push_inst(map, *val, *flags)?;
+            }
+
             LirInst::ReadStr {
                 dst,
                 ptr,
