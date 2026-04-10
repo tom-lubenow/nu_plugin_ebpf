@@ -2382,7 +2382,8 @@ Context parameter syntax (recommended):
     `helper-call "bpf_msg_apply_bytes" $ctx 8` or
     `helper-call "bpf_msg_cork_bytes" $ctx 8`, plus range/data reshaping
     helpers such as `helper-call "bpf_msg_pull_data" $ctx 0 8 0` and
-    `helper-call "bpf_msg_push_data" $ctx 0 8 0`.
+    `helper-call "bpf_msg_push_data" $ctx 0 8 0` or
+    `helper-call "bpf_msg_pop_data" $ctx 0 8 0`.
 
   sk_skb fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

@@ -321,6 +321,10 @@ fn test_type_error_msg_helpers_reject_non_sk_msg_programs() {
             BpfHelper::MsgPushData,
             vec![MirValue::Const(0), MirValue::Const(8), MirValue::Const(0)],
         ),
+        (
+            BpfHelper::MsgPopData,
+            vec![MirValue::Const(0), MirValue::Const(8), MirValue::Const(0)],
+        ),
     ] {
         let mut func = make_test_function();
         let ctx = func.alloc_vreg();
@@ -365,6 +369,10 @@ fn test_infer_msg_helpers_in_sk_msg_program() {
         ),
         (
             BpfHelper::MsgPushData,
+            vec![MirValue::Const(0), MirValue::Const(8), MirValue::Const(0)],
+        ),
+        (
+            BpfHelper::MsgPopData,
             vec![MirValue::Const(0), MirValue::Const(8), MirValue::Const(0)],
         ),
     ] {

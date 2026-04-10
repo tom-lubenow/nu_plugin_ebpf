@@ -116,6 +116,8 @@ pub enum BpfHelper {
     MapPeekElem = 89,
     /// long bpf_msg_push_data(msg, start, len, flags)
     MsgPushData = 90,
+    /// long bpf_msg_pop_data(msg, start, len, flags)
+    MsgPopData = 91,
     /// struct bpf_sock *bpf_sk_fullsock(sk)
     SkFullsock = 95,
     /// long bpf_rc_repeat(ctx)
@@ -219,6 +221,7 @@ impl BpfHelper {
             BpfHelper::MapPopElem => "bpf_map_pop_elem",
             BpfHelper::MapPeekElem => "bpf_map_peek_elem",
             BpfHelper::MsgPushData => "bpf_msg_push_data",
+            BpfHelper::MsgPopData => "bpf_msg_pop_data",
             BpfHelper::RcRepeat => "bpf_rc_repeat",
             BpfHelper::RcKeydown => "bpf_rc_keydown",
             BpfHelper::RcPointerRel => "bpf_rc_pointer_rel",
@@ -295,6 +298,7 @@ impl BpfHelper {
             "map_pop_elem" => Some(Self::MapPopElem),
             "map_peek_elem" => Some(Self::MapPeekElem),
             "msg_push_data" => Some(Self::MsgPushData),
+            "msg_pop_data" => Some(Self::MsgPopData),
             "rc_repeat" => Some(Self::RcRepeat),
             "rc_keydown" => Some(Self::RcKeydown),
             "rc_pointer_rel" => Some(Self::RcPointerRel),

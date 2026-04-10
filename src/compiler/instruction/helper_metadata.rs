@@ -37,6 +37,7 @@ impl BpfHelper {
             88 => Some(Self::MapPopElem),
             89 => Some(Self::MapPeekElem),
             90 => Some(Self::MsgPushData),
+            91 => Some(Self::MsgPopData),
             77 => Some(Self::RcRepeat),
             78 => Some(Self::RcKeydown),
             92 => Some(Self::RcPointerRel),
@@ -113,12 +114,14 @@ impl BpfHelper {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
-            BpfHelper::MsgPullData | BpfHelper::MsgPushData => HelperSignature {
-                min_args: 4,
-                max_args: 4,
-                arg_kinds: [P, S, S, S, S],
-                ret_kind: HelperRetKind::Scalar,
-            },
+            BpfHelper::MsgPullData | BpfHelper::MsgPushData | BpfHelper::MsgPopData => {
+                HelperSignature {
+                    min_args: 4,
+                    max_args: 4,
+                    arg_kinds: [P, S, S, S, S],
+                    ret_kind: HelperRetKind::Scalar,
+                }
+            }
             BpfHelper::ProbeRead | BpfHelper::ProbeReadUser | BpfHelper::ProbeReadKernel => {
                 HelperSignature {
                     min_args: 3,
@@ -1025,6 +1028,17 @@ impl BpfHelper {
                 ptr_arg_rules: &[HelperPtrArgRule {
                     arg_idx: 0,
                     op: "helper msg_push_data ctx",
+                    allowed: KERNEL,
+                    fixed_size: None,
+                    size_from_arg: None,
+                }],
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::MsgPopData => HelperSemantics {
+                ptr_arg_rules: &[HelperPtrArgRule {
+                    arg_idx: 0,
+                    op: "helper msg_pop_data ctx",
                     allowed: KERNEL,
                     fixed_size: None,
                     size_from_arg: None,

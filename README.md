@@ -557,7 +557,8 @@ work. Modeled socket-message helpers are available through the ordinary
 helper surface, for example `helper-call "bpf_msg_apply_bytes" $ctx 8`
 or `helper-call "bpf_msg_cork_bytes" $ctx 8`, plus range/data reshaping
 forms like `helper-call "bpf_msg_pull_data" $ctx 0 8 0` and
-`helper-call "bpf_msg_push_data" $ctx 0 8 0`.
+`helper-call "bpf_msg_push_data" $ctx 0 8 0` or
+`helper-call "bpf_msg_pop_data" $ctx 0 8 0`.
 
 `sk_skb` currently emits `sk_skb/stream_verdict` programs attached to a
 pinned sockmap or sockhash path such as `/sys/fs/bpf/demo_sockmap`. It
