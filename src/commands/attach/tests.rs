@@ -1897,6 +1897,31 @@ fn find_lsm_named_projection_candidate() -> Option<(String, String, String)> {
     None
 }
 
+fn find_fexit_ret_candidate() -> Option<String> {
+    for function_name in ["ksys_read", "do_sys_openat2", "__jump_label_patch"] {
+        if matches!(
+            KernelBtf::get().function_trampoline_ret_type_info(function_name),
+            Ok(Some(_))
+        ) {
+            return Some(function_name.to_string());
+        }
+    }
+    None
+}
+
+fn find_fexit_ret_projection_candidate() -> Option<(String, String)> {
+    for (function_name, field_name) in [("__jump_label_patch", "size")] {
+        let path = [TrampolineFieldSelector::Field(field_name.to_string())];
+        if matches!(
+            KernelBtf::get().function_trampoline_ret_field(function_name, &path),
+            Ok(Some(_))
+        ) {
+            return Some((function_name.to_string(), field_name.to_string()));
+        }
+    }
+    None
+}
+
 fn make_ctx_path_call_program(cell_path: CellPath, decl_id: DeclId) -> HirProgram {
     let ctx_var = VarId::new(0);
     let func = HirFunction {
@@ -3423,6 +3448,68 @@ fn test_compile_lsm_named_projected_ctx_arg_program() {
         Some(&lowering.type_hints),
     )
     .expect("lsm named ctx.arg field count should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_fexit_ctx_retval_program() {
+    let Some(function_name) = find_fexit_ret_candidate() else {
+        return;
+    };
+
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("retval")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fexit, &function_name);
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fexit ctx.retval should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("fexit ctx.retval should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_fexit_projected_ctx_retval_program() {
+    let Some((function_name, field_name)) = find_fexit_ret_projection_candidate() else {
+        return;
+    };
+
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("retval"), string_member(&field_name)],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fexit, &function_name);
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fexit ctx.retval field projection should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("fexit ctx.retval field projection should compile");
 
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
