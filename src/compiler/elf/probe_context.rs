@@ -1,6 +1,4 @@
-use super::{
-    CompileError, CtxField, EbpfProgramType, PacketContextKind, ProbeContext, ProgramTargetKind,
-};
+use super::{CompileError, CtxField, EbpfProgramType, ProbeContext, ProgramTargetKind};
 
 impl ProbeContext {
     fn cgroup_sock_addr_attach_kind(&self) -> Option<&str> {
@@ -127,67 +125,31 @@ impl ProbeContext {
                 )
             }
         };
+        let program_type = self.probe_type;
 
         match field {
             CtxField::Pid | CtxField::Tid | CtxField::Uid | CtxField::Gid | CtxField::Comm
-                if !self.probe_type.supports_task_ctx_fields() =>
+                if !program_type.supports_task_ctx_fields() =>
             {
                 Some(format!(
                     "ctx.{} is not available on {} programs",
                     field.display_name(),
-                    self.probe_type.canonical_prefix()
+                    program_type.canonical_prefix()
                 ))
             }
-            CtxField::Cpu if !self.probe_type.supports_cpu_ctx_field() => Some(format!(
+            CtxField::Cpu if !program_type.supports_cpu_ctx_field() => Some(format!(
                 "ctx.{} is not available on {} programs",
                 field.display_name(),
-                self.probe_type.canonical_prefix()
+                program_type.canonical_prefix()
             )),
-            CtxField::Timestamp if !self.probe_type.supports_timestamp_ctx_field() => Some(
+            CtxField::Timestamp if !program_type.supports_timestamp_ctx_field() => Some(
                 format!(
                     "ctx.{} is not available on {} programs",
                     field.display_name(),
-                    self.probe_type.canonical_prefix()
+                    program_type.canonical_prefix()
                 ),
             ),
-            CtxField::CgroupId
-                if !matches!(
-                    self.probe_type,
-                    EbpfProgramType::Kprobe
-                        | EbpfProgramType::Kretprobe
-                        | EbpfProgramType::Fentry
-                        | EbpfProgramType::Fexit
-                        | EbpfProgramType::Tracepoint
-                        | EbpfProgramType::RawTracepoint
-                        | EbpfProgramType::Uprobe
-                        | EbpfProgramType::Uretprobe
-                        | EbpfProgramType::Lsm
-                        | EbpfProgramType::Xdp
-                        | EbpfProgramType::PerfEvent
-                        | EbpfProgramType::SocketFilter
-                        | EbpfProgramType::CgroupDevice
-                        | EbpfProgramType::SkLookup
-                        | EbpfProgramType::SkMsg
-                        | EbpfProgramType::SkSkb
-                        | EbpfProgramType::SkSkbParser
-                        | EbpfProgramType::SockOps
-                        | EbpfProgramType::Tc
-                        | EbpfProgramType::CgroupSkb
-                        | EbpfProgramType::CgroupSock
-                        | EbpfProgramType::CgroupSysctl
-                        | EbpfProgramType::CgroupSockopt
-                        | EbpfProgramType::CgroupSockAddr
-                        | EbpfProgramType::LircMode2
-                        | EbpfProgramType::StructOps
-                ) =>
-            {
-                Some(format!(
-                    "ctx.{} is not available on {} programs",
-                    field.display_name(),
-                    self.probe_type.canonical_prefix()
-                ))
-            }
-            CtxField::PacketLen if !self.probe_type.supports_packet_len_ctx_field() => {
+            CtxField::PacketLen if !program_type.supports_packet_len_ctx_field() => {
                 Some(packet_field_error(field))
             }
             CtxField::PktType
@@ -203,41 +165,38 @@ impl ProbeContext {
             | CtxField::GsoSegs
             | CtxField::GsoSize
             | CtxField::Hwtstamp
-                if self.probe_type.packet_context_kind() != Some(PacketContextKind::SkBuff) =>
+                if !program_type.supports_skb_ctx_fields() =>
             {
                 Some(format!(
                     "ctx.{} is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
                     field.display_name()
                 ))
             }
-            CtxField::Data | CtxField::DataEnd
-                if !self.probe_type.supports_packet_data_ctx_fields() =>
+            CtxField::Data | CtxField::DataEnd if !program_type.supports_packet_data_ctx_fields() =>
             {
                 Some(packet_field_error(field))
             }
-            CtxField::IngressIfindex if !self.probe_type.supports_ingress_ifindex_ctx_field() => {
+            CtxField::IngressIfindex if !program_type.supports_ingress_ifindex_ctx_field() => {
                 Some(packet_field_error(field))
             }
-            CtxField::Ifindex
-                if self.probe_type.packet_context_kind() != Some(PacketContextKind::SkBuff) =>
+            CtxField::Ifindex if !program_type.supports_skb_ctx_fields() =>
             {
                 Some(format!(
                     "ctx.{} is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
                     field.display_name()
                 ))
             }
-            CtxField::TcIndex | CtxField::SkbHash
-                if self.probe_type.packet_context_kind() != Some(PacketContextKind::SkBuff) =>
+            CtxField::TcIndex | CtxField::SkbHash if !program_type.supports_skb_ctx_fields() =>
             {
                 Some(format!(
                     "ctx.{} is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
                     field.display_name()
                 ))
             }
-            CtxField::RxQueueIndex if !self.probe_type.supports_rx_queue_index_ctx_field() => {
+            CtxField::RxQueueIndex if !program_type.supports_rx_queue_index_ctx_field() => {
                 Some(packet_field_error(field))
             }
-            CtxField::EgressIfindex if !self.probe_type.supports_egress_ifindex_ctx_field() => {
+            CtxField::EgressIfindex if !program_type.supports_egress_ifindex_ctx_field() => {
                 Some(packet_field_error(field))
             }
             CtxField::RemoteIp4
@@ -246,84 +205,41 @@ impl ProbeContext {
             | CtxField::LocalIp4
             | CtxField::LocalIp6
             | CtxField::LocalPort
-                if !matches!(
-                    self.probe_type,
-                    EbpfProgramType::SkLookup
-                        | EbpfProgramType::SkMsg
-                        | EbpfProgramType::SkSkb
-                        | EbpfProgramType::SkSkbParser
-                        | EbpfProgramType::SockOps
-                ) =>
+                if !program_type.supports_socket_tuple_ctx_fields() =>
             {
                 Some(format!(
                     "ctx.{} is only available on sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs",
                     field.display_name()
                 ))
             }
-            CtxField::Socket
-                if !matches!(
-                    self.probe_type,
-                    EbpfProgramType::CgroupSock
-                        | EbpfProgramType::CgroupSockopt
-                        | EbpfProgramType::SkLookup
-                        | EbpfProgramType::SkMsg
-                ) =>
+            CtxField::Socket if !program_type.supports_socket_ref_ctx_field() =>
             {
                 Some(format!(
                     "ctx.{} is only available on cgroup_sock, cgroup_sockopt, sk_lookup, and sk_msg programs",
                     field.display_name()
                 ))
             }
-            CtxField::LookupCookie if !matches!(self.probe_type, EbpfProgramType::SkLookup) => {
+            CtxField::LookupCookie if !program_type.supports_lookup_cookie_ctx_field() => {
                 Some(format!(
                     "ctx.{} is only available on sk_lookup programs",
                     field.display_name()
                 ))
             }
-            CtxField::SocketCookie
-                if !matches!(
-                    self.probe_type,
-                    EbpfProgramType::SocketFilter
-                        | EbpfProgramType::Tc
-                        | EbpfProgramType::CgroupSkb
-                        | EbpfProgramType::CgroupSock
-                        | EbpfProgramType::CgroupSockAddr
-                        | EbpfProgramType::SkSkb
-                        | EbpfProgramType::SkSkbParser
-                        | EbpfProgramType::SockOps
-                ) =>
+            CtxField::SocketCookie if !program_type.supports_socket_cookie_ctx_field() =>
             {
                 Some(format!(
                     "ctx.{} is only available on skb-backed packet programs, cgroup_sock, cgroup_sock_addr, and sock_ops programs",
                     field.display_name()
                 ))
             }
-            CtxField::SocketUid
-                if !matches!(
-                    self.probe_type,
-                    EbpfProgramType::SocketFilter
-                        | EbpfProgramType::Tc
-                        | EbpfProgramType::CgroupSkb
-                        | EbpfProgramType::SkSkb
-                ) =>
+            CtxField::SocketUid if !program_type.supports_socket_uid_ctx_field() =>
             {
                 Some(format!(
                     "ctx.{} is only available on socket_filter, tc, cgroup_skb, and sk_skb programs",
                     field.display_name()
                 ))
             }
-            CtxField::NetnsCookie
-                if !matches!(
-                    self.probe_type,
-                    EbpfProgramType::SocketFilter
-                        | EbpfProgramType::Tc
-                        | EbpfProgramType::CgroupSkb
-                        | EbpfProgramType::CgroupSock
-                        | EbpfProgramType::CgroupSockopt
-                        | EbpfProgramType::CgroupSockAddr
-                        | EbpfProgramType::SkMsg
-                        | EbpfProgramType::SockOps
-                ) =>
+            CtxField::NetnsCookie if !program_type.supports_netns_cookie_ctx_field() =>
             {
                 Some(format!(
                     "ctx.{} is only available on socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_msg, and sock_ops programs",
@@ -331,7 +247,7 @@ impl ProbeContext {
                 ))
             }
             CtxField::DeviceAccessType | CtxField::DeviceMajor | CtxField::DeviceMinor
-                if !matches!(self.probe_type, EbpfProgramType::CgroupDevice) =>
+                if !program_type.supports_device_ctx_fields() =>
             {
                 Some(format!(
                     "ctx.{} is only available on cgroup_device programs",
@@ -369,33 +285,22 @@ impl ProbeContext {
             | CtxField::SockOpsSkbLen
             | CtxField::SockOpsSkbTcpFlags
             | CtxField::SockOpsSkbHwtstamp
-                if !matches!(self.probe_type, EbpfProgramType::SockOps) =>
+                if !program_type.supports_sock_ops_ctx_fields() =>
             {
                 Some(format!(
                     "ctx.{} is only available on sock_ops programs",
                     field.display_name()
                 ))
             }
-            CtxField::UserFamily
-            | CtxField::UserPort
-                if !matches!(self.probe_type, EbpfProgramType::CgroupSockAddr) =>
+            CtxField::UserFamily | CtxField::UserPort
+                if !program_type.supports_cgroup_sock_addr_ctx_fields() =>
             {
                 Some(format!(
                     "ctx.{} is only available on cgroup_sock_addr programs",
                     field.display_name()
                 ))
             }
-            CtxField::Family
-                if !matches!(
-                    self.probe_type,
-                    EbpfProgramType::CgroupSockAddr
-                        | EbpfProgramType::CgroupSock
-                        | EbpfProgramType::SkLookup
-                        | EbpfProgramType::SkMsg
-                        | EbpfProgramType::SkSkb
-                        | EbpfProgramType::SkSkbParser
-                        | EbpfProgramType::SockOps
-                ) =>
+            CtxField::Family if !program_type.supports_socket_common_ctx_fields() =>
             {
                 Some(format!(
                     "ctx.{} is only available on cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs",
@@ -403,46 +308,40 @@ impl ProbeContext {
                 ))
             }
             CtxField::SockType | CtxField::Protocol
-                if !matches!(
-                    self.probe_type,
-                    EbpfProgramType::CgroupSockAddr
-                        | EbpfProgramType::CgroupSock
-                        | EbpfProgramType::SkLookup
-                ) =>
+                if !program_type.supports_sock_type_protocol_ctx_fields() =>
             {
                 Some(format!(
                     "ctx.{} is only available on cgroup_sock, cgroup_sock_addr, and sk_lookup programs",
                     field.display_name()
                 ))
             }
-            CtxField::BoundDevIf if !matches!(self.probe_type, EbpfProgramType::CgroupSock) => {
+            CtxField::BoundDevIf if !program_type.supports_cgroup_sock_ctx_fields() => {
                 Some(format!(
                     "ctx.{} is only available on cgroup_sock programs",
                     field.display_name()
                 ))
             }
             CtxField::SockMark | CtxField::SockPriority
-                if !matches!(self.probe_type, EbpfProgramType::CgroupSock)
-                    && self.probe_type.packet_context_kind() != Some(PacketContextKind::SkBuff) =>
+                if !program_type.supports_sock_mark_priority_ctx_fields() =>
             {
                 Some(format!(
                     "ctx.{} is only available on cgroup_sock, socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
                     field.display_name()
                 ))
             }
-            CtxField::UserIp4 if !matches!(self.probe_type, EbpfProgramType::CgroupSockAddr) => {
+            CtxField::UserIp4 if !program_type.supports_cgroup_sock_addr_ctx_fields() => {
                 Some("ctx.user_ip4 is only available on cgroup_sock_addr programs".to_string())
             }
             CtxField::UserIp4 if !self.cgroup_sock_addr_is_ipv4() => Some(
                 "ctx.user_ip4 is only available on IPv4 cgroup_sock_addr hooks (*4)".to_string(),
             ),
-            CtxField::UserIp6 if !matches!(self.probe_type, EbpfProgramType::CgroupSockAddr) => {
+            CtxField::UserIp6 if !program_type.supports_cgroup_sock_addr_ctx_fields() => {
                 Some("ctx.user_ip6 is only available on cgroup_sock_addr programs".to_string())
             }
             CtxField::UserIp6 if !self.cgroup_sock_addr_is_ipv6() => Some(
                 "ctx.user_ip6 is only available on IPv6 cgroup_sock_addr hooks (*6)".to_string(),
             ),
-            CtxField::MsgSrcIp4 if !matches!(self.probe_type, EbpfProgramType::CgroupSockAddr) => {
+            CtxField::MsgSrcIp4 if !program_type.supports_cgroup_sock_addr_ctx_fields() => {
                 Some("ctx.msg_src_ip4 is only available on cgroup_sock_addr programs".to_string())
             }
             CtxField::MsgSrcIp4 if !self.cgroup_sock_addr_is_ipv4() => Some(
@@ -453,7 +352,7 @@ impl ProbeContext {
                 "ctx.msg_src_ip4 is only available on cgroup_sock_addr sendmsg*/recvmsg* hooks"
                     .to_string(),
             ),
-            CtxField::MsgSrcIp6 if !matches!(self.probe_type, EbpfProgramType::CgroupSockAddr) => {
+            CtxField::MsgSrcIp6 if !program_type.supports_cgroup_sock_addr_ctx_fields() => {
                 Some("ctx.msg_src_ip6 is only available on cgroup_sock_addr programs".to_string())
             }
             CtxField::MsgSrcIp6 if !self.cgroup_sock_addr_is_ipv6() => Some(
@@ -465,7 +364,7 @@ impl ProbeContext {
                     .to_string(),
             ),
             CtxField::SysctlWrite | CtxField::SysctlFilePos
-                if !matches!(self.probe_type, EbpfProgramType::CgroupSysctl) =>
+                if !program_type.supports_cgroup_sysctl_ctx_fields() =>
             {
                 Some(format!(
                     "ctx.{} is only available on cgroup_sysctl programs",
@@ -477,42 +376,42 @@ impl ProbeContext {
             | CtxField::SockoptOptlen
             | CtxField::SockoptOptval
             | CtxField::SockoptOptvalEnd
-                if !matches!(self.probe_type, EbpfProgramType::CgroupSockopt) =>
+                if !program_type.supports_cgroup_sockopt_ctx_fields() =>
             {
                 Some(format!(
                     "ctx.{} is only available on cgroup_sockopt programs",
                     field.display_name()
                 ))
             }
-            CtxField::SockoptRetval if !matches!(self.probe_type, EbpfProgramType::CgroupSockopt) => {
+            CtxField::SockoptRetval if !program_type.supports_cgroup_sockopt_ctx_fields() => {
                 Some("ctx.sockopt_retval is only available on cgroup_sockopt programs".to_string())
             }
             CtxField::SockoptRetval if !self.cgroup_sockopt_is_get() => Some(
                 "ctx.sockopt_retval is only available on cgroup_sockopt:get hooks".to_string(),
             ),
             CtxField::LircSample | CtxField::LircValue | CtxField::LircMode
-                if !matches!(self.probe_type, EbpfProgramType::LircMode2) =>
+                if !program_type.supports_lirc_ctx_fields() =>
             {
                 Some(format!(
                     "ctx.{} is only available on lirc_mode2 programs",
                     field.display_name()
                 ))
             }
-            CtxField::Arg(_) if !self.probe_type.supports_ctx_args() => Some(format!(
+            CtxField::Arg(_) if !program_type.supports_ctx_args() => Some(format!(
                 "ctx.{} is only available on contexts with argument access (kprobe, uprobe, fentry, fexit, tp_btf, lsm, struct_ops, and raw_tracepoint)",
                 field.display_name()
             )),
-            CtxField::RetVal if !self.probe_type.supports_ctx_retval() => Some(
+            CtxField::RetVal if !program_type.supports_ctx_retval() => Some(
                 "ctx.retval is only available on return probes with return-value access (kretprobe, uretprobe, fexit)".to_string(),
             ),
-            CtxField::KStack | CtxField::UStack if !self.probe_type.supports_stack_ctx_fields() => {
+            CtxField::KStack | CtxField::UStack if !program_type.supports_stack_ctx_fields() => {
                 Some(format!(
                     "ctx.{} is not available on {} programs",
                     field.display_name(),
-                    self.probe_type.canonical_prefix()
+                    program_type.canonical_prefix()
                 ))
             }
-            CtxField::TracepointField(name) if !self.probe_type.supports_tracepoint_fields() => {
+            CtxField::TracepointField(name) if !program_type.supports_tracepoint_fields() => {
                 Some(format!(
                     "ctx.{} is only available on typed tracepoints (`tracepoint:category/name`)",
                     name

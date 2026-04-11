@@ -28,8 +28,8 @@ mod probe_context;
 mod program_impl;
 mod program_types;
 
-pub use program_types::ProgramTypeInfo;
 use program_types::*;
+pub use program_types::{ProgramContextFamily, ProgramTypeInfo};
 
 /// BPF map types (subset of types we might use)
 #[derive(Debug, Clone, Copy)]
@@ -672,6 +672,10 @@ impl EbpfProgramType {
         self.info().attach_kind
     }
 
+    pub fn context_family(&self) -> ProgramContextFamily {
+        self.info().context_family
+    }
+
     pub fn target_kind(&self) -> ProgramTargetKind {
         self.info().target_kind
     }
@@ -774,6 +778,143 @@ impl EbpfProgramType {
 
     pub fn supports_egress_ifindex_ctx_field(&self) -> bool {
         self.info().supports_egress_ifindex_ctx_field
+    }
+
+    pub fn ctx_field_alias(&self, field_name: &str) -> Option<CtxField> {
+        match (self.context_family(), field_name) {
+            (ProgramContextFamily::Xdp, "ifindex") => Some(CtxField::IngressIfindex),
+            (ProgramContextFamily::SkBuffPacket, "ifindex") => Some(CtxField::Ifindex),
+            _ => None,
+        }
+    }
+
+    pub fn supports_skb_ctx_fields(&self) -> bool {
+        matches!(self.context_family(), ProgramContextFamily::SkBuffPacket)
+    }
+
+    pub fn supports_socket_ref_ctx_field(&self) -> bool {
+        matches!(
+            self,
+            EbpfProgramType::CgroupSock
+                | EbpfProgramType::CgroupSockopt
+                | EbpfProgramType::SkLookup
+                | EbpfProgramType::SkMsg
+        )
+    }
+
+    pub fn supports_socket_common_ctx_fields(&self) -> bool {
+        matches!(
+            self,
+            EbpfProgramType::CgroupSock
+                | EbpfProgramType::CgroupSockAddr
+                | EbpfProgramType::SkLookup
+                | EbpfProgramType::SkMsg
+                | EbpfProgramType::SkSkb
+                | EbpfProgramType::SkSkbParser
+                | EbpfProgramType::SockOps
+        )
+    }
+
+    pub fn supports_socket_tuple_ctx_fields(&self) -> bool {
+        matches!(
+            self,
+            EbpfProgramType::SkLookup
+                | EbpfProgramType::SkMsg
+                | EbpfProgramType::SkSkb
+                | EbpfProgramType::SkSkbParser
+                | EbpfProgramType::SockOps
+        )
+    }
+
+    pub fn supports_sock_type_protocol_ctx_fields(&self) -> bool {
+        matches!(
+            self,
+            EbpfProgramType::CgroupSock
+                | EbpfProgramType::CgroupSockAddr
+                | EbpfProgramType::SkLookup
+        )
+    }
+
+    pub fn supports_sock_mark_priority_ctx_fields(&self) -> bool {
+        matches!(
+            self,
+            EbpfProgramType::CgroupSock
+                | EbpfProgramType::SocketFilter
+                | EbpfProgramType::Tc
+                | EbpfProgramType::CgroupSkb
+                | EbpfProgramType::SkSkb
+                | EbpfProgramType::SkSkbParser
+        )
+    }
+
+    pub fn supports_socket_cookie_ctx_field(&self) -> bool {
+        matches!(
+            self,
+            EbpfProgramType::SocketFilter
+                | EbpfProgramType::Tc
+                | EbpfProgramType::CgroupSkb
+                | EbpfProgramType::CgroupSock
+                | EbpfProgramType::CgroupSockAddr
+                | EbpfProgramType::SkSkb
+                | EbpfProgramType::SkSkbParser
+                | EbpfProgramType::SockOps
+        )
+    }
+
+    pub fn supports_socket_uid_ctx_field(&self) -> bool {
+        matches!(
+            self,
+            EbpfProgramType::SocketFilter
+                | EbpfProgramType::Tc
+                | EbpfProgramType::CgroupSkb
+                | EbpfProgramType::SkSkb
+        )
+    }
+
+    pub fn supports_netns_cookie_ctx_field(&self) -> bool {
+        matches!(
+            self,
+            EbpfProgramType::SocketFilter
+                | EbpfProgramType::Tc
+                | EbpfProgramType::CgroupSkb
+                | EbpfProgramType::CgroupSock
+                | EbpfProgramType::CgroupSockopt
+                | EbpfProgramType::CgroupSockAddr
+                | EbpfProgramType::SkMsg
+                | EbpfProgramType::SockOps
+        )
+    }
+
+    pub fn supports_lookup_cookie_ctx_field(&self) -> bool {
+        matches!(self, EbpfProgramType::SkLookup)
+    }
+
+    pub fn supports_cgroup_sock_ctx_fields(&self) -> bool {
+        matches!(self.context_family(), ProgramContextFamily::CgroupSock)
+    }
+
+    pub fn supports_cgroup_sock_addr_ctx_fields(&self) -> bool {
+        matches!(self.context_family(), ProgramContextFamily::CgroupSockAddr)
+    }
+
+    pub fn supports_cgroup_sockopt_ctx_fields(&self) -> bool {
+        matches!(self.context_family(), ProgramContextFamily::CgroupSockopt)
+    }
+
+    pub fn supports_cgroup_sysctl_ctx_fields(&self) -> bool {
+        matches!(self.context_family(), ProgramContextFamily::CgroupSysctl)
+    }
+
+    pub fn supports_device_ctx_fields(&self) -> bool {
+        matches!(self.context_family(), ProgramContextFamily::CgroupDevice)
+    }
+
+    pub fn supports_sock_ops_ctx_fields(&self) -> bool {
+        matches!(self.context_family(), ProgramContextFamily::SockOps)
+    }
+
+    pub fn supports_lirc_ctx_fields(&self) -> bool {
+        matches!(self.context_family(), ProgramContextFamily::LircMode2)
     }
 }
 

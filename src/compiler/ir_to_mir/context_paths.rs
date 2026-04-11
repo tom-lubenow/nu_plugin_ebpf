@@ -1,6 +1,5 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
-use crate::compiler::elf::PacketContextKind;
 use crate::compiler::mir::CtxStoreTarget;
 use crate::kernel_btf::KernelBtf;
 
@@ -248,16 +247,17 @@ impl<'a> HirToMirLowering<'a> {
             return Ok((CtxField::Arg(arg_idx), 2));
         }
 
+        if let Some(field) = self
+            .probe_ctx
+            .and_then(|ctx| ctx.probe_type.ctx_field_alias(&field_name))
+        {
+            return Ok((field, 1));
+        }
+
         let field = match (
             self.probe_ctx.map(|ctx| ctx.probe_type),
             field_name.as_str(),
         ) {
-            (Some(EbpfProgramType::Xdp), "ifindex") => CtxField::IngressIfindex,
-            (Some(probe_type), "ifindex")
-                if probe_type.packet_context_kind() == Some(PacketContextKind::SkBuff) =>
-            {
-                CtxField::Ifindex
-            }
             (Some(EbpfProgramType::Tracepoint), _) => Self::ctx_field_from_name(field_name)?,
             _ => Self::non_tracepoint_ctx_field_from_name(&field_name)
                 .unwrap_or(Self::ctx_field_from_name(field_name)?),

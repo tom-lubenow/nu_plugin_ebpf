@@ -143,13 +143,19 @@ Last updated: 2026-02-15.
 
 ## Roadmap to a general-purpose eBPF language
 
+Near-term priority order:
+1. Make the program model explicitly program-type-aware (targets, section naming, helper surface, attach/load path).
+2. Move context legality and aliases behind per-program context schemas instead of probe-centric special cases.
+3. Tighten VCC/verifier parity against that model before broadening the surface further.
+
 - [ ] Expand program type support beyond probes.
   - Add program-type-aware compile targets (section naming, context type, helper set, attach/load path).
   - Keep tracing as one target among many instead of the default architecture.
 
-- [ ] Generalize context modeling by program type.
+- [~] Generalize context modeling by program type.
   - Replace tracing-centric context fields with per-program typed context schemas.
   - Make illegal context access fail early in HIR/MIR type checking.
+  - Recent progress: started moving context legality and aliases behind explicit program-type metadata/helpers so packet/socket/cgroup families no longer rely on a single probe-centric validation match.
 
 - [ ] Expand map support to the broader eBPF map ecosystem.
   - Add missing map definitions and loader plumbing for commonly used map families.
