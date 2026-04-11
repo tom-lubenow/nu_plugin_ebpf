@@ -1441,13 +1441,13 @@ impl<'a> MirToEbpfCompiler<'a> {
                 })?;
 
                 let btf = KernelBtf::get();
-                let ctx = btf.get_tracepoint_context(category, tp_name).map_err(|e| {
-                    CompileError::TracepointContextError {
-                        category: category.into(),
-                        name: tp_name.into(),
+                let ctx = btf
+                    .get_tracepoint_context(&category, &tp_name)
+                    .map_err(|e| CompileError::TracepointContextError {
+                        category: category.clone(),
+                        name: tp_name.clone(),
                         reason: e.to_string(),
-                    }
-                })?;
+                    })?;
 
                 // Look up the field in the tracepoint context
                 let field_info =

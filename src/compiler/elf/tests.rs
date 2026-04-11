@@ -356,6 +356,15 @@ fn test_probe_context_for_struct_ops_callback_preserves_value_type_name() {
 }
 
 #[test]
+fn test_probe_context_tracepoint_parts_use_typed_program_spec() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "sched/sched_switch");
+    assert_eq!(
+        ctx.tracepoint_parts(),
+        Some(("sched".to_string(), "sched_switch".to_string()))
+    );
+}
+
+#[test]
 fn test_program_type_supports_raw_tracepoint_alias() {
     assert_eq!(
         EbpfProgramType::from_spec_prefix("raw_tp"),

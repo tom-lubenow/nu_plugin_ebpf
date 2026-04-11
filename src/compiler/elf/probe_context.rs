@@ -1,47 +1,69 @@
 use super::{CompileError, CtxField, EbpfProgramType, ProbeContext, ProgramTargetKind};
+use crate::program_spec::{CgroupSockAddrTarget, CgroupSockoptTarget, ProgramSpec};
+use aya::programs::{CgroupSockAddrAttachType, CgroupSockoptAttachType};
 
 impl ProbeContext {
-    fn cgroup_sock_addr_attach_kind(&self) -> Option<&str> {
-        if !matches!(self.probe_type, EbpfProgramType::CgroupSockAddr) {
-            return None;
+    fn parsed_program_spec(&self) -> Option<ProgramSpec> {
+        ProgramSpec::from_program_type_target(self.probe_type, &self.target).ok()
+    }
+
+    fn cgroup_sock_addr_target(&self) -> Option<CgroupSockAddrTarget> {
+        match self.parsed_program_spec()? {
+            ProgramSpec::CgroupSockAddr { target } => Some(target),
+            _ => None,
         }
-        self.target
-            .rsplit_once(':')
-            .map(|(_, attach_kind)| attach_kind)
     }
 
     fn cgroup_sock_addr_is_ipv4(&self) -> bool {
-        matches!(
-            self.cgroup_sock_addr_attach_kind(),
-            Some("bind4" | "connect4" | "getpeername4" | "getsockname4" | "sendmsg4" | "recvmsg4")
-        )
+        self.cgroup_sock_addr_target().is_some_and(|target| {
+            matches!(
+                target.attach_type,
+                CgroupSockAddrAttachType::Bind4
+                    | CgroupSockAddrAttachType::Connect4
+                    | CgroupSockAddrAttachType::GetPeerName4
+                    | CgroupSockAddrAttachType::GetSockName4
+                    | CgroupSockAddrAttachType::UDPSendMsg4
+                    | CgroupSockAddrAttachType::UDPRecvMsg4
+            )
+        })
     }
 
     fn cgroup_sock_addr_is_ipv6(&self) -> bool {
-        matches!(
-            self.cgroup_sock_addr_attach_kind(),
-            Some("bind6" | "connect6" | "getpeername6" | "getsockname6" | "sendmsg6" | "recvmsg6")
-        )
+        self.cgroup_sock_addr_target().is_some_and(|target| {
+            matches!(
+                target.attach_type,
+                CgroupSockAddrAttachType::Bind6
+                    | CgroupSockAddrAttachType::Connect6
+                    | CgroupSockAddrAttachType::GetPeerName6
+                    | CgroupSockAddrAttachType::GetSockName6
+                    | CgroupSockAddrAttachType::UDPSendMsg6
+                    | CgroupSockAddrAttachType::UDPRecvMsg6
+            )
+        })
     }
 
     fn cgroup_sock_addr_has_msg_source(&self) -> bool {
-        matches!(
-            self.cgroup_sock_addr_attach_kind(),
-            Some("sendmsg4" | "sendmsg6" | "recvmsg4" | "recvmsg6")
-        )
+        self.cgroup_sock_addr_target().is_some_and(|target| {
+            matches!(
+                target.attach_type,
+                CgroupSockAddrAttachType::UDPSendMsg4
+                    | CgroupSockAddrAttachType::UDPSendMsg6
+                    | CgroupSockAddrAttachType::UDPRecvMsg4
+                    | CgroupSockAddrAttachType::UDPRecvMsg6
+            )
+        })
     }
 
-    fn cgroup_sockopt_attach_kind(&self) -> Option<&str> {
-        if !matches!(self.probe_type, EbpfProgramType::CgroupSockopt) {
-            return None;
+    fn cgroup_sockopt_target(&self) -> Option<CgroupSockoptTarget> {
+        match self.parsed_program_spec()? {
+            ProgramSpec::CgroupSockopt { target } => Some(target),
+            _ => None,
         }
-        self.target
-            .rsplit_once(':')
-            .map(|(_, attach_kind)| attach_kind)
     }
 
     fn cgroup_sockopt_is_get(&self) -> bool {
-        matches!(self.cgroup_sockopt_attach_kind(), Some("get"))
+        self.cgroup_sockopt_target()
+            .is_some_and(|target| matches!(target.attach_type, CgroupSockoptAttachType::Get))
     }
 
     /// Create a new probe context
@@ -96,14 +118,9 @@ impl ProbeContext {
     /// Get tracepoint category and name
     ///
     /// For tracepoint "syscalls/sys_enter_openat", returns Some(("syscalls", "sys_enter_openat"))
-    pub fn tracepoint_parts(&self) -> Option<(&str, &str)> {
-        if !self.is_tracepoint() {
-            return None;
-        }
-
-        let mut parts = self.target.splitn(2, '/');
-        match (parts.next(), parts.next()) {
-            (Some(category), Some(name)) => Some((category, name)),
+    pub fn tracepoint_parts(&self) -> Option<(String, String)> {
+        match self.parsed_program_spec()? {
+            ProgramSpec::Tracepoint { category, name } => Some((category, name)),
             _ => None,
         }
     }
