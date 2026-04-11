@@ -593,7 +593,7 @@ group. If the pipeline input is a whole typed `map-get` value, `map-put`
 stores the underlying aggregate bytes rather than the pointer wrapper.
 
 Example:
-  $ctx.arg0.f_path | map-put seen_paths $ctx.pid --kind hash
+  $ctx.arg.file.f_path | map-put seen_paths $ctx.pid --kind hash
 
 For `--kind lpm-trie`, the key bytes must already use the kernel LPM layout:
 leading `u32` prefix length followed by the trie payload bytes."#
@@ -621,7 +621,7 @@ leading `u32` prefix length followed by the trie payload bytes."#
 
     fn examples(&self) -> Vec<Example<'_>> {
         vec![Example {
-            example: "ebpf attach 'fentry:security_file_open' {|ctx| $ctx.arg0.f_path | map-put seen_paths $ctx.pid --kind hash }",
+            example: "ebpf attach 'fentry:security_file_open' {|ctx| $ctx.arg.file.f_path | map-put seen_paths $ctx.pid --kind hash }",
             description: "Store a typed struct value in a named hash map",
             result: None,
         }]

@@ -203,8 +203,8 @@ Context parameter syntax (recommended):
   lsm targets:
     {|ctx| $ctx.pid }    - Get current thread ID at hook time
     {|ctx| $ctx.comm }   - Get current command name at hook time
-    {|ctx| $ctx.arg0 }   - Get the first BTF-typed LSM hook argument
-    {|ctx| $ctx.arg0.f_flags } - Project through BTF-backed LSM hook arguments
+    {|ctx| $ctx.arg.file }   - Get a named BTF-typed LSM hook argument
+    {|ctx| $ctx.arg.file.f_flags } - Project through named BTF-backed LSM hook arguments
     Note: initial LSM support uses `lsm:<hook_name>` targets such as
     `lsm:file_open`. Live loading requires a kernel with BPF LSM enabled;
     `--dry-run` is the safest way to validate object construction and BTF
