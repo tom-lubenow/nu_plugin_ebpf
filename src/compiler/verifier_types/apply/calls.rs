@@ -1,7 +1,7 @@
 use super::*;
-use crate::compiler::ProgramTypeInfo;
 use crate::compiler::instruction::unknown_kfunc_signature_message;
 use crate::compiler::mir::SubfunctionId;
+use crate::compiler::{ProbeContext, ProgramTypeInfo};
 
 pub(super) fn apply_call_helper_inst(
     dst: VReg,
@@ -10,12 +10,16 @@ pub(super) fn apply_call_helper_inst(
     types: &HashMap<VReg, MirType>,
     slot_sizes: &HashMap<StackSlotId, i64>,
     program: Option<&ProgramTypeInfo>,
+    probe_ctx: Option<&ProbeContext>,
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
     if let Some(helper_kind) = BpfHelper::from_u32(helper)
-        && let Some(message) =
-            program.and_then(|program| program.program_type.helper_call_error(helper_kind))
+        && let Some(message) = probe_ctx
+            .and_then(|ctx| ctx.helper_call_error(helper_kind))
+            .or_else(|| {
+                program.and_then(|program| program.program_type.helper_call_error(helper_kind))
+            })
     {
         errors.push(VerifierTypeError::new(message));
         let ty = types
@@ -48,7 +52,7 @@ pub(super) fn apply_call_helper_inst(
             );
         }
         let helper_kfunc_acquire_kind =
-            apply_helper_semantics(helper, args, state, slot_sizes, program, errors);
+            apply_helper_semantics(helper, args, state, slot_sizes, program, probe_ctx, errors);
 
         let ty = match sig.ret_kind {
             HelperRetKind::Scalar => types
@@ -138,9 +142,20 @@ pub(super) fn apply_call_kfunc_inst(
     kfunc: &str,
     args: &[VReg],
     types: &HashMap<VReg, MirType>,
+    probe_ctx: Option<&ProbeContext>,
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
+    if let Some(message) = probe_ctx.and_then(|ctx| ctx.kfunc_call_error(kfunc)) {
+        errors.push(VerifierTypeError::new(message));
+        let ty = types
+            .get(&dst)
+            .map(verifier_type_from_mir)
+            .unwrap_or(VerifierType::Scalar);
+        state.set_with_range(dst, ty, ValueRange::Unknown);
+        return;
+    }
+
     let Some(sig) = KfuncSignature::for_name_or_kernel_btf(kfunc) else {
         errors.push(VerifierTypeError::new(unknown_kfunc_signature_message(
             kfunc,

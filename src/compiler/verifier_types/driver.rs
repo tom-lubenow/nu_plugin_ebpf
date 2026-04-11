@@ -1,14 +1,14 @@
 use super::*;
-use crate::compiler::ProgramTypeInfo;
 use crate::compiler::mir::SubfunctionId;
 use crate::compiler::type_infer::validate_program_capabilities_for_info;
+use crate::compiler::{ProbeContext, ProgramTypeInfo};
 use std::collections::{HashMap, VecDeque};
 
 pub fn verify_mir(
     func: &MirFunction,
     types: &HashMap<VReg, MirType>,
 ) -> Result<(), Vec<VerifierTypeError>> {
-    verify_mir_with_subfunction_summaries_for_program(func, types, &HashMap::new(), None)
+    verify_mir_with_subfunction_summaries_impl(func, types, &HashMap::new(), None, None)
 }
 
 pub fn verify_mir_for_program(
@@ -16,7 +16,22 @@ pub fn verify_mir_for_program(
     types: &HashMap<VReg, MirType>,
     program: &ProgramTypeInfo,
 ) -> Result<(), Vec<VerifierTypeError>> {
-    verify_mir_with_subfunction_summaries_for_program(func, types, &HashMap::new(), Some(program))
+    verify_mir_with_subfunction_summaries_impl(func, types, &HashMap::new(), Some(program), None)
+}
+
+#[cfg(test)]
+pub(crate) fn verify_mir_for_probe_context(
+    func: &MirFunction,
+    types: &HashMap<VReg, MirType>,
+    probe_ctx: &ProbeContext,
+) -> Result<(), Vec<VerifierTypeError>> {
+    verify_mir_with_subfunction_summaries_impl(
+        func,
+        types,
+        &HashMap::new(),
+        Some(probe_ctx.probe_type.info()),
+        Some(probe_ctx),
+    )
 }
 
 #[allow(dead_code)]
@@ -25,16 +40,34 @@ pub(crate) fn verify_mir_with_subfunction_summaries(
     types: &HashMap<VReg, MirType>,
     subfn_summaries: &HashMap<SubfunctionId, SubfunctionReturnSummary>,
 ) -> Result<(), Vec<VerifierTypeError>> {
-    verify_mir_with_subfunction_summaries_for_program(func, types, subfn_summaries, None)
+    verify_mir_with_subfunction_summaries_impl(func, types, subfn_summaries, None, None)
 }
 
-pub(crate) fn verify_mir_with_subfunction_summaries_for_program(
+pub(crate) fn verify_mir_with_subfunction_summaries_for_probe_context(
+    func: &MirFunction,
+    types: &HashMap<VReg, MirType>,
+    subfn_summaries: &HashMap<SubfunctionId, SubfunctionReturnSummary>,
+    probe_ctx: Option<&ProbeContext>,
+) -> Result<(), Vec<VerifierTypeError>> {
+    verify_mir_with_subfunction_summaries_impl(
+        func,
+        types,
+        subfn_summaries,
+        probe_ctx.map(|ctx| ctx.probe_type.info()),
+        probe_ctx,
+    )
+}
+
+fn verify_mir_with_subfunction_summaries_impl(
     func: &MirFunction,
     types: &HashMap<VReg, MirType>,
     subfn_summaries: &HashMap<SubfunctionId, SubfunctionReturnSummary>,
     program: Option<&ProgramTypeInfo>,
+    probe_ctx: Option<&ProbeContext>,
 ) -> Result<(), Vec<VerifierTypeError>> {
-    if let Some(program) = program {
+    let effective_program = probe_ctx.map(|ctx| ctx.probe_type.info()).or(program);
+
+    if let Some(program) = effective_program {
         if let Err(errors) = validate_program_capabilities_for_info(func, program) {
             return Err(errors
                 .into_iter()
@@ -95,7 +128,8 @@ pub(crate) fn verify_mir_with_subfunction_summaries_for_program(
                 types,
                 &slot_sizes,
                 subfn_summaries,
-                program,
+                effective_program,
+                probe_ctx,
                 &mut state,
                 &mut errors,
             );
@@ -125,7 +159,8 @@ pub(crate) fn verify_mir_with_subfunction_summaries_for_program(
                     types,
                     &slot_sizes,
                     subfn_summaries,
-                    program,
+                    effective_program,
+                    probe_ctx,
                     &mut body_state,
                     &mut errors,
                 );

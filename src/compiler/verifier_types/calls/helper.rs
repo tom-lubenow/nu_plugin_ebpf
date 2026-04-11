@@ -1,5 +1,5 @@
 use super::*;
-use crate::compiler::ProgramTypeInfo;
+use crate::compiler::{ProbeContext, ProgramTypeInfo};
 
 pub(in crate::compiler::verifier_types) fn check_helper_arg(
     helper_id: u32,
@@ -164,6 +164,7 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
     state: &mut VerifierState,
     slot_sizes: &HashMap<StackSlotId, i64>,
     program: Option<&ProgramTypeInfo>,
+    probe_ctx: Option<&ProbeContext>,
     errors: &mut Vec<VerifierTypeError>,
 ) -> Option<KfuncRefKind> {
     let Some(helper) = BpfHelper::from_u32(helper_id) else {
@@ -214,8 +215,11 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         })
     };
 
-    if let Some((arg_idx, message)) =
-        program.and_then(|program| program.program_type.helper_zero_arg_requirement(helper))
+    if let Some((arg_idx, message)) = probe_ctx
+        .and_then(|ctx| ctx.helper_zero_arg_requirement(helper))
+        .or_else(|| {
+            program.and_then(|program| program.program_type.helper_zero_arg_requirement(helper))
+        })
         && !arg_is_known_zero(arg_idx)
     {
         errors.push(VerifierTypeError::new(message));

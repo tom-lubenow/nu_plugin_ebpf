@@ -108,6 +108,7 @@ Last updated: 2026-02-15.
   - VCC helper pointer-space checks now resolve `Unknown` vreg pointer spaces via effective MIR address-space fallback, preventing helper-space-rule bypasses for typed stack pointers.
   - Verifier/VCC helper parity now enforces redirect-helper scalar contracts from the program/helper model: XDP `bpf_redirect` requires zero flags, `bpf_redirect_neigh` requires zero flags and zero `plen` when the params arg is known null, and `bpf_redirect_peer` requires zero flags.
   - Verifier/VCC now also enforce program-type helper surface legality when `ProgramTypeInfo` is available, rejecting non-attach-sensitive helper misuse such as `bpf_redirect*` outside packet programs and `bpf_msg_*` helpers outside `sk_msg`.
+  - Compile-time verifier/VCC checks now also consult full `ProbeContext` on the real compile path, so attach-sensitive legality rules are enforced beyond type inference: tc-egress now rejects `bpf_redirect_peer`, and sched_ext callback-scoped kfunc policy is checked in verifier_types/VCC as well as type inference.
   - VCC now propagates map-value bounds from built-in map semantics and pointee types, including pointer-arithmetic/load/store bounds checks for map-value pointers.
   - VCC now aligns direct memory access rules with verifier expectations by rejecting raw `load`/`store` on non stack/map pointer spaces.
   - Remaining: extend pointer-state transitions to broader helper/kfunc families (provenance/nullability/mutability/ref-lifetime) with kernel-verifier-level fidelity.

@@ -1,7 +1,7 @@
 use super::*;
 use crate::compiler::mir::StructField;
 use crate::compiler::subfn_summaries::SubfunctionReturnSummary;
-use crate::compiler::{EbpfProgramType, MapRef, ProgramCapability, ProgramTypeInfo};
+use crate::compiler::{EbpfProgramType, MapRef, ProbeContext, ProgramCapability, ProgramTypeInfo};
 
 #[test]
 fn test_verify_mir_helper_map_lookup_rejects_out_of_bounds_key_pointer() {
@@ -444,6 +444,54 @@ fn test_verify_mir_helper_redirect_peer_requires_zero_flags() {
         e.message
             .contains("helper 'bpf_redirect_peer' requires arg1 = 0")
     }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_redirect_peer_rejects_tc_egress() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RedirectPeer as u32,
+            args: vec![MirValue::Const(1), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected redirect_peer tc-egress context error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect_peer' is only valid in tc ingress programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_redirect_peer_accepts_tc_ingress() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RedirectPeer as u32,
+            args: vec![MirValue::Const(1), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected redirect_peer tc-ingress context to verify");
 }
 
 #[test]

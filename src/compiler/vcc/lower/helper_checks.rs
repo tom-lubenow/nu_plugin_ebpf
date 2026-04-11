@@ -10,8 +10,9 @@ impl<'a> VccLowerer<'a> {
     ) -> Result<(), VccError> {
         if let Some(helper) = BpfHelper::from_u32(helper_id)
             && let Some(message) = self
-                .program
-                .and_then(|program| program.program_type.helper_call_error(helper))
+                .probe_ctx
+                .and_then(|ctx| ctx.helper_call_error(helper))
+                .or_else(|| self.program.and_then(|program| program.program_type.helper_call_error(helper)))
         {
             return Err(VccError::new(
                 VccErrorKind::UnsupportedInstruction,
@@ -67,6 +68,13 @@ impl<'a> VccLowerer<'a> {
         args: &[VReg],
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
+        if let Some(message) = self.probe_ctx.and_then(|ctx| ctx.kfunc_call_error(kfunc)) {
+            return Err(VccError::new(
+                VccErrorKind::UnsupportedInstruction,
+                message,
+            ));
+        }
+
         let sig = KfuncSignature::for_name_or_kernel_btf(kfunc).ok_or_else(|| {
             VccError::new(
                 VccErrorKind::UnsupportedInstruction,
@@ -855,8 +863,9 @@ impl<'a> VccLowerer<'a> {
         }
 
         if let Some((arg_idx, message)) = self
-            .program
-            .and_then(|program| program.program_type.helper_zero_arg_requirement(helper))
+            .probe_ctx
+            .and_then(|ctx| ctx.helper_zero_arg_requirement(helper))
+            .or_else(|| self.program.and_then(|program| program.program_type.helper_zero_arg_requirement(helper)))
             && let Some(arg) = args.get(arg_idx)
         {
             self.verify_helper_scalar_const_eq(helper_id, arg_idx, arg, 0, message, out)?;

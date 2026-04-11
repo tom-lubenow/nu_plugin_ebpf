@@ -1,4 +1,115 @@
 use super::*;
+use crate::compiler::ProbeContext;
+
+#[test]
+fn test_verify_mir_for_probe_context_sched_ext_dispatch_only_kfunc_rejected_in_select_cpu() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_dispatch_nr_slots".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new_struct_ops_callback("sched_ext_ops", "select_cpu");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected dispatch-only sched_ext kfunc to be rejected outside dispatch");
+    assert!(err.iter().any(|e| e.message.contains(
+        "kfunc 'scx_bpf_dispatch_nr_slots' is only valid in sched_ext_ops.dispatch, not sched_ext_ops.select_cpu"
+    )));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_sched_ext_dispatch_only_kfunc_allowed_in_dispatch() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_dispatch_nr_slots".to_string(),
+        btf_id: None,
+        args: vec![],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new_struct_ops_callback("sched_ext_ops", "dispatch");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected dispatch-only sched_ext kfunc to verify in dispatch");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_sched_ext_create_dsq_rejected_in_dispatch() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+    let dsq_id = func.alloc_vreg();
+    let node = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dsq_id,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: node,
+        src: MirValue::Const(-1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_create_dsq".to_string(),
+        btf_id: None,
+        args: vec![dsq_id, node],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+    types.insert(dsq_id, MirType::I64);
+    types.insert(node, MirType::I64);
+
+    let probe_ctx = ProbeContext::new_struct_ops_callback("sched_ext_ops", "dispatch");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected create_dsq to be rejected outside sleepable callbacks");
+    assert!(err.iter().any(|e| e.message.contains(
+        "kfunc 'scx_bpf_create_dsq' is only valid in sleepable sched_ext_ops callbacks, not sched_ext_ops.dispatch"
+    )));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_sched_ext_create_dsq_allowed_in_sleepable_init() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+    let dsq_id = func.alloc_vreg();
+    let node = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dsq_id,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: node,
+        src: MirValue::Const(-1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_create_dsq".to_string(),
+        btf_id: None,
+        args: vec![dsq_id, node],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+    types.insert(dsq_id, MirType::I64);
+    types.insert(node, MirType::I64);
+
+    let probe_ctx = ProbeContext::new_struct_ops_callback("sched_ext_ops", "init");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected create_dsq to verify in sleepable sched_ext_ops.init");
+}
 
 #[test]
 fn test_verify_mir_kfunc_unknown_signature_rejected() {

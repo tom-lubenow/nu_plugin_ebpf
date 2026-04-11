@@ -4,6 +4,7 @@ struct VccLowerer<'a> {
     subfn_summaries:
         &'a HashMap<SubfunctionId, crate::compiler::subfn_summaries::SubfunctionReturnSummary>,
     program: Option<&'a ProgramTypeInfo>,
+    probe_ctx: Option<&'a ProbeContext>,
     slot_sizes: HashMap<StackSlotId, usize>,
     slot_kinds: HashMap<StackSlotId, StackSlotKind>,
     list_max: HashMap<StackSlotId, usize>,
@@ -32,6 +33,7 @@ impl<'a> VccLowerer<'a> {
             crate::compiler::subfn_summaries::SubfunctionReturnSummary,
         >,
         program: Option<&'a ProgramTypeInfo>,
+        probe_ctx: Option<&'a ProbeContext>,
     ) -> Self {
         let mut slot_sizes = HashMap::new();
         let mut slot_kinds = HashMap::new();
@@ -50,6 +52,7 @@ impl<'a> VccLowerer<'a> {
             types,
             subfn_summaries,
             program,
+            probe_ctx,
             slot_sizes,
             slot_kinds,
             list_max,
