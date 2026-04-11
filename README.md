@@ -5,7 +5,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: Write tracing logic in familiar Nushell syntax
-- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tp_btf, tracepoint, uprobe, uretprobe, lsm, perf_event, socket_filter, xdp, tc, cgroup_skb, cgroup_device, cgroup_sock, sock_ops, sk_msg, sk_skb, sk_skb_parser, cgroup_sysctl, cgroup_sockopt, cgroup_sock_addr, sk_lookup, initial struct_ops object support
+- **Multiple attach types**: kprobe, kretprobe, fentry, fexit, tp_btf, tracepoint, raw_tracepoint, uprobe, uretprobe, lsm, perf_event, socket_filter, xdp, tc, cgroup_skb, cgroup_device, cgroup_sock, sock_ops, sk_msg, sk_skb, sk_skb_parser, cgroup_sysctl, cgroup_sockopt, cgroup_sock_addr, sk_lookup, lirc_mode2, and struct_ops
 - **Aggregations**: Count by key, histograms, timing measurements
 - **Event streaming**: Real-time event output via ring buffers
 - **Map sharing**: Share data between probes with `--pin`
@@ -62,10 +62,8 @@ ebpf attach -s 'kprobe:sys_read' {|ctx| $ctx.tgid | emit } | first 10
 # Capture first 10 fentry hits on ksys_read
 ebpf attach -s 'fentry:ksys_read' {|ctx| $ctx.pid | emit } | first 10
 
-# Capture the first filename seen by do_sys_openat2
-ebpf attach -s 'fentry:do_sys_openat2' {|ctx|
-    if $ctx.arg1 != 0 { $ctx.arg1 | read-str --max-len 64 | emit }
-} | first 1
+# Capture the first file_open flags seen through a named BTF-backed arg
+ebpf attach -s 'fentry:security_file_open' {|ctx| $ctx.arg.file.f_flags | emit } | first 1
 
 # Capture openat2 flags from a pointer-backed trampoline arg
 ebpf attach -s 'fentry:do_sys_openat2' {|ctx| $ctx.arg2.flags | emit } | first 1
@@ -74,10 +72,10 @@ ebpf attach -s 'fentry:do_sys_openat2' {|ctx| $ctx.arg2.flags | emit } | first 1
 ebpf attach -s 'fexit:ksys_read' {|ctx| $ctx.retval | emit } | first 1
 
 # Count syscalls through a BTF-enabled raw tracepoint
-ebpf attach 'tp_btf:sys_enter' {|ctx| $ctx.arg1.orig_ax | count; 0 }
+ebpf attach 'tp_btf:sys_enter' {|ctx| $ctx.arg.regs.orig_ax | count; 0 }
 
 # Dry-run an LSM file_open hook using BTF-backed hook arguments
-ebpf attach --dry-run 'lsm:file_open' {|ctx| $ctx.arg0.f_flags | count; 0 }
+ebpf attach --dry-run 'lsm:file_open' {|ctx| $ctx.arg.file.f_flags | count; 0 }
 
 # Count software cpu-clock samples by CPU
 let id = ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.cpu | count; 0 }
@@ -258,7 +256,7 @@ ebpf counters $id | sort-by count --reverse
 
 ```nushell
 let id = ebpf attach 'fentry:security_file_open' {|ctx|
-    $ctx.arg0.f_path | map-put seen_paths $ctx.pid --kind hash
+    $ctx.arg.file.f_path | map-put seen_paths $ctx.pid --kind hash
     let entry = ($ctx.pid | map-get seen_paths --kind hash)
     if $entry != 0 { $entry | count }
 }
@@ -421,7 +419,7 @@ Typed `ctx.sk` currently exposes `bound_dev_if`, `family`, `type`, `protocol`, `
 | `optval` | Kernel pointer to the sockopt buffer | cgroup_sockopt |
 | `optval_end` | Kernel pointer to the end of the sockopt buffer | cgroup_sockopt |
 | `sockopt_retval` | Getsockopt return value on `get` hooks | cgroup_sockopt |
-| `arg0`-`argN` | Function arguments | kprobe, uprobe, fentry, fexit, tp_btf |
+| `arg0`-`argN` | Function arguments; kernel-BTF-backed contexts also expose named `ctx.arg.<name>` aliases when kernel BTF includes names | kprobe, uprobe, fentry, fexit, tp_btf, lsm, struct_ops, raw_tracepoint |
 | `retval` | Return value | kretprobe, uretprobe, fexit |
 
 Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/format`.
@@ -593,9 +591,12 @@ ports, and IPv6 word arrays. Its return contract is a raw integer parser
 result rather than a verdict alias surface, so ordinary examples should
 return `0` or another integer length.
 
-`kprobe` and `uprobe` expose `ctx.arg0`-`ctx.arg5` through `pt_regs`. `fentry`,
-`fexit`, and `tp_btf` resolve `ctx.argN` through kernel BTF, and `fexit` also
-exposes `ctx.retval`. Scalar and pointer
+`kprobe` and `uprobe` expose `ctx.arg0`-`ctx.arg5` through `pt_regs`.
+`raw_tracepoint` exposes raw positional `ctx.argN` slots. `fentry`, `fexit`,
+`tp_btf`, `lsm`, and `struct_ops` callbacks resolve arguments from kernel BTF;
+those kernel-BTF-backed contexts also expose named aliases through
+`ctx.arg.<name>` when names are available, and `fexit` additionally exposes
+`ctx.retval`. Scalar and pointer
 trampoline values work directly. By-value trampoline args and pointer-backed
 trampoline args/returns can project scalar/pointer fields such as
 `ctx.arg0.some_field`; pointer-backed projections are lowered through
@@ -636,10 +637,10 @@ so `let files = $ctx.arg0; $files.fdt.fd.f_inode.i_ino`,
 `ctx.arg0.fdt.fd.0.f_inode.i_ino`, `let fd = $ctx.arg0.fdt.fd;
 $fd.0.f_inode.i_ino`, `let idx = 0; let fd = ($ctx.arg0.fdt.fd | get $idx);
 $fd.f_inode.i_ino`, and `let inode = $ctx.arg0.f_inode; $inode.i_sb.s_flags`
-continue to type-check and lower as expected. Kernel-BTF-backed contexts also
-expose named parameter access through `ctx.arg.<name>`, for example
-`ctx.arg.prev_cpu`, `ctx.arg.p.pid`, `ctx.arg.file.f_flags`, or
-`ctx.arg.file.f_inode.i_ino`. 16-byte byte-array/string keys such as
+continue to type-check and lower as expected. Named parameter access works
+through the same typed lowering path, for example `ctx.arg.prev_cpu`,
+`ctx.arg.p.pid`, `ctx.arg.file.f_flags`, or `ctx.arg.file.f_inode.i_ino`.
+16-byte byte-array/string keys such as
 `ctx.arg0.comm` continue to display as strings.
 Aggregate `fexit` returns still depend on kernel trampoline support; some
 kernels reject struct returns entirely.
@@ -678,8 +679,11 @@ function definitions and other top-level statements; a typed `mut` that appears
 later is not treated as a compiler-managed global.
 
 Compiler-managed named globals are still available through `global-define`,
-`global-get`, and `global-set`. These are compiler-managed per-program globals
-backed by `.data` or `.bss`. `global-define` is declarative: by default a
+`global-get`, and `global-set` when you need an explicit shared name or
+source-order-independent declaration. Leading typed `mut` bindings remain the
+preferred private-state path when ordinary variable syntax is enough. These
+named globals are compiler-managed per-program globals backed by `.data` or
+`.bss`. `global-define` is declarative: by default a
 compile-time constant input establishes the fixed layout and initial contents
 without doing a runtime store, so source order does not matter. `global-define
 --zero` takes the next step and uses the input only for layout inference,
@@ -748,8 +752,8 @@ materialized.
 | `read-kernel-str` | Read string from kernel memory (`--max-len` to cap, default 128) |
 | `helper-call` | Call a modeled BPF helper by name, such as `bpf_get_current_pid_tgid` |
 | `kfunc-call` | Call a typed kernel kfunc by name, resolved from kernel BTF when possible |
-| `global-define` | Declare a named compiler-managed program global; `--zero` uses a runtime exemplar, `--type` declares a zero-initialized scalar, `bytes:N`, `string:N`, `list:i64:N`, or nested `record{field:type,...}` global directly |
-| `global-get` | Load a named compiler-managed program global |
+| `global-define` | Declare a named compiler-managed program global when a leading typed `mut` binding is not enough; `--zero` uses a runtime exemplar, `--type` declares a zero-initialized scalar, `bytes:N`, `string:N`, `list:i64:N`, or nested `record{field:type,...}` global directly |
+| `global-get` | Load a named compiler-managed program global declared with `global-define` or inferred from `global-set` |
 | `global-set` | Store the pipeline input into a named compiler-managed program global |
 | `map-get` | Look up a value pointer in a named generic map |
 | `map-put` | Insert or update a value in a named generic map |

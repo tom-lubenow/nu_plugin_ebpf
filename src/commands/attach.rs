@@ -480,9 +480,12 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.arg1 }    - Get function argument 1
     {|ctx| $ctx.retval }  - Get return value (kretprobe/uretprobe/fexit)
 
-    Note: kprobe/uprobe expose pt_regs-style ctx.arg0-5. fentry/fexit/tp_btf use
-    kernel BTF. Scalar/pointer trampoline args and returns work directly.
-    By-value trampoline args and pointer-backed trampoline args/returns
+    Note: kprobe/uprobe expose pt_regs-style ctx.arg0-5. raw_tracepoint exposes
+    raw positional ctx.argN slots. fentry/fexit/tp_btf/lsm/struct_ops use
+    kernel BTF, and those kernel-BTF-backed contexts also expose named
+    parameter aliases through ctx.arg.<name> when names are available.
+    Scalar/pointer trampoline args and returns work directly. By-value
+    trampoline args and pointer-backed trampoline args/returns
     support scalar/pointer field projection like ctx.arg0.some_field.
     Pointer-backed projections use null-guarded bpf_probe_read_{kernel,user}
     and can cross intermediate and repeated pointer hops like ctx.arg0.foo.bar
@@ -519,7 +522,7 @@ Context parameter syntax (recommended):
     as byte-buffer keys. ebpf counters decodes those keys using any schema the
     compiler still has: arrays and typed structs can surface as strings,
     lists, or records; opaque aggregate layouts still display as binary. Plain
-    trampoline ctx.argN and ctx.retval loads also preserve their typed pointer
+    positional ctx.argN and ctx.retval loads also preserve their typed pointer
     or aggregate layouts
     across bindings, for example `let files = $ctx.arg0;
     $files.fdt.fd.f_inode.i_ino` or `let inode = $ctx.arg0.f_inode;
@@ -705,8 +708,8 @@ Requirements:
                 result: None,
             },
             Example {
-                example: "ebpf attach -s 'fentry:do_sys_openat2' {|ctx| if $ctx.arg1 != 0 { $ctx.arg1 | read-str --max-len 64 | emit } } | first 5",
-                description: "Capture the first 5 fentry filenames using BTF-backed trampoline args",
+                example: "ebpf attach -s 'fentry:security_file_open' {|ctx| $ctx.arg.file.f_flags | emit } | first 5",
+                description: "Capture the first 5 fentry file flags using a named BTF-backed trampoline arg",
                 result: None,
             },
             Example {

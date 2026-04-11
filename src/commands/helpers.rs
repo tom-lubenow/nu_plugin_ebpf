@@ -394,6 +394,10 @@ With `--zero`, the input is used only for layout inference and the resulting
 global is zero-initialized in `.bss`. With `--type`, no input is needed at all:
 the type string declares a zero-initialized global directly.
 
+Leading annotated `mut` bindings are the preferred small private-state path
+when ordinary Nushell variable syntax is enough. Named globals remain useful
+when you want an explicit shared name or a source-order-independent declaration.
+
 Because this is declarative, later constant `global-define` calls can establish
 globals used by earlier `global-get`s.
 
@@ -485,6 +489,9 @@ impl PluginCommand for GlobalGet {
 `count`. `global-define` is declarative and source-order independent; if you
 skip it, `global-set` can still infer the layout on first use.
 
+Prefer leading annotated `mut` bindings for private state when plain variable
+syntax is sufficient. Use named globals when you need an explicit shared name.
+
 Example:
   let state = (global-get seen_path)
   if $state != 0 { $state | emit }"#
@@ -539,6 +546,9 @@ same-closure `global-define` already exists, the first `global-set` for a given
 name establishes the fixed layout used by later `global-get` and `global-set`
 calls. Compile-time constant first writes seed the global's initial value;
 otherwise it starts zeroed.
+
+Prefer leading annotated `mut` bindings for private state when plain variable
+syntax is sufficient. Use named globals when you need an explicit shared name.
 
 Example:
   $ctx.pid | global-set seen_pid"#
