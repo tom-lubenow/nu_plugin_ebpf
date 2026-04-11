@@ -2298,6 +2298,5 @@ impl Drop for EventStreamIterator {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

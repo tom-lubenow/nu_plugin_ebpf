@@ -1,3121 +1,1886 @@
-    use std::collections::{HashMap, HashSet};
 
-    use crate::compiler::hir::{
-        HirBlock, HirBlockId, HirCallArgs, HirFunction, HirLiteral, HirProgram, HirStmt,
-        HirTerminator,
-    };
-    use crate::compiler::hir_to_mir::{
-        lower_hir_to_mir_with_hints, lower_hir_to_mir_with_hints_and_maps,
-    };
-    use crate::compiler::mir::{AddressSpace, MapKind, MapRef, StructField};
-    use crate::compiler::passes::optimize_with_ssa_hints;
-    use crate::compiler::{
-        CounterKeySchema, CounterKeySchemaField, EbpfProgramType, MirType, ProbeContext,
-        StructOpsObjectSpec, StructOpsValueField, compile_mir_to_ebpf_with_hints,
-    };
-    use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
-    use nu_protocol::DeclId;
-    use nu_protocol::ast::{CellPath, Comparison, Math, Operator, PathMember};
-    use nu_protocol::casing::Casing;
-    use nu_protocol::engine::Closure;
-    use nu_protocol::ir::{Instruction, IrBlock};
-    use nu_protocol::{BlockId, Record, RegId, Span, Type, Value, VarId};
+use std::collections::{HashMap, HashSet};
 
-    #[test]
-    fn test_extract_decl_names_from_formatted_instructions_preserves_user_function_names() {
-        let decl_names = super::extract_decl_names_from_formatted_instructions(&[
-            r#"call                   decl 488 "global-define", %0"#.to_string(),
-            r#"call                   decl 489 "project-entry", %1"#.to_string(),
-            r#"call                   decl 490 "count", %2"#.to_string(),
-            r#"call                   decl 491 "get", %3"#.to_string(),
-        ]);
+use crate::compiler::hir::{
+    HirBlock, HirBlockId, HirCallArgs, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
+};
+use crate::compiler::hir_to_mir::{
+    lower_hir_to_mir_with_hints, lower_hir_to_mir_with_hints_and_maps,
+};
+use crate::compiler::mir::{AddressSpace, MapKind, MapRef, StructField};
+use crate::compiler::passes::optimize_with_ssa_hints;
+use crate::compiler::{
+    CounterKeySchema, CounterKeySchemaField, EbpfProgramType, MirType, ProbeContext,
+    StructOpsObjectSpec, StructOpsValueField, compile_mir_to_ebpf_with_hints,
+};
+use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
+use nu_protocol::DeclId;
+use nu_protocol::ast::{CellPath, Comparison, Math, Operator, PathMember};
+use nu_protocol::casing::Casing;
+use nu_protocol::engine::Closure;
+use nu_protocol::ir::{Instruction, IrBlock};
+use nu_protocol::{BlockId, Record, RegId, Span, Type, Value, VarId};
 
-        assert_eq!(
-            decl_names,
-            HashMap::from([
-                (DeclId::new(488), "global-define".to_string()),
-                (DeclId::new(489), "project-entry".to_string()),
-                (DeclId::new(490), "count".to_string()),
-                (DeclId::new(491), "get".to_string()),
-            ])
-        );
-    }
+#[test]
+fn test_extract_decl_names_from_formatted_instructions_preserves_user_function_names() {
+    let decl_names = super::extract_decl_names_from_formatted_instructions(&[
+        r#"call                   decl 488 "global-define", %0"#.to_string(),
+        r#"call                   decl 489 "project-entry", %1"#.to_string(),
+        r#"call                   decl 490 "count", %2"#.to_string(),
+        r#"call                   decl 491 "get", %3"#.to_string(),
+    ]);
 
-    #[test]
-    fn test_parse_inline_user_function_signatures_extracts_closure_local_def() {
-        let source = r#"{|ctx|
+    assert_eq!(
+        decl_names,
+        HashMap::from([
+            (DeclId::new(488), "global-define".to_string()),
+            (DeclId::new(489), "project-entry".to_string()),
+            (DeclId::new(490), "count".to_string()),
+            (DeclId::new(491), "get".to_string()),
+        ])
+    );
+}
+
+#[test]
+fn test_parse_inline_user_function_signatures_extracts_closure_local_def() {
+    let source = r#"{|ctx|
             def bump [msg] { "ok" }
             let next = (bump "hi")
             $next | count
         }"#;
-        let decl_ids = HashSet::from([DeclId::new(515)]);
-        let decl_names = HashMap::from([(DeclId::new(515), "bump".to_string())]);
+    let decl_ids = HashSet::from([DeclId::new(515)]);
+    let decl_names = HashMap::from([(DeclId::new(515), "bump".to_string())]);
 
-        let sigs = super::parse_inline_user_function_signatures(
-            source,
-            &decl_ids,
-            &decl_names,
-            Span::test_data(),
-        )
-        .expect("inline def signatures should parse");
+    let sigs = super::parse_inline_user_function_signatures(
+        source,
+        &decl_ids,
+        &decl_names,
+        Span::test_data(),
+    )
+    .expect("inline def signatures should parse");
 
-        assert_eq!(sigs.len(), 1);
-        let sig = sigs
-            .get(&DeclId::new(515))
-            .expect("bump signature should exist");
-        assert_eq!(sig.params.len(), 2);
-        assert!(matches!(
-            sig.params[0],
-            crate::compiler::UserParam {
-                kind: crate::compiler::UserParamKind::Input,
-                ..
-            }
-        ));
-        assert!(matches!(
-            sig.params[1],
-            crate::compiler::UserParam {
-                kind: crate::compiler::UserParamKind::Positional,
-                optional: false,
-                ..
-            }
-        ));
-        assert_eq!(sig.params[1].name.as_deref(), Some("msg"));
+    assert_eq!(sigs.len(), 1);
+    let sig = sigs
+        .get(&DeclId::new(515))
+        .expect("bump signature should exist");
+    assert_eq!(sig.params.len(), 2);
+    assert!(matches!(
+        sig.params[0],
+        crate::compiler::UserParam {
+            kind: crate::compiler::UserParamKind::Input,
+            ..
+        }
+    ));
+    assert!(matches!(
+        sig.params[1],
+        crate::compiler::UserParam {
+            kind: crate::compiler::UserParamKind::Positional,
+            optional: false,
+            ..
+        }
+    ));
+    assert_eq!(sig.params[1].name.as_deref(), Some("msg"));
+}
+
+#[test]
+fn test_parse_inline_user_function_signatures_skips_ambiguous_names() {
+    let source = r#"{|ctx| def bump [msg] { "ok" } }"#;
+    let decl_ids = HashSet::from([DeclId::new(515), DeclId::new(516)]);
+    let decl_names = HashMap::from([
+        (DeclId::new(515), "bump".to_string()),
+        (DeclId::new(516), "bump".to_string()),
+    ]);
+
+    let sigs = super::parse_inline_user_function_signatures(
+        source,
+        &decl_ids,
+        &decl_names,
+        Span::test_data(),
+    )
+    .expect("ambiguous inline defs should not error");
+
+    assert!(sigs.is_empty(), "ambiguous def names should not be guessed");
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_uses_leading_declaration_order() {
+    let source =
+        "{|| let tmp = 1; mut state: record<pid: int ok: bool> = {pid: 0, ok: false}; $state }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(10),
+                src: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(1),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 4],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 4],
+        comments: vec!["let".into(), "let".into(), "".into(), "".into()],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("leading annotated mut globals should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].var_id, VarId::new(11));
+    assert_eq!(
+        globals[0].declared_type,
+        Type::Record(Box::new([
+            ("pid".to_string(), Type::Int),
+            ("ok".to_string(), Type::Bool),
+        ]))
+    );
+    match &globals[0].initial_value {
+        Value::Record { val, .. } => {
+            assert_eq!(val.get("pid").and_then(|v| v.as_int().ok()), Some(0));
+            assert_eq!(val.get("ok").and_then(|v| v.as_bool().ok()), Some(false));
+        }
+        other => panic!("expected record initializer, got {other:?}"),
     }
+}
 
-    #[test]
-    fn test_parse_inline_user_function_signatures_skips_ambiguous_names() {
-        let source = r#"{|ctx| def bump [msg] { "ok" } }"#;
-        let decl_ids = HashSet::from([DeclId::new(515), DeclId::new(516)]);
-        let decl_names = HashMap::from([
-            (DeclId::new(515), "bump".to_string()),
-            (DeclId::new(516), "bump".to_string()),
-        ]);
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_non_leading_annotated_mut() {
+    let source = "{|| 1 | count; mut state: int = 0; $state }";
+    let ir_block = IrBlock {
+        instructions: vec![Instruction::StoreVariable {
+            var_id: VarId::new(80),
+            src: RegId::new(0),
+        }],
+        spans: vec![Span::test_data()],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None],
+        comments: vec!["let".into()],
+        register_count: 1,
+        file_count: 0,
+    };
 
-        let sigs = super::parse_inline_user_function_signatures(
-            source,
-            &decl_ids,
-            &decl_names,
-            Span::test_data(),
-        )
-        .expect("ambiguous inline defs should not error");
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("non-leading annotated mut declarations should fail clearly");
+    assert!(
+        err.to_string()
+            .contains("Annotated mutable globals must be declared first"),
+        "unexpected error: {err}"
+    );
+}
 
-        assert!(sigs.is_empty(), "ambiguous def names should not be guessed");
-    }
+#[test]
+fn test_map_leading_annotated_mut_globals_ignores_non_leading_untyped_mut() {
+    let source = "{|| 1 | count; mut state = 0; $state }";
+    let ir_block = IrBlock {
+        instructions: vec![Instruction::StoreVariable {
+            var_id: VarId::new(80),
+            src: RegId::new(0),
+        }],
+        spans: vec![Span::test_data()],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None],
+        comments: vec!["let".into()],
+        register_count: 1,
+        file_count: 0,
+    };
 
-    #[test]
-    fn test_map_leading_annotated_mut_globals_uses_leading_declaration_order() {
-        let source =
-            "{|| let tmp = 1; mut state: record<pid: int ok: bool> = {pid: 0, ok: false}; $state }";
-        let ir_block = IrBlock {
-            instructions: vec![
-                Instruction::StoreVariable {
-                    var_id: VarId::new(10),
-                    src: RegId::new(0),
-                },
-                Instruction::StoreVariable {
-                    var_id: VarId::new(11),
-                    src: RegId::new(1),
-                },
-                Instruction::LoadVariable {
-                    dst: RegId::new(0),
-                    var_id: VarId::new(11),
-                },
-                Instruction::Return { src: RegId::new(0) },
-            ],
-            spans: vec![Span::test_data(); 4],
-            data: Vec::<u8>::new().into(),
-            ast: vec![None; 4],
-            comments: vec!["let".into(), "let".into(), "".into(), "".into()],
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("non-leading untyped mut should remain an ordinary local");
+
+    assert!(globals.is_empty());
+}
+
+#[test]
+fn test_strip_leading_annotated_mut_initializer_stmts_removes_leading_initializer_code() {
+    let mut hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::int(7, Span::test_data())),
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: VarId::new(10),
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(1),
+                        var_id: VarId::new(10),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(1) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 3],
+            ast: vec![None; 3],
+            comments: vec![],
             register_count: 2,
             file_count: 0,
-        };
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    hir.annotated_mut_globals = vec![crate::compiler::hir::AnnotatedMutGlobal {
+        var_id: VarId::new(10),
+        declared_type: Type::Int,
+        initial_value: Value::int(7, Span::test_data()),
+    }];
 
-        let globals =
-            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
-                .expect("leading annotated mut globals should map cleanly");
+    super::strip_leading_annotated_mut_initializer_stmts(&mut hir, Span::test_data())
+        .expect("leading annotated mut initializer should strip cleanly");
 
-        assert_eq!(globals.len(), 1);
-        assert_eq!(globals[0].var_id, VarId::new(11));
-        assert_eq!(
-            globals[0].declared_type,
-            Type::Record(Box::new([
-                ("pid".to_string(), Type::Int),
-                ("ok".to_string(), Type::Bool),
-            ]))
-        );
-        match &globals[0].initial_value {
-            Value::Record { val, .. } => {
-                assert_eq!(val.get("pid").and_then(|v| v.as_int().ok()), Some(0));
-                assert_eq!(val.get("ok").and_then(|v| v.as_bool().ok()), Some(false));
-            }
-            other => panic!("expected record initializer, got {other:?}"),
-        }
-    }
+    assert_eq!(hir.main.blocks[0].stmts.len(), 1);
+    assert!(matches!(
+        &hir.main.blocks[0].stmts[0],
+        HirStmt::LoadVariable {
+            var_id,
+            dst: RegId { .. }
+        } if *var_id == VarId::new(10)
+    ));
+}
 
-    #[test]
-    fn test_map_leading_annotated_mut_globals_rejects_non_leading_annotated_mut() {
-        let source = "{|| 1 | count; mut state: int = 0; $state }";
-        let ir_block = IrBlock {
-            instructions: vec![Instruction::StoreVariable {
-                var_id: VarId::new(80),
-                src: RegId::new(0),
+#[test]
+fn test_strip_leading_annotated_mut_initializer_stmts_keeps_following_code() {
+    let mut hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::int(1, Span::test_data())),
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: VarId::new(10),
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadValue {
+                        dst: RegId::new(1),
+                        val: Box::new(Value::int(2, Span::test_data())),
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: VarId::new(11),
+                        src: RegId::new(1),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(2),
+                        var_id: VarId::new(99),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(2) },
             }],
-            spans: vec![Span::test_data()],
-            data: Vec::<u8>::new().into(),
-            ast: vec![None],
-            comments: vec!["let".into()],
-            register_count: 1,
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 5],
+            ast: vec![None; 5],
+            comments: vec![],
+            register_count: 3,
             file_count: 0,
-        };
-
-        let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
-            .expect_err("non-leading annotated mut declarations should fail clearly");
-        assert!(
-            err.to_string()
-                .contains("Annotated mutable globals must be declared first"),
-            "unexpected error: {err}"
-        );
-    }
-
-    #[test]
-    fn test_map_leading_annotated_mut_globals_ignores_non_leading_untyped_mut() {
-        let source = "{|| 1 | count; mut state = 0; $state }";
-        let ir_block = IrBlock {
-            instructions: vec![Instruction::StoreVariable {
-                var_id: VarId::new(80),
-                src: RegId::new(0),
-            }],
-            spans: vec![Span::test_data()],
-            data: Vec::<u8>::new().into(),
-            ast: vec![None],
-            comments: vec!["let".into()],
-            register_count: 1,
-            file_count: 0,
-        };
-
-        let globals =
-            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
-                .expect("non-leading untyped mut should remain an ordinary local");
-
-        assert!(globals.is_empty());
-    }
-
-    #[test]
-    fn test_strip_leading_annotated_mut_initializer_stmts_removes_leading_initializer_code() {
-        let mut hir = HirProgram::new(
-            HirFunction {
-                blocks: vec![HirBlock {
-                    id: HirBlockId(0),
-                    stmts: vec![
-                        HirStmt::LoadValue {
-                            dst: RegId::new(0),
-                            val: Box::new(Value::int(7, Span::test_data())),
-                        },
-                        HirStmt::StoreVariable {
-                            var_id: VarId::new(10),
-                            src: RegId::new(0),
-                        },
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(1),
-                            var_id: VarId::new(10),
-                        },
-                    ],
-                    terminator: HirTerminator::Return { src: RegId::new(1) },
-                }],
-                entry: HirBlockId(0),
-                spans: vec![Span::test_data(); 3],
-                ast: vec![None; 3],
-                comments: vec![],
-                register_count: 2,
-                file_count: 0,
-            },
-            HashMap::new(),
-            vec![],
-            None,
-        );
-        hir.annotated_mut_globals = vec![crate::compiler::hir::AnnotatedMutGlobal {
-            var_id: VarId::new(10),
-            declared_type: Type::Int,
-            initial_value: Value::int(7, Span::test_data()),
-        }];
-
-        super::strip_leading_annotated_mut_initializer_stmts(&mut hir, Span::test_data())
-            .expect("leading annotated mut initializer should strip cleanly");
-
-        assert_eq!(hir.main.blocks[0].stmts.len(), 1);
-        assert!(matches!(
-            &hir.main.blocks[0].stmts[0],
-            HirStmt::LoadVariable {
-                var_id,
-                dst: RegId { .. }
-            } if *var_id == VarId::new(10)
-        ));
-    }
-
-    #[test]
-    fn test_strip_leading_annotated_mut_initializer_stmts_keeps_following_code() {
-        let mut hir = HirProgram::new(
-            HirFunction {
-                blocks: vec![HirBlock {
-                    id: HirBlockId(0),
-                    stmts: vec![
-                        HirStmt::LoadValue {
-                            dst: RegId::new(0),
-                            val: Box::new(Value::int(1, Span::test_data())),
-                        },
-                        HirStmt::StoreVariable {
-                            var_id: VarId::new(10),
-                            src: RegId::new(0),
-                        },
-                        HirStmt::LoadValue {
-                            dst: RegId::new(1),
-                            val: Box::new(Value::int(2, Span::test_data())),
-                        },
-                        HirStmt::StoreVariable {
-                            var_id: VarId::new(11),
-                            src: RegId::new(1),
-                        },
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(2),
-                            var_id: VarId::new(99),
-                        },
-                    ],
-                    terminator: HirTerminator::Return { src: RegId::new(2) },
-                }],
-                entry: HirBlockId(0),
-                spans: vec![Span::test_data(); 5],
-                ast: vec![None; 5],
-                comments: vec![],
-                register_count: 3,
-                file_count: 0,
-            },
-            HashMap::new(),
-            vec![],
-            None,
-        );
-        hir.annotated_mut_globals = vec![
-            crate::compiler::hir::AnnotatedMutGlobal {
-                var_id: VarId::new(10),
-                declared_type: Type::Int,
-                initial_value: Value::int(1, Span::test_data()),
-            },
-            crate::compiler::hir::AnnotatedMutGlobal {
-                var_id: VarId::new(11),
-                declared_type: Type::Int,
-                initial_value: Value::int(2, Span::test_data()),
-            },
-        ];
-
-        super::strip_leading_annotated_mut_initializer_stmts(&mut hir, Span::test_data())
-            .expect("multiple leading annotated mut initializers should strip cleanly");
-
-        assert_eq!(hir.main.blocks[0].stmts.len(), 1);
-        assert!(matches!(
-            &hir.main.blocks[0].stmts[0],
-            HirStmt::LoadVariable { var_id, .. } if *var_id == VarId::new(99)
-        ));
-    }
-
-    #[test]
-    fn test_strip_leading_annotated_mut_initializer_stmts_removes_initializer_cleanup() {
-        let mut hir = HirProgram::new(
-            HirFunction {
-                blocks: vec![HirBlock {
-                    id: HirBlockId(0),
-                    stmts: vec![
-                        HirStmt::LoadValue {
-                            dst: RegId::new(0),
-                            val: Box::new(Value::int(1, Span::test_data())),
-                        },
-                        HirStmt::StoreVariable {
-                            var_id: VarId::new(10),
-                            src: RegId::new(0),
-                        },
-                        HirStmt::Drain { src: RegId::new(0) },
-                        HirStmt::Drop { src: RegId::new(0) },
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(1),
-                            var_id: VarId::new(10),
-                        },
-                    ],
-                    terminator: HirTerminator::Return { src: RegId::new(1) },
-                }],
-                entry: HirBlockId(0),
-                spans: vec![Span::test_data(); 5],
-                ast: vec![None; 5],
-                comments: vec![],
-                register_count: 2,
-                file_count: 0,
-            },
-            HashMap::new(),
-            vec![],
-            None,
-        );
-        hir.annotated_mut_globals = vec![crate::compiler::hir::AnnotatedMutGlobal {
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    hir.annotated_mut_globals = vec![
+        crate::compiler::hir::AnnotatedMutGlobal {
             var_id: VarId::new(10),
             declared_type: Type::Int,
             initial_value: Value::int(1, Span::test_data()),
-        }];
+        },
+        crate::compiler::hir::AnnotatedMutGlobal {
+            var_id: VarId::new(11),
+            declared_type: Type::Int,
+            initial_value: Value::int(2, Span::test_data()),
+        },
+    ];
 
-        super::strip_leading_annotated_mut_initializer_stmts(&mut hir, Span::test_data())
-            .expect("leading annotated mut cleanup should strip cleanly");
+    super::strip_leading_annotated_mut_initializer_stmts(&mut hir, Span::test_data())
+        .expect("multiple leading annotated mut initializers should strip cleanly");
 
-        assert_eq!(hir.main.blocks[0].stmts.len(), 1);
-        assert!(matches!(
-            &hir.main.blocks[0].stmts[0],
-            HirStmt::LoadVariable {
-                var_id,
-                dst: RegId { .. }
-            } if *var_id == VarId::new(10)
+    assert_eq!(hir.main.blocks[0].stmts.len(), 1);
+    assert!(matches!(
+        &hir.main.blocks[0].stmts[0],
+        HirStmt::LoadVariable { var_id, .. } if *var_id == VarId::new(99)
+    ));
+}
+
+#[test]
+fn test_strip_leading_annotated_mut_initializer_stmts_removes_initializer_cleanup() {
+    let mut hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::int(1, Span::test_data())),
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: VarId::new(10),
+                        src: RegId::new(0),
+                    },
+                    HirStmt::Drain { src: RegId::new(0) },
+                    HirStmt::Drop { src: RegId::new(0) },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(1),
+                        var_id: VarId::new(10),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(1) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 5],
+            ast: vec![None; 5],
+            comments: vec![],
+            register_count: 2,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    hir.annotated_mut_globals = vec![crate::compiler::hir::AnnotatedMutGlobal {
+        var_id: VarId::new(10),
+        declared_type: Type::Int,
+        initial_value: Value::int(1, Span::test_data()),
+    }];
+
+    super::strip_leading_annotated_mut_initializer_stmts(&mut hir, Span::test_data())
+        .expect("leading annotated mut cleanup should strip cleanly");
+
+    assert_eq!(hir.main.blocks[0].stmts.len(), 1);
+    assert!(matches!(
+        &hir.main.blocks[0].stmts[0],
+        HirStmt::LoadVariable {
+            var_id,
+            dst: RegId { .. }
+        } if *var_id == VarId::new(10)
+    ));
+}
+
+#[test]
+fn test_value_to_spanned_closure_accepts_closure_value() {
+    let closure = Closure {
+        block_id: BlockId::new(7),
+        captures: vec![],
+    };
+    let value = Value::closure(closure.clone(), Span::test_data());
+
+    let lowered =
+        super::value_to_spanned_closure(value, Span::test_data()).expect("closure should lower");
+
+    assert_eq!(lowered.item.block_id, closure.block_id);
+}
+
+#[test]
+fn test_struct_ops_value_field_from_value_accepts_binary() {
+    let field = super::struct_ops::struct_ops_value_field_from_value(
+        "cookie",
+        &Value::binary(vec![1, 2, 3], Span::test_data()),
+    )
+    .expect("binary field should lower");
+
+    assert_eq!(field, StructOpsValueField::Bytes(vec![1, 2, 3]));
+}
+
+#[test]
+fn test_struct_ops_value_field_from_value_accepts_int_list() {
+    let field = super::struct_ops::struct_ops_value_field_from_value(
+        "cookie",
+        &Value::list(
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    )
+    .expect("int-list field should lower");
+
+    assert_eq!(field, StructOpsValueField::IntList(vec![1, 2]));
+}
+
+#[test]
+fn test_struct_ops_value_field_from_value_rejects_mixed_list() {
+    let err = super::struct_ops::struct_ops_value_field_from_value(
+        "cookie",
+        &Value::list(
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::string("oops", Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    )
+    .expect_err("mixed list should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("Unsupported struct_ops value field")
+    );
+}
+
+#[test]
+fn test_struct_ops_value_field_from_value_rejects_record() {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+
+    let err = super::struct_ops::struct_ops_value_field_from_value(
+        "state",
+        &Value::record(record, Span::test_data()),
+    )
+    .expect_err("record field should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("Unsupported struct_ops value field")
+    );
+}
+
+fn find_nested_struct_ops_value_candidate() -> Option<(String, Vec<String>, usize, usize)> {
+    for (type_name, path) in [
+        ("task_struct", vec!["se", "avg", "util_avg"]),
+        ("task_struct", vec!["se", "avg", "load_avg"]),
+        ("task_struct", vec!["thread", "pid"]),
+    ] {
+        let selectors: Vec<_> = path
+            .iter()
+            .map(|segment| TrampolineFieldSelector::Field((*segment).to_string()))
+            .collect();
+        let Ok(projection) =
+            KernelBtf::get().kernel_named_type_field_projection(type_name, &selectors)
+        else {
+            continue;
+        };
+        if projection.path.len() <= 1
+            || projection
+                .path
+                .iter()
+                .take(projection.path.len().saturating_sub(1))
+                .any(|segment| matches!(segment.type_info, TypeInfo::Ptr { .. }))
+            || !matches!(projection.type_info, TypeInfo::Int { .. })
+        {
+            continue;
+        }
+        let Some(offset) = projection
+            .path
+            .iter()
+            .try_fold(0usize, |acc, segment| acc.checked_add(segment.offset_bytes))
+        else {
+            continue;
+        };
+        return Some((
+            type_name.to_string(),
+            path.into_iter().map(str::to_string).collect(),
+            offset,
+            projection.type_info.size(),
         ));
     }
+    None
+}
 
-    #[test]
-    fn test_value_to_spanned_closure_accepts_closure_value() {
-        let closure = Closure {
-            block_id: BlockId::new(7),
-            captures: vec![],
-        };
-        let value = Value::closure(closure.clone(), Span::test_data());
-
-        let lowered = super::value_to_spanned_closure(value, Span::test_data())
-            .expect("closure should lower");
-
-        assert_eq!(lowered.item.block_id, closure.block_id);
-    }
-
-    #[test]
-    fn test_struct_ops_value_field_from_value_accepts_binary() {
-        let field = super::struct_ops::struct_ops_value_field_from_value(
-            "cookie",
-            &Value::binary(vec![1, 2, 3], Span::test_data()),
-        )
-        .expect("binary field should lower");
-
-        assert_eq!(field, StructOpsValueField::Bytes(vec![1, 2, 3]));
-    }
-
-    #[test]
-    fn test_struct_ops_value_field_from_value_accepts_int_list() {
-        let field = super::struct_ops::struct_ops_value_field_from_value(
-            "cookie",
-            &Value::list(
-                vec![
-                    Value::int(1, Span::test_data()),
-                    Value::int(2, Span::test_data()),
-                ],
-                Span::test_data(),
-            ),
-        )
-        .expect("int-list field should lower");
-
-        assert_eq!(field, StructOpsValueField::IntList(vec![1, 2]));
-    }
-
-    #[test]
-    fn test_struct_ops_value_field_from_value_rejects_mixed_list() {
-        let err = super::struct_ops::struct_ops_value_field_from_value(
-            "cookie",
-            &Value::list(
-                vec![
-                    Value::int(1, Span::test_data()),
-                    Value::string("oops", Span::test_data()),
-                ],
-                Span::test_data(),
-            ),
-        )
-        .expect_err("mixed list should be rejected");
-
-        assert!(
-            err.to_string()
-                .contains("Unsupported struct_ops value field")
-        );
-    }
-
-    #[test]
-    fn test_struct_ops_value_field_from_value_rejects_record() {
-        let mut record = Record::new();
-        record.push("pid", Value::int(7, Span::test_data()));
-
-        let err = super::struct_ops::struct_ops_value_field_from_value(
-            "state",
-            &Value::record(record, Span::test_data()),
-        )
-        .expect_err("record field should be rejected");
-
-        assert!(
-            err.to_string()
-                .contains("Unsupported struct_ops value field")
-        );
-    }
-
-    fn find_nested_struct_ops_value_candidate() -> Option<(String, Vec<String>, usize, usize)> {
-        for (type_name, path) in [
-            ("task_struct", vec!["se", "avg", "util_avg"]),
-            ("task_struct", vec!["se", "avg", "load_avg"]),
-            ("task_struct", vec!["thread", "pid"]),
-        ] {
-            let selectors: Vec<_> = path
-                .iter()
-                .map(|segment| TrampolineFieldSelector::Field((*segment).to_string()))
-                .collect();
-            let Ok(projection) =
-                KernelBtf::get().kernel_named_type_field_projection(type_name, &selectors)
-            else {
-                continue;
-            };
-            if projection.path.len() <= 1
-                || projection
-                    .path
-                    .iter()
-                    .take(projection.path.len().saturating_sub(1))
-                    .any(|segment| matches!(segment.type_info, TypeInfo::Ptr { .. }))
-                || !matches!(projection.type_info, TypeInfo::Int { .. })
-            {
-                continue;
-            }
-            let Some(offset) = projection
-                .path
-                .iter()
-                .try_fold(0usize, |acc, segment| acc.checked_add(segment.offset_bytes))
-            else {
-                continue;
-            };
-            return Some((
-                type_name.to_string(),
-                path.into_iter().map(str::to_string).collect(),
-                offset,
-                projection.type_info.size(),
-            ));
-        }
-        None
-    }
-
-    fn find_struct_ops_array_record_candidate() -> Option<(String, usize, usize)> {
-        for (type_name, path) in [(
-            "task_struct",
-            vec![
-                TrampolineFieldSelector::Field("uclamp_req".to_string()),
-                TrampolineFieldSelector::Index(0),
-                TrampolineFieldSelector::Field("value".to_string()),
-            ],
-        )] {
-            let Ok(projection) =
-                KernelBtf::get().kernel_named_type_field_projection(type_name, &path)
-            else {
-                continue;
-            };
-            if projection.path.len() <= 2
-                || projection
-                    .path
-                    .iter()
-                    .take(projection.path.len().saturating_sub(1))
-                    .any(|segment| matches!(segment.type_info, TypeInfo::Ptr { .. }))
-                || !matches!(projection.type_info, TypeInfo::Int { .. })
-            {
-                continue;
-            }
-            let Some(offset) = projection
-                .path
-                .iter()
-                .try_fold(0usize, |acc, segment| acc.checked_add(segment.offset_bytes))
-            else {
-                continue;
-            };
-            return Some((type_name.to_string(), offset, projection.type_info.size()));
-        }
-        None
-    }
-
-    fn find_struct_ops_callback_member_candidate() -> Option<(String, String)> {
-        for (value_type_name, field_name) in [
-            ("sched_ext_ops", "select_cpu"),
-            ("tcp_congestion_ops", "cong_avoid"),
-            ("tcp_congestion_ops", "ssthresh"),
-        ] {
-            if KernelBtf::get()
-                .struct_ops_callback_ret_type_info(value_type_name, field_name)
-                .is_ok()
-            {
-                return Some((value_type_name.to_string(), field_name.to_string()));
-            }
-        }
-        None
-    }
-
-    fn find_struct_ops_value_member_candidate() -> Option<(String, String)> {
-        for (value_type_name, field_name) in [
-            ("tcp_congestion_ops", "name"),
-            ("tcp_congestion_ops", "flags"),
-            ("sched_ext_ops", "name"),
-        ] {
-            if KernelBtf::get()
-                .struct_ops_callback_ret_type_info(value_type_name, field_name)
-                .is_err()
-                && KernelBtf::get()
-                    .kernel_named_type_field_projection(
-                        value_type_name,
-                        &[TrampolineFieldSelector::Field(field_name.to_string())],
-                    )
-                    .is_ok()
-            {
-                return Some((value_type_name.to_string(), field_name.to_string()));
-            }
-        }
-        None
-    }
-
-    #[test]
-    fn test_apply_struct_ops_value_field_initializes_nested_record_member() {
-        let Some((type_name, path, offset, size)) = find_nested_struct_ops_value_candidate() else {
-            return;
-        };
-        let nested =
-            path[1..]
-                .iter()
-                .rev()
-                .fold(Value::int(7, Span::test_data()), |acc, segment| {
-                    let mut record = Record::new();
-                    record.push(segment.as_str(), acc);
-                    Value::record(record, Span::test_data())
-                });
-
-        let spec = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", &type_name)
-            .expect("expected zeroed spec for nested value-field candidate");
-        let mut field_path = vec![TrampolineFieldSelector::Field(path[0].clone())];
-        let spec = super::apply_struct_ops_value_field(spec, &mut field_path, &nested)
-            .expect("nested struct_ops value field should lower");
-        let object = spec
-            .to_object()
-            .expect("nested struct_ops object should build");
-
-        let bytes = &object.extra_data_symbols[0].data[offset..offset + size];
-        let value = match size {
-            1 => i8::from_le_bytes([bytes[0]]) as i64,
-            2 => i16::from_le_bytes([bytes[0], bytes[1]]) as i64,
-            4 => i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as i64,
-            8 => i64::from_le_bytes([
-                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-            ]),
-            other => panic!("unexpected integer width {}", other),
-        };
-        assert_eq!(value, 7);
-    }
-
-    #[test]
-    fn test_apply_struct_ops_value_field_initializes_array_of_record_member() {
-        let Some((type_name, offset, size)) = find_struct_ops_array_record_candidate() else {
-            return;
-        };
-        let mut elem = Record::new();
-        elem.push("value", Value::int(17, Span::test_data()));
-        let value = Value::list(
-            vec![Value::record(elem, Span::test_data())],
-            Span::test_data(),
-        );
-
-        let spec = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", &type_name)
-            .expect("expected zeroed spec for array-of-record candidate");
-        let mut field_path = vec![TrampolineFieldSelector::Field("uclamp_req".to_string())];
-        let spec = super::apply_struct_ops_value_field(spec, &mut field_path, &value)
-            .expect("array-of-record struct_ops value field should lower");
-        let object = spec
-            .to_object()
-            .expect("array-of-record struct_ops object should build");
-
-        let bytes = &object.extra_data_symbols[0].data[offset..offset + size];
-        let value = match size {
-            1 => i8::from_le_bytes([bytes[0]]) as i64,
-            2 => i16::from_le_bytes([bytes[0], bytes[1]]) as i64,
-            4 => i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as i64,
-            8 => i64::from_le_bytes([
-                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-            ]),
-            other => panic!("unexpected integer width {}", other),
-        };
-        assert_eq!(value, 17);
-    }
-
-    #[test]
-    fn test_apply_struct_ops_value_field_rejects_nested_callback() {
-        let spec = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", "task_struct")
-            .expect("expected zeroed task_struct object spec");
-        let mut nested = Record::new();
-        nested.push(
-            "leaf",
-            Value::closure(
-                Closure {
-                    block_id: BlockId::new(0),
-                    captures: vec![],
-                },
-                Span::test_data(),
-            ),
-        );
-        let mut field_path = vec![TrampolineFieldSelector::Field("state".to_string())];
-        let err = super::apply_struct_ops_value_field(
-            spec,
-            &mut field_path,
-            &Value::record(nested, Span::test_data()),
-        )
-        .expect_err("nested callback should be rejected");
-        assert!(err.to_string().contains("Invalid struct_ops object"));
-    }
-
-    #[test]
-    fn test_validate_struct_ops_top_level_field_kind_rejects_closure_on_value_member() {
-        let Some((value_type_name, field_name)) = find_struct_ops_value_member_candidate() else {
-            return;
-        };
-        let err = super::validate_struct_ops_top_level_field_kind(
-            &value_type_name,
-            &field_name,
-            super::StructOpsTopLevelFieldKind::Callback,
-            Span::test_data(),
-        )
-        .expect_err("value member used as callback slot should be rejected");
-        assert!(
-            err.labels
-                .iter()
-                .any(|label| label.text.contains("value member, not a callback slot"))
-        );
-    }
-
-    #[test]
-    fn test_validate_struct_ops_top_level_field_kind_rejects_constant_on_callback_member() {
-        let Some((value_type_name, field_name)) = find_struct_ops_callback_member_candidate()
+fn find_struct_ops_array_record_candidate() -> Option<(String, usize, usize)> {
+    for (type_name, path) in [(
+        "task_struct",
+        vec![
+            TrampolineFieldSelector::Field("uclamp_req".to_string()),
+            TrampolineFieldSelector::Index(0),
+            TrampolineFieldSelector::Field("value".to_string()),
+        ],
+    )] {
+        let Ok(projection) = KernelBtf::get().kernel_named_type_field_projection(type_name, &path)
         else {
-            return;
+            continue;
         };
-        let err = super::validate_struct_ops_top_level_field_kind(
-            &value_type_name,
-            &field_name,
-            super::StructOpsTopLevelFieldKind::Value,
-            Span::test_data(),
-        )
-        .expect_err("callback member used as value field should be rejected");
-        assert!(
-            err.labels
+        if projection.path.len() <= 2
+            || projection
+                .path
                 .iter()
-                .any(|label| label.text.contains("callback slot; provide a closure"))
-        );
-    }
-
-    #[test]
-    fn test_validate_struct_ops_attach_safety_rejects_sched_ext_live_load_by_default() {
-        let err = super::validate_struct_ops_attach_safety(
-            "sched_ext_ops",
-            false,
-            false,
-            Span::test_data(),
-        )
-        .expect_err("live sched_ext attach should require explicit opt-in");
-        assert!(err.labels.iter().any(|label| {
-            label
-                .text
-                .contains("live loading of struct_ops 'sched_ext_ops' is disabled by default")
-        }));
-    }
-
-    #[test]
-    fn test_validate_struct_ops_attach_safety_allows_sched_ext_dry_run() {
-        super::validate_struct_ops_attach_safety("sched_ext_ops", true, false, Span::test_data())
-            .expect("dry-run sched_ext attach should stay allowed");
-    }
-
-    #[test]
-    fn test_validate_struct_ops_attach_safety_allows_sched_ext_with_explicit_opt_in() {
-        super::validate_struct_ops_attach_safety("sched_ext_ops", false, true, Span::test_data())
-            .expect("explicit opt-in should allow live sched_ext attach");
-    }
-
-    #[test]
-    fn test_validate_struct_ops_attach_safety_allows_lower_risk_families() {
-        super::validate_struct_ops_attach_safety(
-            "tcp_congestion_ops",
-            false,
-            false,
-            Span::test_data(),
-        )
-        .expect("lower-risk struct_ops families should not be gated");
-    }
-
-    #[test]
-    fn test_validate_required_struct_ops_callbacks_rejects_missing_tcp_congestion_callbacks() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("tcp_congestion_ops")
-            .is_err()
+                .take(projection.path.len().saturating_sub(1))
+                .any(|segment| matches!(segment.type_info, TypeInfo::Ptr { .. }))
+            || !matches!(projection.type_info, TypeInfo::Int { .. })
         {
-            return;
+            continue;
         }
-
-        let err = super::validate_required_struct_ops_callbacks(
-            "tcp_congestion_ops",
-            &HashSet::from(["ssthresh".to_string()]),
-            Span::test_data(),
-        )
-        .expect_err("missing required tcp_congestion_ops callbacks should be rejected");
-        assert!(err.labels.iter().any(|label| {
-            label
-                .text
-                .contains("missing required callback closure(s): cong_avoid, undo_cwnd")
-        }));
-    }
-
-    #[test]
-    fn test_validate_required_struct_ops_callbacks_allows_complete_tcp_congestion_callbacks() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("tcp_congestion_ops")
-            .is_err()
-        {
-            return;
-        }
-
-        super::validate_required_struct_ops_callbacks(
-            "tcp_congestion_ops",
-            &HashSet::from([
-                "ssthresh".to_string(),
-                "cong_avoid".to_string(),
-                "undo_cwnd".to_string(),
-            ]),
-            Span::test_data(),
-        )
-        .expect("complete tcp_congestion_ops callbacks should be allowed");
-    }
-
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_missing_tcp_congestion_name() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("tcp_congestion_ops")
-            .is_err()
-        {
-            return;
-        }
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "tcp_congestion_ops",
-            &Record::new(),
-            Span::test_data(),
-        )
-        .expect_err("missing tcp_congestion_ops name should be rejected");
-        assert!(
-            err.labels
-                .iter()
-                .any(|label| { label.text.contains("missing required value field 'name'") })
-        );
-    }
-
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_empty_tcp_congestion_name() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("tcp_congestion_ops")
-            .is_err()
-        {
-            return;
-        }
-
-        let mut body = Record::new();
-        body.push("name", Value::string("", Span::test_data()));
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "tcp_congestion_ops",
-            &body,
-            Span::test_data(),
-        )
-        .expect_err("empty tcp_congestion_ops name should be rejected");
-        assert!(err.labels.iter().any(|label| {
-            label
-                .text
-                .contains("requires a non-empty 'name' value field")
-        }));
-    }
-
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_allows_non_empty_tcp_congestion_name() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("tcp_congestion_ops")
-            .is_err()
-        {
-            return;
-        }
-
-        let mut body = Record::new();
-        body.push("name", Value::string("nu_demo", Span::test_data()));
-
-        super::validate_required_struct_ops_value_fields(
-            "tcp_congestion_ops",
-            &body,
-            Span::test_data(),
-        )
-        .expect("non-empty tcp_congestion_ops name should be allowed");
-    }
-
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_non_string_tcp_congestion_name() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("tcp_congestion_ops")
-            .is_err()
-        {
-            return;
-        }
-
-        let mut body = Record::new();
-        body.push("name", Value::int(7, Span::test_data()));
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "tcp_congestion_ops",
-            &body,
-            Span::test_data(),
-        )
-        .expect_err("integer tcp_congestion_ops name should be rejected");
-        assert!(err.labels.iter().any(|label| {
-            label
-                .text
-                .contains("requires 'name' to be a string or binary byte buffer")
-        }));
-    }
-
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_too_long_tcp_congestion_name() {
-        let Ok(name_capacity) = super::struct_ops::resolve_struct_ops_char_array_field_capacity(
-            "tcp_congestion_ops",
-            "name",
-            Span::test_data(),
-        ) else {
-            return;
+        let Some(offset) = projection
+            .path
+            .iter()
+            .try_fold(0usize, |acc, segment| acc.checked_add(segment.offset_bytes))
+        else {
+            continue;
         };
-
-        let mut body = Record::new();
-        body.push(
-            "name",
-            Value::string("x".repeat(name_capacity), Span::test_data()),
-        );
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "tcp_congestion_ops",
-            &body,
-            Span::test_data(),
-        )
-        .expect_err("overlong tcp_congestion_ops name should be rejected");
-        assert!(err.labels.iter().any(|label| {
-            label
-                .text
-                .contains("struct_ops 'tcp_congestion_ops' name is too long")
-        }));
+        return Some((type_name.to_string(), offset, projection.type_info.size()));
     }
+    None
+}
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_missing_sched_ext_name() {
+fn find_struct_ops_callback_member_candidate() -> Option<(String, String)> {
+    for (value_type_name, field_name) in [
+        ("sched_ext_ops", "select_cpu"),
+        ("tcp_congestion_ops", "cong_avoid"),
+        ("tcp_congestion_ops", "ssthresh"),
+    ] {
         if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
+            .struct_ops_callback_ret_type_info(value_type_name, field_name)
+            .is_ok()
         {
-            return;
+            return Some((value_type_name.to_string(), field_name.to_string()));
         }
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &Record::new(),
-            Span::test_data(),
-        )
-        .expect_err("missing sched_ext_ops name should be rejected");
-        assert!(
-            err.labels
-                .iter()
-                .any(|label| { label.text.contains("missing required value field 'name'") })
-        );
     }
+    None
+}
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_empty_sched_ext_name() {
+fn find_struct_ops_value_member_candidate() -> Option<(String, String)> {
+    for (value_type_name, field_name) in [
+        ("tcp_congestion_ops", "name"),
+        ("tcp_congestion_ops", "flags"),
+        ("sched_ext_ops", "name"),
+    ] {
         if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
+            .struct_ops_callback_ret_type_info(value_type_name, field_name)
             .is_err()
+            && KernelBtf::get()
+                .kernel_named_type_field_projection(
+                    value_type_name,
+                    &[TrampolineFieldSelector::Field(field_name.to_string())],
+                )
+                .is_ok()
         {
-            return;
+            return Some((value_type_name.to_string(), field_name.to_string()));
         }
-
-        let mut body = Record::new();
-        body.push("name", Value::string("", Span::test_data()));
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &body,
-            Span::test_data(),
-        )
-        .expect_err("empty sched_ext_ops name should be rejected");
-        assert!(err.labels.iter().any(|label| {
-            label
-                .text
-                .contains("requires a non-empty 'name' value field")
-        }));
     }
+    None
+}
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_allows_non_empty_sched_ext_name() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
-        {
-            return;
-        }
+#[test]
+fn test_apply_struct_ops_value_field_initializes_nested_record_member() {
+    let Some((type_name, path, offset, size)) = find_nested_struct_ops_value_candidate() else {
+        return;
+    };
+    let nested = path[1..]
+        .iter()
+        .rev()
+        .fold(Value::int(7, Span::test_data()), |acc, segment| {
+            let mut record = Record::new();
+            record.push(segment.as_str(), acc);
+            Value::record(record, Span::test_data())
+        });
 
-        let mut body = Record::new();
-        body.push("name", Value::string("nu_demo", Span::test_data()));
+    let spec = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", &type_name)
+        .expect("expected zeroed spec for nested value-field candidate");
+    let mut field_path = vec![TrampolineFieldSelector::Field(path[0].clone())];
+    let spec = super::apply_struct_ops_value_field(spec, &mut field_path, &nested)
+        .expect("nested struct_ops value field should lower");
+    let object = spec
+        .to_object()
+        .expect("nested struct_ops object should build");
 
-        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
-            .expect("non-empty sched_ext_ops name should be allowed");
-    }
+    let bytes = &object.extra_data_symbols[0].data[offset..offset + size];
+    let value = match size {
+        1 => i8::from_le_bytes([bytes[0]]) as i64,
+        2 => i16::from_le_bytes([bytes[0], bytes[1]]) as i64,
+        4 => i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as i64,
+        8 => i64::from_le_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        ]),
+        other => panic!("unexpected integer width {}", other),
+    };
+    assert_eq!(value, 7);
+}
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_non_string_sched_ext_name() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
-        {
-            return;
-        }
+#[test]
+fn test_apply_struct_ops_value_field_initializes_array_of_record_member() {
+    let Some((type_name, offset, size)) = find_struct_ops_array_record_candidate() else {
+        return;
+    };
+    let mut elem = Record::new();
+    elem.push("value", Value::int(17, Span::test_data()));
+    let value = Value::list(
+        vec![Value::record(elem, Span::test_data())],
+        Span::test_data(),
+    );
 
-        let mut body = Record::new();
-        body.push("name", Value::binary(vec![0x6e, 0x75], Span::test_data()));
+    let spec = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", &type_name)
+        .expect("expected zeroed spec for array-of-record candidate");
+    let mut field_path = vec![TrampolineFieldSelector::Field("uclamp_req".to_string())];
+    let spec = super::apply_struct_ops_value_field(spec, &mut field_path, &value)
+        .expect("array-of-record struct_ops value field should lower");
+    let object = spec
+        .to_object()
+        .expect("array-of-record struct_ops object should build");
 
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &body,
-            Span::test_data(),
-        )
-        .expect_err("binary sched_ext_ops name should be rejected");
-        assert!(
-            err.labels
-                .iter()
-                .any(|label| { label.text.contains("requires 'name' to be a string") })
-        );
-    }
+    let bytes = &object.extra_data_symbols[0].data[offset..offset + size];
+    let value = match size {
+        1 => i8::from_le_bytes([bytes[0]]) as i64,
+        2 => i16::from_le_bytes([bytes[0], bytes[1]]) as i64,
+        4 => i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as i64,
+        8 => i64::from_le_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        ]),
+        other => panic!("unexpected integer width {}", other),
+    };
+    assert_eq!(value, 17);
+}
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_invalid_sched_ext_name_chars() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
-        {
-            return;
-        }
-
-        let mut body = Record::new();
-        body.push("name", Value::string("nu-demo", Span::test_data()));
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &body,
-            Span::test_data(),
-        )
-        .expect_err("invalid sched_ext_ops object name chars should be rejected");
-        assert!(err.labels.iter().any(|label| {
-            label
-                .text
-                .contains("must be a valid BPF object name using only [A-Za-z0-9_.]")
-        }));
-    }
-
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_too_long_sched_ext_name() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
-        {
-            return;
-        }
-
-        let mut body = Record::new();
-        body.push("name", Value::string("x".repeat(128), Span::test_data()));
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &body,
-            Span::test_data(),
-        )
-        .expect_err("overlong sched_ext_ops name should be rejected");
-        assert!(err.labels.iter().any(|label| {
-            label
-                .text
-                .contains("struct_ops 'sched_ext_ops' name is too long")
-        }));
-    }
-
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_allows_valid_sched_ext_object_name() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
-        {
-            return;
-        }
-
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-
-        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
-            .expect("valid sched_ext_ops object names should be allowed");
-    }
-
-    fn sched_ext_flag_masks() -> Option<(u64, u64)> {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
-        {
-            return None;
-        }
-        let allowed =
-            super::struct_ops::resolve_sched_ext_allowed_flags_mask(Span::test_data()).ok()?;
-        let known = (0..63)
-            .map(|bit| 1u64 << bit)
-            .find(|bit| (allowed & *bit) != 0)?;
-        let unknown = (0..63)
-            .map(|bit| 1u64 << bit)
-            .find(|bit| (allowed & *bit) == 0)?;
-        Some((known, unknown))
-    }
-
-    fn sched_ext_flag_bit(flag_name: &str) -> Option<u64> {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
-        {
-            return None;
-        }
-        super::struct_ops::resolve_sched_ext_flag_bit(flag_name, Span::test_data()).ok()
-    }
-
-    fn test_closure_value() -> Value {
+#[test]
+fn test_apply_struct_ops_value_field_rejects_nested_callback() {
+    let spec = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", "task_struct")
+        .expect("expected zeroed task_struct object spec");
+    let mut nested = Record::new();
+    nested.push(
+        "leaf",
         Value::closure(
             Closure {
                 block_id: BlockId::new(0),
                 captures: vec![],
             },
             Span::test_data(),
-        )
+        ),
+    );
+    let mut field_path = vec![TrampolineFieldSelector::Field("state".to_string())];
+    let err = super::apply_struct_ops_value_field(
+        spec,
+        &mut field_path,
+        &Value::record(nested, Span::test_data()),
+    )
+    .expect_err("nested callback should be rejected");
+    assert!(err.to_string().contains("Invalid struct_ops object"));
+}
+
+#[test]
+fn test_validate_struct_ops_top_level_field_kind_rejects_closure_on_value_member() {
+    let Some((value_type_name, field_name)) = find_struct_ops_value_member_candidate() else {
+        return;
+    };
+    let err = super::validate_struct_ops_top_level_field_kind(
+        &value_type_name,
+        &field_name,
+        super::StructOpsTopLevelFieldKind::Callback,
+        Span::test_data(),
+    )
+    .expect_err("value member used as callback slot should be rejected");
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| label.text.contains("value member, not a callback slot"))
+    );
+}
+
+#[test]
+fn test_validate_struct_ops_top_level_field_kind_rejects_constant_on_callback_member() {
+    let Some((value_type_name, field_name)) = find_struct_ops_callback_member_candidate() else {
+        return;
+    };
+    let err = super::validate_struct_ops_top_level_field_kind(
+        &value_type_name,
+        &field_name,
+        super::StructOpsTopLevelFieldKind::Value,
+        Span::test_data(),
+    )
+    .expect_err("callback member used as value field should be rejected");
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| label.text.contains("callback slot; provide a closure"))
+    );
+}
+
+#[test]
+fn test_validate_struct_ops_attach_safety_rejects_sched_ext_live_load_by_default() {
+    let err =
+        super::validate_struct_ops_attach_safety("sched_ext_ops", false, false, Span::test_data())
+            .expect_err("live sched_ext attach should require explicit opt-in");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("live loading of struct_ops 'sched_ext_ops' is disabled by default")
+    }));
+}
+
+#[test]
+fn test_validate_struct_ops_attach_safety_allows_sched_ext_dry_run() {
+    super::validate_struct_ops_attach_safety("sched_ext_ops", true, false, Span::test_data())
+        .expect("dry-run sched_ext attach should stay allowed");
+}
+
+#[test]
+fn test_validate_struct_ops_attach_safety_allows_sched_ext_with_explicit_opt_in() {
+    super::validate_struct_ops_attach_safety("sched_ext_ops", false, true, Span::test_data())
+        .expect("explicit opt-in should allow live sched_ext attach");
+}
+
+#[test]
+fn test_validate_struct_ops_attach_safety_allows_lower_risk_families() {
+    super::validate_struct_ops_attach_safety("tcp_congestion_ops", false, false, Span::test_data())
+        .expect("lower-risk struct_ops families should not be gated");
+}
+
+#[test]
+fn test_validate_required_struct_ops_callbacks_rejects_missing_tcp_congestion_callbacks() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("tcp_congestion_ops")
+        .is_err()
+    {
+        return;
     }
 
-    fn sched_ext_callback_kfuncs(
-        callback: &str,
-        kfuncs: &[&str],
-    ) -> HashMap<String, HashSet<String>> {
-        HashMap::from([(
-            callback.to_string(),
-            kfuncs.iter().map(|kfunc| (*kfunc).to_string()).collect(),
-        )])
+    let err = super::validate_required_struct_ops_callbacks(
+        "tcp_congestion_ops",
+        &HashSet::from(["ssthresh".to_string()]),
+        Span::test_data(),
+    )
+    .expect_err("missing required tcp_congestion_ops callbacks should be rejected");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("missing required callback closure(s): cong_avoid, undo_cwnd")
+    }));
+}
+
+#[test]
+fn test_validate_required_struct_ops_callbacks_allows_complete_tcp_congestion_callbacks() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("tcp_congestion_ops")
+        .is_err()
+    {
+        return;
     }
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_non_int_sched_ext_flags() {
-        if sched_ext_flag_masks().is_none() {
-            return;
-        }
+    super::validate_required_struct_ops_callbacks(
+        "tcp_congestion_ops",
+        &HashSet::from([
+            "ssthresh".to_string(),
+            "cong_avoid".to_string(),
+            "undo_cwnd".to_string(),
+        ]),
+        Span::test_data(),
+    )
+    .expect("complete tcp_congestion_ops callbacks should be allowed");
+}
 
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push("flags", Value::bool(true, Span::test_data()));
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &body,
-            Span::test_data(),
-        )
-        .expect_err("non-integer sched_ext_ops flags should be rejected");
-        assert!(err.labels.iter().any(|label| {
-            label
-                .text
-                .contains("requires 'flags' to be a non-negative integer bitmask")
-        }));
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_missing_tcp_congestion_name() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("tcp_congestion_ops")
+        .is_err()
+    {
+        return;
     }
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_negative_sched_ext_flags() {
-        if sched_ext_flag_masks().is_none() {
-            return;
-        }
+    let err = super::validate_required_struct_ops_value_fields(
+        "tcp_congestion_ops",
+        &Record::new(),
+        Span::test_data(),
+    )
+    .expect_err("missing tcp_congestion_ops name should be rejected");
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| { label.text.contains("missing required value field 'name'") })
+    );
+}
 
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push("flags", Value::int(-1, Span::test_data()));
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &body,
-            Span::test_data(),
-        )
-        .expect_err("negative sched_ext_ops flags should be rejected");
-        assert!(err.labels.iter().any(|label| {
-            label
-                .text
-                .contains("requires 'flags' to be a non-negative integer bitmask")
-        }));
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_empty_tcp_congestion_name() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("tcp_congestion_ops")
+        .is_err()
+    {
+        return;
     }
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_unknown_sched_ext_flags_bits() {
-        let Some((_, unknown_flags)) = sched_ext_flag_masks() else {
-            return;
-        };
+    let mut body = Record::new();
+    body.push("name", Value::string("", Span::test_data()));
 
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push(
-            "flags",
-            Value::int(
-                i64::try_from(unknown_flags).expect("unknown flag bit should fit in i64"),
-                Span::test_data(),
-            ),
-        );
+    let err = super::validate_required_struct_ops_value_fields(
+        "tcp_congestion_ops",
+        &body,
+        Span::test_data(),
+    )
+    .expect_err("empty tcp_congestion_ops name should be rejected");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("requires a non-empty 'name' value field")
+    }));
+}
 
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &body,
-            Span::test_data(),
-        )
-        .expect_err("unknown sched_ext_ops flag bits should be rejected");
-        assert!(
-            err.labels
-                .iter()
-                .any(|label| { label.text.contains("flags set unknown or unsupported bits") })
-        );
+#[test]
+fn test_validate_required_struct_ops_value_fields_allows_non_empty_tcp_congestion_name() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("tcp_congestion_ops")
+        .is_err()
+    {
+        return;
     }
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_allows_known_sched_ext_flags_bits() {
-        let Some((known_flags, _)) = sched_ext_flag_masks() else {
-            return;
-        };
+    let mut body = Record::new();
+    body.push("name", Value::string("nu_demo", Span::test_data()));
 
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push(
-            "flags",
-            Value::int(
-                i64::try_from(known_flags).expect("known flag bit should fit in i64"),
-                Span::test_data(),
-            ),
-        );
+    super::validate_required_struct_ops_value_fields(
+        "tcp_congestion_ops",
+        &body,
+        Span::test_data(),
+    )
+    .expect("non-empty tcp_congestion_ops name should be allowed");
+}
 
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_non_string_tcp_congestion_name() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("tcp_congestion_ops")
+        .is_err()
+    {
+        return;
+    }
+
+    let mut body = Record::new();
+    body.push("name", Value::int(7, Span::test_data()));
+
+    let err = super::validate_required_struct_ops_value_fields(
+        "tcp_congestion_ops",
+        &body,
+        Span::test_data(),
+    )
+    .expect_err("integer tcp_congestion_ops name should be rejected");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("requires 'name' to be a string or binary byte buffer")
+    }));
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_too_long_tcp_congestion_name() {
+    let Ok(name_capacity) = super::struct_ops::resolve_struct_ops_char_array_field_capacity(
+        "tcp_congestion_ops",
+        "name",
+        Span::test_data(),
+    ) else {
+        return;
+    };
+
+    let mut body = Record::new();
+    body.push(
+        "name",
+        Value::string("x".repeat(name_capacity), Span::test_data()),
+    );
+
+    let err = super::validate_required_struct_ops_value_fields(
+        "tcp_congestion_ops",
+        &body,
+        Span::test_data(),
+    )
+    .expect_err("overlong tcp_congestion_ops name should be rejected");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("struct_ops 'tcp_congestion_ops' name is too long")
+    }));
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_missing_sched_ext_name() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
+    }
+
+    let err = super::validate_required_struct_ops_value_fields(
+        "sched_ext_ops",
+        &Record::new(),
+        Span::test_data(),
+    )
+    .expect_err("missing sched_ext_ops name should be rejected");
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| { label.text.contains("missing required value field 'name'") })
+    );
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_empty_sched_ext_name() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
+    }
+
+    let mut body = Record::new();
+    body.push("name", Value::string("", Span::test_data()));
+
+    let err =
         super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
-            .expect("known sched_ext_ops flags should be allowed");
+            .expect_err("empty sched_ext_ops name should be rejected");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("requires a non-empty 'name' value field")
+    }));
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_allows_non_empty_sched_ext_name() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
     }
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_enq_last_without_enqueue() {
-        let Some(enq_last) = sched_ext_flag_bit("SCX_OPS_ENQ_LAST") else {
-            return;
-        };
+    let mut body = Record::new();
+    body.push("name", Value::string("nu_demo", Span::test_data()));
 
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push(
-            "flags",
-            Value::int(
-                i64::try_from(enq_last).expect("flag bit should fit in i64"),
-                Span::test_data(),
-            ),
-        );
+    super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+        .expect("non-empty sched_ext_ops name should be allowed");
+}
 
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &body,
-            Span::test_data(),
-        )
-        .expect_err("SCX_OPS_ENQ_LAST without enqueue should be rejected");
-        assert!(err.labels.iter().any(|label| {
-            label
-                .text
-                .contains("sets SCX_OPS_ENQ_LAST without implementing 'enqueue'")
-        }));
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_non_string_sched_ext_name() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
     }
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_allows_enq_last_with_enqueue() {
-        let Some(enq_last) = sched_ext_flag_bit("SCX_OPS_ENQ_LAST") else {
-            return;
-        };
+    let mut body = Record::new();
+    body.push("name", Value::binary(vec![0x6e, 0x75], Span::test_data()));
 
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push(
-            "flags",
-            Value::int(
-                i64::try_from(enq_last).expect("flag bit should fit in i64"),
-                Span::test_data(),
-            ),
-        );
-        body.push("enqueue", test_closure_value());
-
+    let err =
         super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
-            .expect("SCX_OPS_ENQ_LAST with enqueue should be allowed");
+            .expect_err("binary sched_ext_ops name should be rejected");
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| { label.text.contains("requires 'name' to be a string") })
+    );
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_invalid_sched_ext_name_chars() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
     }
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_non_int_sched_ext_timeout() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
-        {
-            return;
-        }
+    let mut body = Record::new();
+    body.push("name", Value::string("nu-demo", Span::test_data()));
 
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push("timeout_ms", Value::bool(true, Span::test_data()));
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &body,
-            Span::test_data(),
-        )
-        .expect_err("non-integer sched_ext_ops timeout_ms should be rejected");
-        assert!(err.labels.iter().any(|label| {
-            label.text.contains(
-                "requires 'timeout_ms' to be a non-negative integer number of milliseconds",
-            )
-        }));
-    }
-
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_negative_sched_ext_timeout() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
-        {
-            return;
-        }
-
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push("timeout_ms", Value::int(-1, Span::test_data()));
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &body,
-            Span::test_data(),
-        )
-        .expect_err("negative sched_ext_ops timeout_ms should be rejected");
-        assert!(err.labels.iter().any(|label| {
-            label.text.contains(
-                "requires 'timeout_ms' to be a non-negative integer number of milliseconds",
-            )
-        }));
-    }
-
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_too_large_sched_ext_timeout() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
-        {
-            return;
-        }
-
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push(
-            "timeout_ms",
-            Value::int(
-                super::struct_ops::SCHED_EXT_MAX_TIMEOUT_MS + 1,
-                Span::test_data(),
-            ),
-        );
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &body,
-            Span::test_data(),
-        )
-        .expect_err("overlarge sched_ext_ops timeout_ms should be rejected");
-        assert!(
-            err.labels
-                .iter()
-                .any(|label| { label.text.contains("timeout_ms is too large") })
-        );
-    }
-
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_allows_sched_ext_timeout_within_limit() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
-        {
-            return;
-        }
-
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push(
-            "timeout_ms",
-            Value::int(
-                super::struct_ops::SCHED_EXT_MAX_TIMEOUT_MS,
-                Span::test_data(),
-            ),
-        );
-
+    let err =
         super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
-            .expect("sched_ext_ops timeout_ms within limit should be allowed");
+            .expect_err("invalid sched_ext_ops object name chars should be rejected");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("must be a valid BPF object name using only [A-Za-z0-9_.]")
+    }));
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_too_long_sched_ext_name() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
     }
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_update_idle_without_select_cpu() {
-        let Some(_keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
-            return;
-        };
+    let mut body = Record::new();
+    body.push("name", Value::string("x".repeat(128), Span::test_data()));
 
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push("update_idle", test_closure_value());
+    let err =
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect_err("overlong sched_ext_ops name should be rejected");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("struct_ops 'sched_ext_ops' name is too long")
+    }));
+}
 
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
+#[test]
+fn test_validate_required_struct_ops_value_fields_allows_valid_sched_ext_object_name() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
+    }
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+
+    super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+        .expect("valid sched_ext_ops object names should be allowed");
+}
+
+fn sched_ext_flag_masks() -> Option<(u64, u64)> {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return None;
+    }
+    let allowed =
+        super::struct_ops::resolve_sched_ext_allowed_flags_mask(Span::test_data()).ok()?;
+    let known = (0..63)
+        .map(|bit| 1u64 << bit)
+        .find(|bit| (allowed & *bit) != 0)?;
+    let unknown = (0..63)
+        .map(|bit| 1u64 << bit)
+        .find(|bit| (allowed & *bit) == 0)?;
+    Some((known, unknown))
+}
+
+fn sched_ext_flag_bit(flag_name: &str) -> Option<u64> {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return None;
+    }
+    super::struct_ops::resolve_sched_ext_flag_bit(flag_name, Span::test_data()).ok()
+}
+
+fn test_closure_value() -> Value {
+    Value::closure(
+        Closure {
+            block_id: BlockId::new(0),
+            captures: vec![],
+        },
+        Span::test_data(),
+    )
+}
+
+fn sched_ext_callback_kfuncs(callback: &str, kfuncs: &[&str]) -> HashMap<String, HashSet<String>> {
+    HashMap::from([(
+        callback.to_string(),
+        kfuncs.iter().map(|kfunc| (*kfunc).to_string()).collect(),
+    )])
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_non_int_sched_ext_flags() {
+    if sched_ext_flag_masks().is_none() {
+        return;
+    }
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push("flags", Value::bool(true, Span::test_data()));
+
+    let err =
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect_err("non-integer sched_ext_ops flags should be rejected");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("requires 'flags' to be a non-negative integer bitmask")
+    }));
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_negative_sched_ext_flags() {
+    if sched_ext_flag_masks().is_none() {
+        return;
+    }
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push("flags", Value::int(-1, Span::test_data()));
+
+    let err =
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect_err("negative sched_ext_ops flags should be rejected");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("requires 'flags' to be a non-negative integer bitmask")
+    }));
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_unknown_sched_ext_flags_bits() {
+    let Some((_, unknown_flags)) = sched_ext_flag_masks() else {
+        return;
+    };
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push(
+        "flags",
+        Value::int(
+            i64::try_from(unknown_flags).expect("unknown flag bit should fit in i64"),
+            Span::test_data(),
+        ),
+    );
+
+    let err =
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect_err("unknown sched_ext_ops flag bits should be rejected");
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| { label.text.contains("flags set unknown or unsupported bits") })
+    );
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_allows_known_sched_ext_flags_bits() {
+    let Some((known_flags, _)) = sched_ext_flag_masks() else {
+        return;
+    };
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push(
+        "flags",
+        Value::int(
+            i64::try_from(known_flags).expect("known flag bit should fit in i64"),
+            Span::test_data(),
+        ),
+    );
+
+    super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+        .expect("known sched_ext_ops flags should be allowed");
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_enq_last_without_enqueue() {
+    let Some(enq_last) = sched_ext_flag_bit("SCX_OPS_ENQ_LAST") else {
+        return;
+    };
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push(
+        "flags",
+        Value::int(
+            i64::try_from(enq_last).expect("flag bit should fit in i64"),
+            Span::test_data(),
+        ),
+    );
+
+    let err =
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect_err("SCX_OPS_ENQ_LAST without enqueue should be rejected");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("sets SCX_OPS_ENQ_LAST without implementing 'enqueue'")
+    }));
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_allows_enq_last_with_enqueue() {
+    let Some(enq_last) = sched_ext_flag_bit("SCX_OPS_ENQ_LAST") else {
+        return;
+    };
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push(
+        "flags",
+        Value::int(
+            i64::try_from(enq_last).expect("flag bit should fit in i64"),
+            Span::test_data(),
+        ),
+    );
+    body.push("enqueue", test_closure_value());
+
+    super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+        .expect("SCX_OPS_ENQ_LAST with enqueue should be allowed");
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_non_int_sched_ext_timeout() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
+    }
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push("timeout_ms", Value::bool(true, Span::test_data()));
+
+    let err =
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect_err("non-integer sched_ext_ops timeout_ms should be rejected");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("requires 'timeout_ms' to be a non-negative integer number of milliseconds")
+    }));
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_negative_sched_ext_timeout() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
+    }
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push("timeout_ms", Value::int(-1, Span::test_data()));
+
+    let err =
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect_err("negative sched_ext_ops timeout_ms should be rejected");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("requires 'timeout_ms' to be a non-negative integer number of milliseconds")
+    }));
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_too_large_sched_ext_timeout() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
+    }
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push(
+        "timeout_ms",
+        Value::int(
+            super::struct_ops::SCHED_EXT_MAX_TIMEOUT_MS + 1,
+            Span::test_data(),
+        ),
+    );
+
+    let err =
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect_err("overlarge sched_ext_ops timeout_ms should be rejected");
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| { label.text.contains("timeout_ms is too large") })
+    );
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_allows_sched_ext_timeout_within_limit() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
+    }
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push(
+        "timeout_ms",
+        Value::int(
+            super::struct_ops::SCHED_EXT_MAX_TIMEOUT_MS,
+            Span::test_data(),
+        ),
+    );
+
+    super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+        .expect("sched_ext_ops timeout_ms within limit should be allowed");
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_update_idle_without_select_cpu() {
+    let Some(_keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
+        return;
+    };
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push("update_idle", test_closure_value());
+
+    let err = super::validate_required_struct_ops_value_fields(
+        "sched_ext_ops",
+        &body,
+        Span::test_data(),
+    )
+    .expect_err(
+        "sched_ext_ops update_idle without select_cpu or KEEP_BUILTIN_IDLE should be rejected",
+    );
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("must define 'select_cpu' when 'update_idle' is implemented")
+    }));
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_allows_update_idle_with_select_cpu() {
+    let Some(_keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
+        return;
+    };
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push("update_idle", test_closure_value());
+    body.push("select_cpu", test_closure_value());
+
+    super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+        .expect("sched_ext_ops update_idle with select_cpu should be allowed");
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_allows_update_idle_with_keep_builtin_idle() {
+    let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
+        return;
+    };
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push("update_idle", test_closure_value());
+    body.push(
+        "flags",
+        Value::int(
+            i64::try_from(keep_builtin_idle).expect("flag bit should fit in i64"),
+            Span::test_data(),
+        ),
+    );
+
+    super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+        .expect("sched_ext_ops update_idle with KEEP_BUILTIN_IDLE should be allowed");
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_builtin_idle_per_node_without_builtin_idle_enabled()
+ {
+    let Some(builtin_idle_per_node) = sched_ext_flag_bit("SCX_OPS_BUILTIN_IDLE_PER_NODE") else {
+        return;
+    };
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push("update_idle", test_closure_value());
+    body.push("select_cpu", test_closure_value());
+    body.push(
+        "flags",
+        Value::int(
+            i64::try_from(builtin_idle_per_node).expect("flag bit should fit in i64"),
+            Span::test_data(),
+        ),
+    );
+
+    let err =
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect_err("SCX_OPS_BUILTIN_IDLE_PER_NODE without builtin idle should be rejected");
+    assert!(err.labels.iter().any(|label| {
+        label.text.contains(
+            "sets SCX_OPS_BUILTIN_IDLE_PER_NODE without built-in CPU idle selection enabled",
+        )
+    }));
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_allows_builtin_idle_per_node_with_keep_builtin_idle()
+ {
+    let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
+        return;
+    };
+    let Some(builtin_idle_per_node) = sched_ext_flag_bit("SCX_OPS_BUILTIN_IDLE_PER_NODE") else {
+        return;
+    };
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push("update_idle", test_closure_value());
+    body.push(
+        "flags",
+        Value::int(
+            i64::try_from(keep_builtin_idle | builtin_idle_per_node)
+                .expect("flag bits should fit in i64"),
+            Span::test_data(),
+        ),
+    );
+    body.push("select_cpu", test_closure_value());
+
+    super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+        .expect("SCX_OPS_BUILTIN_IDLE_PER_NODE with KEEP_BUILTIN_IDLE should be allowed");
+}
+
+#[test]
+fn test_validate_sched_ext_callback_kfunc_requirements_rejects_builtin_idle_kfuncs_when_update_idle_disables_builtin_idle()
+ {
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push("update_idle", test_closure_value());
+    body.push("select_cpu", test_closure_value());
+
+    for kfunc in [
+        "scx_bpf_select_cpu_dfl",
+        "scx_bpf_select_cpu_and",
+        "scx_bpf_test_and_clear_cpu_idle",
+        "scx_bpf_pick_idle_cpu",
+        "scx_bpf_pick_idle_cpu_node",
+    ] {
+        let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &[kfunc]);
+        let err = super::validate_sched_ext_callback_kfunc_requirements(
             &body,
+            &callback_kfuncs,
             Span::test_data(),
         )
         .expect_err(
-            "sched_ext_ops update_idle without select_cpu or KEEP_BUILTIN_IDLE should be rejected",
+            "builtin-idle kfunc should be rejected when update_idle disables builtin idle tracking",
         );
-        assert!(err.labels.iter().any(|label| {
-            label
-                .text
-                .contains("must define 'select_cpu' when 'update_idle' is implemented")
-        }));
-    }
-
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_allows_update_idle_with_select_cpu() {
-        let Some(_keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
-            return;
-        };
-
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push("update_idle", test_closure_value());
-        body.push("select_cpu", test_closure_value());
-
-        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
-            .expect("sched_ext_ops update_idle with select_cpu should be allowed");
-    }
-
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_allows_update_idle_with_keep_builtin_idle() {
-        let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
-            return;
-        };
-
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push("update_idle", test_closure_value());
-        body.push(
-            "flags",
-            Value::int(
-                i64::try_from(keep_builtin_idle).expect("flag bit should fit in i64"),
-                Span::test_data(),
-            ),
+        assert!(
+            err.labels.iter().any(|label| label.text.contains(kfunc)),
+            "unexpected errors for {kfunc}: {:?}",
+            err
         );
-
-        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
-            .expect("sched_ext_ops update_idle with KEEP_BUILTIN_IDLE should be allowed");
     }
+}
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_builtin_idle_per_node_without_builtin_idle_enabled()
-     {
-        let Some(builtin_idle_per_node) = sched_ext_flag_bit("SCX_OPS_BUILTIN_IDLE_PER_NODE")
-        else {
-            return;
-        };
+#[test]
+fn test_validate_sched_ext_callback_kfunc_requirements_allows_builtin_idle_kfuncs_with_keep_builtin_idle()
+ {
+    let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
+        return;
+    };
 
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push("update_idle", test_closure_value());
-        body.push("select_cpu", test_closure_value());
-        body.push(
-            "flags",
-            Value::int(
-                i64::try_from(builtin_idle_per_node).expect("flag bit should fit in i64"),
-                Span::test_data(),
-            ),
-        );
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &body,
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push("update_idle", test_closure_value());
+    body.push("select_cpu", test_closure_value());
+    body.push(
+        "flags",
+        Value::int(
+            i64::try_from(keep_builtin_idle).expect("flag bit should fit in i64"),
             Span::test_data(),
-        )
-        .expect_err("SCX_OPS_BUILTIN_IDLE_PER_NODE without builtin idle should be rejected");
-        assert!(err.labels.iter().any(|label| {
-            label.text.contains(
-                "sets SCX_OPS_BUILTIN_IDLE_PER_NODE without built-in CPU idle selection enabled",
-            )
-        }));
-    }
+        ),
+    );
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_allows_builtin_idle_per_node_with_keep_builtin_idle()
-     {
-        let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
-            return;
-        };
-        let Some(builtin_idle_per_node) = sched_ext_flag_bit("SCX_OPS_BUILTIN_IDLE_PER_NODE")
-        else {
-            return;
-        };
-
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push("update_idle", test_closure_value());
-        body.push(
-            "flags",
-            Value::int(
-                i64::try_from(keep_builtin_idle | builtin_idle_per_node)
-                    .expect("flag bits should fit in i64"),
-                Span::test_data(),
-            ),
-        );
-        body.push("select_cpu", test_closure_value());
-
-        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
-            .expect("SCX_OPS_BUILTIN_IDLE_PER_NODE with KEEP_BUILTIN_IDLE should be allowed");
-    }
-
-    #[test]
-    fn test_validate_sched_ext_callback_kfunc_requirements_rejects_builtin_idle_kfuncs_when_update_idle_disables_builtin_idle()
-     {
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push("update_idle", test_closure_value());
-        body.push("select_cpu", test_closure_value());
-
-        for kfunc in [
-            "scx_bpf_select_cpu_dfl",
-            "scx_bpf_select_cpu_and",
-            "scx_bpf_test_and_clear_cpu_idle",
-            "scx_bpf_pick_idle_cpu",
-            "scx_bpf_pick_idle_cpu_node",
-        ] {
-            let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &[kfunc]);
-            let err =
-                super::validate_sched_ext_callback_kfunc_requirements(
-                    &body,
-                    &callback_kfuncs,
-                    Span::test_data(),
-                )
-                .expect_err("builtin-idle kfunc should be rejected when update_idle disables builtin idle tracking");
-            assert!(
-                err.labels.iter().any(|label| label.text.contains(kfunc)),
-                "unexpected errors for {kfunc}: {:?}",
-                err
-            );
-        }
-    }
-
-    #[test]
-    fn test_validate_sched_ext_callback_kfunc_requirements_allows_builtin_idle_kfuncs_with_keep_builtin_idle()
-     {
-        let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
-            return;
-        };
-
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push("update_idle", test_closure_value());
-        body.push("select_cpu", test_closure_value());
-        body.push(
-            "flags",
-            Value::int(
-                i64::try_from(keep_builtin_idle).expect("flag bit should fit in i64"),
-                Span::test_data(),
-            ),
-        );
-
-        for kfunc in [
-            "scx_bpf_select_cpu_dfl",
-            "scx_bpf_select_cpu_and",
-            "scx_bpf_test_and_clear_cpu_idle",
-            "scx_bpf_pick_idle_cpu",
-        ] {
-            let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &[kfunc]);
-            super::validate_sched_ext_callback_kfunc_requirements(
-                &body,
-                &callback_kfuncs,
-                Span::test_data(),
-            )
-            .expect("KEEP_BUILTIN_IDLE should preserve builtin-idle kfunc availability");
-        }
-    }
-
-    #[test]
-    fn test_validate_sched_ext_callback_kfunc_requirements_rejects_pick_idle_cpu_node_without_per_node_flag()
-     {
-        let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
-            return;
-        };
-
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push(
-            "flags",
-            Value::int(
-                i64::try_from(keep_builtin_idle).expect("flag bit should fit in i64"),
-                Span::test_data(),
-            ),
-        );
-
-        let callback_kfuncs =
-            sched_ext_callback_kfuncs("select_cpu", &["scx_bpf_pick_idle_cpu_node"]);
-        let err = super::validate_sched_ext_callback_kfunc_requirements(
-            &body,
-            &callback_kfuncs,
-            Span::test_data(),
-        )
-        .expect_err("pick_idle_cpu_node should require SCX_OPS_BUILTIN_IDLE_PER_NODE");
-        assert!(err.labels.iter().any(|label| {
-            label
-                .text
-                .contains("uses 'scx_bpf_pick_idle_cpu_node' without SCX_OPS_BUILTIN_IDLE_PER_NODE")
-        }));
-    }
-
-    #[test]
-    fn test_validate_sched_ext_callback_kfunc_requirements_rejects_pick_idle_cpu_with_per_node_flag()
-     {
-        let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
-            return;
-        };
-        let Some(builtin_idle_per_node) = sched_ext_flag_bit("SCX_OPS_BUILTIN_IDLE_PER_NODE")
-        else {
-            return;
-        };
-
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push(
-            "flags",
-            Value::int(
-                i64::try_from(keep_builtin_idle | builtin_idle_per_node)
-                    .expect("flag bits should fit in i64"),
-                Span::test_data(),
-            ),
-        );
-
-        let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &["scx_bpf_pick_idle_cpu"]);
-        let err = super::validate_sched_ext_callback_kfunc_requirements(
-            &body,
-            &callback_kfuncs,
-            Span::test_data(),
-        )
-        .expect_err("pick_idle_cpu should be rejected when per-node idle masks are enabled");
-        assert!(err.labels.iter().any(|label| {
-            label
-                .text
-                .contains("uses 'scx_bpf_pick_idle_cpu', but SCX_OPS_BUILTIN_IDLE_PER_NODE enables per-node idle masks")
-        }));
-    }
-
-    #[test]
-    fn test_validate_sched_ext_callback_kfunc_requirements_rejects_pick_any_cpu_with_per_node_flag()
-    {
-        let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
-            return;
-        };
-        let Some(builtin_idle_per_node) = sched_ext_flag_bit("SCX_OPS_BUILTIN_IDLE_PER_NODE")
-        else {
-            return;
-        };
-
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push(
-            "flags",
-            Value::int(
-                i64::try_from(keep_builtin_idle | builtin_idle_per_node)
-                    .expect("flag bits should fit in i64"),
-                Span::test_data(),
-            ),
-        );
-
-        let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &["scx_bpf_pick_any_cpu"]);
-        let err = super::validate_sched_ext_callback_kfunc_requirements(
-            &body,
-            &callback_kfuncs,
-            Span::test_data(),
-        )
-        .expect_err("pick_any_cpu should be rejected when per-node idle masks are enabled");
-        assert!(err.labels.iter().any(|label| {
-            label
-                .text
-                .contains("uses 'scx_bpf_pick_any_cpu', but SCX_OPS_BUILTIN_IDLE_PER_NODE requires scx_bpf_pick_idle_cpu_node instead")
-        }));
-    }
-
-    #[test]
-    fn test_validate_sched_ext_callback_kfunc_requirements_allows_pick_idle_cpu_node_with_per_node_flag()
-     {
-        let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
-            return;
-        };
-        let Some(builtin_idle_per_node) = sched_ext_flag_bit("SCX_OPS_BUILTIN_IDLE_PER_NODE")
-        else {
-            return;
-        };
-
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push(
-            "flags",
-            Value::int(
-                i64::try_from(keep_builtin_idle | builtin_idle_per_node)
-                    .expect("flag bits should fit in i64"),
-                Span::test_data(),
-            ),
-        );
-
-        let callback_kfuncs =
-            sched_ext_callback_kfuncs("select_cpu", &["scx_bpf_pick_idle_cpu_node"]);
+    for kfunc in [
+        "scx_bpf_select_cpu_dfl",
+        "scx_bpf_select_cpu_and",
+        "scx_bpf_test_and_clear_cpu_idle",
+        "scx_bpf_pick_idle_cpu",
+    ] {
+        let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &[kfunc]);
         super::validate_sched_ext_callback_kfunc_requirements(
             &body,
             &callback_kfuncs,
             Span::test_data(),
         )
-        .expect(
-            "pick_idle_cpu_node should be allowed when per-node builtin idle masks are enabled",
-        );
+        .expect("KEEP_BUILTIN_IDLE should preserve builtin-idle kfunc availability");
     }
+}
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_non_int_dispatch_max_batch() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
-        {
-            return;
-        }
+#[test]
+fn test_validate_sched_ext_callback_kfunc_requirements_rejects_pick_idle_cpu_node_without_per_node_flag()
+ {
+    let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
+        return;
+    };
 
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push("dispatch_max_batch", Value::bool(true, Span::test_data()));
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &body,
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push(
+        "flags",
+        Value::int(
+            i64::try_from(keep_builtin_idle).expect("flag bit should fit in i64"),
             Span::test_data(),
-        )
-        .expect_err("non-integer sched_ext_ops dispatch_max_batch should be rejected");
-        assert!(err.labels.iter().any(|label| {
+        ),
+    );
+
+    let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &["scx_bpf_pick_idle_cpu_node"]);
+    let err = super::validate_sched_ext_callback_kfunc_requirements(
+        &body,
+        &callback_kfuncs,
+        Span::test_data(),
+    )
+    .expect_err("pick_idle_cpu_node should require SCX_OPS_BUILTIN_IDLE_PER_NODE");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("uses 'scx_bpf_pick_idle_cpu_node' without SCX_OPS_BUILTIN_IDLE_PER_NODE")
+    }));
+}
+
+#[test]
+fn test_validate_sched_ext_callback_kfunc_requirements_rejects_pick_idle_cpu_with_per_node_flag() {
+    let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
+        return;
+    };
+    let Some(builtin_idle_per_node) = sched_ext_flag_bit("SCX_OPS_BUILTIN_IDLE_PER_NODE") else {
+        return;
+    };
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push(
+        "flags",
+        Value::int(
+            i64::try_from(keep_builtin_idle | builtin_idle_per_node)
+                .expect("flag bits should fit in i64"),
+            Span::test_data(),
+        ),
+    );
+
+    let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &["scx_bpf_pick_idle_cpu"]);
+    let err = super::validate_sched_ext_callback_kfunc_requirements(
+        &body,
+        &callback_kfuncs,
+        Span::test_data(),
+    )
+    .expect_err("pick_idle_cpu should be rejected when per-node idle masks are enabled");
+    assert!(err.labels.iter().any(|label| {
             label
                 .text
-                .contains("requires 'dispatch_max_batch' to be a non-negative integer")
+                .contains("uses 'scx_bpf_pick_idle_cpu', but SCX_OPS_BUILTIN_IDLE_PER_NODE enables per-node idle masks")
         }));
-    }
+}
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_negative_dispatch_max_batch() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
-        {
-            return;
-        }
+#[test]
+fn test_validate_sched_ext_callback_kfunc_requirements_rejects_pick_any_cpu_with_per_node_flag() {
+    let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
+        return;
+    };
+    let Some(builtin_idle_per_node) = sched_ext_flag_bit("SCX_OPS_BUILTIN_IDLE_PER_NODE") else {
+        return;
+    };
 
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push("dispatch_max_batch", Value::int(-1, Span::test_data()));
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &body,
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push(
+        "flags",
+        Value::int(
+            i64::try_from(keep_builtin_idle | builtin_idle_per_node)
+                .expect("flag bits should fit in i64"),
             Span::test_data(),
-        )
-        .expect_err("negative sched_ext_ops dispatch_max_batch should be rejected");
-        assert!(err.labels.iter().any(|label| {
+        ),
+    );
+
+    let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &["scx_bpf_pick_any_cpu"]);
+    let err = super::validate_sched_ext_callback_kfunc_requirements(
+        &body,
+        &callback_kfuncs,
+        Span::test_data(),
+    )
+    .expect_err("pick_any_cpu should be rejected when per-node idle masks are enabled");
+    assert!(err.labels.iter().any(|label| {
             label
                 .text
-                .contains("requires 'dispatch_max_batch' to be a non-negative integer")
+                .contains("uses 'scx_bpf_pick_any_cpu', but SCX_OPS_BUILTIN_IDLE_PER_NODE requires scx_bpf_pick_idle_cpu_node instead")
         }));
-    }
+}
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_too_large_dispatch_max_batch() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
-        {
-            return;
-        }
+#[test]
+fn test_validate_sched_ext_callback_kfunc_requirements_allows_pick_idle_cpu_node_with_per_node_flag()
+ {
+    let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
+        return;
+    };
+    let Some(builtin_idle_per_node) = sched_ext_flag_bit("SCX_OPS_BUILTIN_IDLE_PER_NODE") else {
+        return;
+    };
 
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push(
-            "dispatch_max_batch",
-            Value::int(i64::from(u32::MAX) + 1, Span::test_data()),
-        );
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &body,
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push(
+        "flags",
+        Value::int(
+            i64::try_from(keep_builtin_idle | builtin_idle_per_node)
+                .expect("flag bits should fit in i64"),
             Span::test_data(),
-        )
-        .expect_err("oversized sched_ext_ops dispatch_max_batch should be rejected");
-        assert!(err.labels.iter().any(|label| {
-            label.text.contains("dispatch_max_batch' value")
-                || label.text.contains("dispatch_max_batch")
-        }));
+        ),
+    );
+
+    let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &["scx_bpf_pick_idle_cpu_node"]);
+    super::validate_sched_ext_callback_kfunc_requirements(
+        &body,
+        &callback_kfuncs,
+        Span::test_data(),
+    )
+    .expect("pick_idle_cpu_node should be allowed when per-node builtin idle masks are enabled");
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_non_int_dispatch_max_batch() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
     }
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_dispatch_max_batch_above_int_max() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
-        {
-            return;
-        }
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push("dispatch_max_batch", Value::bool(true, Span::test_data()));
 
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push(
-            "dispatch_max_batch",
-            Value::int(
-                super::struct_ops::SCHED_EXT_MAX_DISPATCH_BATCH + 1,
-                Span::test_data(),
-            ),
-        );
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &body,
-            Span::test_data(),
-        )
-        .expect_err("dispatch_max_batch above INT_MAX should be rejected");
-        assert!(
-            err.labels
-                .iter()
-                .any(|label| { label.text.contains("dispatch_max_batch is too large") })
-        );
-    }
-
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_allows_dispatch_max_batch_int_max() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
-        {
-            return;
-        }
-
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push(
-            "dispatch_max_batch",
-            Value::int(
-                super::struct_ops::SCHED_EXT_MAX_DISPATCH_BATCH,
-                Span::test_data(),
-            ),
-        );
-
+    let err =
         super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
-            .expect("sched_ext_ops dispatch_max_batch at INT_MAX should be allowed");
+            .expect_err("non-integer sched_ext_ops dispatch_max_batch should be rejected");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("requires 'dispatch_max_batch' to be a non-negative integer")
+    }));
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_negative_dispatch_max_batch() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
     }
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_negative_exit_dump_len() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
-        {
-            return;
-        }
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push("dispatch_max_batch", Value::int(-1, Span::test_data()));
 
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push("exit_dump_len", Value::int(-1, Span::test_data()));
+    let err =
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect_err("negative sched_ext_ops dispatch_max_batch should be rejected");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("requires 'dispatch_max_batch' to be a non-negative integer")
+    }));
+}
 
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &body,
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_too_large_dispatch_max_batch() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
+    }
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push(
+        "dispatch_max_batch",
+        Value::int(i64::from(u32::MAX) + 1, Span::test_data()),
+    );
+
+    let err =
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect_err("oversized sched_ext_ops dispatch_max_batch should be rejected");
+    assert!(err.labels.iter().any(|label| {
+        label.text.contains("dispatch_max_batch' value")
+            || label.text.contains("dispatch_max_batch")
+    }));
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_dispatch_max_batch_above_int_max() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
+    }
+
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push(
+        "dispatch_max_batch",
+        Value::int(
+            super::struct_ops::SCHED_EXT_MAX_DISPATCH_BATCH + 1,
             Span::test_data(),
-        )
-        .expect_err("negative sched_ext_ops exit_dump_len should be rejected");
-        assert!(err.labels.iter().any(|label| {
-            label
-                .text
-                .contains("requires 'exit_dump_len' to be a non-negative integer")
-        }));
+        ),
+    );
+
+    let err =
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect_err("dispatch_max_batch above INT_MAX should be rejected");
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| { label.text.contains("dispatch_max_batch is too large") })
+    );
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_allows_dispatch_max_batch_int_max() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
     }
 
-    #[test]
-    fn test_validate_required_struct_ops_value_fields_rejects_negative_hotplug_seq() {
-        if KernelBtf::get()
-            .kernel_named_type_size_bytes("sched_ext_ops")
-            .is_err()
-        {
-            return;
-        }
-
-        let mut body = Record::new();
-        body.push("name", Value::string("nu.demo_1", Span::test_data()));
-        body.push("hotplug_seq", Value::int(-1, Span::test_data()));
-
-        let err = super::validate_required_struct_ops_value_fields(
-            "sched_ext_ops",
-            &body,
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push(
+        "dispatch_max_batch",
+        Value::int(
+            super::struct_ops::SCHED_EXT_MAX_DISPATCH_BATCH,
             Span::test_data(),
-        )
-        .expect_err("negative sched_ext_ops hotplug_seq should be rejected");
-        assert!(err.labels.iter().any(|label| {
-            label
-                .text
-                .contains("requires 'hotplug_seq' to be a non-negative integer")
-        }));
+        ),
+    );
+
+    super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+        .expect("sched_ext_ops dispatch_max_batch at INT_MAX should be allowed");
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_negative_exit_dump_len() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
     }
 
-    #[test]
-    fn test_default_struct_ops_object_name_sanitizes_type_name() {
-        assert_eq!(
-            super::default_struct_ops_object_name("sched_ext_ops"),
-            "nu_sched_ext_ops"
-        );
-        assert_eq!(
-            super::default_struct_ops_object_name("weird-type/name"),
-            "nu_weird_type_name"
-        );
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push("exit_dump_len", Value::int(-1, Span::test_data()));
+
+    let err =
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect_err("negative sched_ext_ops exit_dump_len should be rejected");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("requires 'exit_dump_len' to be a non-negative integer")
+    }));
+}
+
+#[test]
+fn test_validate_required_struct_ops_value_fields_rejects_negative_hotplug_seq() {
+    if KernelBtf::get()
+        .kernel_named_type_size_bytes("sched_ext_ops")
+        .is_err()
+    {
+        return;
     }
 
-    fn make_ctx_path_program(cell_path: CellPath) -> HirProgram {
-        let ctx_var = VarId::new(0);
-        let func = HirFunction {
-            blocks: vec![HirBlock {
-                id: HirBlockId(0),
-                stmts: vec![
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(0),
-                        var_id: ctx_var,
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(1),
-                        lit: HirLiteral::CellPath(Box::new(cell_path)),
-                    },
-                    HirStmt::FollowCellPath {
-                        src_dst: RegId::new(0),
-                        path: RegId::new(1),
-                    },
-                ],
-                terminator: HirTerminator::Return { src: RegId::new(0) },
-            }],
-            entry: HirBlockId(0),
-            spans: vec![Span::test_data(); 4],
-            ast: vec![None; 4],
-            comments: vec![],
-            register_count: 2,
-            file_count: 0,
-        };
-        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
-    }
+    let mut body = Record::new();
+    body.push("name", Value::string("nu.demo_1", Span::test_data()));
+    body.push("hotplug_seq", Value::int(-1, Span::test_data()));
 
-    fn string_member(name: &str) -> PathMember {
-        PathMember::test_string(name.to_string(), false, Casing::Sensitive)
-    }
+    let err =
+        super::validate_required_struct_ops_value_fields("sched_ext_ops", &body, Span::test_data())
+            .expect_err("negative sched_ext_ops hotplug_seq should be rejected");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("requires 'hotplug_seq' to be a non-negative integer")
+    }));
+}
 
-    fn make_ctx_path_call_program(cell_path: CellPath, decl_id: DeclId) -> HirProgram {
-        let ctx_var = VarId::new(0);
-        let func = HirFunction {
-            blocks: vec![HirBlock {
-                id: HirBlockId(0),
-                stmts: vec![
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(0),
-                        var_id: ctx_var,
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(1),
-                        lit: HirLiteral::CellPath(Box::new(cell_path)),
-                    },
-                    HirStmt::FollowCellPath {
-                        src_dst: RegId::new(0),
-                        path: RegId::new(1),
-                    },
-                    HirStmt::Call {
-                        decl_id,
-                        src_dst: RegId::new(0),
-                        args: HirCallArgs::default(),
-                    },
-                ],
-                terminator: HirTerminator::Return { src: RegId::new(0) },
-            }],
-            entry: HirBlockId(0),
-            spans: vec![Span::test_data(); 4],
-            ast: vec![None; 4],
-            comments: vec![],
-            register_count: 2,
-            file_count: 0,
-        };
-        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
-    }
+#[test]
+fn test_default_struct_ops_object_name_sanitizes_type_name() {
+    assert_eq!(
+        super::default_struct_ops_object_name("sched_ext_ops"),
+        "nu_sched_ext_ops"
+    );
+    assert_eq!(
+        super::default_struct_ops_object_name("weird-type/name"),
+        "nu_weird_type_name"
+    );
+}
 
-    fn make_map_put_get_projection_program(
-        map_put_decl: DeclId,
-        map_get_decl: DeclId,
-        count_decl: DeclId,
-    ) -> HirProgram {
-        let ctx_var = VarId::new(0);
-        let lookup_var = VarId::new(1);
-        let func = HirFunction {
-            blocks: vec![
-                HirBlock {
-                    id: HirBlockId(0),
-                    stmts: vec![
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(0),
-                            var_id: ctx_var,
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(1),
-                            lit: HirLiteral::CellPath(Box::new(CellPath {
-                                members: vec![string_member("arg0"), string_member("f_path")],
-                            })),
-                        },
-                        HirStmt::FollowCellPath {
-                            src_dst: RegId::new(0),
-                            path: RegId::new(1),
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(2),
-                            lit: HirLiteral::String(b"cached_path".to_vec()),
-                        },
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(3),
-                            var_id: ctx_var,
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(4),
-                            lit: HirLiteral::CellPath(Box::new(CellPath {
-                                members: vec![string_member("pid")],
-                            })),
-                        },
-                        HirStmt::FollowCellPath {
-                            src_dst: RegId::new(3),
-                            path: RegId::new(4),
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(5),
-                            lit: HirLiteral::String(b"hash".to_vec()),
-                        },
-                        HirStmt::Call {
-                            decl_id: map_put_decl,
-                            src_dst: RegId::new(0),
-                            args: HirCallArgs {
-                                positional: vec![RegId::new(2), RegId::new(3)],
-                                named: vec![(b"kind".to_vec(), RegId::new(5))],
-                                ..Default::default()
-                            },
-                        },
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(0),
-                            var_id: ctx_var,
-                        },
-                        HirStmt::FollowCellPath {
-                            src_dst: RegId::new(0),
-                            path: RegId::new(4),
-                        },
-                        HirStmt::Call {
-                            decl_id: map_get_decl,
-                            src_dst: RegId::new(0),
-                            args: HirCallArgs {
-                                positional: vec![RegId::new(2)],
-                                named: vec![(b"kind".to_vec(), RegId::new(5))],
-                                ..Default::default()
-                            },
-                        },
-                        HirStmt::StoreVariable {
-                            var_id: lookup_var,
-                            src: RegId::new(0),
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(6),
-                            lit: HirLiteral::Int(0),
-                        },
-                        HirStmt::BinaryOp {
-                            lhs_dst: RegId::new(0),
-                            op: Operator::Comparison(Comparison::NotEqual),
-                            rhs: RegId::new(6),
-                        },
-                    ],
-                    terminator: HirTerminator::BranchIf {
-                        cond: RegId::new(0),
-                        if_true: HirBlockId(1),
-                        if_false: HirBlockId(2),
-                    },
-                },
-                HirBlock {
-                    id: HirBlockId(1),
-                    stmts: vec![
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(0),
-                            var_id: lookup_var,
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(1),
-                            lit: HirLiteral::CellPath(Box::new(CellPath {
-                                members: vec![string_member("dentry"), string_member("d_flags")],
-                            })),
-                        },
-                        HirStmt::FollowCellPath {
-                            src_dst: RegId::new(0),
-                            path: RegId::new(1),
-                        },
-                        HirStmt::Call {
-                            decl_id: count_decl,
-                            src_dst: RegId::new(0),
-                            args: HirCallArgs::default(),
-                        },
-                    ],
-                    terminator: HirTerminator::Return { src: RegId::new(0) },
-                },
-                HirBlock {
-                    id: HirBlockId(2),
-                    stmts: vec![],
-                    terminator: HirTerminator::Return { src: RegId::new(0) },
-                },
-            ],
-            entry: HirBlockId(0),
-            spans: vec![Span::test_data(); 21],
-            ast: vec![None; 21],
-            comments: vec![],
-            register_count: 7,
-            file_count: 0,
-        };
-        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
-    }
-
-    fn make_map_get_whole_value_program(map_get_decl: DeclId, terminal_decl: DeclId) -> HirProgram {
-        let ctx_var = VarId::new(0);
-        let lookup_var = VarId::new(1);
-        let func = HirFunction {
-            blocks: vec![
-                HirBlock {
-                    id: HirBlockId(0),
-                    stmts: vec![
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(0),
-                            var_id: ctx_var,
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(1),
-                            lit: HirLiteral::CellPath(Box::new(CellPath {
-                                members: vec![string_member("pid")],
-                            })),
-                        },
-                        HirStmt::FollowCellPath {
-                            src_dst: RegId::new(0),
-                            path: RegId::new(1),
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(2),
-                            lit: HirLiteral::String(b"cached_path".to_vec()),
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(3),
-                            lit: HirLiteral::String(b"hash".to_vec()),
-                        },
-                        HirStmt::Call {
-                            decl_id: map_get_decl,
-                            src_dst: RegId::new(0),
-                            args: HirCallArgs {
-                                positional: vec![RegId::new(2)],
-                                named: vec![(b"kind".to_vec(), RegId::new(3))],
-                                ..Default::default()
-                            },
-                        },
-                        HirStmt::StoreVariable {
-                            var_id: lookup_var,
-                            src: RegId::new(0),
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(4),
-                            lit: HirLiteral::Int(0),
-                        },
-                        HirStmt::BinaryOp {
-                            lhs_dst: RegId::new(0),
-                            op: Operator::Comparison(Comparison::NotEqual),
-                            rhs: RegId::new(4),
-                        },
-                    ],
-                    terminator: HirTerminator::BranchIf {
-                        cond: RegId::new(0),
-                        if_true: HirBlockId(1),
-                        if_false: HirBlockId(2),
-                    },
-                },
-                HirBlock {
-                    id: HirBlockId(1),
-                    stmts: vec![
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(0),
-                            var_id: lookup_var,
-                        },
-                        HirStmt::Call {
-                            decl_id: terminal_decl,
-                            src_dst: RegId::new(0),
-                            args: HirCallArgs::default(),
-                        },
-                    ],
-                    terminator: HirTerminator::Return { src: RegId::new(0) },
-                },
-                HirBlock {
-                    id: HirBlockId(2),
-                    stmts: vec![],
-                    terminator: HirTerminator::Return { src: RegId::new(0) },
-                },
-            ],
-            entry: HirBlockId(0),
-            spans: vec![Span::test_data(); 10],
-            ast: vec![None; 10],
-            comments: vec![],
-            register_count: 5,
-            file_count: 0,
-        };
-        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
-    }
-
-    fn make_map_get_record_emit_program(map_get_decl: DeclId, emit_decl: DeclId) -> HirProgram {
-        let ctx_var = VarId::new(0);
-        let lookup_var = VarId::new(1);
-        let func = HirFunction {
-            blocks: vec![
-                HirBlock {
-                    id: HirBlockId(0),
-                    stmts: vec![
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(0),
-                            var_id: ctx_var,
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(1),
-                            lit: HirLiteral::CellPath(Box::new(CellPath {
-                                members: vec![string_member("pid")],
-                            })),
-                        },
-                        HirStmt::FollowCellPath {
-                            src_dst: RegId::new(0),
-                            path: RegId::new(1),
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(2),
-                            lit: HirLiteral::String(b"cached_path".to_vec()),
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(3),
-                            lit: HirLiteral::String(b"hash".to_vec()),
-                        },
-                        HirStmt::Call {
-                            decl_id: map_get_decl,
-                            src_dst: RegId::new(0),
-                            args: HirCallArgs {
-                                positional: vec![RegId::new(2)],
-                                named: vec![(b"kind".to_vec(), RegId::new(3))],
-                                ..Default::default()
-                            },
-                        },
-                        HirStmt::StoreVariable {
-                            var_id: lookup_var,
-                            src: RegId::new(0),
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(4),
-                            lit: HirLiteral::Int(0),
-                        },
-                        HirStmt::BinaryOp {
-                            lhs_dst: RegId::new(0),
-                            op: Operator::Comparison(Comparison::NotEqual),
-                            rhs: RegId::new(4),
-                        },
-                    ],
-                    terminator: HirTerminator::BranchIf {
-                        cond: RegId::new(0),
-                        if_true: HirBlockId(1),
-                        if_false: HirBlockId(2),
-                    },
-                },
-                HirBlock {
-                    id: HirBlockId(1),
-                    stmts: vec![
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(0),
-                            lit: HirLiteral::Record { capacity: 1 },
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(1),
-                            lit: HirLiteral::String(b"path".to_vec()),
-                        },
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(2),
-                            var_id: lookup_var,
-                        },
-                        HirStmt::RecordInsert {
-                            src_dst: RegId::new(0),
-                            key: RegId::new(1),
-                            val: RegId::new(2),
-                        },
-                        HirStmt::Call {
-                            decl_id: emit_decl,
-                            src_dst: RegId::new(0),
-                            args: HirCallArgs::default(),
-                        },
-                    ],
-                    terminator: HirTerminator::Return { src: RegId::new(0) },
-                },
-                HirBlock {
-                    id: HirBlockId(2),
-                    stmts: vec![HirStmt::LoadLiteral {
-                        dst: RegId::new(0),
-                        lit: HirLiteral::Int(0),
-                    }],
-                    terminator: HirTerminator::Return { src: RegId::new(0) },
-                },
-            ],
-            entry: HirBlockId(0),
-            spans: vec![Span::test_data(); 16],
-            ast: vec![None; 16],
-            comments: vec![],
-            register_count: 5,
-            file_count: 0,
-        };
-        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
-    }
-
-    fn make_identity_user_function() -> HirFunction {
-        HirFunction {
-            blocks: vec![HirBlock {
-                id: HirBlockId(0),
-                stmts: vec![HirStmt::LoadVariable {
+fn make_ctx_path_program(cell_path: CellPath) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
                     dst: RegId::new(0),
-                    var_id: VarId::new(10),
-                }],
-                terminator: HirTerminator::Return { src: RegId::new(0) },
-            }],
-            entry: HirBlockId(0),
-            spans: vec![Span::test_data(); 2],
-            ast: vec![None; 2],
-            comments: vec![],
-            register_count: 1,
-            file_count: 0,
-        }
-    }
-
-    fn make_project_inode_flags_user_function() -> HirFunction {
-        HirFunction {
-            blocks: vec![HirBlock {
-                id: HirBlockId(0),
-                stmts: vec![
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(0),
-                        var_id: VarId::new(10),
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(1),
-                        lit: HirLiteral::CellPath(Box::new(CellPath {
-                            members: vec![string_member("f_inode"), string_member("i_flags")],
-                        })),
-                    },
-                    HirStmt::FollowCellPath {
-                        src_dst: RegId::new(0),
-                        path: RegId::new(1),
-                    },
-                ],
-                terminator: HirTerminator::Return { src: RegId::new(0) },
-            }],
-            entry: HirBlockId(0),
-            spans: vec![Span::test_data(); 4],
-            ast: vec![None; 4],
-            comments: vec![],
-            register_count: 2,
-            file_count: 0,
-        }
-    }
-
-    fn make_map_get_user_function_emit_program(
-        map_get_decl: DeclId,
-        user_decl: DeclId,
-        emit_decl: DeclId,
-    ) -> HirProgram {
-        let ctx_var = VarId::new(0);
-        let lookup_var = VarId::new(1);
-        let func = HirFunction {
-            blocks: vec![
-                HirBlock {
-                    id: HirBlockId(0),
-                    stmts: vec![
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(0),
-                            var_id: ctx_var,
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(1),
-                            lit: HirLiteral::CellPath(Box::new(CellPath {
-                                members: vec![string_member("pid")],
-                            })),
-                        },
-                        HirStmt::FollowCellPath {
-                            src_dst: RegId::new(0),
-                            path: RegId::new(1),
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(2),
-                            lit: HirLiteral::String(b"cached_path".to_vec()),
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(3),
-                            lit: HirLiteral::String(b"hash".to_vec()),
-                        },
-                        HirStmt::Call {
-                            decl_id: map_get_decl,
-                            src_dst: RegId::new(0),
-                            args: HirCallArgs {
-                                positional: vec![RegId::new(2)],
-                                named: vec![(b"kind".to_vec(), RegId::new(3))],
-                                ..Default::default()
-                            },
-                        },
-                        HirStmt::StoreVariable {
-                            var_id: lookup_var,
-                            src: RegId::new(0),
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(4),
-                            lit: HirLiteral::Int(0),
-                        },
-                        HirStmt::BinaryOp {
-                            lhs_dst: RegId::new(0),
-                            op: Operator::Comparison(Comparison::NotEqual),
-                            rhs: RegId::new(4),
-                        },
-                    ],
-                    terminator: HirTerminator::BranchIf {
-                        cond: RegId::new(0),
-                        if_true: HirBlockId(1),
-                        if_false: HirBlockId(2),
-                    },
+                    var_id: ctx_var,
                 },
-                HirBlock {
-                    id: HirBlockId(1),
-                    stmts: vec![
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(1),
-                            var_id: lookup_var,
-                        },
-                        HirStmt::Call {
-                            decl_id: user_decl,
-                            src_dst: RegId::new(0),
-                            args: HirCallArgs {
-                                positional: vec![RegId::new(1)],
-                                ..Default::default()
-                            },
-                        },
-                        HirStmt::Call {
-                            decl_id: emit_decl,
-                            src_dst: RegId::new(0),
-                            args: HirCallArgs::default(),
-                        },
-                    ],
-                    terminator: HirTerminator::Return { src: RegId::new(0) },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(cell_path)),
                 },
-                HirBlock {
-                    id: HirBlockId(2),
-                    stmts: vec![HirStmt::LoadLiteral {
-                        dst: RegId::new(0),
-                        lit: HirLiteral::Int(0),
-                    }],
-                    terminator: HirTerminator::Return { src: RegId::new(0) },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
                 },
             ],
-            entry: HirBlockId(0),
-            spans: vec![Span::test_data(); 14],
-            ast: vec![None; 14],
-            comments: vec![],
-            register_count: 5,
-            file_count: 0,
-        };
-        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
-    }
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 4],
+        ast: vec![None; 4],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
 
-    fn make_trampoline_user_function_count_program(
-        user_decl: DeclId,
-        count_decl: DeclId,
-    ) -> HirProgram {
-        let ctx_var = VarId::new(0);
-        let func = HirFunction {
-            blocks: vec![HirBlock {
-                id: HirBlockId(0),
-                stmts: vec![
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(0),
-                        var_id: ctx_var,
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(1),
-                        lit: HirLiteral::CellPath(Box::new(CellPath {
-                            members: vec![string_member("arg0")],
-                        })),
-                    },
-                    HirStmt::FollowCellPath {
-                        src_dst: RegId::new(0),
-                        path: RegId::new(1),
-                    },
-                    HirStmt::Call {
-                        decl_id: user_decl,
-                        src_dst: RegId::new(0),
-                        args: HirCallArgs {
-                            positional: vec![RegId::new(0)],
-                            ..Default::default()
-                        },
-                    },
-                    HirStmt::Call {
-                        decl_id: count_decl,
-                        src_dst: RegId::new(0),
-                        args: HirCallArgs::default(),
-                    },
-                ],
-                terminator: HirTerminator::Return { src: RegId::new(0) },
-            }],
-            entry: HirBlockId(0),
-            spans: vec![Span::test_data(); 6],
-            ast: vec![None; 6],
-            comments: vec![],
-            register_count: 2,
-            file_count: 0,
-        };
-        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
-    }
+fn string_member(name: &str) -> PathMember {
+    PathMember::test_string(name.to_string(), false, Casing::Sensitive)
+}
 
-    fn cached_path_struct_schema() -> HashMap<MapRef, MirType> {
-        HashMap::from([(
-            MapRef {
-                name: "cached_path".to_string(),
-                kind: MapKind::Hash,
-            },
-            MirType::Struct {
-                name: Some("path".to_string()),
-                kernel_btf_type_id: None,
-                fields: vec![
-                    StructField {
-                        name: "mnt".to_string(),
-                        ty: MirType::U64,
-                        offset: 0,
-                        synthetic: false,
-                        bitfield: None,
-                    },
-                    StructField {
-                        name: "dentry".to_string(),
-                        ty: MirType::Ptr {
-                            pointee: Box::new(MirType::Struct {
-                                name: Some("dentry".to_string()),
-                                kernel_btf_type_id: None,
-                                fields: vec![StructField {
-                                    name: "d_flags".to_string(),
-                                    ty: MirType::U32,
-                                    offset: 0,
-                                    synthetic: false,
-                                    bitfield: None,
-                                }],
-                            }),
-                            address_space: AddressSpace::Kernel,
-                        },
-                        offset: 8,
-                        synthetic: false,
-                        bitfield: None,
-                    },
-                ],
-            },
-        )])
-    }
-
-    fn make_map_copy_projection_program(
-        map_put_decl: DeclId,
-        map_get_decl: DeclId,
-        count_decl: DeclId,
-    ) -> HirProgram {
-        let ctx_var = VarId::new(0);
-        let lookup_var = VarId::new(1);
-        let copied_var = VarId::new(2);
-        let func = HirFunction {
-            blocks: vec![
-                HirBlock {
-                    id: HirBlockId(0),
-                    stmts: vec![
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(0),
-                            var_id: ctx_var,
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(1),
-                            lit: HirLiteral::CellPath(Box::new(CellPath {
-                                members: vec![string_member("arg0"), string_member("f_path")],
-                            })),
-                        },
-                        HirStmt::FollowCellPath {
-                            src_dst: RegId::new(0),
-                            path: RegId::new(1),
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(2),
-                            lit: HirLiteral::String(b"cached_path".to_vec()),
-                        },
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(3),
-                            var_id: ctx_var,
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(4),
-                            lit: HirLiteral::CellPath(Box::new(CellPath {
-                                members: vec![string_member("pid")],
-                            })),
-                        },
-                        HirStmt::FollowCellPath {
-                            src_dst: RegId::new(3),
-                            path: RegId::new(4),
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(5),
-                            lit: HirLiteral::String(b"hash".to_vec()),
-                        },
-                        HirStmt::Call {
-                            decl_id: map_put_decl,
-                            src_dst: RegId::new(0),
-                            args: HirCallArgs {
-                                positional: vec![RegId::new(2), RegId::new(3)],
-                                named: vec![(b"kind".to_vec(), RegId::new(5))],
-                                ..Default::default()
-                            },
-                        },
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(0),
-                            var_id: ctx_var,
-                        },
-                        HirStmt::FollowCellPath {
-                            src_dst: RegId::new(0),
-                            path: RegId::new(4),
-                        },
-                        HirStmt::Call {
-                            decl_id: map_get_decl,
-                            src_dst: RegId::new(0),
-                            args: HirCallArgs {
-                                positional: vec![RegId::new(2)],
-                                named: vec![(b"kind".to_vec(), RegId::new(5))],
-                                ..Default::default()
-                            },
-                        },
-                        HirStmt::StoreVariable {
-                            var_id: lookup_var,
-                            src: RegId::new(0),
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(6),
-                            lit: HirLiteral::Int(0),
-                        },
-                        HirStmt::BinaryOp {
-                            lhs_dst: RegId::new(0),
-                            op: Operator::Comparison(Comparison::NotEqual),
-                            rhs: RegId::new(6),
-                        },
-                    ],
-                    terminator: HirTerminator::BranchIf {
-                        cond: RegId::new(0),
-                        if_true: HirBlockId(1),
-                        if_false: HirBlockId(3),
-                    },
+fn make_ctx_path_call_program(cell_path: CellPath, decl_id: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
                 },
-                HirBlock {
-                    id: HirBlockId(1),
-                    stmts: vec![
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(0),
-                            var_id: lookup_var,
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(7),
-                            lit: HirLiteral::String(b"copied_path".to_vec()),
-                        },
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(3),
-                            var_id: ctx_var,
-                        },
-                        HirStmt::FollowCellPath {
-                            src_dst: RegId::new(3),
-                            path: RegId::new(4),
-                        },
-                        HirStmt::Call {
-                            decl_id: map_put_decl,
-                            src_dst: RegId::new(0),
-                            args: HirCallArgs {
-                                positional: vec![RegId::new(7), RegId::new(3)],
-                                named: vec![(b"kind".to_vec(), RegId::new(5))],
-                                ..Default::default()
-                            },
-                        },
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(0),
-                            var_id: ctx_var,
-                        },
-                        HirStmt::FollowCellPath {
-                            src_dst: RegId::new(0),
-                            path: RegId::new(4),
-                        },
-                        HirStmt::Call {
-                            decl_id: map_get_decl,
-                            src_dst: RegId::new(0),
-                            args: HirCallArgs {
-                                positional: vec![RegId::new(7)],
-                                named: vec![(b"kind".to_vec(), RegId::new(5))],
-                                ..Default::default()
-                            },
-                        },
-                        HirStmt::StoreVariable {
-                            var_id: copied_var,
-                            src: RegId::new(0),
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(8),
-                            lit: HirLiteral::Int(0),
-                        },
-                        HirStmt::BinaryOp {
-                            lhs_dst: RegId::new(0),
-                            op: Operator::Comparison(Comparison::NotEqual),
-                            rhs: RegId::new(8),
-                        },
-                    ],
-                    terminator: HirTerminator::BranchIf {
-                        cond: RegId::new(0),
-                        if_true: HirBlockId(2),
-                        if_false: HirBlockId(3),
-                    },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(cell_path)),
                 },
-                HirBlock {
-                    id: HirBlockId(2),
-                    stmts: vec![
-                        HirStmt::LoadVariable {
-                            dst: RegId::new(0),
-                            var_id: copied_var,
-                        },
-                        HirStmt::LoadLiteral {
-                            dst: RegId::new(1),
-                            lit: HirLiteral::CellPath(Box::new(CellPath {
-                                members: vec![string_member("dentry"), string_member("d_flags")],
-                            })),
-                        },
-                        HirStmt::FollowCellPath {
-                            src_dst: RegId::new(0),
-                            path: RegId::new(1),
-                        },
-                        HirStmt::Call {
-                            decl_id: count_decl,
-                            src_dst: RegId::new(0),
-                            args: HirCallArgs::default(),
-                        },
-                    ],
-                    terminator: HirTerminator::Return { src: RegId::new(0) },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
                 },
-                HirBlock {
-                    id: HirBlockId(3),
-                    stmts: vec![],
-                    terminator: HirTerminator::Return { src: RegId::new(0) },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
                 },
             ],
-            entry: HirBlockId(0),
-            spans: vec![Span::test_data(); 30],
-            ast: vec![None; 30],
-            comments: vec![],
-            register_count: 9,
-            file_count: 0,
-        };
-        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
-    }
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 4],
+        ast: vec![None; 4],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
 
-    fn make_bound_ctx_path_program(binding: CellPath, access: CellPath) -> HirProgram {
-        let ctx_var = VarId::new(0);
-        let bound_var = VarId::new(1);
-        let func = HirFunction {
-            blocks: vec![HirBlock {
-                id: HirBlockId(0),
-                stmts: vec![
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(0),
-                        var_id: ctx_var,
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(1),
-                        lit: HirLiteral::CellPath(Box::new(binding)),
-                    },
-                    HirStmt::FollowCellPath {
-                        src_dst: RegId::new(0),
-                        path: RegId::new(1),
-                    },
-                    HirStmt::StoreVariable {
-                        var_id: bound_var,
-                        src: RegId::new(0),
-                    },
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(0),
-                        var_id: bound_var,
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(2),
-                        lit: HirLiteral::CellPath(Box::new(access)),
-                    },
-                    HirStmt::FollowCellPath {
-                        src_dst: RegId::new(0),
-                        path: RegId::new(2),
-                    },
-                ],
-                terminator: HirTerminator::Return { src: RegId::new(0) },
-            }],
-            entry: HirBlockId(0),
-            spans: vec![Span::test_data(); 7],
-            ast: vec![None; 7],
-            comments: vec![],
-            register_count: 3,
-            file_count: 0,
-        };
-        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
-    }
-
-    fn make_bound_ctx_get_program(
-        binding: CellPath,
-        access: CellPath,
-        decl_id: DeclId,
-    ) -> HirProgram {
-        let ctx_var = VarId::new(0);
-        let bound_var = VarId::new(1);
-        let func = HirFunction {
-            blocks: vec![HirBlock {
-                id: HirBlockId(0),
-                stmts: vec![
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(0),
-                        var_id: ctx_var,
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(1),
-                        lit: HirLiteral::CellPath(Box::new(binding)),
-                    },
-                    HirStmt::FollowCellPath {
-                        src_dst: RegId::new(0),
-                        path: RegId::new(1),
-                    },
-                    HirStmt::StoreVariable {
-                        var_id: bound_var,
-                        src: RegId::new(0),
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(2),
-                        lit: HirLiteral::Int(0),
-                    },
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(0),
-                        var_id: bound_var,
-                    },
-                    HirStmt::Call {
-                        decl_id,
-                        src_dst: RegId::new(0),
-                        args: HirCallArgs {
-                            positional: vec![RegId::new(2)],
-                            ..HirCallArgs::default()
-                        },
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(3),
-                        lit: HirLiteral::CellPath(Box::new(access)),
-                    },
-                    HirStmt::FollowCellPath {
-                        src_dst: RegId::new(0),
-                        path: RegId::new(3),
-                    },
-                ],
-                terminator: HirTerminator::Return { src: RegId::new(0) },
-            }],
-            entry: HirBlockId(0),
-            spans: vec![Span::test_data(); 9],
-            ast: vec![None; 9],
-            comments: vec![],
-            register_count: 4,
-            file_count: 0,
-        };
-        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
-    }
-
-    fn make_bound_ctx_runtime_get_program(
-        binding: CellPath,
-        idx_binding: CellPath,
-        modulus: i64,
-        decl_id: DeclId,
-    ) -> HirProgram {
-        let ctx_var = VarId::new(0);
-        let bound_var = VarId::new(1);
-        let idx_var = VarId::new(2);
-        let func = HirFunction {
-            blocks: vec![HirBlock {
-                id: HirBlockId(0),
-                stmts: vec![
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(0),
-                        var_id: ctx_var,
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(1),
-                        lit: HirLiteral::CellPath(Box::new(idx_binding)),
-                    },
-                    HirStmt::FollowCellPath {
-                        src_dst: RegId::new(0),
-                        path: RegId::new(1),
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(2),
-                        lit: HirLiteral::Int(modulus),
-                    },
-                    HirStmt::BinaryOp {
-                        lhs_dst: RegId::new(0),
-                        op: Operator::Math(Math::Modulo),
-                        rhs: RegId::new(2),
-                    },
-                    HirStmt::StoreVariable {
-                        var_id: idx_var,
-                        src: RegId::new(0),
-                    },
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(0),
-                        var_id: ctx_var,
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(1),
-                        lit: HirLiteral::CellPath(Box::new(binding)),
-                    },
-                    HirStmt::FollowCellPath {
-                        src_dst: RegId::new(0),
-                        path: RegId::new(1),
-                    },
-                    HirStmt::StoreVariable {
-                        var_id: bound_var,
-                        src: RegId::new(0),
-                    },
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(0),
-                        var_id: bound_var,
-                    },
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(2),
-                        var_id: idx_var,
-                    },
-                    HirStmt::Call {
-                        decl_id,
-                        src_dst: RegId::new(0),
-                        args: HirCallArgs {
-                            positional: vec![RegId::new(2)],
-                            ..HirCallArgs::default()
-                        },
-                    },
-                ],
-                terminator: HirTerminator::Return { src: RegId::new(0) },
-            }],
-            entry: HirBlockId(0),
-            spans: vec![Span::test_data(); 13],
-            ast: vec![None; 13],
-            comments: vec![],
-            register_count: 3,
-            file_count: 0,
-        };
-        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
-    }
-
-    fn make_bound_ctx_runtime_get_then_call_program(
-        binding: CellPath,
-        idx_binding: CellPath,
-        modulus: i64,
-        decl_id: DeclId,
-    ) -> HirProgram {
-        let ctx_var = VarId::new(0);
-        let idx_var = VarId::new(1);
-        let value_var = VarId::new(2);
-        let func = HirFunction {
-            blocks: vec![HirBlock {
-                id: HirBlockId(0),
-                stmts: vec![
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(0),
-                        var_id: ctx_var,
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(1),
-                        lit: HirLiteral::CellPath(Box::new(idx_binding)),
-                    },
-                    HirStmt::FollowCellPath {
-                        src_dst: RegId::new(0),
-                        path: RegId::new(1),
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(2),
-                        lit: HirLiteral::Int(modulus),
-                    },
-                    HirStmt::BinaryOp {
-                        lhs_dst: RegId::new(0),
-                        op: Operator::Math(Math::Modulo),
-                        rhs: RegId::new(2),
-                    },
-                    HirStmt::StoreVariable {
-                        var_id: idx_var,
-                        src: RegId::new(0),
-                    },
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(0),
-                        var_id: ctx_var,
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(1),
-                        lit: HirLiteral::CellPath(Box::new(binding)),
-                    },
-                    HirStmt::FollowCellPath {
-                        src_dst: RegId::new(0),
-                        path: RegId::new(1),
-                    },
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(2),
-                        var_id: idx_var,
-                    },
-                    HirStmt::Call {
-                        decl_id: DeclId::new(42),
-                        src_dst: RegId::new(0),
-                        args: HirCallArgs {
-                            positional: vec![RegId::new(2)],
-                            ..HirCallArgs::default()
-                        },
-                    },
-                    HirStmt::StoreVariable {
-                        var_id: value_var,
-                        src: RegId::new(0),
-                    },
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(0),
-                        var_id: value_var,
-                    },
-                    HirStmt::Call {
-                        decl_id,
-                        src_dst: RegId::new(0),
-                        args: HirCallArgs::default(),
-                    },
-                ],
-                terminator: HirTerminator::Return { src: RegId::new(0) },
-            }],
-            entry: HirBlockId(0),
-            spans: vec![Span::test_data(); 14],
-            ast: vec![None; 14],
-            comments: vec![],
-            register_count: 3,
-            file_count: 0,
-        };
-        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
-    }
-
-    fn make_bound_ctx_runtime_get_path_program(
-        binding: CellPath,
-        idx_binding: CellPath,
-        modulus: i64,
-        access: CellPath,
-        decl_id: DeclId,
-    ) -> HirProgram {
-        let ctx_var = VarId::new(0);
-        let bound_var = VarId::new(1);
-        let idx_var = VarId::new(2);
-        let func = HirFunction {
-            blocks: vec![HirBlock {
-                id: HirBlockId(0),
-                stmts: vec![
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(0),
-                        var_id: ctx_var,
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(1),
-                        lit: HirLiteral::CellPath(Box::new(idx_binding)),
-                    },
-                    HirStmt::FollowCellPath {
-                        src_dst: RegId::new(0),
-                        path: RegId::new(1),
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(2),
-                        lit: HirLiteral::Int(modulus),
-                    },
-                    HirStmt::BinaryOp {
-                        lhs_dst: RegId::new(0),
-                        op: Operator::Math(Math::Modulo),
-                        rhs: RegId::new(2),
-                    },
-                    HirStmt::StoreVariable {
-                        var_id: idx_var,
-                        src: RegId::new(0),
-                    },
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(0),
-                        var_id: ctx_var,
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(1),
-                        lit: HirLiteral::CellPath(Box::new(binding)),
-                    },
-                    HirStmt::FollowCellPath {
-                        src_dst: RegId::new(0),
-                        path: RegId::new(1),
-                    },
-                    HirStmt::StoreVariable {
-                        var_id: bound_var,
-                        src: RegId::new(0),
-                    },
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(0),
-                        var_id: bound_var,
-                    },
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(2),
-                        var_id: idx_var,
-                    },
-                    HirStmt::Call {
-                        decl_id,
-                        src_dst: RegId::new(0),
-                        args: HirCallArgs {
-                            positional: vec![RegId::new(2)],
-                            ..HirCallArgs::default()
-                        },
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(1),
-                        lit: HirLiteral::CellPath(Box::new(access)),
-                    },
-                    HirStmt::FollowCellPath {
-                        src_dst: RegId::new(0),
-                        path: RegId::new(1),
-                    },
-                ],
-                terminator: HirTerminator::Return { src: RegId::new(0) },
-            }],
-            entry: HirBlockId(0),
-            spans: vec![Span::test_data(); 15],
-            ast: vec![None; 15],
-            comments: vec![],
-            register_count: 3,
-            file_count: 0,
-        };
-        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
-    }
-
-    fn make_branch_refined_bound_ctx_get_program(
-        scalar_binding: CellPath,
-        pointer_binding: CellPath,
-        access: CellPath,
-        decl_id: DeclId,
-    ) -> HirProgram {
-        let ctx_var = VarId::new(0);
-        let scalar_var = VarId::new(1);
-        let idx_var = VarId::new(2);
-        let blocks = vec![
+fn make_map_put_get_projection_program(
+    map_put_decl: DeclId,
+    map_get_decl: DeclId,
+    count_decl: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let lookup_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![
             HirBlock {
                 id: HirBlockId(0),
                 stmts: vec![
@@ -3125,28 +1890,74 @@
                     },
                     HirStmt::LoadLiteral {
                         dst: RegId::new(1),
-                        lit: HirLiteral::CellPath(Box::new(scalar_binding)),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("arg0"), string_member("f_path")],
+                        })),
                     },
                     HirStmt::FollowCellPath {
                         src_dst: RegId::new(0),
                         path: RegId::new(1),
                     },
-                    HirStmt::StoreVariable {
-                        var_id: scalar_var,
-                        src: RegId::new(0),
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String(b"cached_path".to_vec()),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(3),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("pid")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(3),
+                        path: RegId::new(4),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(5),
+                        lit: HirLiteral::String(b"hash".to_vec()),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_put_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(2), RegId::new(3)],
+                            named: vec![(b"kind".to_vec(), RegId::new(5))],
+                            ..Default::default()
+                        },
                     },
                     HirStmt::LoadVariable {
                         dst: RegId::new(0),
-                        var_id: scalar_var,
+                        var_id: ctx_var,
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(4),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_get_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(2)],
+                            named: vec![(b"kind".to_vec(), RegId::new(5))],
+                            ..Default::default()
+                        },
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: lookup_var,
+                        src: RegId::new(0),
                     },
                     HirStmt::LoadLiteral {
-                        dst: RegId::new(1),
+                        dst: RegId::new(6),
                         lit: HirLiteral::Int(0),
                     },
                     HirStmt::BinaryOp {
                         lhs_dst: RegId::new(0),
-                        op: Operator::Comparison(Comparison::GreaterThan),
-                        rhs: RegId::new(1),
+                        op: Operator::Comparison(Comparison::NotEqual),
+                        rhs: RegId::new(6),
                     },
                 ],
                 terminator: HirTerminator::BranchIf {
@@ -3160,55 +1971,218 @@
                 stmts: vec![
                     HirStmt::LoadVariable {
                         dst: RegId::new(0),
-                        var_id: scalar_var,
+                        var_id: lookup_var,
                     },
                     HirStmt::LoadLiteral {
                         dst: RegId::new(1),
-                        lit: HirLiteral::Int(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("dentry"), string_member("d_flags")],
+                        })),
                     },
-                    HirStmt::BinaryOp {
-                        lhs_dst: RegId::new(0),
-                        op: Operator::Math(Math::Subtract),
-                        rhs: RegId::new(1),
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
                     },
-                    HirStmt::StoreVariable {
-                        var_id: idx_var,
-                        src: RegId::new(0),
+                    HirStmt::Call {
+                        decl_id: count_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
                     },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 21],
+        ast: vec![None; 21],
+        comments: vec![],
+        register_count: 7,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_map_get_whole_value_program(map_get_decl: DeclId, terminal_decl: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let lookup_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
                     HirStmt::LoadVariable {
-                        dst: RegId::new(2),
+                        dst: RegId::new(0),
                         var_id: ctx_var,
                     },
                     HirStmt::LoadLiteral {
-                        dst: RegId::new(3),
-                        lit: HirLiteral::CellPath(Box::new(pointer_binding)),
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("pid")],
+                        })),
                     },
                     HirStmt::FollowCellPath {
-                        src_dst: RegId::new(2),
-                        path: RegId::new(3),
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
                     },
-                    HirStmt::LoadVariable {
-                        dst: RegId::new(0),
-                        var_id: idx_var,
-                    },
-                    HirStmt::Call {
-                        decl_id,
-                        src_dst: RegId::new(2),
-                        args: HirCallArgs {
-                            positional: vec![RegId::new(0)],
-                            ..HirCallArgs::default()
-                        },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String(b"cached_path".to_vec()),
                     },
                     HirStmt::LoadLiteral {
                         dst: RegId::new(3),
-                        lit: HirLiteral::CellPath(Box::new(access)),
+                        lit: HirLiteral::String(b"hash".to_vec()),
                     },
-                    HirStmt::FollowCellPath {
-                        src_dst: RegId::new(2),
-                        path: RegId::new(3),
+                    HirStmt::Call {
+                        decl_id: map_get_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(2)],
+                            named: vec![(b"kind".to_vec(), RegId::new(3))],
+                            ..Default::default()
+                        },
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: lookup_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Comparison(Comparison::NotEqual),
+                        rhs: RegId::new(4),
                     },
                 ],
-                terminator: HirTerminator::Return { src: RegId::new(2) },
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(0),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: lookup_var,
+                    },
+                    HirStmt::Call {
+                        decl_id: terminal_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 10],
+        ast: vec![None; 10],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_map_get_record_emit_program(map_get_decl: DeclId, emit_decl: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let lookup_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("pid")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String(b"cached_path".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::String(b"hash".to_vec()),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_get_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(2)],
+                            named: vec![(b"kind".to_vec(), RegId::new(3))],
+                            ..Default::default()
+                        },
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: lookup_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Comparison(Comparison::NotEqual),
+                        rhs: RegId::new(4),
+                    },
+                ],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(0),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Record { capacity: 1 },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String(b"path".to_vec()),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(2),
+                        var_id: lookup_var,
+                    },
+                    HirStmt::RecordInsert {
+                        src_dst: RegId::new(0),
+                        key: RegId::new(1),
+                        val: RegId::new(2),
+                    },
+                    HirStmt::Call {
+                        decl_id: emit_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
             },
             HirBlock {
                 id: HirBlockId(2),
@@ -3218,475 +2192,1462 @@
                 }],
                 terminator: HirTerminator::Return { src: RegId::new(0) },
             },
-        ];
-        let func = HirFunction {
-            blocks,
-            entry: HirBlockId(0),
-            spans: vec![Span::test_data(); 19],
-            ast: vec![None; 19],
-            comments: vec![],
-            register_count: 4,
-            file_count: 0,
-        };
-        HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
-    }
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 16],
+        ast: vec![None; 16],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
 
-    #[test]
-    fn test_recover_optimized_type_hints_for_pointer_hop_trampoline_projection() {
-        let hir = make_ctx_path_program(CellPath {
-            members: vec![
-                string_member("arg0"),
-                string_member("f_inode"),
-                string_member("i_ino"),
+fn make_identity_user_function() -> HirFunction {
+    HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(10),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 2],
+        ast: vec![None; 2],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    }
+}
+
+fn make_project_inode_flags_user_function() -> HirFunction {
+    HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(10),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("f_inode"), string_member("i_flags")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
             ],
-        });
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
-
-        let mut lowering = lower_hir_to_mir_with_hints(
-            &hir,
-            Some(&probe_ctx),
-            &HashMap::new(),
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .expect("pointer-hop field projection should lower");
-
-        optimize_with_ssa_hints(
-            &mut lowering.program.main,
-            Some(&probe_ctx),
-            &mut lowering.type_hints.main,
-            &lowering.type_hints.main_stack_slots,
-            &lowering.type_hints.generic_map_value_types,
-        );
-        let result = compile_mir_to_ebpf_with_hints(
-            &lowering.program,
-            Some(&probe_ctx),
-            Some(&lowering.type_hints),
-        )
-        .expect("optimized pointer-hop field projection should compile");
-        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 4],
+        ast: vec![None; 4],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
     }
+}
 
-    #[test]
-    fn test_recover_optimized_type_hints_for_struct_leaf_counter_schema() {
-        let hir = make_ctx_path_call_program(
-            CellPath {
-                members: vec![string_member("arg0"), string_member("f_path")],
-            },
-            DeclId::new(42),
-        );
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
-        let mut decl_names = HashMap::new();
-        decl_names.insert(DeclId::new(42), "count".to_string());
-
-        let mut lowering = lower_hir_to_mir_with_hints(
-            &hir,
-            Some(&probe_ctx),
-            &decl_names,
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .expect("struct-leaf count should lower");
-
-        optimize_with_ssa_hints(
-            &mut lowering.program.main,
-            Some(&probe_ctx),
-            &mut lowering.type_hints.main,
-            &lowering.type_hints.main_stack_slots,
-            &lowering.type_hints.generic_map_value_types,
-        );
-        let result = compile_mir_to_ebpf_with_hints(
-            &lowering.program,
-            Some(&probe_ctx),
-            Some(&lowering.type_hints),
-        )
-        .expect("optimized struct-leaf count should compile");
-        assert_eq!(
-            result.bytes_counter_key_schema,
-            Some(CounterKeySchema::Record {
-                name: Some("path".to_string()),
-                fields: vec![
-                    CounterKeySchemaField {
-                        name: "mnt".to_string(),
-                        schema: CounterKeySchema::Int {
-                            size: 8,
-                            signed: false,
-                        },
-                        offset: 0,
-                        bitfield: None,
+fn make_map_get_user_function_emit_program(
+    map_get_decl: DeclId,
+    user_decl: DeclId,
+    emit_decl: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let lookup_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
                     },
-                    CounterKeySchemaField {
-                        name: "dentry".to_string(),
-                        schema: CounterKeySchema::Int {
-                            size: 8,
-                            signed: false,
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("pid")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String(b"cached_path".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::String(b"hash".to_vec()),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_get_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(2)],
+                            named: vec![(b"kind".to_vec(), RegId::new(3))],
+                            ..Default::default()
                         },
-                        offset: 8,
-                        bitfield: None,
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: lookup_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Comparison(Comparison::NotEqual),
+                        rhs: RegId::new(4),
                     },
                 ],
-                total_size: 16,
-            })
-        );
-    }
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(0),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(1),
+                        var_id: lookup_var,
+                    },
+                    HirStmt::Call {
+                        decl_id: user_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1)],
+                            ..Default::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: emit_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(0),
+                }],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 14],
+        ast: vec![None; 14],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
 
-    #[test]
-    fn test_compile_optimized_typed_map_get_projection() {
-        let hir =
-            make_map_put_get_projection_program(DeclId::new(42), DeclId::new(43), DeclId::new(44));
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
-        let mut decl_names = HashMap::new();
-        decl_names.insert(DeclId::new(42), "map-put".to_string());
-        decl_names.insert(DeclId::new(43), "map-get".to_string());
-        decl_names.insert(DeclId::new(44), "count".to_string());
+fn make_trampoline_user_function_count_program(
+    user_decl: DeclId,
+    count_decl: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("arg0")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::Call {
+                    decl_id: user_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: count_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 6],
+        ast: vec![None; 6],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
 
-        let mut lowering = lower_hir_to_mir_with_hints(
-            &hir,
-            Some(&probe_ctx),
-            &decl_names,
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .expect("typed map put/get projection should lower");
+fn cached_path_struct_schema() -> HashMap<MapRef, MirType> {
+    HashMap::from([(
+        MapRef {
+            name: "cached_path".to_string(),
+            kind: MapKind::Hash,
+        },
+        MirType::Struct {
+            name: Some("path".to_string()),
+            kernel_btf_type_id: None,
+            fields: vec![
+                StructField {
+                    name: "mnt".to_string(),
+                    ty: MirType::U64,
+                    offset: 0,
+                    synthetic: false,
+                    bitfield: None,
+                },
+                StructField {
+                    name: "dentry".to_string(),
+                    ty: MirType::Ptr {
+                        pointee: Box::new(MirType::Struct {
+                            name: Some("dentry".to_string()),
+                            kernel_btf_type_id: None,
+                            fields: vec![StructField {
+                                name: "d_flags".to_string(),
+                                ty: MirType::U32,
+                                offset: 0,
+                                synthetic: false,
+                                bitfield: None,
+                            }],
+                        }),
+                        address_space: AddressSpace::Kernel,
+                    },
+                    offset: 8,
+                    synthetic: false,
+                    bitfield: None,
+                },
+            ],
+        },
+    )])
+}
 
-        optimize_with_ssa_hints(
-            &mut lowering.program.main,
-            Some(&probe_ctx),
-            &mut lowering.type_hints.main,
-            &lowering.type_hints.main_stack_slots,
-            &lowering.type_hints.generic_map_value_types,
-        );
+fn make_map_copy_projection_program(
+    map_put_decl: DeclId,
+    map_get_decl: DeclId,
+    count_decl: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let lookup_var = VarId::new(1);
+    let copied_var = VarId::new(2);
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("arg0"), string_member("f_path")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String(b"cached_path".to_vec()),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(3),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("pid")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(3),
+                        path: RegId::new(4),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(5),
+                        lit: HirLiteral::String(b"hash".to_vec()),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_put_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(2), RegId::new(3)],
+                            named: vec![(b"kind".to_vec(), RegId::new(5))],
+                            ..Default::default()
+                        },
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(4),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_get_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(2)],
+                            named: vec![(b"kind".to_vec(), RegId::new(5))],
+                            ..Default::default()
+                        },
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: lookup_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(6),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Comparison(Comparison::NotEqual),
+                        rhs: RegId::new(6),
+                    },
+                ],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(0),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(3),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: lookup_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(7),
+                        lit: HirLiteral::String(b"copied_path".to_vec()),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(3),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(3),
+                        path: RegId::new(4),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_put_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(7), RegId::new(3)],
+                            named: vec![(b"kind".to_vec(), RegId::new(5))],
+                            ..Default::default()
+                        },
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(4),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_get_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(7)],
+                            named: vec![(b"kind".to_vec(), RegId::new(5))],
+                            ..Default::default()
+                        },
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: copied_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(8),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Comparison(Comparison::NotEqual),
+                        rhs: RegId::new(8),
+                    },
+                ],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(0),
+                    if_true: HirBlockId(2),
+                    if_false: HirBlockId(3),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: copied_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("dentry"), string_member("d_flags")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::Call {
+                        decl_id: count_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+            HirBlock {
+                id: HirBlockId(3),
+                stmts: vec![],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 30],
+        ast: vec![None; 30],
+        comments: vec![],
+        register_count: 9,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
 
-        let result = compile_mir_to_ebpf_with_hints(
-            &lowering.program,
-            Some(&probe_ctx),
-            Some(&lowering.type_hints),
-        )
-        .expect("optimized typed map get projection should compile");
+fn make_bound_ctx_path_program(binding: CellPath, access: CellPath) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let bound_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(binding)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::StoreVariable {
+                    var_id: bound_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: bound_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::CellPath(Box::new(access)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(2),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 7],
+        ast: vec![None; 7],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
 
-        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
-        assert!(
-            result.maps.iter().any(|map| map.name == "cached_path"),
-            "expected generic map definition for cached_path"
-        );
-    }
+fn make_bound_ctx_get_program(binding: CellPath, access: CellPath, decl_id: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let bound_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(binding)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::StoreVariable {
+                    var_id: bound_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: bound_var,
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::CellPath(Box::new(access)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(3),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 9],
+        ast: vec![None; 9],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
 
-    #[test]
-    fn test_compile_optimized_external_typed_map_get_whole_struct_count() {
-        let hir = make_map_get_whole_value_program(DeclId::new(43), DeclId::new(44));
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
-        let mut decl_names = HashMap::new();
-        decl_names.insert(DeclId::new(43), "map-get".to_string());
-        decl_names.insert(DeclId::new(44), "count".to_string());
-        let external_schema = cached_path_struct_schema();
+fn make_bound_ctx_runtime_get_program(
+    binding: CellPath,
+    idx_binding: CellPath,
+    modulus: i64,
+    decl_id: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let bound_var = VarId::new(1);
+    let idx_var = VarId::new(2);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(idx_binding)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(modulus),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: Operator::Math(Math::Modulo),
+                    rhs: RegId::new(2),
+                },
+                HirStmt::StoreVariable {
+                    var_id: idx_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(binding)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::StoreVariable {
+                    var_id: bound_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: bound_var,
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(2),
+                    var_id: idx_var,
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 13],
+        ast: vec![None; 13],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
 
-        let mut lowering = lower_hir_to_mir_with_hints_and_maps(
-            &hir,
-            Some(&probe_ctx),
-            &decl_names,
-            None,
-            Some(&external_schema),
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .expect("whole-value typed map-get count should lower");
+fn make_bound_ctx_runtime_get_then_call_program(
+    binding: CellPath,
+    idx_binding: CellPath,
+    modulus: i64,
+    decl_id: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let idx_var = VarId::new(1);
+    let value_var = VarId::new(2);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(idx_binding)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(modulus),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: Operator::Math(Math::Modulo),
+                    rhs: RegId::new(2),
+                },
+                HirStmt::StoreVariable {
+                    var_id: idx_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(binding)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(2),
+                    var_id: idx_var,
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::StoreVariable {
+                    var_id: value_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: value_var,
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 14],
+        ast: vec![None; 14],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
 
-        optimize_with_ssa_hints(
-            &mut lowering.program.main,
-            Some(&probe_ctx),
-            &mut lowering.type_hints.main,
-            &lowering.type_hints.main_stack_slots,
-            &lowering.type_hints.generic_map_value_types,
-        );
-        let result = compile_mir_to_ebpf_with_hints(
-            &lowering.program,
-            Some(&probe_ctx),
-            Some(&lowering.type_hints),
-        )
-        .expect("optimized whole-value typed map-get count should compile");
-        let schema = result
-            .bytes_counter_key_schema
-            .expect("whole-value count should preserve a record key schema");
-        assert!(matches!(
-            schema,
-            CounterKeySchema::Record { ref fields, .. }
-                if fields.len() == 2
-                    && fields[0].name == "mnt"
-                    && fields[1].name == "dentry"
-        ));
-    }
+fn make_bound_ctx_runtime_get_path_program(
+    binding: CellPath,
+    idx_binding: CellPath,
+    modulus: i64,
+    access: CellPath,
+    decl_id: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let bound_var = VarId::new(1);
+    let idx_var = VarId::new(2);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(idx_binding)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(modulus),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: Operator::Math(Math::Modulo),
+                    rhs: RegId::new(2),
+                },
+                HirStmt::StoreVariable {
+                    var_id: idx_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(binding)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::StoreVariable {
+                    var_id: bound_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: bound_var,
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(2),
+                    var_id: idx_var,
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(access)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 15],
+        ast: vec![None; 15],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
 
-    #[test]
-    fn test_compile_optimized_external_typed_map_get_whole_struct_emit() {
-        let hir = make_map_get_whole_value_program(DeclId::new(43), DeclId::new(44));
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
-        let mut decl_names = HashMap::new();
-        decl_names.insert(DeclId::new(43), "map-get".to_string());
-        decl_names.insert(DeclId::new(44), "emit".to_string());
-        let external_schema = cached_path_struct_schema();
+fn make_branch_refined_bound_ctx_get_program(
+    scalar_binding: CellPath,
+    pointer_binding: CellPath,
+    access: CellPath,
+    decl_id: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let scalar_var = VarId::new(1);
+    let idx_var = VarId::new(2);
+    let blocks = vec![
+        HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(scalar_binding)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::StoreVariable {
+                    var_id: scalar_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: scalar_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: Operator::Comparison(Comparison::GreaterThan),
+                    rhs: RegId::new(1),
+                },
+            ],
+            terminator: HirTerminator::BranchIf {
+                cond: RegId::new(0),
+                if_true: HirBlockId(1),
+                if_false: HirBlockId(2),
+            },
+        },
+        HirBlock {
+            id: HirBlockId(1),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: scalar_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: Operator::Math(Math::Subtract),
+                    rhs: RegId::new(1),
+                },
+                HirStmt::StoreVariable {
+                    var_id: idx_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(2),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::CellPath(Box::new(pointer_binding)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(2),
+                    path: RegId::new(3),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: idx_var,
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::CellPath(Box::new(access)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(2),
+                    path: RegId::new(3),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        },
+        HirBlock {
+            id: HirBlockId(2),
+            stmts: vec![HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::Int(0),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        },
+    ];
+    let func = HirFunction {
+        blocks,
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 19],
+        ast: vec![None; 19],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
 
-        let mut lowering = lower_hir_to_mir_with_hints_and_maps(
-            &hir,
-            Some(&probe_ctx),
-            &decl_names,
-            None,
-            Some(&external_schema),
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .expect("whole-value typed map-get emit should lower");
+#[test]
+fn test_recover_optimized_type_hints_for_pointer_hop_trampoline_projection() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("arg0"),
+            string_member("f_inode"),
+            string_member("i_ino"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
 
-        optimize_with_ssa_hints(
-            &mut lowering.program.main,
-            Some(&probe_ctx),
-            &mut lowering.type_hints.main,
-            &lowering.type_hints.main_stack_slots,
-            &lowering.type_hints.generic_map_value_types,
-        );
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("pointer-hop field projection should lower");
 
-        let result = compile_mir_to_ebpf_with_hints(
-            &lowering.program,
-            Some(&probe_ctx),
-            Some(&lowering.type_hints),
-        )
-        .expect("optimized whole-value typed map-get emit should compile");
-        let schema = result
-            .event_schema
-            .expect("whole-value emit should preserve a structured event schema");
-        assert!(
-            schema
-                .fields
-                .iter()
-                .map(|field| field.name.as_str())
-                .eq(["mnt", "dentry"].into_iter()),
-            "whole-value emit should preserve top-level record fields"
-        );
-    }
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized pointer-hop field projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
 
-    #[test]
-    fn test_compile_optimized_external_typed_map_get_record_emit() {
-        let hir = make_map_get_record_emit_program(DeclId::new(43), DeclId::new(44));
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
-        let mut decl_names = HashMap::new();
-        decl_names.insert(DeclId::new(43), "map-get".to_string());
-        decl_names.insert(DeclId::new(44), "emit".to_string());
-        let external_schema = cached_path_struct_schema();
+#[test]
+fn test_recover_optimized_type_hints_for_struct_leaf_counter_schema() {
+    let hir = make_ctx_path_call_program(
+        CellPath {
+            members: vec![string_member("arg0"), string_member("f_path")],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "count".to_string());
 
-        let mut lowering = lower_hir_to_mir_with_hints_and_maps(
-            &hir,
-            Some(&probe_ctx),
-            &decl_names,
-            None,
-            Some(&external_schema),
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .expect("record emit around typed map-get should lower");
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("struct-leaf count should lower");
 
-        optimize_with_ssa_hints(
-            &mut lowering.program.main,
-            Some(&probe_ctx),
-            &mut lowering.type_hints.main,
-            &lowering.type_hints.main_stack_slots,
-            &lowering.type_hints.generic_map_value_types,
-        );
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized struct-leaf count should compile");
+    assert_eq!(
+        result.bytes_counter_key_schema,
+        Some(CounterKeySchema::Record {
+            name: Some("path".to_string()),
+            fields: vec![
+                CounterKeySchemaField {
+                    name: "mnt".to_string(),
+                    schema: CounterKeySchema::Int {
+                        size: 8,
+                        signed: false,
+                    },
+                    offset: 0,
+                    bitfield: None,
+                },
+                CounterKeySchemaField {
+                    name: "dentry".to_string(),
+                    schema: CounterKeySchema::Int {
+                        size: 8,
+                        signed: false,
+                    },
+                    offset: 8,
+                    bitfield: None,
+                },
+            ],
+            total_size: 16,
+        })
+    );
+}
 
-        let result = compile_mir_to_ebpf_with_hints(
-            &lowering.program,
-            Some(&probe_ctx),
-            Some(&lowering.type_hints),
-        )
-        .expect("optimized record emit around typed map-get should compile");
-        let schema = result
-            .event_schema
-            .expect("record emit should preserve a structured event schema");
-        assert!(matches!(
-            schema.fields.as_slice(),
-            [crate::compiler::SchemaField {
-                name,
-                field_type: crate::compiler::BpfFieldType::Bytes(16),
-                value_schema: Some(CounterKeySchema::Record { fields, .. }),
-                ..
-            }] if name == "path"
-                && fields.len() == 2
+#[test]
+fn test_compile_optimized_typed_map_get_projection() {
+    let hir =
+        make_map_put_get_projection_program(DeclId::new(42), DeclId::new(43), DeclId::new(44));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "map-put".to_string());
+    decl_names.insert(DeclId::new(43), "map-get".to_string());
+    decl_names.insert(DeclId::new(44), "count".to_string());
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("typed map put/get projection should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized typed map get projection should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+    assert!(
+        result.maps.iter().any(|map| map.name == "cached_path"),
+        "expected generic map definition for cached_path"
+    );
+}
+
+#[test]
+fn test_compile_optimized_external_typed_map_get_whole_struct_count() {
+    let hir = make_map_get_whole_value_program(DeclId::new(43), DeclId::new(44));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(43), "map-get".to_string());
+    decl_names.insert(DeclId::new(44), "count".to_string());
+    let external_schema = cached_path_struct_schema();
+
+    let mut lowering = lower_hir_to_mir_with_hints_and_maps(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        Some(&external_schema),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("whole-value typed map-get count should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized whole-value typed map-get count should compile");
+    let schema = result
+        .bytes_counter_key_schema
+        .expect("whole-value count should preserve a record key schema");
+    assert!(matches!(
+        schema,
+        CounterKeySchema::Record { ref fields, .. }
+            if fields.len() == 2
                 && fields[0].name == "mnt"
                 && fields[1].name == "dentry"
-        ));
-    }
+    ));
+}
 
-    #[test]
-    fn test_compile_optimized_external_typed_map_get_user_function_emit() {
-        let hir = make_map_get_user_function_emit_program(
-            DeclId::new(43),
-            DeclId::new(90),
-            DeclId::new(44),
-        );
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
-        let mut decl_names = HashMap::new();
-        decl_names.insert(DeclId::new(43), "map-get".to_string());
-        decl_names.insert(DeclId::new(44), "emit".to_string());
-        decl_names.insert(DeclId::new(90), "project-entry".to_string());
-        let external_schema = cached_path_struct_schema();
-        let user_functions = HashMap::from([(DeclId::new(90), make_identity_user_function())]);
+#[test]
+fn test_compile_optimized_external_typed_map_get_whole_struct_emit() {
+    let hir = make_map_get_whole_value_program(DeclId::new(43), DeclId::new(44));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(43), "map-get".to_string());
+    decl_names.insert(DeclId::new(44), "emit".to_string());
+    let external_schema = cached_path_struct_schema();
 
-        let mut lowering = lower_hir_to_mir_with_hints_and_maps(
-            &hir,
-            Some(&probe_ctx),
-            &decl_names,
-            None,
-            Some(&external_schema),
-            &user_functions,
-            &HashMap::new(),
-        )
-        .expect("typed map-get through user function should lower");
+    let mut lowering = lower_hir_to_mir_with_hints_and_maps(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        Some(&external_schema),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("whole-value typed map-get emit should lower");
 
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized whole-value typed map-get emit should compile");
+    let schema = result
+        .event_schema
+        .expect("whole-value emit should preserve a structured event schema");
+    assert!(
+        schema
+            .fields
+            .iter()
+            .map(|field| field.name.as_str())
+            .eq(["mnt", "dentry"].into_iter()),
+        "whole-value emit should preserve top-level record fields"
+    );
+}
+
+#[test]
+fn test_compile_optimized_external_typed_map_get_record_emit() {
+    let hir = make_map_get_record_emit_program(DeclId::new(43), DeclId::new(44));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(43), "map-get".to_string());
+    decl_names.insert(DeclId::new(44), "emit".to_string());
+    let external_schema = cached_path_struct_schema();
+
+    let mut lowering = lower_hir_to_mir_with_hints_and_maps(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        Some(&external_schema),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("record emit around typed map-get should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized record emit around typed map-get should compile");
+    let schema = result
+        .event_schema
+        .expect("record emit should preserve a structured event schema");
+    assert!(matches!(
+        schema.fields.as_slice(),
+        [crate::compiler::SchemaField {
+            name,
+            field_type: crate::compiler::BpfFieldType::Bytes(16),
+            value_schema: Some(CounterKeySchema::Record { fields, .. }),
+            ..
+        }] if name == "path"
+            && fields.len() == 2
+            && fields[0].name == "mnt"
+            && fields[1].name == "dentry"
+    ));
+}
+
+#[test]
+fn test_compile_optimized_external_typed_map_get_user_function_emit() {
+    let hir =
+        make_map_get_user_function_emit_program(DeclId::new(43), DeclId::new(90), DeclId::new(44));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(43), "map-get".to_string());
+    decl_names.insert(DeclId::new(44), "emit".to_string());
+    decl_names.insert(DeclId::new(90), "project-entry".to_string());
+    let external_schema = cached_path_struct_schema();
+    let user_functions = HashMap::from([(DeclId::new(90), make_identity_user_function())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints_and_maps(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        Some(&external_schema),
+        &user_functions,
+        &HashMap::new(),
+    )
+    .expect("typed map-get through user function should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+    for ((subfn, hints), stack_slots) in lowering
+        .program
+        .subfunctions
+        .iter_mut()
+        .zip(lowering.type_hints.subfunctions.iter_mut())
+        .zip(lowering.type_hints.subfunction_stack_slots.iter())
+    {
         optimize_with_ssa_hints(
-            &mut lowering.program.main,
+            subfn,
             Some(&probe_ctx),
-            &mut lowering.type_hints.main,
-            &lowering.type_hints.main_stack_slots,
+            hints,
+            stack_slots,
             &lowering.type_hints.generic_map_value_types,
         );
-        for ((subfn, hints), stack_slots) in lowering
-            .program
-            .subfunctions
-            .iter_mut()
-            .zip(lowering.type_hints.subfunctions.iter_mut())
-            .zip(lowering.type_hints.subfunction_stack_slots.iter())
-        {
-            optimize_with_ssa_hints(
-                subfn,
-                Some(&probe_ctx),
-                hints,
-                stack_slots,
-                &lowering.type_hints.generic_map_value_types,
-            );
-        }
-
-        let result = compile_mir_to_ebpf_with_hints(
-            &lowering.program,
-            Some(&probe_ctx),
-            Some(&lowering.type_hints),
-        )
-        .expect("optimized typed map-get through user function should compile");
-        let schema = result
-            .event_schema
-            .expect("user-function emit should preserve a structured event schema");
-        assert!(
-            schema
-                .fields
-                .iter()
-                .map(|field| field.name.as_str())
-                .eq(["mnt", "dentry"].into_iter()),
-            "user-function emit should preserve top-level record fields, got {:?}",
-            schema
-        );
     }
 
-    #[test]
-    fn test_compile_optimized_typed_trampoline_user_function_projection() {
-        let hir = make_trampoline_user_function_count_program(DeclId::new(90), DeclId::new(44));
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
-        let mut decl_names = HashMap::new();
-        decl_names.insert(DeclId::new(44), "count".to_string());
-        decl_names.insert(DeclId::new(90), "project-inode-flags".to_string());
-        let user_functions =
-            HashMap::from([(DeclId::new(90), make_project_inode_flags_user_function())]);
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized typed map-get through user function should compile");
+    let schema = result
+        .event_schema
+        .expect("user-function emit should preserve a structured event schema");
+    assert!(
+        schema
+            .fields
+            .iter()
+            .map(|field| field.name.as_str())
+            .eq(["mnt", "dentry"].into_iter()),
+        "user-function emit should preserve top-level record fields, got {:?}",
+        schema
+    );
+}
 
-        let mut lowering = lower_hir_to_mir_with_hints_and_maps(
-            &hir,
-            Some(&probe_ctx),
-            &decl_names,
-            None,
-            None,
-            &user_functions,
-            &HashMap::new(),
-        )
-        .expect("typed trampoline arg through user function should lower");
+#[test]
+fn test_compile_optimized_typed_trampoline_user_function_projection() {
+    let hir = make_trampoline_user_function_count_program(DeclId::new(90), DeclId::new(44));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(44), "count".to_string());
+    decl_names.insert(DeclId::new(90), "project-inode-flags".to_string());
+    let user_functions =
+        HashMap::from([(DeclId::new(90), make_project_inode_flags_user_function())]);
 
+    let mut lowering = lower_hir_to_mir_with_hints_and_maps(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        None,
+        &user_functions,
+        &HashMap::new(),
+    )
+    .expect("typed trampoline arg through user function should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+    for ((subfn, hints), stack_slots) in lowering
+        .program
+        .subfunctions
+        .iter_mut()
+        .zip(lowering.type_hints.subfunctions.iter_mut())
+        .zip(lowering.type_hints.subfunction_stack_slots.iter())
+    {
         optimize_with_ssa_hints(
-            &mut lowering.program.main,
+            subfn,
             Some(&probe_ctx),
-            &mut lowering.type_hints.main,
-            &lowering.type_hints.main_stack_slots,
+            hints,
+            stack_slots,
             &lowering.type_hints.generic_map_value_types,
         );
-        for ((subfn, hints), stack_slots) in lowering
-            .program
-            .subfunctions
-            .iter_mut()
-            .zip(lowering.type_hints.subfunctions.iter_mut())
-            .zip(lowering.type_hints.subfunction_stack_slots.iter())
-        {
-            optimize_with_ssa_hints(
-                subfn,
-                Some(&probe_ctx),
-                hints,
-                stack_slots,
-                &lowering.type_hints.generic_map_value_types,
-            );
-        }
-
-        compile_mir_to_ebpf_with_hints(
-            &lowering.program,
-            Some(&probe_ctx),
-            Some(&lowering.type_hints),
-        )
-        .expect("optimized typed trampoline projection through user function should compile");
     }
 
-    #[test]
-    fn test_compile_optimized_map_to_map_copy_projection() {
-        let hir =
-            make_map_copy_projection_program(DeclId::new(42), DeclId::new(43), DeclId::new(44));
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
-        let mut decl_names = HashMap::new();
-        decl_names.insert(DeclId::new(42), "map-put".to_string());
-        decl_names.insert(DeclId::new(43), "map-get".to_string());
-        decl_names.insert(DeclId::new(44), "count".to_string());
+    compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized typed trampoline projection through user function should compile");
+}
 
-        let mut lowering = lower_hir_to_mir_with_hints(
-            &hir,
-            Some(&probe_ctx),
-            &decl_names,
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .expect("map-to-map copy projection should lower");
+#[test]
+fn test_compile_optimized_map_to_map_copy_projection() {
+    let hir = make_map_copy_projection_program(DeclId::new(42), DeclId::new(43), DeclId::new(44));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "map-put".to_string());
+    decl_names.insert(DeclId::new(43), "map-get".to_string());
+    decl_names.insert(DeclId::new(44), "count".to_string());
 
-        optimize_with_ssa_hints(
-            &mut lowering.program.main,
-            Some(&probe_ctx),
-            &mut lowering.type_hints.main,
-            &lowering.type_hints.main_stack_slots,
-            &lowering.type_hints.generic_map_value_types,
-        );
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("map-to-map copy projection should lower");
 
-        let result = compile_mir_to_ebpf_with_hints(
-            &lowering.program,
-            Some(&probe_ctx),
-            Some(&lowering.type_hints),
-        )
-        .expect("optimized map-to-map copy projection should compile");
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
 
-        assert!(
-            result.maps.iter().any(|map| map.name == "copied_path"),
-            "expected generic map definition for copied_path"
-        );
-        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
-    }
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized map-to-map copy projection should compile");
 
-    #[test]
-    fn test_recover_optimized_type_hints_for_direct_pointer_index_projection() {
-        let hir = make_ctx_path_program(CellPath {
+    assert!(
+        result.maps.iter().any(|map| map.name == "copied_path"),
+        "expected generic map definition for copied_path"
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_recover_optimized_type_hints_for_direct_pointer_index_projection() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("arg0"),
+            string_member("fdt"),
+            string_member("fd"),
+            PathMember::Int {
+                val: 0,
+                span: Span::test_data(),
+                optional: false,
+            },
+            string_member("f_inode"),
+            string_member("i_ino"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "do_close_on_exec");
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("direct pointer-index projection should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized direct pointer-index projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_recover_optimized_type_hints_for_bound_pointer_index_projection() {
+    let hir = make_bound_ctx_path_program(
+        CellPath {
             members: vec![
                 string_member("arg0"),
                 string_member("fdt"),
                 string_member("fd"),
+            ],
+        },
+        CellPath {
+            members: vec![
                 PathMember::Int {
                     val: 0,
                     span: Span::test_data(),
@@ -3695,382 +3656,331 @@
                 string_member("f_inode"),
                 string_member("i_ino"),
             ],
-        });
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "do_close_on_exec");
+        },
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "do_close_on_exec");
 
-        let mut lowering = lower_hir_to_mir_with_hints(
-            &hir,
-            Some(&probe_ctx),
-            &HashMap::new(),
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .expect("direct pointer-index projection should lower");
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bound pointer-index projection should lower");
 
-        optimize_with_ssa_hints(
-            &mut lowering.program.main,
-            Some(&probe_ctx),
-            &mut lowering.type_hints.main,
-            &lowering.type_hints.main_stack_slots,
-            &lowering.type_hints.generic_map_value_types,
-        );
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
 
-        let result = compile_mir_to_ebpf_with_hints(
-            &lowering.program,
-            Some(&probe_ctx),
-            Some(&lowering.type_hints),
-        )
-        .expect("optimized direct pointer-index projection should compile");
-        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
-    }
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized bound pointer-index projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
 
-    #[test]
-    fn test_recover_optimized_type_hints_for_bound_pointer_index_projection() {
-        let hir = make_bound_ctx_path_program(
-            CellPath {
-                members: vec![
-                    string_member("arg0"),
-                    string_member("fdt"),
-                    string_member("fd"),
-                ],
-            },
-            CellPath {
-                members: vec![
-                    PathMember::Int {
-                        val: 0,
-                        span: Span::test_data(),
-                        optional: false,
-                    },
-                    string_member("f_inode"),
-                    string_member("i_ino"),
-                ],
-            },
-        );
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "do_close_on_exec");
+#[test]
+fn test_recover_optimized_type_hints_for_bound_numeric_get_projection() {
+    let hir = make_bound_ctx_get_program(
+        CellPath {
+            members: vec![
+                string_member("arg0"),
+                string_member("fdt"),
+                string_member("fd"),
+            ],
+        },
+        CellPath {
+            members: vec![string_member("f_inode"), string_member("i_ino")],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "do_close_on_exec");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "get".to_string());
 
-        let mut lowering = lower_hir_to_mir_with_hints(
-            &hir,
-            Some(&probe_ctx),
-            &HashMap::new(),
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .expect("bound pointer-index projection should lower");
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bound numeric get projection should lower");
 
-        optimize_with_ssa_hints(
-            &mut lowering.program.main,
-            Some(&probe_ctx),
-            &mut lowering.type_hints.main,
-            &lowering.type_hints.main_stack_slots,
-            &lowering.type_hints.generic_map_value_types,
-        );
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
 
-        let result = compile_mir_to_ebpf_with_hints(
-            &lowering.program,
-            Some(&probe_ctx),
-            Some(&lowering.type_hints),
-        )
-        .expect("optimized bound pointer-index projection should compile");
-        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
-    }
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized bound numeric get projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
 
-    #[test]
-    fn test_recover_optimized_type_hints_for_bound_numeric_get_projection() {
-        let hir = make_bound_ctx_get_program(
-            CellPath {
-                members: vec![
-                    string_member("arg0"),
-                    string_member("fdt"),
-                    string_member("fd"),
-                ],
-            },
-            CellPath {
-                members: vec![string_member("f_inode"), string_member("i_ino")],
-            },
-            DeclId::new(42),
-        );
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "do_close_on_exec");
-        let mut decl_names = HashMap::new();
-        decl_names.insert(DeclId::new(42), "get".to_string());
+#[test]
+fn test_recover_optimized_type_hints_for_branch_refined_bound_numeric_get_projection() {
+    let hir = make_branch_refined_bound_ctx_get_program(
+        CellPath {
+            members: vec![
+                string_member("arg0"),
+                string_member("fdt"),
+                string_member("max_fds"),
+            ],
+        },
+        CellPath {
+            members: vec![
+                string_member("arg0"),
+                string_member("fdt"),
+                string_member("fd"),
+            ],
+        },
+        CellPath {
+            members: vec![string_member("f_inode"), string_member("i_ino")],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "do_close_on_exec");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "get".to_string());
 
-        let mut lowering = lower_hir_to_mir_with_hints(
-            &hir,
-            Some(&probe_ctx),
-            &decl_names,
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .expect("bound numeric get projection should lower");
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("branch-refined bound numeric get projection should lower");
 
-        optimize_with_ssa_hints(
-            &mut lowering.program.main,
-            Some(&probe_ctx),
-            &mut lowering.type_hints.main,
-            &lowering.type_hints.main_stack_slots,
-            &lowering.type_hints.generic_map_value_types,
-        );
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
 
-        let result = compile_mir_to_ebpf_with_hints(
-            &lowering.program,
-            Some(&probe_ctx),
-            Some(&lowering.type_hints),
-        )
-        .expect("optimized bound numeric get projection should compile");
-        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
-    }
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized branch-refined bound numeric get projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
 
-    #[test]
-    fn test_recover_optimized_type_hints_for_branch_refined_bound_numeric_get_projection() {
-        let hir = make_branch_refined_bound_ctx_get_program(
-            CellPath {
-                members: vec![
-                    string_member("arg0"),
-                    string_member("fdt"),
-                    string_member("max_fds"),
-                ],
-            },
-            CellPath {
-                members: vec![
-                    string_member("arg0"),
-                    string_member("fdt"),
-                    string_member("fd"),
-                ],
-            },
-            CellPath {
-                members: vec![string_member("f_inode"), string_member("i_ino")],
-            },
-            DeclId::new(42),
-        );
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "do_close_on_exec");
-        let mut decl_names = HashMap::new();
-        decl_names.insert(DeclId::new(42), "get".to_string());
+#[test]
+fn test_recover_optimized_type_hints_for_stack_backed_array_numeric_get() {
+    let hir = make_bound_ctx_runtime_get_program(
+        CellPath {
+            members: vec![string_member("arg0"), string_member("comm")],
+        },
+        CellPath {
+            members: vec![string_member("pid")],
+        },
+        2,
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "wake_up_new_task");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "get".to_string());
 
-        let mut lowering = lower_hir_to_mir_with_hints(
-            &hir,
-            Some(&probe_ctx),
-            &decl_names,
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .expect("branch-refined bound numeric get projection should lower");
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("stack-backed array numeric get should lower");
 
-        optimize_with_ssa_hints(
-            &mut lowering.program.main,
-            Some(&probe_ctx),
-            &mut lowering.type_hints.main,
-            &lowering.type_hints.main_stack_slots,
-            &lowering.type_hints.generic_map_value_types,
-        );
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
 
-        let result = compile_mir_to_ebpf_with_hints(
-            &lowering.program,
-            Some(&probe_ctx),
-            Some(&lowering.type_hints),
-        )
-        .expect("optimized branch-refined bound numeric get projection should compile");
-        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
-    }
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized stack-backed array numeric get should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
 
-    #[test]
-    fn test_recover_optimized_type_hints_for_stack_backed_array_numeric_get() {
-        let hir = make_bound_ctx_runtime_get_program(
-            CellPath {
-                members: vec![string_member("arg0"), string_member("comm")],
-            },
-            CellPath {
-                members: vec![string_member("pid")],
-            },
-            2,
-            DeclId::new(42),
-        );
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "wake_up_new_task");
-        let mut decl_names = HashMap::new();
-        decl_names.insert(DeclId::new(42), "get".to_string());
+#[test]
+fn test_recover_optimized_type_hints_for_stack_backed_bitfield_projection_after_numeric_get() {
+    let hir = make_bound_ctx_runtime_get_path_program(
+        CellPath {
+            members: vec![string_member("arg0"), string_member("uclamp_req")],
+        },
+        CellPath {
+            members: vec![string_member("pid")],
+        },
+        2,
+        CellPath {
+            members: vec![string_member("bucket_id")],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "wake_up_new_task");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "get".to_string());
 
-        let mut lowering = lower_hir_to_mir_with_hints(
-            &hir,
-            Some(&probe_ctx),
-            &decl_names,
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .expect("stack-backed array numeric get should lower");
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("stack-backed bitfield projection after numeric get should lower");
 
-        optimize_with_ssa_hints(
-            &mut lowering.program.main,
-            Some(&probe_ctx),
-            &mut lowering.type_hints.main,
-            &lowering.type_hints.main_stack_slots,
-            &lowering.type_hints.generic_map_value_types,
-        );
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
 
-        let result = compile_mir_to_ebpf_with_hints(
-            &lowering.program,
-            Some(&probe_ctx),
-            Some(&lowering.type_hints),
-        )
-        .expect("optimized stack-backed array numeric get should compile");
-        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
-    }
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized stack-backed bitfield projection after numeric get should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
 
-    #[test]
-    fn test_recover_optimized_type_hints_for_stack_backed_bitfield_projection_after_numeric_get() {
-        let hir = make_bound_ctx_runtime_get_path_program(
-            CellPath {
-                members: vec![string_member("arg0"), string_member("uclamp_req")],
-            },
-            CellPath {
-                members: vec![string_member("pid")],
-            },
-            2,
-            CellPath {
-                members: vec![string_member("bucket_id")],
-            },
-            DeclId::new(42),
-        );
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "wake_up_new_task");
-        let mut decl_names = HashMap::new();
-        decl_names.insert(DeclId::new(42), "get".to_string());
+#[test]
+fn test_recover_optimized_type_hints_for_stack_backed_bitfield_struct_count_after_numeric_get() {
+    let hir = make_bound_ctx_runtime_get_then_call_program(
+        CellPath {
+            members: vec![string_member("arg0"), string_member("uclamp_req")],
+        },
+        CellPath {
+            members: vec![string_member("pid")],
+        },
+        2,
+        DeclId::new(43),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "wake_up_new_task");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "get".to_string());
+    decl_names.insert(DeclId::new(43), "count".to_string());
 
-        let mut lowering = lower_hir_to_mir_with_hints(
-            &hir,
-            Some(&probe_ctx),
-            &decl_names,
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .expect("stack-backed bitfield projection after numeric get should lower");
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("stack-backed bitfield struct count after numeric get should lower");
 
-        optimize_with_ssa_hints(
-            &mut lowering.program.main,
-            Some(&probe_ctx),
-            &mut lowering.type_hints.main,
-            &lowering.type_hints.main_stack_slots,
-            &lowering.type_hints.generic_map_value_types,
-        );
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
 
-        let result = compile_mir_to_ebpf_with_hints(
-            &lowering.program,
-            Some(&probe_ctx),
-            Some(&lowering.type_hints),
-        )
-        .expect("optimized stack-backed bitfield projection after numeric get should compile");
-        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
-    }
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized stack-backed bitfield struct count should compile");
+    assert!(
+        matches!(
+            result.bytes_counter_key_schema,
+            Some(CounterKeySchema::Record { .. })
+        ),
+        "bitfield struct count should preserve a record schema"
+    );
+}
 
-    #[test]
-    fn test_recover_optimized_type_hints_for_stack_backed_bitfield_struct_count_after_numeric_get()
-    {
-        let hir = make_bound_ctx_runtime_get_then_call_program(
-            CellPath {
-                members: vec![string_member("arg0"), string_member("uclamp_req")],
-            },
-            CellPath {
-                members: vec![string_member("pid")],
-            },
-            2,
-            DeclId::new(43),
-        );
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "wake_up_new_task");
-        let mut decl_names = HashMap::new();
-        decl_names.insert(DeclId::new(42), "get".to_string());
-        decl_names.insert(DeclId::new(43), "count".to_string());
+#[test]
+fn test_recover_optimized_type_hints_for_stack_backed_bitfield_struct_emit_after_numeric_get() {
+    let hir = make_bound_ctx_runtime_get_then_call_program(
+        CellPath {
+            members: vec![string_member("arg0"), string_member("uclamp_req")],
+        },
+        CellPath {
+            members: vec![string_member("pid")],
+        },
+        2,
+        DeclId::new(43),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "wake_up_new_task");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "get".to_string());
+    decl_names.insert(DeclId::new(43), "emit".to_string());
 
-        let mut lowering = lower_hir_to_mir_with_hints(
-            &hir,
-            Some(&probe_ctx),
-            &decl_names,
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .expect("stack-backed bitfield struct count after numeric get should lower");
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("stack-backed bitfield struct emit after numeric get should lower");
 
-        optimize_with_ssa_hints(
-            &mut lowering.program.main,
-            Some(&probe_ctx),
-            &mut lowering.type_hints.main,
-            &lowering.type_hints.main_stack_slots,
-            &lowering.type_hints.generic_map_value_types,
-        );
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
 
-        let result = compile_mir_to_ebpf_with_hints(
-            &lowering.program,
-            Some(&probe_ctx),
-            Some(&lowering.type_hints),
-        )
-        .expect("optimized stack-backed bitfield struct count should compile");
-        assert!(
-            matches!(
-                result.bytes_counter_key_schema,
-                Some(CounterKeySchema::Record { .. })
-            ),
-            "bitfield struct count should preserve a record schema"
-        );
-    }
-
-    #[test]
-    fn test_recover_optimized_type_hints_for_stack_backed_bitfield_struct_emit_after_numeric_get() {
-        let hir = make_bound_ctx_runtime_get_then_call_program(
-            CellPath {
-                members: vec![string_member("arg0"), string_member("uclamp_req")],
-            },
-            CellPath {
-                members: vec![string_member("pid")],
-            },
-            2,
-            DeclId::new(43),
-        );
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "wake_up_new_task");
-        let mut decl_names = HashMap::new();
-        decl_names.insert(DeclId::new(42), "get".to_string());
-        decl_names.insert(DeclId::new(43), "emit".to_string());
-
-        let mut lowering = lower_hir_to_mir_with_hints(
-            &hir,
-            Some(&probe_ctx),
-            &decl_names,
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .expect("stack-backed bitfield struct emit after numeric get should lower");
-
-        optimize_with_ssa_hints(
-            &mut lowering.program.main,
-            Some(&probe_ctx),
-            &mut lowering.type_hints.main,
-            &lowering.type_hints.main_stack_slots,
-            &lowering.type_hints.generic_map_value_types,
-        );
-
-        let result = compile_mir_to_ebpf_with_hints(
-            &lowering.program,
-            Some(&probe_ctx),
-            Some(&lowering.type_hints),
-        )
-        .expect("optimized stack-backed bitfield struct emit should compile");
-        let schema = result
-            .event_schema
-            .expect("single-value emit should preserve a schema");
-        assert!(
-            schema.fields.iter().map(|field| field.name.as_str()).eq([
-                "value",
-                "bucket_id",
-                "active",
-                "user_defined"
-            ]
-            .into_iter()),
-            "bitfield struct emit should preserve top-level record fields"
-        );
-        assert!(
-            schema.fields[0].bitfield.is_some() && schema.fields[1].bitfield.is_some(),
-            "bitfield struct emit should preserve bitfield metadata"
-        );
-    }
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized stack-backed bitfield struct emit should compile");
+    let schema = result
+        .event_schema
+        .expect("single-value emit should preserve a schema");
+    assert!(
+        schema.fields.iter().map(|field| field.name.as_str()).eq([
+            "value",
+            "bucket_id",
+            "active",
+            "user_defined"
+        ]
+        .into_iter()),
+        "bitfield struct emit should preserve top-level record fields"
+    );
+    assert!(
+        schema.fields[0].bitfield.is_some() && schema.fields[1].bitfield.is_some(),
+        "bitfield struct emit should preserve bitfield metadata"
+    );
+}
