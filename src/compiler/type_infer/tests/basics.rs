@@ -71,6 +71,26 @@ fn find_tp_btf_arg_candidate() -> Option<String> {
     None
 }
 
+fn find_tracepoint_pointer_field_candidate() -> Option<(String, String)> {
+    for (target, field_name) in [
+        ("syscalls/sys_enter_openat", "filename"),
+        ("syscalls/sys_enter_openat2", "filename"),
+        ("syscalls/sys_enter_execve", "filename"),
+    ] {
+        let (category, name) = target.split_once('/')?;
+        let Ok(ctx) = KernelBtf::get().get_tracepoint_context(category, name) else {
+            continue;
+        };
+        let Some(field) = ctx.get_field(field_name) else {
+            continue;
+        };
+        if field.type_info.is_ptr() {
+            return Some((target.to_string(), field_name.to_string()));
+        }
+    }
+    None
+}
+
 fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
     match type_info {
         TypeInfo::Int { size, signed } => Some(match (*size, *signed) {
@@ -430,6 +450,73 @@ fn test_type_error_tracepoint_arg_is_rejected() {
         e.message
             .contains("ctx.arg0 is only available on contexts with argument access")
     }));
+}
+
+#[test]
+fn test_infer_tracepoint_id_field_is_concrete_integer() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::TracepointField("id".to_string()),
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "syscalls/sys_enter_openat");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+    let expected = KernelBtf::get()
+        .get_tracepoint_context("syscalls", "sys_enter_openat")
+        .unwrap()
+        .get_field("id")
+        .and_then(|field| mir_type_from_type_info(&field.type_info))
+        .expect("expected concrete id field type");
+
+    assert_eq!(types.get(&v0), Some(&expected));
+}
+
+#[test]
+fn test_infer_tracepoint_filename_field_is_kernel_pointer() {
+    let Some((target, field_name)) = find_tracepoint_pointer_field_candidate() else {
+        return;
+    };
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::TracepointField(field_name.clone()),
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::Tracepoint, &target);
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+    let (category, name) = target
+        .split_once('/')
+        .expect("tracepoint target should include category");
+    let expected = KernelBtf::get()
+        .get_tracepoint_context(category, name)
+        .unwrap()
+        .get_field(&field_name)
+        .and_then(|field| mir_type_from_type_info(&field.type_info))
+        .expect("expected concrete pointer field type");
+
+    assert_eq!(types.get(&v0), Some(&expected));
+    assert!(matches!(
+        types.get(&v0),
+        Some(MirType::Ptr {
+            address_space: AddressSpace::Kernel,
+            ..
+        })
+    ));
 }
 
 #[test]

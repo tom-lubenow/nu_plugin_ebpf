@@ -1,6 +1,6 @@
 use super::*;
 use crate::compiler::ProgramValueAccess;
-use crate::kernel_btf::TypeInfo;
+use crate::kernel_btf::{KernelBtf, TypeInfo};
 
 impl<'a> TypeInference<'a> {
     fn synthetic_bpf_sock_hm_type() -> HMType {
@@ -228,6 +228,27 @@ impl<'a> TypeInference<'a> {
         }))
     }
 
+    fn tracepoint_field_type(&self, name: &str) -> Result<Option<HMType>, TypeError> {
+        let Some(ctx) = self.probe_ctx.as_ref() else {
+            return Ok(None);
+        };
+        let Some((category, tp_name)) = ctx.tracepoint_parts() else {
+            return Ok(None);
+        };
+        let trace_ctx = KernelBtf::get()
+            .get_tracepoint_context(&category, &tp_name)
+            .map_err(|err| TypeError::new(err.to_string()))?;
+        let Some(field) = trace_ctx.get_field(name) else {
+            return Ok(None);
+        };
+        Ok(match &field.type_info {
+            TypeInfo::Int { .. } | TypeInfo::Ptr { .. } => {
+                Self::hm_type_from_type_info(&field.type_info)
+            }
+            _ => None,
+        })
+    }
+
     pub(super) fn validate_ctx_field_access(&self, field: &CtxField) -> Result<(), TypeError> {
         if let Some(ctx) = self.probe_ctx.as_ref() {
             ctx.validate_load_ctx_field(field)
@@ -405,13 +426,17 @@ impl<'a> TypeInference<'a> {
                 address_space: AddressSpace::Stack,
             },
 
-            CtxField::TracepointField(name) => {
-                let tvar = *self
-                    .ctx_tp_vars
-                    .entry(name.clone())
-                    .or_insert_with(|| self.tvar_gen.fresh());
-                HMType::Var(tvar)
-            }
+            CtxField::TracepointField(name) => self
+                .tracepoint_field_type(name)
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| {
+                    let tvar = *self
+                        .ctx_tp_vars
+                        .entry(name.clone())
+                        .or_insert_with(|| self.tvar_gen.fresh());
+                    HMType::Var(tvar)
+                }),
         }
     }
 
