@@ -591,6 +591,25 @@ fn find_lsm_hook_named_arg_candidate() -> Option<(&'static str, &'static str, us
 }
 
 #[test]
+fn test_tp_btf_arg_type_info_skips_hidden_context_slot() {
+    let callable_name = KernelBtf::tp_btf_type_name("sys_enter");
+    let Ok(Some(raw_visible_arg)) =
+        KernelBtf::get().function_trampoline_arg_type_info(&callable_name, 1)
+    else {
+        return;
+    };
+    let user_visible_arg = KernelBtf::get()
+        .tp_btf_arg_type_info("sys_enter", 0)
+        .expect("tp_btf arg query should succeed")
+        .expect("tp_btf sys_enter arg0 should exist");
+
+    assert_eq!(
+        format!("{user_visible_arg:?}"),
+        format!("{raw_visible_arg:?}")
+    );
+}
+
+#[test]
 fn test_struct_ops_callback_arg_type_info_resolves_candidate() {
     let Some((value_type_name, callback_name)) = find_struct_ops_callback_candidate() else {
         return;

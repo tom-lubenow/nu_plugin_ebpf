@@ -53,6 +53,23 @@ fn find_struct_ops_arg_candidate() -> Option<(String, String)> {
     None
 }
 
+fn find_tp_btf_arg_candidate() -> Option<String> {
+    for tracepoint_name in [
+        "sys_enter",
+        "sys_exit",
+        "sched_process_exec",
+        "sched_process_fork",
+    ] {
+        if matches!(
+            KernelBtf::get().tp_btf_arg_type_info(tracepoint_name, 0),
+            Ok(Some(_))
+        ) {
+            return Some(tracepoint_name.to_string());
+        }
+    }
+    None
+}
+
 fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
     match type_info {
         TypeInfo::Int { size, signed } => Some(match (*size, *signed) {
@@ -486,6 +503,37 @@ fn test_infer_raw_tracepoint_arg_is_u64() {
     let types = ti.infer(&func).unwrap();
 
     assert_eq!(types.get(&v0), Some(&MirType::U64));
+}
+
+#[test]
+fn test_infer_tp_btf_arg_matches_kernel_btf() {
+    let Some(tracepoint_name) = find_tp_btf_arg_candidate() else {
+        return;
+    };
+
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::Arg(0),
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::TpBtf, &tracepoint_name);
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+    let expected = expected_runtime_trampoline_type(
+        &KernelBtf::get()
+            .tp_btf_arg_type_info(&tracepoint_name, 0)
+            .unwrap()
+            .expect("expected tp_btf arg0 type info"),
+    );
+
+    assert_eq!(types.get(&v0), Some(&expected));
 }
 
 #[test]

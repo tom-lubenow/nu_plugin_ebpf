@@ -715,7 +715,7 @@ Requirements:
                 result: None,
             },
             Example {
-                example: "ebpf attach --dry-run 'tp_btf:sys_enter' {|ctx| $ctx.arg1.orig_ax | count; 0 }",
+                example: "ebpf attach --dry-run 'tp_btf:sys_enter' {|ctx| $ctx.arg0.orig_ax | count; 0 }",
                 description: "Dry-run a BTF-enabled raw tracepoint using typed trampoline args",
                 result: None,
             },

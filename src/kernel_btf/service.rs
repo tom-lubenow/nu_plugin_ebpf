@@ -256,12 +256,22 @@ pub struct KernelBtf {
 }
 
 impl KernelBtf {
+    const TP_BTF_HIDDEN_ARG_COUNT: usize = 1;
+
     fn lsm_hook_function_name(hook_name: &str) -> String {
         format!("bpf_lsm_{hook_name}")
     }
 
     fn tp_btf_type_name(tracepoint_name: &str) -> String {
         format!("btf_trace_{tracepoint_name}")
+    }
+
+    fn tp_btf_raw_arg_index(arg_idx: usize) -> usize {
+        arg_idx + Self::TP_BTF_HIDDEN_ARG_COUNT
+    }
+
+    fn tp_btf_user_arg_index(raw_idx: usize) -> Option<usize> {
+        raw_idx.checked_sub(Self::TP_BTF_HIDDEN_ARG_COUNT)
     }
 
     fn resolve_named_trampoline_callable<'a>(
@@ -497,7 +507,10 @@ impl KernelBtf {
         tracepoint_name: &str,
         arg_idx: usize,
     ) -> Result<Option<TrampolineValueSpec>, BtfError> {
-        self.function_trampoline_arg(&Self::tp_btf_type_name(tracepoint_name), arg_idx)
+        self.function_trampoline_arg(
+            &Self::tp_btf_type_name(tracepoint_name),
+            Self::tp_btf_raw_arg_index(arg_idx),
+        )
     }
 
     /// Resolve a typed trampoline argument slot for a `struct_ops` callback.
@@ -580,7 +593,10 @@ impl KernelBtf {
         tracepoint_name: &str,
         arg_idx: usize,
     ) -> Result<Option<TypeInfo>, BtfError> {
-        self.function_trampoline_arg_type_info(&Self::tp_btf_type_name(tracepoint_name), arg_idx)
+        self.function_trampoline_arg_type_info(
+            &Self::tp_btf_type_name(tracepoint_name),
+            Self::tp_btf_raw_arg_index(arg_idx),
+        )
     }
 
     /// Resolve the argument index for a named trampoline function parameter.
@@ -618,10 +634,12 @@ impl KernelBtf {
         tracepoint_name: &str,
         arg_name: &str,
     ) -> Result<Option<usize>, BtfError> {
-        self.function_trampoline_arg_index_by_name(
-            &Self::tp_btf_type_name(tracepoint_name),
-            arg_name,
-        )
+        Ok(self
+            .function_trampoline_arg_index_by_name(
+                &Self::tp_btf_type_name(tracepoint_name),
+                arg_name,
+            )?
+            .and_then(Self::tp_btf_user_arg_index))
     }
 
     /// Resolve the exact kernel-BTF type for a `struct_ops` callback argument.
@@ -808,12 +826,17 @@ impl KernelBtf {
     pub fn validate_tp_btf_target(&self, tracepoint_name: &str) -> Result<(), BtfError> {
         let callable_name = Self::tp_btf_type_name(tracepoint_name);
         let layout = self.function_trampoline_layout(&callable_name)?;
-        for (idx, arg) in layout.args.iter().enumerate() {
+        for (idx, arg) in layout
+            .args
+            .iter()
+            .enumerate()
+            .skip(Self::TP_BTF_HIDDEN_ARG_COUNT)
+        {
             if arg.value.is_none() {
                 return Err(BtfError::KernelBtfError(format!(
                     "tp_btf target '{}' uses unsupported argument {}: {}",
                     tracepoint_name,
-                    idx,
+                    idx - Self::TP_BTF_HIDDEN_ARG_COUNT,
                     arg.unsupported_reason
                         .as_deref()
                         .unwrap_or("unknown layout")
@@ -941,7 +964,7 @@ impl KernelBtf {
     ) -> Result<Option<TrampolineFieldProjection>, BtfError> {
         self.function_trampoline_arg_field(
             &Self::tp_btf_type_name(tracepoint_name),
-            arg_idx,
+            Self::tp_btf_raw_arg_index(arg_idx),
             field_path,
         )
     }

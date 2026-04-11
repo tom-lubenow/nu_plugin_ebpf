@@ -2307,6 +2307,36 @@ fn test_lower_struct_ops_named_arg_alias_nested_projection() {
 }
 
 #[test]
+fn test_lower_tp_btf_named_arg_alias() {
+    let Some((tracepoint_name, arg_name, expected_idx)) = find_tp_btf_named_arg_candidate() else {
+        return;
+    };
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("arg"), string_member(&arg_name)],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::TpBtf, &tracepoint_name);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("named tp_btf arg alias should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Arg(idx),
+            ..
+        } if *idx == expected_idx
+    )));
+}
+
+#[test]
 fn test_lower_function_trampoline_named_arg_alias() {
     let Some((function_name, arg_name, expected_idx)) =
         find_function_trampoline_named_arg_candidate()

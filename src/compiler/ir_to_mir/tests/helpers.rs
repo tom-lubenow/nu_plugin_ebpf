@@ -134,6 +134,26 @@ pub(super) fn find_struct_ops_named_arg_candidate() -> Option<(String, String, S
     None
 }
 
+pub(super) fn find_tp_btf_named_arg_candidate() -> Option<(String, String, u8)> {
+    for (tracepoint_name, arg_name) in [
+        ("sys_enter", "regs"),
+        ("sys_enter", "id"),
+        ("sys_exit", "regs"),
+        ("sys_exit", "ret"),
+        ("sched_process_fork", "parent"),
+        ("sched_process_fork", "child"),
+        ("sched_process_exec", "bprm"),
+    ] {
+        if let Ok(Some(idx)) = KernelBtf::get().tp_btf_arg_index_by_name(tracepoint_name, arg_name)
+        {
+            if let Ok(idx) = u8::try_from(idx) {
+                return Some((tracepoint_name.to_string(), arg_name.to_string(), idx));
+            }
+        }
+    }
+    None
+}
+
 pub(super) fn find_function_trampoline_named_arg_candidate() -> Option<(String, String, u8)> {
     for (function_name, arg_name, expected_idx) in [
         ("security_file_open", "file", 0u8),

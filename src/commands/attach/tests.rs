@@ -3146,6 +3146,54 @@ fn make_branch_refined_bound_ctx_get_program(
 }
 
 #[test]
+fn test_compile_tp_btf_ctx_arg_program() {
+    fn find_tp_btf_scalar_arg_candidate() -> Option<(&'static str, usize)> {
+        for (tracepoint_name, arg_idx) in [
+            ("sys_enter", 1usize),
+            ("sys_exit", 1),
+            ("sched_process_exec", 1),
+            ("sched_process_fork", 0),
+        ] {
+            if matches!(
+                KernelBtf::get().tp_btf_arg_type_info(tracepoint_name, arg_idx),
+                Ok(Some(TypeInfo::Int { .. }))
+            ) {
+                return Some((tracepoint_name, arg_idx));
+            }
+        }
+        None
+    }
+
+    let Some((tracepoint_name, arg_idx)) = find_tp_btf_scalar_arg_candidate() else {
+        return;
+    };
+
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member(&format!("arg{arg_idx}"))],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::TpBtf, tracepoint_name);
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tp_btf scalar ctx.arg should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("tp_btf scalar ctx.arg should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_compile_raw_tracepoint_ctx_arg_program() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("arg0")],
