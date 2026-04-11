@@ -1875,6 +1875,21 @@ fn find_function_trampoline_named_struct_leaf_candidate() -> Option<(String, Str
     None
 }
 
+fn find_function_trampoline_named_root_candidate() -> Option<(String, String)> {
+    for (function_name, arg_name) in [
+        ("security_file_open", "file"),
+        ("do_close_on_exec", "files"),
+    ] {
+        if matches!(
+            KernelBtf::get().function_trampoline_arg_index_by_name(function_name, arg_name),
+            Ok(Some(_))
+        ) {
+            return Some((function_name.to_string(), arg_name.to_string()));
+        }
+    }
+    None
+}
+
 fn find_tp_btf_named_projection_candidate() -> Option<(String, String, String)> {
     for (tracepoint_name, arg_name, field_name) in [
         ("sys_enter", "regs", "orig_ax"),
@@ -2464,6 +2479,7 @@ fn make_map_get_user_function_emit_program(
 }
 
 fn make_trampoline_user_function_count_program(
+    source_path: CellPath,
     user_decl: DeclId,
     count_decl: DeclId,
 ) -> HirProgram {
@@ -2478,9 +2494,7 @@ fn make_trampoline_user_function_count_program(
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(1),
-                    lit: HirLiteral::CellPath(Box::new(CellPath {
-                        members: vec![string_member("arg0")],
-                    })),
+                    lit: HirLiteral::CellPath(Box::new(source_path)),
                 },
                 HirStmt::FollowCellPath {
                     src_dst: RegId::new(0),
@@ -2555,6 +2569,7 @@ fn cached_path_struct_schema() -> HashMap<MapRef, MirType> {
 }
 
 fn make_map_copy_projection_program(
+    source_path: CellPath,
     map_put_decl: DeclId,
     map_get_decl: DeclId,
     count_decl: DeclId,
@@ -2573,9 +2588,7 @@ fn make_map_copy_projection_program(
                     },
                     HirStmt::LoadLiteral {
                         dst: RegId::new(1),
-                        lit: HirLiteral::CellPath(Box::new(CellPath {
-                            members: vec![string_member("arg0"), string_member("f_path")],
-                        })),
+                        lit: HirLiteral::CellPath(Box::new(source_path)),
                     },
                     HirStmt::FollowCellPath {
                         src_dst: RegId::new(0),
@@ -3978,7 +3991,13 @@ fn test_compile_optimized_external_typed_map_get_user_function_emit() {
 
 #[test]
 fn test_compile_optimized_typed_trampoline_user_function_projection() {
-    let hir = make_trampoline_user_function_count_program(DeclId::new(90), DeclId::new(44));
+    let hir = make_trampoline_user_function_count_program(
+        CellPath {
+            members: vec![string_member("arg0")],
+        },
+        DeclId::new(90),
+        DeclId::new(44),
+    );
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
     let mut decl_names = HashMap::new();
     decl_names.insert(DeclId::new(44), "count".to_string());
@@ -4029,8 +4048,77 @@ fn test_compile_optimized_typed_trampoline_user_function_projection() {
 }
 
 #[test]
+fn test_compile_optimized_named_typed_trampoline_user_function_projection() {
+    let Some((function_name, arg_name)) = find_function_trampoline_named_root_candidate() else {
+        return;
+    };
+
+    let hir = make_trampoline_user_function_count_program(
+        CellPath {
+            members: vec![string_member("arg"), string_member(&arg_name)],
+        },
+        DeclId::new(90),
+        DeclId::new(44),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, &function_name);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(44), "count".to_string());
+    decl_names.insert(DeclId::new(90), "project-inode-flags".to_string());
+    let user_functions =
+        HashMap::from([(DeclId::new(90), make_project_inode_flags_user_function())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints_and_maps(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        None,
+        &user_functions,
+        &HashMap::new(),
+    )
+    .expect("named typed trampoline arg through user function should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+    for ((subfn, hints), stack_slots) in lowering
+        .program
+        .subfunctions
+        .iter_mut()
+        .zip(lowering.type_hints.subfunctions.iter_mut())
+        .zip(lowering.type_hints.subfunction_stack_slots.iter())
+    {
+        optimize_with_ssa_hints(
+            subfn,
+            Some(&probe_ctx),
+            hints,
+            stack_slots,
+            &lowering.type_hints.generic_map_value_types,
+        );
+    }
+
+    compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized named typed trampoline projection through user function should compile");
+}
+
+#[test]
 fn test_compile_optimized_map_to_map_copy_projection() {
-    let hir = make_map_copy_projection_program(DeclId::new(42), DeclId::new(43), DeclId::new(44));
+    let hir = make_map_copy_projection_program(
+        CellPath {
+            members: vec![string_member("arg0"), string_member("f_path")],
+        },
+        DeclId::new(42),
+        DeclId::new(43),
+        DeclId::new(44),
+    );
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
     let mut decl_names = HashMap::new();
     decl_names.insert(DeclId::new(42), "map-put".to_string());
@@ -4061,6 +4149,64 @@ fn test_compile_optimized_map_to_map_copy_projection() {
         Some(&lowering.type_hints),
     )
     .expect("optimized map-to-map copy projection should compile");
+
+    assert!(
+        result.maps.iter().any(|map| map.name == "copied_path"),
+        "expected generic map definition for copied_path"
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_optimized_named_map_to_map_copy_projection() {
+    let Some((function_name, arg_name, field_name)) =
+        find_function_trampoline_named_struct_leaf_candidate()
+    else {
+        return;
+    };
+
+    let hir = make_map_copy_projection_program(
+        CellPath {
+            members: vec![
+                string_member("arg"),
+                string_member(&arg_name),
+                string_member(&field_name),
+            ],
+        },
+        DeclId::new(42),
+        DeclId::new(43),
+        DeclId::new(44),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, &function_name);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "map-put".to_string());
+    decl_names.insert(DeclId::new(43), "map-get".to_string());
+    decl_names.insert(DeclId::new(44), "count".to_string());
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("named map-to-map copy projection should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized named map-to-map copy projection should compile");
 
     assert!(
         result.maps.iter().any(|map| map.name == "copied_path"),
