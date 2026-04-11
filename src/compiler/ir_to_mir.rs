@@ -54,6 +54,7 @@ const MAX_INT_STRING_LEN: usize = 20;
 mod call_support;
 mod calls;
 mod closures;
+mod context_paths;
 mod control_flow;
 mod core_utils;
 mod entry;
