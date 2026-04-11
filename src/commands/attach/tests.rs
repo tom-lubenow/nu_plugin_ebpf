@@ -1835,6 +1835,68 @@ fn string_member(name: &str) -> PathMember {
     PathMember::test_string(name.to_string(), false, Casing::Sensitive)
 }
 
+fn find_function_trampoline_named_projection_candidate() -> Option<(String, String, String)> {
+    for (function_name, arg_name, field_name) in [("security_file_open", "file", "f_flags")] {
+        let path = [TrampolineFieldSelector::Field(field_name.to_string())];
+        if let Ok(Some(arg_idx)) =
+            KernelBtf::get().function_trampoline_arg_index_by_name(function_name, arg_name)
+            && matches!(
+                KernelBtf::get().function_trampoline_arg_field(function_name, arg_idx, &path),
+                Ok(Some(_))
+            )
+        {
+            return Some((
+                function_name.to_string(),
+                arg_name.to_string(),
+                field_name.to_string(),
+            ));
+        }
+    }
+    None
+}
+
+fn find_tp_btf_named_projection_candidate() -> Option<(String, String, String)> {
+    for (tracepoint_name, arg_name, field_name) in [
+        ("sys_enter", "regs", "orig_ax"),
+        ("sys_exit", "regs", "orig_ax"),
+    ] {
+        let path = [TrampolineFieldSelector::Field(field_name.to_string())];
+        if let Ok(Some(arg_idx)) =
+            KernelBtf::get().tp_btf_arg_index_by_name(tracepoint_name, arg_name)
+            && matches!(
+                KernelBtf::get().tp_btf_arg_field(tracepoint_name, arg_idx, &path),
+                Ok(Some(_))
+            )
+        {
+            return Some((
+                tracepoint_name.to_string(),
+                arg_name.to_string(),
+                field_name.to_string(),
+            ));
+        }
+    }
+    None
+}
+
+fn find_lsm_named_projection_candidate() -> Option<(String, String, String)> {
+    for (hook_name, arg_name, field_name) in [("file_open", "file", "f_flags")] {
+        let path = [TrampolineFieldSelector::Field(field_name.to_string())];
+        if let Ok(Some(arg_idx)) = KernelBtf::get().lsm_hook_arg_index_by_name(hook_name, arg_name)
+            && matches!(
+                KernelBtf::get().lsm_hook_arg_field(hook_name, arg_idx, &path),
+                Ok(Some(_))
+            )
+        {
+            return Some((
+                hook_name.to_string(),
+                arg_name.to_string(),
+                field_name.to_string(),
+            ));
+        }
+    }
+    None
+}
+
 fn make_ctx_path_call_program(cell_path: CellPath, decl_id: DeclId) -> HirProgram {
     let ctx_var = VarId::new(0);
     let func = HirFunction {
@@ -3238,6 +3300,129 @@ fn test_compile_tp_btf_projected_ctx_arg_program() {
         Some(&lowering.type_hints),
     )
     .expect("tp_btf ctx.arg0 field count should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_fentry_named_projected_ctx_arg_program() {
+    let Some((function_name, arg_name, field_name)) =
+        find_function_trampoline_named_projection_candidate()
+    else {
+        return;
+    };
+
+    let hir = make_ctx_path_call_program(
+        CellPath {
+            members: vec![
+                string_member("arg"),
+                string_member(&arg_name),
+                string_member(&field_name),
+            ],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, &function_name);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "count".to_string());
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fentry named ctx.arg field count should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("fentry named ctx.arg field count should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_tp_btf_named_projected_ctx_arg_program() {
+    let Some((tracepoint_name, arg_name, field_name)) = find_tp_btf_named_projection_candidate()
+    else {
+        return;
+    };
+
+    let hir = make_ctx_path_call_program(
+        CellPath {
+            members: vec![
+                string_member("arg"),
+                string_member(&arg_name),
+                string_member(&field_name),
+            ],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::TpBtf, &tracepoint_name);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "count".to_string());
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tp_btf named ctx.arg field count should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("tp_btf named ctx.arg field count should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_lsm_named_projected_ctx_arg_program() {
+    let Some((hook_name, arg_name, field_name)) = find_lsm_named_projection_candidate() else {
+        return;
+    };
+
+    let hir = make_ctx_path_call_program(
+        CellPath {
+            members: vec![
+                string_member("arg"),
+                string_member(&arg_name),
+                string_member(&field_name),
+            ],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, &hook_name);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "count".to_string());
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("lsm named ctx.arg field count should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("lsm named ctx.arg field count should compile");
 
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }

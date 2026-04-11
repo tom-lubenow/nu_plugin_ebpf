@@ -715,12 +715,12 @@ Requirements:
                 result: None,
             },
             Example {
-                example: "ebpf attach --dry-run 'tp_btf:sys_enter' {|ctx| $ctx.arg0.orig_ax | count; 0 }",
+                example: "ebpf attach --dry-run 'tp_btf:sys_enter' {|ctx| $ctx.arg.regs.orig_ax | count; 0 }",
                 description: "Dry-run a BTF-enabled raw tracepoint using typed trampoline args",
                 result: None,
             },
             Example {
-                example: "ebpf attach --dry-run 'lsm:file_open' {|ctx| $ctx.arg0.f_flags | count; 0 }",
+                example: "ebpf attach --dry-run 'lsm:file_open' {|ctx| $ctx.arg.file.f_flags | count; 0 }",
                 description: "Dry-run an LSM file_open hook using BTF-backed hook arguments",
                 result: None,
             },
