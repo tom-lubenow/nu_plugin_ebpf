@@ -325,6 +325,7 @@ fn test_constant_record_rodata_survives_projection_codegen_and_elf() {
         compile_result.event_schema,
         compile_result.bytes_counter_key_schema,
         HashMap::new(),
+        HashMap::new(),
     )
     .with_readonly_globals(compile_result.readonly_globals);
 

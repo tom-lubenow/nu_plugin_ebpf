@@ -148,6 +148,9 @@ pub struct ActiveProbe {
     bytes_counter_key_schema: Option<CounterKeySchema>,
     /// Typed generic map value schemas established for this pinned program set
     generic_map_value_types: HashMap<MapRef, MirType>,
+    /// Logical semantics for typed generic map values with richer layouts
+    generic_map_value_semantics:
+        HashMap<MapRef, crate::compiler::ir_to_mir::AnnotatedValueSemantics>,
     /// Pin group name (if maps are pinned for sharing)
     pin_group: Option<String>,
 }
@@ -184,6 +187,10 @@ impl std::fmt::Debug for ActiveProbe {
             .field(
                 "generic_map_value_types",
                 &self.generic_map_value_types.len(),
+            )
+            .field(
+                "generic_map_value_semantics",
+                &self.generic_map_value_semantics.len(),
             )
             .finish()
     }
@@ -336,6 +343,35 @@ impl EbpfState {
         merged
     }
 
+    fn merge_generic_map_value_semantics<'a>(
+        schemas: impl Iterator<
+            Item = &'a HashMap<MapRef, crate::compiler::ir_to_mir::AnnotatedValueSemantics>,
+        >,
+    ) -> HashMap<MapRef, crate::compiler::ir_to_mir::AnnotatedValueSemantics> {
+        let mut merged = HashMap::new();
+        let mut conflicts = HashSet::new();
+
+        for schema_set in schemas {
+            for (map, semantics) in schema_set {
+                if conflicts.contains(map) {
+                    continue;
+                }
+                match merged.get(map) {
+                    Some(existing) if existing != semantics => {
+                        merged.remove(map);
+                        conflicts.insert(map.clone());
+                    }
+                    Some(_) => {}
+                    None => {
+                        merged.insert(map.clone(), semantics.clone());
+                    }
+                }
+            }
+        }
+
+        merged
+    }
+
     pub fn new() -> Self {
         Self {
             probes: Mutex::new(HashMap::new()),
@@ -403,6 +439,24 @@ impl EbpfState {
                 .values()
                 .filter(|probe| probe.pin_group.as_deref() == Some(pin_group))
                 .map(|probe| &probe.generic_map_value_types),
+        ))
+    }
+
+    /// Collect logical generic-map value semantics from active probes in a pin group.
+    ///
+    /// Conflicting semantics for the same pinned map are dropped so callers only
+    /// see unambiguous richer layouts.
+    pub fn pinned_generic_map_value_semantics(
+        &self,
+        pin_group: &str,
+    ) -> Result<HashMap<MapRef, crate::compiler::ir_to_mir::AnnotatedValueSemantics>, LoadError>
+    {
+        let probes = self.probes.lock().map_err(|_| LoadError::LockPoisoned)?;
+        Ok(Self::merge_generic_map_value_semantics(
+            probes
+                .values()
+                .filter(|probe| probe.pin_group.as_deref() == Some(pin_group))
+                .map(|probe| &probe.generic_map_value_semantics),
         ))
     }
 }

@@ -504,11 +504,44 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn register_named_map_value_semantics(
+        &mut self,
+        map: &MapRef,
+        semantics: &AnnotatedValueSemantics,
+    ) {
+        if self.conflicting_map_value_semantics.contains(map) {
+            return;
+        }
+
+        match self.map_value_semantics.get(map) {
+            Some(existing) if existing != semantics => {
+                self.map_value_semantics.remove(map);
+                self.conflicting_map_value_semantics.insert(map.clone());
+            }
+            Some(_) => {}
+            None => {
+                self.map_value_semantics
+                    .insert(map.clone(), semantics.clone());
+            }
+        }
+    }
+
     pub(super) fn named_map_value_type(&self, map: &MapRef) -> Option<&MirType> {
         if self.conflicting_map_value_types.contains(map) {
             None
         } else {
             self.map_value_types.get(map)
+        }
+    }
+
+    pub(super) fn named_map_value_semantics(
+        &self,
+        map: &MapRef,
+    ) -> Option<&AnnotatedValueSemantics> {
+        if self.conflicting_map_value_semantics.contains(map) {
+            None
+        } else {
+            self.map_value_semantics.get(map)
         }
     }
 
@@ -523,7 +556,7 @@ impl<'a> HirToMirLowering<'a> {
         self.named_program_global_semantics.get(name)
     }
 
-    fn tracked_value_semantics(
+    pub(super) fn tracked_value_semantics(
         &self,
         src: RegId,
         constant_value: Option<&Value>,

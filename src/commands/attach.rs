@@ -22,7 +22,8 @@ use crate::compiler::{
     StructOpsObjectSpec, StructOpsValueField, UserFunctionSig, UserParam, UserParamKind,
     compile_mir_to_ebpf_with_hints_and_globals, hir::AnnotatedMutGlobal, hir::HirFunction,
     hir::HirProgram, hir::HirStmt, hir::supports_constant_value, hir_type_infer, infer_ctx_param,
-    lower_hir_to_mir_with_hints_and_maps, lower_ir_to_hir, passes::optimize_with_ssa_hints,
+    lower_hir_to_mir_with_hints_maps_and_semantics, lower_ir_to_hir,
+    passes::optimize_with_ssa_hints,
 };
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 
@@ -163,6 +164,8 @@ struct LeadingVariableDeclaration {
 struct CompiledClosureArtifacts {
     compile_result: MirCompileResult,
     generic_map_value_types: HashMap<MapRef, MirType>,
+    generic_map_value_semantics:
+        HashMap<MapRef, crate::compiler::ir_to_mir::AnnotatedValueSemantics>,
     used_kfuncs: HashSet<String>,
 }
 
@@ -1908,6 +1911,18 @@ fn compile_closure_with_context(
                 })
         })
         .transpose()?;
+    let external_map_value_semantics = pin_group
+        .map(|group| {
+            state
+                .pinned_generic_map_value_semantics(group)
+                .map_err(|e| match e {
+                    LoadError::LockPoisoned => LabeledError::new("Failed to attach eBPF probe")
+                        .with_label("loader state lock poisoned", call_head),
+                    other => LabeledError::new("Failed to attach eBPF probe")
+                        .with_label(other.to_string(), call_head),
+                })
+        })
+        .transpose()?;
 
     let hir_types = match hir_type_infer::infer_hir_types_with_decls(
         &hir_program,
@@ -1925,12 +1940,13 @@ fn compile_closure_with_context(
         }
     };
 
-    let lower_result = lower_hir_to_mir_with_hints_and_maps(
+    let lower_result = lower_hir_to_mir_with_hints_maps_and_semantics(
         &hir_program,
         Some(probe_context),
         &decl_names,
         Some(&hir_types),
         external_map_value_types.as_ref(),
+        external_map_value_semantics.as_ref(),
         &user_functions,
         &user_signatures,
     )
@@ -1943,6 +1959,7 @@ fn compile_closure_with_context(
         program: mut mir_program,
         mut type_hints,
         generic_map_value_types,
+        generic_map_value_semantics,
         readonly_globals,
         data_globals,
         bss_globals,
@@ -2000,6 +2017,7 @@ fn compile_closure_with_context(
     Ok(CompiledClosureArtifacts {
         compile_result,
         generic_map_value_types,
+        generic_map_value_semantics,
         used_kfuncs,
     })
 }
@@ -2056,6 +2074,7 @@ fn compile_struct_ops_object(
                     field_name.as_str(),
                     callback_name,
                     compiled.generic_map_value_types,
+                    compiled.generic_map_value_semantics,
                 ));
             }
             _ => {
@@ -3005,6 +3024,7 @@ fn run_attach(
                 &target,
                 "nushell_ebpf",
                 compiled.generic_map_value_types,
+                compiled.generic_map_value_semantics,
             );
             if pin_group.is_some() {
                 program = program.with_pinning();

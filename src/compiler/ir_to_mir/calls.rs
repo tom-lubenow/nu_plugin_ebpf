@@ -872,11 +872,15 @@ impl<'a> HirToMirLowering<'a> {
                 self.reset_call_result_metadata(src_dst);
                 if let Some(value_ty @ (MirType::Array { .. } | MirType::Struct { .. })) = stored_ty
                 {
+                    let semantics = self.named_map_value_semantics(&map_ref).cloned();
                     let meta = self.get_or_create_metadata(src_dst);
                     meta.field_type = Some(MirType::Ptr {
                         pointee: Box::new(value_ty),
                         address_space: AddressSpace::Map,
                     });
+                    if let Some(semantics) = semantics {
+                        meta.annotated_semantics = Some(semantics);
+                    }
                 }
             }
 
@@ -934,6 +938,9 @@ impl<'a> HirToMirLowering<'a> {
                             "map-put requires a value from pipeline input".into(),
                         )
                     })?;
+                let value_reg = self
+                    .pipeline_input_reg
+                    .or_else(|| src_dst_had_value.then_some(src_dst));
 
                 self.emit(MirInst::MapUpdate {
                     map: map_ref.clone(),
@@ -942,14 +949,16 @@ impl<'a> HirToMirLowering<'a> {
                     flags,
                 });
 
-                let value_ty = self
-                    .pipeline_input_reg
+                let value_ty = value_reg
                     .and_then(|reg| self.get_metadata(reg))
-                    .and_then(|m| m.field_type.clone())
-                    .or_else(|| {
-                        self.get_metadata(src_dst)
-                            .and_then(|m| m.field_type.clone())
-                    });
+                    .and_then(|m| m.field_type.clone());
+                let value_constant = value_reg
+                    .and_then(|reg| self.get_metadata(reg))
+                    .and_then(|m| m.constant_value.clone());
+                let value_semantics = value_reg
+                    .map(|reg| self.tracked_value_semantics(reg, value_constant.as_ref()))
+                    .transpose()?
+                    .flatten();
                 if let Some(value_ty) = value_ty {
                     let stored_value_ty = self.stored_generic_map_value_type(&value_ty);
                     if self.externally_seeded_map_value_types.contains(&map_ref) {
@@ -963,6 +972,22 @@ impl<'a> HirToMirLowering<'a> {
                         }
                     }
                     self.register_named_map_value_type(&map_ref, &stored_value_ty);
+                }
+                if let Some(value_semantics) = value_semantics {
+                    if self
+                        .externally_seeded_map_value_semantics
+                        .contains(&map_ref)
+                    {
+                        if let Some(existing) = self.named_map_value_semantics(&map_ref) {
+                            if existing != &value_semantics {
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "map-put value semantics for '{}' conflicts with pinned map schema",
+                                    map_ref.name
+                                )));
+                            }
+                        }
+                    }
+                    self.register_named_map_value_semantics(&map_ref, &value_semantics);
                 }
 
                 self.emit(MirInst::Copy {

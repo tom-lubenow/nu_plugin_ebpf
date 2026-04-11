@@ -99,6 +99,10 @@ impl MirCompileResult {
         target: impl Into<String>,
         name: impl Into<String>,
         generic_map_value_types: HashMap<MapRef, MirType>,
+        generic_map_value_semantics: HashMap<
+            MapRef,
+            crate::compiler::ir_to_mir::AnnotatedValueSemantics,
+        >,
     ) -> EbpfProgram {
         EbpfProgram::with_maps(
             prog_type,
@@ -112,6 +116,7 @@ impl MirCompileResult {
             self.event_schema,
             self.bytes_counter_key_schema,
             generic_map_value_types,
+            generic_map_value_semantics,
         )
         .with_readonly_globals(self.readonly_globals)
         .with_data_globals(self.data_globals)
@@ -123,6 +128,10 @@ impl MirCompileResult {
         slot_name: impl Into<String>,
         callback_name: impl Into<String>,
         generic_map_value_types: HashMap<MapRef, MirType>,
+        generic_map_value_semantics: HashMap<
+            MapRef,
+            crate::compiler::ir_to_mir::AnnotatedValueSemantics,
+        >,
     ) -> CompiledStructOpsCallback {
         let callback_name = callback_name.into();
         CompiledStructOpsCallback {
@@ -133,6 +142,7 @@ impl MirCompileResult {
                 callback_name.clone(),
                 callback_name,
                 generic_map_value_types,
+                generic_map_value_semantics,
             ),
         }
     }

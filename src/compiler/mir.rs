@@ -1033,6 +1033,8 @@ pub struct MirTypeHints {
     pub main_stack_slots: HashMap<StackSlotId, MirType>,
     pub subfunction_stack_slots: Vec<HashMap<StackSlotId, MirType>>,
     pub generic_map_value_types: HashMap<MapRef, MirType>,
+    pub generic_map_value_semantics:
+        HashMap<MapRef, crate::compiler::ir_to_mir::AnnotatedValueSemantics>,
 }
 
 #[cfg(test)]

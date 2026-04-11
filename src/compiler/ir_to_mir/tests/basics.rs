@@ -5167,6 +5167,315 @@ fn test_lower_map_get_preserves_prior_typed_struct_schema() {
 }
 
 #[test]
+fn test_lower_map_put_get_record_string_field_preserves_semantics() {
+    let capture_var = VarId::new(320);
+    let lookup_var = VarId::new(321);
+    let map_put_decl = DeclId::new(209);
+    let map_get_decl = DeclId::new(210);
+    let decl_names = HashMap::from([
+        (map_put_decl, "map-put".to_string()),
+        (map_get_decl, "map-get".to_string()),
+    ]);
+
+    let mut record = Record::new();
+    record.push("msg", Value::string("hi", Span::test_data()));
+    record.push("pid", Value::int(0, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: capture_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String("typed_state".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::String("hash".into()),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_put_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1), RegId::new(2)],
+                            named: vec![(b"kind".to_vec(), RegId::new(3))],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: map_get_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1), RegId::new(2)],
+                            named: vec![(b"kind".to_vec(), RegId::new(3))],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: lookup_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Comparison(Comparison::NotEqual),
+                        rhs: RegId::new(4),
+                    },
+                ],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(0),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: lookup_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("msg")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String("!".into()),
+                    },
+                    HirStmt::StringAppend {
+                        src_dst: RegId::new(0),
+                        val: RegId::new(2),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(0),
+                }],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(capture_var, Value::record(record, Span::test_data()))],
+        None,
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("map-put/map-get record string field should preserve semantics");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StringAppend { .. })),
+        "expected map-get on record string field to materialize a stack string slot"
+    );
+}
+
+#[test]
+fn test_lower_map_put_get_record_list_field_preserves_semantics() {
+    let capture_var = VarId::new(322);
+    let lookup_var = VarId::new(323);
+    let map_put_decl = DeclId::new(211);
+    let map_get_decl = DeclId::new(212);
+    let get_decl = DeclId::new(213);
+    let decl_names = HashMap::from([
+        (map_put_decl, "map-put".to_string()),
+        (map_get_decl, "map-get".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let mut record = Record::new();
+    record.push(
+        "vals",
+        Value::list(
+            vec![
+                Value::int(11, Span::test_data()),
+                Value::int(22, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+    record.push("pid", Value::int(0, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: capture_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String("typed_state".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::String("hash".into()),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_put_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1), RegId::new(2)],
+                            named: vec![(b"kind".to_vec(), RegId::new(3))],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: map_get_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1), RegId::new(2)],
+                            named: vec![(b"kind".to_vec(), RegId::new(3))],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: lookup_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Comparison(Comparison::NotEqual),
+                        rhs: RegId::new(4),
+                    },
+                ],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(0),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: lookup_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("vals")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(1),
+                    },
+                    HirStmt::Call {
+                        decl_id: get_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(2)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(0),
+                }],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(capture_var, Value::record(record, Span::test_data()))],
+        None,
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("map-put/map-get record list field should preserve semantics");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListGet { .. })),
+        "expected map-get on record list field to lower through ListGet"
+    );
+}
+
+#[test]
 fn test_lower_map_get_uses_external_typed_struct_schema() {
     let hir = make_map_get_projection_program(DeclId::new(43), DeclId::new(44));
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
@@ -5240,6 +5549,173 @@ fn test_lower_map_get_uses_external_typed_struct_schema() {
                     && fields[1].name == "dentry"
         )
     )));
+}
+
+#[test]
+fn test_lower_map_get_uses_external_record_string_semantics() {
+    let lookup_var = VarId::new(330);
+    let map_get_decl = DeclId::new(214);
+    let decl_names = HashMap::from([(map_get_decl, "map-get".to_string())]);
+
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String("typed_state".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String("hash".into()),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_get_decl,
+                        src_dst: RegId::new(3),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1), RegId::new(0)],
+                            named: vec![(b"kind".to_vec(), RegId::new(2))],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: lookup_var,
+                        src: RegId::new(3),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(3),
+                        op: Operator::Comparison(Comparison::NotEqual),
+                        rhs: RegId::new(4),
+                    },
+                ],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(3),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: lookup_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("msg")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String("!".into()),
+                    },
+                    HirStmt::StringAppend {
+                        src_dst: RegId::new(0),
+                        val: RegId::new(2),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(0),
+                }],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let external_schema = HashMap::from([(
+        MapRef {
+            name: "typed_state".to_string(),
+            kind: MapKind::Hash,
+        },
+        MirType::Struct {
+            name: Some("state".to_string()),
+            kernel_btf_type_id: None,
+            fields: vec![
+                StructField {
+                    name: "msg".to_string(),
+                    ty: MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len: 24,
+                    },
+                    offset: 0,
+                    synthetic: false,
+                    bitfield: None,
+                },
+                StructField {
+                    name: "pid".to_string(),
+                    ty: MirType::I64,
+                    offset: 24,
+                    synthetic: false,
+                    bitfield: None,
+                },
+            ],
+        },
+    )]);
+    let external_semantics = HashMap::from([(
+        MapRef {
+            name: "typed_state".to_string(),
+            kind: MapKind::Hash,
+        },
+        AnnotatedValueSemantics::Record(vec![(
+            "msg".to_string(),
+            AnnotatedValueSemantics::String {
+                slot_len: 16,
+                content_cap: 15,
+            },
+        )]),
+    )]);
+
+    let result = lower_hir_to_mir_with_hints_maps_and_semantics(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        Some(&external_schema),
+        Some(&external_semantics),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("external map schema and semantics should preserve string field behavior");
+
+    assert_eq!(result.generic_map_value_types, external_schema);
+    assert_eq!(result.generic_map_value_semantics, external_semantics);
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StringAppend { .. })),
+        "expected externally seeded map schema to materialize a stack string slot"
+    );
 }
 
 #[test]

@@ -12,6 +12,7 @@ pub struct MirLoweringResult {
     pub program: MirProgram,
     pub type_hints: MirTypeHints,
     pub generic_map_value_types: HashMap<MapRef, MirType>,
+    pub generic_map_value_semantics: HashMap<MapRef, AnnotatedValueSemantics>,
     pub readonly_globals: Vec<ReadonlyGlobal>,
     pub data_globals: Vec<DataGlobal>,
     pub bss_globals: Vec<BssGlobal>,
@@ -368,12 +369,13 @@ fn collect_named_global_predeclarations(
     merged.into_iter().collect()
 }
 
-pub fn lower_hir_to_mir_with_hints_and_maps(
+pub fn lower_hir_to_mir_with_hints_maps_and_semantics(
     hir: &HirProgram,
     probe_ctx: Option<&ProbeContext>,
     decl_names: &HashMap<DeclId, String>,
     type_info: Option<&HirTypeInfo>,
     external_map_value_types: Option<&HashMap<MapRef, MirType>>,
+    external_map_value_semantics: Option<&HashMap<MapRef, AnnotatedValueSemantics>>,
     user_functions: &HashMap<DeclId, HirFunction>,
     decl_signatures: &HashMap<DeclId, UserFunctionSig>,
 ) -> Result<MirLoweringResult, CompileError> {
@@ -389,6 +391,7 @@ pub fn lower_hir_to_mir_with_hints_and_maps(
         hir.ctx_param,
         hir_type_hints.as_ref(),
         external_map_value_types,
+        external_map_value_semantics,
         user_functions,
         decl_signatures,
     );
@@ -405,16 +408,45 @@ pub fn lower_hir_to_mir_with_hints_and_maps(
         }
     }
     lowering.lower_block(&hir.main)?;
-    let (program, type_hints, generic_map_value_types, readonly_globals, data_globals, bss_globals) =
-        lowering.finish_with_hints();
+    let (
+        program,
+        type_hints,
+        generic_map_value_types,
+        generic_map_value_semantics,
+        readonly_globals,
+        data_globals,
+        bss_globals,
+    ) = lowering.finish_with_hints();
     Ok(MirLoweringResult {
         program,
         type_hints,
         generic_map_value_types,
+        generic_map_value_semantics,
         readonly_globals,
         data_globals,
         bss_globals,
     })
+}
+
+pub fn lower_hir_to_mir_with_hints_and_maps(
+    hir: &HirProgram,
+    probe_ctx: Option<&ProbeContext>,
+    decl_names: &HashMap<DeclId, String>,
+    type_info: Option<&HirTypeInfo>,
+    external_map_value_types: Option<&HashMap<MapRef, MirType>>,
+    user_functions: &HashMap<DeclId, HirFunction>,
+    decl_signatures: &HashMap<DeclId, UserFunctionSig>,
+) -> Result<MirLoweringResult, CompileError> {
+    lower_hir_to_mir_with_hints_maps_and_semantics(
+        hir,
+        probe_ctx,
+        decl_names,
+        type_info,
+        external_map_value_types,
+        None,
+        user_functions,
+        decl_signatures,
+    )
 }
 
 pub fn lower_hir_to_mir_with_hints(

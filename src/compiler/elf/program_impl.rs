@@ -1,6 +1,7 @@
 use super::*;
 use std::collections::{HashMap, HashSet};
 
+use crate::compiler::ir_to_mir::AnnotatedValueSemantics;
 use crate::kernel_btf::TypeInfo;
 use crate::kernel_btf::{FieldInfo, KernelBtf, TrampolineFieldSelector};
 
@@ -111,6 +112,7 @@ impl EbpfProgram {
             event_schema: None,
             bytes_counter_key_schema: None,
             generic_map_value_types: HashMap::new(),
+            generic_map_value_semantics: HashMap::new(),
         }
     }
 
@@ -138,6 +140,7 @@ impl EbpfProgram {
             event_schema: None,
             bytes_counter_key_schema: None,
             generic_map_value_types: HashMap::new(),
+            generic_map_value_semantics: HashMap::new(),
         }
     }
 
@@ -154,6 +157,7 @@ impl EbpfProgram {
         event_schema: Option<EventSchema>,
         bytes_counter_key_schema: Option<CounterKeySchema>,
         generic_map_value_types: HashMap<MapRef, MirType>,
+        generic_map_value_semantics: HashMap<MapRef, AnnotatedValueSemantics>,
     ) -> Self {
         Self {
             prog_type,
@@ -171,6 +175,7 @@ impl EbpfProgram {
             event_schema,
             bytes_counter_key_schema,
             generic_map_value_types,
+            generic_map_value_semantics,
         }
     }
 
@@ -223,6 +228,7 @@ impl EbpfProgram {
             event_schema,
             bytes_counter_key_schema,
             generic_map_value_types,
+            generic_map_value_semantics,
         } = self;
 
         EbpfObject {
@@ -245,6 +251,7 @@ impl EbpfProgram {
                 event_schema,
                 bytes_counter_key_schema,
                 generic_map_value_types,
+                generic_map_value_semantics,
             }],
         }
     }
@@ -263,6 +270,7 @@ impl EbpfProgram {
             event_schema: self.event_schema,
             bytes_counter_key_schema: self.bytes_counter_key_schema,
             generic_map_value_types: self.generic_map_value_types,
+            generic_map_value_semantics: self.generic_map_value_semantics,
         }
     }
 
@@ -801,6 +809,7 @@ impl EbpfObject {
                 event_schema: program.event_schema.clone(),
                 bytes_counter_key_schema: program.bytes_counter_key_schema.clone(),
                 generic_map_value_types: program.generic_map_value_types.clone(),
+                generic_map_value_semantics: program.generic_map_value_semantics.clone(),
             };
             temp.validate_runtime_artifacts()?;
         }

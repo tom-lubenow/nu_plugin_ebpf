@@ -2469,6 +2469,9 @@ pub struct EbpfProgramSection {
     pub bytes_counter_key_schema: Option<CounterKeySchema>,
     /// Optional typed generic map value schemas keyed by map identity
     pub generic_map_value_types: HashMap<MapRef, MirType>,
+    /// Optional logical semantics for generic map values with richer layouts
+    pub generic_map_value_semantics:
+        HashMap<MapRef, crate::compiler::ir_to_mir::AnnotatedValueSemantics>,
 }
 
 /// A complete eBPF ELF object with shared maps/globals and one or more program sections.
@@ -2625,6 +2628,9 @@ pub struct EbpfProgram {
     pub bytes_counter_key_schema: Option<CounterKeySchema>,
     /// Optional typed generic map value schemas keyed by map identity
     pub generic_map_value_types: HashMap<MapRef, MirType>,
+    /// Optional logical semantics for generic map values with richer layouts
+    pub generic_map_value_semantics:
+        HashMap<MapRef, crate::compiler::ir_to_mir::AnnotatedValueSemantics>,
 }
 
 #[cfg(test)]

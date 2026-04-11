@@ -2,6 +2,7 @@ use super::*;
 use crate::compiler::mir::MapKind;
 use crate::compiler::{
     CounterKeySchema, CounterKeySchemaField, EbpfObject, EbpfProgramType, MapRef, MirType,
+    ir_to_mir::AnnotatedValueSemantics,
 };
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use crate::program_spec::DEFAULT_PERF_EVENT_PERIOD;
@@ -791,6 +792,44 @@ fn test_merge_generic_map_value_types_drops_conflicts() {
     );
 
     assert_eq!(merged.get(&unique), Some(&other_ty));
+    assert!(!merged.contains_key(&shared));
+}
+
+#[test]
+fn test_merge_generic_map_value_semantics_drops_conflicts() {
+    let shared = MapRef {
+        name: "shared_state".to_string(),
+        kind: MapKind::Hash,
+    };
+    let unique = MapRef {
+        name: "other_state".to_string(),
+        kind: MapKind::Hash,
+    };
+    let string_semantics = AnnotatedValueSemantics::Record(vec![(
+        "msg".to_string(),
+        AnnotatedValueSemantics::String {
+            slot_len: 16,
+            content_cap: 15,
+        },
+    )]);
+    let list_semantics = AnnotatedValueSemantics::Record(vec![(
+        "vals".to_string(),
+        AnnotatedValueSemantics::NumericList { max_len: 2 },
+    )]);
+
+    let merged = EbpfState::merge_generic_map_value_semantics(
+        [
+            HashMap::from([
+                (shared.clone(), string_semantics.clone()),
+                (unique.clone(), list_semantics.clone()),
+            ]),
+            HashMap::from([(shared.clone(), string_semantics.clone())]),
+            HashMap::from([(shared.clone(), list_semantics.clone())]),
+        ]
+        .iter(),
+    );
+
+    assert_eq!(merged.get(&unique), Some(&list_semantics));
     assert!(!merged.contains_key(&shared));
 }
 

@@ -1109,7 +1109,7 @@ fn test_struct_ops_object_spec_accepts_callbacks_from_mir_compile_results() {
 
     let callback = compile_mir_to_ebpf(&program, None)
         .expect("expected MIR callback compile result")
-        .into_struct_ops_callback("f_inode", "demo_select_cpu", HashMap::new());
+        .into_struct_ops_callback("f_inode", "demo_select_cpu", HashMap::new(), HashMap::new());
 
     let object = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", "file")
         .expect("expected zeroed struct_ops spec from kernel BTF")
@@ -1328,7 +1328,12 @@ fn test_struct_ops_object_uses_sleepable_sched_ext_callback_section() {
                 None,
             )
             .expect("expected MIR sched_ext callback compile result")
-            .into_struct_ops_callback("init", "demo_init", HashMap::new()),
+            .into_struct_ops_callback(
+                "init",
+                "demo_init",
+                HashMap::new(),
+                HashMap::new(),
+            ),
         ])
         .expect("expected struct_ops object from compiled sched_ext callback");
 
@@ -1457,6 +1462,7 @@ fn test_to_elf_rejects_missing_relocation_symbol() {
         vec![],
         None,
         None,
+        HashMap::new(),
         HashMap::new(),
     );
 
@@ -2280,6 +2286,7 @@ fn test_validate_runtime_artifacts_rejects_event_schema_without_ringbuf_map() {
         }),
         None,
         HashMap::new(),
+        HashMap::new(),
     );
 
     let err = program
@@ -2308,6 +2315,7 @@ fn test_validate_runtime_artifacts_rejects_bytes_counter_schema_size_mismatch() 
         None,
         Some(CounterKeySchema::Bytes { size: 16 }),
         HashMap::new(),
+        HashMap::new(),
     );
 
     let err = program
@@ -2335,6 +2343,7 @@ fn test_validate_runtime_artifacts_rejects_unexpected_ringbuf_name() {
         vec![],
         None,
         None,
+        HashMap::new(),
         HashMap::new(),
     );
 
@@ -2370,6 +2379,7 @@ fn test_validate_runtime_artifacts_rejects_missing_emit_capability_for_events_ma
         vec![],
         None,
         None,
+        HashMap::new(),
         HashMap::new(),
     );
 

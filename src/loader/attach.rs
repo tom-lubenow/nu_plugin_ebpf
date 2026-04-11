@@ -819,6 +819,7 @@ impl EbpfState {
             event_schema: program.event_schema.clone(),
             bytes_counter_key_schema: program.bytes_counter_key_schema.clone(),
             generic_map_value_types: program.generic_map_value_types.clone(),
+            generic_map_value_semantics: program.generic_map_value_semantics.clone(),
             pin_group: pin_group_owned,
         };
 
@@ -865,6 +866,7 @@ impl EbpfState {
             event_schema: None,
             bytes_counter_key_schema: None,
             generic_map_value_types: HashMap::new(),
+            generic_map_value_semantics: HashMap::new(),
             pin_group: None,
         };
 
