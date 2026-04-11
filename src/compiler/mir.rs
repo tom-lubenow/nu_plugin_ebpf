@@ -584,7 +584,7 @@ pub enum CtxField {
     SockoptOptvalEnd,
     /// bpf_sockopt::retval
     SockoptRetval,
-    /// Function argument (kprobe/uprobe)
+    /// Program argument (pt_regs-backed probes and BTF-backed trampoline contexts)
     Arg(u8),
     /// Return value (kretprobe/uretprobe)
     RetVal,

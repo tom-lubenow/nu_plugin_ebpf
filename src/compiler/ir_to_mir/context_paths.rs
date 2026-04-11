@@ -106,6 +106,46 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
+    fn non_tracepoint_ctx_field_from_name(field_name: &str) -> Option<CtxField> {
+        Some(match field_name {
+            "ifindex" => CtxField::Ifindex,
+            "access_type" => CtxField::DeviceAccessType,
+            "major" => CtxField::DeviceMajor,
+            "minor" => CtxField::DeviceMinor,
+            "op" => CtxField::SockOp,
+            "is_fullsock" => CtxField::IsFullsock,
+            "snd_cwnd" => CtxField::SockOpsSndCwnd,
+            "srtt_us" => CtxField::SockOpsSrttUs,
+            "cb_flags" => CtxField::SockOpsCbFlags,
+            "state" => CtxField::SockState,
+            "rtt_min" => CtxField::SockOpsRttMin,
+            "snd_ssthresh" => CtxField::SockOpsSndSsthresh,
+            "rcv_nxt" => CtxField::SockOpsRcvNxt,
+            "snd_nxt" => CtxField::SockOpsSndNxt,
+            "snd_una" => CtxField::SockOpsSndUna,
+            "mss_cache" => CtxField::SockOpsMssCache,
+            "ecn_flags" => CtxField::SockOpsEcnFlags,
+            "rate_delivered" => CtxField::SockOpsRateDelivered,
+            "rate_interval_us" => CtxField::SockOpsRateIntervalUs,
+            "packets_out" => CtxField::SockOpsPacketsOut,
+            "retrans_out" => CtxField::SockOpsRetransOut,
+            "total_retrans" => CtxField::SockOpsTotalRetrans,
+            "segs_in" => CtxField::SockOpsSegsIn,
+            "data_segs_in" => CtxField::SockOpsDataSegsIn,
+            "segs_out" => CtxField::SockOpsSegsOut,
+            "data_segs_out" => CtxField::SockOpsDataSegsOut,
+            "lost_out" => CtxField::SockOpsLostOut,
+            "sacked_out" => CtxField::SockOpsSackedOut,
+            "sk_txhash" => CtxField::SockOpsSkTxhash,
+            "bytes_received" => CtxField::SockOpsBytesReceived,
+            "bytes_acked" => CtxField::SockOpsBytesAcked,
+            "skb_len" => CtxField::SockOpsSkbLen,
+            "skb_tcp_flags" => CtxField::SockOpsSkbTcpFlags,
+            "skb_hwtstamp" => CtxField::SockOpsSkbHwtstamp,
+            _ => return None,
+        })
+    }
+
     pub(super) fn resolve_ctx_field_from_path(
         &self,
         path: &CellPath,
@@ -218,40 +258,9 @@ impl<'a> HirToMirLowering<'a> {
             {
                 CtxField::Ifindex
             }
-            (Some(EbpfProgramType::CgroupDevice), "access_type") => CtxField::DeviceAccessType,
-            (Some(EbpfProgramType::CgroupDevice), "major") => CtxField::DeviceMajor,
-            (Some(EbpfProgramType::CgroupDevice), "minor") => CtxField::DeviceMinor,
-            (Some(EbpfProgramType::SockOps), "op") => CtxField::SockOp,
-            (Some(EbpfProgramType::SockOps), "is_fullsock") => CtxField::IsFullsock,
-            (Some(EbpfProgramType::SockOps), "snd_cwnd") => CtxField::SockOpsSndCwnd,
-            (Some(EbpfProgramType::SockOps), "srtt_us") => CtxField::SockOpsSrttUs,
-            (Some(EbpfProgramType::SockOps), "cb_flags") => CtxField::SockOpsCbFlags,
-            (Some(EbpfProgramType::SockOps), "state") => CtxField::SockState,
-            (Some(EbpfProgramType::SockOps), "rtt_min") => CtxField::SockOpsRttMin,
-            (Some(EbpfProgramType::SockOps), "snd_ssthresh") => CtxField::SockOpsSndSsthresh,
-            (Some(EbpfProgramType::SockOps), "rcv_nxt") => CtxField::SockOpsRcvNxt,
-            (Some(EbpfProgramType::SockOps), "snd_nxt") => CtxField::SockOpsSndNxt,
-            (Some(EbpfProgramType::SockOps), "snd_una") => CtxField::SockOpsSndUna,
-            (Some(EbpfProgramType::SockOps), "mss_cache") => CtxField::SockOpsMssCache,
-            (Some(EbpfProgramType::SockOps), "ecn_flags") => CtxField::SockOpsEcnFlags,
-            (Some(EbpfProgramType::SockOps), "rate_delivered") => CtxField::SockOpsRateDelivered,
-            (Some(EbpfProgramType::SockOps), "rate_interval_us") => CtxField::SockOpsRateIntervalUs,
-            (Some(EbpfProgramType::SockOps), "packets_out") => CtxField::SockOpsPacketsOut,
-            (Some(EbpfProgramType::SockOps), "retrans_out") => CtxField::SockOpsRetransOut,
-            (Some(EbpfProgramType::SockOps), "total_retrans") => CtxField::SockOpsTotalRetrans,
-            (Some(EbpfProgramType::SockOps), "segs_in") => CtxField::SockOpsSegsIn,
-            (Some(EbpfProgramType::SockOps), "data_segs_in") => CtxField::SockOpsDataSegsIn,
-            (Some(EbpfProgramType::SockOps), "segs_out") => CtxField::SockOpsSegsOut,
-            (Some(EbpfProgramType::SockOps), "data_segs_out") => CtxField::SockOpsDataSegsOut,
-            (Some(EbpfProgramType::SockOps), "lost_out") => CtxField::SockOpsLostOut,
-            (Some(EbpfProgramType::SockOps), "sacked_out") => CtxField::SockOpsSackedOut,
-            (Some(EbpfProgramType::SockOps), "sk_txhash") => CtxField::SockOpsSkTxhash,
-            (Some(EbpfProgramType::SockOps), "bytes_received") => CtxField::SockOpsBytesReceived,
-            (Some(EbpfProgramType::SockOps), "bytes_acked") => CtxField::SockOpsBytesAcked,
-            (Some(EbpfProgramType::SockOps), "skb_len") => CtxField::SockOpsSkbLen,
-            (Some(EbpfProgramType::SockOps), "skb_tcp_flags") => CtxField::SockOpsSkbTcpFlags,
-            (Some(EbpfProgramType::SockOps), "skb_hwtstamp") => CtxField::SockOpsSkbHwtstamp,
-            _ => Self::ctx_field_from_name(field_name)?,
+            (Some(EbpfProgramType::Tracepoint), _) => Self::ctx_field_from_name(field_name)?,
+            _ => Self::non_tracepoint_ctx_field_from_name(&field_name)
+                .unwrap_or(Self::ctx_field_from_name(field_name)?),
         };
 
         Ok((field, 1))

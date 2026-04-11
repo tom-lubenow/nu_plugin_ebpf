@@ -272,6 +272,101 @@ fn test_lower_cgroup_sock_ctx_socket_family_field() {
 }
 
 #[test]
+fn test_lower_kprobe_reserved_sock_ops_name_reports_sock_ops_error() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("op")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_openat2");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("kprobe ctx.op should be rejected through sock_ops context validation");
+
+    assert!(
+        err.to_string()
+            .contains("ctx.op is only available on sock_ops programs")
+    );
+}
+
+#[test]
+fn test_lower_kprobe_reserved_cgroup_device_name_reports_device_error() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("access_type")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_openat2");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("kprobe ctx.access_type should be rejected through cgroup_device validation");
+
+    assert!(
+        err.to_string()
+            .contains("ctx.access_type is only available on cgroup_device programs")
+    );
+}
+
+#[test]
+fn test_lower_kprobe_ifindex_alias_reports_packet_context_error() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("ifindex")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_openat2");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("kprobe ctx.ifindex should be rejected through packet-context validation");
+
+    assert!(err
+        .to_string()
+        .contains("ctx.ifindex is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"));
+}
+
+#[test]
+fn test_lower_tracepoint_reserved_sock_ops_name_stays_tracepoint_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("op")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "sched/sched_switch");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("typed tracepoint ctx.op should still lower as a tracepoint field");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::TracepointField(name),
+            ..
+        } if name == "op"
+    )));
+}
+
+#[test]
 fn test_lower_cgroup_sock_post_bind_ctx_socket_src_port_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("sk"), string_member("src_port")],

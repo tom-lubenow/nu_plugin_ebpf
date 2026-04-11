@@ -410,7 +410,7 @@ fn test_type_error_tracepoint_arg_is_rejected() {
 
     assert!(errs.iter().any(|e| {
         e.message
-            .contains("ctx.arg0 is only available on function probes with argument access")
+            .contains("ctx.arg0 is only available on contexts with argument access")
     }));
 }
 
@@ -436,7 +436,7 @@ fn test_type_error_kretprobe_arg_is_rejected() {
 
     assert!(errs.iter().any(|e| {
         e.message
-            .contains("ctx.arg0 is only available on function probes with argument access")
+            .contains("ctx.arg0 is only available on contexts with argument access")
     }));
 }
 

@@ -1500,7 +1500,7 @@ fn test_probe_context_rejects_arg_on_tracepoint() {
     let err = ctx
         .ctx_field_access_error(&CtxField::Arg(0))
         .expect("expected tracepoint arg access error");
-    assert!(err.contains("ctx.arg0 is only available on function probes with argument access"));
+    assert!(err.contains("ctx.arg0 is only available on contexts with argument access"));
 }
 
 #[test]
