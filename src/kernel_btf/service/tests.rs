@@ -610,6 +610,46 @@ fn test_tp_btf_arg_type_info_skips_hidden_context_slot() {
 }
 
 #[test]
+fn test_tp_btf_arg_index_by_name_skips_hidden_context_slot() {
+    let callable_name = KernelBtf::tp_btf_type_name("sys_enter");
+    let Ok(Some(raw_visible_idx)) =
+        KernelBtf::get().function_trampoline_arg_index_by_name(&callable_name, "regs")
+    else {
+        return;
+    };
+    let user_visible_idx = KernelBtf::get()
+        .tp_btf_arg_index_by_name("sys_enter", "regs")
+        .expect("tp_btf arg index query should succeed")
+        .expect("tp_btf sys_enter regs arg should exist");
+
+    assert_eq!(
+        raw_visible_idx,
+        user_visible_idx + KernelBtf::TP_BTF_HIDDEN_ARG_COUNT
+    );
+    assert_eq!(user_visible_idx, 0);
+}
+
+#[test]
+fn test_tp_btf_arg_field_skips_hidden_context_slot() {
+    let callable_name = KernelBtf::tp_btf_type_name("sys_enter");
+    let field_path = [TrampolineFieldSelector::Field("orig_ax".to_string())];
+    let Ok(Some(raw_visible_projection)) =
+        KernelBtf::get().function_trampoline_arg_field(&callable_name, 1, &field_path)
+    else {
+        return;
+    };
+    let user_visible_projection = KernelBtf::get()
+        .tp_btf_arg_field("sys_enter", 0, &field_path)
+        .expect("tp_btf field query should succeed")
+        .expect("tp_btf sys_enter regs.orig_ax should exist");
+
+    assert_eq!(
+        format!("{user_visible_projection:?}"),
+        format!("{raw_visible_projection:?}")
+    );
+}
+
+#[test]
 fn test_struct_ops_callback_arg_type_info_resolves_candidate() {
     let Some((value_type_name, callback_name)) = find_struct_ops_callback_candidate() else {
         return;

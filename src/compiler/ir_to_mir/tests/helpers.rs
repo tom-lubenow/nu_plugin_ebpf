@@ -154,6 +154,29 @@ pub(super) fn find_tp_btf_named_arg_candidate() -> Option<(String, String, u8)> 
     None
 }
 
+pub(super) fn find_tp_btf_named_pointer_projection_candidate() -> Option<(String, String, String)> {
+    for (tracepoint_name, arg_name, field_name) in [
+        ("sys_enter", "regs", "orig_ax"),
+        ("sys_exit", "regs", "orig_ax"),
+    ] {
+        let path = [TrampolineFieldSelector::Field(field_name.to_string())];
+        if let Ok(Some(arg_idx)) =
+            KernelBtf::get().tp_btf_arg_index_by_name(tracepoint_name, arg_name)
+            && matches!(
+                KernelBtf::get().tp_btf_arg_field(tracepoint_name, arg_idx, &path),
+                Ok(Some(_))
+            )
+        {
+            return Some((
+                tracepoint_name.to_string(),
+                arg_name.to_string(),
+                field_name.to_string(),
+            ));
+        }
+    }
+    None
+}
+
 pub(super) fn find_function_trampoline_named_arg_candidate() -> Option<(String, String, u8)> {
     for (function_name, arg_name, expected_idx) in [
         ("security_file_open", "file", 0u8),

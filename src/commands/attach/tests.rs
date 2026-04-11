@@ -3194,6 +3194,55 @@ fn test_compile_tp_btf_ctx_arg_program() {
 }
 
 #[test]
+fn test_compile_tp_btf_projected_ctx_arg_program() {
+    fn find_tp_btf_projection_candidate() -> Option<(&'static str, &'static str)> {
+        for (tracepoint_name, field_name) in [("sys_enter", "orig_ax"), ("sys_exit", "orig_ax")] {
+            let path = [TrampolineFieldSelector::Field(field_name.to_string())];
+            if matches!(
+                KernelBtf::get().tp_btf_arg_field(tracepoint_name, 0, &path),
+                Ok(Some(_))
+            ) {
+                return Some((tracepoint_name, field_name));
+            }
+        }
+        None
+    }
+
+    let Some((tracepoint_name, field_name)) = find_tp_btf_projection_candidate() else {
+        return;
+    };
+
+    let hir = make_ctx_path_call_program(
+        CellPath {
+            members: vec![string_member("arg0"), string_member(field_name)],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::TpBtf, tracepoint_name);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "count".to_string());
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tp_btf ctx.arg0 field count should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("tp_btf ctx.arg0 field count should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_compile_raw_tracepoint_ctx_arg_program() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("arg0")],

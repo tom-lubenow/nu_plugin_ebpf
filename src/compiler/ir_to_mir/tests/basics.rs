@@ -2337,6 +2337,50 @@ fn test_lower_tp_btf_named_arg_alias() {
 }
 
 #[test]
+fn test_lower_tp_btf_named_arg_alias_nested_projection() {
+    let Some((tracepoint_name, arg_name, field_name)) =
+        find_tp_btf_named_pointer_projection_candidate()
+    else {
+        return;
+    };
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("arg"),
+            string_member(&arg_name),
+            string_member(&field_name),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::TpBtf, &tracepoint_name);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("named tp_btf arg alias nested projection should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Arg(0),
+                    ..
+                }
+            )),
+        "expected named tp_btf arg alias to resolve through ctx.arg0 before nested projection"
+    );
+}
+
+#[test]
 fn test_lower_function_trampoline_named_arg_alias() {
     let Some((function_name, arg_name, expected_idx)) =
         find_function_trampoline_named_arg_candidate()
