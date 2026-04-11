@@ -279,6 +279,86 @@ fn test_verify_mir_for_program_redirect_allows_non_zero_flags_outside_xdp() {
 }
 
 #[test]
+fn test_verify_mir_for_program_redirect_rejects_non_packet_programs() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::Redirect as u32,
+            args: vec![MirValue::Const(1), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Kprobe.info())
+        .expect_err("expected redirect helper program-surface error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect' is only valid in xdp and tc programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_program_redirect_neigh_rejects_non_tc_programs() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RedirectNeigh as u32,
+            args: vec![
+                MirValue::Const(1),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected redirect_neigh helper program-surface error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect_neigh' is only valid in tc programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_program_msg_apply_bytes_rejects_non_sk_msg_programs() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::MsgApplyBytes as u32,
+            args: vec![MirValue::Const(0), MirValue::Const(1)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Kprobe.info())
+        .expect_err("expected sk_msg helper program-surface error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_msg_apply_bytes' is only valid in sk_msg programs")
+    }));
+}
+
+#[test]
 fn test_verify_mir_helper_redirect_neigh_requires_zero_flags() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();

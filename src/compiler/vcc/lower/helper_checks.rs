@@ -8,6 +8,17 @@ impl<'a> VccLowerer<'a> {
         args: &[MirValue],
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
+        if let Some(helper) = BpfHelper::from_u32(helper_id)
+            && let Some(message) = self
+                .program
+                .and_then(|program| program.program_type.helper_call_error(helper))
+        {
+            return Err(VccError::new(
+                VccErrorKind::UnsupportedInstruction,
+                message,
+            ));
+        }
+
         if let Some(sig) = HelperSignature::for_id(helper_id) {
             if args.len() < sig.min_args || args.len() > sig.max_args {
                 return Err(VccError::new(
