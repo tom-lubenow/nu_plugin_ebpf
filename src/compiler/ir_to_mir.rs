@@ -61,6 +61,7 @@ mod expr_lowering;
 mod globals;
 mod subfunctions;
 mod user_functions;
+mod value_lowering;
 pub use entry::{
     MirLoweringResult, lower_hir_to_mir, lower_hir_to_mir_with_hints,
     lower_hir_to_mir_with_hints_and_maps, lower_hir_to_mir_with_hints_maps_and_semantics,
