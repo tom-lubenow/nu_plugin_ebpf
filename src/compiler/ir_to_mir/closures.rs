@@ -34,26 +34,91 @@ impl<'a> HirToMirLowering<'a> {
             })?;
 
         let val_vreg = self.get_vreg(val);
+        let val_meta = self.get_metadata(val).cloned();
 
         // Preserve aggregate-pointer field layout as the underlying aggregate
         // so `{ path: $entry } | emit` serializes nested data instead of a raw pointer.
-        let field_type = self
-            .get_metadata(val)
+        let mut field_type = val_meta
+            .as_ref()
             .and_then(|m| m.field_type.clone())
             .or_else(|| self.vreg_type_hints.get(&val_vreg).cloned())
             .map(|ty| self.stored_generic_map_value_type(&ty))
             .unwrap_or(MirType::I64);
+        let field_constant = self
+            .get_metadata(val)
+            .and_then(|m| m.constant_value.clone());
+        let field_semantics = self.tracked_value_semantics(val, field_constant.as_ref())?;
 
         // IMPORTANT: Create a fresh VReg and copy the value to preserve it.
         // The IR reuses registers, so val_vreg might be overwritten by subsequent operations.
         // By copying to a fresh VReg, we ensure the value is preserved until emit time.
         let preserved_vreg = self.func.alloc_vreg();
-        self.emit(MirInst::Copy {
-            dst: preserved_vreg,
-            src: MirValue::VReg(val_vreg),
-        });
-        if let Some(ty) = self.vreg_type_hints.get(&val_vreg).cloned() {
-            self.vreg_type_hints.insert(preserved_vreg, ty);
+        if let Some(meta) = val_meta.as_ref()
+            && let Some(slot) = meta.string_slot
+        {
+            let len_vreg = meta.string_len_vreg.ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "record string field requires a tracked string length".into(),
+                )
+            })?;
+            let src_slot_size = self.stack_slot_size(slot).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "string slot not found during record field materialization".into(),
+                )
+            })?;
+            let stored_slot_len = 8usize.saturating_add(src_slot_size);
+            let stored_ty = MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: stored_slot_len,
+            };
+            let stored_slot =
+                self.func
+                    .alloc_stack_slot(stored_slot_len, 8, StackSlotKind::StringBuffer);
+            self.record_stack_slot_type(stored_slot, stored_ty.clone());
+            self.emit(MirInst::StoreSlot {
+                slot: stored_slot,
+                offset: 0,
+                val: MirValue::VReg(len_vreg),
+                ty: MirType::U64,
+            });
+
+            let src_ptr = self.func.alloc_vreg();
+            self.emit(MirInst::Copy {
+                dst: src_ptr,
+                src: MirValue::StackSlot(slot),
+            });
+            self.vreg_type_hints.insert(
+                src_ptr,
+                MirType::Ptr {
+                    pointee: Box::new(MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len: src_slot_size,
+                    }),
+                    address_space: crate::compiler::mir::AddressSpace::Stack,
+                },
+            );
+            self.emit_ptr_to_slot_copy(stored_slot, 8, src_ptr, 0, src_slot_size)?;
+
+            self.emit(MirInst::Copy {
+                dst: preserved_vreg,
+                src: MirValue::StackSlot(stored_slot),
+            });
+            self.vreg_type_hints.insert(
+                preserved_vreg,
+                MirType::Ptr {
+                    pointee: Box::new(stored_ty.clone()),
+                    address_space: crate::compiler::mir::AddressSpace::Stack,
+                },
+            );
+            field_type = stored_ty;
+        } else {
+            self.emit(MirInst::Copy {
+                dst: preserved_vreg,
+                src: MirValue::VReg(val_vreg),
+            });
+            if let Some(ty) = self.vreg_type_hints.get(&val_vreg).cloned() {
+                self.vreg_type_hints.insert(preserved_vreg, ty);
+            }
         }
 
         // Add field to the record being built (using preserved VReg with inferred type)
@@ -62,6 +127,7 @@ impl<'a> HirToMirLowering<'a> {
             value_vreg: preserved_vreg,
             stack_offset: None,
             ty: field_type,
+            semantics: field_semantics,
         };
 
         let meta = self.get_or_create_metadata(src_dst);

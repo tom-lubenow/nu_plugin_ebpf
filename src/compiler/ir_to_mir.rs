@@ -51,12 +51,14 @@ pub const MAX_STRING_SIZE: usize = 128;
 const STRING_APPEND_COPY_CAP: usize = 64;
 const MAX_INT_STRING_LEN: usize = 20;
 
+mod call_support;
 mod calls;
 mod closures;
 mod control_flow;
 mod core_utils;
 mod entry;
 mod expr_lowering;
+mod globals;
 mod subfunctions;
 mod user_functions;
 pub use entry::{
@@ -131,6 +133,7 @@ struct RecordField {
     #[allow(dead_code)] // Reserved for future stack safety checks
     stack_offset: Option<i16>,
     ty: MirType,
+    semantics: Option<AnnotatedValueSemantics>,
 }
 
 /// Bounded iterator info for ranges

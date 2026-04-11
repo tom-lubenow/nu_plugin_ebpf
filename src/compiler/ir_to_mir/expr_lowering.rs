@@ -858,11 +858,17 @@ impl<'a> HirToMirLowering<'a> {
                 &field.name,
                 None,
             )?;
+            let field_semantics = record
+                .get(&field.name)
+                .map(Self::mutable_global_value_semantics)
+                .transpose()?
+                .flatten();
             record_fields.push(RecordField {
                 name: field.name,
                 value_vreg: field_vreg,
                 stack_offset: None,
                 ty: field_ty,
+                semantics: field_semantics,
             });
         }
 
@@ -870,6 +876,8 @@ impl<'a> HirToMirLowering<'a> {
         meta.is_context = false;
         meta.record_fields = record_fields;
         meta.field_type = Some(record_ty);
+        meta.annotated_semantics =
+            Self::mutable_global_value_semantics(&Value::record(record.clone(), Span::unknown()))?;
 
         Ok(())
     }
