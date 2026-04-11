@@ -1,4 +1,3 @@
-
 use super::*;
 
 fn make_test_service() -> KernelBtf {

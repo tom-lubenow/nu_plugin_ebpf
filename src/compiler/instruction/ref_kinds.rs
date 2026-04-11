@@ -1896,34 +1896,6 @@ fn infer_unknown_stack_object_copy_args_from_const_hints<'a>(
     dsts.into_values().map(|dst| (src, dst)).collect()
 }
 
-#[cfg(test)]
-fn infer_unknown_stack_object_copy_args<'a>(
-    args: &'a [UnknownStackObjectArgInfo],
-    move_semantics: bool,
-) -> Vec<(&'a UnknownStackObjectArgInfo, &'a UnknownStackObjectArgInfo)> {
-    if args.len() < 2 {
-        return Vec::new();
-    }
-
-    let mut args_by_type: BTreeMap<&str, Vec<&UnknownStackObjectArgInfo>> = BTreeMap::new();
-    for arg in args {
-        args_by_type
-            .entry(arg.type_name.as_str())
-            .or_default()
-            .push(arg);
-    }
-
-    let mut copies = Vec::new();
-    for type_args in args_by_type.values() {
-        copies.extend(infer_unknown_stack_object_copy_args_for_type(
-            type_args,
-            &BTreeSet::new(),
-            move_semantics,
-        ));
-    }
-    copies
-}
-
 fn infer_unknown_stack_object_lifecycle_arg<'a>(
     args: &'a [UnknownStackObjectArgInfo],
     op: KfuncUnknownStackObjectLifecycleOp,
@@ -2185,6 +2157,33 @@ pub fn kfunc_pointer_arg_fixed_size(kfunc: &str, arg_idx: usize) -> Option<usize
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn infer_unknown_stack_object_copy_args<'a>(
+        args: &'a [UnknownStackObjectArgInfo],
+        move_semantics: bool,
+    ) -> Vec<(&'a UnknownStackObjectArgInfo, &'a UnknownStackObjectArgInfo)> {
+        if args.len() < 2 {
+            return Vec::new();
+        }
+
+        let mut args_by_type: BTreeMap<&str, Vec<&UnknownStackObjectArgInfo>> = BTreeMap::new();
+        for arg in args {
+            args_by_type
+                .entry(arg.type_name.as_str())
+                .or_default()
+                .push(arg);
+        }
+
+        let mut copies = Vec::new();
+        for type_args in args_by_type.values() {
+            copies.extend(infer_unknown_stack_object_copy_args_for_type(
+                type_args,
+                &BTreeSet::new(),
+                move_semantics,
+            ));
+        }
+        copies
+    }
 
     #[test]
     fn test_iter_lifecycle_op_from_kfunc_name() {
