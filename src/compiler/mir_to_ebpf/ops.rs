@@ -1353,6 +1353,11 @@ impl<'a> MirToEbpfCompiler<'a> {
                             &format!("ctx.arg{n}"),
                         )?;
                     }
+                    Some(ctx) if ctx.probe_type == EbpfProgramType::RawTracepoint => {
+                        let offset = Self::raw_tracepoint_arg_offset(n)?;
+                        self.instructions
+                            .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+                    }
                     _ => {
                         if n >= 6 {
                             return Err(CompileError::UnsupportedInstruction(format!(

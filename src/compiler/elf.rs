@@ -913,6 +913,7 @@ pub enum KernelTargetValidationKind {
 pub enum ProgramValueAccess {
     None,
     PtRegs,
+    RawTracepoint,
     Trampoline,
 }
 

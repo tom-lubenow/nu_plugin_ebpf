@@ -468,6 +468,27 @@ fn test_infer_fentry_arg_is_int() {
 }
 
 #[test]
+fn test_infer_raw_tracepoint_arg_is_u64() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::Arg(0),
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::RawTracepoint, "sys_enter");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::U64));
+}
+
+#[test]
 fn test_infer_struct_ops_arg_matches_kernel_btf() {
     let Some((value_type_name, callback_name)) = find_struct_ops_arg_candidate() else {
         return;

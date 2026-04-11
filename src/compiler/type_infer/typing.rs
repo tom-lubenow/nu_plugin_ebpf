@@ -546,6 +546,13 @@ impl<'a> TypeInference<'a> {
                 if let Some(ty) = self.trampoline_arg_type(*idx).ok().flatten() {
                     return ty;
                 }
+                if self
+                    .probe_ctx
+                    .as_ref()
+                    .is_some_and(|ctx| ctx.probe_type == EbpfProgramType::RawTracepoint)
+                {
+                    return HMType::U64;
+                }
                 if self.is_userspace_probe() {
                     HMType::Ptr {
                         pointee: Box::new(HMType::U8),

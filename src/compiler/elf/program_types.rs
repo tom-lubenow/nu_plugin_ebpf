@@ -252,7 +252,7 @@ pub(super) const RAW_TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     target_kind: ProgramTargetKind::RawTracepoint,
     kernel_target_validation: None,
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
-    arg_access: ProgramValueAccess::None,
+    arg_access: ProgramValueAccess::RawTracepoint,
     retval_access: ProgramValueAccess::None,
     supports_task_ctx_fields: true,
     supports_cpu_ctx_field: true,

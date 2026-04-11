@@ -775,6 +775,13 @@ impl<'a> HirToMirLowering<'a> {
                 };
                 (ptr_ty.clone(), Some(ptr_ty))
             }
+            CtxField::Arg(_)
+                if self
+                    .probe_ctx
+                    .is_some_and(|ctx| ctx.probe_type == EbpfProgramType::RawTracepoint) =>
+            {
+                (MirType::U64, Some(MirType::U64))
+            }
             _ => precise_trampoline_types
                 .map(|(semantic_ty, runtime_ty)| (semantic_ty, Some(runtime_ty)))
                 .unwrap_or_else(|| match trampoline_value_spec.map(|spec| spec.kind) {

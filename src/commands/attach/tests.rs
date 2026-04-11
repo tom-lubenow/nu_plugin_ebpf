@@ -3146,6 +3146,33 @@ fn make_branch_refined_bound_ctx_get_program(
 }
 
 #[test]
+fn test_compile_raw_tracepoint_ctx_arg_program() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("arg0")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::RawTracepoint, "sys_enter");
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("raw tracepoint ctx.arg0 should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("raw tracepoint ctx.arg0 should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_recover_optimized_type_hints_for_pointer_hop_trampoline_projection() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![

@@ -499,7 +499,7 @@ impl ProbeContext {
                 ))
             }
             CtxField::Arg(_) if !self.probe_type.supports_ctx_args() => Some(format!(
-                "ctx.{} is only available on contexts with argument access (kprobe, uprobe, fentry, fexit, tp_btf, lsm, and struct_ops)",
+                "ctx.{} is only available on contexts with argument access (kprobe, uprobe, fentry, fexit, tp_btf, lsm, struct_ops, and raw_tracepoint)",
                 field.display_name()
             )),
             CtxField::RetVal if !self.probe_type.supports_ctx_retval() => Some(

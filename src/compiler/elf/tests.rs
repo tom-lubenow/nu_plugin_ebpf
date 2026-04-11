@@ -164,6 +164,19 @@ fn test_program_type_metadata_for_tp_btf() {
 }
 
 #[test]
+fn test_program_type_metadata_for_raw_tracepoint() {
+    let info = EbpfProgramType::RawTracepoint.info();
+    assert_eq!(info.canonical_prefix, "raw_tracepoint");
+    assert_eq!(info.attach_kind, ProgramAttachKind::RawTracepoint);
+    assert_eq!(info.target_kind, ProgramTargetKind::RawTracepoint);
+    assert_eq!(info.arg_access, ProgramValueAccess::RawTracepoint);
+    assert_eq!(info.retval_access, ProgramValueAccess::None);
+    assert!(info.supports_task_ctx_fields);
+    assert!(info.supports_cpu_ctx_field);
+    assert!(info.supports_timestamp_ctx_field);
+}
+
+#[test]
 fn test_program_type_metadata_for_sk_lookup() {
     let info = EbpfProgramType::SkLookup.info();
     assert_eq!(info.canonical_prefix, "sk_lookup");
@@ -1519,6 +1532,12 @@ fn test_probe_context_rejects_tracepoint_field_on_raw_tracepoint() {
         .ctx_field_access_error(&CtxField::TracepointField("filename".to_string()))
         .expect("expected raw tracepoint field access error");
     assert!(err.contains("ctx.filename is only available on typed tracepoints"));
+}
+
+#[test]
+fn test_probe_context_allows_arg_on_raw_tracepoint() {
+    let ctx = ProbeContext::new(EbpfProgramType::RawTracepoint, "sys_enter");
+    assert!(ctx.ctx_field_access_error(&CtxField::Arg(0)).is_none());
 }
 
 #[test]

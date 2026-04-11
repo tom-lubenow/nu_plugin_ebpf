@@ -389,6 +389,8 @@ fn recover_ctx_field_hint(
                         .flatten()?,
                 };
                 runtime_trampoline_root_type(&type_info)
+            } else if ctx.probe_type == crate::compiler::EbpfProgramType::RawTracepoint {
+                Some(MirType::U64)
             } else if ctx.is_userspace() {
                 Some(pointer_hint(AddressSpace::User))
             } else {
