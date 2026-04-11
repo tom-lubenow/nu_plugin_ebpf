@@ -1855,6 +1855,26 @@ fn find_function_trampoline_named_projection_candidate() -> Option<(String, Stri
     None
 }
 
+fn find_function_trampoline_named_struct_leaf_candidate() -> Option<(String, String, String)> {
+    for (function_name, arg_name, field_name) in [("security_file_open", "file", "f_path")] {
+        let path = [TrampolineFieldSelector::Field(field_name.to_string())];
+        if let Ok(Some(arg_idx)) =
+            KernelBtf::get().function_trampoline_arg_index_by_name(function_name, arg_name)
+            && matches!(
+                KernelBtf::get().function_trampoline_arg_field(function_name, arg_idx, &path),
+                Ok(Some(_))
+            )
+        {
+            return Some((
+                function_name.to_string(),
+                arg_name.to_string(),
+                field_name.to_string(),
+            ));
+        }
+    }
+    None
+}
+
 fn find_tp_btf_named_projection_candidate() -> Option<(String, String, String)> {
     for (tracepoint_name, arg_name, field_name) in [
         ("sys_enter", "regs", "orig_ax"),
@@ -1959,6 +1979,7 @@ fn make_ctx_path_call_program(cell_path: CellPath, decl_id: DeclId) -> HirProgra
 }
 
 fn make_map_put_get_projection_program(
+    source_path: CellPath,
     map_put_decl: DeclId,
     map_get_decl: DeclId,
     count_decl: DeclId,
@@ -1976,9 +1997,7 @@ fn make_map_put_get_projection_program(
                     },
                     HirStmt::LoadLiteral {
                         dst: RegId::new(1),
-                        lit: HirLiteral::CellPath(Box::new(CellPath {
-                            members: vec![string_member("arg0"), string_member("f_path")],
-                        })),
+                        lit: HirLiteral::CellPath(Box::new(source_path)),
                     },
                     HirStmt::FollowCellPath {
                         src_dst: RegId::new(0),
@@ -3644,8 +3663,14 @@ fn test_recover_optimized_type_hints_for_struct_leaf_counter_schema() {
 
 #[test]
 fn test_compile_optimized_typed_map_get_projection() {
-    let hir =
-        make_map_put_get_projection_program(DeclId::new(42), DeclId::new(43), DeclId::new(44));
+    let hir = make_map_put_get_projection_program(
+        CellPath {
+            members: vec![string_member("arg0"), string_member("f_path")],
+        },
+        DeclId::new(42),
+        DeclId::new(43),
+        DeclId::new(44),
+    );
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
     let mut decl_names = HashMap::new();
     decl_names.insert(DeclId::new(42), "map-put".to_string());
@@ -3676,6 +3701,64 @@ fn test_compile_optimized_typed_map_get_projection() {
         Some(&lowering.type_hints),
     )
     .expect("optimized typed map get projection should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+    assert!(
+        result.maps.iter().any(|map| map.name == "cached_path"),
+        "expected generic map definition for cached_path"
+    );
+}
+
+#[test]
+fn test_compile_optimized_named_typed_map_get_projection() {
+    let Some((function_name, arg_name, field_name)) =
+        find_function_trampoline_named_struct_leaf_candidate()
+    else {
+        return;
+    };
+
+    let hir = make_map_put_get_projection_program(
+        CellPath {
+            members: vec![
+                string_member("arg"),
+                string_member(&arg_name),
+                string_member(&field_name),
+            ],
+        },
+        DeclId::new(42),
+        DeclId::new(43),
+        DeclId::new(44),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, &function_name);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "map-put".to_string());
+    decl_names.insert(DeclId::new(43), "map-get".to_string());
+    decl_names.insert(DeclId::new(44), "count".to_string());
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("named typed map put/get projection should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized named typed map get projection should compile");
 
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
     assert!(
