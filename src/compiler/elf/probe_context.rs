@@ -2,6 +2,7 @@ use super::{
     CompileError, CtxField, EbpfProgramType, IngressIfindexContextLayout, ProbeContext,
     ProgramTargetKind, ProgramValueAccess, SocketContextLayout,
 };
+use crate::compiler::hindley_milner::HMType;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::CtxStoreTarget;
 use crate::kernel_btf::{
@@ -539,6 +540,51 @@ impl ProbeContext {
                     path_desc, self.target, e
                 )
             })
+    }
+
+    pub(crate) fn main_function_expected_return_type(&self) -> Result<Option<HMType>, String> {
+        if self.probe_type != EbpfProgramType::StructOps {
+            return Ok(Some(HMType::I64));
+        }
+
+        let value_type_name = self.require_struct_ops_value_type_name()?;
+        let ret_type = KernelBtf::get()
+            .struct_ops_callback_ret_type_info(value_type_name, &self.target)
+            .map_err(|err| {
+                format!(
+                    "failed to resolve return type for struct_ops {}.{}: {}",
+                    value_type_name, self.target, err
+                )
+            })?;
+
+        match ret_type {
+            None | Some(TypeInfo::Void) => Ok(None),
+            Some(TypeInfo::Int { size, signed }) => Ok(Some(match (size, signed) {
+                (1, false) => HMType::Bool,
+                (1, true) => HMType::I8,
+                (2, false) => HMType::U16,
+                (2, true) => HMType::I16,
+                (4, false) => HMType::U32,
+                (4, true) => HMType::I32,
+                (8, false) => HMType::U64,
+                (8, true) => HMType::I64,
+                _ => {
+                    return Err(format!(
+                        "struct_ops {}.{} returns an unsupported integer width {}",
+                        value_type_name, self.target, size
+                    ));
+                }
+            })),
+            Some(TypeInfo::Ptr { .. }) => Ok(Some(HMType::I64)),
+            Some(TypeInfo::Struct { .. }) | Some(TypeInfo::Array { .. }) => Err(format!(
+                "struct_ops {}.{} returns an aggregate type, which is not supported yet",
+                value_type_name, self.target
+            )),
+            Some(TypeInfo::Unknown) => Err(format!(
+                "struct_ops {}.{} returns an unsupported type",
+                value_type_name, self.target
+            )),
+        }
     }
 
     pub(crate) fn resolve_ctx_field_name(&self, field_name: &str) -> Result<CtxField, String> {

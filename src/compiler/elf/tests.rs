@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::BpfHelper;
+use crate::compiler::hindley_milner::HMType;
 use crate::compiler::mir::{CtxField, CtxStoreTarget, MirType, StructField};
 use crate::compiler::mir_to_ebpf::compile_mir_to_ebpf;
 use crate::kernel_btf::KernelBtf;
@@ -560,6 +561,16 @@ fn test_probe_context_helper_zero_arg_requirement_uses_program_type() {
         Some((1, "helper 'bpf_redirect' requires arg1 = 0 in xdp programs"))
     );
     assert_eq!(tc.helper_zero_arg_requirement(BpfHelper::Redirect), None);
+}
+
+#[test]
+fn test_probe_context_main_return_type_defaults_to_i64_outside_struct_ops() {
+    let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    assert_eq!(
+        ctx.main_function_expected_return_type()
+            .expect("non-struct_ops return contract should resolve"),
+        Some(HMType::I64)
+    );
 }
 
 #[test]

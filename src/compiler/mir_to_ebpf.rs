@@ -51,7 +51,7 @@ use crate::compiler::type_infer::{
 };
 use crate::compiler::vcc;
 use crate::compiler::verifier_types;
-use crate::kernel_btf::{KernelBtf, TypeInfo};
+use crate::kernel_btf::KernelBtf;
 
 mod aggregations;
 mod calls;
@@ -524,68 +524,13 @@ pub fn compile_mir_to_ebpf_with_hints_and_globals(
     Ok(result)
 }
 
-fn struct_ops_callback_expected_return_type(
-    probe_ctx: &ProbeContext,
-) -> Result<Option<HMType>, CompileError> {
-    let value_type_name = probe_ctx
-        .struct_ops_value_type_name
-        .as_deref()
-        .ok_or_else(|| {
-            CompileError::TypeError(TypeError::new(format!(
-                "missing struct_ops value type for callback '{}'",
-                probe_ctx.target
-            )))
-        })?;
-    let ret_type = KernelBtf::get()
-        .struct_ops_callback_ret_type_info(value_type_name, &probe_ctx.target)
-        .map_err(|err| {
-            CompileError::TypeError(TypeError::new(format!(
-                "failed to resolve return type for struct_ops {}.{}: {}",
-                value_type_name, probe_ctx.target, err
-            )))
-        })?;
-
-    match ret_type {
-        None | Some(TypeInfo::Void) => Ok(None),
-        Some(TypeInfo::Int { size, signed }) => Ok(Some(match (size, signed) {
-            (1, false) => HMType::Bool,
-            (1, true) => HMType::I8,
-            (2, false) => HMType::U16,
-            (2, true) => HMType::I16,
-            (4, false) => HMType::U32,
-            (4, true) => HMType::I32,
-            (8, false) => HMType::U64,
-            (8, true) => HMType::I64,
-            _ => {
-                return Err(CompileError::TypeError(TypeError::new(format!(
-                    "struct_ops {}.{} returns an unsupported integer width {}",
-                    value_type_name, probe_ctx.target, size
-                ))));
-            }
-        })),
-        Some(TypeInfo::Ptr { .. }) => Ok(Some(HMType::I64)),
-        Some(TypeInfo::Struct { .. }) | Some(TypeInfo::Array { .. }) => {
-            Err(CompileError::TypeError(TypeError::new(format!(
-                "struct_ops {}.{} returns an aggregate type, which is not supported yet",
-                value_type_name, probe_ctx.target
-            ))))
-        }
-        Some(TypeInfo::Unknown) => Err(CompileError::TypeError(TypeError::new(format!(
-            "struct_ops {}.{} returns an unsupported type",
-            value_type_name, probe_ctx.target
-        )))),
-    }
-}
-
 fn main_function_expected_return_type(
     probe_ctx: Option<&ProbeContext>,
 ) -> Result<Option<HMType>, CompileError> {
-    match probe_ctx {
-        Some(ctx) if matches!(ctx.probe_type, EbpfProgramType::StructOps) => {
-            struct_ops_callback_expected_return_type(ctx)
-        }
-        _ => Ok(Some(HMType::I64)),
-    }
+    probe_ctx.map_or(Ok(Some(HMType::I64)), |ctx| {
+        ctx.main_function_expected_return_type()
+            .map_err(|message| CompileError::TypeError(TypeError::new(message)))
+    })
 }
 
 fn verify_mir_program(
