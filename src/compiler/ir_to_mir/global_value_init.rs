@@ -55,9 +55,7 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        let is_post_bind =
-            ctx.target.ends_with(":post_bind4") || ctx.target.ends_with(":post_bind6");
-        if is_post_bind {
+        if ctx.cgroup_sock_is_post_bind() {
             return Ok(());
         }
 

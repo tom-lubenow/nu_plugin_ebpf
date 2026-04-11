@@ -156,7 +156,7 @@ Near-term priority order:
 - [~] Generalize context modeling by program type.
   - Replace tracing-centric context fields with per-program typed context schemas.
   - Make illegal context access fail early in HIR/MIR type checking.
-  - Recent progress: started moving context legality and aliases behind explicit program-type metadata/helpers so packet/socket/cgroup families no longer rely on a single probe-centric validation match, and target-sensitive checks now consult typed `ProgramSpec` parsing instead of open-coded target-string splits.
+  - Recent progress: started moving context legality and aliases behind explicit program-type metadata/helpers so packet/socket/cgroup families no longer rely on a single probe-centric validation match, and target-sensitive checks now consult typed `ProgramSpec` parsing instead of open-coded target-string splits or suffix checks.
 
 - [ ] Expand map support to the broader eBPF map ecosystem.
   - Add missing map definitions and loader plumbing for commonly used map families.

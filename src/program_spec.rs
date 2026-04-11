@@ -159,13 +159,20 @@ impl TcTarget {
         })
     }
 
-    pub fn target_string(&self) -> String {
-        let direction = match self.attach_type {
+    pub fn attach_type_name(&self) -> &'static str {
+        match self.attach_type {
             TcAttachType::Ingress => "ingress",
             TcAttachType::Egress => "egress",
             _ => "unknown",
-        };
-        format!("{}:{direction}", self.interface)
+        }
+    }
+
+    pub fn is_ingress(&self) -> bool {
+        matches!(self.attach_type, TcAttachType::Ingress)
+    }
+
+    pub fn target_string(&self) -> String {
+        format!("{}:{}", self.interface, self.attach_type_name())
     }
 }
 
@@ -283,6 +290,13 @@ impl CgroupSockTarget {
             CgroupSockAttachType::SockCreate => "sock_create",
             CgroupSockAttachType::SockRelease => "sock_release",
         }
+    }
+
+    pub fn is_post_bind(&self) -> bool {
+        matches!(
+            self.attach_type,
+            CgroupSockAttachType::PostBind4 | CgroupSockAttachType::PostBind6
+        )
     }
 
     pub fn target_string(&self) -> String {

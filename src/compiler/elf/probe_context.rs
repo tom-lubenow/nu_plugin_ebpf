@@ -1,10 +1,35 @@
 use super::{CompileError, CtxField, EbpfProgramType, ProbeContext, ProgramTargetKind};
-use crate::program_spec::{CgroupSockAddrTarget, CgroupSockoptTarget, ProgramSpec};
+use crate::program_spec::{
+    CgroupSockAddrTarget, CgroupSockTarget, CgroupSockoptTarget, ProgramSpec, TcTarget,
+};
 use aya::programs::{CgroupSockAddrAttachType, CgroupSockoptAttachType};
 
 impl ProbeContext {
-    fn parsed_program_spec(&self) -> Option<ProgramSpec> {
+    pub(crate) fn parsed_program_spec(&self) -> Option<ProgramSpec> {
         ProgramSpec::from_program_type_target(self.probe_type, &self.target).ok()
+    }
+
+    pub(crate) fn tc_target(&self) -> Option<TcTarget> {
+        match self.parsed_program_spec()? {
+            ProgramSpec::Tc { target } => Some(target),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn tc_is_ingress(&self) -> bool {
+        self.tc_target().is_some_and(|target| target.is_ingress())
+    }
+
+    pub(crate) fn cgroup_sock_target(&self) -> Option<CgroupSockTarget> {
+        match self.parsed_program_spec()? {
+            ProgramSpec::CgroupSock { target } => Some(target),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn cgroup_sock_is_post_bind(&self) -> bool {
+        self.cgroup_sock_target()
+            .is_some_and(|target| target.is_post_bind())
     }
 
     fn cgroup_sock_addr_target(&self) -> Option<CgroupSockAddrTarget> {

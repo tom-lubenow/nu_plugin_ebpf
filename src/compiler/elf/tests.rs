@@ -365,6 +365,24 @@ fn test_probe_context_tracepoint_parts_use_typed_program_spec() {
 }
 
 #[test]
+fn test_probe_context_tc_attach_kind_uses_typed_program_spec() {
+    let ingress = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let egress = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
+
+    assert!(ingress.tc_is_ingress());
+    assert!(!egress.tc_is_ingress());
+}
+
+#[test]
+fn test_probe_context_cgroup_sock_attach_kind_uses_typed_program_spec() {
+    let post_bind = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
+    let sock_create = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+
+    assert!(post_bind.cgroup_sock_is_post_bind());
+    assert!(!sock_create.cgroup_sock_is_post_bind());
+}
+
+#[test]
 fn test_program_type_supports_raw_tracepoint_alias() {
     assert_eq!(
         EbpfProgramType::from_spec_prefix("raw_tp"),
