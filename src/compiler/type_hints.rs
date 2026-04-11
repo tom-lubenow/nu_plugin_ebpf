@@ -379,6 +379,21 @@ fn recover_ctx_field_hint(
             let ctx = probe_ctx?;
             if ctx.probe_type.uses_btf_trampoline() {
                 let type_info = match ctx.probe_type {
+                    crate::compiler::EbpfProgramType::StructOps => {
+                        let value_type_name = ctx.struct_ops_value_type_name.as_deref()?;
+                        KernelBtf::get()
+                            .struct_ops_callback_arg_type_info(
+                                value_type_name,
+                                &ctx.target,
+                                *idx as usize,
+                            )
+                            .ok()
+                            .flatten()?
+                    }
+                    crate::compiler::EbpfProgramType::TpBtf => KernelBtf::get()
+                        .tp_btf_arg_type_info(&ctx.target, *idx as usize)
+                        .ok()
+                        .flatten()?,
                     crate::compiler::EbpfProgramType::Lsm => KernelBtf::get()
                         .lsm_hook_arg_type_info(&ctx.target, *idx as usize)
                         .ok()
@@ -714,7 +729,74 @@ pub(crate) fn recover_optimized_mir_type_hints(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::EbpfProgramType;
     use crate::compiler::mir::StackSlotKind;
+    use crate::kernel_btf::KernelBtf;
+
+    fn recover_ctx_arg_hint(probe_ctx: &ProbeContext) -> Option<MirType> {
+        let mut func = MirFunction::new();
+        let bb0 = func.alloc_block();
+        func.entry = bb0;
+
+        let arg = func.alloc_vreg();
+        func.block_mut(bb0)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: arg,
+                field: CtxField::Arg(0),
+                slot: None,
+            });
+        func.block_mut(bb0).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(arg)),
+        };
+
+        let mut hints = HashMap::new();
+        recover_optimized_function_type_hints(
+            &func,
+            Some(probe_ctx),
+            &mut hints,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+        hints.remove(&arg)
+    }
+
+    fn find_tp_btf_arg_candidate() -> Option<&'static str> {
+        for tracepoint_name in [
+            "sys_enter",
+            "sys_exit",
+            "sched_process_exec",
+            "sched_process_fork",
+        ] {
+            if matches!(
+                KernelBtf::get().tp_btf_arg_type_info(tracepoint_name, 0),
+                Ok(Some(_))
+            ) {
+                return Some(tracepoint_name);
+            }
+        }
+        None
+    }
+
+    fn find_struct_ops_arg_candidate() -> Option<(&'static str, &'static str)> {
+        for (value_type_name, callback_name) in [
+            ("sched_ext_ops", "select_cpu"),
+            ("tcp_congestion_ops", "cong_avoid"),
+            ("tcp_congestion_ops", "init"),
+        ] {
+            if matches!(
+                KernelBtf::get().struct_ops_callback_arg_type_info(
+                    value_type_name,
+                    callback_name,
+                    0
+                ),
+                Ok(Some(_))
+            ) {
+                return Some((value_type_name, callback_name));
+            }
+        }
+        None
+    }
 
     #[test]
     fn test_synthetic_bpf_sock_type_uses_uapi_offsets() {
@@ -995,5 +1077,44 @@ mod tests {
         assert_eq!(hints.get(&v1), Some(&packet_ptr));
         assert_eq!(hints.get(&v2), Some(&packet_ptr));
         assert_eq!(hints.get(&v3), Some(&packet_ptr));
+    }
+
+    #[test]
+    fn test_recover_optimized_function_type_hints_uses_tp_btf_arg_metadata() {
+        let Some(tracepoint_name) = find_tp_btf_arg_candidate() else {
+            return;
+        };
+
+        let expected_info = KernelBtf::get()
+            .tp_btf_arg_type_info(tracepoint_name, 0)
+            .expect("tp_btf arg type query should succeed")
+            .expect("tp_btf arg0 should exist");
+        let expected = runtime_trampoline_root_type(&expected_info)
+            .expect("tp_btf arg0 should produce a MIR hint");
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::TpBtf, tracepoint_name);
+        let actual = recover_ctx_arg_hint(&probe_ctx).expect("tp_btf arg0 should recover a hint");
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_recover_optimized_function_type_hints_uses_struct_ops_arg_metadata() {
+        let Some((value_type_name, callback_name)) = find_struct_ops_arg_candidate() else {
+            return;
+        };
+
+        let expected_info = KernelBtf::get()
+            .struct_ops_callback_arg_type_info(value_type_name, callback_name, 0)
+            .expect("struct_ops arg type query should succeed")
+            .expect("struct_ops arg0 should exist");
+        let expected = runtime_trampoline_root_type(&expected_info)
+            .expect("struct_ops arg0 should produce a MIR hint");
+
+        let probe_ctx = ProbeContext::new_struct_ops_callback(value_type_name, callback_name);
+        let actual =
+            recover_ctx_arg_hint(&probe_ctx).expect("struct_ops arg0 should recover a hint");
+
+        assert_eq!(actual, expected);
     }
 }
