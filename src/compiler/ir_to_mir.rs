@@ -61,6 +61,7 @@ mod entry;
 mod expr_lowering;
 mod global_value_init;
 mod globals;
+mod path_ops;
 mod subfunctions;
 mod user_functions;
 mod value_lowering;
