@@ -6857,6 +6857,242 @@ fn test_lower_global_set_and_get_string_materializes_string_slot() {
 }
 
 #[test]
+fn test_lower_global_set_and_get_record_string_field_materializes_string_slot() {
+    let capture_var = VarId::new(300);
+    let get_decl = DeclId::new(94);
+    let set_decl = DeclId::new(95);
+    let decl_names = HashMap::from([
+        (get_decl, "global-get".to_string()),
+        (set_decl, "global-set".to_string()),
+    ]);
+
+    let mut record = Record::new();
+    record.push("msg", Value::string("hi", Span::test_data()));
+    record.push("pid", Value::int(0, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: capture_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("seen_state".into()),
+                },
+                HirStmt::Call {
+                    decl_id: set_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("msg")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(2),
+                    path: RegId::new(3),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String("!".into()),
+                },
+                HirStmt::StringAppend {
+                    src_dst: RegId::new(2),
+                    val: RegId::new(4),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(capture_var, Value::record(record, Span::test_data()))],
+        None,
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("global-get/global-set record string field should lower as a stack-backed string");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StringAppend { .. })),
+        "expected global-get on record string field to materialize a stack string slot"
+    );
+}
+
+#[test]
+fn test_lower_global_define_and_get_record_list_field_supports_get() {
+    let capture_var = VarId::new(301);
+    let define_decl = DeclId::new(96);
+    let global_get_decl = DeclId::new(97);
+    let get_decl = DeclId::new(98);
+    let count_decl = DeclId::new(99);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (get_decl, "get".to_string()),
+        (count_decl, "count".to_string()),
+    ]);
+
+    let mut record = Record::new();
+    record.push(
+        "vals",
+        Value::list(
+            vec![
+                Value::int(11, Span::test_data()),
+                Value::int(22, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+    record.push("pid", Value::int(0, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: capture_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("seen_state".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("vals")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(2),
+                    path: RegId::new(3),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: count_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(capture_var, Value::record(record, Span::test_data()))],
+        None,
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("global-define/global-get record list field should lower as a stack-backed list");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListGet { .. })),
+        "expected global-get on record list field to lower through ListGet"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::MapUpdate {
+                    map: MapRef { name, .. },
+                    ..
+                } if name == COUNTER_MAP_NAME
+            )),
+        "expected global-get list field result to be typed as a scalar key"
+    );
+}
+
+#[test]
 fn test_lower_global_define_and_get_nonzero_scalar_uses_named_data_global() {
     let define_decl = DeclId::new(98);
     let get_decl = DeclId::new(99);

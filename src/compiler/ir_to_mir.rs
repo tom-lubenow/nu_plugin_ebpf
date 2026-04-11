@@ -324,6 +324,8 @@ pub struct HirToMirLowering<'a> {
     pending_annotated_mut_global_init_stores: HashSet<VarId>,
     /// Explicit named globals created by `global-set`
     named_program_globals: HashMap<String, MutableCaptureGlobal>,
+    /// Logical semantics for named program globals with richer runtime layouts.
+    named_program_global_semantics: HashMap<String, AnnotatedValueSemantics>,
     /// Monotonic counter for unique readonly-global symbol names
     readonly_global_counter: u32,
     /// Registry of generated subfunctions by DeclId plus call-site type seeds
@@ -408,6 +410,7 @@ impl<'a> HirToMirLowering<'a> {
             subfunction_global_aliases: HashMap::new(),
             pending_annotated_mut_global_init_stores: HashSet::new(),
             named_program_globals: HashMap::new(),
+            named_program_global_semantics: HashMap::new(),
             readonly_global_counter: 0,
             subfunction_registry: HashMap::new(),
             call_counts: HashMap::new(),

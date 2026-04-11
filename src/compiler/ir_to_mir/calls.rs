@@ -1198,6 +1198,10 @@ impl<'a> HirToMirLowering<'a> {
                     })?;
 
                 self.load_mutable_global_value(src_dst, result_vreg, &global)?;
+                if let Some(semantics) = self.named_program_global_semantics(&global_name).cloned()
+                {
+                    self.get_or_create_metadata(src_dst).annotated_semantics = Some(semantics);
+                }
             }
 
             "global-set" => {

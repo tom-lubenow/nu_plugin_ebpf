@@ -516,6 +516,13 @@ impl<'a> HirToMirLowering<'a> {
         self.named_program_globals.get(name)
     }
 
+    pub(super) fn named_program_global_semantics(
+        &self,
+        name: &str,
+    ) -> Option<&AnnotatedValueSemantics> {
+        self.named_program_global_semantics.get(name)
+    }
+
     fn typed_named_program_global_layout(
         symbol: String,
         spec: &str,
@@ -891,9 +898,16 @@ impl<'a> HirToMirLowering<'a> {
         initialize_from_constant: bool,
     ) -> Result<MutableCaptureGlobal, CompileError> {
         let symbol = Self::named_program_global_symbol(name);
+        let source_constant_value = self
+            .get_metadata(src)
+            .and_then(|meta| meta.constant_value.clone());
+        let value_semantics = source_constant_value
+            .as_ref()
+            .map(Self::mutable_global_value_semantics)
+            .transpose()?
+            .flatten();
         let constant_value = if initialize_from_constant {
-            self.get_metadata(src)
-                .and_then(|meta| meta.constant_value.clone())
+            source_constant_value.clone()
         } else {
             None
         };
@@ -922,6 +936,21 @@ impl<'a> HirToMirLowering<'a> {
                     name
                 )));
             }
+            if let Some(semantics) = value_semantics {
+                match self.named_program_global_semantics.get(name) {
+                    Some(existing_semantics) if existing_semantics != &semantics => {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "global '{}' is used with incompatible value semantics",
+                            name
+                        )));
+                    }
+                    Some(_) => {}
+                    None => {
+                        self.named_program_global_semantics
+                            .insert(name.to_string(), semantics);
+                    }
+                }
+            }
             return Ok(existing.clone());
         }
 
@@ -944,6 +973,10 @@ impl<'a> HirToMirLowering<'a> {
         }
         self.named_program_globals
             .insert(name.to_string(), inferred.clone());
+        if let Some(semantics) = value_semantics {
+            self.named_program_global_semantics
+                .insert(name.to_string(), semantics);
+        }
         Ok(inferred)
     }
 
@@ -996,6 +1029,21 @@ impl<'a> HirToMirLowering<'a> {
                     name
                 )));
             }
+            if let Some(semantics) = Self::mutable_global_value_semantics(value)? {
+                match self.named_program_global_semantics.get(name) {
+                    Some(existing_semantics) if existing_semantics != &semantics => {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "global '{}' is used with incompatible value semantics",
+                            name
+                        )));
+                    }
+                    Some(_) => {}
+                    None => {
+                        self.named_program_global_semantics
+                            .insert(name.to_string(), semantics);
+                    }
+                }
+            }
             return Ok(existing.clone());
         }
 
@@ -1017,6 +1065,10 @@ impl<'a> HirToMirLowering<'a> {
         }
         self.named_program_globals
             .insert(name.to_string(), inferred.clone());
+        if let Some(semantics) = Self::mutable_global_value_semantics(value)? {
+            self.named_program_global_semantics
+                .insert(name.to_string(), semantics);
+        }
         Ok(inferred)
     }
 

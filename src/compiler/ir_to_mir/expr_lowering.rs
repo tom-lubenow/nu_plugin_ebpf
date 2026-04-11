@@ -486,7 +486,7 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    fn mutable_global_value_semantics(
+    pub(super) fn mutable_global_value_semantics(
         value: &Value,
     ) -> Result<Option<AnnotatedValueSemantics>, CompileError> {
         match value {
