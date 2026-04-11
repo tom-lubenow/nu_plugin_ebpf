@@ -424,6 +424,29 @@ fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
 }
 
 #[test]
+fn test_probe_context_kfunc_call_error_uses_sched_ext_callback_policy() {
+    let dispatch = ProbeContext::new_struct_ops_callback("sched_ext_ops", "dispatch");
+    let init = ProbeContext::new_struct_ops_callback("sched_ext_ops", "init");
+    let select_cpu = ProbeContext::new_struct_ops_callback("sched_ext_ops", "select_cpu");
+
+    assert_eq!(
+        dispatch.kfunc_call_error("scx_bpf_create_dsq"),
+        Some(
+            "kfunc 'scx_bpf_create_dsq' is only valid in sleepable sched_ext_ops callbacks, not sched_ext_ops.dispatch"
+                .to_string()
+        )
+    );
+    assert!(init.kfunc_call_error("scx_bpf_create_dsq").is_none());
+    assert_eq!(
+        select_cpu.kfunc_call_error("scx_bpf_dispatch_nr_slots"),
+        Some(
+            "kfunc 'scx_bpf_dispatch_nr_slots' is only valid in sched_ext_ops.dispatch, not sched_ext_ops.select_cpu"
+                .to_string()
+        )
+    );
+}
+
+#[test]
 fn test_probe_context_socket_projection_error_uses_typed_attach_kind() {
     let post_bind = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
     let sock_create = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");

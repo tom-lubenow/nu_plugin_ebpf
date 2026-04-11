@@ -4,81 +4,6 @@ use crate::compiler::instruction::unknown_kfunc_signature_message;
 use crate::compiler::mir::CtxStoreTarget;
 
 impl<'a> TypeInference<'a> {
-    fn active_sched_ext_callback(&self) -> Option<&str> {
-        let ctx = self.probe_ctx.as_ref()?;
-        if ctx.probe_type != EbpfProgramType::StructOps {
-            return None;
-        }
-        if ctx.struct_ops_value_type_name.as_deref() != Some("sched_ext_ops") {
-            return None;
-        }
-        Some(ctx.target.as_str())
-    }
-
-    fn sched_ext_callback_is_sleepable(callback: &str) -> bool {
-        super::super::elf::struct_ops_callback_is_sleepable("sched_ext_ops", callback)
-    }
-
-    fn sched_ext_kfunc_allowed_callbacks(kfunc: &str) -> Option<&'static [&'static str]> {
-        match kfunc {
-            "scx_bpf_dispatch_nr_slots"
-            | "scx_bpf_dsq_move_to_local"
-            | "scx_bpf_dispatch_cancel"
-            | "scx_bpf_dsq_move"
-            | "scx_bpf_dsq_move_vtime"
-            | "scx_bpf_dsq_move_set_slice"
-            | "scx_bpf_dsq_move_set_vtime" => Some(&["dispatch"]),
-            "scx_bpf_reenqueue_local" => Some(&["cpu_release"]),
-            "scx_bpf_select_cpu_dfl" => Some(&["select_cpu", "enqueue"]),
-            "scx_bpf_select_cpu_and" => Some(&["select_cpu", "enqueue"]),
-            "scx_bpf_dsq_insert" | "scx_bpf_dsq_insert_vtime" => {
-                Some(&["select_cpu", "enqueue", "dispatch"])
-            }
-            _ => None,
-        }
-    }
-
-    fn format_sched_ext_callback_list(callbacks: &[&str]) -> String {
-        match callbacks {
-            [] => String::new(),
-            [only] => format!("sched_ext_ops.{only}"),
-            [left, right] => format!("sched_ext_ops.{left} or sched_ext_ops.{right}"),
-            _ => {
-                let mut names = callbacks
-                    .iter()
-                    .map(|callback| format!("sched_ext_ops.{callback}"))
-                    .collect::<Vec<_>>();
-                let last = names.pop().unwrap();
-                format!("{}, or {}", names.join(", "), last)
-            }
-        }
-    }
-
-    fn validate_sched_ext_kfunc_callback_context(&self, kfunc: &str, errors: &mut Vec<TypeError>) {
-        let Some(active_callback) = self.active_sched_ext_callback() else {
-            return;
-        };
-        if kfunc == "scx_bpf_create_dsq" && !Self::sched_ext_callback_is_sleepable(active_callback)
-        {
-            errors.push(TypeError::new(format!(
-                "kfunc '{}' is only valid in sleepable sched_ext_ops callbacks, not sched_ext_ops.{}",
-                kfunc, active_callback
-            )));
-            return;
-        }
-        let Some(allowed_callbacks) = Self::sched_ext_kfunc_allowed_callbacks(kfunc) else {
-            return;
-        };
-        if allowed_callbacks.contains(&active_callback) {
-            return;
-        }
-        let allowed = Self::format_sched_ext_callback_list(allowed_callbacks);
-        errors.push(TypeError::new(format!(
-            "kfunc '{}' is only valid in {}, not sched_ext_ops.{}",
-            kfunc, allowed, active_callback
-        )));
-    }
-
     fn validate_helper_program_context(&self, helper_id: u32, errors: &mut Vec<TypeError>) {
         let Some(helper) = BpfHelper::from_u32(helper_id) else {
             return;
@@ -87,6 +12,15 @@ impl<'a> TypeInference<'a> {
             return;
         };
         if let Some(message) = ctx.helper_call_error(helper) {
+            errors.push(TypeError::new(message));
+        }
+    }
+
+    fn validate_kfunc_program_context(&self, kfunc: &str, errors: &mut Vec<TypeError>) {
+        let Some(ctx) = self.probe_ctx.as_ref() else {
+            return;
+        };
+        if let Some(message) = ctx.kfunc_call_error(kfunc) {
             errors.push(TypeError::new(message));
         }
     }
@@ -775,7 +709,7 @@ impl<'a> TypeInference<'a> {
                     errors.push(TypeError::new(unknown_kfunc_signature_message(kfunc)));
                     return;
                 };
-                self.validate_sched_ext_kfunc_callback_context(kfunc, errors);
+                self.validate_kfunc_program_context(kfunc, errors);
                 if args.len() < sig.min_args || args.len() > sig.max_args {
                     errors.push(TypeError::new(format!(
                         "kfunc '{}' expects {}..={} arguments, got {}",
