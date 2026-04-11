@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::BpfHelper;
 use crate::compiler::mir::{CtxField, MirType, StructField};
 use crate::compiler::mir_to_ebpf::compile_mir_to_ebpf;
 use crate::kernel_btf::KernelBtf;
@@ -380,6 +381,18 @@ fn test_probe_context_cgroup_sock_attach_kind_uses_typed_program_spec() {
 
     assert!(post_bind.cgroup_sock_is_post_bind());
     assert!(!sock_create.cgroup_sock_is_post_bind());
+}
+
+#[test]
+fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
+    let ingress = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let egress = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
+
+    assert!(ingress.helper_call_error(BpfHelper::RedirectPeer).is_none());
+    assert_eq!(
+        egress.helper_call_error(BpfHelper::RedirectPeer),
+        Some("helper 'bpf_redirect_peer' is only valid in tc ingress programs".to_string())
+    );
 }
 
 #[test]

@@ -86,52 +86,8 @@ impl<'a> TypeInference<'a> {
         let Some(ctx) = self.probe_ctx.as_ref() else {
             return;
         };
-        match helper {
-            BpfHelper::RcRepeat | BpfHelper::RcKeydown | BpfHelper::RcPointerRel => {
-                if ctx.probe_type != EbpfProgramType::LircMode2 {
-                    errors.push(TypeError::new(format!(
-                        "helper '{}' is only valid in lirc_mode2 programs",
-                        helper.name()
-                    )));
-                }
-            }
-            BpfHelper::Redirect => {
-                if !matches!(ctx.probe_type, EbpfProgramType::Xdp | EbpfProgramType::Tc) {
-                    errors.push(TypeError::new(format!(
-                        "helper '{}' is only valid in xdp and tc programs",
-                        helper.name()
-                    )));
-                }
-            }
-            BpfHelper::RedirectNeigh => {
-                if ctx.probe_type != EbpfProgramType::Tc {
-                    errors.push(TypeError::new(format!(
-                        "helper '{}' is only valid in tc programs",
-                        helper.name()
-                    )));
-                }
-            }
-            BpfHelper::RedirectPeer => {
-                if !ctx.tc_is_ingress() {
-                    errors.push(TypeError::new(format!(
-                        "helper '{}' is only valid in tc ingress programs",
-                        helper.name()
-                    )));
-                }
-            }
-            BpfHelper::MsgApplyBytes
-            | BpfHelper::MsgCorkBytes
-            | BpfHelper::MsgPullData
-            | BpfHelper::MsgPushData
-            | BpfHelper::MsgPopData => {
-                if ctx.probe_type != EbpfProgramType::SkMsg {
-                    errors.push(TypeError::new(format!(
-                        "helper '{}' is only valid in sk_msg programs",
-                        helper.name()
-                    )));
-                }
-            }
-            _ => {}
+        if let Some(message) = ctx.helper_call_error(helper) {
+            errors.push(TypeError::new(message));
         }
     }
 
