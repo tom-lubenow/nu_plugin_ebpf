@@ -514,4 +514,22 @@ impl ProbeContext {
             _ => None,
         }
     }
+
+    /// Returns a user-facing error message when a socket projection member is
+    /// not valid for this program type or attach context.
+    pub fn socket_projection_access_error(&self, member_name: &str) -> Option<String> {
+        let requires_post_bind = matches!(
+            member_name,
+            "src_ip4" | "src_ip6" | "src_port" | "dst_port" | "dst_ip4" | "dst_ip6"
+        );
+        if self.probe_type != EbpfProgramType::CgroupSock || !requires_post_bind {
+            return None;
+        }
+        if self.cgroup_sock_is_post_bind() {
+            return None;
+        }
+        Some(format!(
+            "ctx.sk.{member_name} is only available on cgroup_sock post_bind4/post_bind6 hooks"
+        ))
+    }
 }

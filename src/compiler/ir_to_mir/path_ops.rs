@@ -297,7 +297,13 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             if matches!(ctx_field, CtxField::Socket) {
-                self.validate_socket_projection_members(remaining_members)?;
+                if let (Some(ctx), Some(PathMember::String { val, .. })) =
+                    (self.probe_ctx, remaining_members.first())
+                {
+                    if let Some(message) = ctx.socket_projection_access_error(val) {
+                        return Err(CompileError::UnsupportedInstruction(message));
+                    }
+                }
                 let base_ty = MirType::Ptr {
                     pointee: Box::new(Self::synthetic_bpf_sock_type()),
                     address_space: AddressSpace::Kernel,

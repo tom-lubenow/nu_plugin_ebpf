@@ -1,6 +1,4 @@
 use super::*;
-use crate::compiler::EbpfProgramType;
-
 impl<'a> HirToMirLowering<'a> {
     fn mutable_numeric_list_global_repr(
         values: &[Value],
@@ -29,39 +27,6 @@ impl<'a> HirToMirLowering<'a> {
             },
             data,
             max_len,
-        )))
-    }
-
-    pub(super) fn validate_socket_projection_members(
-        &self,
-        members: &[PathMember],
-    ) -> Result<(), CompileError> {
-        let Some(ctx) = self.probe_ctx else {
-            return Ok(());
-        };
-        if !matches!(ctx.probe_type, EbpfProgramType::CgroupSock) {
-            return Ok(());
-        }
-
-        let Some(PathMember::String { val, .. }) = members.first() else {
-            return Ok(());
-        };
-
-        let requires_post_bind = matches!(
-            val.as_str(),
-            "src_ip4" | "src_ip6" | "src_port" | "dst_port" | "dst_ip4" | "dst_ip6"
-        );
-        if !requires_post_bind {
-            return Ok(());
-        }
-
-        if ctx.cgroup_sock_is_post_bind() {
-            return Ok(());
-        }
-
-        Err(CompileError::UnsupportedInstruction(format!(
-            "ctx.sk.{} is only available on cgroup_sock post_bind4/post_bind6 hooks",
-            val
         )))
     }
 
