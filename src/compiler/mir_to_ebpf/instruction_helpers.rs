@@ -77,29 +77,15 @@ impl<'a> MirToEbpfCompiler<'a> {
                 ty
             )));
         }
+        let Some(ctx) = self.probe_ctx else {
+            return Err(CompileError::UnsupportedInstruction(
+                target.missing_context_error().into(),
+            ));
+        };
+        ctx.validate_ctx_store_target(target)?;
         let offset = match target {
-            CtxStoreTarget::SockOpsReply => {
-                if !matches!(
-                    self.probe_ctx.map(|ctx| ctx.probe_type),
-                    Some(EbpfProgramType::SockOps)
-                ) {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "writable sock_ops reply fields are only supported on sock_ops programs"
-                            .into(),
-                    ));
-                }
-                Self::bpf_sock_ops_args_offset()
-            }
+            CtxStoreTarget::SockOpsReply => Self::bpf_sock_ops_args_offset(),
             CtxStoreTarget::SockOpsReplyLong(index) => {
-                if !matches!(
-                    self.probe_ctx.map(|ctx| ctx.probe_type),
-                    Some(EbpfProgramType::SockOps)
-                ) {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "writable sock_ops reply fields are only supported on sock_ops programs"
-                            .into(),
-                    ));
-                }
                 Self::bpf_sock_ops_args_offset()
                     + i16::from(*index).checked_mul(4).ok_or_else(|| {
                         CompileError::UnsupportedInstruction(
@@ -107,15 +93,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                         )
                     })?
             }
-            CtxStoreTarget::SockoptRetval => {
-                let Some(ctx) = self.probe_ctx else {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "writable sockopt_retval requires cgroup_sockopt:get probe context".into(),
-                    ));
-                };
-                ctx.validate_ctx_field_access(&CtxField::SockoptRetval)?;
-                Self::bpf_sockopt_offsets().5
-            }
+            CtxStoreTarget::SockoptRetval => Self::bpf_sockopt_offsets().5,
         };
         let val_reg = self.value_to_reg(val)?;
         self.emit_store(EbpfReg::R9, offset, val_reg, size)?;

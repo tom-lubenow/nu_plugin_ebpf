@@ -722,6 +722,41 @@ pub enum CtxStoreTarget {
     SockoptRetval,
 }
 
+impl CtxStoreTarget {
+    pub fn value_type(&self) -> MirType {
+        match self {
+            CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => MirType::U32,
+            CtxStoreTarget::SockoptRetval => MirType::I32,
+        }
+    }
+
+    pub fn type_error_message(&self, actual: &MirType) -> String {
+        match self {
+            CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
+                format!(
+                    "writable sock_ops reply fields require a u32 store, got {:?}",
+                    actual
+                )
+            }
+            CtxStoreTarget::SockoptRetval => format!(
+                "writable cgroup_sockopt retval requires an i32 store, got {:?}",
+                actual
+            ),
+        }
+    }
+
+    pub fn missing_context_error(&self) -> &'static str {
+        match self {
+            CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
+                "writable sock_ops reply fields are only supported on sock_ops programs"
+            }
+            CtxStoreTarget::SockoptRetval => {
+                "writable sockopt_retval requires cgroup_sockopt:get context"
+            }
+        }
+    }
+}
+
 /// MIR instruction
 #[derive(Debug, Clone)]
 pub enum MirInst {

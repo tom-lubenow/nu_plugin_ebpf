@@ -1,7 +1,5 @@
 use super::*;
-use crate::compiler::EbpfProgramType;
 use crate::compiler::instruction::unknown_kfunc_signature_message;
-use crate::compiler::mir::CtxStoreTarget;
 
 impl<'a> TypeInference<'a> {
     fn validate_helper_program_context(&self, helper_id: u32, errors: &mut Vec<TypeError>) {
@@ -145,42 +143,16 @@ impl<'a> TypeInference<'a> {
                         val_ty
                     )));
                 }
-                match target {
-                    CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
-                        if *ty != MirType::U32 {
-                            errors.push(TypeError::new(format!(
-                                "writable sock_ops reply fields require a u32 store, got {:?}",
-                                ty
-                            )));
-                        }
-                        if !matches!(
-                            self.probe_ctx.as_ref().map(|ctx| ctx.probe_type),
-                            Some(EbpfProgramType::SockOps)
-                        ) {
-                            errors.push(TypeError::new(format!(
-                                "context store target {:?} is only supported on sock_ops programs",
-                                target
-                            )));
-                        }
-                    }
-                    CtxStoreTarget::SockoptRetval => {
-                        if *ty != MirType::I32 {
-                            errors.push(TypeError::new(format!(
-                                "writable cgroup_sockopt retval requires an i32 store, got {:?}",
-                                ty
-                            )));
-                        }
-                        let Some(ctx) = self.probe_ctx.as_ref() else {
-                            errors.push(TypeError::new(
-                                "writable sockopt_retval requires cgroup_sockopt:get context"
-                                    .to_string(),
-                            ));
-                            return;
-                        };
-                        if let Err(err) = ctx.validate_ctx_field_access(&CtxField::SockoptRetval) {
-                            errors.push(TypeError::new(err.to_string()));
-                        }
-                    }
+                let expected_ty = target.value_type();
+                if *ty != expected_ty {
+                    errors.push(TypeError::new(target.type_error_message(ty)));
+                }
+                let Some(ctx) = self.probe_ctx.as_ref() else {
+                    errors.push(TypeError::new(target.missing_context_error().to_string()));
+                    return;
+                };
+                if let Err(err) = ctx.validate_ctx_store_target(target) {
+                    errors.push(TypeError::new(err.to_string()));
                 }
             }
             MirInst::BinOp { op, lhs, rhs, .. } => {

@@ -74,13 +74,6 @@ impl<'a> HirToMirLowering<'a> {
             .map_err(CompileError::UnsupportedInstruction)
     }
 
-    fn ctx_store_target_type(target: &CtxStoreTarget) -> MirType {
-        match target {
-            CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => MirType::U32,
-            CtxStoreTarget::SockoptRetval => MirType::I32,
-        }
-    }
-
     pub(super) fn lower_context_upsert_cell_path(
         &mut self,
         src_dst: RegId,
@@ -97,7 +90,7 @@ impl<'a> HirToMirLowering<'a> {
                     Self::typed_value_path_desc(&path.members)
                 ))
             })?;
-        let target_ty = Self::ctx_store_target_type(&target);
+        let target_ty = target.value_type();
         let stored_vreg = match new_value_runtime_ty {
             MirType::Bool
             | MirType::I8

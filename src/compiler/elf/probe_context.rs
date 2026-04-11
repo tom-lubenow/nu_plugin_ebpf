@@ -644,6 +644,32 @@ impl ProbeContext {
         }
     }
 
+    pub(crate) fn ctx_store_target_error(&self, target: &CtxStoreTarget) -> Option<String> {
+        match target {
+            CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
+                if self.probe_type != EbpfProgramType::SockOps {
+                    Some(
+                        "writable sock_ops reply fields are only supported on sock_ops programs"
+                            .to_string(),
+                    )
+                } else {
+                    None
+                }
+            }
+            CtxStoreTarget::SockoptRetval => self.ctx_field_access_error(&CtxField::SockoptRetval),
+        }
+    }
+
+    pub(crate) fn validate_ctx_store_target(
+        &self,
+        target: &CtxStoreTarget,
+    ) -> Result<(), CompileError> {
+        if let Some(message) = self.ctx_store_target_error(target) {
+            return Err(CompileError::UnsupportedInstruction(message));
+        }
+        Ok(())
+    }
+
     /// Returns a user-facing error message when a context field is not valid
     /// for this program type.
     pub fn ctx_field_access_error(&self, field: &CtxField) -> Option<String> {

@@ -1864,6 +1864,31 @@ fn test_probe_context_resolves_sock_ops_store_targets() {
 }
 
 #[test]
+fn test_probe_context_validates_sock_ops_store_targets() {
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    assert!(
+        ctx.validate_ctx_store_target(&CtxStoreTarget::SockOpsReply)
+            .is_ok()
+    );
+    assert!(
+        ctx.validate_ctx_store_target(&CtxStoreTarget::SockOpsReplyLong(2))
+            .is_ok()
+    );
+}
+
+#[test]
+fn test_probe_context_rejects_sock_ops_store_target_on_non_sock_ops_program() {
+    let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let err = ctx
+        .validate_ctx_store_target(&CtxStoreTarget::SockOpsReply)
+        .expect_err("sock_ops store target should be rejected outside sock_ops");
+    assert!(
+        err.to_string()
+            .contains("writable sock_ops reply fields are only supported on sock_ops programs")
+    );
+}
+
+#[test]
 fn test_probe_context_rejects_sock_ops_replylong_store_without_fixed_index() {
     let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
     let err = ctx
@@ -2460,6 +2485,10 @@ fn test_probe_context_resolves_cgroup_sockopt_retval_store_target() {
         ctx.resolve_ctx_store_target("sockopt_retval", None, "sockopt_retval")
             .expect("cgroup_sockopt:get retval target should resolve"),
         CtxStoreTarget::SockoptRetval
+    );
+    assert!(
+        ctx.validate_ctx_store_target(&CtxStoreTarget::SockoptRetval)
+            .is_ok()
     );
 }
 

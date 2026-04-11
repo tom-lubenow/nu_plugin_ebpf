@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
+use crate::compiler::mir::CtxStoreTarget;
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind, TypeInfo};
 
 fn find_aggregate_fentry_arg_candidate() -> (String, u8, usize) {
@@ -1928,4 +1929,48 @@ fn test_unification_through_binop() {
     assert_eq!(types.get(&v0), Some(&MirType::U32));
     assert_eq!(types.get(&v1), Some(&MirType::U32));
     assert_eq!(types.get(&v2), Some(&MirType::Bool));
+}
+
+#[test]
+fn test_type_error_store_ctx_reply_rejects_non_sock_ops_program() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::SockOpsReply,
+        val: MirValue::Const(1),
+        ty: MirType::U32,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("sock_ops reply store should be rejected outside sock_ops");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("writable sock_ops reply fields are only supported on sock_ops programs")
+    }));
+}
+
+#[test]
+fn test_type_error_store_sockopt_retval_rejects_set_context() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::SockoptRetval,
+        val: MirValue::Const(0),
+        ty: MirType::I32,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("sockopt_retval store should be rejected on cgroup_sockopt:set");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("ctx.sockopt_retval is only available on cgroup_sockopt:get hooks")
+    }));
 }
