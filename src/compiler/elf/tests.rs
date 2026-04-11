@@ -551,6 +551,18 @@ fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
 }
 
 #[test]
+fn test_probe_context_helper_zero_arg_requirement_uses_program_type() {
+    let xdp = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let tc = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    assert_eq!(
+        xdp.helper_zero_arg_requirement(BpfHelper::Redirect),
+        Some((1, "helper 'bpf_redirect' requires arg1 = 0 in xdp programs"))
+    );
+    assert_eq!(tc.helper_zero_arg_requirement(BpfHelper::Redirect), None);
+}
+
+#[test]
 fn test_probe_context_kfunc_call_error_uses_sched_ext_callback_policy() {
     let dispatch = ProbeContext::new_struct_ops_callback("sched_ext_ops", "dispatch");
     let init = ProbeContext::new_struct_ops_callback("sched_ext_ops", "init");

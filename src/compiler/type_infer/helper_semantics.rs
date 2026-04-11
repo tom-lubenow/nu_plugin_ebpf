@@ -1,5 +1,4 @@
 use super::*;
-use crate::compiler::EbpfProgramType;
 use crate::kernel_btf::KernelBtf;
 
 impl<'a> TypeInference<'a> {
@@ -374,22 +373,19 @@ impl<'a> TypeInference<'a> {
             }
         }
 
-        if matches!(helper, BpfHelper::Redirect)
-            && self
-                .probe_ctx
-                .as_ref()
-                .is_some_and(|ctx| ctx.probe_type == EbpfProgramType::Xdp)
+        if let Some((arg_idx, message)) = self
+            .probe_ctx
+            .as_ref()
+            .and_then(|ctx| ctx.helper_zero_arg_requirement(helper))
         {
-            let flags_ok = args.get(1).is_some_and(|value| {
+            let flags_ok = args.get(arg_idx).is_some_and(|value| {
                 matches!(
                     self.value_range_for(value, value_ranges),
                     ValueRange::Known { min: 0, max: 0 }
                 )
             });
             if !flags_ok {
-                errors.push(TypeError::new(
-                    "helper 'bpf_redirect' requires arg1 = 0 in xdp programs",
-                ));
+                errors.push(TypeError::new(message));
             }
         }
 

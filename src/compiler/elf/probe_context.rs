@@ -962,6 +962,18 @@ impl ProbeContext {
         }
     }
 
+    pub(crate) fn helper_zero_arg_requirement(
+        &self,
+        helper: BpfHelper,
+    ) -> Option<(usize, &'static str)> {
+        match (helper, self.probe_type) {
+            (BpfHelper::Redirect, EbpfProgramType::Xdp) => {
+                Some((1, "helper 'bpf_redirect' requires arg1 = 0 in xdp programs"))
+            }
+            _ => None,
+        }
+    }
+
     fn sched_ext_callback(&self) -> Option<&str> {
         if self.probe_type != EbpfProgramType::StructOps {
             return None;
