@@ -318,6 +318,12 @@ fn test_parse_program_spec_tc_is_structured() {
 }
 
 #[test]
+fn test_program_spec_parse_tracepoint_section_name() {
+    let spec = ProgramSpec::parse("tracepoint:sched/sched_switch").unwrap();
+    assert_eq!(spec.section_name(), "tracepoint/sched/sched_switch");
+}
+
+#[test]
 fn test_parse_probe_spec_cgroup_skb_egress() {
     let (prog_type, target) = parse_probe_spec("cgroup_skb:/sys/fs/cgroup:egress").unwrap();
     assert_eq!(prog_type, EbpfProgramType::CgroupSkb);
@@ -530,6 +536,14 @@ fn test_parse_program_spec_cgroup_sockopt_is_structured() {
         }
     );
     assert_eq!(spec.to_string(), "cgroup_sockopt:/sys/fs/cgroup:get");
+}
+
+#[test]
+fn test_program_spec_from_program_type_target_cgroup_sockopt_section_name() {
+    let spec =
+        ProgramSpec::from_program_type_target(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set")
+            .unwrap();
+    assert_eq!(spec.section_name(), "cgroup/setsockopt");
 }
 
 #[test]

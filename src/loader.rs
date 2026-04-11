@@ -85,6 +85,12 @@ pub enum LoadError {
     LockPoisoned,
 }
 
+impl From<crate::program_spec::ProgramSpecParseError> for LoadError {
+    fn from(err: crate::program_spec::ProgramSpecParseError) -> Self {
+        LoadError::Load(err.to_string())
+    }
+}
+
 #[path = "loader/events.rs"]
 mod events;
 

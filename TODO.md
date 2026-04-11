@@ -148,9 +148,10 @@ Near-term priority order:
 2. Move context legality and aliases behind per-program context schemas instead of probe-centric special cases.
 3. Tighten VCC/verifier parity against that model before broadening the surface further.
 
-- [ ] Expand program type support beyond probes.
+- [~] Expand program type support beyond probes.
   - Add program-type-aware compile targets (section naming, context type, helper set, attach/load path).
   - Keep tracing as one target among many instead of the default architecture.
+  - Recent progress: `ProgramSpec` now owns typed target parsing and section-name derivation shared by the loader and compiler, removing another raw-target special-case path from ELF emission.
 
 - [~] Generalize context modeling by program type.
   - Replace tracing-centric context fields with per-program typed context schemas.

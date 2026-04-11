@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use crate::compiler::ir_to_mir::AnnotatedValueSemantics;
 use crate::kernel_btf::TypeInfo;
 use crate::kernel_btf::{FieldInfo, KernelBtf, TrampolineFieldSelector};
+use crate::program_spec::ProgramSpec;
 
 mod struct_ops;
 
@@ -11,82 +12,9 @@ fn section_name_for_program(
     prog_type: EbpfProgramType,
     target: &str,
 ) -> Result<String, CompileError> {
-    match prog_type {
-        EbpfProgramType::CgroupSkb => {
-            let (_path, attach_type) = target.rsplit_once(':').ok_or_else(|| {
-                CompileError::InvalidProgram(format!(
-                    "invalid cgroup_skb target '{}': expected cgroup_path:ingress or cgroup_path:egress",
-                    target
-                ))
-            })?;
-            match attach_type {
-                "ingress" | "egress" => Ok(format!("cgroup_skb/{attach_type}")),
-                other => Err(CompileError::InvalidProgram(format!(
-                    "invalid cgroup_skb attach type '{}': expected ingress or egress",
-                    other
-                ))),
-            }
-        }
-        EbpfProgramType::CgroupSock => {
-            let (_path, attach_type) = target.rsplit_once(':').ok_or_else(|| {
-                CompileError::InvalidProgram(format!(
-                    "invalid cgroup_sock target '{}': expected cgroup_path:sock_create|sock_release|post_bind4|post_bind6",
-                    target
-                ))
-            })?;
-            match attach_type {
-                "sock_create" | "sock_release" | "post_bind4" | "post_bind6" => {
-                    Ok(format!("cgroup/{attach_type}"))
-                }
-                other => Err(CompileError::InvalidProgram(format!(
-                    "invalid cgroup_sock attach type '{}': expected sock_create, sock_release, post_bind4, or post_bind6",
-                    other
-                ))),
-            }
-        }
-        EbpfProgramType::CgroupSockAddr => {
-            let (_path, attach_type) = target.rsplit_once(':').ok_or_else(|| {
-                CompileError::InvalidProgram(format!(
-                    "invalid cgroup_sock_addr target '{}': expected cgroup_path:attach_kind",
-                    target
-                ))
-            })?;
-            match attach_type {
-                "bind4" | "bind6" | "connect4" | "connect6" | "getpeername4" | "getpeername6"
-                | "getsockname4" | "getsockname6" | "sendmsg4" | "sendmsg6" | "recvmsg4"
-                | "recvmsg6" => Ok(format!("cgroup/{attach_type}")),
-                other => Err(CompileError::InvalidProgram(format!(
-                    "invalid cgroup_sock_addr attach type '{}'",
-                    other
-                ))),
-            }
-        }
-        EbpfProgramType::CgroupSysctl => Ok("cgroup/sysctl".to_string()),
-        EbpfProgramType::CgroupDevice => Ok("cgroup/dev".to_string()),
-        EbpfProgramType::CgroupSockopt => {
-            let (_path, attach_type) = target.rsplit_once(':').ok_or_else(|| {
-                CompileError::InvalidProgram(format!(
-                    "invalid cgroup_sockopt target '{}': expected cgroup_path:get or cgroup_path:set",
-                    target
-                ))
-            })?;
-            match attach_type {
-                "get" => Ok("cgroup/getsockopt".to_string()),
-                "set" => Ok("cgroup/setsockopt".to_string()),
-                other => Err(CompileError::InvalidProgram(format!(
-                    "invalid cgroup_sockopt attach type '{}': expected get or set",
-                    other
-                ))),
-            }
-        }
-        _ => {
-            if prog_type.info().section_uses_target {
-                Ok(format!("{}/{}", prog_type.section_prefix(), target))
-            } else {
-                Ok(prog_type.section_prefix().to_string())
-            }
-        }
-    }
+    Ok(ProgramSpec::from_program_type_target(prog_type, target)
+        .map_err(|err| CompileError::InvalidProgram(err.to_string()))?
+        .section_name())
 }
 
 impl EbpfProgram {

@@ -8,7 +8,6 @@
 
 use std::collections::HashMap;
 
-use crate::program_spec::ProgramSpec;
 use object::write::{Object, Relocation, Symbol, SymbolSection};
 use object::{
     Architecture, BinaryFormat, Endianness, RelocationFlags, SectionFlags, SectionKind,
@@ -915,51 +914,6 @@ impl EbpfProgramType {
 
     pub fn supports_lirc_ctx_fields(&self) -> bool {
         matches!(self.context_family(), ProgramContextFamily::LircMode2)
-    }
-}
-
-impl ProgramSpec {
-    pub fn program_type(&self) -> EbpfProgramType {
-        match self {
-            ProgramSpec::Kprobe { .. } => EbpfProgramType::Kprobe,
-            ProgramSpec::Kretprobe { .. } => EbpfProgramType::Kretprobe,
-            ProgramSpec::Fentry { .. } => EbpfProgramType::Fentry,
-            ProgramSpec::Fexit { .. } => EbpfProgramType::Fexit,
-            ProgramSpec::TpBtf { .. } => EbpfProgramType::TpBtf,
-            ProgramSpec::Lsm { .. } => EbpfProgramType::Lsm,
-            ProgramSpec::Tracepoint { .. } => EbpfProgramType::Tracepoint,
-            ProgramSpec::RawTracepoint { .. } => EbpfProgramType::RawTracepoint,
-            ProgramSpec::Uprobe { .. } => EbpfProgramType::Uprobe,
-            ProgramSpec::Uretprobe { .. } => EbpfProgramType::Uretprobe,
-            ProgramSpec::Xdp { .. } => EbpfProgramType::Xdp,
-            ProgramSpec::PerfEvent { .. } => EbpfProgramType::PerfEvent,
-            ProgramSpec::SocketFilter { .. } => EbpfProgramType::SocketFilter,
-            ProgramSpec::CgroupDevice { .. } => EbpfProgramType::CgroupDevice,
-            ProgramSpec::SkLookup { .. } => EbpfProgramType::SkLookup,
-            ProgramSpec::SkMsg { .. } => EbpfProgramType::SkMsg,
-            ProgramSpec::SkSkb { .. } => EbpfProgramType::SkSkb,
-            ProgramSpec::SkSkbParser { .. } => EbpfProgramType::SkSkbParser,
-            ProgramSpec::SockOps { .. } => EbpfProgramType::SockOps,
-            ProgramSpec::Tc { .. } => EbpfProgramType::Tc,
-            ProgramSpec::CgroupSkb { .. } => EbpfProgramType::CgroupSkb,
-            ProgramSpec::CgroupSock { .. } => EbpfProgramType::CgroupSock,
-            ProgramSpec::CgroupSysctl { .. } => EbpfProgramType::CgroupSysctl,
-            ProgramSpec::CgroupSockopt { .. } => EbpfProgramType::CgroupSockopt,
-            ProgramSpec::CgroupSockAddr { .. } => EbpfProgramType::CgroupSockAddr,
-            ProgramSpec::LircMode2 { .. } => EbpfProgramType::LircMode2,
-            ProgramSpec::StructOps { .. } => EbpfProgramType::StructOps,
-        }
-    }
-}
-
-impl std::fmt::Display for ProgramSpec {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}:{}",
-            self.program_type().canonical_prefix(),
-            self.target_string()
-        )
     }
 }
 

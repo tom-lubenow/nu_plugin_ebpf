@@ -2,586 +2,16 @@ use super::LoadError;
 use crate::compiler::{EbpfProgramType, KernelTargetValidationKind, ProgramTargetKind};
 use crate::kernel_btf::{FunctionCheckResult, KernelBtf};
 use crate::program_spec::{
-    CgroupDeviceTarget, CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockTarget,
-    CgroupSockoptTarget, DEFAULT_PERF_EVENT_PERIOD, LircMode2Target, PerfEventEvent,
-    PerfEventHardwareEvent, PerfEventSamplePolicy, PerfEventSoftwareEvent, PerfEventTarget,
-    ProgramSpec, SkLookupTarget, SkMsgTarget, SkSkbTarget, SockOpsTarget, SocketFilterSocketKind,
-    SocketFilterTarget, TcTarget, UprobeTarget,
-};
-use aya::programs::{
-    CgroupSkbAttachType, CgroupSockAddrAttachType, CgroupSockAttachType, CgroupSockoptAttachType,
-    TcAttachType,
+    CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockTarget, CgroupSockoptTarget, LircMode2Target,
+    PerfEventTarget, ProgramSpec, ProgramSpecParseError, SkLookupTarget, SocketFilterTarget,
+    TcTarget, UprobeTarget,
 };
 use aya::util::online_cpus;
-use std::net::{Ipv4Addr, Ipv6Addr};
 use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
 
-impl UprobeTarget {
-    /// Parse a uprobe target string
-    ///
-    /// Formats supported:
-    /// - `/path/to/binary:function_name` - attach to function entry
-    /// - `/path/to/binary:0x1234` - attach to offset (hex)
-    /// - `/path/to/binary:function_name+0x10` - attach to function + offset
-    /// - Any of the above with `@PID` suffix for PID filtering
-    pub fn parse(target: &str) -> Result<Self, LoadError> {
-        // Check for PID suffix (@1234)
-        let (target_part, pid) = if let Some(at_idx) = target.rfind('@') {
-            let pid_str = &target[at_idx + 1..];
-            match pid_str.parse::<i32>() {
-                Ok(pid) => (&target[..at_idx], Some(pid)),
-                Err(_) => (target, None), // Not a valid PID, treat @ as part of target
-            }
-        } else {
-            (target, None)
-        };
-
-        // Find the last colon that separates path from function/offset
-        // We need to find the colon that's not part of the path
-        // Path can't contain colon on Unix, so the last colon is our separator
-        let colon_idx = target_part.rfind(':').ok_or_else(|| {
-            LoadError::Load(format!(
-                "Invalid uprobe target: {target}. Expected format: /path/to/binary:function_name"
-            ))
-        })?;
-
-        let binary_path = target_part[..colon_idx].to_string();
-        let func_or_offset = &target_part[colon_idx + 1..];
-
-        if binary_path.is_empty() {
-            return Err(LoadError::Load(
-                "Uprobe binary path cannot be empty".to_string(),
-            ));
-        }
-
-        // Parse function name and/or offset
-        // Format: function_name, 0x1234, or function_name+0x10
-        let (function_name, offset) = if let Some(plus_idx) = func_or_offset.find('+') {
-            // function_name+offset
-            let name = &func_or_offset[..plus_idx];
-            let offset_str = &func_or_offset[plus_idx + 1..];
-            let offset = parse_offset(offset_str)?;
-            (Some(name.to_string()), offset)
-        } else if func_or_offset.starts_with("0x") || func_or_offset.starts_with("0X") {
-            // Pure offset
-            let offset = parse_offset(func_or_offset)?;
-            (None, offset)
-        } else {
-            // Pure function name
-            (Some(func_or_offset.to_string()), 0)
-        };
-
-        Ok(UprobeTarget {
-            binary_path,
-            function_name,
-            offset,
-            pid,
-        })
-    }
-}
-
-impl TcTarget {
-    /// Parse a tc target string of the form `iface:ingress` or `iface:egress`.
-    pub fn parse(target: &str) -> Result<Self, LoadError> {
-        let (interface, direction) = target.split_once(':').ok_or_else(|| {
-            LoadError::Load(format!(
-                "Invalid tc target: {target}. Expected format: interface:ingress or interface:egress"
-            ))
-        })?;
-
-        if interface.is_empty() {
-            return Err(LoadError::Load(
-                "TC interface target cannot be empty".to_string(),
-            ));
-        }
-
-        let attach_type = match direction {
-            "ingress" => TcAttachType::Ingress,
-            "egress" => TcAttachType::Egress,
-            _ => {
-                return Err(LoadError::Load(format!(
-                    "Invalid tc attach direction: {direction}. Expected ingress or egress"
-                )));
-            }
-        };
-
-        Ok(Self {
-            interface: interface.to_string(),
-            attach_type,
-        })
-    }
-}
-
-impl CgroupSkbTarget {
-    /// Parse a cgroup_skb target string of the form `/sys/fs/cgroup:ingress`
-    /// or `/sys/fs/cgroup:egress`.
-    pub fn parse(target: &str) -> Result<Self, LoadError> {
-        let (cgroup_path, direction) = target.rsplit_once(':').ok_or_else(|| {
-            LoadError::Load(format!(
-                "Invalid cgroup_skb target: {target}. Expected format: /path/to/cgroup:ingress or /path/to/cgroup:egress"
-            ))
-        })?;
-
-        if cgroup_path.is_empty() {
-            return Err(LoadError::Load(
-                "cgroup_skb cgroup path cannot be empty".to_string(),
-            ));
-        }
-
-        let attach_type = match direction {
-            "ingress" => CgroupSkbAttachType::Ingress,
-            "egress" => CgroupSkbAttachType::Egress,
-            _ => {
-                return Err(LoadError::Load(format!(
-                    "Invalid cgroup_skb attach direction: {direction}. Expected ingress or egress"
-                )));
-            }
-        };
-
-        Ok(Self {
-            cgroup_path: cgroup_path.to_string(),
-            attach_type,
-        })
-    }
-}
-
-impl CgroupSockTarget {
-    /// Parse a cgroup_sock target string of the form `/sys/fs/cgroup:sock_create`.
-    pub fn parse(target: &str) -> Result<Self, LoadError> {
-        let (cgroup_path, attach_kind) = target.rsplit_once(':').ok_or_else(|| {
-            LoadError::Load(format!(
-                "Invalid cgroup_sock target: {target}. Expected format: /path/to/cgroup:sock_create|sock_release|post_bind4|post_bind6"
-            ))
-        })?;
-
-        if cgroup_path.is_empty() {
-            return Err(LoadError::Load(
-                "cgroup_sock cgroup path cannot be empty".to_string(),
-            ));
-        }
-
-        let attach_type = match attach_kind {
-            "sock_create" => CgroupSockAttachType::SockCreate,
-            "sock_release" => CgroupSockAttachType::SockRelease,
-            "post_bind4" => CgroupSockAttachType::PostBind4,
-            "post_bind6" => CgroupSockAttachType::PostBind6,
-            _ => {
-                return Err(LoadError::Load(format!(
-                    "Invalid cgroup_sock attach kind: {attach_kind}. Expected sock_create, sock_release, post_bind4, or post_bind6"
-                )));
-            }
-        };
-
-        Ok(Self {
-            cgroup_path: cgroup_path.to_string(),
-            attach_type,
-        })
-    }
-}
-
-impl CgroupSockAddrTarget {
-    /// Parse a cgroup_sock_addr target string of the form `/sys/fs/cgroup:connect4`.
-    pub fn parse(target: &str) -> Result<Self, LoadError> {
-        let (cgroup_path, attach_kind) = target.rsplit_once(':').ok_or_else(|| {
-            LoadError::Load(format!(
-                "Invalid cgroup_sock_addr target: {target}. Expected format: /path/to/cgroup:attach_kind"
-            ))
-        })?;
-
-        if cgroup_path.is_empty() {
-            return Err(LoadError::Load(
-                "cgroup_sock_addr cgroup path cannot be empty".to_string(),
-            ));
-        }
-
-        let attach_type = match attach_kind {
-            "bind4" => CgroupSockAddrAttachType::Bind4,
-            "bind6" => CgroupSockAddrAttachType::Bind6,
-            "connect4" => CgroupSockAddrAttachType::Connect4,
-            "connect6" => CgroupSockAddrAttachType::Connect6,
-            "getpeername4" => CgroupSockAddrAttachType::GetPeerName4,
-            "getpeername6" => CgroupSockAddrAttachType::GetPeerName6,
-            "getsockname4" => CgroupSockAddrAttachType::GetSockName4,
-            "getsockname6" => CgroupSockAddrAttachType::GetSockName6,
-            "sendmsg4" => CgroupSockAddrAttachType::UDPSendMsg4,
-            "sendmsg6" => CgroupSockAddrAttachType::UDPSendMsg6,
-            "recvmsg4" => CgroupSockAddrAttachType::UDPRecvMsg4,
-            "recvmsg6" => CgroupSockAddrAttachType::UDPRecvMsg6,
-            _ => {
-                return Err(LoadError::Load(format!(
-                    "Invalid cgroup_sock_addr attach kind: {attach_kind}. Expected one of bind4, bind6, connect4, connect6, getpeername4, getpeername6, getsockname4, getsockname6, sendmsg4, sendmsg6, recvmsg4, recvmsg6"
-                )));
-            }
-        };
-
-        Ok(Self {
-            cgroup_path: cgroup_path.to_string(),
-            attach_type,
-        })
-    }
-}
-
-impl CgroupSockoptTarget {
-    /// Parse a cgroup_sockopt target string of the form `/sys/fs/cgroup:get`.
-    pub fn parse(target: &str) -> Result<Self, LoadError> {
-        let (cgroup_path, attach_kind) = target.rsplit_once(':').ok_or_else(|| {
-            LoadError::Load(format!(
-                "Invalid cgroup_sockopt target: {target}. Expected format: /path/to/cgroup:get or /path/to/cgroup:set"
-            ))
-        })?;
-
-        if cgroup_path.is_empty() {
-            return Err(LoadError::Load(
-                "cgroup_sockopt cgroup path cannot be empty".to_string(),
-            ));
-        }
-
-        let attach_type = match attach_kind {
-            "get" => CgroupSockoptAttachType::Get,
-            "set" => CgroupSockoptAttachType::Set,
-            _ => {
-                return Err(LoadError::Load(format!(
-                    "Invalid cgroup_sockopt attach kind: {attach_kind}. Expected get or set"
-                )));
-            }
-        };
-
-        Ok(Self {
-            cgroup_path: cgroup_path.to_string(),
-            attach_type,
-        })
-    }
-}
-
-impl SkLookupTarget {
-    /// Parse an sk_lookup target string of the form `/proc/self/ns/net`.
-    pub fn parse(target: &str) -> Result<Self, LoadError> {
-        if target.is_empty() {
-            return Err(LoadError::Load(
-                "sk_lookup network namespace path cannot be empty".to_string(),
-            ));
-        }
-
-        Ok(Self {
-            netns_path: target.to_string(),
-        })
-    }
-}
-
-impl LircMode2Target {
-    /// Parse a lirc_mode2 target string of the form `/dev/lirc0`.
-    pub fn parse(target: &str) -> Result<Self, LoadError> {
-        if target.is_empty() {
-            return Err(LoadError::Load(
-                "lirc_mode2 device path cannot be empty".to_string(),
-            ));
-        }
-
-        Ok(Self {
-            device_path: target.to_string(),
-        })
-    }
-}
-
-impl SkMsgTarget {
-    /// Parse an sk_msg target string of the form `/sys/fs/bpf/pinned_sockmap`.
-    pub fn parse(target: &str) -> Result<Self, LoadError> {
-        if target.is_empty() {
-            return Err(LoadError::Load(
-                "sk_msg pinned sockmap path cannot be empty".to_string(),
-            ));
-        }
-
-        Ok(Self {
-            map_path: target.to_string(),
-        })
-    }
-}
-
-impl SkSkbTarget {
-    /// Parse an sk_skb target string of the form `/sys/fs/bpf/pinned_sockmap`.
-    pub fn parse(target: &str) -> Result<Self, LoadError> {
-        if target.is_empty() {
-            return Err(LoadError::Load(
-                "sk_skb pinned sockmap path cannot be empty".to_string(),
-            ));
-        }
-
-        Ok(Self {
-            map_path: target.to_string(),
-        })
-    }
-}
-
-impl CgroupDeviceTarget {
-    /// Parse a cgroup_device target string of the form `/sys/fs/cgroup`.
-    pub fn parse(target: &str) -> Result<Self, LoadError> {
-        if target.is_empty() {
-            return Err(LoadError::Load(
-                "cgroup_device cgroup path cannot be empty".to_string(),
-            ));
-        }
-
-        Ok(Self {
-            cgroup_path: target.to_string(),
-        })
-    }
-}
-
-impl SockOpsTarget {
-    /// Parse a sock_ops target string of the form `/sys/fs/cgroup`.
-    pub fn parse(target: &str) -> Result<Self, LoadError> {
-        if target.is_empty() {
-            return Err(LoadError::Load(
-                "sock_ops cgroup path cannot be empty".to_string(),
-            ));
-        }
-
-        Ok(Self {
-            cgroup_path: target.to_string(),
-        })
-    }
-}
-
-impl SocketFilterTarget {
-    /// Parse a socket_filter target string of the form `udp4:127.0.0.1:31337`,
-    /// `udp6:[::1]:31337`, `tcp4:127.0.0.1:31337`, or `tcp6:[::1]:31337`.
-    pub fn parse(target: &str) -> Result<Self, LoadError> {
-        const EXPECTED: &str = "udp4:IP:PORT, udp6:[IPV6]:PORT, tcp4:IP:PORT, or tcp6:[IPV6]:PORT";
-        let (socket_kind, rest) = target.split_once(':').ok_or_else(|| {
-            LoadError::Load(format!(
-                "Invalid socket_filter target: {target}. Expected format: {EXPECTED}"
-            ))
-        })?;
-        let (bind_ip, bind_port) = rest.rsplit_once(':').ok_or_else(|| {
-            LoadError::Load(format!(
-                "Invalid socket_filter target: {target}. Expected format: {EXPECTED}"
-            ))
-        })?;
-
-        let socket_kind = match socket_kind {
-            "udp4" => SocketFilterSocketKind::Udp4,
-            "udp6" => SocketFilterSocketKind::Udp6,
-            "tcp4" => SocketFilterSocketKind::Tcp4,
-            "tcp6" => SocketFilterSocketKind::Tcp6,
-            _ => {
-                return Err(LoadError::Load(format!(
-                    "Unsupported socket_filter socket kind: {socket_kind}. Expected udp4, udp6, tcp4, or tcp6"
-                )));
-            }
-        };
-
-        let bind_ip = match socket_kind {
-            SocketFilterSocketKind::Udp4 | SocketFilterSocketKind::Tcp4 => {
-                bind_ip.parse::<Ipv4Addr>().map_err(|e| {
-                    LoadError::Load(format!(
-                        "Invalid socket_filter IPv4 bind address '{bind_ip}': {e}"
-                    ))
-                })?;
-                bind_ip.to_string()
-            }
-            SocketFilterSocketKind::Udp6 | SocketFilterSocketKind::Tcp6 => {
-                let inner = bind_ip.strip_prefix('[').and_then(|s| s.strip_suffix(']')).ok_or_else(
-                    || {
-                        LoadError::Load(format!(
-                            "Invalid socket_filter IPv6 bind address '{bind_ip}': expected brackets like [::1]"
-                        ))
-                    },
-                )?;
-                inner.parse::<Ipv6Addr>().map_err(|e| {
-                    LoadError::Load(format!(
-                        "Invalid socket_filter IPv6 bind address '{inner}': {e}"
-                    ))
-                })?;
-                inner.to_string()
-            }
-        };
-
-        let bind_port = bind_port.parse::<u16>().map_err(|e| {
-            LoadError::Load(format!("Invalid socket_filter port '{bind_port}': {e}"))
-        })?;
-        if bind_port == 0 {
-            return Err(LoadError::Load(
-                "socket_filter port must be non-zero".to_string(),
-            ));
-        }
-
-        Ok(Self {
-            socket_kind,
-            bind_ip,
-            bind_port,
-        })
-    }
-}
-
-impl PerfEventTarget {
-    /// Parse a perf_event target string of the form
-    /// `software:cpu-clock[:cpu=0][:pid=1234][:period=1000000]` or
-    /// `hardware:cpu-cycles[:cpu=0][:pid=1234][:period=1000000]`.
-    pub fn parse(target: &str) -> Result<Self, LoadError> {
-        let mut parts = target.split(':');
-        let source = parts.next().ok_or_else(|| {
-            LoadError::Load(format!(
-                "Invalid perf_event target: {target}. Expected format: software:cpu-clock[:cpu=N][:pid=N][:period=N|freq=N] or hardware:cpu-cycles[:cpu=N][:pid=N][:period=N|freq=N]"
-            ))
-        })?;
-        let event_name = parts.next().ok_or_else(|| {
-            LoadError::Load(format!(
-                "Invalid perf_event target: {target}. Expected format: software:cpu-clock[:cpu=N][:pid=N][:period=N|freq=N] or hardware:cpu-cycles[:cpu=N][:pid=N][:period=N|freq=N]"
-            ))
-        })?;
-
-        let event = match source {
-            "software" => match event_name {
-                "cpu-clock" => PerfEventEvent::Software(PerfEventSoftwareEvent::CpuClock),
-                "task-clock" => PerfEventEvent::Software(PerfEventSoftwareEvent::TaskClock),
-                "context-switches" => {
-                    PerfEventEvent::Software(PerfEventSoftwareEvent::ContextSwitches)
-                }
-                "cpu-migrations" => PerfEventEvent::Software(PerfEventSoftwareEvent::CpuMigrations),
-                "page-faults" => PerfEventEvent::Software(PerfEventSoftwareEvent::PageFaults),
-                "minor-faults" => PerfEventEvent::Software(PerfEventSoftwareEvent::MinorFaults),
-                "major-faults" => PerfEventEvent::Software(PerfEventSoftwareEvent::MajorFaults),
-                _ => {
-                    return Err(LoadError::Load(format!(
-                        "Unsupported perf_event software event: {event_name}. Expected one of cpu-clock, task-clock, context-switches, cpu-migrations, page-faults, minor-faults, major-faults"
-                    )));
-                }
-            },
-            "hardware" => match event_name {
-                "cpu-cycles" => PerfEventEvent::Hardware(PerfEventHardwareEvent::CpuCycles),
-                "instructions" => PerfEventEvent::Hardware(PerfEventHardwareEvent::Instructions),
-                "cache-references" => {
-                    PerfEventEvent::Hardware(PerfEventHardwareEvent::CacheReferences)
-                }
-                "cache-misses" => PerfEventEvent::Hardware(PerfEventHardwareEvent::CacheMisses),
-                "branch-instructions" => {
-                    PerfEventEvent::Hardware(PerfEventHardwareEvent::BranchInstructions)
-                }
-                "branch-misses" => PerfEventEvent::Hardware(PerfEventHardwareEvent::BranchMisses),
-                "bus-cycles" => PerfEventEvent::Hardware(PerfEventHardwareEvent::BusCycles),
-                "stalled-cycles-frontend" => {
-                    PerfEventEvent::Hardware(PerfEventHardwareEvent::StalledCyclesFrontend)
-                }
-                "stalled-cycles-backend" => {
-                    PerfEventEvent::Hardware(PerfEventHardwareEvent::StalledCyclesBackend)
-                }
-                "ref-cpu-cycles" => PerfEventEvent::Hardware(PerfEventHardwareEvent::RefCpuCycles),
-                _ => {
-                    return Err(LoadError::Load(format!(
-                        "Unsupported perf_event hardware event: {event_name}. Expected one of cpu-cycles, instructions, cache-references, cache-misses, branch-instructions, branch-misses, bus-cycles, stalled-cycles-frontend, stalled-cycles-backend, ref-cpu-cycles"
-                    )));
-                }
-            },
-            _ => {
-                return Err(LoadError::Load(format!(
-                    "Unsupported perf_event source: {source}. Expected software or hardware"
-                )));
-            }
-        };
-
-        let mut cpu = None;
-        let mut pid = None;
-        let mut sample_policy = PerfEventSamplePolicy::Period(DEFAULT_PERF_EVENT_PERIOD);
-
-        for option in parts {
-            if let Some(raw_cpu) = option.strip_prefix("cpu=") {
-                if cpu.is_some() {
-                    return Err(LoadError::Load(
-                        "perf_event target cannot specify cpu more than once".to_string(),
-                    ));
-                }
-                cpu = Some(raw_cpu.parse::<u32>().map_err(|_| {
-                    LoadError::Load(format!("Invalid perf_event cpu selector: {raw_cpu}"))
-                })?);
-                continue;
-            }
-
-            if let Some(raw_pid) = option.strip_prefix("pid=") {
-                if pid.is_some() {
-                    return Err(LoadError::Load(
-                        "perf_event target cannot specify pid more than once".to_string(),
-                    ));
-                }
-                let parsed_pid = raw_pid.parse::<u32>().map_err(|_| {
-                    LoadError::Load(format!("Invalid perf_event pid selector: {raw_pid}"))
-                })?;
-                if parsed_pid == 0 {
-                    return Err(LoadError::Load(
-                        "perf_event pid selector must be greater than zero".to_string(),
-                    ));
-                }
-                pid = Some(parsed_pid);
-                continue;
-            }
-
-            if let Some(raw_period) = option.strip_prefix("period=") {
-                let period = raw_period.parse::<u64>().map_err(|_| {
-                    LoadError::Load(format!("Invalid perf_event period: {raw_period}"))
-                })?;
-                if period == 0 {
-                    return Err(LoadError::Load(
-                        "perf_event period must be greater than zero".to_string(),
-                    ));
-                }
-                match sample_policy {
-                    PerfEventSamplePolicy::Period(v) if v == DEFAULT_PERF_EVENT_PERIOD => {
-                        sample_policy = PerfEventSamplePolicy::Period(period);
-                    }
-                    _ => {
-                        return Err(LoadError::Load(
-                            "perf_event target cannot specify both period and freq".to_string(),
-                        ));
-                    }
-                }
-                continue;
-            }
-
-            if let Some(raw_freq) = option.strip_prefix("freq=") {
-                let freq = raw_freq.parse::<u64>().map_err(|_| {
-                    LoadError::Load(format!("Invalid perf_event frequency: {raw_freq}"))
-                })?;
-                if freq == 0 {
-                    return Err(LoadError::Load(
-                        "perf_event frequency must be greater than zero".to_string(),
-                    ));
-                }
-                if !matches!(
-                    sample_policy,
-                    PerfEventSamplePolicy::Period(v) if v == DEFAULT_PERF_EVENT_PERIOD
-                ) {
-                    return Err(LoadError::Load(
-                        "perf_event target cannot specify both period and freq".to_string(),
-                    ));
-                }
-                sample_policy = PerfEventSamplePolicy::Frequency(freq);
-                continue;
-            }
-
-            return Err(LoadError::Load(format!(
-                "Unrecognized perf_event selector: {option}. Expected cpu=N, pid=N, period=N, or freq=N"
-            )));
-        }
-
-        Ok(Self {
-            event,
-            cpu,
-            pid,
-            sample_policy,
-        })
-    }
-}
-
-/// Parse a hex or decimal offset string
-fn parse_offset(s: &str) -> Result<u64, LoadError> {
-    if s.starts_with("0x") || s.starts_with("0X") {
-        u64::from_str_radix(&s[2..], 16)
-            .map_err(|_| LoadError::Load(format!("Invalid hex offset: {s}")))
-    } else {
-        s.parse::<u64>()
-            .map_err(|_| LoadError::Load(format!("Invalid offset: {s}")))
-    }
+fn parse_error(err: ProgramSpecParseError) -> LoadError {
+    LoadError::Load(err.to_string())
 }
 
 /// Validate a kprobe/kretprobe target function exists
@@ -674,12 +104,12 @@ fn validate_network_interface_target(target: &str) -> Result<(), LoadError> {
 }
 
 fn validate_tc_target(target: &str) -> Result<(), LoadError> {
-    let parsed = TcTarget::parse(target)?;
+    let parsed = TcTarget::parse(target).map_err(parse_error)?;
     validate_network_interface_target(&parsed.interface)
 }
 
 fn validate_cgroup_skb_target(target: &str) -> Result<(), LoadError> {
-    let parsed = CgroupSkbTarget::parse(target)?;
+    let parsed = CgroupSkbTarget::parse(target).map_err(parse_error)?;
     let cgroup_path = Path::new(&parsed.cgroup_path);
 
     if !cgroup_path.exists() {
@@ -700,7 +130,7 @@ fn validate_cgroup_skb_target(target: &str) -> Result<(), LoadError> {
 }
 
 fn validate_cgroup_sock_target(target: &str) -> Result<(), LoadError> {
-    let parsed = CgroupSockTarget::parse(target)?;
+    let parsed = CgroupSockTarget::parse(target).map_err(parse_error)?;
     let cgroup_path = Path::new(&parsed.cgroup_path);
 
     if !cgroup_path.exists() {
@@ -738,7 +168,7 @@ fn validate_cgroup_path_target(target: &str) -> Result<(), LoadError> {
 }
 
 fn validate_cgroup_sockopt_target(target: &str) -> Result<(), LoadError> {
-    let parsed = CgroupSockoptTarget::parse(target)?;
+    let parsed = CgroupSockoptTarget::parse(target).map_err(parse_error)?;
     let cgroup_path = Path::new(&parsed.cgroup_path);
 
     if !cgroup_path.exists() {
@@ -759,7 +189,7 @@ fn validate_cgroup_sockopt_target(target: &str) -> Result<(), LoadError> {
 }
 
 fn validate_cgroup_sock_addr_target(target: &str) -> Result<(), LoadError> {
-    let parsed = CgroupSockAddrTarget::parse(target)?;
+    let parsed = CgroupSockAddrTarget::parse(target).map_err(parse_error)?;
     let cgroup_path = Path::new(&parsed.cgroup_path);
 
     if !cgroup_path.exists() {
@@ -780,7 +210,7 @@ fn validate_cgroup_sock_addr_target(target: &str) -> Result<(), LoadError> {
 }
 
 fn validate_sk_lookup_target(target: &str) -> Result<(), LoadError> {
-    let parsed = SkLookupTarget::parse(target)?;
+    let parsed = SkLookupTarget::parse(target).map_err(parse_error)?;
     let netns_path = Path::new(&parsed.netns_path);
 
     if !netns_path.exists() {
@@ -821,12 +251,12 @@ fn validate_pinned_sockmap_target(target: &str) -> Result<(), LoadError> {
 }
 
 fn validate_socket_filter_target(target: &str) -> Result<(), LoadError> {
-    SocketFilterTarget::parse(target)?;
+    SocketFilterTarget::parse(target).map_err(parse_error)?;
     Ok(())
 }
 
 fn validate_lirc_mode2_target(target: &str) -> Result<(), LoadError> {
-    let parsed = LircMode2Target::parse(target)?;
+    let parsed = LircMode2Target::parse(target).map_err(parse_error)?;
     let device_path = Path::new(&parsed.device_path);
 
     if !device_path.exists() {
@@ -906,12 +336,12 @@ fn validate_target_for_program_type(
         ProgramTargetKind::Tracepoint => validate_tracepoint_target(target),
         ProgramTargetKind::RawTracepoint => Ok(()),
         ProgramTargetKind::UserFunction => {
-            UprobeTarget::parse(target)?;
+            UprobeTarget::parse(target).map_err(parse_error)?;
             Ok(())
         }
         ProgramTargetKind::NetworkInterface => validate_network_interface_target(target),
         ProgramTargetKind::PerfEventTarget => {
-            let parsed = PerfEventTarget::parse(target)?;
+            let parsed = PerfEventTarget::parse(target).map_err(parse_error)?;
             if let Some(cpu) = parsed.cpu {
                 let online = online_cpus().map_err(|(_, e)| {
                     LoadError::Load(format!("Failed to enumerate online CPUs: {e}"))
@@ -1004,98 +434,7 @@ pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
     };
 
     validate_target_for_program_type(prog_type, target)?;
-
-    match prog_type {
-        EbpfProgramType::Kprobe => Ok(ProgramSpec::Kprobe {
-            function: target.to_string(),
-        }),
-        EbpfProgramType::Kretprobe => Ok(ProgramSpec::Kretprobe {
-            function: target.to_string(),
-        }),
-        EbpfProgramType::Fentry => Ok(ProgramSpec::Fentry {
-            function: target.to_string(),
-        }),
-        EbpfProgramType::Fexit => Ok(ProgramSpec::Fexit {
-            function: target.to_string(),
-        }),
-        EbpfProgramType::TpBtf => Ok(ProgramSpec::TpBtf {
-            name: target.to_string(),
-        }),
-        EbpfProgramType::Lsm => Ok(ProgramSpec::Lsm {
-            hook: target.to_string(),
-        }),
-        EbpfProgramType::Tracepoint => {
-            let (category, name) = target.split_once('/').ok_or_else(|| {
-                LoadError::Load(format!(
-                    "Invalid tracepoint target: {target}. Expected format: category/name"
-                ))
-            })?;
-            Ok(ProgramSpec::Tracepoint {
-                category: category.to_string(),
-                name: name.to_string(),
-            })
-        }
-        EbpfProgramType::RawTracepoint => Ok(ProgramSpec::RawTracepoint {
-            name: target.to_string(),
-        }),
-        EbpfProgramType::Uprobe => Ok(ProgramSpec::Uprobe {
-            target: UprobeTarget::parse(target)?,
-        }),
-        EbpfProgramType::Uretprobe => Ok(ProgramSpec::Uretprobe {
-            target: UprobeTarget::parse(target)?,
-        }),
-        EbpfProgramType::Xdp => Ok(ProgramSpec::Xdp {
-            interface: target.to_string(),
-        }),
-        EbpfProgramType::PerfEvent => Ok(ProgramSpec::PerfEvent {
-            target: PerfEventTarget::parse(target)?,
-        }),
-        EbpfProgramType::SocketFilter => Ok(ProgramSpec::SocketFilter {
-            target: SocketFilterTarget::parse(target)?,
-        }),
-        EbpfProgramType::SkLookup => Ok(ProgramSpec::SkLookup {
-            target: SkLookupTarget::parse(target)?,
-        }),
-        EbpfProgramType::SkMsg => Ok(ProgramSpec::SkMsg {
-            target: SkMsgTarget::parse(target)?,
-        }),
-        EbpfProgramType::SkSkb => Ok(ProgramSpec::SkSkb {
-            target: SkSkbTarget::parse(target)?,
-        }),
-        EbpfProgramType::SkSkbParser => Ok(ProgramSpec::SkSkbParser {
-            target: SkSkbTarget::parse(target)?,
-        }),
-        EbpfProgramType::CgroupDevice => Ok(ProgramSpec::CgroupDevice {
-            target: CgroupDeviceTarget::parse(target)?,
-        }),
-        EbpfProgramType::SockOps => Ok(ProgramSpec::SockOps {
-            target: SockOpsTarget::parse(target)?,
-        }),
-        EbpfProgramType::Tc => Ok(ProgramSpec::Tc {
-            target: TcTarget::parse(target)?,
-        }),
-        EbpfProgramType::CgroupSkb => Ok(ProgramSpec::CgroupSkb {
-            target: CgroupSkbTarget::parse(target)?,
-        }),
-        EbpfProgramType::CgroupSock => Ok(ProgramSpec::CgroupSock {
-            target: CgroupSockTarget::parse(target)?,
-        }),
-        EbpfProgramType::CgroupSysctl => Ok(ProgramSpec::CgroupSysctl {
-            cgroup_path: target.to_string(),
-        }),
-        EbpfProgramType::CgroupSockopt => Ok(ProgramSpec::CgroupSockopt {
-            target: CgroupSockoptTarget::parse(target)?,
-        }),
-        EbpfProgramType::CgroupSockAddr => Ok(ProgramSpec::CgroupSockAddr {
-            target: CgroupSockAddrTarget::parse(target)?,
-        }),
-        EbpfProgramType::LircMode2 => Ok(ProgramSpec::LircMode2 {
-            target: LircMode2Target::parse(target)?,
-        }),
-        EbpfProgramType::StructOps => Ok(ProgramSpec::StructOps {
-            value_type_name: target.to_string(),
-        }),
-    }
+    ProgramSpec::from_program_type_target(prog_type, target).map_err(parse_error)
 }
 
 pub fn parse_probe_spec(spec: &str) -> Result<(EbpfProgramType, String), LoadError> {
