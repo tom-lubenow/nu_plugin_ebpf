@@ -58,6 +58,7 @@ mod control_flow;
 mod core_utils;
 mod entry;
 mod expr_lowering;
+mod global_value_init;
 mod globals;
 mod subfunctions;
 mod user_functions;
