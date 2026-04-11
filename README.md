@@ -688,14 +688,18 @@ use `global-define --type`, no exemplar is needed at all: currently
 `i8`/`i16`/`i32`/`i64`, `u8`/`u16`/`u32`/`u64`, `bool`, and `bytes:N` are
 supported as direct zero-initialized declarations, and that now also extends to
 `string:N` and `list:i64:N` using the same runtime layouts as ordinary mutable
-string/list globals, plus flat `record{field:type,...}` declarations with
-scalar or fixed `bytes:N`/`binary:N` fields. If you skip `global-define`, the
-first `global-set` for a given name still establishes the fixed layout used by
-later `global-get` and `global-set` calls in the same closure; when that first
-write is a compile-time constant the global is initialized from it, otherwise
-it starts zeroed. They are best suited for small per-program state without the
-overhead of an explicit map. Like the current mutable-capture path, they only
-support values with a truthful fixed layout.
+string/list globals, plus nested `record{field:type,...}` declarations whose
+fields can themselves be scalars, fixed `bytes:N`/`binary:N`, `string:N`,
+`list:i64:N`, or further `record{...}` layouts. `global-get` preserves those
+typed string/list field semantics too, so projections like `$state.msg` or
+`($state.vals | get 1)` behave the same way as the ordinary typed mutable
+global path. If you skip `global-define`, the first `global-set` for a given
+name still establishes the fixed layout used by later `global-get` and
+`global-set` calls in the same closure; when that first write is a compile-time
+constant the global is initialized from it, otherwise it starts zeroed. They
+are best suited for small per-program state without the overhead of an explicit
+map. Like the current mutable-capture path, they only support values with a
+truthful fixed layout.
 Generic map `--kind` now supports `hash`, `array`, `queue`, `stack`,
 `lpm-trie`, `lru-hash`, `per-cpu-hash`, `per-cpu-array`, and
 `lru-per-cpu-hash`.

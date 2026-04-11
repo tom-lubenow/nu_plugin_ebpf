@@ -526,10 +526,87 @@ impl<'a> HirToMirLowering<'a> {
     fn typed_named_program_global_layout(
         symbol: String,
         spec: &str,
-    ) -> Result<MutableCaptureGlobal, CompileError> {
+    ) -> Result<(MutableCaptureGlobal, Option<AnnotatedValueSemantics>), CompileError> {
         const MAX_NUMERIC_LIST_CAPACITY: usize = 60;
 
-        fn parse_flat_record_field_type(spec: &str) -> Result<MirType, CompileError> {
+        #[derive(Debug)]
+        struct ParsedGlobalType {
+            ty: MirType,
+            list_max_len: Option<usize>,
+            string_slot_len: Option<usize>,
+            string_content_cap: Option<usize>,
+            semantics: Option<AnnotatedValueSemantics>,
+        }
+
+        fn split_top_level_fields<'a>(
+            body: &'a str,
+            spec: &str,
+        ) -> Result<Vec<&'a str>, CompileError> {
+            let mut fields = Vec::new();
+            let mut depth = 0usize;
+            let mut start = 0usize;
+
+            for (idx, ch) in body.char_indices() {
+                match ch {
+                    '{' => depth = depth.saturating_add(1),
+                    '}' => {
+                        if depth == 0 {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "global type spec '{}' has an unmatched '}}'",
+                                spec
+                            )));
+                        }
+                        depth -= 1;
+                    }
+                    ',' if depth == 0 => {
+                        fields.push(body[start..idx].trim());
+                        start = idx + 1;
+                    }
+                    _ => {}
+                }
+            }
+
+            if depth != 0 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "global type spec '{}' has unmatched '{{' braces",
+                    spec
+                )));
+            }
+
+            fields.push(body[start..].trim());
+            Ok(fields)
+        }
+
+        fn split_top_level_field<'a>(field: &'a str) -> Result<(&'a str, &'a str), CompileError> {
+            let mut depth = 0usize;
+
+            for (idx, ch) in field.char_indices() {
+                match ch {
+                    '{' => depth = depth.saturating_add(1),
+                    '}' => {
+                        if depth == 0 {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "record field '{}' has an unmatched '}}'",
+                                field
+                            )));
+                        }
+                        depth -= 1;
+                    }
+                    ':' if depth == 0 => {
+                        let (name, rest) = field.split_at(idx);
+                        return Ok((name.trim(), rest[1..].trim()));
+                    }
+                    _ => {}
+                }
+            }
+
+            Err(CompileError::UnsupportedInstruction(format!(
+                "record field '{}' must use name:type syntax",
+                field
+            )))
+        }
+
+        fn parse_named_global_type(spec: &str) -> Result<ParsedGlobalType, CompileError> {
             let scalar_ty = match spec {
                 "i8" => Some(MirType::I8),
                 "i16" => Some(MirType::I16),
@@ -544,7 +621,82 @@ impl<'a> HirToMirLowering<'a> {
             };
 
             if let Some(ty) = scalar_ty {
-                return Ok(ty);
+                return Ok(ParsedGlobalType {
+                    ty,
+                    list_max_len: None,
+                    string_slot_len: None,
+                    string_content_cap: None,
+                    semantics: None,
+                });
+            }
+
+            if let Some(body) = spec
+                .strip_prefix("record{")
+                .and_then(|rest| rest.strip_suffix('}'))
+            {
+                if body.trim().is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "record global declarations require at least one field".into(),
+                    ));
+                }
+
+                let mut fields = Vec::new();
+                let mut field_semantics = Vec::new();
+                let mut offset = 0usize;
+
+                for field in split_top_level_fields(body, spec)? {
+                    if field.is_empty() {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "global record type spec '{}' contains an empty field",
+                            spec
+                        )));
+                    }
+
+                    let (name, field_spec) = split_top_level_field(field)?;
+                    if name.is_empty() || field_spec.is_empty() {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "record field '{}' must use name:type syntax",
+                            field
+                        )));
+                    }
+
+                    if fields
+                        .iter()
+                        .any(|existing: &StructField| existing.name == name)
+                    {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "record global declarations do not support duplicate field name '{}'",
+                            name
+                        )));
+                    }
+
+                    let parsed_field = parse_named_global_type(field_spec)?;
+                    let ty = parsed_field.ty;
+                    if let Some(semantics) = parsed_field.semantics {
+                        field_semantics.push((name.to_string(), semantics));
+                    }
+                    fields.push(StructField {
+                        name: name.to_string(),
+                        ty: ty.clone(),
+                        offset,
+                        synthetic: false,
+                        bitfield: None,
+                    });
+                    offset = offset.saturating_add(ty.size());
+                }
+
+                return Ok(ParsedGlobalType {
+                    ty: MirType::Struct {
+                        name: None,
+                        kernel_btf_type_id: None,
+                        fields,
+                    },
+                    list_max_len: None,
+                    string_slot_len: None,
+                    string_content_cap: None,
+                    semantics: (!field_semantics.is_empty())
+                        .then_some(AnnotatedValueSemantics::Record(field_semantics)),
+                });
             }
 
             let byte_len = spec
@@ -553,7 +705,7 @@ impl<'a> HirToMirLowering<'a> {
                 .map(|len| {
                     len.parse::<usize>().map_err(|_| {
                         CompileError::UnsupportedInstruction(format!(
-                            "record field type spec '{}' has an invalid byte length",
+                            "global type spec '{}' has an invalid byte length",
                             spec
                         ))
                     })
@@ -563,225 +715,107 @@ impl<'a> HirToMirLowering<'a> {
             if let Some(len) = byte_len {
                 if len == 0 {
                     return Err(CompileError::UnsupportedInstruction(
-                        "record field byte-array declarations require a positive length".into(),
+                        "global byte-array declarations require a positive length".into(),
                     ));
                 }
 
-                return Ok(MirType::Array {
-                    elem: Box::new(MirType::U8),
-                    len,
+                return Ok(ParsedGlobalType {
+                    ty: MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len,
+                    },
+                    list_max_len: None,
+                    string_slot_len: None,
+                    string_content_cap: None,
+                    semantics: None,
+                });
+            }
+
+            if let Some(cap) = spec
+                .strip_prefix("string:")
+                .map(|len| {
+                    len.parse::<usize>().map_err(|_| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "global type spec '{}' has an invalid string capacity",
+                            spec
+                        ))
+                    })
+                })
+                .transpose()?
+            {
+                if cap == 0 || cap >= MAX_STRING_SIZE {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "global string declarations require a capacity between 1 and {}",
+                        MAX_STRING_SIZE - 1
+                    )));
+                }
+
+                let slot_len = align_to_eight(cap.saturating_add(1))
+                    .min(MAX_STRING_SIZE)
+                    .max(16);
+                return Ok(ParsedGlobalType {
+                    ty: MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len: 8 + slot_len,
+                    },
+                    list_max_len: None,
+                    string_slot_len: Some(slot_len),
+                    string_content_cap: Some(cap),
+                    semantics: Some(AnnotatedValueSemantics::String {
+                        slot_len,
+                        content_cap: cap,
+                    }),
+                });
+            }
+
+            if let Some(cap) = spec
+                .strip_prefix("list:i64:")
+                .map(|len| {
+                    len.parse::<usize>().map_err(|_| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "global type spec '{}' has an invalid list capacity",
+                            spec
+                        ))
+                    })
+                })
+                .transpose()?
+            {
+                if cap > MAX_NUMERIC_LIST_CAPACITY {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "global numeric list declarations require a capacity of at most {}",
+                        MAX_NUMERIC_LIST_CAPACITY
+                    )));
+                }
+
+                return Ok(ParsedGlobalType {
+                    ty: MirType::Array {
+                        elem: Box::new(MirType::I64),
+                        len: cap.saturating_add(1),
+                    },
+                    list_max_len: Some(cap),
+                    string_slot_len: None,
+                    string_content_cap: None,
+                    semantics: Some(AnnotatedValueSemantics::NumericList { max_len: cap }),
                 });
             }
 
             Err(CompileError::UnsupportedInstruction(format!(
-                "unsupported record field type spec '{}'; expected one of i8, i16, i32, i64, u8, u16, u32, u64, bool, bytes:N, or binary:N",
+                "unsupported global type spec '{}'; expected one of i8, i16, i32, i64, u8, u16, u32, u64, bool, bytes:N, binary:N, string:N, list:i64:N, or nested record{{field:type,...}}",
                 spec
             )))
         }
 
-        fn parse_flat_record_type(spec: &str) -> Result<Option<MirType>, CompileError> {
-            let Some(body) = spec
-                .strip_prefix("record{")
-                .and_then(|rest| rest.strip_suffix('}'))
-            else {
-                return Ok(None);
-            };
-
-            if body.trim().is_empty() {
-                return Err(CompileError::UnsupportedInstruction(
-                    "record global declarations require at least one field".into(),
-                ));
-            }
-
-            let mut fields = Vec::new();
-            let mut offset = 0usize;
-            for raw_field in body.split(',') {
-                let field = raw_field.trim();
-                if field.is_empty() {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "global record type spec '{}' contains an empty field",
-                        spec
-                    )));
-                }
-
-                let Some((name_raw, field_spec_raw)) = field.split_once(':') else {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "record field '{}' must use name:type syntax",
-                        field
-                    )));
-                };
-
-                let name = name_raw.trim();
-                let field_spec = field_spec_raw.trim();
-                if name.is_empty() || field_spec.is_empty() {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "record field '{}' must use name:type syntax",
-                        field
-                    )));
-                }
-
-                if fields
-                    .iter()
-                    .any(|existing: &StructField| existing.name == name)
-                {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "record global declarations do not support duplicate field name '{}'",
-                        name
-                    )));
-                }
-
-                let ty = parse_flat_record_field_type(field_spec)?;
-                fields.push(StructField {
-                    name: name.to_string(),
-                    ty: ty.clone(),
-                    offset,
-                    synthetic: false,
-                    bitfield: None,
-                });
-                offset = offset.saturating_add(ty.size());
-            }
-
-            Ok(Some(MirType::Struct {
-                name: None,
-                kernel_btf_type_id: None,
-                fields,
-            }))
-        }
-
-        let scalar_ty = match spec {
-            "i8" => Some(MirType::I8),
-            "i16" => Some(MirType::I16),
-            "i32" => Some(MirType::I32),
-            "i64" => Some(MirType::I64),
-            "u8" => Some(MirType::U8),
-            "u16" => Some(MirType::U16),
-            "u32" => Some(MirType::U32),
-            "u64" => Some(MirType::U64),
-            "bool" => Some(MirType::Bool),
-            _ => None,
-        };
-
-        if let Some(ty) = scalar_ty {
-            return Ok(MutableCaptureGlobal {
+        let parsed = parse_named_global_type(spec)?;
+        Ok((
+            MutableCaptureGlobal {
                 symbol,
-                ty,
-                list_max_len: None,
-                string_slot_len: None,
-                string_content_cap: None,
-            });
-        }
-
-        if let Some(ty) = parse_flat_record_type(spec)? {
-            return Ok(MutableCaptureGlobal {
-                symbol,
-                ty,
-                list_max_len: None,
-                string_slot_len: None,
-                string_content_cap: None,
-            });
-        }
-
-        let byte_len = spec
-            .strip_prefix("bytes:")
-            .or_else(|| spec.strip_prefix("binary:"))
-            .map(|len| {
-                len.parse::<usize>().map_err(|_| {
-                    CompileError::UnsupportedInstruction(format!(
-                        "global type spec '{}' has an invalid byte length",
-                        spec
-                    ))
-                })
-            })
-            .transpose()?;
-
-        if let Some(len) = byte_len {
-            if len == 0 {
-                return Err(CompileError::UnsupportedInstruction(
-                    "global byte-array declarations require a positive length".into(),
-                ));
-            }
-
-            return Ok(MutableCaptureGlobal {
-                symbol,
-                ty: MirType::Array {
-                    elem: Box::new(MirType::U8),
-                    len,
-                },
-                list_max_len: None,
-                string_slot_len: None,
-                string_content_cap: None,
-            });
-        }
-
-        if let Some(cap) = spec
-            .strip_prefix("string:")
-            .map(|len| {
-                len.parse::<usize>().map_err(|_| {
-                    CompileError::UnsupportedInstruction(format!(
-                        "global type spec '{}' has an invalid string capacity",
-                        spec
-                    ))
-                })
-            })
-            .transpose()?
-        {
-            if cap == 0 || cap >= MAX_STRING_SIZE {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "global string declarations require a capacity between 1 and {}",
-                    MAX_STRING_SIZE - 1
-                )));
-            }
-
-            let slot_len = align_to_eight(cap.saturating_add(1))
-                .min(MAX_STRING_SIZE)
-                .max(16);
-            return Ok(MutableCaptureGlobal {
-                symbol,
-                ty: MirType::Array {
-                    elem: Box::new(MirType::U8),
-                    len: 8 + slot_len,
-                },
-                list_max_len: None,
-                string_slot_len: Some(slot_len),
-                string_content_cap: Some(cap),
-            });
-        }
-
-        if let Some(cap) = spec
-            .strip_prefix("list:i64:")
-            .map(|len| {
-                len.parse::<usize>().map_err(|_| {
-                    CompileError::UnsupportedInstruction(format!(
-                        "global type spec '{}' has an invalid list capacity",
-                        spec
-                    ))
-                })
-            })
-            .transpose()?
-        {
-            if cap > MAX_NUMERIC_LIST_CAPACITY {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "global numeric list declarations require a capacity of at most {}",
-                    MAX_NUMERIC_LIST_CAPACITY
-                )));
-            }
-
-            return Ok(MutableCaptureGlobal {
-                symbol,
-                ty: MirType::Array {
-                    elem: Box::new(MirType::I64),
-                    len: cap.saturating_add(1),
-                },
-                list_max_len: Some(cap),
-                string_slot_len: None,
-                string_content_cap: None,
-            });
-        }
-
-        Err(CompileError::UnsupportedInstruction(format!(
-            "unsupported global type spec '{}'; expected one of i8, i16, i32, i64, u8, u16, u32, u64, bool, bytes:N, binary:N, string:N, list:i64:N, or record{{field:type,...}}",
-            spec
-        )))
+                ty: parsed.ty,
+                list_max_len: parsed.list_max_len,
+                string_slot_len: parsed.string_slot_len,
+                string_content_cap: parsed.string_content_cap,
+            },
+            parsed.semantics,
+        ))
     }
 
     fn infer_mutable_global_layout(
@@ -1078,7 +1112,7 @@ impl<'a> HirToMirLowering<'a> {
         spec: &str,
     ) -> Result<MutableCaptureGlobal, CompileError> {
         let symbol = Self::named_program_global_symbol(name);
-        let inferred = Self::typed_named_program_global_layout(symbol.clone(), spec)?;
+        let (inferred, semantics) = Self::typed_named_program_global_layout(symbol.clone(), spec)?;
 
         if let Some(existing) = self.named_program_globals.get(name) {
             if existing != &inferred {
@@ -1086,6 +1120,21 @@ impl<'a> HirToMirLowering<'a> {
                     "global '{}' is used with incompatible layouts",
                     name
                 )));
+            }
+            if let Some(semantics) = semantics {
+                match self.named_program_global_semantics.get(name) {
+                    Some(existing_semantics) if existing_semantics != &semantics => {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "global '{}' is used with incompatible value semantics",
+                            name
+                        )));
+                    }
+                    Some(_) => {}
+                    None => {
+                        self.named_program_global_semantics
+                            .insert(name.to_string(), semantics);
+                    }
+                }
             }
             return Ok(existing.clone());
         }
@@ -1101,6 +1150,10 @@ impl<'a> HirToMirLowering<'a> {
         self.bss_globals.push(BssGlobal { name: symbol, size });
         self.named_program_globals
             .insert(name.to_string(), inferred.clone());
+        if let Some(semantics) = semantics {
+            self.named_program_global_semantics
+                .insert(name.to_string(), semantics);
+        }
         Ok(inferred)
     }
 
