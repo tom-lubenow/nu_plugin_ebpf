@@ -898,6 +898,164 @@ fn test_reused_register_load_variable_freshens_before_ctx_socket_projection() {
 }
 
 #[test]
+fn test_reused_register_move_freshens_destination_vreg() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"stale".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::Move {
+                    dst: RegId::new(1),
+                    src: RegId::new(2),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let result = lower_hir_to_mir_with_hints(
+        &HirProgram::new(func, HashMap::new(), vec![], None),
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("reused-register move should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    let string_vreg = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::Copy {
+                dst,
+                src: MirValue::StackSlot(_),
+            } => Some(*dst),
+            _ => None,
+        })
+        .expect("expected stack-backed string literal materialization");
+    let moved_vreg = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::Copy {
+                dst,
+                src: MirValue::VReg(_),
+            } if *dst != string_vreg => Some(*dst),
+            _ => None,
+        })
+        .expect("expected move copy into destination register");
+
+    assert_ne!(
+        string_vreg, moved_vreg,
+        "Move should freshen reused destination registers"
+    );
+}
+
+#[test]
+fn test_reused_register_clone_cell_path_freshens_destination_vreg() {
+    let ctx_var = VarId::new(83);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"stale".to_vec()),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(2),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![nu_protocol::ast::PathMember::test_string(
+                            "sk".to_string(),
+                            false,
+                            nu_protocol::casing::Casing::Sensitive,
+                        )],
+                    })),
+                },
+                HirStmt::CloneCellPath {
+                    dst: RegId::new(1),
+                    src: RegId::new(2),
+                    path: RegId::new(3),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String(b"pass".to_vec()),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let result = lower_hir_to_mir_with_hints(
+        &HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var)),
+        Some(&ProbeContext::new(
+            EbpfProgramType::SkMsg,
+            "/sys/fs/bpf/demo_sockmap",
+        )),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("reused-register clone-cell-path should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    let string_vreg = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::Copy {
+                dst,
+                src: MirValue::StackSlot(_),
+            } => Some(*dst),
+            _ => None,
+        })
+        .expect("expected stack-backed string literal materialization");
+    let socket_vreg = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::LoadCtxField {
+                dst,
+                field: CtxField::Socket,
+                ..
+            } => Some(*dst),
+            _ => None,
+        })
+        .expect("expected ctx.sk load");
+
+    assert_ne!(
+        string_vreg, socket_vreg,
+        "CloneCellPath should freshen reused destination registers"
+    );
+}
+
+#[test]
 fn test_kfunc_call_does_not_inject_drained_src_dst() {
     use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
     use nu_protocol::{DeclId, RegId};

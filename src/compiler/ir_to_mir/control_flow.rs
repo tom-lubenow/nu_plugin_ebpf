@@ -298,7 +298,11 @@ impl<'a> HirToMirLowering<'a> {
             HirStmt::Move { dst, src } => {
                 // Copy value and metadata
                 let src_vreg = self.get_vreg(*src);
-                let dst_vreg = self.get_vreg(*dst);
+                let dst_vreg = if self.reg_map.contains_key(&dst.get()) {
+                    self.assign_fresh_vreg(*dst)
+                } else {
+                    self.get_vreg(*dst)
+                };
                 self.emit(MirInst::Copy {
                     dst: dst_vreg,
                     src: MirValue::VReg(src_vreg),
@@ -315,7 +319,11 @@ impl<'a> HirToMirLowering<'a> {
             HirStmt::Clone { dst, src } => {
                 // Same as Move for our purposes
                 let src_vreg = self.get_vreg(*src);
-                let dst_vreg = self.get_vreg(*dst);
+                let dst_vreg = if self.reg_map.contains_key(&dst.get()) {
+                    self.assign_fresh_vreg(*dst)
+                } else {
+                    self.get_vreg(*dst)
+                };
                 self.emit(MirInst::Copy {
                     dst: dst_vreg,
                     src: MirValue::VReg(src_vreg),
@@ -350,7 +358,11 @@ impl<'a> HirToMirLowering<'a> {
 
             HirStmt::CloneCellPath { dst, src, path } => {
                 let src_vreg = self.get_vreg(*src);
-                let dst_vreg = self.get_vreg(*dst);
+                let dst_vreg = if self.reg_map.contains_key(&dst.get()) {
+                    self.assign_fresh_vreg(*dst)
+                } else {
+                    self.get_vreg(*dst)
+                };
                 self.emit(MirInst::Copy {
                     dst: dst_vreg,
                     src: MirValue::VReg(src_vreg),
