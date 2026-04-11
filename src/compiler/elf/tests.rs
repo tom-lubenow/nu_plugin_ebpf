@@ -552,6 +552,30 @@ fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
 }
 
 #[test]
+fn test_program_type_helper_call_error_covers_program_only_rules() {
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::MsgApplyBytes),
+        Some("helper 'bpf_msg_apply_bytes' is only valid in sk_msg programs".to_string())
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::Redirect),
+        Some("helper 'bpf_redirect' is only valid in xdp and tc programs".to_string())
+    );
+}
+
+#[test]
+fn test_program_type_helper_zero_arg_requirement_uses_program_surface() {
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_zero_arg_requirement(BpfHelper::Redirect),
+        Some((1, "helper 'bpf_redirect' requires arg1 = 0 in xdp programs"))
+    );
+    assert_eq!(
+        EbpfProgramType::Tc.helper_zero_arg_requirement(BpfHelper::Redirect),
+        None
+    );
+}
+
+#[test]
 fn test_probe_context_helper_zero_arg_requirement_uses_program_type() {
     let xdp = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     let tc = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");

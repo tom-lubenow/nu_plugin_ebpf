@@ -16,6 +16,7 @@ use object::{
 
 use super::CompileError;
 use super::btf::BtfBuilder;
+use super::instruction::BpfHelper;
 use super::instruction::EbpfBuilder;
 use super::mir::{
     BYTES_COUNTER_MAP_NAME, BitfieldInfo, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME,
@@ -829,6 +830,54 @@ impl EbpfProgramType {
 
     pub fn supports_egress_ifindex_ctx_field(&self) -> bool {
         self.info().supports_egress_ifindex_ctx_field
+    }
+
+    pub(crate) fn helper_call_error(&self, helper: BpfHelper) -> Option<String> {
+        match helper {
+            BpfHelper::RcRepeat | BpfHelper::RcKeydown | BpfHelper::RcPointerRel
+                if *self != EbpfProgramType::LircMode2 =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in lirc_mode2 programs",
+                    helper.name()
+                ))
+            }
+            BpfHelper::Redirect if !matches!(self, EbpfProgramType::Xdp | EbpfProgramType::Tc) => {
+                Some(format!(
+                    "helper '{}' is only valid in xdp and tc programs",
+                    helper.name()
+                ))
+            }
+            BpfHelper::RedirectNeigh if *self != EbpfProgramType::Tc => Some(format!(
+                "helper '{}' is only valid in tc programs",
+                helper.name()
+            )),
+            BpfHelper::MsgApplyBytes
+            | BpfHelper::MsgCorkBytes
+            | BpfHelper::MsgPullData
+            | BpfHelper::MsgPushData
+            | BpfHelper::MsgPopData
+                if *self != EbpfProgramType::SkMsg =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in sk_msg programs",
+                    helper.name()
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn helper_zero_arg_requirement(
+        &self,
+        helper: BpfHelper,
+    ) -> Option<(usize, &'static str)> {
+        match (helper, self) {
+            (BpfHelper::Redirect, EbpfProgramType::Xdp) => {
+                Some((1, "helper 'bpf_redirect' requires arg1 = 0 in xdp programs"))
+            }
+            _ => None,
+        }
     }
 
     pub fn ctx_field_alias(&self, field_name: &str) -> Option<CtxField> {

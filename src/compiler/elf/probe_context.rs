@@ -993,43 +993,14 @@ impl ProbeContext {
     /// Returns a user-facing error message when a helper is not valid
     /// for this program type or attach context.
     pub fn helper_call_error(&self, helper: BpfHelper) -> Option<String> {
+        if let Some(message) = self.probe_type.helper_call_error(helper) {
+            return Some(message);
+        }
         match helper {
-            BpfHelper::RcRepeat | BpfHelper::RcKeydown | BpfHelper::RcPointerRel
-                if self.probe_type != EbpfProgramType::LircMode2 =>
-            {
-                Some(format!(
-                    "helper '{}' is only valid in lirc_mode2 programs",
-                    helper.name()
-                ))
-            }
-            BpfHelper::Redirect
-                if !matches!(self.probe_type, EbpfProgramType::Xdp | EbpfProgramType::Tc) =>
-            {
-                Some(format!(
-                    "helper '{}' is only valid in xdp and tc programs",
-                    helper.name()
-                ))
-            }
-            BpfHelper::RedirectNeigh if self.probe_type != EbpfProgramType::Tc => Some(format!(
-                "helper '{}' is only valid in tc programs",
-                helper.name()
-            )),
             BpfHelper::RedirectPeer if !self.tc_is_ingress() => Some(format!(
                 "helper '{}' is only valid in tc ingress programs",
                 helper.name()
             )),
-            BpfHelper::MsgApplyBytes
-            | BpfHelper::MsgCorkBytes
-            | BpfHelper::MsgPullData
-            | BpfHelper::MsgPushData
-            | BpfHelper::MsgPopData
-                if self.probe_type != EbpfProgramType::SkMsg =>
-            {
-                Some(format!(
-                    "helper '{}' is only valid in sk_msg programs",
-                    helper.name()
-                ))
-            }
             _ => None,
         }
     }
@@ -1038,12 +1009,7 @@ impl ProbeContext {
         &self,
         helper: BpfHelper,
     ) -> Option<(usize, &'static str)> {
-        match (helper, self.probe_type) {
-            (BpfHelper::Redirect, EbpfProgramType::Xdp) => {
-                Some((1, "helper 'bpf_redirect' requires arg1 = 0 in xdp programs"))
-            }
-            _ => None,
-        }
+        self.probe_type.helper_zero_arg_requirement(helper)
     }
 
     fn sched_ext_callback(&self) -> Option<&str> {
