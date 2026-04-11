@@ -106,6 +106,7 @@ Last updated: 2026-02-15.
   - Verifier/VCC helper-arg parity now enforces socket ref-family provenance for tracked kernel refs passed to socket-pointer helpers (`bpf_get_listener_sock` / `bpf_sk_fullsock` / `bpf_tcp_sock`), rejecting mixed-family refs (e.g., task ref args).
   - VCC now aligns typed pointer nullability with verifier_types (`Map`/`Kernel`/`User` pointers are `MaybeNull` until guarded), including parity tests for load/read_str/helper flows that require explicit null checks.
   - VCC helper pointer-space checks now resolve `Unknown` vreg pointer spaces via effective MIR address-space fallback, preventing helper-space-rule bypasses for typed stack pointers.
+  - Verifier/VCC helper parity now enforces redirect-helper scalar contracts from the program/helper model: XDP `bpf_redirect` requires zero flags, `bpf_redirect_neigh` requires zero flags and zero `plen` when the params arg is known null, and `bpf_redirect_peer` requires zero flags.
   - VCC now propagates map-value bounds from built-in map semantics and pointee types, including pointer-arithmetic/load/store bounds checks for map-value pointers.
   - VCC now aligns direct memory access rules with verifier expectations by rejecting raw `load`/`store` on non stack/map pointer spaces.
   - Remaining: extend pointer-state transitions to broader helper/kfunc families (provenance/nullability/mutability/ref-lifetime) with kernel-verifier-level fidelity.

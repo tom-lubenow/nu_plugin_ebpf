@@ -120,6 +120,55 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::AssertConstEqIfConstEq {
+                value,
+                expected,
+                when_value,
+                when_expected,
+                message,
+            } => {
+                let when_ty = match state.value_type(*when_value) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                if Self::const_scalar_value(*when_value, when_ty) != Some(*when_expected) {
+                    return;
+                }
+
+                let ty = match state.value_type(*value) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                if ty.class() != VccTypeClass::Scalar && ty.class() != VccTypeClass::Bool {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::TypeMismatch {
+                            expected: VccTypeClass::Scalar,
+                            actual: ty.class(),
+                        },
+                        "expected scalar value",
+                    ));
+                    return;
+                }
+                let Some(range) = state.value_range(*value, ty) else {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message.clone(),
+                    ));
+                    return;
+                };
+                if range.min != *expected || range.max != *expected {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message.clone(),
+                    ));
+                }
+            }
             VccInst::AssertKnownConst { value, message } => {
                 let ty = match state.value_type(*value) {
                     Ok(ty) => ty,

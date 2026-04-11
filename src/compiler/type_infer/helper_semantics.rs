@@ -373,65 +373,36 @@ impl<'a> TypeInference<'a> {
             }
         }
 
+        let arg_is_known_zero = |arg_idx| {
+            args.get(arg_idx).is_some_and(|value| {
+                matches!(
+                    self.value_range_for(value, value_ranges),
+                    ValueRange::Known { min: 0, max: 0 }
+                )
+            })
+        };
+
         if let Some((arg_idx, message)) = self
             .probe_ctx
             .as_ref()
             .and_then(|ctx| ctx.helper_zero_arg_requirement(helper))
+            && !arg_is_known_zero(arg_idx)
         {
-            let flags_ok = args.get(arg_idx).is_some_and(|value| {
-                matches!(
-                    self.value_range_for(value, value_ranges),
-                    ValueRange::Known { min: 0, max: 0 }
-                )
-            });
-            if !flags_ok {
-                errors.push(TypeError::new(message));
-            }
+            errors.push(TypeError::new(message));
         }
 
-        if matches!(helper, BpfHelper::RedirectNeigh) {
-            let params_is_null = args.get(1).is_some_and(|value| {
-                matches!(
-                    self.value_range_for(value, value_ranges),
-                    ValueRange::Known { min: 0, max: 0 }
-                )
-            });
-            let plen_is_zero = args.get(2).is_some_and(|value| {
-                matches!(
-                    self.value_range_for(value, value_ranges),
-                    ValueRange::Known { min: 0, max: 0 }
-                )
-            });
-            let flags_ok = args.get(3).is_some_and(|value| {
-                matches!(
-                    self.value_range_for(value, value_ranges),
-                    ValueRange::Known { min: 0, max: 0 }
-                )
-            });
-            if params_is_null && !plen_is_zero {
-                errors.push(TypeError::new(
-                    "helper 'bpf_redirect_neigh' requires arg2 = 0 when arg1 is null",
-                ));
-            }
-            if !flags_ok {
-                errors.push(TypeError::new(
-                    "helper 'bpf_redirect_neigh' requires arg3 = 0",
-                ));
-            }
+        if let Some((arg_idx, message)) = helper.zero_scalar_arg_requirement()
+            && !arg_is_known_zero(arg_idx)
+        {
+            errors.push(TypeError::new(message));
         }
 
-        if matches!(helper, BpfHelper::RedirectPeer) {
-            let flags_ok = args.get(1).is_some_and(|value| {
-                matches!(
-                    self.value_range_for(value, value_ranges),
-                    ValueRange::Known { min: 0, max: 0 }
-                )
-            });
-            if !flags_ok {
-                errors.push(TypeError::new(
-                    "helper 'bpf_redirect_peer' requires arg1 = 0",
-                ));
-            }
+        if let Some((arg_idx, trigger_arg_idx, message)) =
+            helper.zero_scalar_arg_requirement_when_arg_zero()
+            && arg_is_known_zero(trigger_arg_idx)
+            && !arg_is_known_zero(arg_idx)
+        {
+            errors.push(TypeError::new(message));
         }
     }
 

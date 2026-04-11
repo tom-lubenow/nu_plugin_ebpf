@@ -95,6 +95,7 @@ pub(crate) fn verify_mir_with_subfunction_summaries_for_program(
                 types,
                 &slot_sizes,
                 subfn_summaries,
+                program,
                 &mut state,
                 &mut errors,
             );
@@ -124,6 +125,7 @@ pub(crate) fn verify_mir_with_subfunction_summaries_for_program(
                     types,
                     &slot_sizes,
                     subfn_summaries,
+                    program,
                     &mut body_state,
                     &mut errors,
                 );

@@ -374,4 +374,25 @@ impl BpfHelper {
             },
         }
     }
+
+    pub const fn zero_scalar_arg_requirement(self) -> Option<(usize, &'static str)> {
+        match self {
+            BpfHelper::RedirectNeigh => Some((3, "helper 'bpf_redirect_neigh' requires arg3 = 0")),
+            BpfHelper::RedirectPeer => Some((1, "helper 'bpf_redirect_peer' requires arg1 = 0")),
+            _ => None,
+        }
+    }
+
+    pub const fn zero_scalar_arg_requirement_when_arg_zero(
+        self,
+    ) -> Option<(usize, usize, &'static str)> {
+        match self {
+            BpfHelper::RedirectNeigh => Some((
+                2,
+                1,
+                "helper 'bpf_redirect_neigh' requires arg2 = 0 when arg1 is null",
+            )),
+            _ => None,
+        }
+    }
 }

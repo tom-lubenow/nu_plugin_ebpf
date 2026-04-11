@@ -233,6 +233,140 @@ fn test_verify_mir_for_program_rejects_missing_tail_call_capability() {
 }
 
 #[test]
+fn test_verify_mir_for_program_redirect_requires_zero_flags_in_xdp() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::Redirect as u32,
+            args: vec![MirValue::Const(1), MirValue::Const(1)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected xdp redirect flags error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect' requires arg1 = 0 in xdp programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_program_redirect_allows_non_zero_flags_outside_xdp() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::Redirect as u32,
+            args: vec![MirValue::Const(1), MirValue::Const(1)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    verify_mir_for_program(&func, &types, EbpfProgramType::Tc.info())
+        .expect("expected tc redirect flags to remain allowed");
+}
+
+#[test]
+fn test_verify_mir_helper_redirect_neigh_requires_zero_flags() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RedirectNeigh as u32,
+            args: vec![
+                MirValue::Const(1),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(1),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected redirect_neigh flags error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect_neigh' requires arg3 = 0")
+    }));
+}
+
+#[test]
+fn test_verify_mir_helper_redirect_neigh_requires_zero_plen_for_zero_vreg_params() {
+    let (mut func, entry) = new_mir_function();
+    let params = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: params,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RedirectNeigh as u32,
+            args: vec![
+                MirValue::Const(1),
+                MirValue::VReg(params),
+                MirValue::Const(4),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(params, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected redirect_neigh plen error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect_neigh' requires arg2 = 0 when arg1 is null")
+    }));
+}
+
+#[test]
+fn test_verify_mir_helper_redirect_peer_requires_zero_flags() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RedirectPeer as u32,
+            args: vec![MirValue::Const(1), MirValue::Const(1)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected redirect_peer flags error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect_peer' requires arg1 = 0")
+    }));
+}
+
+#[test]
 fn test_verify_mir_helper_ringbuf_reserve_submit_ok_with_eq_null_branch() {
     let (mut func, entry) = new_mir_function();
     let submit = func.alloc_block();

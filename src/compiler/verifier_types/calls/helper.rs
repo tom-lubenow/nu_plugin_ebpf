@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::ProgramTypeInfo;
 
 pub(in crate::compiler::verifier_types) fn check_helper_arg(
     helper_id: u32,
@@ -162,6 +163,7 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
     args: &[MirValue],
     state: &mut VerifierState,
     slot_sizes: &HashMap<StackSlotId, i64>,
+    program: Option<&ProgramTypeInfo>,
     errors: &mut Vec<VerifierTypeError>,
 ) -> Option<KfuncRefKind> {
     let Some(helper) = BpfHelper::from_u32(helper_id) else {
@@ -201,6 +203,36 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
             slot_sizes,
             errors,
         );
+    }
+
+    let arg_is_known_zero = |arg_idx| {
+        args.get(arg_idx).is_some_and(|value| {
+            matches!(
+                value_range(value, state),
+                ValueRange::Known { min: 0, max: 0 }
+            )
+        })
+    };
+
+    if let Some((arg_idx, message)) =
+        program.and_then(|program| program.program_type.helper_zero_arg_requirement(helper))
+        && !arg_is_known_zero(arg_idx)
+    {
+        errors.push(VerifierTypeError::new(message));
+    }
+
+    if let Some((arg_idx, message)) = helper.zero_scalar_arg_requirement()
+        && !arg_is_known_zero(arg_idx)
+    {
+        errors.push(VerifierTypeError::new(message));
+    }
+
+    if let Some((arg_idx, trigger_arg_idx, message)) =
+        helper.zero_scalar_arg_requirement_when_arg_zero()
+        && arg_is_known_zero(trigger_arg_idx)
+        && !arg_is_known_zero(arg_idx)
+    {
+        errors.push(VerifierTypeError::new(message));
     }
 
     for (arg_idx, arg) in args.iter().enumerate().take(5) {

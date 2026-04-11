@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::ProgramTypeInfo;
 use crate::compiler::instruction::unknown_kfunc_signature_message;
 use crate::compiler::mir::SubfunctionId;
 
@@ -8,6 +9,7 @@ pub(super) fn apply_call_helper_inst(
     args: &[MirValue],
     types: &HashMap<VReg, MirType>,
     slot_sizes: &HashMap<StackSlotId, i64>,
+    program: Option<&ProgramTypeInfo>,
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
@@ -33,7 +35,7 @@ pub(super) fn apply_call_helper_inst(
             );
         }
         let helper_kfunc_acquire_kind =
-            apply_helper_semantics(helper, args, state, slot_sizes, errors);
+            apply_helper_semantics(helper, args, state, slot_sizes, program, errors);
 
         let ty = match sig.ret_kind {
             HelperRetKind::Scalar => types

@@ -232,6 +232,13 @@ pub enum VccInst {
         expected: i64,
         message: String,
     },
+    AssertConstEqIfConstEq {
+        value: VccValue,
+        expected: i64,
+        when_value: VccValue,
+        when_expected: i64,
+        message: String,
+    },
     AssertKnownConst {
         value: VccValue,
         message: String,
@@ -641,7 +648,7 @@ pub(crate) fn verify_mir_with_subfunction_summaries_for_program(
     let list_lowering = ListLowering;
     let _ = list_lowering.run(&mut verify_func, &cfg);
 
-    let mut lowerer = VccLowerer::new(&verify_func, types, list_max, subfn_summaries);
+    let mut lowerer = VccLowerer::new(&verify_func, types, list_max, subfn_summaries, program);
     let vcc_func = match lowerer.lower() {
         Ok(vcc) => vcc,
         Err(err) => return Err(vec![err]),

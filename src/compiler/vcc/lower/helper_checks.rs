@@ -348,6 +348,95 @@ impl<'a> VccLowerer<'a> {
         )
     }
 
+    fn verify_helper_scalar_const_eq(
+        &mut self,
+        helper_id: u32,
+        arg_idx: usize,
+        arg: &MirValue,
+        expected: i64,
+        message: &str,
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        match arg {
+            MirValue::Const(actual) => {
+                if *actual == expected {
+                    Ok(())
+                } else {
+                    Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message.to_string(),
+                    ))
+                }
+            }
+            MirValue::VReg(vreg) => {
+                self.assert_scalar_reg(*vreg, out);
+                out.push(VccInst::AssertConstEq {
+                    value: VccValue::Reg(VccReg(vreg.0)),
+                    expected,
+                    message: message.to_string(),
+                });
+                Ok(())
+            }
+            MirValue::StackSlot(_) => Err(VccError::new(
+                VccErrorKind::TypeMismatch {
+                    expected: VccTypeClass::Scalar,
+                    actual: VccTypeClass::Ptr,
+                },
+                format!("helper {} arg{} expects scalar value", helper_id, arg_idx),
+            )),
+        }
+    }
+
+    fn verify_helper_scalar_const_eq_if_scalar_const_eq(
+        &mut self,
+        helper_id: u32,
+        arg_idx: usize,
+        arg: &MirValue,
+        trigger: &MirValue,
+        trigger_expected: i64,
+        message: &str,
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        match trigger {
+            MirValue::Const(actual) => {
+                if *actual == trigger_expected {
+                    self.verify_helper_scalar_const_eq(
+                        helper_id, arg_idx, arg, 0, message, out,
+                    )?;
+                }
+                Ok(())
+            }
+            MirValue::VReg(vreg) if !self.is_pointer_reg(*vreg) => {
+                self.assert_scalar_reg(*vreg, out);
+                let value = match arg {
+                    MirValue::Const(actual) => VccValue::Imm(*actual),
+                    MirValue::VReg(value) => {
+                        self.assert_scalar_reg(*value, out);
+                        VccValue::Reg(VccReg(value.0))
+                    }
+                    MirValue::StackSlot(_) => {
+                        return Err(VccError::new(
+                            VccErrorKind::TypeMismatch {
+                                expected: VccTypeClass::Scalar,
+                                actual: VccTypeClass::Ptr,
+                            },
+                            format!("helper {} arg{} expects scalar value", helper_id, arg_idx),
+                        ));
+                    }
+                };
+                out.push(VccInst::AssertConstEqIfConstEq {
+                    value,
+                    expected: 0,
+                    when_value: VccValue::Reg(VccReg(vreg.0)),
+                    when_expected: trigger_expected,
+                    message: message.to_string(),
+                });
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
     pub(super) fn verify_helper_arg_value(
         &mut self,
         helper_id: u32,
@@ -752,6 +841,35 @@ impl<'a> VccLowerer<'a> {
                     out,
                 )?;
             }
+        }
+
+        if let Some((arg_idx, message)) = self
+            .program
+            .and_then(|program| program.program_type.helper_zero_arg_requirement(helper))
+            && let Some(arg) = args.get(arg_idx)
+        {
+            self.verify_helper_scalar_const_eq(helper_id, arg_idx, arg, 0, message, out)?;
+        }
+
+        if let Some((arg_idx, message)) = helper.zero_scalar_arg_requirement()
+            && let Some(arg) = args.get(arg_idx)
+        {
+            self.verify_helper_scalar_const_eq(helper_id, arg_idx, arg, 0, message, out)?;
+        }
+
+        if let Some((arg_idx, trigger_arg_idx, message)) =
+            helper.zero_scalar_arg_requirement_when_arg_zero()
+            && let (Some(arg), Some(trigger)) = (args.get(arg_idx), args.get(trigger_arg_idx))
+        {
+            self.verify_helper_scalar_const_eq_if_scalar_const_eq(
+                helper_id,
+                arg_idx,
+                arg,
+                trigger,
+                0,
+                message,
+                out,
+            )?;
         }
 
         Ok(())
