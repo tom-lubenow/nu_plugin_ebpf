@@ -278,6 +278,35 @@ fn test_program_type_metadata_for_socket_filter() {
 }
 
 #[test]
+fn test_program_type_return_action_aliases_cover_const_families() {
+    assert_eq!(
+        EbpfProgramType::Xdp.return_action_alias("PaSs"),
+        Some(ProgramReturnAlias::Const(2))
+    );
+    assert_eq!(
+        EbpfProgramType::Tc.return_action_alias("trap"),
+        Some(ProgramReturnAlias::Const(8))
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSock.return_action_alias("reject"),
+        Some(ProgramReturnAlias::Const(0))
+    );
+    assert_eq!(EbpfProgramType::Kprobe.return_action_alias("pass"), None);
+}
+
+#[test]
+fn test_program_type_return_action_aliases_cover_packet_len_aliases() {
+    assert_eq!(
+        EbpfProgramType::SocketFilter.return_action_alias("permit"),
+        Some(ProgramReturnAlias::PacketLen)
+    );
+    assert_eq!(
+        EbpfProgramType::SocketFilter.return_action_alias("KEEP"),
+        Some(ProgramReturnAlias::PacketLen)
+    );
+}
+
+#[test]
 fn test_program_type_metadata_for_cgroup_device() {
     let info = EbpfProgramType::CgroupDevice.info();
     assert_eq!(info.canonical_prefix, "cgroup_device");

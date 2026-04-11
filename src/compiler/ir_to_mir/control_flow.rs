@@ -1,11 +1,5 @@
 use super::*;
-use crate::compiler::EbpfProgramType;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ActionAliasReturn {
-    Const(i64),
-    PacketLen,
-}
+use crate::compiler::elf::ProgramReturnAlias;
 
 impl<'a> HirToMirLowering<'a> {
     fn cleanup_return_src(hir: &HirFunction, target: HirBlockId) -> Option<RegId> {
@@ -47,70 +41,25 @@ impl<'a> HirToMirLowering<'a> {
         resolve_cleanup_return_src(hir, target, &mut Vec::new())
     }
 
-    fn action_alias_return_value(&self, reg: RegId) -> Option<ActionAliasReturn> {
+    fn action_alias_return_value(&self, reg: RegId) -> Option<ProgramReturnAlias> {
         let program_type = self.probe_ctx.as_ref().map(|ctx| ctx.probe_type)?;
-        let alias = self
-            .get_metadata(reg)
-            .and_then(|meta| {
-                meta.literal_string.clone().or_else(|| {
-                    meta.constant_value.as_ref().and_then(|value| match value {
-                        Value::String { val, .. } | Value::Glob { val, .. } => Some(val.clone()),
-                        _ => None,
-                    })
+        let alias = self.get_metadata(reg).and_then(|meta| {
+            meta.literal_string.clone().or_else(|| {
+                meta.constant_value.as_ref().and_then(|value| match value {
+                    Value::String { val, .. } | Value::Glob { val, .. } => Some(val.clone()),
+                    _ => None,
                 })
-            })?
-            .to_ascii_lowercase();
+            })
+        })?;
 
-        match program_type {
-            EbpfProgramType::Xdp => match alias.as_str() {
-                "abort" | "aborted" => Some(ActionAliasReturn::Const(0)),
-                "drop" => Some(ActionAliasReturn::Const(1)),
-                "pass" => Some(ActionAliasReturn::Const(2)),
-                "tx" => Some(ActionAliasReturn::Const(3)),
-                "redirect" => Some(ActionAliasReturn::Const(4)),
-                _ => None,
-            },
-            EbpfProgramType::SocketFilter => match alias.as_str() {
-                "deny" | "drop" | "reject" => Some(ActionAliasReturn::Const(0)),
-                "allow" | "accept" | "permit" | "keep" | "pass" => {
-                    Some(ActionAliasReturn::PacketLen)
-                }
-                _ => None,
-            },
-            EbpfProgramType::Tc => match alias.as_str() {
-                "ok" => Some(ActionAliasReturn::Const(0)),
-                "reclassify" => Some(ActionAliasReturn::Const(1)),
-                "shot" | "drop" => Some(ActionAliasReturn::Const(2)),
-                "pipe" => Some(ActionAliasReturn::Const(3)),
-                "stolen" => Some(ActionAliasReturn::Const(4)),
-                "queued" => Some(ActionAliasReturn::Const(5)),
-                "repeat" => Some(ActionAliasReturn::Const(6)),
-                "redirect" => Some(ActionAliasReturn::Const(7)),
-                "trap" => Some(ActionAliasReturn::Const(8)),
-                _ => None,
-            },
-            EbpfProgramType::CgroupSkb
-            | EbpfProgramType::CgroupDevice
-            | EbpfProgramType::CgroupSock
-            | EbpfProgramType::CgroupSysctl
-            | EbpfProgramType::CgroupSockopt
-            | EbpfProgramType::CgroupSockAddr
-            | EbpfProgramType::SkLookup
-            | EbpfProgramType::SkSkb
-            | EbpfProgramType::SkMsg => match alias.as_str() {
-                "deny" | "drop" | "reject" => Some(ActionAliasReturn::Const(0)),
-                "allow" | "pass" | "accept" | "permit" => Some(ActionAliasReturn::Const(1)),
-                _ => None,
-            },
-            _ => None,
-        }
+        program_type.return_action_alias(&alias)
     }
 
     fn return_value_for_reg(&mut self, reg: RegId) -> MirValue {
         if let Some(alias) = self.action_alias_return_value(reg) {
             return match alias {
-                ActionAliasReturn::Const(value) => MirValue::Const(value),
-                ActionAliasReturn::PacketLen => {
+                ProgramReturnAlias::Const(value) => MirValue::Const(value),
+                ProgramReturnAlias::PacketLen => {
                     let dst = self.func.alloc_vreg();
                     self.emit(MirInst::LoadCtxField {
                         dst,
