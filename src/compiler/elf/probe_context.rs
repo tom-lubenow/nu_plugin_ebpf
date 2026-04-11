@@ -987,6 +987,36 @@ impl ProbeContext {
         if let Some(message) = self.ctx_field_access_error(field) {
             return Err(CompileError::UnsupportedInstruction(message));
         }
+        match field {
+            CtxField::Arg(idx) if self.probe_type.uses_btf_trampoline() => {
+                if self
+                    .btf_arg_spec(*idx as usize)
+                    .map_err(CompileError::UnsupportedInstruction)?
+                    .is_none()
+                {
+                    return Err(CompileError::UnsupportedInstruction(
+                        self.btf_arg_unavailable_error(*idx as usize),
+                    ));
+                }
+            }
+            CtxField::RetVal
+                if matches!(
+                    self.probe_type.retval_access(),
+                    ProgramValueAccess::Trampoline
+                ) =>
+            {
+                if self
+                    .btf_ret_spec()
+                    .map_err(CompileError::UnsupportedInstruction)?
+                    .is_none()
+                {
+                    return Err(CompileError::UnsupportedInstruction(
+                        self.btf_ret_unavailable_error(),
+                    ));
+                }
+            }
+            _ => {}
+        }
         Ok(())
     }
 

@@ -230,32 +230,8 @@ impl<'a> TypeInference<'a> {
 
     pub(super) fn validate_ctx_field_access(&self, field: &CtxField) -> Result<(), TypeError> {
         if let Some(ctx) = self.probe_ctx.as_ref() {
-            if let Some(message) = ctx.ctx_field_access_error(field) {
-                return Err(TypeError::new(message));
-            }
-
-            match field {
-                CtxField::Arg(idx) if ctx.probe_type.uses_btf_trampoline() => {
-                    if ctx
-                        .btf_arg_spec(*idx as usize)
-                        .map_err(TypeError::new)?
-                        .is_none()
-                    {
-                        return Err(TypeError::new(ctx.btf_arg_unavailable_error(*idx as usize)));
-                    }
-                }
-                CtxField::RetVal
-                    if matches!(
-                        ctx.probe_type.retval_access(),
-                        ProgramValueAccess::Trampoline
-                    ) =>
-                {
-                    if ctx.btf_ret_spec().map_err(TypeError::new)?.is_none() {
-                        return Err(TypeError::new(ctx.btf_ret_unavailable_error()));
-                    }
-                }
-                _ => {}
-            }
+            ctx.validate_ctx_field_access(field)
+                .map_err(|err| TypeError::new(err.to_string()))?;
         }
         Ok(())
     }

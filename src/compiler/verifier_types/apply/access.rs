@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::mir::CtxStoreTarget;
 
 fn scalar_value_range_for_type(types: &HashMap<VReg, MirType>, dst: VReg) -> ValueRange {
     types
@@ -136,10 +137,17 @@ pub(super) fn apply_load_ctx_field_inst(
     dst: VReg,
     field: &CtxField,
     slot: Option<StackSlotId>,
+    probe_ctx: Option<&ProbeContext>,
     types: &HashMap<VReg, MirType>,
     slot_sizes: &HashMap<StackSlotId, i64>,
     state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
 ) {
+    if let Some(ctx) = probe_ctx
+        && let Err(err) = ctx.validate_ctx_field_access(field)
+    {
+        errors.push(VerifierTypeError::new(err.to_string()));
+    }
     let mut ty = state.find_ctx_field_type(field).unwrap_or_else(|| {
         types
             .get(&dst)
@@ -214,6 +222,38 @@ pub(super) fn apply_load_ctx_field_inst(
     }
     state.set_with_range(dst, ty, scalar_value_range_for_type(types, dst));
     state.set_ctx_field_source(dst, Some(field.clone()));
+}
+
+pub(super) fn apply_store_ctx_field_inst(
+    target: &CtxStoreTarget,
+    val: &MirValue,
+    ty: &MirType,
+    probe_ctx: Option<&ProbeContext>,
+    state: &VerifierState,
+    slot_sizes: &HashMap<StackSlotId, i64>,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    if *ty != target.value_type() {
+        errors.push(VerifierTypeError::new(target.type_error_message(ty)));
+    }
+    match probe_ctx {
+        Some(ctx) => {
+            if let Err(err) = ctx.validate_ctx_store_target(target) {
+                errors.push(VerifierTypeError::new(err.to_string()));
+            }
+        }
+        None => errors.push(VerifierTypeError::new(target.missing_context_error())),
+    }
+    let val_ty = value_type(val, state, slot_sizes);
+    if !matches!(
+        val_ty,
+        VerifierType::Scalar | VerifierType::Bool | VerifierType::Unknown
+    ) {
+        errors.push(VerifierTypeError::new(format!(
+            "writable context fields require an integer-compatible scalar value, got {:?}",
+            val_ty
+        )));
+    }
 }
 
 pub(super) fn apply_read_str_inst(

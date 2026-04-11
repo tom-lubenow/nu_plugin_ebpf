@@ -5,6 +5,7 @@ use crate::compiler::mir::{
 };
 use std::collections::HashMap;
 
+mod context;
 mod core;
 mod helpers;
 mod kfuncs;

@@ -117,9 +117,13 @@ pub(super) fn apply_inst(
             apply_list_get_inst(*dst, *list, types, state, errors);
         }
         MirInst::LoadCtxField { dst, field, slot } => {
-            apply_load_ctx_field_inst(*dst, field, *slot, types, slot_sizes, state);
+            apply_load_ctx_field_inst(
+                *dst, field, *slot, probe_ctx, types, slot_sizes, state, errors,
+            );
         }
-        MirInst::StoreCtxField { .. } => {}
+        MirInst::StoreCtxField { target, val, ty } => {
+            apply_store_ctx_field_inst(target, val, ty, probe_ctx, state, slot_sizes, errors);
+        }
         MirInst::ReadStr {
             ptr, user_space, ..
         } => {

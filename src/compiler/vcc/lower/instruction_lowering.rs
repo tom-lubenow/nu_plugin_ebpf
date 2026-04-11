@@ -308,6 +308,7 @@ impl<'a> VccLowerer<'a> {
                 });
             }
             MirInst::LoadCtxField { dst, field, slot } => {
+                self.verify_ctx_field_load(field)?;
                 if slot.is_none() {
                     let key = Self::ctx_field_key(field);
                     if let Some(src) = self.entry_ctx_field_regs.get(&key).copied() {
@@ -401,7 +402,8 @@ impl<'a> VccLowerer<'a> {
                         .or_insert(VccReg(dst.0));
                 }
             }
-            MirInst::StoreCtxField { val, .. } => {
+            MirInst::StoreCtxField { target, val, ty } => {
+                self.verify_ctx_field_store(target, ty)?;
                 let value = self.lower_value(val, out);
                 out.push(VccInst::AssertScalar { value });
             }

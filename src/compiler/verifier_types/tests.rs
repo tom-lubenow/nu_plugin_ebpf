@@ -3,6 +3,7 @@ use crate::compiler::mir::{
     COUNTER_MAP_NAME, MapKind, MapRef, MirType, STRING_COUNTER_MAP_NAME, StackSlotKind,
 };
 
+mod context;
 mod helper_refs;
 mod helpers;
 mod kfuncs;

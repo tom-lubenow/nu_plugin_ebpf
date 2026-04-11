@@ -20,6 +20,8 @@ const MAX_INT_STRING_LEN: usize = 20;
 mod value_utils;
 #[path = "lower/helper_checks.rs"]
 mod helper_checks;
+#[path = "lower/context_checks.rs"]
+mod context_checks;
 #[path = "lower/instruction_lowering.rs"]
 mod instruction_lowering;
 
