@@ -307,6 +307,13 @@ fn test_program_type_return_action_aliases_cover_packet_len_aliases() {
 }
 
 #[test]
+fn test_program_type_uses_raw_tracepoint_arg_access() {
+    assert!(EbpfProgramType::RawTracepoint.uses_raw_tracepoint_args());
+    assert!(!EbpfProgramType::Kprobe.uses_raw_tracepoint_args());
+    assert!(!EbpfProgramType::TpBtf.uses_raw_tracepoint_args());
+}
+
+#[test]
 fn test_probe_context_socket_layouts_follow_program_model() {
     let cgroup_sock = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
     assert_eq!(

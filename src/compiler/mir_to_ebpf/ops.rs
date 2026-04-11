@@ -1,6 +1,6 @@
 use super::*;
+use crate::compiler::ProgramValueAccess;
 use crate::compiler::elf::{IngressIfindexContextLayout, SocketContextLayout};
-use crate::compiler::{EbpfProgramType, ProgramValueAccess};
 use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec};
 
 mod context;
@@ -1408,7 +1408,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                             &format!("ctx.arg{n}"),
                         )?;
                     }
-                    Some(ctx) if ctx.probe_type == EbpfProgramType::RawTracepoint => {
+                    Some(ctx) if ctx.probe_type.uses_raw_tracepoint_args() => {
                         let offset = Self::raw_tracepoint_arg_offset(n)?;
                         self.instructions
                             .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));

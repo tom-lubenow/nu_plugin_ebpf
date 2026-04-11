@@ -1,5 +1,5 @@
 use super::*;
-use crate::compiler::{EbpfProgramType, ProgramValueAccess};
+use crate::compiler::ProgramValueAccess;
 use crate::kernel_btf::TypeInfo;
 
 impl<'a> TypeInference<'a> {
@@ -395,7 +395,7 @@ impl<'a> TypeInference<'a> {
                 if self
                     .probe_ctx
                     .as_ref()
-                    .is_some_and(|ctx| ctx.probe_type == EbpfProgramType::RawTracepoint)
+                    .is_some_and(|ctx| ctx.probe_type.uses_raw_tracepoint_args())
                 {
                     return HMType::U64;
                 }

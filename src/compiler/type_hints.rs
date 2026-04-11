@@ -380,7 +380,7 @@ fn recover_ctx_field_hint(
             if ctx.probe_type.uses_btf_trampoline() {
                 let type_info = ctx.btf_arg_type_info(*idx as usize).ok().flatten()?;
                 runtime_trampoline_root_type(&type_info)
-            } else if ctx.probe_type == crate::compiler::EbpfProgramType::RawTracepoint {
+            } else if ctx.probe_type.uses_raw_tracepoint_args() {
                 Some(MirType::U64)
             } else if ctx.is_userspace() {
                 Some(pointer_hint(AddressSpace::User))

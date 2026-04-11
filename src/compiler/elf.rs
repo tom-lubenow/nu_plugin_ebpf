@@ -710,6 +710,10 @@ impl EbpfProgramType {
         )
     }
 
+    pub fn uses_raw_tracepoint_args(&self) -> bool {
+        matches!(self.arg_access(), ProgramValueAccess::RawTracepoint)
+    }
+
     /// Returns true if this runs at function return time.
     pub fn is_return_probe(&self) -> bool {
         !matches!(self.retval_access(), ProgramValueAccess::None)

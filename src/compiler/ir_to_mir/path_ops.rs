@@ -1,5 +1,4 @@
 use super::*;
-use crate::compiler::EbpfProgramType;
 use crate::compiler::mir::AddressSpace;
 use crate::kernel_btf::{TrampolineFieldSelector, TrampolineValueKind};
 
@@ -700,7 +699,7 @@ impl<'a> HirToMirLowering<'a> {
             CtxField::Arg(_)
                 if self
                     .probe_ctx
-                    .is_some_and(|ctx| ctx.probe_type == EbpfProgramType::RawTracepoint) =>
+                    .is_some_and(|ctx| ctx.probe_type.uses_raw_tracepoint_args()) =>
             {
                 (MirType::U64, Some(MirType::U64))
             }
