@@ -1890,6 +1890,28 @@ fn find_function_trampoline_named_root_candidate() -> Option<(String, String)> {
     None
 }
 
+fn find_function_trampoline_named_pointer_index_candidate() -> Option<(String, String)> {
+    for (function_name, arg_name) in [("do_close_on_exec", "files")] {
+        let path = [
+            TrampolineFieldSelector::Field("fdt".to_string()),
+            TrampolineFieldSelector::Field("fd".to_string()),
+            TrampolineFieldSelector::Index(0),
+            TrampolineFieldSelector::Field("f_inode".to_string()),
+            TrampolineFieldSelector::Field("i_ino".to_string()),
+        ];
+        if let Ok(Some(arg_idx)) =
+            KernelBtf::get().function_trampoline_arg_index_by_name(function_name, arg_name)
+            && matches!(
+                KernelBtf::get().function_trampoline_arg_field(function_name, arg_idx, &path),
+                Ok(Some(_))
+            )
+        {
+            return Some((function_name.to_string(), arg_name.to_string()));
+        }
+    }
+    None
+}
+
 fn find_tp_btf_named_projection_candidate() -> Option<(String, String, String)> {
     for (tracepoint_name, arg_name, field_name) in [
         ("sys_enter", "regs", "orig_ax"),
@@ -4261,6 +4283,57 @@ fn test_recover_optimized_type_hints_for_direct_pointer_index_projection() {
 }
 
 #[test]
+fn test_recover_optimized_type_hints_for_named_direct_pointer_index_projection() {
+    let Some((function_name, arg_name)) = find_function_trampoline_named_pointer_index_candidate()
+    else {
+        return;
+    };
+
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("arg"),
+            string_member(&arg_name),
+            string_member("fdt"),
+            string_member("fd"),
+            PathMember::Int {
+                val: 0,
+                span: Span::test_data(),
+                optional: false,
+            },
+            string_member("f_inode"),
+            string_member("i_ino"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, &function_name);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("named direct pointer-index projection should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized named direct pointer-index projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_recover_optimized_type_hints_for_bound_pointer_index_projection() {
     let hir = make_bound_ctx_path_program(
         CellPath {
@@ -4312,6 +4385,63 @@ fn test_recover_optimized_type_hints_for_bound_pointer_index_projection() {
 }
 
 #[test]
+fn test_recover_optimized_type_hints_for_named_bound_pointer_index_projection() {
+    let Some((function_name, arg_name)) = find_function_trampoline_named_pointer_index_candidate()
+    else {
+        return;
+    };
+
+    let hir = make_bound_ctx_path_program(
+        CellPath {
+            members: vec![
+                string_member("arg"),
+                string_member(&arg_name),
+                string_member("fdt"),
+                string_member("fd"),
+            ],
+        },
+        CellPath {
+            members: vec![
+                PathMember::Int {
+                    val: 0,
+                    span: Span::test_data(),
+                    optional: false,
+                },
+                string_member("f_inode"),
+                string_member("i_ino"),
+            ],
+        },
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, &function_name);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("named bound pointer-index projection should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized named bound pointer-index projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_recover_optimized_type_hints_for_bound_numeric_get_projection() {
     let hir = make_bound_ctx_get_program(
         CellPath {
@@ -4354,6 +4484,58 @@ fn test_recover_optimized_type_hints_for_bound_numeric_get_projection() {
         Some(&lowering.type_hints),
     )
     .expect("optimized bound numeric get projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_recover_optimized_type_hints_for_named_bound_numeric_get_projection() {
+    let Some((function_name, arg_name)) = find_function_trampoline_named_pointer_index_candidate()
+    else {
+        return;
+    };
+
+    let hir = make_bound_ctx_get_program(
+        CellPath {
+            members: vec![
+                string_member("arg"),
+                string_member(&arg_name),
+                string_member("fdt"),
+                string_member("fd"),
+            ],
+        },
+        CellPath {
+            members: vec![string_member("f_inode"), string_member("i_ino")],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, &function_name);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "get".to_string());
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("named bound numeric get projection should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized named bound numeric get projection should compile");
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
@@ -4407,6 +4589,66 @@ fn test_recover_optimized_type_hints_for_branch_refined_bound_numeric_get_projec
         Some(&lowering.type_hints),
     )
     .expect("optimized branch-refined bound numeric get projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_recover_optimized_type_hints_for_named_branch_refined_bound_numeric_get_projection() {
+    let Some((function_name, arg_name)) = find_function_trampoline_named_pointer_index_candidate()
+    else {
+        return;
+    };
+
+    let hir = make_branch_refined_bound_ctx_get_program(
+        CellPath {
+            members: vec![
+                string_member("arg"),
+                string_member(&arg_name),
+                string_member("fdt"),
+                string_member("max_fds"),
+            ],
+        },
+        CellPath {
+            members: vec![
+                string_member("arg"),
+                string_member(&arg_name),
+                string_member("fdt"),
+                string_member("fd"),
+            ],
+        },
+        CellPath {
+            members: vec![string_member("f_inode"), string_member("i_ino")],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, &function_name);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "get".to_string());
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("named branch-refined bound numeric get projection should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized named branch-refined bound numeric get projection should compile");
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
