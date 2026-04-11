@@ -421,6 +421,40 @@ fn test_lower_cgroup_sock_post_bind_ctx_socket_src_port_field() {
 }
 
 #[test]
+fn test_lower_ctx_pid_type_hint_is_u32() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("pid")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("ctx.pid should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    let pid_vreg = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::LoadCtxField {
+                dst,
+                field: CtxField::Pid,
+                ..
+            } => Some(*dst),
+            _ => None,
+        })
+        .expect("expected ctx.pid load");
+
+    assert_eq!(result.type_hints.main.get(&pid_vreg), Some(&MirType::U32));
+}
+
+#[test]
 fn test_lower_cgroup_sock_create_ctx_socket_src_port_rejected() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("sk"), string_member("src_port")],

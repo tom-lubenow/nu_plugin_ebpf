@@ -673,7 +673,7 @@ impl<'a> HirToMirLowering<'a> {
                 (semantic_ty, Some(runtime_ty))
             }
             CtxField::Pid | CtxField::Tid | CtxField::Uid | CtxField::Gid => {
-                (MirType::I32, Some(MirType::I32))
+                (MirType::U32, Some(MirType::U32))
             }
             CtxField::CgroupId => (MirType::U64, Some(MirType::U64)),
             CtxField::Cpu
