@@ -151,7 +151,7 @@ Near-term priority order:
 - [~] Expand program type support beyond probes.
   - Add program-type-aware compile targets (section naming, context type, helper set, attach/load path).
   - Keep tracing as one target among many instead of the default architecture.
-  - Recent progress: `ProgramSpec` now owns typed target parsing and section-name derivation shared by the loader and compiler, removing another raw-target special-case path from ELF emission.
+  - Recent progress: `ProgramSpec` now owns typed target parsing plus section-name/attach input derivation shared by loader, compiler, and attach paths, removing another raw-target special-case layer from ELF emission/runtime loading.
 
 - [~] Generalize context modeling by program type.
   - Replace tracing-centric context fields with per-program typed context schemas.

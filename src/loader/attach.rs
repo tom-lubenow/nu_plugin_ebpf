@@ -80,6 +80,7 @@ impl EbpfState {
             .ok_or_else(|| LoadError::ProgramNotFound(program.name.clone()))?;
 
         let mut owned_socket = None;
+        let spec = ProgramSpec::from_program_type_target(program.prog_type, &program.target)?;
 
         // Attach based on program type
         match program.prog_type.attach_kind() {
@@ -146,15 +147,9 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach tp_btf: {e}")))?;
             }
             ProgramAttachKind::Tracepoint => {
-                // Tracepoint target format: "category/name" (e.g., "syscalls/sys_enter_openat")
-                let parts: Vec<&str> = program.target.splitn(2, '/').collect();
-                if parts.len() != 2 {
-                    return Err(LoadError::Load(format!(
-                        "Invalid tracepoint target: {}. Expected format: category/name",
-                        program.target
-                    )));
-                }
-                let (category, name) = (parts[0], parts[1]);
+                let ProgramSpec::Tracepoint { category, name } = &spec else {
+                    unreachable!("tracepoint attach kind must use tracepoint program spec");
+                };
 
                 let tracepoint: &mut TracePoint = prog.try_into().map_err(|e| {
                     LoadError::Load(format!("Failed to convert to TracePoint: {e}"))
@@ -179,8 +174,10 @@ impl EbpfState {
                 })?;
             }
             ProgramAttachKind::Uprobe | ProgramAttachKind::Uretprobe => {
-                // Uprobe target format: /path/to/binary:function_name or /path/to/binary:0x1234
-                let target = UprobeTarget::parse(&program.target)?;
+                let (ProgramSpec::Uprobe { target } | ProgramSpec::Uretprobe { target }) = &spec
+                else {
+                    unreachable!("uprobe attach kind must use uprobe program spec");
+                };
                 let uprobe: &mut UProbe = prog.try_into().map_err(|e| {
                     LoadError::Load(format!(
                         "Failed to convert to {}: {e}",
@@ -229,7 +226,9 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach xdp: {e}")))?;
             }
             ProgramAttachKind::PerfEvent => {
-                let target = PerfEventTarget::parse(&program.target)?;
+                let ProgramSpec::PerfEvent { target } = &spec else {
+                    unreachable!("perf_event attach kind must use perf_event program spec");
+                };
                 let perf_event: &mut PerfEvent = prog
                     .try_into()
                     .map_err(|e| LoadError::Load(format!("Failed to convert to PerfEvent: {e}")))?;
@@ -375,7 +374,9 @@ impl EbpfState {
                 }
             }
             ProgramAttachKind::SocketFilter => {
-                let target = SocketFilterTarget::parse(&program.target)?;
+                let ProgramSpec::SocketFilter { target } = &spec else {
+                    unreachable!("socket_filter attach kind must use socket_filter program spec");
+                };
                 let socket_filter: &mut SocketFilter = prog.try_into().map_err(|e| {
                     LoadError::Load(format!("Failed to convert to SocketFilter: {e}"))
                 })?;
@@ -428,7 +429,9 @@ impl EbpfState {
                 }
             }
             ProgramAttachKind::SkLookup => {
-                let target = SkLookupTarget::parse(&program.target)?;
+                let ProgramSpec::SkLookup { target } = &spec else {
+                    unreachable!("sk_lookup attach kind must use sk_lookup program spec");
+                };
                 let netns = std::fs::File::open(&target.netns_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied
@@ -450,7 +453,9 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach sk_lookup: {e}")))?;
             }
             ProgramAttachKind::SkMsg => {
-                let target = SkMsgTarget::parse(&program.target)?;
+                let ProgramSpec::SkMsg { target } = &spec else {
+                    unreachable!("sk_msg attach kind must use sk_msg program spec");
+                };
                 let map = MapData::from_pin(&target.map_path).map_err(|e| {
                     LoadError::Attach(format!(
                         "Failed to open pinned sockmap {}: {e}",
@@ -483,7 +488,9 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach sk_msg: {e}")))?;
             }
             ProgramAttachKind::SkSkb => {
-                let target = SkSkbTarget::parse(&program.target)?;
+                let ProgramSpec::SkSkb { target } = &spec else {
+                    unreachable!("sk_skb attach kind must use sk_skb program spec");
+                };
                 let map = MapData::from_pin(&target.map_path).map_err(|e| {
                     LoadError::Attach(format!(
                         "Failed to open pinned sockmap {}: {e}",
@@ -516,7 +523,9 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach sk_skb: {e}")))?;
             }
             ProgramAttachKind::SkSkbParser => {
-                let target = SkSkbTarget::parse(&program.target)?;
+                let ProgramSpec::SkSkbParser { target } = &spec else {
+                    unreachable!("sk_skb_parser attach kind must use sk_skb_parser program spec");
+                };
                 let map = MapData::from_pin(&target.map_path).map_err(|e| {
                     LoadError::Attach(format!(
                         "Failed to open pinned sockmap {}: {e}",
@@ -549,7 +558,9 @@ impl EbpfState {
                 })?;
             }
             ProgramAttachKind::CgroupDevice => {
-                let target = CgroupDeviceTarget::parse(&program.target)?;
+                let ProgramSpec::CgroupDevice { target } = &spec else {
+                    unreachable!("cgroup_device attach kind must use cgroup_device program spec");
+                };
                 let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied
@@ -573,7 +584,9 @@ impl EbpfState {
                     })?;
             }
             ProgramAttachKind::SockOps => {
-                let target = SockOpsTarget::parse(&program.target)?;
+                let ProgramSpec::SockOps { target } = &spec else {
+                    unreachable!("sock_ops attach kind must use sock_ops program spec");
+                };
                 let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied
@@ -595,7 +608,9 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach sock_ops: {e}")))?;
             }
             ProgramAttachKind::Tc => {
-                let target = TcTarget::parse(&program.target)?;
+                let ProgramSpec::Tc { target } = &spec else {
+                    unreachable!("tc attach kind must use tc program spec");
+                };
                 let classifier: &mut SchedClassifier = prog.try_into().map_err(|e| {
                     LoadError::Load(format!("Failed to convert to SchedClassifier: {e}"))
                 })?;
@@ -617,7 +632,9 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach tc: {e}")))?;
             }
             ProgramAttachKind::CgroupSkb => {
-                let target = CgroupSkbTarget::parse(&program.target)?;
+                let ProgramSpec::CgroupSkb { target } = &spec else {
+                    unreachable!("cgroup_skb attach kind must use cgroup_skb program spec");
+                };
                 let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied
@@ -639,7 +656,9 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach cgroup_skb: {e}")))?;
             }
             ProgramAttachKind::CgroupSock => {
-                let target = CgroupSockTarget::parse(&program.target)?;
+                let ProgramSpec::CgroupSock { target } = &spec else {
+                    unreachable!("cgroup_sock attach kind must use cgroup_sock program spec");
+                };
                 let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied
@@ -661,13 +680,16 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach cgroup_sock: {e}")))?;
             }
             ProgramAttachKind::CgroupSysctl => {
-                let cgroup = std::fs::File::open(&program.target).map_err(|e| {
+                let ProgramSpec::CgroupSysctl { cgroup_path } = &spec else {
+                    unreachable!("cgroup_sysctl attach kind must use cgroup_sysctl program spec");
+                };
+                let cgroup = std::fs::File::open(cgroup_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied
                     } else {
                         LoadError::Attach(format!(
                             "Failed to open cgroup path {}: {e}",
-                            program.target
+                            cgroup_path
                         ))
                     }
                 })?;
@@ -684,7 +706,9 @@ impl EbpfState {
                     })?;
             }
             ProgramAttachKind::CgroupSockopt => {
-                let target = CgroupSockoptTarget::parse(&program.target)?;
+                let ProgramSpec::CgroupSockopt { target } = &spec else {
+                    unreachable!("cgroup_sockopt attach kind must use cgroup_sockopt program spec");
+                };
                 let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied
@@ -708,7 +732,11 @@ impl EbpfState {
                     })?;
             }
             ProgramAttachKind::CgroupSockAddr => {
-                let target = CgroupSockAddrTarget::parse(&program.target)?;
+                let ProgramSpec::CgroupSockAddr { target } = &spec else {
+                    unreachable!(
+                        "cgroup_sock_addr attach kind must use cgroup_sock_addr program spec"
+                    );
+                };
                 let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied
@@ -732,7 +760,9 @@ impl EbpfState {
                     })?;
             }
             ProgramAttachKind::LircMode2 => {
-                let target = LircMode2Target::parse(&program.target)?;
+                let ProgramSpec::LircMode2 { target } = &spec else {
+                    unreachable!("lirc_mode2 attach kind must use lirc_mode2 program spec");
+                };
                 let device = std::fs::File::open(&target.device_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied
