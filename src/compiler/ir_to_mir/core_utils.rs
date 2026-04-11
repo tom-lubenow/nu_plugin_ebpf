@@ -523,6 +523,42 @@ impl<'a> HirToMirLowering<'a> {
         self.named_program_global_semantics.get(name)
     }
 
+    fn tracked_value_semantics(
+        &self,
+        src: RegId,
+        constant_value: Option<&Value>,
+    ) -> Result<Option<AnnotatedValueSemantics>, CompileError> {
+        if let Some(value) = constant_value {
+            return Self::mutable_global_value_semantics(value);
+        }
+
+        let Some(meta) = self.get_metadata(src) else {
+            return Ok(None);
+        };
+
+        if let Some(semantics) = meta.annotated_semantics.clone() {
+            return Ok(Some(semantics));
+        }
+
+        if let Some((_, max_len)) = meta.list_buffer {
+            return Ok(Some(AnnotatedValueSemantics::NumericList { max_len }));
+        }
+
+        if let Some(slot) = meta.string_slot {
+            let slot_len = self.stack_slot_size(slot).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "string slot not found during global value semantics inference".into(),
+                )
+            })?;
+            return Ok(Some(AnnotatedValueSemantics::String {
+                slot_len,
+                content_cap: meta.string_len_bound.unwrap_or(slot_len.saturating_sub(1)),
+            }));
+        }
+
+        Ok(None)
+    }
+
     fn typed_named_program_global_layout(
         symbol: String,
         spec: &str,
@@ -935,11 +971,7 @@ impl<'a> HirToMirLowering<'a> {
         let source_constant_value = self
             .get_metadata(src)
             .and_then(|meta| meta.constant_value.clone());
-        let value_semantics = source_constant_value
-            .as_ref()
-            .map(Self::mutable_global_value_semantics)
-            .transpose()?
-            .flatten();
+        let value_semantics = self.tracked_value_semantics(src, source_constant_value.as_ref())?;
         let constant_value = if initialize_from_constant {
             source_constant_value.clone()
         } else {
