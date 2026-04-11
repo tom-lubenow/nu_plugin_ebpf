@@ -1,5 +1,5 @@
 use super::*;
-use crate::compiler::elf::SocketContextLayout;
+use crate::compiler::elf::{IngressIfindexContextLayout, SocketContextLayout};
 use crate::compiler::{EbpfProgramType, ProgramValueAccess};
 use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec};
 
@@ -716,25 +716,19 @@ impl<'a> MirToEbpfCompiler<'a> {
                 };
             }
             CtxField::IngressIfindex => {
-                let ingress_ifindex_offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type)
+                let ingress_ifindex_offset = match self
+                    .probe_ctx
+                    .as_ref()
+                    .and_then(|ctx| ctx.ingress_ifindex_context_layout())
                 {
-                    Some(EbpfProgramType::SkLookup) => Self::bpf_sk_lookup_offsets().9,
-                    _ => match self.packet_context_kind()? {
-                        PacketContextKind::XdpMd => Self::xdp_md_offsets().3,
-                        PacketContextKind::SkBuff => Self::sk_buff_offsets().3,
-                        PacketContextKind::SkMsg => {
-                            return Err(CompileError::UnsupportedInstruction(
-                                "ctx.ingress_ifindex is not available on sk_msg programs"
-                                    .to_string(),
-                            ));
-                        }
-                        PacketContextKind::SockOps => {
-                            return Err(CompileError::UnsupportedInstruction(
-                                "ctx.ingress_ifindex is not available on sock_ops programs"
-                                    .to_string(),
-                            ));
-                        }
-                    },
+                    Some(IngressIfindexContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().9,
+                    Some(IngressIfindexContextLayout::XdpMd) => Self::xdp_md_offsets().3,
+                    Some(IngressIfindexContextLayout::SkBuff) => Self::sk_buff_offsets().3,
+                    None => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.ingress_ifindex is only available on xdp, socket_filter, tc, cgroup_skb, sk_lookup, sk_skb, and sk_skb_parser programs".to_string(),
+                        ));
+                    }
                 };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, ingress_ifindex_offset));
@@ -920,40 +914,50 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::SockMark => {
-                let offset = if matches!(
-                    self.probe_ctx.as_ref().map(|ctx| ctx.probe_type),
-                    Some(EbpfProgramType::CgroupSock)
-                ) {
-                    Self::bpf_sock_offsets().4
-                } else {
-                    match self.packet_context_kind()? {
-                        PacketContextKind::SkBuff => Self::sk_buff_mark_priority_offsets().0,
-                        _ => {
-                            return Err(CompileError::UnsupportedInstruction(
-                                "ctx.mark is only available on cgroup_sock and skb-backed packet programs"
-                                    .to_string(),
-                            ));
-                        }
+                let offset = match self
+                    .probe_ctx
+                    .as_ref()
+                    .and_then(|ctx| ctx.sock_mark_priority_context_layout())
+                {
+                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().4,
+                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_mark_priority_offsets().0,
+                    Some(
+                        SocketContextLayout::SockAddr
+                        | SocketContextLayout::CgroupSockopt
+                        | SocketContextLayout::SkLookup
+                        | SocketContextLayout::SkMsg
+                        | SocketContextLayout::SockOps,
+                    )
+                    | None => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.mark is only available on cgroup_sock and skb-backed packet programs"
+                                .to_string(),
+                        ));
                     }
                 };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::SockPriority => {
-                let offset = if matches!(
-                    self.probe_ctx.as_ref().map(|ctx| ctx.probe_type),
-                    Some(EbpfProgramType::CgroupSock)
-                ) {
-                    Self::bpf_sock_offsets().5
-                } else {
-                    match self.packet_context_kind()? {
-                        PacketContextKind::SkBuff => Self::sk_buff_mark_priority_offsets().1,
-                        _ => {
-                            return Err(CompileError::UnsupportedInstruction(
-                                "ctx.priority is only available on cgroup_sock and skb-backed packet programs"
-                                    .to_string(),
-                            ));
-                        }
+                let offset = match self
+                    .probe_ctx
+                    .as_ref()
+                    .and_then(|ctx| ctx.sock_mark_priority_context_layout())
+                {
+                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().5,
+                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_mark_priority_offsets().1,
+                    Some(
+                        SocketContextLayout::SockAddr
+                        | SocketContextLayout::CgroupSockopt
+                        | SocketContextLayout::SkLookup
+                        | SocketContextLayout::SkMsg
+                        | SocketContextLayout::SockOps,
+                    )
+                    | None => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.priority is only available on cgroup_sock and skb-backed packet programs"
+                                .to_string(),
+                        ));
                     }
                 };
                 self.instructions

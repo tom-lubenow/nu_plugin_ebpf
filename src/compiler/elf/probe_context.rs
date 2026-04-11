@@ -1,6 +1,6 @@
 use super::{
-    CompileError, CtxField, EbpfProgramType, ProbeContext, ProgramTargetKind, ProgramValueAccess,
-    SocketContextLayout,
+    CompileError, CtxField, EbpfProgramType, IngressIfindexContextLayout, ProbeContext,
+    ProgramTargetKind, ProgramValueAccess, SocketContextLayout,
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::kernel_btf::{
@@ -147,6 +147,31 @@ impl ProbeContext {
             EbpfProgramType::CgroupSockopt => Some(SocketContextLayout::CgroupSockopt),
             EbpfProgramType::SkLookup => Some(SocketContextLayout::SkLookup),
             EbpfProgramType::SkMsg => Some(SocketContextLayout::SkMsg),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn ingress_ifindex_context_layout(&self) -> Option<IngressIfindexContextLayout> {
+        match self.probe_type {
+            EbpfProgramType::Xdp => Some(IngressIfindexContextLayout::XdpMd),
+            EbpfProgramType::SocketFilter
+            | EbpfProgramType::Tc
+            | EbpfProgramType::CgroupSkb
+            | EbpfProgramType::SkSkb
+            | EbpfProgramType::SkSkbParser => Some(IngressIfindexContextLayout::SkBuff),
+            EbpfProgramType::SkLookup => Some(IngressIfindexContextLayout::SkLookup),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn sock_mark_priority_context_layout(&self) -> Option<SocketContextLayout> {
+        match self.probe_type {
+            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
+            EbpfProgramType::SocketFilter
+            | EbpfProgramType::Tc
+            | EbpfProgramType::CgroupSkb
+            | EbpfProgramType::SkSkb
+            | EbpfProgramType::SkSkbParser => Some(SocketContextLayout::SkBuff),
             _ => None,
         }
     }

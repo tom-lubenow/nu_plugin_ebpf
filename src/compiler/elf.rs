@@ -1078,6 +1078,13 @@ pub(crate) enum SocketContextLayout {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum IngressIfindexContextLayout {
+    XdpMd,
+    SkBuff,
+    SkLookup,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProgramIntrinsic {
     Emit,
     Count,

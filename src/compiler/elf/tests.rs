@@ -356,6 +356,48 @@ fn test_probe_context_socket_ref_layouts_follow_program_model() {
 }
 
 #[test]
+fn test_probe_context_ingress_ifindex_layouts_follow_program_model() {
+    let xdp = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    assert_eq!(
+        xdp.ingress_ifindex_context_layout(),
+        Some(IngressIfindexContextLayout::XdpMd)
+    );
+
+    let sk_lookup = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    assert_eq!(
+        sk_lookup.ingress_ifindex_context_layout(),
+        Some(IngressIfindexContextLayout::SkLookup)
+    );
+
+    let sk_skb = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+    assert_eq!(
+        sk_skb.ingress_ifindex_context_layout(),
+        Some(IngressIfindexContextLayout::SkBuff)
+    );
+
+    let sk_msg = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+    assert_eq!(sk_msg.ingress_ifindex_context_layout(), None);
+}
+
+#[test]
+fn test_probe_context_sock_mark_priority_layouts_follow_program_model() {
+    let cgroup_sock = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+    assert_eq!(
+        cgroup_sock.sock_mark_priority_context_layout(),
+        Some(SocketContextLayout::CgroupSock)
+    );
+
+    let tc = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    assert_eq!(
+        tc.sock_mark_priority_context_layout(),
+        Some(SocketContextLayout::SkBuff)
+    );
+
+    let sock_ops = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    assert_eq!(sock_ops.sock_mark_priority_context_layout(), None);
+}
+
+#[test]
 fn test_program_type_metadata_for_cgroup_device() {
     let info = EbpfProgramType::CgroupDevice.info();
     assert_eq!(info.canonical_prefix, "cgroup_device");
