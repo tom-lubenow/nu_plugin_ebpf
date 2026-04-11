@@ -241,12 +241,18 @@ impl<'a> TypeInference<'a> {
         let Some(field) = trace_ctx.get_field(name) else {
             return Ok(None);
         };
-        Ok(match &field.type_info {
-            TypeInfo::Int { .. } | TypeInfo::Ptr { .. } => {
-                Self::hm_type_from_type_info(&field.type_info)
-            }
-            _ => None,
-        })
+        Ok(Some(match &field.type_info {
+            TypeInfo::Struct { .. } | TypeInfo::Array { .. } => HMType::Ptr {
+                pointee: Box::new(Self::hm_type_from_type_info(&field.type_info).unwrap_or(
+                    HMType::Array {
+                        elem: Box::new(HMType::U8),
+                        len: field.type_info.size(),
+                    },
+                )),
+                address_space: AddressSpace::Stack,
+            },
+            _ => Self::hm_type_from_type_info(&field.type_info).unwrap_or(HMType::I64),
+        }))
     }
 
     pub(super) fn validate_ctx_field_access(&self, field: &CtxField) -> Result<(), TypeError> {

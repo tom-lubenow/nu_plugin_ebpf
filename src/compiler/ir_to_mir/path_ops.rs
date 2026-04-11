@@ -1,8 +1,52 @@
 use super::*;
 use crate::compiler::mir::AddressSpace;
-use crate::kernel_btf::{TrampolineFieldSelector, TrampolineValueKind};
+use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TrampolineValueKind, TypeInfo};
 
 impl<'a> HirToMirLowering<'a> {
+    fn tracepoint_root_field_types(
+        &self,
+        name: &str,
+    ) -> Result<Option<(MirType, MirType)>, CompileError> {
+        let Some(ctx) = self.probe_ctx else {
+            return Ok(None);
+        };
+        let Some((category, tp_name)) = ctx.tracepoint_parts() else {
+            return Ok(None);
+        };
+        let Ok(trace_ctx) = KernelBtf::get().get_tracepoint_context(&category, &tp_name) else {
+            return Ok(None);
+        };
+        let Some(field) = trace_ctx.get_field(name) else {
+            return Ok(None);
+        };
+
+        let types = match &field.type_info {
+            TypeInfo::Struct { .. } | TypeInfo::Array { .. } => {
+                let Some(semantic_ty) = Self::projected_trampoline_field_type(&field.type_info)
+                    .or_else(|| {
+                        (field.size > 0).then(|| MirType::Array {
+                            elem: Box::new(MirType::U8),
+                            len: field.size,
+                        })
+                    })
+                else {
+                    return Ok(None);
+                };
+                let runtime_ty = MirType::Ptr {
+                    pointee: Box::new(semantic_ty.clone()),
+                    address_space: AddressSpace::Stack,
+                };
+                Some((semantic_ty, runtime_ty))
+            }
+            _ => {
+                let ty =
+                    Self::projected_trampoline_field_type(&field.type_info).unwrap_or(MirType::I64);
+                Some((ty.clone(), ty))
+            }
+        };
+        Ok(types)
+    }
+
     pub(super) fn lower_dynamic_typed_numeric_get(
         &mut self,
         dst_reg: RegId,
@@ -482,10 +526,28 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        let tracepoint_root_types = match &ctx_field {
+            CtxField::TracepointField(name) => self.tracepoint_root_field_types(name)?,
+            _ => None,
+        };
         let slot = trampoline_value_spec
             .and_then(|spec| match spec.kind {
                 TrampolineValueKind::Aggregate { size_bytes } => Some(self.func.alloc_stack_slot(
                     align_to_eight(size_bytes),
+                    8,
+                    StackSlotKind::Local,
+                )),
+                _ => None,
+            })
+            .or_else(|| match tracepoint_root_types.as_ref() {
+                Some((
+                    semantic_ty,
+                    MirType::Ptr {
+                        address_space: AddressSpace::Stack,
+                        ..
+                    },
+                )) => Some(self.func.alloc_stack_slot(
+                    align_to_eight(semantic_ty.size()),
                     8,
                     StackSlotKind::Local,
                 )),
@@ -548,6 +610,19 @@ impl<'a> HirToMirLowering<'a> {
                     },
                 },
             );
+        }
+        if let (
+            Some(slot),
+            Some((
+                semantic_ty,
+                MirType::Ptr {
+                    address_space: AddressSpace::Stack,
+                    ..
+                },
+            )),
+        ) = (slot, tracepoint_root_types.as_ref())
+        {
+            self.record_stack_slot_type(slot, semantic_ty.clone());
         }
         self.emit(MirInst::LoadCtxField {
             dst: dst_vreg,
@@ -703,6 +778,9 @@ impl<'a> HirToMirLowering<'a> {
             {
                 (MirType::U64, Some(MirType::U64))
             }
+            CtxField::TracepointField(_) => tracepoint_root_types
+                .map(|(semantic_ty, runtime_ty)| (semantic_ty, Some(runtime_ty)))
+                .unwrap_or((MirType::I64, None)),
             _ => precise_trampoline_types
                 .map(|(semantic_ty, runtime_ty)| (semantic_ty, Some(runtime_ty)))
                 .unwrap_or_else(|| match trampoline_value_spec.map(|spec| spec.kind) {

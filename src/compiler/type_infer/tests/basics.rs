@@ -520,6 +520,40 @@ fn test_infer_tracepoint_filename_field_is_kernel_pointer() {
 }
 
 #[test]
+fn test_infer_tracepoint_args_field_is_stack_backed_array() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+    let expected_pointee = KernelBtf::get()
+        .get_tracepoint_context("syscalls", "sys_enter_openat")
+        .unwrap()
+        .get_field("args")
+        .and_then(|field| mir_type_from_type_info(&field.type_info))
+        .expect("expected concrete args field type");
+    let slot = func.alloc_stack_slot(expected_pointee.size(), 8, StackSlotKind::Local);
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::TracepointField("args".to_string()),
+            slot: Some(slot),
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "syscalls/sys_enter_openat");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(
+        types.get(&v0),
+        Some(&MirType::Ptr {
+            pointee: Box::new(expected_pointee),
+            address_space: AddressSpace::Stack,
+        })
+    );
+}
+
+#[test]
 fn test_type_error_kretprobe_arg_is_rejected() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();

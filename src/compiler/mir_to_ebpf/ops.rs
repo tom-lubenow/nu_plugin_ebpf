@@ -1,7 +1,7 @@
 use super::*;
 use crate::compiler::ProgramValueAccess;
 use crate::compiler::elf::{IngressIfindexContextLayout, SocketContextLayout};
-use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec};
+use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec, TypeInfo};
 
 mod context;
 
@@ -1506,7 +1506,42 @@ impl<'a> MirToEbpfCompiler<'a> {
 
                 // Load the field from the context struct
                 // R9 contains the saved context pointer (tracepoint context struct)
-                let offset = field_info.offset as i16;
+                let offset = i16::try_from(field_info.offset).map_err(|_| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "tracepoint field '{}' offset {} is too large",
+                        name, field_info.offset
+                    ))
+                })?;
+
+                if matches!(
+                    field_info.type_info,
+                    TypeInfo::Struct { .. } | TypeInfo::Array { .. }
+                ) {
+                    let slot = slot.ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "ctx.{} requires a stack backing slot",
+                            name
+                        ))
+                    })?;
+                    let dst_offset = self.slot_offset_i16(slot, 0)?;
+                    let aligned_size = field_info.size.div_ceil(8) * 8;
+                    if aligned_size > field_info.size {
+                        self.emit_zero_bytes(EbpfReg::R10, dst_offset, aligned_size, EbpfReg::R0)?;
+                    }
+                    self.emit_copy_bytes(
+                        EbpfReg::R9,
+                        offset,
+                        EbpfReg::R10,
+                        dst_offset,
+                        field_info.size,
+                        EbpfReg::R0,
+                    )?;
+                    self.instructions
+                        .push(EbpfInsn::mov64_reg(dst, EbpfReg::R10));
+                    self.instructions
+                        .push(EbpfInsn::add64_imm(dst, dst_offset as i32));
+                    return Ok(());
+                }
 
                 // Choose load instruction based on field size
                 match field_info.size {

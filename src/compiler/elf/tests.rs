@@ -1828,6 +1828,22 @@ fn test_program_type_resolves_sock_ops_field_names() {
 }
 
 #[test]
+fn test_probe_context_prefers_tracepoint_fields_over_reserved_sock_ops_names() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "syscalls/sys_enter_openat");
+
+    assert_eq!(
+        ctx.resolve_ctx_field_name("op")
+            .expect("tracepoint op should stay tracepoint-scoped"),
+        CtxField::TracepointField("op".to_string())
+    );
+    assert_eq!(
+        ctx.resolve_ctx_field_name("args")
+            .expect("tracepoint args should stay tracepoint-scoped"),
+        CtxField::TracepointField("args".to_string())
+    );
+}
+
+#[test]
 fn test_probe_context_rejects_arg_on_tracepoint() {
     let ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "syscalls/sys_enter_openat");
     let err = ctx

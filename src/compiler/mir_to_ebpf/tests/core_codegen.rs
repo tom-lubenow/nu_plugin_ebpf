@@ -1857,6 +1857,83 @@ fn test_compile_sock_ops_args_load_copies_four_words_into_stack_slot() {
 }
 
 #[test]
+fn test_compile_tracepoint_args_load_copies_into_backing_slot() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "syscalls/sys_enter_openat");
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(48, 8, StackSlotKind::Local);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::LoadCtxField {
+            dst,
+            field: CtxField::TracepointField("args".to_string()),
+            slot: Some(slot),
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    let dst_reg = compiler
+        .vreg_to_phys
+        .get(&dst)
+        .copied()
+        .expect("destination vreg should be assigned a physical register");
+    let slot_offset = *compiler
+        .slot_offsets
+        .get(&slot)
+        .expect("stack slot should have an assigned offset");
+
+    let load_offsets: Vec<i16> = compiler
+        .instructions
+        .iter()
+        .filter(|insn| {
+            insn.opcode == opcode::BPF_LDX | opcode::BPF_DW | opcode::BPF_MEM
+                && insn.src_reg == EbpfReg::R9.as_u8()
+        })
+        .map(|insn| insn.offset)
+        .collect();
+    assert_eq!(load_offsets, vec![16, 24, 32, 40, 48, 56]);
+
+    let store_count = compiler
+        .instructions
+        .iter()
+        .filter(|insn| {
+            insn.opcode == opcode::BPF_STX | opcode::BPF_DW | opcode::BPF_MEM
+                && insn.dst_reg == EbpfReg::R10.as_u8()
+        })
+        .count();
+    let saw_stack_addr = compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::MOV64_REG
+            && insn.dst_reg == dst_reg.as_u8()
+            && insn.src_reg == EbpfReg::R10.as_u8()
+    }) && compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::ADD64_IMM
+            && insn.dst_reg == dst_reg.as_u8()
+            && insn.imm == slot_offset as i32
+    });
+
+    assert_eq!(store_count, 6);
+    assert!(saw_stack_addr, "expected load to return a stack pointer");
+}
+
+#[test]
 fn test_compile_sock_ops_snd_cwnd_load_uses_u32_ctx_word() {
     let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
 

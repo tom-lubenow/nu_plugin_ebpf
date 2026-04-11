@@ -1263,6 +1263,59 @@ fn test_lower_fentry_array_leaf_emit_uses_full_byte_size() {
 }
 
 #[test]
+fn test_lower_tracepoint_args_leaf_emit_uses_full_byte_size() {
+    let hir = make_ctx_path_call_program(
+        CellPath {
+            members: vec![string_member("args")],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "syscalls/sys_enter_openat");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "emit".to_string());
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tracepoint args leaf emit should lower");
+
+    let emit_size = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::EmitEvent { size, .. } => Some(*size),
+            _ => None,
+        })
+        .expect("expected emit event");
+    assert_eq!(emit_size, 48);
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::TracepointField(name),
+                    slot: Some(_),
+                    ..
+                } if name == "args"
+            )),
+        "expected tracepoint aggregate field load to use a stack backing slot"
+    );
+}
+
+#[test]
 fn test_lower_fentry_array_leaf_count_uses_string_counter_map() {
     let hir = make_ctx_path_call_program(
         CellPath {
