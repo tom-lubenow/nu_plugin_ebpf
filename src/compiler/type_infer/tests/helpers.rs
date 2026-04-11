@@ -404,6 +404,39 @@ fn test_infer_msg_helpers_in_sk_msg_program() {
 }
 
 #[test]
+fn test_infer_sk_cgroup_helpers_from_socket_pointer() {
+    for (helper, args) in [
+        (BpfHelper::SkCgroupId, vec![]),
+        (BpfHelper::SkAncestorCgroupId, vec![MirValue::Const(0)]),
+    ] {
+        let mut func = make_test_function();
+        let sk = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: sk,
+            field: CtxField::Socket,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: std::iter::once(MirValue::VReg(sk))
+                .chain(args.into_iter())
+                .collect(),
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .expect("expected socket helper to infer from ctx.sk");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
 fn test_type_error_redirect_peer_helper_rejects_tc_egress() {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();

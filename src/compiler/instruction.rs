@@ -142,6 +142,10 @@ pub enum BpfHelper {
     TcpGenSyncookie = 110,
     /// long bpf_sk_assign(ctx, sk, flags)
     SkAssign = 124,
+    /// u64 bpf_sk_cgroup_id(sk)
+    SkCgroupId = 128,
+    /// u64 bpf_sk_ancestor_cgroup_id(sk, ancestor_level)
+    SkAncestorCgroupId = 129,
     /// void *bpf_task_storage_get(map, task, value, flags)
     TaskStorageGet = 156,
     /// long bpf_task_storage_delete(map, task)
@@ -234,6 +238,8 @@ impl BpfHelper {
             BpfHelper::SkStorageDelete => "bpf_sk_storage_delete",
             BpfHelper::TcpGenSyncookie => "bpf_tcp_gen_syncookie",
             BpfHelper::SkAssign => "bpf_sk_assign",
+            BpfHelper::SkCgroupId => "bpf_sk_cgroup_id",
+            BpfHelper::SkAncestorCgroupId => "bpf_sk_ancestor_cgroup_id",
             BpfHelper::TaskStorageGet => "bpf_task_storage_get",
             BpfHelper::TaskStorageDelete => "bpf_task_storage_delete",
             BpfHelper::SkcToTcp6Sock => "bpf_skc_to_tcp6_sock",
@@ -311,6 +317,8 @@ impl BpfHelper {
             "sk_storage_delete" => Some(Self::SkStorageDelete),
             "tcp_gen_syncookie" => Some(Self::TcpGenSyncookie),
             "sk_assign" => Some(Self::SkAssign),
+            "sk_cgroup_id" => Some(Self::SkCgroupId),
+            "sk_ancestor_cgroup_id" => Some(Self::SkAncestorCgroupId),
             "task_storage_get" => Some(Self::TaskStorageGet),
             "task_storage_delete" => Some(Self::TaskStorageDelete),
             "skc_to_tcp6_sock" => Some(Self::SkcToTcp6Sock),

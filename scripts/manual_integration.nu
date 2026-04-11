@@ -928,6 +928,10 @@ step 63 "sk_msg pinned sockhash live attach and detach" {
                 '    helper-call "bpf_msg_pull_data" $ctx 0 8 0'
                 '    helper-call "bpf_msg_push_data" $ctx 0 8 0'
                 '    helper-call "bpf_msg_pop_data" $ctx 0 8 0'
+                '    if $ctx.sk != 0 {'
+                '        helper-call "bpf_sk_cgroup_id" $ctx.sk'
+                '        helper-call "bpf_sk_ancestor_cgroup_id" $ctx.sk 0'
+                '    }'
                 '    "pass"'
                 '} | describe'
             ] | str join (char newline) | str replace "__MAP__" $map_path)

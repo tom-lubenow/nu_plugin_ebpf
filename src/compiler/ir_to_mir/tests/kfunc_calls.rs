@@ -810,6 +810,94 @@ fn test_helper_call_exact_attach_ir_with_ctx_and_three_scalars_typechecks_and_lo
 }
 
 #[test]
+fn test_reused_register_load_variable_freshens_before_ctx_socket_projection() {
+    let ctx_var = VarId::new(82);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"bpf_sk_cgroup_id".to_vec()),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(1),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![nu_protocol::ast::PathMember::test_string(
+                            "sk".to_string(),
+                            false,
+                            nu_protocol::casing::Casing::Sensitive,
+                        )],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(1),
+                    path: RegId::new(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String(b"pass".to_vec()),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("reused register ctx.sk projection should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    let string_vreg = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::Copy {
+                dst,
+                src: MirValue::StackSlot(_),
+            } => Some(*dst),
+            _ => None,
+        })
+        .expect("expected stack-backed string literal materialization");
+    let socket_vreg = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::LoadCtxField {
+                dst,
+                field: CtxField::Socket,
+                ..
+            } => Some(*dst),
+            _ => None,
+        })
+        .expect("expected ctx.sk load");
+
+    assert_ne!(
+        string_vreg, socket_vreg,
+        "LoadVariable should freshen reused registers before ctx path lowering"
+    );
+}
+
+#[test]
 fn test_kfunc_call_does_not_inject_drained_src_dst() {
     use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
     use nu_protocol::{DeclId, RegId};

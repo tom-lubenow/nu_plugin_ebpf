@@ -50,6 +50,8 @@ impl BpfHelper {
             108 => Some(Self::SkStorageDelete),
             110 => Some(Self::TcpGenSyncookie),
             124 => Some(Self::SkAssign),
+            128 => Some(Self::SkCgroupId),
+            129 => Some(Self::SkAncestorCgroupId),
             136 => Some(Self::SkcToTcp6Sock),
             137 => Some(Self::SkcToTcpSock),
             138 => Some(Self::SkcToTcpTimewaitSock),
@@ -169,6 +171,18 @@ impl BpfHelper {
             BpfHelper::GetSocketUid => HelperSignature {
                 min_args: 1,
                 max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SkCgroupId => HelperSignature {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SkAncestorCgroupId => HelperSignature {
+                min_args: 2,
+                max_args: 2,
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
@@ -1076,6 +1090,28 @@ impl BpfHelper {
                 ptr_arg_rules: &[HelperPtrArgRule {
                     arg_idx: 0,
                     op: "helper get_socket_uid ctx",
+                    allowed: KERNEL,
+                    fixed_size: None,
+                    size_from_arg: None,
+                }],
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkCgroupId => HelperSemantics {
+                ptr_arg_rules: &[HelperPtrArgRule {
+                    arg_idx: 0,
+                    op: "helper sk_cgroup_id sk",
+                    allowed: KERNEL,
+                    fixed_size: None,
+                    size_from_arg: None,
+                }],
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkAncestorCgroupId => HelperSemantics {
+                ptr_arg_rules: &[HelperPtrArgRule {
+                    arg_idx: 0,
+                    op: "helper sk_ancestor_cgroup_id sk",
                     allowed: KERNEL,
                     fixed_size: None,
                     size_from_arg: None,

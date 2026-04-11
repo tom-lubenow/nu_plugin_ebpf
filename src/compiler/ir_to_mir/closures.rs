@@ -219,7 +219,12 @@ impl<'a> HirToMirLowering<'a> {
         dst: RegId,
         var_id: nu_protocol::VarId,
     ) -> Result<(), CompileError> {
-        let dst_vreg = self.get_vreg(dst);
+        let dst_vreg = if self.reg_map.contains_key(&dst.get()) {
+            self.assign_fresh_vreg(dst)
+        } else {
+            self.get_vreg(dst)
+        };
+        self.reg_metadata.insert(dst.get(), RegMetadata::default());
 
         if let Some(&source_var) = self.subfunction_global_aliases.get(&var_id) {
             if let Some(global) = self.annotated_mut_globals.get(&source_var).cloned() {

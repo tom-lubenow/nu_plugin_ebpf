@@ -87,6 +87,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::MsgPopData)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_sk_cgroup_id"),
+        Some(BpfHelper::SkCgroupId)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_sk_ancestor_cgroup_id"),
+        Some(BpfHelper::SkAncestorCgroupId)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("ktime_get_boot_ns"),
         Some(BpfHelper::KtimeGetBootNs)
     ));
@@ -295,6 +303,24 @@ fn test_helper_signatures_msg_pull_and_push_data() {
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signatures_sk_cgroup_helpers() {
+    let sig = HelperSignature::for_id(BpfHelper::SkCgroupId as u32)
+        .expect("expected bpf_sk_cgroup_id helper signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::SkAncestorCgroupId as u32)
+        .expect("expected bpf_sk_ancestor_cgroup_id helper signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 
