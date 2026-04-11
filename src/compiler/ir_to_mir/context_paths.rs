@@ -10,140 +10,6 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    fn ctx_field_from_name(field_name: String) -> Result<CtxField, CompileError> {
-        Ok(match field_name.as_str() {
-            "pid" => CtxField::Pid,
-            "tid" | "tgid" => CtxField::Tid,
-            "uid" => CtxField::Uid,
-            "gid" => CtxField::Gid,
-            "comm" => CtxField::Comm,
-            "cpu" => CtxField::Cpu,
-            "ktime" | "timestamp" => CtxField::Timestamp,
-            "cgroup_id" => CtxField::CgroupId,
-            "packet_len" | "len" => CtxField::PacketLen,
-            "pkt_type" => CtxField::PktType,
-            "queue_mapping" => CtxField::QueueMapping,
-            "eth_protocol" => CtxField::EthProtocol,
-            "vlan_present" => CtxField::VlanPresent,
-            "vlan_tci" => CtxField::VlanTci,
-            "vlan_proto" => CtxField::VlanProto,
-            "cb" => CtxField::SkbCb,
-            "tc_classid" => CtxField::TcClassid,
-            "napi_id" => CtxField::NapiId,
-            "wire_len" => CtxField::WireLen,
-            "gso_segs" => CtxField::GsoSegs,
-            "gso_size" => CtxField::GsoSize,
-            "hwtstamp" => CtxField::Hwtstamp,
-            "data" => CtxField::Data,
-            "data_end" => CtxField::DataEnd,
-            "ingress_ifindex" => CtxField::IngressIfindex,
-            "rx_queue_index" => CtxField::RxQueueIndex,
-            "egress_ifindex" => CtxField::EgressIfindex,
-            "tc_index" => CtxField::TcIndex,
-            "hash" => CtxField::SkbHash,
-            "user_family" => CtxField::UserFamily,
-            "user_ip4" => CtxField::UserIp4,
-            "user_ip6" => CtxField::UserIp6,
-            "user_port" => CtxField::UserPort,
-            "family" => CtxField::Family,
-            "sock_type" | "type" => CtxField::SockType,
-            "protocol" => CtxField::Protocol,
-            "sk" => CtxField::Socket,
-            "bound_dev_if" => CtxField::BoundDevIf,
-            "mark" => CtxField::SockMark,
-            "priority" => CtxField::SockPriority,
-            "msg_src_ip4" => CtxField::MsgSrcIp4,
-            "msg_src_ip6" => CtxField::MsgSrcIp6,
-            "remote_ip4" => CtxField::RemoteIp4,
-            "remote_ip6" => CtxField::RemoteIp6,
-            "remote_port" => CtxField::RemotePort,
-            "local_ip4" => CtxField::LocalIp4,
-            "local_ip6" => CtxField::LocalIp6,
-            "local_port" => CtxField::LocalPort,
-            "cookie" => CtxField::LookupCookie,
-            "sample" | "raw" => CtxField::LircSample,
-            "value" => CtxField::LircValue,
-            "mode" => CtxField::LircMode,
-            "socket_cookie" => CtxField::SocketCookie,
-            "socket_uid" => CtxField::SocketUid,
-            "netns_cookie" => CtxField::NetnsCookie,
-            "args" => CtxField::SockOpsArgs,
-            "snd_cwnd" => CtxField::SockOpsSndCwnd,
-            "srtt_us" => CtxField::SockOpsSrttUs,
-            "write" => CtxField::SysctlWrite,
-            "file_pos" => CtxField::SysctlFilePos,
-            "rtt_min" => CtxField::SockOpsRttMin,
-            "snd_ssthresh" => CtxField::SockOpsSndSsthresh,
-            "rcv_nxt" => CtxField::SockOpsRcvNxt,
-            "snd_nxt" => CtxField::SockOpsSndNxt,
-            "snd_una" => CtxField::SockOpsSndUna,
-            "packets_out" => CtxField::SockOpsPacketsOut,
-            "retrans_out" => CtxField::SockOpsRetransOut,
-            "total_retrans" => CtxField::SockOpsTotalRetrans,
-            "bytes_received" => CtxField::SockOpsBytesReceived,
-            "bytes_acked" => CtxField::SockOpsBytesAcked,
-            "skb_len" => CtxField::SockOpsSkbLen,
-            "skb_tcp_flags" => CtxField::SockOpsSkbTcpFlags,
-            "skb_hwtstamp" => CtxField::SockOpsSkbHwtstamp,
-            "level" => CtxField::SockoptLevel,
-            "optname" => CtxField::SockoptOptname,
-            "optlen" => CtxField::SockoptOptlen,
-            "optval" => CtxField::SockoptOptval,
-            "optval_end" => CtxField::SockoptOptvalEnd,
-            "sockopt_retval" => CtxField::SockoptRetval,
-            "retval" => CtxField::RetVal,
-            "kstack" => CtxField::KStack,
-            "ustack" => CtxField::UStack,
-            s if s.starts_with("arg") => {
-                let num: u8 = s[3..].parse().map_err(|_| {
-                    CompileError::UnsupportedInstruction(format!("Invalid arg: {}", s))
-                })?;
-                CtxField::Arg(num)
-            }
-            _ => CtxField::TracepointField(field_name),
-        })
-    }
-
-    fn non_tracepoint_ctx_field_from_name(field_name: &str) -> Option<CtxField> {
-        Some(match field_name {
-            "ifindex" => CtxField::Ifindex,
-            "access_type" => CtxField::DeviceAccessType,
-            "major" => CtxField::DeviceMajor,
-            "minor" => CtxField::DeviceMinor,
-            "op" => CtxField::SockOp,
-            "is_fullsock" => CtxField::IsFullsock,
-            "snd_cwnd" => CtxField::SockOpsSndCwnd,
-            "srtt_us" => CtxField::SockOpsSrttUs,
-            "cb_flags" => CtxField::SockOpsCbFlags,
-            "state" => CtxField::SockState,
-            "rtt_min" => CtxField::SockOpsRttMin,
-            "snd_ssthresh" => CtxField::SockOpsSndSsthresh,
-            "rcv_nxt" => CtxField::SockOpsRcvNxt,
-            "snd_nxt" => CtxField::SockOpsSndNxt,
-            "snd_una" => CtxField::SockOpsSndUna,
-            "mss_cache" => CtxField::SockOpsMssCache,
-            "ecn_flags" => CtxField::SockOpsEcnFlags,
-            "rate_delivered" => CtxField::SockOpsRateDelivered,
-            "rate_interval_us" => CtxField::SockOpsRateIntervalUs,
-            "packets_out" => CtxField::SockOpsPacketsOut,
-            "retrans_out" => CtxField::SockOpsRetransOut,
-            "total_retrans" => CtxField::SockOpsTotalRetrans,
-            "segs_in" => CtxField::SockOpsSegsIn,
-            "data_segs_in" => CtxField::SockOpsDataSegsIn,
-            "segs_out" => CtxField::SockOpsSegsOut,
-            "data_segs_out" => CtxField::SockOpsDataSegsOut,
-            "lost_out" => CtxField::SockOpsLostOut,
-            "sacked_out" => CtxField::SockOpsSackedOut,
-            "sk_txhash" => CtxField::SockOpsSkTxhash,
-            "bytes_received" => CtxField::SockOpsBytesReceived,
-            "bytes_acked" => CtxField::SockOpsBytesAcked,
-            "skb_len" => CtxField::SockOpsSkbLen,
-            "skb_tcp_flags" => CtxField::SockOpsSkbTcpFlags,
-            "skb_hwtstamp" => CtxField::SockOpsSkbHwtstamp,
-            _ => return None,
-        })
-    }
-
     pub(super) fn resolve_ctx_field_from_path(
         &self,
         path: &CellPath,
@@ -165,43 +31,17 @@ impl<'a> HirToMirLowering<'a> {
                     "ctx.arg.<name> is only available on kernel-BTF-backed contexts".into(),
                 ));
             };
-            if !ctx.probe_type.uses_btf_trampoline() {
-                return Err(CompileError::UnsupportedInstruction(
-                    "ctx.arg.<name> is only available on kernel-BTF-backed contexts".into(),
-                ));
-            }
-            let Some(arg_idx) = ctx
-                .btf_arg_index_by_name(arg_name)
-                .map_err(CompileError::UnsupportedInstruction)?
-            else {
-                return Err(CompileError::UnsupportedInstruction(
-                    ctx.btf_arg_name_invalid_error(arg_name),
-                ));
-            };
-            let arg_idx = u8::try_from(arg_idx).map_err(|_| {
-                CompileError::UnsupportedInstruction(format!(
-                    "ctx.arg.{} resolved to unsupported parameter index {}",
-                    arg_name, arg_idx
-                ))
-            })?;
-            return Ok((CtxField::Arg(arg_idx), 2));
+            let field = ctx
+                .resolve_named_ctx_arg(arg_name)
+                .map_err(CompileError::UnsupportedInstruction)?;
+            return Ok((field, 2));
         }
 
-        if let Some(field) = self
-            .probe_ctx
-            .and_then(|ctx| ctx.probe_type.ctx_field_alias(&field_name))
-        {
-            return Ok((field, 1));
+        let field = match self.probe_ctx {
+            Some(ctx) => ctx.resolve_ctx_field_name(&field_name),
+            None => EbpfProgramType::resolve_untyped_ctx_field_name(&field_name),
         }
-
-        let field = match (
-            self.probe_ctx.map(|ctx| ctx.probe_type),
-            field_name.as_str(),
-        ) {
-            (Some(EbpfProgramType::Tracepoint), _) => Self::ctx_field_from_name(field_name)?,
-            _ => Self::non_tracepoint_ctx_field_from_name(&field_name)
-                .unwrap_or(Self::ctx_field_from_name(field_name)?),
-        };
+        .map_err(CompileError::UnsupportedInstruction)?;
 
         Ok((field, 1))
     }
@@ -217,48 +57,21 @@ impl<'a> HirToMirLowering<'a> {
                 path_desc
             )));
         };
-        match (ctx.probe_type, path.members.as_slice()) {
-            (EbpfProgramType::SockOps, [PathMember::String { val, .. }]) if val == "reply" => {
-                Ok(CtxStoreTarget::SockOpsReply)
+        let (field_name, index) = match path.members.as_slice() {
+            [member] => (Self::ctx_path_member_name(member)?, None),
+            [member, PathMember::Int { val: index, .. }] => {
+                (Self::ctx_path_member_name(member)?, Some(*index))
             }
-            (
-                EbpfProgramType::SockOps,
-                [
-                    PathMember::String { val, .. },
-                    PathMember::Int { val: index, .. },
-                ],
-            ) if val == "replylong" => {
-                let index = u8::try_from(*index).map_err(|_| {
-                    CompileError::UnsupportedInstruction(format!(
-                        "ctx.replylong index must be in 0..=3, got {}",
-                        index
-                    ))
-                })?;
-                if index >= 4 {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "ctx.replylong index must be in 0..=3, got {}",
-                        index
-                    )));
-                }
-                Ok(CtxStoreTarget::SockOpsReplyLong(index))
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "context cell path update '.{} = ...' is only supported for sock_ops reply fields and cgroup_sockopt:get sockopt_retval",
+                    path_desc
+                )));
             }
-            (EbpfProgramType::SockOps, [PathMember::String { val, .. }]) if val == "replylong" => {
-                Err(CompileError::UnsupportedInstruction(
-                    "ctx.replylong assignment requires a fixed index, e.g. $ctx.replylong.0 = ..."
-                        .into(),
-                ))
-            }
-            (EbpfProgramType::CgroupSockopt, [PathMember::String { val, .. }])
-                if val == "sockopt_retval" =>
-            {
-                ctx.validate_ctx_field_access(&CtxField::SockoptRetval)?;
-                Ok(CtxStoreTarget::SockoptRetval)
-            }
-            _ => Err(CompileError::UnsupportedInstruction(format!(
-                "context cell path update '.{} = ...' is only supported for sock_ops reply fields and cgroup_sockopt:get sockopt_retval",
-                path_desc
-            ))),
-        }
+        };
+
+        ctx.resolve_ctx_store_target(&field_name, index, &path_desc)
+            .map_err(CompileError::UnsupportedInstruction)
     }
 
     fn ctx_store_target_type(target: &CtxStoreTarget) -> MirType {

@@ -3,6 +3,7 @@ use super::{
     ProgramTargetKind, ProgramValueAccess, SocketContextLayout,
 };
 use crate::compiler::instruction::BpfHelper;
+use crate::compiler::mir::CtxStoreTarget;
 use crate::kernel_btf::{
     KernelBtf, TrampolineFieldProjection, TrampolineFieldSelector, TrampolineValueSpec, TypeInfo,
 };
@@ -538,6 +539,63 @@ impl ProbeContext {
                     path_desc, self.target, e
                 )
             })
+    }
+
+    pub(crate) fn resolve_ctx_field_name(&self, field_name: &str) -> Result<CtxField, String> {
+        self.probe_type.resolve_ctx_field_name(field_name)
+    }
+
+    pub(crate) fn resolve_named_ctx_arg(&self, arg_name: &str) -> Result<CtxField, String> {
+        if !self.probe_type.uses_btf_trampoline() {
+            return Err("ctx.arg.<name> is only available on kernel-BTF-backed contexts".into());
+        }
+
+        let Some(arg_idx) = self.btf_arg_index_by_name(arg_name)? else {
+            return Err(self.btf_arg_name_invalid_error(arg_name));
+        };
+        let arg_idx = u8::try_from(arg_idx).map_err(|_| {
+            format!(
+                "ctx.arg.{} resolved to unsupported parameter index {}",
+                arg_name, arg_idx
+            )
+        })?;
+
+        Ok(CtxField::Arg(arg_idx))
+    }
+
+    pub(crate) fn resolve_ctx_store_target(
+        &self,
+        field_name: &str,
+        index: Option<usize>,
+        path_desc: &str,
+    ) -> Result<CtxStoreTarget, String> {
+        match (self.probe_type, field_name, index) {
+            (EbpfProgramType::SockOps, "reply", None) => Ok(CtxStoreTarget::SockOpsReply),
+            (EbpfProgramType::SockOps, "replylong", Some(index)) => {
+                let index = u8::try_from(index)
+                    .map_err(|_| format!("ctx.replylong index must be in 0..=3, got {}", index))?;
+                if index >= 4 {
+                    return Err(format!(
+                        "ctx.replylong index must be in 0..=3, got {}",
+                        index
+                    ));
+                }
+                Ok(CtxStoreTarget::SockOpsReplyLong(index))
+            }
+            (EbpfProgramType::SockOps, "replylong", None) => Err(
+                "ctx.replylong assignment requires a fixed index, e.g. $ctx.replylong.0 = ..."
+                    .into(),
+            ),
+            (EbpfProgramType::CgroupSockopt, "sockopt_retval", None) => {
+                self.validate_ctx_field_access(&CtxField::SockoptRetval)
+                    .map_err(|err| err.to_string())?;
+                Ok(CtxStoreTarget::SockoptRetval)
+            }
+            _ => Err(format!(
+                "context cell path update '.{} = ...' is only supported for sock_ops reply fields and cgroup_sockopt:get sockopt_retval",
+                path_desc
+            )),
+        }
     }
 
     /// Returns a user-facing error message when a context field is not valid

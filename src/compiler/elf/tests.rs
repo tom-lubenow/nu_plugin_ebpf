@@ -1,6 +1,6 @@
 use super::*;
 use crate::compiler::BpfHelper;
-use crate::compiler::mir::{CtxField, MirType, StructField};
+use crate::compiler::mir::{CtxField, CtxStoreTarget, MirType, StructField};
 use crate::compiler::mir_to_ebpf::compile_mir_to_ebpf;
 use crate::kernel_btf::KernelBtf;
 use aya_obj::{
@@ -1745,6 +1745,42 @@ fn test_runtime_artifacts_reject_zero_sized_bss_global() {
 }
 
 #[test]
+fn test_program_type_resolves_xdp_ifindex_alias() {
+    assert_eq!(
+        EbpfProgramType::Xdp
+            .resolve_ctx_field_name("ifindex")
+            .expect("xdp ifindex alias should resolve"),
+        CtxField::IngressIfindex
+    );
+}
+
+#[test]
+fn test_program_type_resolves_tracepoint_specific_field_names() {
+    assert_eq!(
+        EbpfProgramType::Tracepoint
+            .resolve_ctx_field_name("filename")
+            .expect("tracepoint field should resolve"),
+        CtxField::TracepointField("filename".to_string())
+    );
+    assert_eq!(
+        EbpfProgramType::Tracepoint
+            .resolve_ctx_field_name("ifindex")
+            .expect("tracepoint ifindex should stay tracepoint-scoped"),
+        CtxField::TracepointField("ifindex".to_string())
+    );
+}
+
+#[test]
+fn test_program_type_resolves_sock_ops_field_names() {
+    assert_eq!(
+        EbpfProgramType::SockOps
+            .resolve_ctx_field_name("op")
+            .expect("sock_ops op should resolve"),
+        CtxField::SockOp
+    );
+}
+
+#[test]
 fn test_probe_context_rejects_arg_on_tracepoint() {
     let ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "syscalls/sys_enter_openat");
     let err = ctx
@@ -1787,6 +1823,30 @@ fn test_probe_context_allows_arg_on_fentry() {
 fn test_probe_context_allows_arg_on_tp_btf() {
     let ctx = ProbeContext::new(EbpfProgramType::TpBtf, "sys_enter");
     assert!(ctx.ctx_field_access_error(&CtxField::Arg(0)).is_none());
+}
+
+#[test]
+fn test_probe_context_resolves_sock_ops_store_targets() {
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    assert_eq!(
+        ctx.resolve_ctx_store_target("reply", None, "reply")
+            .expect("sock_ops reply target should resolve"),
+        CtxStoreTarget::SockOpsReply
+    );
+    assert_eq!(
+        ctx.resolve_ctx_store_target("replylong", Some(2), "replylong.2")
+            .expect("sock_ops replylong target should resolve"),
+        CtxStoreTarget::SockOpsReplyLong(2)
+    );
+}
+
+#[test]
+fn test_probe_context_rejects_sock_ops_replylong_store_without_fixed_index() {
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let err = ctx
+        .resolve_ctx_store_target("replylong", None, "replylong")
+        .expect_err("replylong without index should be rejected");
+    assert!(err.contains("requires a fixed index"));
 }
 
 #[test]
@@ -2367,6 +2427,25 @@ fn test_probe_context_rejects_sockopt_retval_on_cgroup_sockopt_set() {
     let err = ctx
         .ctx_field_access_error(&CtxField::SockoptRetval)
         .expect("expected cgroup_sockopt:set retval rejection");
+    assert!(err.contains("cgroup_sockopt:get"));
+}
+
+#[test]
+fn test_probe_context_resolves_cgroup_sockopt_retval_store_target() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+    assert_eq!(
+        ctx.resolve_ctx_store_target("sockopt_retval", None, "sockopt_retval")
+            .expect("cgroup_sockopt:get retval target should resolve"),
+        CtxStoreTarget::SockoptRetval
+    );
+}
+
+#[test]
+fn test_probe_context_rejects_cgroup_sockopt_set_retval_store_target() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set");
+    let err = ctx
+        .resolve_ctx_store_target("sockopt_retval", None, "sockopt_retval")
+        .expect_err("cgroup_sockopt:set retval store target should be rejected");
     assert!(err.contains("cgroup_sockopt:get"));
 }
 
