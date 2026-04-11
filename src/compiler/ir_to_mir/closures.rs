@@ -242,6 +242,13 @@ impl<'a> HirToMirLowering<'a> {
 
             if let Some(global) = self.mutable_capture_globals.get(&source_var).cloned() {
                 self.load_mutable_global_value(dst, dst_vreg, &global)?;
+                if let Some(semantics) = self
+                    .mutable_capture_global_semantics
+                    .get(&source_var)
+                    .cloned()
+                {
+                    self.get_or_create_metadata(dst).annotated_semantics = Some(semantics);
+                }
                 self.get_or_create_metadata(dst).source_var = Some(source_var);
                 return Ok(());
             }
@@ -287,6 +294,9 @@ impl<'a> HirToMirLowering<'a> {
 
         if let Some(global) = self.mutable_capture_globals.get(&var_id).cloned() {
             self.load_mutable_global_value(dst, dst_vreg, &global)?;
+            if let Some(semantics) = self.mutable_capture_global_semantics.get(&var_id).cloned() {
+                self.get_or_create_metadata(dst).annotated_semantics = Some(semantics);
+            }
             self.get_or_create_metadata(dst).source_var = Some(var_id);
             return Ok(());
         }

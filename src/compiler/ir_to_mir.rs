@@ -314,6 +314,8 @@ pub struct HirToMirLowering<'a> {
     annotated_mut_globals: HashMap<VarId, MutableCaptureGlobal>,
     /// Logical semantics for annotated mutable globals with richer runtime layouts.
     annotated_mut_global_semantics: HashMap<VarId, AnnotatedValueSemantics>,
+    /// Logical semantics for captured mutable globals with richer runtime layouts.
+    mutable_capture_global_semantics: HashMap<VarId, AnnotatedValueSemantics>,
     /// Subfunction parameters that should behave as aliases for a backing
     /// mutable global instead of ordinary by-value locals.
     subfunction_global_aliases: HashMap<VarId, VarId>,
@@ -402,6 +404,7 @@ impl<'a> HirToMirLowering<'a> {
             mutable_capture_globals: HashMap::new(),
             annotated_mut_globals: HashMap::new(),
             annotated_mut_global_semantics: HashMap::new(),
+            mutable_capture_global_semantics: HashMap::new(),
             subfunction_global_aliases: HashMap::new(),
             pending_annotated_mut_global_init_stores: HashSet::new(),
             named_program_globals: HashMap::new(),

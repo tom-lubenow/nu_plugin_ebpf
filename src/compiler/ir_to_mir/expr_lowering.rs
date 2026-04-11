@@ -288,6 +288,10 @@ impl<'a> HirToMirLowering<'a> {
                     string_content_cap: string_slot_len.map(|slot_len| slot_len.saturating_sub(1)),
                 },
             );
+            if let Some(semantics) = Self::mutable_global_value_semantics(value)? {
+                self.mutable_capture_global_semantics
+                    .insert(*var_id, semantics);
+            }
         }
 
         Ok(())
@@ -467,6 +471,46 @@ impl<'a> HirToMirLowering<'a> {
                     };
                     if let Some(field_semantics_value) =
                         Self::annotated_mutable_global_semantics(field_type, field_value)?
+                    {
+                        field_semantics.push((field_name.clone(), field_semantics_value));
+                    }
+                }
+
+                if field_semantics.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(AnnotatedValueSemantics::Record(field_semantics)))
+                }
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn mutable_global_value_semantics(
+        value: &Value,
+    ) -> Result<Option<AnnotatedValueSemantics>, CompileError> {
+        match value {
+            Value::String { .. } | Value::Glob { .. } => {
+                let Some((_ty, _data, slot_len)) = Self::mutable_string_global_repr(value) else {
+                    return Ok(None);
+                };
+                Ok(Some(AnnotatedValueSemantics::String {
+                    slot_len,
+                    content_cap: slot_len.saturating_sub(1),
+                }))
+            }
+            Value::List { vals, .. }
+                if crate::compiler::hir::supports_numeric_constant_list(value) =>
+            {
+                Ok(Some(AnnotatedValueSemantics::NumericList {
+                    max_len: vals.len(),
+                }))
+            }
+            Value::Record { val, .. } => {
+                let mut field_semantics = Vec::new();
+                for (field_name, field_value) in val.iter() {
+                    if let Some(field_semantics_value) =
+                        Self::mutable_global_value_semantics(field_value)?
                     {
                         field_semantics.push((field_name.clone(), field_semantics_value));
                     }
