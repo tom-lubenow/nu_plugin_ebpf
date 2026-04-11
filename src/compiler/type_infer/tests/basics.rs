@@ -1804,6 +1804,63 @@ fn test_type_error_kprobe_tracepoint_field_is_rejected() {
 }
 
 #[test]
+fn test_type_error_kprobe_arg_index_out_of_range_is_rejected() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::Arg(6),
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_openat2");
+    let mut ti = TypeInference::new(Some(ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected out-of-range pt_regs arg to be rejected");
+
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("Argument index 6 out of range")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_tracepoint_missing_field_is_rejected() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::TracepointField("__definitely_missing".to_string()),
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "syscalls/sys_enter_openat");
+    let mut ti = TypeInference::new(Some(ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected missing tracepoint field to be rejected");
+
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("Tracepoint field '__definitely_missing' not found")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_infer_map_lookup_returns_ptr() {
     use crate::compiler::mir::{MapKind, MapRef};
 

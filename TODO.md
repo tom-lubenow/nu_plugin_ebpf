@@ -48,6 +48,7 @@ Last updated: 2026-02-15.
   - Verifier parity now enforces generic map-operation kind constraints (reject unsupported kinds; reject `MapDelete` on array/per-cpu-array kinds) before backend codegen, with matching verifier_types/VCC regression tests.
   - Verifier parity now enforces `MapUpdate` flags range checks (`<= i32::MAX`) before backend codegen, with matching verifier_types/VCC regression tests.
   - Verifier parity now enforces probe-context-aware `LoadCtxField` / `StoreCtxField` legality (including attach-sensitive ctx-field access, writable ctx-target rules, and BTF trampoline arg/retval availability) with matching verifier_types/VCC regression tests.
+  - Shared probe-context validation now also rejects out-of-range pt_regs/raw-tracepoint `ctx.argN` access and missing typed tracepoint fields before codegen, with regression coverage in type inference, verifier_types, and VCC.
   - Verifier parity now enforces generic map key/value scalar-operand size constraints (`<= 8` bytes unless passed as pointers), matching backend `map_operand_layout` behavior with verifier_types/VCC regression tests.
   - Verifier parity now enforces generic map layout consistency across operations (kind/key-size/value-size conflict detection), matching backend `register_generic_map_spec` behavior with verifier_types/VCC regression tests.
   - Verifier parity now enforces built-in counter-map kind restrictions and conflicts (`counters`/`str_counters` require `Hash` or `PerCpuHash`, with no mixed-kind usage).

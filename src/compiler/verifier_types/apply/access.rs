@@ -144,7 +144,7 @@ pub(super) fn apply_load_ctx_field_inst(
     errors: &mut Vec<VerifierTypeError>,
 ) {
     if let Some(ctx) = probe_ctx
-        && let Err(err) = ctx.validate_ctx_field_access(field)
+        && let Err(err) = ctx.validate_load_ctx_field(field)
     {
         errors.push(VerifierTypeError::new(err.to_string()));
     }

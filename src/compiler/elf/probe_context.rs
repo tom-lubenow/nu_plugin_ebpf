@@ -987,7 +987,45 @@ impl ProbeContext {
         if let Some(message) = self.ctx_field_access_error(field) {
             return Err(CompileError::UnsupportedInstruction(message));
         }
+        Ok(())
+    }
+
+    pub(crate) fn validate_load_ctx_field(&self, field: &CtxField) -> Result<(), CompileError> {
+        self.validate_ctx_field_access(field)?;
         match field {
+            CtxField::Arg(idx)
+                if matches!(self.probe_type.arg_access(), ProgramValueAccess::PtRegs) =>
+            {
+                let offsets = KernelBtf::get().pt_regs_offsets().map_err(|e| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "pt_regs argument access unavailable: {e}"
+                    ))
+                })?;
+                if usize::from(*idx) >= offsets.arg_offsets.len() {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "Argument index {} out of range",
+                        idx
+                    )));
+                }
+            }
+            CtxField::Arg(idx)
+                if matches!(
+                    self.probe_type.arg_access(),
+                    ProgramValueAccess::RawTracepoint
+                ) =>
+            {
+                let byte_offset = usize::from(*idx).checked_mul(8).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "raw tracepoint arg offset overflow".into(),
+                    )
+                })?;
+                i16::try_from(byte_offset).map_err(|_| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "raw tracepoint arg index {} is too large",
+                        idx
+                    ))
+                })?;
+            }
             CtxField::Arg(idx) if self.probe_type.uses_btf_trampoline() => {
                 if self
                     .btf_arg_spec(*idx as usize)
@@ -998,6 +1036,15 @@ impl ProbeContext {
                         self.btf_arg_unavailable_error(*idx as usize),
                     ));
                 }
+            }
+            CtxField::RetVal
+                if matches!(self.probe_type.retval_access(), ProgramValueAccess::PtRegs) =>
+            {
+                KernelBtf::get().pt_regs_offsets().map_err(|e| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "pt_regs return value access unavailable: {e}"
+                    ))
+                })?;
             }
             CtxField::RetVal
                 if matches!(
@@ -1013,6 +1060,28 @@ impl ProbeContext {
                     return Err(CompileError::UnsupportedInstruction(
                         self.btf_ret_unavailable_error(),
                     ));
+                }
+            }
+            CtxField::TracepointField(name) => {
+                let (category, tp_name) = self.tracepoint_parts().ok_or_else(|| {
+                    CompileError::TracepointContextError {
+                        category: "unknown".into(),
+                        name: self.target.clone(),
+                        reason: "Invalid tracepoint format. Expected 'category/name'".into(),
+                    }
+                })?;
+                let ctx = KernelBtf::get()
+                    .get_tracepoint_context(&category, &tp_name)
+                    .map_err(|e| CompileError::TracepointContextError {
+                        category: category.clone(),
+                        name: tp_name.clone(),
+                        reason: e.to_string(),
+                    })?;
+                if !ctx.has_field(name) {
+                    return Err(CompileError::TracepointFieldNotFound {
+                        field: name.clone(),
+                        available: ctx.field_names().join(", "),
+                    });
                 }
             }
             _ => {}

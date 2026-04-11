@@ -390,7 +390,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         slot: Option<StackSlotId>,
     ) -> Result<(), CompileError> {
         if let Some(ctx) = self.probe_ctx {
-            ctx.validate_ctx_field_access(field)?;
+            ctx.validate_load_ctx_field(field)?;
         }
 
         match field {

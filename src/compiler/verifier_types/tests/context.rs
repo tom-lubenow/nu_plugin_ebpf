@@ -51,6 +51,61 @@ fn test_verify_mir_for_probe_context_rejects_invalid_tracepoint_field_load() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_rejects_out_of_range_pt_regs_arg_load() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst,
+            field: CtxField::Arg(6),
+            slot: None,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_openat2");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected out-of-range pt_regs arg to be rejected");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("Argument index 6 out of range")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_rejects_missing_tracepoint_field_load() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst,
+            field: CtxField::TracepointField("__definitely_missing".to_string()),
+            slot: None,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "syscalls/sys_enter_openat");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected missing tracepoint field to be rejected");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("Tracepoint field '__definitely_missing' not found")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_rejects_unavailable_trampoline_arg_load() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();

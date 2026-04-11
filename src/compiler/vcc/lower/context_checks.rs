@@ -4,7 +4,7 @@ use crate::compiler::mir::CtxStoreTarget;
 impl<'a> VccLowerer<'a> {
     pub(super) fn verify_ctx_field_load(&self, field: &CtxField) -> Result<(), VccError> {
         if let Some(ctx) = self.probe_ctx
-            && let Err(err) = ctx.validate_ctx_field_access(field)
+            && let Err(err) = ctx.validate_load_ctx_field(field)
         {
             return Err(VccError::new(
                 VccErrorKind::UnsupportedInstruction,

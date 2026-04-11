@@ -230,7 +230,7 @@ impl<'a> TypeInference<'a> {
 
     pub(super) fn validate_ctx_field_access(&self, field: &CtxField) -> Result<(), TypeError> {
         if let Some(ctx) = self.probe_ctx.as_ref() {
-            ctx.validate_ctx_field_access(field)
+            ctx.validate_load_ctx_field(field)
                 .map_err(|err| TypeError::new(err.to_string()))?;
         }
         Ok(())
