@@ -1,6 +1,6 @@
 use super::*;
 use crate::compiler::{EbpfProgramType, ProgramValueAccess};
-use crate::kernel_btf::{KernelBtf, TypeInfo};
+use crate::kernel_btf::TypeInfo;
 
 impl<'a> TypeInference<'a> {
     fn synthetic_bpf_sock_hm_type() -> HMType {
@@ -181,88 +181,22 @@ impl<'a> TypeInference<'a> {
             return Ok(None);
         }
 
-        let type_info = match ctx.probe_type {
-            EbpfProgramType::StructOps => {
-                let value_type_name =
-                    ctx.struct_ops_value_type_name.as_deref().ok_or_else(|| {
-                        TypeError::new(format!(
-                            "missing struct_ops value type for callback '{}'",
-                            ctx.target
-                        ))
-                    })?;
-                KernelBtf::get()
-                    .struct_ops_callback_arg_type_info(value_type_name, &ctx.target, idx as usize)
-                    .map_err(|e| {
-                        TypeError::new(format!(
-                            "failed to resolve ctx.arg{} for struct_ops {}.{}: {}",
-                            idx, value_type_name, ctx.target, e
-                        ))
-                    })?
-            }
-            EbpfProgramType::TpBtf => KernelBtf::get()
-                .tp_btf_arg_type_info(&ctx.target, idx as usize)
-                .map_err(|e| {
-                    TypeError::new(format!(
-                        "failed to resolve ctx.arg{} for tp_btf:{}: {}",
-                        idx, ctx.target, e
-                    ))
-                })?,
-            EbpfProgramType::Lsm => KernelBtf::get()
-                .lsm_hook_arg_type_info(&ctx.target, idx as usize)
-                .map_err(|e| {
-                    TypeError::new(format!(
-                        "failed to resolve ctx.arg{} for lsm:{}: {}",
-                        idx, ctx.target, e
-                    ))
-                })?,
-            _ => KernelBtf::get()
-                .function_trampoline_arg_type_info(&ctx.target, idx as usize)
-                .map_err(|e| {
-                    TypeError::new(format!(
-                        "failed to resolve ctx.arg{} for {}:{}: {}",
-                        idx,
-                        ctx.probe_type.section_prefix(),
-                        ctx.target,
-                        e
-                    ))
-                })?,
-        };
-        type_info
-            .ok_or_else(|| {
-                TypeError::new(match ctx.probe_type {
-                    EbpfProgramType::StructOps => format!(
-                        "ctx.arg{} is not available on struct_ops {}.{}",
-                        idx,
-                        ctx.struct_ops_value_type_name
-                            .as_deref()
-                            .unwrap_or("<unknown>"),
-                        ctx.target
-                    ),
-                    EbpfProgramType::TpBtf => {
-                        format!("ctx.arg{} is not available on tp_btf:{}", idx, ctx.target)
-                    }
-                    _ => format!(
-                        "ctx.arg{} is not available on {}:{}",
-                        idx,
-                        ctx.probe_type.section_prefix(),
-                        ctx.target
-                    ),
-                })
-            })
-            .map(|type_info| {
-                Some(match type_info {
-                    TypeInfo::Struct { .. } | TypeInfo::Array { .. } => HMType::Ptr {
-                        pointee: Box::new(Self::hm_type_from_type_info(&type_info).unwrap_or(
-                            HMType::Array {
-                                elem: Box::new(HMType::U8),
-                                len: type_info.size(),
-                            },
-                        )),
-                        address_space: AddressSpace::Stack,
+        let type_info = ctx
+            .btf_arg_type_info(idx as usize)
+            .map_err(TypeError::new)?
+            .ok_or_else(|| TypeError::new(ctx.btf_arg_unavailable_error(idx as usize)))?;
+        Ok(Some(match type_info {
+            TypeInfo::Struct { .. } | TypeInfo::Array { .. } => HMType::Ptr {
+                pointee: Box::new(Self::hm_type_from_type_info(&type_info).unwrap_or(
+                    HMType::Array {
+                        elem: Box::new(HMType::U8),
+                        len: type_info.size(),
                     },
-                    _ => Self::hm_type_from_type_info(&type_info).unwrap_or(HMType::I64),
-                })
-            })
+                )),
+                address_space: AddressSpace::Stack,
+            },
+            _ => Self::hm_type_from_type_info(&type_info).unwrap_or(HMType::I64),
+        }))
     }
 
     fn trampoline_ret_type(&self) -> Result<Option<HMType>, TypeError> {
@@ -276,35 +210,22 @@ impl<'a> TypeInference<'a> {
             return Ok(None);
         }
 
-        let type_info = KernelBtf::get()
-            .function_trampoline_ret_type_info(&ctx.target)
-            .map_err(|e| {
-                TypeError::new(format!(
-                    "failed to resolve ctx.retval for fexit:{}: {}",
-                    ctx.target, e
-                ))
-            })?;
-        type_info
-            .ok_or_else(|| {
-                TypeError::new(format!(
-                    "ctx.retval is not available on fexit:{} because the target returns void",
-                    ctx.target
-                ))
-            })
-            .map(|type_info| {
-                Some(match type_info {
-                    TypeInfo::Struct { .. } | TypeInfo::Array { .. } => HMType::Ptr {
-                        pointee: Box::new(Self::hm_type_from_type_info(&type_info).unwrap_or(
-                            HMType::Array {
-                                elem: Box::new(HMType::U8),
-                                len: type_info.size(),
-                            },
-                        )),
-                        address_space: AddressSpace::Stack,
+        let type_info = ctx
+            .btf_ret_type_info()
+            .map_err(TypeError::new)?
+            .ok_or_else(|| TypeError::new(ctx.btf_ret_unavailable_error()))?;
+        Ok(Some(match type_info {
+            TypeInfo::Struct { .. } | TypeInfo::Array { .. } => HMType::Ptr {
+                pointee: Box::new(Self::hm_type_from_type_info(&type_info).unwrap_or(
+                    HMType::Array {
+                        elem: Box::new(HMType::U8),
+                        len: type_info.size(),
                     },
-                    _ => Self::hm_type_from_type_info(&type_info).unwrap_or(HMType::I64),
-                })
-            })
+                )),
+                address_space: AddressSpace::Stack,
+            },
+            _ => Self::hm_type_from_type_info(&type_info).unwrap_or(HMType::I64),
+        }))
     }
 
     pub(super) fn validate_ctx_field_access(&self, field: &CtxField) -> Result<(), TypeError> {
@@ -315,76 +236,12 @@ impl<'a> TypeInference<'a> {
 
             match field {
                 CtxField::Arg(idx) if ctx.probe_type.uses_btf_trampoline() => {
-                    let spec = match ctx.probe_type {
-                        EbpfProgramType::StructOps => {
-                            let value_type_name =
-                                ctx.struct_ops_value_type_name.as_deref().ok_or_else(|| {
-                                    TypeError::new(format!(
-                                        "missing struct_ops value type for callback '{}'",
-                                        ctx.target
-                                    ))
-                                })?;
-                            KernelBtf::get()
-                                .struct_ops_callback_arg(
-                                    value_type_name,
-                                    &ctx.target,
-                                    *idx as usize,
-                                )
-                                .map_err(|e| {
-                                    TypeError::new(format!(
-                                        "failed to resolve ctx.arg{} for struct_ops {}.{}: {}",
-                                        idx, value_type_name, ctx.target, e
-                                    ))
-                                })?
-                        }
-                        EbpfProgramType::TpBtf => KernelBtf::get()
-                            .tp_btf_arg(&ctx.target, *idx as usize)
-                            .map_err(|e| {
-                                TypeError::new(format!(
-                                    "failed to resolve ctx.arg{} for tp_btf:{}: {}",
-                                    idx, ctx.target, e
-                                ))
-                            })?,
-                        EbpfProgramType::Lsm => KernelBtf::get()
-                            .lsm_hook_arg(&ctx.target, *idx as usize)
-                            .map_err(|e| {
-                                TypeError::new(format!(
-                                    "failed to resolve ctx.arg{} for lsm:{}: {}",
-                                    idx, ctx.target, e
-                                ))
-                            })?,
-                        _ => KernelBtf::get()
-                            .function_trampoline_arg(&ctx.target, *idx as usize)
-                            .map_err(|e| {
-                                TypeError::new(format!(
-                                    "failed to resolve ctx.arg{} for {}:{}: {}",
-                                    idx,
-                                    ctx.probe_type.section_prefix(),
-                                    ctx.target,
-                                    e
-                                ))
-                            })?,
-                    };
-                    if spec.is_none() {
-                        return Err(TypeError::new(match ctx.probe_type {
-                            EbpfProgramType::StructOps => format!(
-                                "ctx.arg{} is not available on struct_ops {}.{}",
-                                idx,
-                                ctx.struct_ops_value_type_name
-                                    .as_deref()
-                                    .unwrap_or("<unknown>"),
-                                ctx.target
-                            ),
-                            EbpfProgramType::TpBtf => {
-                                format!("ctx.arg{} is not available on tp_btf:{}", idx, ctx.target)
-                            }
-                            _ => format!(
-                                "ctx.arg{} is not available on {}:{}",
-                                idx,
-                                ctx.probe_type.section_prefix(),
-                                ctx.target
-                            ),
-                        }));
+                    if ctx
+                        .btf_arg_spec(*idx as usize)
+                        .map_err(TypeError::new)?
+                        .is_none()
+                    {
+                        return Err(TypeError::new(ctx.btf_arg_unavailable_error(*idx as usize)));
                     }
                 }
                 CtxField::RetVal
@@ -393,19 +250,8 @@ impl<'a> TypeInference<'a> {
                         ProgramValueAccess::Trampoline
                     ) =>
                 {
-                    let spec = KernelBtf::get()
-                        .function_trampoline_ret(&ctx.target)
-                        .map_err(|e| {
-                            TypeError::new(format!(
-                                "failed to resolve ctx.retval for fexit:{}: {}",
-                                ctx.target, e
-                            ))
-                        })?;
-                    if spec.is_none() {
-                        return Err(TypeError::new(format!(
-                            "ctx.retval is not available on fexit:{} because the target returns void",
-                            ctx.target
-                        )));
+                    if ctx.btf_ret_spec().map_err(TypeError::new)?.is_none() {
+                        return Err(TypeError::new(ctx.btf_ret_unavailable_error()));
                     }
                 }
                 _ => {}

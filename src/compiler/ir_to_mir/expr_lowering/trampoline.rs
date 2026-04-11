@@ -46,78 +46,14 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<Option<TrampolineValueSpec>, CompileError> {
         match (self.probe_ctx, field) {
             (Some(ctx), CtxField::Arg(idx)) if ctx.probe_type.uses_btf_trampoline() => {
-                let spec = match ctx.probe_type {
-                    EbpfProgramType::StructOps => {
-                        let value_type_name =
-                            ctx.struct_ops_value_type_name.as_deref().ok_or_else(|| {
-                                CompileError::UnsupportedInstruction(format!(
-                                    "missing struct_ops value type for callback '{}'",
-                                    ctx.target
-                                ))
-                            })?;
-                        KernelBtf::get()
-                            .struct_ops_callback_arg(value_type_name, &ctx.target, *idx as usize)
-                            .map_err(|e| {
-                                CompileError::UnsupportedInstruction(format!(
-                                    "failed to resolve ctx.arg{} for struct_ops {}.{}: {}",
-                                    idx, value_type_name, ctx.target, e
-                                ))
-                            })?
-                            .ok_or_else(|| {
-                                CompileError::UnsupportedInstruction(format!(
-                                    "ctx.arg{} is not available on struct_ops {}.{}",
-                                    idx, value_type_name, ctx.target
-                                ))
-                            })?
-                    }
-                    EbpfProgramType::TpBtf => KernelBtf::get()
-                        .tp_btf_arg(&ctx.target, *idx as usize)
-                        .map_err(|e| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "failed to resolve ctx.arg{} for tp_btf:{}: {}",
-                                idx, ctx.target, e
-                            ))
-                        })?
-                        .ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "ctx.arg{} is not available on tp_btf:{}",
-                                idx, ctx.target
-                            ))
-                        })?,
-                    EbpfProgramType::Lsm => KernelBtf::get()
-                        .lsm_hook_arg(&ctx.target, *idx as usize)
-                        .map_err(|e| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "failed to resolve ctx.arg{} for lsm:{}: {}",
-                                idx, ctx.target, e
-                            ))
-                        })?
-                        .ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "ctx.arg{} is not available on lsm:{}",
-                                idx, ctx.target
-                            ))
-                        })?,
-                    _ => KernelBtf::get()
-                        .function_trampoline_arg(&ctx.target, *idx as usize)
-                        .map_err(|e| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "failed to resolve ctx.arg{} for {}:{}: {}",
-                                idx,
-                                ctx.probe_type.section_prefix(),
-                                ctx.target,
-                                e
-                            ))
-                        })?
-                        .ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "ctx.arg{} is not available on {}:{}",
-                                idx,
-                                ctx.probe_type.section_prefix(),
-                                ctx.target
-                            ))
-                        })?,
-                };
+                let spec = ctx
+                    .btf_arg_spec(*idx as usize)
+                    .map_err(CompileError::UnsupportedInstruction)?
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            ctx.btf_arg_unavailable_error(*idx as usize),
+                        )
+                    })?;
                 Ok(Some(spec))
             }
             (Some(ctx), CtxField::RetVal)
@@ -126,19 +62,11 @@ impl<'a> HirToMirLowering<'a> {
                     ProgramValueAccess::Trampoline
                 ) =>
             {
-                let spec = KernelBtf::get()
-                    .function_trampoline_ret(&ctx.target)
-                    .map_err(|e| {
-                        CompileError::UnsupportedInstruction(format!(
-                            "failed to resolve ctx.retval for fexit:{}: {}",
-                            ctx.target, e
-                        ))
-                    })?
+                let spec = ctx
+                    .btf_ret_spec()
+                    .map_err(CompileError::UnsupportedInstruction)?
                     .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(format!(
-                            "ctx.retval is not available on fexit:{} because the target returns void",
-                            ctx.target
-                        ))
+                        CompileError::UnsupportedInstruction(ctx.btf_ret_unavailable_error())
                     })?;
                 Ok(Some(spec))
             }
@@ -368,72 +296,17 @@ impl<'a> HirToMirLowering<'a> {
         field: &CtxField,
     ) -> Result<Option<TypeInfo>, CompileError> {
         match (self.probe_ctx, field) {
-            (Some(ctx), CtxField::Arg(idx)) if ctx.probe_type.uses_btf_trampoline() => {
-                match ctx.probe_type {
-                    EbpfProgramType::StructOps => {
-                        let value_type_name =
-                            ctx.struct_ops_value_type_name.as_deref().ok_or_else(|| {
-                                CompileError::UnsupportedInstruction(format!(
-                                    "missing struct_ops value type for callback '{}'",
-                                    ctx.target
-                                ))
-                            })?;
-                        KernelBtf::get()
-                            .struct_ops_callback_arg_type_info(
-                                value_type_name,
-                                &ctx.target,
-                                *idx as usize,
-                            )
-                            .map_err(|e| {
-                                CompileError::UnsupportedInstruction(format!(
-                                    "failed to resolve ctx.arg{} type for struct_ops {}.{}: {}",
-                                    idx, value_type_name, ctx.target, e
-                                ))
-                            })
-                    }
-                    EbpfProgramType::TpBtf => KernelBtf::get()
-                        .tp_btf_arg_type_info(&ctx.target, *idx as usize)
-                        .map_err(|e| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "failed to resolve ctx.arg{} type for tp_btf:{}: {}",
-                                idx, ctx.target, e
-                            ))
-                        }),
-                    EbpfProgramType::Lsm => KernelBtf::get()
-                        .lsm_hook_arg_type_info(&ctx.target, *idx as usize)
-                        .map_err(|e| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "failed to resolve ctx.arg{} type for lsm:{}: {}",
-                                idx, ctx.target, e
-                            ))
-                        }),
-                    _ => KernelBtf::get()
-                        .function_trampoline_arg_type_info(&ctx.target, *idx as usize)
-                        .map_err(|e| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "failed to resolve ctx.arg{} type for {}:{}: {}",
-                                idx,
-                                ctx.probe_type.section_prefix(),
-                                ctx.target,
-                                e
-                            ))
-                        }),
-                }
-            }
+            (Some(ctx), CtxField::Arg(idx)) if ctx.probe_type.uses_btf_trampoline() => ctx
+                .btf_arg_type_info(*idx as usize)
+                .map_err(CompileError::UnsupportedInstruction),
             (Some(ctx), CtxField::RetVal)
                 if matches!(
                     ctx.probe_type.retval_access(),
                     ProgramValueAccess::Trampoline
                 ) =>
             {
-                KernelBtf::get()
-                    .function_trampoline_ret_type_info(&ctx.target)
-                    .map_err(|e| {
-                        CompileError::UnsupportedInstruction(format!(
-                            "failed to resolve ctx.retval type for fexit:{}: {}",
-                            ctx.target, e
-                        ))
-                    })
+                ctx.btf_ret_type_info()
+                    .map_err(CompileError::UnsupportedInstruction)
             }
             _ => Ok(None),
         }

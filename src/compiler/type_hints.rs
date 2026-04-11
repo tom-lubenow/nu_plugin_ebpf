@@ -5,7 +5,7 @@ use crate::compiler::mir::{
     AddressSpace, BinOpKind, CtxField, MapRef, MirFunction, MirInst, MirProgram, MirType,
     MirTypeHints, MirValue, StackSlotId, StructField, VReg,
 };
-use crate::kernel_btf::{KernelBtf, TypeInfo};
+use crate::kernel_btf::TypeInfo;
 
 fn pointer_hint(address_space: AddressSpace) -> MirType {
     MirType::Ptr {
@@ -378,31 +378,7 @@ fn recover_ctx_field_hint(
         CtxField::Arg(idx) => {
             let ctx = probe_ctx?;
             if ctx.probe_type.uses_btf_trampoline() {
-                let type_info = match ctx.probe_type {
-                    crate::compiler::EbpfProgramType::StructOps => {
-                        let value_type_name = ctx.struct_ops_value_type_name.as_deref()?;
-                        KernelBtf::get()
-                            .struct_ops_callback_arg_type_info(
-                                value_type_name,
-                                &ctx.target,
-                                *idx as usize,
-                            )
-                            .ok()
-                            .flatten()?
-                    }
-                    crate::compiler::EbpfProgramType::TpBtf => KernelBtf::get()
-                        .tp_btf_arg_type_info(&ctx.target, *idx as usize)
-                        .ok()
-                        .flatten()?,
-                    crate::compiler::EbpfProgramType::Lsm => KernelBtf::get()
-                        .lsm_hook_arg_type_info(&ctx.target, *idx as usize)
-                        .ok()
-                        .flatten()?,
-                    _ => KernelBtf::get()
-                        .function_trampoline_arg_type_info(&ctx.target, *idx as usize)
-                        .ok()
-                        .flatten()?,
-                };
+                let type_info = ctx.btf_arg_type_info(*idx as usize).ok().flatten()?;
                 runtime_trampoline_root_type(&type_info)
             } else if ctx.probe_type == crate::compiler::EbpfProgramType::RawTracepoint {
                 Some(MirType::U64)
@@ -420,10 +396,7 @@ fn recover_ctx_field_hint(
             ) {
                 return None;
             }
-            let type_info = KernelBtf::get()
-                .function_trampoline_ret_type_info(&ctx.target)
-                .ok()
-                .flatten()?;
+            let type_info = ctx.btf_ret_type_info().ok().flatten()?;
             runtime_trampoline_root_type(&type_info)
         }
         _ => None,

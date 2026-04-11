@@ -1,7 +1,6 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
 use crate::compiler::mir::CtxStoreTarget;
-use crate::kernel_btf::KernelBtf;
 
 impl<'a> HirToMirLowering<'a> {
     fn ctx_path_member_name(member: &PathMember) -> Result<String, CompileError> {
@@ -166,77 +165,18 @@ impl<'a> HirToMirLowering<'a> {
                     "ctx.arg.<name> is only available on kernel-BTF-backed contexts".into(),
                 ));
             };
-            let Some(arg_idx) = (match ctx.probe_type {
-                EbpfProgramType::StructOps => {
-                    let value_type_name =
-                        ctx.struct_ops_value_type_name.as_deref().ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "missing struct_ops value type for callback '{}'",
-                                ctx.target
-                            ))
-                        })?;
-                    KernelBtf::get()
-                        .struct_ops_callback_arg_index_by_name(
-                            value_type_name,
-                            &ctx.target,
-                            arg_name,
-                        )
-                        .map_err(|e| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "failed to resolve ctx.arg.{} for struct_ops {}.{}: {}",
-                                arg_name, value_type_name, ctx.target, e
-                            ))
-                        })?
-                }
-                EbpfProgramType::TpBtf => KernelBtf::get()
-                    .tp_btf_arg_index_by_name(&ctx.target, arg_name)
-                    .map_err(|e| {
-                        CompileError::UnsupportedInstruction(format!(
-                            "failed to resolve ctx.arg.{} for tp_btf:{}: {}",
-                            arg_name, ctx.target, e
-                        ))
-                    })?,
-                EbpfProgramType::Lsm => KernelBtf::get()
-                    .lsm_hook_arg_index_by_name(&ctx.target, arg_name)
-                    .map_err(|e| {
-                        CompileError::UnsupportedInstruction(format!(
-                            "failed to resolve ctx.arg.{} for lsm:{}: {}",
-                            arg_name, ctx.target, e
-                        ))
-                    })?,
-                probe_type if probe_type.uses_btf_trampoline() => KernelBtf::get()
-                    .function_trampoline_arg_index_by_name(&ctx.target, arg_name)
-                    .map_err(|e| {
-                        CompileError::UnsupportedInstruction(format!(
-                            "failed to resolve ctx.arg.{} for {}:{}: {}",
-                            arg_name,
-                            ctx.probe_type.section_prefix(),
-                            ctx.target,
-                            e
-                        ))
-                    })?,
-                _ => {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "ctx.arg.<name> is only available on kernel-BTF-backed contexts".into(),
-                    ));
-                }
-            }) else {
-                let context = match ctx.probe_type {
-                    EbpfProgramType::StructOps => {
-                        let value_type_name = ctx
-                            .struct_ops_value_type_name
-                            .as_deref()
-                            .unwrap_or("<unknown>");
-                        format!("struct_ops {}.{}", value_type_name, ctx.target)
-                    }
-                    EbpfProgramType::TpBtf => format!("tp_btf:{}", ctx.target),
-                    EbpfProgramType::Lsm => format!("lsm:{}", ctx.target),
-                    _ => format!("{}:{}", ctx.probe_type.section_prefix(), ctx.target),
-                };
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "ctx.arg.{} is not a valid argument name for {}",
-                    arg_name, context
-                )));
+            if !ctx.probe_type.uses_btf_trampoline() {
+                return Err(CompileError::UnsupportedInstruction(
+                    "ctx.arg.<name> is only available on kernel-BTF-backed contexts".into(),
+                ));
+            }
+            let Some(arg_idx) = ctx
+                .btf_arg_index_by_name(arg_name)
+                .map_err(CompileError::UnsupportedInstruction)?
+            else {
+                return Err(CompileError::UnsupportedInstruction(
+                    ctx.btf_arg_name_invalid_error(arg_name),
+                ));
             };
             let arg_idx = u8::try_from(arg_idx).map_err(|_| {
                 CompileError::UnsupportedInstruction(format!(

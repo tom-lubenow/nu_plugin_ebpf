@@ -1,7 +1,7 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
 use crate::compiler::mir::AddressSpace;
-use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TrampolineValueKind};
+use crate::kernel_btf::{TrampolineFieldSelector, TrampolineValueKind};
 
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn lower_dynamic_typed_numeric_get(
@@ -415,103 +415,19 @@ impl<'a> HirToMirLowering<'a> {
                 ));
             }
             let projection = match &ctx_field {
-                CtxField::Arg(idx) => match ctx.probe_type {
-                    EbpfProgramType::StructOps => {
-                        let value_type_name =
-                            ctx.struct_ops_value_type_name.as_deref().ok_or_else(|| {
-                                CompileError::UnsupportedInstruction(format!(
-                                    "missing struct_ops value type for callback '{}'",
-                                    ctx.target
-                                ))
-                            })?;
-                        KernelBtf::get()
-                            .struct_ops_callback_arg_field(
-                                value_type_name,
-                                &ctx.target,
-                                *idx as usize,
-                                &nested_segments,
-                            )
-                            .map_err(|e| {
-                                CompileError::UnsupportedInstruction(format!(
-                                    "failed to resolve ctx.arg{}.{} for struct_ops {}.{}: {}",
-                                    idx, path_desc, value_type_name, ctx.target, e
-                                ))
-                            })?
-                            .ok_or_else(|| {
-                                CompileError::UnsupportedInstruction(format!(
-                                    "ctx.arg{} is not available on struct_ops {}.{}",
-                                    idx, value_type_name, ctx.target
-                                ))
-                            })?
-                    }
-                    EbpfProgramType::TpBtf => KernelBtf::get()
-                        .tp_btf_arg_field(&ctx.target, *idx as usize, &nested_segments)
-                        .map_err(|e| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "failed to resolve ctx.arg{}.{} for tp_btf:{}: {}",
-                                idx, path_desc, ctx.target, e
-                            ))
-                        })?
-                        .ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "ctx.arg{} is not available on tp_btf:{}",
-                                idx, ctx.target
-                            ))
-                        })?,
-                    EbpfProgramType::Lsm => KernelBtf::get()
-                        .lsm_hook_arg_field(&ctx.target, *idx as usize, &nested_segments)
-                        .map_err(|e| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "failed to resolve ctx.arg{}.{} for lsm:{}: {}",
-                                idx, path_desc, ctx.target, e
-                            ))
-                        })?
-                        .ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "ctx.arg{} is not available on lsm:{}",
-                                idx, ctx.target
-                            ))
-                        })?,
-                    _ => KernelBtf::get()
-                        .function_trampoline_arg_field(
-                            &ctx.target,
-                            *idx as usize,
-                            &nested_segments,
-                        )
-                        .map_err(|e| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "failed to resolve ctx.arg{}.{} for {}:{}: {}",
-                                idx,
-                                path_desc,
-                                ctx.probe_type.section_prefix(),
-                                ctx.target,
-                                e
-                            ))
-                        })?
-                        .ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "ctx.arg{} is not available on {}:{}",
-                                idx,
-                                ctx.probe_type.section_prefix(),
-                                ctx.target
-                            ))
-                        })?,
-                },
-                CtxField::RetVal => KernelBtf::get()
-                    .function_trampoline_ret_field(&ctx.target, &nested_segments)
-                    .map_err(|e| {
-                        CompileError::UnsupportedInstruction(format!(
-                            "failed to resolve ctx.retval.{} for fexit:{}: {}",
-                            path_desc,
-                            ctx.target,
-                            e
-                        ))
-                    })?
+                CtxField::Arg(idx) => ctx
+                    .btf_arg_field_projection(*idx as usize, &nested_segments, &path_desc)
+                    .map_err(CompileError::UnsupportedInstruction)?
                     .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(format!(
-                            "ctx.retval is not available on fexit:{} because the target returns void",
-                            ctx.target
-                        ))
+                        CompileError::UnsupportedInstruction(
+                            ctx.btf_arg_unavailable_error(*idx as usize),
+                        )
+                    })?,
+                CtxField::RetVal => ctx
+                    .btf_ret_field_projection(&nested_segments, &path_desc)
+                    .map_err(CompileError::UnsupportedInstruction)?
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(ctx.btf_ret_unavailable_error())
                     })?,
                 _ => {
                     return Err(CompileError::UnsupportedInstruction(

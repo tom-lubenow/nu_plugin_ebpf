@@ -366,6 +366,34 @@ fn test_probe_context_tracepoint_parts_use_typed_program_spec() {
 }
 
 #[test]
+fn test_probe_context_btf_context_label_formats_struct_ops() {
+    let ctx = ProbeContext::new_struct_ops_callback("sched_ext_ops", "select_cpu");
+
+    assert_eq!(
+        ctx.btf_context_label(),
+        "struct_ops sched_ext_ops.select_cpu"
+    );
+    assert_eq!(
+        ctx.btf_arg_name_invalid_error("missing"),
+        "ctx.arg.missing is not a valid argument name for struct_ops sched_ext_ops.select_cpu"
+    );
+}
+
+#[test]
+fn test_probe_context_btf_arg_index_by_name_uses_tp_btf_lookup() {
+    let tracepoint_name = "sys_enter";
+    let ctx = ProbeContext::new(EbpfProgramType::TpBtf, tracepoint_name);
+
+    assert_eq!(
+        ctx.btf_arg_index_by_name("regs")
+            .expect("tp_btf ctx.arg.<name> lookup should succeed"),
+        KernelBtf::get()
+            .tp_btf_arg_index_by_name(tracepoint_name, "regs")
+            .expect("direct tp_btf arg-name lookup should succeed")
+    );
+}
+
+#[test]
 fn test_probe_context_tc_attach_kind_uses_typed_program_spec() {
     let ingress = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let egress = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");

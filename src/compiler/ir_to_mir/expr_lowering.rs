@@ -1,9 +1,9 @@
 use super::*;
+use crate::compiler::ProgramValueAccess;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
 use crate::compiler::mir::StructField;
 use crate::compiler::mir::UnaryOpKind;
-use crate::compiler::{EbpfProgramType, ProgramValueAccess};
 use crate::kernel_btf::{
     KernelBtf, TrampolineBitfieldInfo, TrampolineFieldProjection, TrampolineFieldSelector,
     TrampolineValueKind, TrampolineValueSpec, TypeInfo,

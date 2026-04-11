@@ -1,5 +1,10 @@
-use super::{CompileError, CtxField, EbpfProgramType, ProbeContext, ProgramTargetKind};
+use super::{
+    CompileError, CtxField, EbpfProgramType, ProbeContext, ProgramTargetKind, ProgramValueAccess,
+};
 use crate::compiler::instruction::BpfHelper;
+use crate::kernel_btf::{
+    KernelBtf, TrampolineFieldProjection, TrampolineFieldSelector, TrampolineValueSpec, TypeInfo,
+};
 use crate::program_spec::{
     CgroupSockAddrTarget, CgroupSockTarget, CgroupSockoptTarget, ProgramSpec, TcTarget,
 };
@@ -92,6 +97,15 @@ impl ProbeContext {
             .is_some_and(|target| matches!(target.attach_type, CgroupSockoptAttachType::Get))
     }
 
+    fn require_struct_ops_value_type_name(&self) -> Result<&str, String> {
+        self.struct_ops_value_type_name.as_deref().ok_or_else(|| {
+            format!(
+                "missing struct_ops value type for callback '{}'",
+                self.target
+            )
+        })
+    }
+
     /// Create a new probe context
     pub fn new(probe_type: EbpfProgramType, target: impl Into<String>) -> Self {
         Self {
@@ -149,6 +163,302 @@ impl ProbeContext {
             ProgramSpec::Tracepoint { category, name } => Some((category, name)),
             _ => None,
         }
+    }
+
+    pub(crate) fn btf_context_label(&self) -> String {
+        match self.probe_type {
+            EbpfProgramType::StructOps => format!(
+                "struct_ops {}.{}",
+                self.struct_ops_value_type_name
+                    .as_deref()
+                    .unwrap_or("<unknown>"),
+                self.target
+            ),
+            EbpfProgramType::TpBtf => format!("tp_btf:{}", self.target),
+            EbpfProgramType::Lsm => format!("lsm:{}", self.target),
+            _ => format!("{}:{}", self.probe_type.section_prefix(), self.target),
+        }
+    }
+
+    pub(crate) fn btf_arg_unavailable_error(&self, arg_idx: usize) -> String {
+        format!(
+            "ctx.arg{} is not available on {}",
+            arg_idx,
+            self.btf_context_label()
+        )
+    }
+
+    pub(crate) fn btf_arg_name_invalid_error(&self, arg_name: &str) -> String {
+        format!(
+            "ctx.arg.{} is not a valid argument name for {}",
+            arg_name,
+            self.btf_context_label()
+        )
+    }
+
+    pub(crate) fn btf_ret_unavailable_error(&self) -> String {
+        format!(
+            "ctx.retval is not available on fexit:{} because the target returns void",
+            self.target
+        )
+    }
+
+    pub(crate) fn btf_arg_index_by_name(&self, arg_name: &str) -> Result<Option<usize>, String> {
+        if !self.probe_type.uses_btf_trampoline() {
+            return Ok(None);
+        }
+
+        let btf = KernelBtf::get();
+        match self.probe_type {
+            EbpfProgramType::StructOps => {
+                let value_type_name = self.require_struct_ops_value_type_name()?;
+                btf.struct_ops_callback_arg_index_by_name(value_type_name, &self.target, arg_name)
+                    .map_err(|e| {
+                        format!(
+                            "failed to resolve ctx.arg.{} for struct_ops {}.{}: {}",
+                            arg_name, value_type_name, self.target, e
+                        )
+                    })
+            }
+            EbpfProgramType::TpBtf => btf
+                .tp_btf_arg_index_by_name(&self.target, arg_name)
+                .map_err(|e| {
+                    format!(
+                        "failed to resolve ctx.arg.{} for tp_btf:{}: {}",
+                        arg_name, self.target, e
+                    )
+                }),
+            EbpfProgramType::Lsm => btf
+                .lsm_hook_arg_index_by_name(&self.target, arg_name)
+                .map_err(|e| {
+                    format!(
+                        "failed to resolve ctx.arg.{} for lsm:{}: {}",
+                        arg_name, self.target, e
+                    )
+                }),
+            _ => btf
+                .function_trampoline_arg_index_by_name(&self.target, arg_name)
+                .map_err(|e| {
+                    format!(
+                        "failed to resolve ctx.arg.{} for {}:{}: {}",
+                        arg_name,
+                        self.probe_type.section_prefix(),
+                        self.target,
+                        e
+                    )
+                }),
+        }
+    }
+
+    pub(crate) fn btf_arg_spec(
+        &self,
+        arg_idx: usize,
+    ) -> Result<Option<TrampolineValueSpec>, String> {
+        if !self.probe_type.uses_btf_trampoline() {
+            return Ok(None);
+        }
+
+        let btf = KernelBtf::get();
+        match self.probe_type {
+            EbpfProgramType::StructOps => {
+                let value_type_name = self.require_struct_ops_value_type_name()?;
+                btf.struct_ops_callback_arg(value_type_name, &self.target, arg_idx)
+                    .map_err(|e| {
+                        format!(
+                            "failed to resolve ctx.arg{} for struct_ops {}.{}: {}",
+                            arg_idx, value_type_name, self.target, e
+                        )
+                    })
+            }
+            EbpfProgramType::TpBtf => btf.tp_btf_arg(&self.target, arg_idx).map_err(|e| {
+                format!(
+                    "failed to resolve ctx.arg{} for tp_btf:{}: {}",
+                    arg_idx, self.target, e
+                )
+            }),
+            EbpfProgramType::Lsm => btf.lsm_hook_arg(&self.target, arg_idx).map_err(|e| {
+                format!(
+                    "failed to resolve ctx.arg{} for lsm:{}: {}",
+                    arg_idx, self.target, e
+                )
+            }),
+            _ => btf
+                .function_trampoline_arg(&self.target, arg_idx)
+                .map_err(|e| {
+                    format!(
+                        "failed to resolve ctx.arg{} for {}:{}: {}",
+                        arg_idx,
+                        self.probe_type.section_prefix(),
+                        self.target,
+                        e
+                    )
+                }),
+        }
+    }
+
+    pub(crate) fn btf_arg_type_info(&self, arg_idx: usize) -> Result<Option<TypeInfo>, String> {
+        if !self.probe_type.uses_btf_trampoline() {
+            return Ok(None);
+        }
+
+        let btf = KernelBtf::get();
+        match self.probe_type {
+            EbpfProgramType::StructOps => {
+                let value_type_name = self.require_struct_ops_value_type_name()?;
+                btf.struct_ops_callback_arg_type_info(value_type_name, &self.target, arg_idx)
+                    .map_err(|e| {
+                        format!(
+                            "failed to resolve ctx.arg{} type for struct_ops {}.{}: {}",
+                            arg_idx, value_type_name, self.target, e
+                        )
+                    })
+            }
+            EbpfProgramType::TpBtf => {
+                btf.tp_btf_arg_type_info(&self.target, arg_idx)
+                    .map_err(|e| {
+                        format!(
+                            "failed to resolve ctx.arg{} type for tp_btf:{}: {}",
+                            arg_idx, self.target, e
+                        )
+                    })
+            }
+            EbpfProgramType::Lsm => {
+                btf.lsm_hook_arg_type_info(&self.target, arg_idx)
+                    .map_err(|e| {
+                        format!(
+                            "failed to resolve ctx.arg{} type for lsm:{}: {}",
+                            arg_idx, self.target, e
+                        )
+                    })
+            }
+            _ => btf
+                .function_trampoline_arg_type_info(&self.target, arg_idx)
+                .map_err(|e| {
+                    format!(
+                        "failed to resolve ctx.arg{} type for {}:{}: {}",
+                        arg_idx,
+                        self.probe_type.section_prefix(),
+                        self.target,
+                        e
+                    )
+                }),
+        }
+    }
+
+    pub(crate) fn btf_arg_field_projection(
+        &self,
+        arg_idx: usize,
+        field_path: &[TrampolineFieldSelector],
+        path_desc: &str,
+    ) -> Result<Option<TrampolineFieldProjection>, String> {
+        if !self.probe_type.uses_btf_trampoline() {
+            return Ok(None);
+        }
+
+        let btf = KernelBtf::get();
+        match self.probe_type {
+            EbpfProgramType::StructOps => {
+                let value_type_name = self.require_struct_ops_value_type_name()?;
+                btf.struct_ops_callback_arg_field(
+                    value_type_name,
+                    &self.target,
+                    arg_idx,
+                    field_path,
+                )
+                .map_err(|e| {
+                    format!(
+                        "failed to resolve ctx.arg{}.{} for struct_ops {}.{}: {}",
+                        arg_idx, path_desc, value_type_name, self.target, e
+                    )
+                })
+            }
+            EbpfProgramType::TpBtf => btf
+                .tp_btf_arg_field(&self.target, arg_idx, field_path)
+                .map_err(|e| {
+                    format!(
+                        "failed to resolve ctx.arg{}.{} for tp_btf:{}: {}",
+                        arg_idx, path_desc, self.target, e
+                    )
+                }),
+            EbpfProgramType::Lsm => btf
+                .lsm_hook_arg_field(&self.target, arg_idx, field_path)
+                .map_err(|e| {
+                    format!(
+                        "failed to resolve ctx.arg{}.{} for lsm:{}: {}",
+                        arg_idx, path_desc, self.target, e
+                    )
+                }),
+            _ => btf
+                .function_trampoline_arg_field(&self.target, arg_idx, field_path)
+                .map_err(|e| {
+                    format!(
+                        "failed to resolve ctx.arg{}.{} for {}:{}: {}",
+                        arg_idx,
+                        path_desc,
+                        self.probe_type.section_prefix(),
+                        self.target,
+                        e
+                    )
+                }),
+        }
+    }
+
+    pub(crate) fn btf_ret_spec(&self) -> Result<Option<TrampolineValueSpec>, String> {
+        if !matches!(
+            self.probe_type.retval_access(),
+            ProgramValueAccess::Trampoline
+        ) {
+            return Ok(None);
+        }
+
+        KernelBtf::get()
+            .function_trampoline_ret(&self.target)
+            .map_err(|e| {
+                format!(
+                    "failed to resolve ctx.retval for fexit:{}: {}",
+                    self.target, e
+                )
+            })
+    }
+
+    pub(crate) fn btf_ret_type_info(&self) -> Result<Option<TypeInfo>, String> {
+        if !matches!(
+            self.probe_type.retval_access(),
+            ProgramValueAccess::Trampoline
+        ) {
+            return Ok(None);
+        }
+
+        KernelBtf::get()
+            .function_trampoline_ret_type_info(&self.target)
+            .map_err(|e| {
+                format!(
+                    "failed to resolve ctx.retval type for fexit:{}: {}",
+                    self.target, e
+                )
+            })
+    }
+
+    pub(crate) fn btf_ret_field_projection(
+        &self,
+        field_path: &[TrampolineFieldSelector],
+        path_desc: &str,
+    ) -> Result<Option<TrampolineFieldProjection>, String> {
+        if !matches!(
+            self.probe_type.retval_access(),
+            ProgramValueAccess::Trampoline
+        ) {
+            return Ok(None);
+        }
+
+        KernelBtf::get()
+            .function_trampoline_ret_field(&self.target, field_path)
+            .map_err(|e| {
+                format!(
+                    "failed to resolve ctx.retval.{} for fexit:{}: {}",
+                    path_desc, self.target, e
+                )
+            })
     }
 
     /// Returns a user-facing error message when a context field is not valid
