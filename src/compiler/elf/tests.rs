@@ -307,6 +307,55 @@ fn test_program_type_return_action_aliases_cover_packet_len_aliases() {
 }
 
 #[test]
+fn test_probe_context_socket_layouts_follow_program_model() {
+    let cgroup_sock = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+    assert_eq!(
+        cgroup_sock.socket_family_context_layout(),
+        Some(SocketContextLayout::CgroupSock)
+    );
+    assert_eq!(
+        cgroup_sock.sock_type_context_layout(),
+        Some(SocketContextLayout::CgroupSock)
+    );
+    assert_eq!(
+        cgroup_sock.protocol_context_layout(),
+        Some(SocketContextLayout::CgroupSock)
+    );
+    assert_eq!(cgroup_sock.socket_tuple_context_layout(), None);
+
+    let sk_skb = ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap");
+    assert_eq!(
+        sk_skb.socket_family_context_layout(),
+        Some(SocketContextLayout::SkBuff)
+    );
+    assert_eq!(
+        sk_skb.socket_tuple_context_layout(),
+        Some(SocketContextLayout::SkBuff)
+    );
+    assert_eq!(sk_skb.sock_type_context_layout(), None);
+    assert_eq!(sk_skb.protocol_context_layout(), None);
+}
+
+#[test]
+fn test_probe_context_socket_ref_layouts_follow_program_model() {
+    let cgroup_sockopt =
+        ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:getsockopt");
+    assert_eq!(
+        cgroup_sockopt.socket_ref_context_layout(),
+        Some(SocketContextLayout::CgroupSockopt)
+    );
+
+    let sk_msg = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+    assert_eq!(
+        sk_msg.socket_ref_context_layout(),
+        Some(SocketContextLayout::SkMsg)
+    );
+
+    let xdp = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    assert_eq!(xdp.socket_ref_context_layout(), None);
+}
+
+#[test]
 fn test_program_type_metadata_for_cgroup_device() {
     let info = EbpfProgramType::CgroupDevice.info();
     assert_eq!(info.canonical_prefix, "cgroup_device");

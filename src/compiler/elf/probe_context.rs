@@ -1,5 +1,6 @@
 use super::{
     CompileError, CtxField, EbpfProgramType, ProbeContext, ProgramTargetKind, ProgramValueAccess,
+    SocketContextLayout,
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::kernel_btf::{
@@ -95,6 +96,59 @@ impl ProbeContext {
     fn cgroup_sockopt_is_get(&self) -> bool {
         self.cgroup_sockopt_target()
             .is_some_and(|target| matches!(target.attach_type, CgroupSockoptAttachType::Get))
+    }
+
+    pub(crate) fn socket_family_context_layout(&self) -> Option<SocketContextLayout> {
+        match self.probe_type {
+            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
+            EbpfProgramType::CgroupSockAddr => Some(SocketContextLayout::SockAddr),
+            EbpfProgramType::SkLookup => Some(SocketContextLayout::SkLookup),
+            EbpfProgramType::SkMsg => Some(SocketContextLayout::SkMsg),
+            EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser => {
+                Some(SocketContextLayout::SkBuff)
+            }
+            EbpfProgramType::SockOps => Some(SocketContextLayout::SockOps),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn socket_tuple_context_layout(&self) -> Option<SocketContextLayout> {
+        match self.probe_type {
+            EbpfProgramType::SkLookup => Some(SocketContextLayout::SkLookup),
+            EbpfProgramType::SkMsg => Some(SocketContextLayout::SkMsg),
+            EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser => {
+                Some(SocketContextLayout::SkBuff)
+            }
+            EbpfProgramType::SockOps => Some(SocketContextLayout::SockOps),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn sock_type_context_layout(&self) -> Option<SocketContextLayout> {
+        match self.probe_type {
+            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
+            EbpfProgramType::CgroupSockAddr => Some(SocketContextLayout::SockAddr),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn protocol_context_layout(&self) -> Option<SocketContextLayout> {
+        match self.probe_type {
+            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
+            EbpfProgramType::CgroupSockAddr => Some(SocketContextLayout::SockAddr),
+            EbpfProgramType::SkLookup => Some(SocketContextLayout::SkLookup),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn socket_ref_context_layout(&self) -> Option<SocketContextLayout> {
+        match self.probe_type {
+            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
+            EbpfProgramType::CgroupSockopt => Some(SocketContextLayout::CgroupSockopt),
+            EbpfProgramType::SkLookup => Some(SocketContextLayout::SkLookup),
+            EbpfProgramType::SkMsg => Some(SocketContextLayout::SkMsg),
+            _ => None,
+        }
     }
 
     fn require_struct_ops_value_type_name(&self) -> Result<&str, String> {

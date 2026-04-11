@@ -1067,6 +1067,17 @@ pub(crate) enum ProgramReturnAlias {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum SocketContextLayout {
+    SockAddr,
+    CgroupSock,
+    CgroupSockopt,
+    SkLookup,
+    SkMsg,
+    SkBuff,
+    SockOps,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProgramIntrinsic {
     Emit,
     Count,

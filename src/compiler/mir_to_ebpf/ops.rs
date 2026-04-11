@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::elf::SocketContextLayout;
 use crate::compiler::{EbpfProgramType, ProgramValueAccess};
 use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec};
 
@@ -816,51 +817,95 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::Family => {
-                let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
-                    Some(EbpfProgramType::CgroupSock) => Self::bpf_sock_offsets().1,
-                    Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().1,
-                    Some(EbpfProgramType::SkLookup) => Self::bpf_sk_lookup_offsets().1,
-                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().2,
-                    Some(EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser) => {
-                        Self::sk_buff_socket_offsets().0
+                let offset = match self
+                    .probe_ctx
+                    .as_ref()
+                    .and_then(|ctx| ctx.socket_family_context_layout())
+                {
+                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().1,
+                    Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().1,
+                    Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().1,
+                    Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().2,
+                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().0,
+                    Some(SocketContextLayout::SockAddr) => Self::bpf_sock_addr_offsets().4,
+                    Some(SocketContextLayout::CgroupSockopt) | None => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.family is only available on cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
+                        ));
                     }
-                    _ => Self::bpf_sock_addr_offsets().4,
                 };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::SockType => {
-                let offset = if matches!(
-                    self.probe_ctx.as_ref().map(|ctx| ctx.probe_type),
-                    Some(EbpfProgramType::CgroupSock)
-                ) {
-                    Self::bpf_sock_offsets().2
-                } else {
-                    Self::bpf_sock_addr_offsets().5
+                let offset = match self
+                    .probe_ctx
+                    .as_ref()
+                    .and_then(|ctx| ctx.sock_type_context_layout())
+                {
+                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().2,
+                    Some(SocketContextLayout::SockAddr) => Self::bpf_sock_addr_offsets().5,
+                    Some(
+                        SocketContextLayout::CgroupSockopt
+                        | SocketContextLayout::SkLookup
+                        | SocketContextLayout::SkMsg
+                        | SocketContextLayout::SkBuff
+                        | SocketContextLayout::SockOps,
+                    )
+                    | None => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.type is only available on cgroup_sock and cgroup_sock_addr programs"
+                                .to_string(),
+                        ));
+                    }
                 };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::Protocol => {
-                let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
-                    Some(EbpfProgramType::CgroupSock) => Self::bpf_sock_offsets().3,
-                    Some(EbpfProgramType::SkLookup) => Self::bpf_sk_lookup_offsets().2,
-                    _ => Self::bpf_sock_addr_offsets().6,
+                let offset = match self
+                    .probe_ctx
+                    .as_ref()
+                    .and_then(|ctx| ctx.protocol_context_layout())
+                {
+                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().3,
+                    Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().2,
+                    Some(SocketContextLayout::SockAddr) => Self::bpf_sock_addr_offsets().6,
+                    Some(
+                        SocketContextLayout::CgroupSockopt
+                        | SocketContextLayout::SkMsg
+                        | SocketContextLayout::SkBuff
+                        | SocketContextLayout::SockOps,
+                    )
+                    | None => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.protocol is only available on cgroup_sock, cgroup_sock_addr, and sk_lookup programs".to_string(),
+                        ));
+                    }
                 };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::Socket => {
-                let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
-                    Some(EbpfProgramType::CgroupSock) => {
+                let offset = match self
+                    .probe_ctx
+                    .as_ref()
+                    .and_then(|ctx| ctx.socket_ref_context_layout())
+                {
+                    Some(SocketContextLayout::CgroupSock) => {
                         self.instructions
                             .push(EbpfInsn::mov64_reg(dst, EbpfReg::R9));
                         return Ok(());
                     }
-                    Some(EbpfProgramType::CgroupSockopt) => Self::bpf_sockopt_offsets().0,
-                    Some(EbpfProgramType::SkLookup) => Self::bpf_sk_lookup_offsets().0,
-                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_sock_offset(),
-                    _ => {
+                    Some(SocketContextLayout::CgroupSockopt) => Self::bpf_sockopt_offsets().0,
+                    Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().0,
+                    Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_sock_offset(),
+                    Some(
+                        SocketContextLayout::SockAddr
+                        | SocketContextLayout::SkBuff
+                        | SocketContextLayout::SockOps,
+                    )
+                    | None => {
                         return Err(CompileError::UnsupportedInstruction(
                             "ctx.sk is only available on cgroup_sock, cgroup_sockopt, sk_lookup, and sk_msg programs".to_string(),
                         ));
@@ -931,43 +976,77 @@ impl<'a> MirToEbpfCompiler<'a> {
                 )?;
             }
             CtxField::RemoteIp4 => {
-                let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
-                    Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().2,
-                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().3,
-                    Some(EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser) => {
-                        Self::sk_buff_socket_offsets().1
+                let offset = match self
+                    .probe_ctx
+                    .as_ref()
+                    .and_then(|ctx| ctx.socket_tuple_context_layout())
+                {
+                    Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().2,
+                    Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().3,
+                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().1,
+                    Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().3,
+                    Some(
+                        SocketContextLayout::SockAddr
+                        | SocketContextLayout::CgroupSock
+                        | SocketContextLayout::CgroupSockopt,
+                    )
+                    | None => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.remote_ip4 is only available on sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
+                        ));
                     }
-                    _ => Self::bpf_sk_lookup_offsets().3,
                 };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
                 self.instructions.push(EbpfInsn::end32_to_be(dst));
             }
             CtxField::RemoteIp6 => {
-                let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
-                    Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().4,
-                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().5,
-                    Some(EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser) => {
-                        Self::sk_buff_socket_offsets().3
+                let offset = match self
+                    .probe_ctx
+                    .as_ref()
+                    .and_then(|ctx| ctx.socket_tuple_context_layout())
+                {
+                    Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().4,
+                    Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().5,
+                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().3,
+                    Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().4,
+                    Some(
+                        SocketContextLayout::SockAddr
+                        | SocketContextLayout::CgroupSock
+                        | SocketContextLayout::CgroupSockopt,
+                    )
+                    | None => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.remote_ip6 is only available on sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
+                        ));
                     }
-                    _ => Self::bpf_sk_lookup_offsets().4,
                 };
                 self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.remote_ip6", true)?;
             }
             CtxField::RemotePort => {
-                let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
-                    Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().6,
-                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().7,
-                    Some(EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser) => {
-                        Self::sk_buff_socket_offsets().5
+                let layout = self
+                    .probe_ctx
+                    .as_ref()
+                    .and_then(|ctx| ctx.socket_tuple_context_layout());
+                let offset = match layout {
+                    Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().6,
+                    Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().7,
+                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().5,
+                    Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().5,
+                    Some(
+                        SocketContextLayout::SockAddr
+                        | SocketContextLayout::CgroupSock
+                        | SocketContextLayout::CgroupSockopt,
+                    )
+                    | None => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.remote_port is only available on sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
+                        ));
                     }
-                    _ => Self::bpf_sk_lookup_offsets().5,
                 };
                 if matches!(
-                    self.probe_ctx.as_ref().map(|ctx| ctx.probe_type),
-                    Some(EbpfProgramType::SkMsg)
-                        | Some(EbpfProgramType::SkSkb)
-                        | Some(EbpfProgramType::SkSkbParser)
+                    layout,
+                    Some(SocketContextLayout::SkMsg) | Some(SocketContextLayout::SkBuff)
                 ) {
                     self.instructions
                         .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
@@ -979,37 +1058,73 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
             CtxField::LocalIp4 => {
-                let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
-                    Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().3,
-                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().4,
-                    Some(EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser) => {
-                        Self::sk_buff_socket_offsets().2
+                let offset = match self
+                    .probe_ctx
+                    .as_ref()
+                    .and_then(|ctx| ctx.socket_tuple_context_layout())
+                {
+                    Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().3,
+                    Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().4,
+                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().2,
+                    Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().6,
+                    Some(
+                        SocketContextLayout::SockAddr
+                        | SocketContextLayout::CgroupSock
+                        | SocketContextLayout::CgroupSockopt,
+                    )
+                    | None => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.local_ip4 is only available on sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
+                        ));
                     }
-                    _ => Self::bpf_sk_lookup_offsets().6,
                 };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
                 self.instructions.push(EbpfInsn::end32_to_be(dst));
             }
             CtxField::LocalIp6 => {
-                let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
-                    Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().5,
-                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().6,
-                    Some(EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser) => {
-                        Self::sk_buff_socket_offsets().4
+                let offset = match self
+                    .probe_ctx
+                    .as_ref()
+                    .and_then(|ctx| ctx.socket_tuple_context_layout())
+                {
+                    Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().5,
+                    Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().6,
+                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().4,
+                    Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().7,
+                    Some(
+                        SocketContextLayout::SockAddr
+                        | SocketContextLayout::CgroupSock
+                        | SocketContextLayout::CgroupSockopt,
+                    )
+                    | None => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.local_ip6 is only available on sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
+                        ));
                     }
-                    _ => Self::bpf_sk_lookup_offsets().7,
                 };
                 self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.local_ip6", true)?;
             }
             CtxField::LocalPort => {
-                let offset = match self.probe_ctx.as_ref().map(|ctx| ctx.probe_type) {
-                    Some(EbpfProgramType::SockOps) => Self::bpf_sock_ops_offsets().7,
-                    Some(EbpfProgramType::SkMsg) => Self::sk_msg_md_offsets().8,
-                    Some(EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser) => {
-                        Self::sk_buff_socket_offsets().6
+                let offset = match self
+                    .probe_ctx
+                    .as_ref()
+                    .and_then(|ctx| ctx.socket_tuple_context_layout())
+                {
+                    Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().7,
+                    Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().8,
+                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().6,
+                    Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().8,
+                    Some(
+                        SocketContextLayout::SockAddr
+                        | SocketContextLayout::CgroupSock
+                        | SocketContextLayout::CgroupSockopt,
+                    )
+                    | None => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.local_port is only available on sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
+                        ));
                     }
-                    _ => Self::bpf_sk_lookup_offsets().8,
                 };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
