@@ -364,6 +364,129 @@ fn test_infer_xdp_adjust_meta_helper_in_xdp_program() {
 }
 
 #[test]
+fn test_type_error_skb_packet_mutation_helpers_reject_invalid_programs() {
+    for (helper, args) in [
+        (
+            BpfHelper::SkbChangeTail,
+            vec![MirValue::Const(64), MirValue::Const(0)],
+        ),
+        (BpfHelper::SkbPullData, vec![MirValue::Const(64)]),
+        (
+            BpfHelper::SkbChangeHead,
+            vec![MirValue::Const(14), MirValue::Const(0)],
+        ),
+        (
+            BpfHelper::SkbAdjustRoom,
+            vec![MirValue::Const(14), MirValue::Const(0), MirValue::Const(0)],
+        ),
+    ] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: std::iter::once(MirValue::VReg(ctx))
+                .chain(args.into_iter())
+                .collect(),
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected skb packet-mutation helper to be rejected");
+        assert!(errs.iter().any(|e| {
+            e.message.contains(&format!(
+                "helper '{}' is only valid in tc, sk_skb, and sk_skb_parser programs",
+                helper.name()
+            ))
+        }));
+    }
+}
+
+#[test]
+fn test_type_error_skb_change_head_helper_requires_zero_flags() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkbChangeHead as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(14), MirValue::Const(1)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_skb_change_head flags to require zero");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_skb_change_head' requires arg2 = 0")
+    }));
+}
+
+#[test]
+fn test_infer_skb_packet_mutation_helpers_in_supported_programs() {
+    for (probe_ctx, helper, extra_args) in [
+        (
+            ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
+            BpfHelper::SkbPullData,
+            vec![MirValue::Const(64)],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap"),
+            BpfHelper::SkbChangeHead,
+            vec![MirValue::Const(14), MirValue::Const(0)],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap"),
+            BpfHelper::SkbAdjustRoom,
+            vec![MirValue::Const(14), MirValue::Const(0), MirValue::Const(0)],
+        ),
+    ] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: std::iter::once(MirValue::VReg(ctx))
+                .chain(extra_args.into_iter())
+                .collect(),
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .expect("expected skb packet-mutation helper to infer");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
 fn test_type_error_msg_helpers_reject_non_sk_msg_programs() {
     for (helper, args) in [
         (BpfHelper::MsgApplyBytes, vec![MirValue::Const(8)]),

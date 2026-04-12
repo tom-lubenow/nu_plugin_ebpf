@@ -20,6 +20,13 @@ impl BpfHelper {
             fixed_size: None,
             size_from_arg: None,
         }];
+        const SKB_MUTATE_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper skb_mutate skb",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
 
         const MAP_LOOKUP_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
@@ -996,6 +1003,14 @@ impl BpfHelper {
                     fixed_size: None,
                     size_from_arg: None,
                 }],
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkbChangeTail
+            | BpfHelper::SkbPullData
+            | BpfHelper::SkbChangeHead
+            | BpfHelper::SkbAdjustRoom => HelperSemantics {
+                ptr_arg_rules: SKB_MUTATE_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

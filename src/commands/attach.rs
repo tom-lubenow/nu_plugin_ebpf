@@ -154,6 +154,11 @@ Context parameter syntax (recommended):
     `helper-call "bpf_xdp_adjust_tail" $ctx DELTA`. After any of those
     helpers, reload `ctx.data`, `ctx.data_meta`, and `ctx.data_end`
     before reading packet bytes again.
+    `tc`, `sk_skb`, and `sk_skb_parser` also model direct-packet
+    mutation helpers such as `bpf_skb_pull_data`, `bpf_skb_change_head`,
+    `bpf_skb_change_tail`, and `bpf_skb_adjust_room`. After any of those
+    helpers, reload `ctx.data` and `ctx.data_end` before reading packet
+    bytes again.
     `helper-call "bpf_redirect_peer" IFINDEX FLAGS` is modeled on
     `tc:...:ingress` and also requires `FLAGS = 0`.
     `helper-call "bpf_redirect_neigh" IFINDEX 0 0 0` is modeled on tc
@@ -396,9 +401,14 @@ Context parameter syntax (recommended):
     as `/sys/fs/bpf/demo_sockmap` and emits `sk_skb/stream_verdict` programs.
     It uses raw verdict codes but supports `pass` / `drop` aliases, and
     `ctx.data` / `ctx.data_end` use the same guarded packet access model as
-    tc and cgroup_skb. IPv4 addresses and the remote port are normalized to
-    host byte order, and IPv6 addresses are exposed as four host-order u32
-    words for ordinary Nushell indexing.
+    tc and cgroup_skb. Modeled skb packet-mutation helpers also use the
+    ordinary helper surface here, including `bpf_skb_pull_data`,
+    `bpf_skb_change_head`, `bpf_skb_change_tail`, and
+    `bpf_skb_adjust_room`; after any of them, reload `ctx.data` and
+    `ctx.data_end` before reading packet bytes again. IPv4 addresses and
+    the remote port are normalized to host byte order, and IPv6
+    addresses are exposed as four host-order u32 words for ordinary
+    Nushell indexing.
 
   sk_skb_parser fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
@@ -435,9 +445,14 @@ Context parameter syntax (recommended):
     Note: initial sk_skb_parser support targets pinned sockmap or sockhash
     paths such as `/sys/fs/bpf/demo_sockmap` and emits `sk_skb/stream_parser`
     programs. It uses raw integer parser returns rather than verdict aliases,
-    so ordinary examples should return an integer such as `0` or `$ctx.packet_len`.
-    IPv4 addresses and the remote port are normalized to host byte order, and
-    IPv6 addresses are exposed as four host-order u32 words for ordinary
+    so ordinary examples should return an integer such as `0` or
+    `$ctx.packet_len`. Modeled skb packet-mutation helpers also use the
+    ordinary helper surface here, including `bpf_skb_pull_data`,
+    `bpf_skb_change_head`, `bpf_skb_change_tail`, and
+    `bpf_skb_adjust_room`; after any of them, reload `ctx.data` and
+    `ctx.data_end` before reading packet bytes again. IPv4 addresses and
+    the remote port are normalized to host byte order, and IPv6
+    addresses are exposed as four host-order u32 words for ordinary
     Nushell indexing.
 
   cgroup_sockopt fields:

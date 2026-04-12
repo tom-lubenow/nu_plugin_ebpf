@@ -70,6 +70,12 @@ pub enum BpfHelper {
     GetPrandomU32 = 7,
     /// u32 bpf_get_smp_processor_id(void)
     GetSmpProcessorId = 8,
+    /// long bpf_skb_change_tail(skb, len, flags)
+    SkbChangeTail = 38,
+    /// long bpf_skb_pull_data(skb, len)
+    SkbPullData = 39,
+    /// long bpf_skb_change_head(skb, len, flags)
+    SkbChangeHead = 43,
     /// long bpf_xdp_adjust_head(xdp_md, delta)
     XdpAdjustHead = 44,
     /// long bpf_redirect(ifindex, flags)
@@ -102,6 +108,8 @@ pub enum BpfHelper {
     GetSocketCookie = 46,
     /// u32 bpf_get_socket_uid(ctx)
     GetSocketUid = 47,
+    /// long bpf_skb_adjust_room(skb, len_diff, mode, flags)
+    SkbAdjustRoom = 50,
     /// long bpf_setsockopt(ctx, level, optname, optval, optlen)
     SetSockOpt = 49,
     /// long bpf_sk_redirect_map(skb, map, key, flags)
@@ -243,6 +251,9 @@ impl BpfHelper {
             BpfHelper::TracePrintk => "bpf_trace_printk",
             BpfHelper::GetPrandomU32 => "bpf_get_prandom_u32",
             BpfHelper::GetSmpProcessorId => "bpf_get_smp_processor_id",
+            BpfHelper::SkbChangeTail => "bpf_skb_change_tail",
+            BpfHelper::SkbPullData => "bpf_skb_pull_data",
+            BpfHelper::SkbChangeHead => "bpf_skb_change_head",
             BpfHelper::XdpAdjustHead => "bpf_xdp_adjust_head",
             BpfHelper::Redirect => "bpf_redirect",
             BpfHelper::RedirectNeigh => "bpf_redirect_neigh",
@@ -259,6 +270,7 @@ impl BpfHelper {
             BpfHelper::Bind => "bpf_bind",
             BpfHelper::GetSocketCookie => "bpf_get_socket_cookie",
             BpfHelper::GetSocketUid => "bpf_get_socket_uid",
+            BpfHelper::SkbAdjustRoom => "bpf_skb_adjust_room",
             BpfHelper::SetSockOpt => "bpf_setsockopt",
             BpfHelper::SkRedirectMap => "bpf_sk_redirect_map",
             BpfHelper::SockMapUpdate => "bpf_sock_map_update",
@@ -342,6 +354,9 @@ impl BpfHelper {
             "trace_printk" => Some(Self::TracePrintk),
             "get_prandom_u32" => Some(Self::GetPrandomU32),
             "get_smp_processor_id" => Some(Self::GetSmpProcessorId),
+            "skb_change_tail" => Some(Self::SkbChangeTail),
+            "skb_pull_data" => Some(Self::SkbPullData),
+            "skb_change_head" => Some(Self::SkbChangeHead),
             "xdp_adjust_head" => Some(Self::XdpAdjustHead),
             "redirect" => Some(Self::Redirect),
             "redirect_neigh" => Some(Self::RedirectNeigh),
@@ -358,6 +373,7 @@ impl BpfHelper {
             "bind" => Some(Self::Bind),
             "get_socket_cookie" => Some(Self::GetSocketCookie),
             "get_socket_uid" => Some(Self::GetSocketUid),
+            "skb_adjust_room" => Some(Self::SkbAdjustRoom),
             "setsockopt" => Some(Self::SetSockOpt),
             "sk_redirect_map" => Some(Self::SkRedirectMap),
             "sock_map_update" => Some(Self::SockMapUpdate),
@@ -473,7 +489,14 @@ impl BpfHelper {
     pub const fn invalidates_packet_pointers(self) -> bool {
         matches!(
             self,
-            Self::XdpAdjustHead | Self::XdpAdjustMeta | Self::XdpAdjustTail | Self::MsgPullData
+            Self::SkbChangeTail
+                | Self::SkbPullData
+                | Self::SkbChangeHead
+                | Self::XdpAdjustHead
+                | Self::XdpAdjustMeta
+                | Self::SkbAdjustRoom
+                | Self::XdpAdjustTail
+                | Self::MsgPullData
         )
     }
 

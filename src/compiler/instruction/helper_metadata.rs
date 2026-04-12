@@ -16,6 +16,9 @@ impl BpfHelper {
             6 => Some(Self::TracePrintk),
             7 => Some(Self::GetPrandomU32),
             8 => Some(Self::GetSmpProcessorId),
+            38 => Some(Self::SkbChangeTail),
+            39 => Some(Self::SkbPullData),
+            43 => Some(Self::SkbChangeHead),
             44 => Some(Self::XdpAdjustHead),
             23 => Some(Self::Redirect),
             152 => Some(Self::RedirectNeigh),
@@ -32,6 +35,7 @@ impl BpfHelper {
             64 => Some(Self::Bind),
             46 => Some(Self::GetSocketCookie),
             47 => Some(Self::GetSocketUid),
+            50 => Some(Self::SkbAdjustRoom),
             49 => Some(Self::SetSockOpt),
             52 => Some(Self::SkRedirectMap),
             53 => Some(Self::SockMapUpdate),
@@ -139,6 +143,18 @@ impl BpfHelper {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
+            BpfHelper::SkbChangeTail | BpfHelper::SkbChangeHead => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SkbPullData => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
             BpfHelper::MsgPullData | BpfHelper::MsgPushData | BpfHelper::MsgPopData => {
                 HelperSignature {
                     min_args: 4,
@@ -147,6 +163,12 @@ impl BpfHelper {
                     ret_kind: HelperRetKind::Scalar,
                 }
             }
+            BpfHelper::SkbAdjustRoom => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
             BpfHelper::Bind => HelperSignature {
                 min_args: 3,
                 max_args: 3,
@@ -469,6 +491,8 @@ impl BpfHelper {
 
     pub const fn zero_scalar_arg_requirement(self) -> Option<(usize, &'static str)> {
         match self {
+            BpfHelper::SkbChangeTail => Some((2, "helper 'bpf_skb_change_tail' requires arg2 = 0")),
+            BpfHelper::SkbChangeHead => Some((2, "helper 'bpf_skb_change_head' requires arg2 = 0")),
             BpfHelper::RedirectNeigh => Some((3, "helper 'bpf_redirect_neigh' requires arg3 = 0")),
             BpfHelper::RedirectPeer => Some((1, "helper 'bpf_redirect_peer' requires arg1 = 0")),
             BpfHelper::StoreHdrOpt => Some((3, "helper 'bpf_store_hdr_opt' requires arg3 = 0")),

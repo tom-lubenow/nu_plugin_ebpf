@@ -877,6 +877,20 @@ impl EbpfProgramType {
                     helper.name()
                 ))
             }
+            BpfHelper::SkbChangeTail
+            | BpfHelper::SkbPullData
+            | BpfHelper::SkbChangeHead
+            | BpfHelper::SkbAdjustRoom
+                if !matches!(
+                    self,
+                    EbpfProgramType::Tc | EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser
+                ) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in tc, sk_skb, and sk_skb_parser programs",
+                    helper.name()
+                ))
+            }
             BpfHelper::Redirect if !matches!(self, EbpfProgramType::Xdp | EbpfProgramType::Tc) => {
                 Some(format!(
                     "helper '{}' is only valid in xdp and tc programs",

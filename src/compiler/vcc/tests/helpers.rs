@@ -741,6 +741,67 @@ fn test_verify_mir_for_probe_context_socket_map_helpers_reject_invalid_programs(
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_skb_packet_mutation_helpers_reject_invalid_programs() {
+    for (helper, args) in [
+        (
+            BpfHelper::SkbChangeTail,
+            vec![MirValue::Const(64), MirValue::Const(0)],
+        ),
+        (BpfHelper::SkbPullData, vec![MirValue::Const(64)]),
+        (
+            BpfHelper::SkbChangeHead,
+            vec![MirValue::Const(14), MirValue::Const(0)],
+        ),
+        (
+            BpfHelper::SkbAdjustRoom,
+            vec![MirValue::Const(14), MirValue::Const(0), MirValue::Const(0)],
+        ),
+    ] {
+        let (mut func, entry) = new_mir_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args: std::iter::once(MirValue::VReg(ctx))
+                    .chain(args.into_iter())
+                    .collect(),
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected skb packet-mutation helper program-surface error");
+        assert!(err.iter().any(|e| {
+            e.message.contains(&format!(
+                "helper '{}' is only valid in tc, sk_skb, and sk_skb_parser programs",
+                helper.name()
+            ))
+        }));
+    }
+}
+
+#[test]
 fn test_verify_mir_helper_sock_map_update_rejects_out_of_bounds_key_pointer() {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();
@@ -1232,6 +1293,255 @@ fn test_verify_mir_for_probe_context_xdp_adjust_meta_allows_reloaded_packet_poin
     let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect("expected reloaded packet pointers to verify after xdp_adjust_meta");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_change_head_requires_zero_flags() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkbChangeHead as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(14), MirValue::Const(1)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_skb_change_head flags to require zero");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_skb_change_head' requires arg2 = 0")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_pull_data_invalidates_prior_packet_pointers() {
+    let (mut func, entry) = new_mir_function();
+    let load = func.alloc_block();
+    let done = func.alloc_block();
+
+    let data = func.alloc_vreg();
+    let access_end = func.alloc_vreg();
+    let data_end = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let ctx = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: data,
+            field: CtxField::Data,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: access_end,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(data),
+        rhs: MirValue::Const(1),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: data_end,
+            field: CtxField::DataEnd,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Le,
+        lhs: MirValue::VReg(access_end),
+        rhs: MirValue::VReg(data_end),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: load,
+        if_false: done,
+    };
+
+    func.block_mut(load)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(load).instructions.push(MirInst::CallHelper {
+        dst: helper_ret,
+        helper: BpfHelper::SkbPullData as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(1)],
+    });
+    func.block_mut(load).instructions.push(MirInst::Load {
+        dst,
+        ptr: data,
+        offset: 0,
+        ty: MirType::U8,
+    });
+    func.block_mut(load).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let packet_ptr = MirType::Ptr {
+        pointee: Box::new(MirType::U8),
+        address_space: AddressSpace::Packet,
+    };
+    let mut types = HashMap::new();
+    types.insert(data, packet_ptr.clone());
+    types.insert(access_end, packet_ptr.clone());
+    types.insert(data_end, packet_ptr);
+    types.insert(cond, MirType::Bool);
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(helper_ret, MirType::I64);
+    types.insert(dst, MirType::U8);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected stale packet pointer load to fail after skb_pull_data");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::InvalidLoadStore
+            && e.message.contains("load requires pointer operand")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_pull_data_allows_reloaded_packet_pointers() {
+    let (mut func, entry) = new_mir_function();
+    let load = func.alloc_block();
+    let done = func.alloc_block();
+
+    let stale_data = func.alloc_vreg();
+    let stale_data_end = func.alloc_vreg();
+    let ctx = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    let data = func.alloc_vreg();
+    let access_end = func.alloc_vreg();
+    let data_end = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: stale_data,
+            field: CtxField::Data,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: stale_data_end,
+            field: CtxField::DataEnd,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::SkbPullData as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(1)],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: data,
+            field: CtxField::Data,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: access_end,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(data),
+        rhs: MirValue::Const(1),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: data_end,
+            field: CtxField::DataEnd,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Le,
+        lhs: MirValue::VReg(access_end),
+        rhs: MirValue::VReg(data_end),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: load,
+        if_false: done,
+    };
+
+    func.block_mut(load).instructions.push(MirInst::Load {
+        dst,
+        ptr: data,
+        offset: 0,
+        ty: MirType::U8,
+    });
+    func.block_mut(load).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let packet_ptr = MirType::Ptr {
+        pointee: Box::new(MirType::U8),
+        address_space: AddressSpace::Packet,
+    };
+    let mut types = HashMap::new();
+    types.insert(stale_data, packet_ptr.clone());
+    types.insert(stale_data_end, packet_ptr.clone());
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(helper_ret, MirType::I64);
+    types.insert(data, packet_ptr.clone());
+    types.insert(access_end, packet_ptr.clone());
+    types.insert(data_end, packet_ptr);
+    types.insert(cond, MirType::Bool);
+    types.insert(dst, MirType::U8);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected reloaded packet pointers to verify after skb_pull_data");
 }
 
 #[test]

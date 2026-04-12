@@ -131,6 +131,22 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::MsgPullData)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_skb_change_tail"),
+        Some(BpfHelper::SkbChangeTail)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_skb_pull_data"),
+        Some(BpfHelper::SkbPullData)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_skb_change_head"),
+        Some(BpfHelper::SkbChangeHead)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_skb_adjust_room"),
+        Some(BpfHelper::SkbAdjustRoom)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_msg_push_data"),
         Some(BpfHelper::MsgPushData)
     ));
@@ -555,6 +571,38 @@ fn test_helper_signatures_sk_cgroup_helpers() {
 }
 
 #[test]
+fn test_helper_signatures_skb_packet_mutation_helpers() {
+    for helper in [BpfHelper::SkbChangeTail, BpfHelper::SkbChangeHead] {
+        let sig =
+            HelperSignature::for_id(helper as u32).expect("expected skb change helper signature");
+        assert_eq!(sig.min_args, 3);
+        assert_eq!(sig.max_args, 3);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+        assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    }
+
+    let sig = HelperSignature::for_id(BpfHelper::SkbPullData as u32)
+        .expect("expected bpf_skb_pull_data helper signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::SkbAdjustRoom as u32)
+        .expect("expected bpf_skb_adjust_room helper signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
 fn test_helper_signature_redirect() {
     let sig = HelperSignature::for_id(BpfHelper::Redirect as u32)
         .expect("expected bpf_redirect helper signature");
@@ -604,6 +652,53 @@ fn test_helper_signatures_xdp_adjust_helpers() {
         assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
         assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
     }
+}
+
+#[test]
+fn test_helpers_with_packet_pointer_invalidation() {
+    for helper in [
+        BpfHelper::SkbChangeTail,
+        BpfHelper::SkbPullData,
+        BpfHelper::SkbChangeHead,
+        BpfHelper::XdpAdjustHead,
+        BpfHelper::XdpAdjustMeta,
+        BpfHelper::SkbAdjustRoom,
+        BpfHelper::XdpAdjustTail,
+        BpfHelper::MsgPullData,
+    ] {
+        assert!(
+            helper.invalidates_packet_pointers(),
+            "{} should invalidate packet pointers",
+            helper.name()
+        );
+    }
+
+    for helper in [
+        BpfHelper::Redirect,
+        BpfHelper::MsgApplyBytes,
+        BpfHelper::MsgPushData,
+        BpfHelper::MsgPopData,
+    ] {
+        assert!(
+            !helper.invalidates_packet_pointers(),
+            "{} should not invalidate packet pointers",
+            helper.name()
+        );
+    }
+}
+
+#[test]
+fn test_helpers_with_reserved_zero_flags() {
+    assert_eq!(
+        BpfHelper::SkbChangeTail.zero_scalar_arg_requirement(),
+        Some((2, "helper 'bpf_skb_change_tail' requires arg2 = 0"))
+    );
+    assert_eq!(
+        BpfHelper::SkbChangeHead.zero_scalar_arg_requirement(),
+        Some((2, "helper 'bpf_skb_change_head' requires arg2 = 0"))
+    );
+    assert_eq!(BpfHelper::SkbPullData.zero_scalar_arg_requirement(), None);
+    assert_eq!(BpfHelper::SkbAdjustRoom.zero_scalar_arg_requirement(), None);
 }
 
 #[test]
