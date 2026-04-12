@@ -1258,13 +1258,6 @@ impl<'a> HirToMirLowering<'a> {
                 arg_idx
             )));
         };
-        if !helper.supports_local_helper_map_fd(arg_idx) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "helper-call does not yet support local {:?} maps for '{}'; key-size inference is not implemented",
-                map_kind,
-                helper.name()
-            )));
-        }
         let map_name = match self.literal_string_arg(arg_reg, "helper-call") {
             Ok(name) => name,
             Err(_) => {
@@ -1283,13 +1276,15 @@ impl<'a> HirToMirLowering<'a> {
                 kind: map_kind,
             },
         });
-        self.vreg_type_hints.insert(
-            map_vreg,
-            MirType::MapRef {
-                key_ty: Box::new(MirType::U32),
-                val_ty: Box::new(MirType::U32),
-            },
-        );
+        if matches!(map_kind, MapKind::SockMap) {
+            self.vreg_type_hints.insert(
+                map_vreg,
+                MirType::MapRef {
+                    key_ty: Box::new(MirType::U32),
+                    val_ty: Box::new(MirType::U32),
+                },
+            );
+        }
         Ok(MirValue::VReg(map_vreg))
     }
 }

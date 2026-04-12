@@ -340,20 +340,18 @@ pub(crate) fn infer_instruction_def_type(
             },
             true,
         )),
-        MirInst::LoadMapFd { dst, map } => Some((
-            *dst,
-            match map.kind {
-                MapKind::SockMap => MirType::MapRef {
+        MirInst::LoadMapFd { dst, map } => match map.kind {
+            MapKind::SockMap => Some((
+                *dst,
+                MirType::MapRef {
                     key_ty: Box::new(MirType::U32),
                     val_ty: Box::new(MirType::U32),
                 },
-                _ => MirType::MapRef {
-                    key_ty: Box::new(MirType::U8),
-                    val_ty: Box::new(MirType::U32),
-                },
-            },
-            true,
-        )),
+                true,
+            )),
+            MapKind::SockHash => hints.get(dst).cloned().map(|ty| (*dst, ty, true)),
+            _ => None,
+        },
         MirInst::BinOp { dst, op, lhs, rhs } if matches!(op, BinOpKind::Add | BinOpKind::Sub) => {
             let lhs_ptr = match lhs {
                 MirValue::VReg(vreg) => hints.get(vreg),

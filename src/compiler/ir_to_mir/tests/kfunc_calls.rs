@@ -1778,3 +1778,109 @@ fn test_helper_call_sockmap_literal_lowers_and_compiles() {
         "expected sockmap relocation"
     );
 }
+
+#[test]
+fn test_helper_call_sockhash_literal_lowers_and_compiles() {
+    let ctx_var = VarId::new(92);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"bpf_msg_redirect_hash".to_vec()),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(2),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(b"demo_sockhash".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String(b"peer-a".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![
+                            RegId::new(1),
+                            RegId::new(2),
+                            RegId::new(3),
+                            RegId::new(4),
+                            RegId::new(5),
+                        ],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 6,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockhash");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("sockhash helper-call should type-check");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sockhash helper-call should lower");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadMapFd {
+            map: MapRef { name, kind: MapKind::SockHash },
+            ..
+        } if name == "demo_sockhash"
+    )));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("sockhash helper-call should compile");
+
+    let map = compiled
+        .maps
+        .iter()
+        .find(|map| map.name == "demo_sockhash")
+        .expect("expected sockhash runtime artifact");
+    assert_eq!(map.def.map_type, BpfMapType::SockHash as u32);
+    assert!(map.def.key_size > 1, "expected inferred sockhash key size");
+    assert!(
+        compiled
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == "demo_sockhash"),
+        "expected sockhash relocation"
+    );
+}

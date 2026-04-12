@@ -428,7 +428,7 @@ impl BpfHelper {
     }
 
     pub const fn supports_local_helper_map_fd(self, arg_idx: usize) -> bool {
-        matches!(self.helper_map_arg_kind(arg_idx), Some(MapKind::SockMap))
+        self.helper_map_arg_kind(arg_idx).is_some()
     }
 }
 

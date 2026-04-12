@@ -281,6 +281,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 | MapKind::Queue
                 | MapKind::Stack
                 | MapKind::SockMap
+                | MapKind::SockHash
         )
     }
 
@@ -378,14 +379,15 @@ impl<'a> MirToEbpfCompiler<'a> {
         match map.kind {
             MapKind::SockMap => self.register_generic_map_spec(map, 4, Some(4))?,
             MapKind::SockHash => {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "local sockhash map '{}' is not yet supported; key-size inference is not implemented",
-                    map.name
-                )));
+                let key_size = match self.current_types.get(&dst) {
+                    Some(MirType::MapRef { key_ty, .. }) => key_ty.size().max(1),
+                    _ => 1,
+                };
+                self.register_generic_map_spec(map, key_size, Some(4))?;
             }
             other => {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "load-map-fd only supports sockmap today, got {:?} for '{}'",
+                    "load-map-fd only supports sockmap and sockhash today, got {:?} for '{}'",
                     other, map.name
                 )));
             }
@@ -542,6 +544,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapKind::Queue => BpfMapDef::queue(spec.value_size, max_entries),
             MapKind::Stack => BpfMapDef::stack(spec.value_size, max_entries),
             MapKind::SockMap => BpfMapDef::sock_map(max_entries),
+            MapKind::SockHash => BpfMapDef::sock_hash(spec.key_size, max_entries),
             other => {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "map kind {:?} is not supported for generic map operations",

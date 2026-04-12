@@ -134,9 +134,12 @@ impl<'a> TypeInference<'a> {
                 self.constrain(dst_ty, result_ty, format!("unaryop {:?}", op));
             }
 
-            MirInst::CallHelper { dst, helper, .. } => {
+            MirInst::CallHelper { dst, helper, args } => {
                 let dst_ty = self.vreg_type(*dst);
                 if let Some(sig) = HelperSignature::for_id(*helper) {
+                    if let Some(helper_kind) = BpfHelper::from_u32(*helper) {
+                        self.constrain_helper_map_args(helper_kind, args);
+                    }
                     match sig.ret_kind {
                         HelperRetKind::Scalar => {
                             self.constrain(dst_ty, HMType::I64, "helper_call");
@@ -255,7 +258,8 @@ impl<'a> TypeInference<'a> {
                 let map_ty = HMType::MapRef {
                     key_ty: Box::new(match map.kind {
                         MapKind::SockMap => HMType::U32,
-                        _ => HMType::U8,
+                        MapKind::SockHash => HMType::Var(self.tvar_gen.fresh()),
+                        _ => HMType::Unknown,
                     }),
                     val_ty: Box::new(HMType::U32),
                 };
@@ -429,6 +433,34 @@ impl<'a> TypeInference<'a> {
                     address_space: AddressSpace::Stack,
                 }),
         }
+    }
+
+    fn constrain_helper_map_args(&mut self, helper: BpfHelper, args: &[MirValue]) {
+        let Some(MirValue::VReg(map_vreg)) = args.get(1) else {
+            return;
+        };
+        let Some(map_kind) = helper.helper_map_arg_kind(1) else {
+            return;
+        };
+
+        let key_ty = match map_kind {
+            MapKind::SockMap => HMType::U32,
+            MapKind::SockHash => match args.get(2).map(|value| self.value_type(value)) {
+                Some(HMType::Ptr { pointee, .. }) => *pointee,
+                Some(other) => other,
+                None => return,
+            },
+            _ => return,
+        };
+
+        self.constrain(
+            self.vreg_type(*map_vreg),
+            HMType::MapRef {
+                key_ty: Box::new(key_ty),
+                val_ty: Box::new(HMType::U32),
+            },
+            format!("helper_map_ref {}", helper.name()),
+        );
     }
 
     pub(super) fn constrain(
