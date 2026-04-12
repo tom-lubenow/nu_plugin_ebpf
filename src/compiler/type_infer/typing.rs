@@ -224,11 +224,7 @@ impl<'a> TypeInference<'a> {
     }
 
     pub(super) fn ctx_field_type(&mut self, field: &CtxField) -> HMType {
-        let static_spec = self
-            .probe_ctx
-            .as_ref()
-            .and_then(|ctx| ctx.ctx_field_type_spec(field))
-            .or_else(|| ProbeContext::static_ctx_field_type_spec(field));
+        let static_spec = ProbeContext::resolve_ctx_field_type_spec(self.probe_ctx.as_ref(), field);
         if let Some(spec) = static_spec {
             return HMType::from_mir_type(&spec.runtime_ty);
         }

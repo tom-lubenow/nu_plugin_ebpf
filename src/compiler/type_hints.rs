@@ -168,9 +168,7 @@ fn recover_ctx_field_hint(
         return Some(pointer_hint(AddressSpace::Stack));
     }
 
-    let static_spec = probe_ctx
-        .and_then(|ctx| ctx.ctx_field_type_spec(field))
-        .or_else(|| ProbeContext::static_ctx_field_type_spec(field));
+    let static_spec = ProbeContext::resolve_ctx_field_type_spec(probe_ctx, field);
     if let Some(spec) = static_spec {
         return Some(spec.runtime_ty);
     }

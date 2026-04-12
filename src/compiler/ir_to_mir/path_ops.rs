@@ -330,13 +330,11 @@ impl<'a> HirToMirLowering<'a> {
             ctx.validate_ctx_field_access(&ctx_field)?;
         }
         let trampoline_value_spec = self.trampoline_value_spec(&ctx_field)?;
-        let static_ctx_projection_spec = self
-            .probe_ctx
-            .and_then(|ctx| ctx.ctx_field_projection_spec(&ctx_field))
-            .or_else(|| ProbeContext::static_ctx_field_projection_spec(&ctx_field));
+        let ctx_projection_spec =
+            ProbeContext::resolve_ctx_field_projection_spec(self.probe_ctx, &ctx_field);
 
         if !remaining_members.is_empty() {
-            if let Some(spec) = static_ctx_projection_spec.as_ref() {
+            if let Some(spec) = ctx_projection_spec.as_ref() {
                 if spec.validate_socket_projection {
                     if let (Some(ctx), Some(PathMember::String { val, .. })) =
                         (self.probe_ctx, remaining_members.first())
@@ -552,7 +550,7 @@ impl<'a> HirToMirLowering<'a> {
             })
             .or_else(|| self.get_metadata(src_dst).and_then(|m| m.string_slot))
             .or_else(|| {
-                static_ctx_projection_spec
+                ctx_projection_spec
                     .as_ref()
                     .and_then(|spec| spec.stack_slot_ty.as_ref())
                     .map(|stack_slot_ty| {
@@ -582,7 +580,7 @@ impl<'a> HirToMirLowering<'a> {
         }
         if let (Some(slot), Some(stack_slot_ty)) = (
             slot,
-            static_ctx_projection_spec
+            ctx_projection_spec
                 .as_ref()
                 .and_then(|spec| spec.stack_slot_ty.as_ref()),
         ) {
@@ -607,10 +605,7 @@ impl<'a> HirToMirLowering<'a> {
             slot,
         });
 
-        let static_ctx_field_types = self
-            .probe_ctx
-            .and_then(|ctx| ctx.ctx_field_type_spec(&ctx_field))
-            .or_else(|| ProbeContext::static_ctx_field_type_spec(&ctx_field));
+        let ctx_field_types = ProbeContext::resolve_ctx_field_type_spec(self.probe_ctx, &ctx_field);
         let (field_type, runtime_type_hint) = match &ctx_field {
             CtxField::Arg(_)
                 if self
@@ -622,8 +617,8 @@ impl<'a> HirToMirLowering<'a> {
             CtxField::TracepointField(_) => tracepoint_root_types
                 .map(|(semantic_ty, runtime_ty)| (semantic_ty, Some(runtime_ty)))
                 .unwrap_or((MirType::I64, None)),
-            _ if static_ctx_field_types.is_some() => {
-                let spec = static_ctx_field_types.unwrap();
+            _ if ctx_field_types.is_some() => {
+                let spec = ctx_field_types.unwrap();
                 (spec.semantic_ty, Some(spec.runtime_ty))
             }
             _ => precise_trampoline_types
@@ -658,7 +653,7 @@ impl<'a> HirToMirLowering<'a> {
                 });
             }
         }
-        if static_ctx_projection_spec
+        if ctx_projection_spec
             .as_ref()
             .is_some_and(|spec| spec.normalize_u32_words_host_order)
         {

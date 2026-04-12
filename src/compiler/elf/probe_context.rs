@@ -20,6 +20,24 @@ use crate::kernel_btf::{
 use crate::program_spec::ProgramSpec;
 
 impl ProbeContext {
+    pub(crate) fn resolve_ctx_field_type_spec(
+        probe_ctx: Option<&Self>,
+        field: &CtxField,
+    ) -> Option<ContextFieldTypeSpec> {
+        probe_ctx
+            .and_then(|ctx| ctx.ctx_field_type_spec(field))
+            .or_else(|| Self::static_ctx_field_type_spec(field))
+    }
+
+    pub(crate) fn resolve_ctx_field_projection_spec(
+        probe_ctx: Option<&Self>,
+        field: &CtxField,
+    ) -> Option<ContextFieldProjectionSpec> {
+        probe_ctx
+            .and_then(|ctx| ctx.ctx_field_projection_spec(field))
+            .or_else(|| Self::static_ctx_field_projection_spec(field))
+    }
+
     pub(crate) fn static_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
         static_ctx_field_type_spec(field)
     }
