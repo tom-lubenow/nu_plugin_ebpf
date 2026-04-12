@@ -490,9 +490,11 @@ Context parameter syntax (recommended):
     pointers, so existing pointer reads like `($ctx.optval | get 0)` or
     `read-kernel-str` can inspect buffer contents. `ctx.sk` uses the same
     typed `bpf_sock` projection model as `cgroup_sock`, `sk_lookup`, and
-    `sk_msg`. On `cgroup_sockopt:get`, writable return overrides use ordinary
-    assignment through a mutable local alias such as `mut ctx = $ctx;
-    $ctx.sockopt_retval = 0`.
+    `sk_msg`. Modeled socket-option helpers are also available through the
+    ordinary helper surface here, including `bpf_getsockopt` and
+    `bpf_setsockopt` on the current sockopt context. On `cgroup_sockopt:get`,
+    writable return overrides use ordinary assignment through a mutable local
+    alias such as `mut ctx = $ctx; $ctx.sockopt_retval = 0`.
 
   cgroup_sock_addr fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

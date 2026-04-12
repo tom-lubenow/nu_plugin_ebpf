@@ -602,12 +602,12 @@ fn test_type_error_sockopt_helpers_reject_invalid_program() {
         (
             BpfHelper::SetSockOpt,
             ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read"),
-            "helper 'bpf_setsockopt' is only valid in sock_ops and cgroup_sock_addr programs",
+            "helper 'bpf_setsockopt' is only valid in sock_ops, cgroup_sock_addr, and cgroup_sockopt programs",
         ),
         (
             BpfHelper::GetSockOpt,
             ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read"),
-            "helper 'bpf_getsockopt' is only valid in sock_ops and cgroup_sock_addr programs",
+            "helper 'bpf_getsockopt' is only valid in sock_ops, cgroup_sock_addr, and cgroup_sockopt programs",
         ),
     ] {
         let mut func = make_test_function();
@@ -777,6 +777,14 @@ fn test_infer_sockopt_helpers_in_supported_socket_contexts() {
         (
             BpfHelper::GetSockOpt,
             ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:bind4"),
+        ),
+        (
+            BpfHelper::GetSockOpt,
+            ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get"),
+        ),
+        (
+            BpfHelper::SetSockOpt,
+            ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set"),
         ),
     ] {
         let mut func = make_test_function();

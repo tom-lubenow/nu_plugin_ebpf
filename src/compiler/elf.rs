@@ -1022,11 +1022,13 @@ impl EbpfProgramType {
             BpfHelper::SetSockOpt | BpfHelper::GetSockOpt
                 if !matches!(
                     self,
-                    EbpfProgramType::SockOps | EbpfProgramType::CgroupSockAddr
+                    EbpfProgramType::SockOps
+                        | EbpfProgramType::CgroupSockAddr
+                        | EbpfProgramType::CgroupSockopt
                 ) =>
             {
                 Some(format!(
-                    "helper '{}' is only valid in sock_ops and cgroup_sock_addr programs",
+                    "helper '{}' is only valid in sock_ops, cgroup_sock_addr, and cgroup_sockopt programs",
                     helper.name()
                 ))
             }

@@ -435,12 +435,12 @@ fn test_verify_mir_for_program_sockopt_helpers_reject_invalid_program() {
         (
             BpfHelper::SetSockOpt,
             ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read"),
-            "helper 'bpf_setsockopt' is only valid in sock_ops and cgroup_sock_addr programs",
+            "helper 'bpf_setsockopt' is only valid in sock_ops, cgroup_sock_addr, and cgroup_sockopt programs",
         ),
         (
             BpfHelper::GetSockOpt,
             ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read"),
-            "helper 'bpf_getsockopt' is only valid in sock_ops and cgroup_sock_addr programs",
+            "helper 'bpf_getsockopt' is only valid in sock_ops, cgroup_sock_addr, and cgroup_sockopt programs",
         ),
     ] {
         let (mut func, entry) = new_mir_function();
@@ -6562,6 +6562,7 @@ fn test_verify_mir_helper_getsockopt_accepts_cgroup_sock_addr_connect_context() 
     for probe_ctx in [
         ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4"),
         ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:bind4"),
+        ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get"),
     ] {
         let (mut func, entry) = new_mir_function();
 
@@ -6601,8 +6602,52 @@ fn test_verify_mir_helper_getsockopt_accepts_cgroup_sock_addr_connect_context() 
         types.insert(dst, MirType::I64);
 
         verify_mir_for_probe_context(&func, &types, &probe_ctx)
-            .expect("expected getsockopt helper to verify on supported cgroup_sock_addr hooks");
+            .expect("expected getsockopt helper to verify on supported socket-option contexts");
     }
+}
+
+#[test]
+fn test_verify_mir_helper_setsockopt_accepts_cgroup_sockopt_set_context() {
+    let (mut func, entry) = new_mir_function();
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let optval_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SetSockOpt as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(1),
+                MirValue::Const(2),
+                MirValue::StackSlot(optval_slot),
+                MirValue::Const(16),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected setsockopt helper to verify on cgroup_sockopt:set");
 }
 
 #[test]
