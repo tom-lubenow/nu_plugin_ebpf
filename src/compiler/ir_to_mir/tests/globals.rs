@@ -1678,6 +1678,126 @@ fn test_lower_global_get_before_later_typed_global_define_uses_named_bss_global(
 }
 
 #[test]
+fn test_lower_global_define_type_duration_and_filesize_use_i64_bss_globals() {
+    let define_decl = DeclId::new(1100);
+    let get_decl = DeclId::new(1101);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (get_decl, "global-get".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("seen_elapsed".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("duration".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String("seen_size".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String("filesize".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(3)],
+                        named: vec![(b"type".to_vec(), RegId::new(4))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(3)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("global-define --type duration/filesize should lower");
+
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 0);
+    assert_eq!(result.bss_globals.len(), 2);
+    assert!(
+        result
+            .bss_globals
+            .iter()
+            .any(|global| global.name == "__nu_global_seen_elapsed" && global.size == 8)
+    );
+    assert!(
+        result
+            .bss_globals
+            .iter()
+            .any(|global| global.name == "__nu_global_seen_size" && global.size == 8)
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .filter(|inst| matches!(
+                inst,
+                MirInst::LoadGlobal {
+                    ty: MirType::I64,
+                    ..
+                }
+            ))
+            .count()
+            >= 2,
+        "expected duration/filesize typed globals to load as i64-backed globals"
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_string_materializes_string_slot() {
     let define_decl = DeclId::new(110);
     let get_decl = DeclId::new(111);

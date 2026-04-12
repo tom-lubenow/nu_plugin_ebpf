@@ -175,6 +175,23 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 _ => return Ok(None),
             },
+            nu_protocol::Type::Duration => match value {
+                Value::Duration { val, .. } => {
+                    return Ok(Some((MirType::I64, val.to_le_bytes().to_vec(), None, None)));
+                }
+                _ => return Ok(None),
+            },
+            nu_protocol::Type::Filesize => match value {
+                Value::Filesize { val, .. } => {
+                    return Ok(Some((
+                        MirType::I64,
+                        val.get().to_le_bytes().to_vec(),
+                        None,
+                        None,
+                    )));
+                }
+                _ => return Ok(None),
+            },
             nu_protocol::Type::Int => match value {
                 Value::Int { val, .. } => {
                     return Ok(Some((MirType::I64, val.to_le_bytes().to_vec(), None, None)));

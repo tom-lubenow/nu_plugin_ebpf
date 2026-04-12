@@ -416,7 +416,7 @@ Examples:
             .named(
                 "type",
                 SyntaxShape::String,
-                "Declare a zero-initialized global directly from a type spec (i8/i16/i32/i64/u8/u16/u32/u64/bool/bytes:N/string:N/list:i64:N/record{field:type,...})",
+                "Declare a zero-initialized global directly from a type spec (i8/i16/i32/i64/duration/filesize/u8/u16/u32/u64/bool/bytes:N/string:N/list:i64:N/record{field:type,...})",
                 None,
             )
             .switch(

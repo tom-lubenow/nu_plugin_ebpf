@@ -3286,6 +3286,86 @@ fn test_lower_leading_annotated_mut_record_uses_declared_field_order() {
 }
 
 #[test]
+fn test_lower_leading_annotated_mut_duration_and_filesize_use_i64_globals() {
+    let duration_var = VarId::new(351);
+    let filesize_var = VarId::new(352);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: duration_var,
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(1),
+                    var_id: filesize_var,
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![
+        AnnotatedMutGlobal {
+            var_id: duration_var,
+            declared_type: Type::Duration,
+            initial_value: Value::duration(1234, Span::test_data()),
+        },
+        AnnotatedMutGlobal {
+            var_id: filesize_var,
+            declared_type: Type::Filesize,
+            initial_value: Value::filesize(4096, Span::test_data()),
+        },
+    ];
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("annotated mutable duration/filesize globals should lower through i64 data globals");
+
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 2);
+    assert_eq!(result.bss_globals.len(), 0);
+    assert!(result.data_globals.iter().any(|global| {
+        global.name == "__nu_local_global_351" && global.data == 1234i64.to_le_bytes()
+    }));
+    assert!(result.data_globals.iter().any(|global| {
+        global.name == "__nu_local_global_352" && global.data == 4096i64.to_le_bytes()
+    }));
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .filter(|inst| matches!(
+                inst,
+                MirInst::LoadGlobal {
+                    ty: MirType::I64,
+                    ..
+                }
+            ))
+            .count()
+            >= 2,
+        "expected annotated duration/filesize globals to load as i64-backed globals"
+    );
+}
+
+#[test]
 fn test_lower_leading_annotated_mut_record_list_field_supports_get() {
     let global_var = VarId::new(252);
     let get_decl = DeclId::new(900);

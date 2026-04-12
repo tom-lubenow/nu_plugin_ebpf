@@ -141,6 +141,8 @@ impl<'a> HirToMirLowering<'a> {
                 "i16" => Some(MirType::I16),
                 "i32" => Some(MirType::I32),
                 "i64" => Some(MirType::I64),
+                "duration" => Some(MirType::I64),
+                "filesize" => Some(MirType::I64),
                 "u8" => Some(MirType::U8),
                 "u16" => Some(MirType::U16),
                 "u32" => Some(MirType::U32),
@@ -329,7 +331,7 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             Err(CompileError::UnsupportedInstruction(format!(
-                "unsupported global type spec '{}'; expected one of i8, i16, i32, i64, u8, u16, u32, u64, bool, bytes:N, binary:N, string:N, list:i64:N, or nested record{{field:type,...}}",
+                "unsupported global type spec '{}'; expected one of i8, i16, i32, i64, duration, filesize, u8, u16, u32, u64, bool, bytes:N, binary:N, string:N, list:i64:N, or nested record{{field:type,...}}",
                 spec
             )))
         }
