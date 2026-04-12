@@ -278,10 +278,14 @@ impl<'a> MirToEbpfCompiler<'a> {
                 | MapKind::PerCpuHash
                 | MapKind::PerCpuArray
                 | MapKind::LruPerCpuHash
+                | MapKind::PerfEventArray
                 | MapKind::Queue
                 | MapKind::Stack
                 | MapKind::SockMap
                 | MapKind::SockHash
+                | MapKind::RingBuf
+                | MapKind::StackTrace
+                | MapKind::ProgArray
         )
     }
 
@@ -385,9 +389,14 @@ impl<'a> MirToEbpfCompiler<'a> {
                 };
                 self.register_generic_map_spec(map, key_size, Some(4))?;
             }
+            MapKind::RingBuf => self.register_generic_map_spec(map, 0, Some(0))?,
+            MapKind::StackTrace => self.register_generic_map_spec(map, 4, Some(127 * 8))?,
+            MapKind::PerfEventArray | MapKind::ProgArray => {
+                self.register_generic_map_spec(map, 4, Some(4))?;
+            }
             other => {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "load-map-fd only supports sockmap and sockhash today, got {:?} for '{}'",
+                    "load-map-fd does not support map kind {:?} for '{}'",
                     other, map.name
                 )));
             }
@@ -472,12 +481,13 @@ impl<'a> MirToEbpfCompiler<'a> {
         }
 
         let mut inferred_key_size = key_size.max(1) as u32;
-        if matches!(map.kind, MapKind::Queue | MapKind::Stack) {
+        if matches!(map.kind, MapKind::Queue | MapKind::Stack | MapKind::RingBuf) {
             inferred_key_size = 0;
         } else if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
             inferred_key_size = 4;
         }
         let (inferred_value_size, defaulted) = match value_size {
+            Some(size) if matches!(map.kind, MapKind::RingBuf) => (size as u32, false),
             Some(size) => (size.max(1) as u32, false),
             None => (8, true),
         };
@@ -541,16 +551,14 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapKind::LruPerCpuHash => {
                 BpfMapDef::lru_per_cpu_hash(spec.key_size, spec.value_size, max_entries)
             }
+            MapKind::PerfEventArray => BpfMapDef::perf_event_array(),
             MapKind::Queue => BpfMapDef::queue(spec.value_size, max_entries),
             MapKind::Stack => BpfMapDef::stack(spec.value_size, max_entries),
+            MapKind::RingBuf => BpfMapDef::ring_buffer(256 * 1024),
+            MapKind::StackTrace => BpfMapDef::stack_trace_map(),
             MapKind::SockMap => BpfMapDef::sock_map(max_entries),
             MapKind::SockHash => BpfMapDef::sock_hash(spec.key_size, max_entries),
-            other => {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "map kind {:?} is not supported for generic map operations",
-                    other
-                )));
-            }
+            MapKind::ProgArray => BpfMapDef::prog_array(1024),
         };
         Ok(map_def)
     }

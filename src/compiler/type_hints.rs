@@ -349,6 +349,30 @@ pub(crate) fn infer_instruction_def_type(
                 },
                 true,
             )),
+            MapKind::ProgArray | MapKind::PerfEventArray => Some((
+                *dst,
+                MirType::MapRef {
+                    key_ty: Box::new(MirType::U32),
+                    val_ty: Box::new(MirType::U32),
+                },
+                true,
+            )),
+            MapKind::StackTrace => Some((
+                *dst,
+                MirType::MapRef {
+                    key_ty: Box::new(MirType::U32),
+                    val_ty: Box::new(MirType::Unknown),
+                },
+                true,
+            )),
+            MapKind::RingBuf => Some((
+                *dst,
+                MirType::MapRef {
+                    key_ty: Box::new(MirType::Unknown),
+                    val_ty: Box::new(MirType::Unknown),
+                },
+                true,
+            )),
             MapKind::SockHash => hints.get(dst).cloned().map(|ty| (*dst, ty, true)),
             _ => None,
         },

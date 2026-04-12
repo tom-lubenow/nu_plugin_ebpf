@@ -1931,3 +1931,211 @@ fn test_compile_sockmap_helper_with_loaded_map_fd() {
         "expected sockmap relocation"
     );
 }
+
+#[test]
+fn test_compile_ringbuf_query_helper_with_loaded_map_fd() {
+    use crate::compiler::elf::BpfMapType;
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_ringbuf".to_string(),
+            kind: MapKind::RingBuf,
+        },
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RingbufQuery as u32,
+        args: vec![MirValue::VReg(map), MirValue::Const(0)],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let compiled = compile_mir_to_ebpf(&program, None).expect("ringbuf helper should compile");
+
+    assert!(compiled.maps.iter().any(|map| {
+        map.name == "demo_ringbuf" && map.def.map_type == BpfMapType::RingBuf as u32
+    }));
+    assert!(
+        compiled
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == "demo_ringbuf"),
+        "expected ringbuf relocation"
+    );
+}
+
+#[test]
+fn test_compile_perf_event_output_helper_with_loaded_map_fd() {
+    use crate::compiler::elf::BpfMapType;
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::Local);
+    let ctx = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let data = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_perf_events".to_string(),
+            kind: MapKind::PerfEventArray,
+        },
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: data,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::PerfEventOutput as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::VReg(map),
+            MirValue::Const(0),
+            MirValue::VReg(data),
+            MirValue::Const(16),
+        ],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "tcp_v4_connect");
+    let compiled = compile_mir_to_ebpf(&program, Some(&probe_ctx))
+        .expect("perf_event_output helper should compile");
+
+    assert!(compiled.maps.iter().any(|map| {
+        map.name == "demo_perf_events" && map.def.map_type == BpfMapType::PerfEventArray as u32
+    }));
+    assert!(
+        compiled
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == "demo_perf_events"),
+        "expected perf-event map relocation"
+    );
+}
+
+#[test]
+fn test_compile_get_stackid_helper_with_loaded_map_fd() {
+    use crate::compiler::elf::BpfMapType;
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_stacks".to_string(),
+            kind: MapKind::StackTrace,
+        },
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetStackId as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::VReg(map), MirValue::Const(0)],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "tcp_v4_connect");
+    let compiled =
+        compile_mir_to_ebpf(&program, Some(&probe_ctx)).expect("get_stackid helper should compile");
+
+    assert!(compiled.maps.iter().any(|map| {
+        map.name == "demo_stacks" && map.def.map_type == BpfMapType::StackTrace as u32
+    }));
+    assert!(
+        compiled
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == "demo_stacks"),
+        "expected stack-trace map relocation"
+    );
+}
+
+#[test]
+fn test_compile_tail_call_helper_with_loaded_map_fd() {
+    use crate::compiler::elf::BpfMapType;
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_tail_targets".to_string(),
+            kind: MapKind::ProgArray,
+        },
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TailCall as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::VReg(map), MirValue::Const(0)],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "tcp_v4_connect");
+    let compiled =
+        compile_mir_to_ebpf(&program, Some(&probe_ctx)).expect("tail_call helper should compile");
+
+    assert!(compiled.maps.iter().any(|map| {
+        map.name == "demo_tail_targets" && map.def.map_type == BpfMapType::ProgArray as u32
+    }));
+    assert!(
+        compiled
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == "demo_tail_targets"),
+        "expected prog-array map relocation"
+    );
+}

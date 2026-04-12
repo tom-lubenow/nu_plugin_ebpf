@@ -63,6 +63,7 @@ pub enum MapKind {
     PerCpuHash,
     PerCpuArray,
     LruPerCpuHash,
+    PerfEventArray,
     Queue,
     Stack,
     RingBuf,

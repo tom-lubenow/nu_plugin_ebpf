@@ -255,13 +255,18 @@ impl<'a> TypeInference<'a> {
 
             MirInst::LoadMapFd { dst, map } => {
                 let dst_ty = self.vreg_type(*dst);
+                let (key_ty, val_ty) = match map.kind {
+                    MapKind::SockMap | MapKind::ProgArray | MapKind::PerfEventArray => {
+                        (HMType::U32, HMType::U32)
+                    }
+                    MapKind::SockHash => (HMType::Var(self.tvar_gen.fresh()), HMType::U32),
+                    MapKind::StackTrace => (HMType::U32, HMType::Unknown),
+                    MapKind::RingBuf => (HMType::Unknown, HMType::Unknown),
+                    _ => (HMType::Unknown, HMType::Unknown),
+                };
                 let map_ty = HMType::MapRef {
-                    key_ty: Box::new(match map.kind {
-                        MapKind::SockMap => HMType::U32,
-                        MapKind::SockHash => HMType::Var(self.tvar_gen.fresh()),
-                        _ => HMType::Unknown,
-                    }),
-                    val_ty: Box::new(HMType::U32),
+                    key_ty: Box::new(key_ty),
+                    val_ty: Box::new(val_ty),
                 };
                 self.constrain(dst_ty, map_ty, "load_map_fd");
             }

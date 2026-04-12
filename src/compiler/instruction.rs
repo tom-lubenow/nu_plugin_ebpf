@@ -415,6 +415,12 @@ impl BpfHelper {
 
     pub const fn helper_map_arg_kind(self, arg_idx: usize) -> Option<MapKind> {
         match (self, arg_idx) {
+            (Self::TailCall, 1) => Some(MapKind::ProgArray),
+            (Self::PerfEventOutput, 1) => Some(MapKind::PerfEventArray),
+            (Self::GetStackId, 1) => Some(MapKind::StackTrace),
+            (Self::RingbufOutput | Self::RingbufReserve | Self::RingbufQuery, 0) => {
+                Some(MapKind::RingBuf)
+            }
             (
                 Self::SkRedirectMap | Self::SockMapUpdate | Self::MsgRedirectMap,
                 1,
