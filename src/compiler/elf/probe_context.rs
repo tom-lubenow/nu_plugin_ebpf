@@ -13,7 +13,6 @@ use crate::kernel_btf::{
 use crate::program_spec::{
     CgroupSockAddrTarget, CgroupSockTarget, CgroupSockoptTarget, ProgramSpec, TcTarget,
 };
-use aya::programs::{CgroupSockAddrAttachType, CgroupSockoptAttachType};
 
 impl ProbeContext {
     pub(crate) fn parsed_program_spec(&self) -> Option<ProgramSpec> {
@@ -51,72 +50,23 @@ impl ProbeContext {
     }
 
     fn cgroup_sock_addr_is_ipv4(&self) -> bool {
-        self.cgroup_sock_addr_target().is_some_and(|target| {
-            matches!(
-                target.attach_type,
-                CgroupSockAddrAttachType::Bind4
-                    | CgroupSockAddrAttachType::Connect4
-                    | CgroupSockAddrAttachType::GetPeerName4
-                    | CgroupSockAddrAttachType::GetSockName4
-                    | CgroupSockAddrAttachType::UDPSendMsg4
-                    | CgroupSockAddrAttachType::UDPRecvMsg4
-            )
-        })
+        self.cgroup_sock_addr_target()
+            .is_some_and(|target| target.is_ipv4())
     }
 
     fn cgroup_sock_addr_is_ipv6(&self) -> bool {
-        self.cgroup_sock_addr_target().is_some_and(|target| {
-            matches!(
-                target.attach_type,
-                CgroupSockAddrAttachType::Bind6
-                    | CgroupSockAddrAttachType::Connect6
-                    | CgroupSockAddrAttachType::GetPeerName6
-                    | CgroupSockAddrAttachType::GetSockName6
-                    | CgroupSockAddrAttachType::UDPSendMsg6
-                    | CgroupSockAddrAttachType::UDPRecvMsg6
-            )
-        })
+        self.cgroup_sock_addr_target()
+            .is_some_and(|target| target.is_ipv6())
     }
 
     fn cgroup_sock_addr_has_msg_source(&self) -> bool {
-        self.cgroup_sock_addr_target().is_some_and(|target| {
-            matches!(
-                target.attach_type,
-                CgroupSockAddrAttachType::UDPSendMsg4
-                    | CgroupSockAddrAttachType::UDPSendMsg6
-                    | CgroupSockAddrAttachType::UDPRecvMsg4
-                    | CgroupSockAddrAttachType::UDPRecvMsg6
-            )
-        })
+        self.cgroup_sock_addr_target()
+            .is_some_and(|target| target.has_msg_source())
     }
 
     fn cgroup_sock_addr_is_connect(&self) -> bool {
-        self.cgroup_sock_addr_target().is_some_and(|target| {
-            matches!(
-                target.attach_type,
-                CgroupSockAddrAttachType::Connect4 | CgroupSockAddrAttachType::Connect6
-            )
-        })
-    }
-
-    fn cgroup_sock_addr_allows_sockopt_helpers(&self) -> bool {
-        self.cgroup_sock_addr_target().is_some_and(|target| {
-            matches!(
-                target.attach_type,
-                CgroupSockAddrAttachType::Bind4
-                    | CgroupSockAddrAttachType::Bind6
-                    | CgroupSockAddrAttachType::Connect4
-                    | CgroupSockAddrAttachType::Connect6
-                    | CgroupSockAddrAttachType::GetPeerName4
-                    | CgroupSockAddrAttachType::GetPeerName6
-                    | CgroupSockAddrAttachType::GetSockName4
-                    | CgroupSockAddrAttachType::GetSockName6
-                    | CgroupSockAddrAttachType::UDPSendMsg4
-                    | CgroupSockAddrAttachType::UDPSendMsg6
-                    | CgroupSockAddrAttachType::UDPRecvMsg4
-                    | CgroupSockAddrAttachType::UDPRecvMsg6
-            )
-        })
+        self.cgroup_sock_addr_target()
+            .is_some_and(|target| target.is_connect())
     }
 
     fn cgroup_sockopt_target(&self) -> Option<CgroupSockoptTarget> {
@@ -128,7 +78,7 @@ impl ProbeContext {
 
     fn cgroup_sockopt_is_get(&self) -> bool {
         self.cgroup_sockopt_target()
-            .is_some_and(|target| matches!(target.attach_type, CgroupSockoptAttachType::Get))
+            .is_some_and(|target| target.is_get())
     }
 
     fn cgroup_sockopt_store_field_error(&self, field: &CtxField) -> Option<String> {
@@ -920,15 +870,6 @@ impl ProbeContext {
             {
                 Some(format!(
                     "helper '{}' is only valid on cgroup_sock_addr connect4/connect6 hooks",
-                    helper.name()
-                ))
-            }
-            BpfHelper::SetSockOpt | BpfHelper::GetSockOpt
-                if self.probe_type == EbpfProgramType::CgroupSockAddr
-                    && !self.cgroup_sock_addr_allows_sockopt_helpers() =>
-            {
-                Some(format!(
-                    "helper '{}' is only valid on cgroup_sock_addr bind/connect/getpeername/getsockname/sendmsg/recvmsg hooks and sock_ops programs",
                     helper.name()
                 ))
             }

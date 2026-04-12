@@ -611,6 +611,47 @@ impl CgroupSockAddrTarget {
     pub fn section_name(&self) -> String {
         format!("cgroup/{}", self.attach_type_name())
     }
+
+    pub fn is_ipv4(&self) -> bool {
+        matches!(
+            self.attach_type,
+            CgroupSockAddrAttachType::Bind4
+                | CgroupSockAddrAttachType::Connect4
+                | CgroupSockAddrAttachType::GetPeerName4
+                | CgroupSockAddrAttachType::GetSockName4
+                | CgroupSockAddrAttachType::UDPSendMsg4
+                | CgroupSockAddrAttachType::UDPRecvMsg4
+        )
+    }
+
+    pub fn is_ipv6(&self) -> bool {
+        matches!(
+            self.attach_type,
+            CgroupSockAddrAttachType::Bind6
+                | CgroupSockAddrAttachType::Connect6
+                | CgroupSockAddrAttachType::GetPeerName6
+                | CgroupSockAddrAttachType::GetSockName6
+                | CgroupSockAddrAttachType::UDPSendMsg6
+                | CgroupSockAddrAttachType::UDPRecvMsg6
+        )
+    }
+
+    pub fn has_msg_source(&self) -> bool {
+        matches!(
+            self.attach_type,
+            CgroupSockAddrAttachType::UDPSendMsg4
+                | CgroupSockAddrAttachType::UDPSendMsg6
+                | CgroupSockAddrAttachType::UDPRecvMsg4
+                | CgroupSockAddrAttachType::UDPRecvMsg6
+        )
+    }
+
+    pub fn is_connect(&self) -> bool {
+        matches!(
+            self.attach_type,
+            CgroupSockAddrAttachType::Connect4 | CgroupSockAddrAttachType::Connect6
+        )
+    }
 }
 
 impl PartialEq for CgroupSockAddrTarget {
@@ -677,6 +718,10 @@ impl CgroupSockoptTarget {
             CgroupSockoptAttachType::Get => "cgroup/getsockopt",
             CgroupSockoptAttachType::Set => "cgroup/setsockopt",
         }
+    }
+
+    pub fn is_get(&self) -> bool {
+        matches!(self.attach_type, CgroupSockoptAttachType::Get)
     }
 }
 
@@ -1274,5 +1319,38 @@ impl fmt::Display for ProgramSpec {
             self.program_type().canonical_prefix(),
             self.target_string()
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cgroup_sock_addr_target_attach_shape_helpers() {
+        let connect4 = CgroupSockAddrTarget::parse("/sys/fs/cgroup:connect4")
+            .expect("connect4 target should parse");
+        assert!(connect4.is_ipv4());
+        assert!(!connect4.is_ipv6());
+        assert!(!connect4.has_msg_source());
+        assert!(connect4.is_connect());
+
+        let sendmsg6 = CgroupSockAddrTarget::parse("/sys/fs/cgroup:sendmsg6")
+            .expect("sendmsg6 target should parse");
+        assert!(!sendmsg6.is_ipv4());
+        assert!(sendmsg6.is_ipv6());
+        assert!(sendmsg6.has_msg_source());
+        assert!(!sendmsg6.is_connect());
+    }
+
+    #[test]
+    fn test_cgroup_sockopt_target_attach_shape_helpers() {
+        let get =
+            CgroupSockoptTarget::parse("/sys/fs/cgroup:get").expect("get target should parse");
+        let set =
+            CgroupSockoptTarget::parse("/sys/fs/cgroup:set").expect("set target should parse");
+
+        assert!(get.is_get());
+        assert!(!set.is_get());
     }
 }
