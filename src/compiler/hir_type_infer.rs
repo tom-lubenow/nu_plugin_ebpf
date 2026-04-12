@@ -520,7 +520,7 @@ fn hm_type_for_value(val: &Value) -> HMType {
 fn hm_type_for_declared_global_type(ty: &Type) -> HMType {
     match ty {
         Type::Bool => HMType::Bool,
-        Type::Int => HMType::I64,
+        Type::Int | Type::Duration | Type::Filesize => HMType::I64,
         Type::String | Type::Glob => stack_string_ptr_type(),
         Type::Binary => stack_string_ptr_type(),
         Type::List(inner) if matches!(inner.as_ref(), Type::Int | Type::Nothing) => {

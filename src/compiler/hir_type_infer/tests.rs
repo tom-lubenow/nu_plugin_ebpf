@@ -592,3 +592,48 @@ fn test_annotated_record_global_field_math_infers_from_declared_type() {
 
     assert_eq!(inferred.main.get(&RegId::new(1)), Some(&HMType::I64));
 }
+
+#[test]
+fn test_infer_annotated_duration_math_uses_i64_type() {
+    let state_var = VarId::new(43);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: state_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: Operator::Math(Math::Add),
+                    rhs: RegId::new(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let mut program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    program.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: state_var,
+        declared_type: Type::Duration,
+        initial_value: Value::duration(1234, Span::test_data()),
+    }];
+
+    let decl_names = HashMap::new();
+    let inferred =
+        infer_hir_types(&program, &decl_names).expect("annotated duration math should infer");
+
+    assert_eq!(inferred.main.get(&RegId::new(0)), Some(&HMType::I64));
+}
