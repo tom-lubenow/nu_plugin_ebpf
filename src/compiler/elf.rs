@@ -1084,60 +1084,27 @@ impl EbpfProgramType {
     }
 
     pub fn supports_socket_ref_ctx_field(&self) -> bool {
-        matches!(
-            self,
-            EbpfProgramType::CgroupSock
-                | EbpfProgramType::CgroupSockAddr
-                | EbpfProgramType::CgroupSockopt
-                | EbpfProgramType::SkLookup
-                | EbpfProgramType::SkMsg
-                | EbpfProgramType::SockOps
-        )
+        self.socket_ref_context_layout().is_some()
     }
 
     pub fn supports_socket_common_ctx_fields(&self) -> bool {
-        matches!(
-            self,
-            EbpfProgramType::CgroupSock
-                | EbpfProgramType::CgroupSockAddr
-                | EbpfProgramType::SkLookup
-                | EbpfProgramType::SkMsg
-                | EbpfProgramType::SkSkb
-                | EbpfProgramType::SkSkbParser
-                | EbpfProgramType::SockOps
-        )
+        self.socket_family_context_layout().is_some()
     }
 
     pub fn supports_socket_tuple_ctx_fields(&self) -> bool {
-        matches!(
-            self,
-            EbpfProgramType::SkLookup
-                | EbpfProgramType::SkMsg
-                | EbpfProgramType::SkSkb
-                | EbpfProgramType::SkSkbParser
-                | EbpfProgramType::SockOps
-        )
+        self.socket_tuple_context_layout().is_some()
     }
 
-    pub fn supports_sock_type_protocol_ctx_fields(&self) -> bool {
-        matches!(
-            self,
-            EbpfProgramType::CgroupSock
-                | EbpfProgramType::CgroupSockAddr
-                | EbpfProgramType::SkLookup
-        )
+    pub fn supports_sock_type_ctx_field(&self) -> bool {
+        self.sock_type_context_layout().is_some()
+    }
+
+    pub fn supports_protocol_ctx_field(&self) -> bool {
+        self.protocol_context_layout().is_some()
     }
 
     pub fn supports_sock_mark_priority_ctx_fields(&self) -> bool {
-        matches!(
-            self,
-            EbpfProgramType::CgroupSock
-                | EbpfProgramType::SocketFilter
-                | EbpfProgramType::Tc
-                | EbpfProgramType::CgroupSkb
-                | EbpfProgramType::SkSkb
-                | EbpfProgramType::SkSkbParser
-        )
+        self.sock_mark_priority_context_layout().is_some()
     }
 
     pub fn supports_socket_cookie_ctx_field(&self) -> bool {

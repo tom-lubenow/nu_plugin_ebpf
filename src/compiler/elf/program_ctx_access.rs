@@ -163,7 +163,12 @@ impl EbpfProgramType {
                     field.display_name()
                 ))
             }
-            CtxField::UserFamily | CtxField::UserPort
+            CtxField::UserFamily
+            | CtxField::UserIp4
+            | CtxField::UserIp6
+            | CtxField::UserPort
+            | CtxField::MsgSrcIp4
+            | CtxField::MsgSrcIp6
                 if !self.supports_cgroup_sock_addr_ctx_fields() =>
             {
                 Some(format!(
@@ -175,8 +180,13 @@ impl EbpfProgramType {
                 "ctx.{} is only available on cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs",
                 field.display_name()
             )),
-            CtxField::SockType | CtxField::Protocol
-                if !self.supports_sock_type_protocol_ctx_fields() =>
+            CtxField::SockType if !self.supports_sock_type_ctx_field() => {
+                Some(format!(
+                    "ctx.{} is only available on cgroup_sock, cgroup_sock_addr, and sk_lookup programs",
+                    field.display_name()
+                ))
+            }
+            CtxField::Protocol if !self.supports_protocol_ctx_field() =>
             {
                 Some(format!(
                     "ctx.{} is only available on cgroup_sock, cgroup_sock_addr, and sk_lookup programs",

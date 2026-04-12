@@ -532,26 +532,9 @@ impl ProbeContext {
         if let Some(message) = self.probe_type.base_ctx_field_access_error(field) {
             return Some(message);
         }
-        let program_type = self.probe_type;
-        let parsed_program_spec = self.parsed_program_spec();
-
-        match field {
-            CtxField::UserIp4 if !program_type.supports_cgroup_sock_addr_ctx_fields() => {
-                Some("ctx.user_ip4 is only available on cgroup_sock_addr programs".to_string())
-            }
-            CtxField::UserIp6 if !program_type.supports_cgroup_sock_addr_ctx_fields() => {
-                Some("ctx.user_ip6 is only available on cgroup_sock_addr programs".to_string())
-            }
-            CtxField::MsgSrcIp4 if !program_type.supports_cgroup_sock_addr_ctx_fields() => {
-                Some("ctx.msg_src_ip4 is only available on cgroup_sock_addr programs".to_string())
-            }
-            CtxField::MsgSrcIp6 if !program_type.supports_cgroup_sock_addr_ctx_fields() => {
-                Some("ctx.msg_src_ip6 is only available on cgroup_sock_addr programs".to_string())
-            }
-            _ => parsed_program_spec
-                .as_ref()
-                .and_then(|spec| spec.ctx_field_access_error(field)),
-        }
+        self.parsed_program_spec()
+            .as_ref()
+            .and_then(|spec| spec.ctx_field_access_error(field))
     }
 
     pub fn validate_ctx_field_access(&self, field: &CtxField) -> Result<(), CompileError> {
