@@ -585,6 +585,47 @@ fn test_probe_context_struct_ops_callback_uses_value_type_program_spec() {
 }
 
 #[test]
+fn test_probe_context_ctx_field_type_spec_respects_context_legality() {
+    let kprobe = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_openat2");
+    let tc = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let ipv6_sock_addr =
+        ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect6");
+
+    assert!(kprobe.ctx_field_type_spec(&CtxField::PacketLen).is_none());
+    assert!(tc.ctx_field_type_spec(&CtxField::PacketLen).is_some());
+    assert!(
+        ipv6_sock_addr
+            .ctx_field_type_spec(&CtxField::UserIp4)
+            .is_none()
+    );
+}
+
+#[test]
+fn test_probe_context_ctx_field_projection_spec_respects_context_legality() {
+    let kprobe = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_openat2");
+    let ipv4_sock_addr =
+        ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+    let ipv6_sock_addr =
+        ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect6");
+
+    assert!(
+        kprobe
+            .ctx_field_projection_spec(&CtxField::Socket)
+            .is_none()
+    );
+    assert!(
+        ipv4_sock_addr
+            .ctx_field_projection_spec(&CtxField::UserIp6)
+            .is_none()
+    );
+    assert!(
+        ipv6_sock_addr
+            .ctx_field_projection_spec(&CtxField::UserIp6)
+            .is_some()
+    );
+}
+
+#[test]
 fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
     let ingress = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let egress = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
