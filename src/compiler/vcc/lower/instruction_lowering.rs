@@ -706,14 +706,7 @@ impl<'a> VccLowerer<'a> {
                         src,
                     });
                 }
-                if matches!(
-                    helper_kind,
-                    Some(
-                        BpfHelper::XdpAdjustHead
-                            | BpfHelper::XdpAdjustMeta
-                            | BpfHelper::XdpAdjustTail
-                    )
-                ) {
+                if matches!(helper_kind, Some(helper) if helper.invalidates_packet_pointers()) {
                     out.push(VccInst::InvalidatePacketPointers);
                     self.entry_ctx_field_regs.remove(&Self::ctx_field_key(&CtxField::Data));
                     self.entry_ctx_field_regs

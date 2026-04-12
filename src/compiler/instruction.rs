@@ -470,6 +470,13 @@ impl BpfHelper {
             )
     }
 
+    pub const fn invalidates_packet_pointers(self) -> bool {
+        matches!(
+            self,
+            Self::XdpAdjustHead | Self::XdpAdjustMeta | Self::XdpAdjustTail | Self::MsgPullData
+        )
+    }
+
     pub const fn supports_local_helper_map_fd(self, arg_idx: usize) -> bool {
         match self.local_helper_map_arg_index() {
             Some(idx) => idx == arg_idx,

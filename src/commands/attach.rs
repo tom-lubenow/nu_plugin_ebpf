@@ -354,8 +354,10 @@ Context parameter syntax (recommended):
     `helper-call "bpf_msg_cork_bytes" $ctx 8`, plus range/data reshaping
     helpers such as `helper-call "bpf_msg_pull_data" $ctx 0 8 0` and
     `helper-call "bpf_msg_push_data" $ctx 0 8 0` or
-    `helper-call "bpf_msg_pop_data" $ctx 0 8 0`. Socket-pointer helpers are
-    also available on `ctx.sk` after a null check, for example
+    `helper-call "bpf_msg_pop_data" $ctx 0 8 0`. After
+    `bpf_msg_pull_data`, reload `ctx.data` and `ctx.data_end` before
+    reading packet bytes again. Socket-pointer helpers are also available
+    on `ctx.sk` after a null check, for example
     `if $ctx.sk != 0 { helper-call "bpf_sk_cgroup_id" $ctx.sk }`.
 
   sk_skb fields:
