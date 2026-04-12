@@ -180,6 +180,61 @@ fn test_verify_mir_for_probe_context_rejects_sockopt_retval_store_on_set_hook() 
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_accepts_sockopt_level_store_on_set_hook() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SockoptLevel,
+            val: MirValue::Const(1),
+            ty: MirType::I32,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set");
+    verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect("expected level store to be accepted on cgroup_sockopt:set");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_accepts_sockopt_optlen_store_on_get_hook() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SockoptOptlen,
+            val: MirValue::Const(8),
+            ty: MirType::I32,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+    verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect("expected optlen store to be accepted on cgroup_sockopt:get");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_rejects_sockopt_level_store_on_get_hook() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SockoptLevel,
+            val: MirValue::Const(1),
+            ty: MirType::I32,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+    let err = verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect_err("expected level store to be rejected on cgroup_sockopt:get");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("ctx.level is only writable on cgroup_sockopt:set hooks")
+    }));
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_accepts_cgroup_sock_addr_user_ip6_store_on_connect6() {
     let (mut func, entry) = new_mir_function();
     func.block_mut(entry)

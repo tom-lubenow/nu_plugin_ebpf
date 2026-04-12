@@ -103,6 +103,26 @@ impl ProbeContext {
             .is_some_and(|target| matches!(target.attach_type, CgroupSockoptAttachType::Get))
     }
 
+    fn cgroup_sockopt_store_field_error(&self, field: &CtxField) -> Option<String> {
+        match field {
+            CtxField::SockoptLevel | CtxField::SockoptOptname => {
+                if let Some(message) = self.ctx_field_access_error(field) {
+                    return Some(message);
+                }
+                if self.cgroup_sockopt_is_get() {
+                    Some(format!(
+                        "ctx.{} is only writable on cgroup_sockopt:set hooks",
+                        field.display_name()
+                    ))
+                } else {
+                    None
+                }
+            }
+            CtxField::SockoptOptlen | CtxField::SockoptRetval => self.ctx_field_access_error(field),
+            _ => None,
+        }
+    }
+
     pub(crate) fn socket_family_context_layout(&self) -> Option<SocketContextLayout> {
         match self.probe_type {
             EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
@@ -646,9 +666,29 @@ impl ProbeContext {
                     .into(),
             ),
             (EbpfProgramType::CgroupSockopt, "sockopt_retval", None) => {
-                self.validate_ctx_field_access(&CtxField::SockoptRetval)
-                    .map_err(|err| err.to_string())?;
+                if let Some(err) = self.cgroup_sockopt_store_field_error(&CtxField::SockoptRetval) {
+                    return Err(err);
+                }
                 Ok(CtxStoreTarget::SockoptRetval)
+            }
+            (EbpfProgramType::CgroupSockopt, "level", None) => {
+                if let Some(err) = self.cgroup_sockopt_store_field_error(&CtxField::SockoptLevel) {
+                    return Err(err);
+                }
+                Ok(CtxStoreTarget::SockoptLevel)
+            }
+            (EbpfProgramType::CgroupSockopt, "optname", None) => {
+                if let Some(err) = self.cgroup_sockopt_store_field_error(&CtxField::SockoptOptname)
+                {
+                    return Err(err);
+                }
+                Ok(CtxStoreTarget::SockoptOptname)
+            }
+            (EbpfProgramType::CgroupSockopt, "optlen", None) => {
+                if let Some(err) = self.cgroup_sockopt_store_field_error(&CtxField::SockoptOptlen) {
+                    return Err(err);
+                }
+                Ok(CtxStoreTarget::SockoptOptlen)
             }
             (EbpfProgramType::CgroupSockAddr, "user_ip4", None) => {
                 self.validate_ctx_field_access(&CtxField::UserIp4)
@@ -688,7 +728,7 @@ impl ProbeContext {
                     .into(),
             ),
             _ => Err(format!(
-                "context cell path update '.{} = ...' is only supported for sock_ops reply fields, cgroup_sockopt:get sockopt_retval, and cgroup_sock_addr rewrite fields",
+                "context cell path update '.{} = ...' is only supported for sock_ops reply fields, writable cgroup_sockopt scalar fields, and cgroup_sock_addr rewrite fields",
                 path_desc
             )),
         }
@@ -706,7 +746,18 @@ impl ProbeContext {
                     None
                 }
             }
-            CtxStoreTarget::SockoptRetval => self.ctx_field_access_error(&CtxField::SockoptRetval),
+            CtxStoreTarget::SockoptLevel => {
+                self.cgroup_sockopt_store_field_error(&CtxField::SockoptLevel)
+            }
+            CtxStoreTarget::SockoptOptname => {
+                self.cgroup_sockopt_store_field_error(&CtxField::SockoptOptname)
+            }
+            CtxStoreTarget::SockoptOptlen => {
+                self.cgroup_sockopt_store_field_error(&CtxField::SockoptOptlen)
+            }
+            CtxStoreTarget::SockoptRetval => {
+                self.cgroup_sockopt_store_field_error(&CtxField::SockoptRetval)
+            }
             CtxStoreTarget::CgroupSockAddrUserIp4 => {
                 self.ctx_field_access_error(&CtxField::UserIp4)
             }

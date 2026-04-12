@@ -718,6 +718,12 @@ pub enum CtxStoreTarget {
     SockOpsReply,
     /// `bpf_sock_ops.replylong[idx]`
     SockOpsReplyLong(u8),
+    /// `bpf_sockopt.level`
+    SockoptLevel,
+    /// `bpf_sockopt.optname`
+    SockoptOptname,
+    /// `bpf_sockopt.optlen`
+    SockoptOptlen,
     /// `bpf_sockopt.retval`
     SockoptRetval,
     /// `bpf_sock_addr.user_ip4` (stored in network byte order)
@@ -736,7 +742,10 @@ impl CtxStoreTarget {
     pub fn value_type(&self) -> MirType {
         match self {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => MirType::U32,
-            CtxStoreTarget::SockoptRetval => MirType::I32,
+            CtxStoreTarget::SockoptLevel
+            | CtxStoreTarget::SockoptOptname
+            | CtxStoreTarget::SockoptOptlen
+            | CtxStoreTarget::SockoptRetval => MirType::I32,
             CtxStoreTarget::CgroupSockAddrUserIp4
             | CtxStoreTarget::CgroupSockAddrUserIp6Word(_)
             | CtxStoreTarget::CgroupSockAddrUserPort
@@ -753,8 +762,11 @@ impl CtxStoreTarget {
                     actual
                 )
             }
-            CtxStoreTarget::SockoptRetval => format!(
-                "writable cgroup_sockopt retval requires an i32 store, got {:?}",
+            CtxStoreTarget::SockoptLevel
+            | CtxStoreTarget::SockoptOptname
+            | CtxStoreTarget::SockoptOptlen
+            | CtxStoreTarget::SockoptRetval => format!(
+                "writable cgroup_sockopt scalar fields require an i32 store, got {:?}",
                 actual
             ),
             CtxStoreTarget::CgroupSockAddrUserIp4
@@ -775,8 +787,11 @@ impl CtxStoreTarget {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
                 "writable sock_ops reply fields are only supported on sock_ops programs"
             }
-            CtxStoreTarget::SockoptRetval => {
-                "writable sockopt_retval requires cgroup_sockopt:get context"
+            CtxStoreTarget::SockoptLevel
+            | CtxStoreTarget::SockoptOptname
+            | CtxStoreTarget::SockoptOptlen
+            | CtxStoreTarget::SockoptRetval => {
+                "writable cgroup_sockopt scalar fields require cgroup_sockopt context"
             }
             CtxStoreTarget::CgroupSockAddrUserIp4
             | CtxStoreTarget::CgroupSockAddrUserIp6Word(_)

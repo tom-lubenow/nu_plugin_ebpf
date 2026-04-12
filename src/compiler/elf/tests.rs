@@ -2533,12 +2533,72 @@ fn test_probe_context_resolves_cgroup_sockopt_retval_store_target() {
 }
 
 #[test]
+fn test_probe_context_resolves_cgroup_sockopt_scalar_store_targets() {
+    let set_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set");
+    assert_eq!(
+        set_ctx
+            .resolve_ctx_store_target("level", None, "level")
+            .expect("cgroup_sockopt:set level target should resolve"),
+        CtxStoreTarget::SockoptLevel
+    );
+    assert_eq!(
+        set_ctx
+            .resolve_ctx_store_target("optname", None, "optname")
+            .expect("cgroup_sockopt:set optname target should resolve"),
+        CtxStoreTarget::SockoptOptname
+    );
+    assert_eq!(
+        set_ctx
+            .resolve_ctx_store_target("optlen", None, "optlen")
+            .expect("cgroup_sockopt:set optlen target should resolve"),
+        CtxStoreTarget::SockoptOptlen
+    );
+    assert!(
+        set_ctx
+            .validate_ctx_store_target(&CtxStoreTarget::SockoptLevel)
+            .is_ok()
+    );
+    assert!(
+        set_ctx
+            .validate_ctx_store_target(&CtxStoreTarget::SockoptOptname)
+            .is_ok()
+    );
+    assert!(
+        set_ctx
+            .validate_ctx_store_target(&CtxStoreTarget::SockoptOptlen)
+            .is_ok()
+    );
+
+    let get_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+    assert_eq!(
+        get_ctx
+            .resolve_ctx_store_target("optlen", None, "optlen")
+            .expect("cgroup_sockopt:get optlen target should resolve"),
+        CtxStoreTarget::SockoptOptlen
+    );
+    assert!(
+        get_ctx
+            .validate_ctx_store_target(&CtxStoreTarget::SockoptOptlen)
+            .is_ok()
+    );
+}
+
+#[test]
 fn test_probe_context_rejects_cgroup_sockopt_set_retval_store_target() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set");
     let err = ctx
         .resolve_ctx_store_target("sockopt_retval", None, "sockopt_retval")
         .expect_err("cgroup_sockopt:set retval store target should be rejected");
     assert!(err.contains("cgroup_sockopt:get"));
+}
+
+#[test]
+fn test_probe_context_rejects_cgroup_sockopt_get_level_store_target() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+    let err = ctx
+        .resolve_ctx_store_target("level", None, "level")
+        .expect_err("cgroup_sockopt:get level store target should be rejected");
+    assert!(err.contains("ctx.level is only writable on cgroup_sockopt:set hooks"));
 }
 
 #[test]

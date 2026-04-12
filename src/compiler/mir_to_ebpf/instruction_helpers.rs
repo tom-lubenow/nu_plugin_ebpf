@@ -95,6 +95,9 @@ impl<'a> MirToEbpfCompiler<'a> {
                     })?,
                 val_reg,
             ),
+            CtxStoreTarget::SockoptLevel => (Self::bpf_sockopt_offsets().2, val_reg),
+            CtxStoreTarget::SockoptOptname => (Self::bpf_sockopt_offsets().3, val_reg),
+            CtxStoreTarget::SockoptOptlen => (Self::bpf_sockopt_offsets().4, val_reg),
             CtxStoreTarget::SockoptRetval => (Self::bpf_sockopt_offsets().5, val_reg),
             CtxStoreTarget::CgroupSockAddrUserIp4 => {
                 self.instructions

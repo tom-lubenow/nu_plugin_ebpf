@@ -2154,6 +2154,62 @@ fn test_type_error_store_sockopt_retval_rejects_set_context() {
 }
 
 #[test]
+fn test_type_infer_accepts_store_sockopt_level_on_set_hook() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::SockoptLevel,
+        val: MirValue::Const(1),
+        ty: MirType::I32,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    ti.infer(&func)
+        .expect("cgroup_sockopt level store should type-check on set hook");
+}
+
+#[test]
+fn test_type_infer_accepts_store_sockopt_optlen_on_get_hook() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::SockoptOptlen,
+        val: MirValue::Const(8),
+        ty: MirType::I32,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    ti.infer(&func)
+        .expect("cgroup_sockopt optlen store should type-check on get hook");
+}
+
+#[test]
+fn test_type_error_store_sockopt_level_rejects_get_context() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::SockoptLevel,
+        val: MirValue::Const(1),
+        ty: MirType::I32,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("sockopt level store should be rejected on cgroup_sockopt:get");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("ctx.level is only writable on cgroup_sockopt:set hooks")
+    }));
+}
+
+#[test]
 fn test_type_infer_accepts_store_cgroup_sock_addr_user_ip6_on_connect6() {
     let mut func = make_test_function();
     let block = func.block_mut(BlockId(0));
