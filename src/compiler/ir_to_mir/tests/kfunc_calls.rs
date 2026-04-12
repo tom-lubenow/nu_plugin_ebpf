@@ -810,8 +810,126 @@ fn test_helper_call_exact_attach_ir_with_ctx_and_three_scalars_typechecks_and_lo
 }
 
 #[test]
-fn test_reused_register_load_variable_freshens_before_ctx_socket_projection() {
+fn test_helper_call_exact_attach_ir_with_sysctl_buffer_typechecks_and_lowers() {
+    use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
+    use std::sync::Arc;
+
+    let helper_name = b"bpf_sysctl_set_new_value";
+    let value = b"1";
+    let result_name = b"pass";
+    let mut data = Vec::new();
+    let helper_start = data.len();
+    data.extend_from_slice(helper_name);
+    let value_start = data.len();
+    data.extend_from_slice(value);
+    let result_start = data.len();
+    data.extend_from_slice(result_name);
+    let data: Arc<[u8]> = data.into();
     let ctx_var = VarId::new(82);
+
+    let main_ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::String(DataSlice {
+                    start: helper_start as u32,
+                    len: helper_name.len() as u32,
+                }),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(2),
+                var_id: ctx_var,
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(3),
+                lit: Literal::String(DataSlice {
+                    start: value_start as u32,
+                    len: value.len() as u32,
+                }),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(4),
+                lit: Literal::Int(1),
+            },
+            Instruction::PushPositional { src: RegId::new(1) },
+            Instruction::PushPositional { src: RegId::new(2) },
+            Instruction::PushPositional { src: RegId::new(3) },
+            Instruction::PushPositional { src: RegId::new(4) },
+            Instruction::Call {
+                decl_id: DeclId::new(42),
+                src_dst: RegId::new(0),
+            },
+            Instruction::Drain { src: RegId::new(0) },
+            Instruction::Drop { src: RegId::new(0) },
+            Instruction::LoadLiteral {
+                dst: RegId::new(0),
+                lit: Literal::String(DataSlice {
+                    start: result_start as u32,
+                    len: result_name.len() as u32,
+                }),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data,
+        ast: vec![],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+
+    let ctx_param = infer_ctx_param(&main_ir);
+    assert_eq!(ctx_param, Some(ctx_var));
+    let hir_program = HirProgram::new(
+        HirFunction::from_ir_block(main_ir).unwrap(),
+        HashMap::new(),
+        vec![],
+        ctx_param,
+    );
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("sysctl helper-call should type-check");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sysctl helper-call should lower");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    let call = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::CallHelper { helper, args, .. } => Some((helper, args)),
+            _ => None,
+        })
+        .expect("expected lowered sysctl helper call");
+
+    assert_eq!(*call.0, BpfHelper::SysctlSetNewValue as u32);
+    assert_eq!(call.1.len(), 3);
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("sysctl helper-call should compile after SSA");
+}
+
+#[test]
+fn test_reused_register_load_variable_freshens_before_ctx_socket_projection() {
+    let ctx_var = VarId::new(83);
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),

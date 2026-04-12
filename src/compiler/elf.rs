@@ -865,6 +865,17 @@ impl EbpfProgramType {
                     helper.name()
                 ))
             }
+            BpfHelper::SysctlGetName
+            | BpfHelper::SysctlGetCurrentValue
+            | BpfHelper::SysctlGetNewValue
+            | BpfHelper::SysctlSetNewValue
+                if *self != EbpfProgramType::CgroupSysctl =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in cgroup_sysctl programs",
+                    helper.name()
+                ))
+            }
             _ => None,
         }
     }

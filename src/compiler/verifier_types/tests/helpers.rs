@@ -319,6 +319,79 @@ fn test_verify_mir_for_program_msg_apply_bytes_rejects_non_sk_msg_programs() {
 }
 
 #[test]
+fn test_verify_mir_for_program_sysctl_helpers_reject_non_sysctl_programs() {
+    for (helper, extra_args) in [
+        (
+            BpfHelper::SysctlGetName,
+            vec![
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::Const(16),
+                MirValue::Const(0),
+            ],
+        ),
+        (
+            BpfHelper::SysctlGetCurrentValue,
+            vec![MirValue::StackSlot(StackSlotId(0)), MirValue::Const(16)],
+        ),
+        (
+            BpfHelper::SysctlGetNewValue,
+            vec![MirValue::StackSlot(StackSlotId(0)), MirValue::Const(16)],
+        ),
+        (
+            BpfHelper::SysctlSetNewValue,
+            vec![MirValue::StackSlot(StackSlotId(0)), MirValue::Const(16)],
+        ),
+    ] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args: std::iter::once(MirValue::VReg(ctx))
+                    .chain(extra_args.into_iter().map(|arg| match arg {
+                        MirValue::StackSlot(StackSlotId(0)) => MirValue::StackSlot(buf_slot),
+                        other => other,
+                    }))
+                    .collect(),
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir_for_program(&func, &types, EbpfProgramType::Kprobe.info())
+            .expect_err("expected sysctl helper program-surface error");
+        assert!(err.iter().any(|e| {
+            e.message.contains(&format!(
+                "helper '{}' is only valid in cgroup_sysctl programs",
+                helper.name()
+            ))
+        }));
+    }
+}
+
+#[test]
 fn test_verify_mir_helper_redirect_neigh_requires_zero_flags() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
@@ -2750,6 +2823,97 @@ fn test_helper_get_current_comm_variable_size_range_checks_bounds() {
         "unexpected errors: {:?}",
         err
     );
+}
+
+#[test]
+fn test_verify_mir_helper_sysctl_get_current_value_accepts_cgroup_sysctl_context() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SysctlGetCurrentValue as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(16),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected sysctl get_current_value helper to verify on cgroup_sysctl");
+}
+
+#[test]
+fn test_verify_mir_helper_sysctl_get_current_value_rejects_small_stack_slot() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SysctlGetCurrentValue as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(16),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected sysctl get_current_value helper bounds error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper sysctl_get_current_value buf out of bounds")
+    }));
 }
 
 #[test]

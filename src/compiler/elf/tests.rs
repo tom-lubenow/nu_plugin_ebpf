@@ -561,6 +561,17 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::Redirect),
         Some("helper 'bpf_redirect' is only valid in xdp and tc programs".to_string())
     );
+    assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SysctlGetCurrentValue),
+        Some(
+            "helper 'bpf_sysctl_get_current_value' is only valid in cgroup_sysctl programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSysctl.helper_call_error(BpfHelper::SysctlGetCurrentValue),
+        None
+    );
 }
 
 #[test]

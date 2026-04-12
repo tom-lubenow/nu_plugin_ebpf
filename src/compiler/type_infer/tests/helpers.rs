@@ -359,6 +359,66 @@ fn test_type_error_msg_helpers_reject_non_sk_msg_programs() {
 }
 
 #[test]
+fn test_type_error_sysctl_helpers_reject_non_sysctl_programs() {
+    for (helper, extra_args) in [
+        (
+            BpfHelper::SysctlGetName,
+            vec![
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::Const(16),
+                MirValue::Const(0),
+            ],
+        ),
+        (
+            BpfHelper::SysctlGetCurrentValue,
+            vec![MirValue::StackSlot(StackSlotId(0)), MirValue::Const(16)],
+        ),
+        (
+            BpfHelper::SysctlGetNewValue,
+            vec![MirValue::StackSlot(StackSlotId(0)), MirValue::Const(16)],
+        ),
+        (
+            BpfHelper::SysctlSetNewValue,
+            vec![MirValue::StackSlot(StackSlotId(0)), MirValue::Const(16)],
+        ),
+    ] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: std::iter::once(MirValue::VReg(ctx))
+                .chain(extra_args.into_iter().map(|arg| match arg {
+                    MirValue::StackSlot(StackSlotId(0)) => MirValue::StackSlot(buf_slot),
+                    other => other,
+                }))
+                .collect(),
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected sysctl helper to be rejected outside cgroup_sysctl");
+        assert!(errs.iter().any(|e| {
+            e.message.contains(&format!(
+                "helper '{}' is only valid in cgroup_sysctl programs",
+                helper.name()
+            ))
+        }));
+    }
+}
+
+#[test]
 fn test_infer_msg_helpers_in_sk_msg_program() {
     for (helper, args) in [
         (BpfHelper::MsgApplyBytes, vec![MirValue::Const(8)]),
@@ -635,6 +695,71 @@ fn test_type_error_helper_get_current_comm_rejects_small_stack_slot() {
         "unexpected errors: {:?}",
         errs
     );
+}
+
+#[test]
+fn test_infer_helper_sysctl_get_current_value_in_cgroup_sysctl_program() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SysctlGetCurrentValue as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(16),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected sysctl get_current_value helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_helper_sysctl_get_current_value_rejects_small_stack_slot() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SysctlGetCurrentValue as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(16),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected sysctl get_current_value stack-size error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper sysctl_get_current_value buf requires 16 bytes")
+    }));
 }
 
 #[test]

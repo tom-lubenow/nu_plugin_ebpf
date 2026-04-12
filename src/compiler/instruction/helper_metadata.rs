@@ -49,6 +49,10 @@ impl BpfHelper {
             98 => Some(Self::GetListenerSock),
             99 => Some(Self::SkcLookupTcp),
             100 => Some(Self::TcpCheckSyncookie),
+            101 => Some(Self::SysctlGetName),
+            102 => Some(Self::SysctlGetCurrentValue),
+            103 => Some(Self::SysctlGetNewValue),
+            104 => Some(Self::SysctlSetNewValue),
             107 => Some(Self::SkStorageGet),
             108 => Some(Self::SkStorageDelete),
             110 => Some(Self::TcpGenSyncookie),
@@ -255,6 +259,20 @@ impl BpfHelper {
                 min_args: 5,
                 max_args: 5,
                 arg_kinds: [P, P, S, P, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SysctlGetName => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SysctlGetCurrentValue
+            | BpfHelper::SysctlGetNewValue
+            | BpfHelper::SysctlSetNewValue => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::SkAssign => HelperSignature {

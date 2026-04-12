@@ -131,6 +131,74 @@ impl BpfHelper {
             size_from_arg: Some(1),
         }];
 
+        const SYSCTL_GET_NAME_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper sysctl_get_name ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper sysctl_get_name buf",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
+
+        const SYSCTL_GET_CURRENT_VALUE_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper sysctl_get_current_value ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper sysctl_get_current_value buf",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
+
+        const SYSCTL_GET_NEW_VALUE_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper sysctl_get_new_value ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper sysctl_get_new_value buf",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
+
+        const SYSCTL_SET_VALUE_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper sysctl_set_value ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper sysctl_set_value buf",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
+
         const TRACE_PRINTK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 0,
             op: "helper trace_printk fmt",
@@ -632,6 +700,26 @@ impl BpfHelper {
             BpfHelper::GetCurrentComm => HelperSemantics {
                 ptr_arg_rules: GET_CURRENT_COMM_RULES,
                 positive_size_args: &[1],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SysctlGetName => HelperSemantics {
+                ptr_arg_rules: SYSCTL_GET_NAME_RULES,
+                positive_size_args: &[2],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SysctlGetCurrentValue => HelperSemantics {
+                ptr_arg_rules: SYSCTL_GET_CURRENT_VALUE_RULES,
+                positive_size_args: &[2],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SysctlGetNewValue => HelperSemantics {
+                ptr_arg_rules: SYSCTL_GET_NEW_VALUE_RULES,
+                positive_size_args: &[2],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SysctlSetNewValue => HelperSemantics {
+                ptr_arg_rules: SYSCTL_SET_VALUE_RULES,
+                positive_size_args: &[2],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::MsgApplyBytes => HelperSemantics {

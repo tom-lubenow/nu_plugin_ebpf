@@ -134,6 +134,14 @@ pub enum BpfHelper {
     SkcLookupTcp = 99,
     /// long bpf_tcp_check_syncookie(sk, iph, iph_len, th, th_len)
     TcpCheckSyncookie = 100,
+    /// long bpf_sysctl_get_name(ctx, buf, buf_len, flags)
+    SysctlGetName = 101,
+    /// long bpf_sysctl_get_current_value(ctx, buf, buf_len)
+    SysctlGetCurrentValue = 102,
+    /// long bpf_sysctl_get_new_value(ctx, buf, buf_len)
+    SysctlGetNewValue = 103,
+    /// long bpf_sysctl_set_new_value(ctx, buf, buf_len)
+    SysctlSetNewValue = 104,
     /// void *bpf_sk_storage_get(map, sk, value, flags)
     SkStorageGet = 107,
     /// long bpf_sk_storage_delete(map, sk)
@@ -234,6 +242,10 @@ impl BpfHelper {
             BpfHelper::GetListenerSock => "bpf_get_listener_sock",
             BpfHelper::SkcLookupTcp => "bpf_skc_lookup_tcp",
             BpfHelper::TcpCheckSyncookie => "bpf_tcp_check_syncookie",
+            BpfHelper::SysctlGetName => "bpf_sysctl_get_name",
+            BpfHelper::SysctlGetCurrentValue => "bpf_sysctl_get_current_value",
+            BpfHelper::SysctlGetNewValue => "bpf_sysctl_get_new_value",
+            BpfHelper::SysctlSetNewValue => "bpf_sysctl_set_new_value",
             BpfHelper::SkStorageGet => "bpf_sk_storage_get",
             BpfHelper::SkStorageDelete => "bpf_sk_storage_delete",
             BpfHelper::TcpGenSyncookie => "bpf_tcp_gen_syncookie",
@@ -313,6 +325,10 @@ impl BpfHelper {
             "get_listener_sock" => Some(Self::GetListenerSock),
             "skc_lookup_tcp" => Some(Self::SkcLookupTcp),
             "tcp_check_syncookie" => Some(Self::TcpCheckSyncookie),
+            "sysctl_get_name" => Some(Self::SysctlGetName),
+            "sysctl_get_current_value" => Some(Self::SysctlGetCurrentValue),
+            "sysctl_get_new_value" => Some(Self::SysctlGetNewValue),
+            "sysctl_set_new_value" => Some(Self::SysctlSetNewValue),
             "sk_storage_get" => Some(Self::SkStorageGet),
             "sk_storage_delete" => Some(Self::SkStorageDelete),
             "tcp_gen_syncookie" => Some(Self::TcpGenSyncookie),

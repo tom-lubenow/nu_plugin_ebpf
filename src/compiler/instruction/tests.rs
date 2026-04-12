@@ -87,6 +87,22 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::MsgPopData)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_sysctl_get_name"),
+        Some(BpfHelper::SysctlGetName)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_sysctl_get_current_value"),
+        Some(BpfHelper::SysctlGetCurrentValue)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_sysctl_get_new_value"),
+        Some(BpfHelper::SysctlGetNewValue)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_sysctl_set_new_value"),
+        Some(BpfHelper::SysctlSetNewValue)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_sk_cgroup_id"),
         Some(BpfHelper::SkCgroupId)
     ));
@@ -142,6 +158,34 @@ fn test_helper_signature_probe_read_helpers() {
         assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
         assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
         assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    }
+}
+
+#[test]
+fn test_helper_signatures_sysctl_helpers() {
+    let get_name = HelperSignature::for_id(BpfHelper::SysctlGetName as u32)
+        .expect("expected bpf_sysctl_get_name helper signature");
+    assert_eq!(get_name.min_args, 4);
+    assert_eq!(get_name.max_args, 4);
+    assert_eq!(get_name.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(get_name.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(get_name.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(get_name.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(get_name.ret_kind, HelperRetKind::Scalar);
+
+    for helper in [
+        BpfHelper::SysctlGetCurrentValue,
+        BpfHelper::SysctlGetNewValue,
+        BpfHelper::SysctlSetNewValue,
+    ] {
+        let sig = HelperSignature::for_id(helper as u32)
+            .unwrap_or_else(|| panic!("expected {} helper signature", helper.name()));
+        assert_eq!(sig.min_args, 3);
+        assert_eq!(sig.max_args, 3);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
         assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
     }
 }
