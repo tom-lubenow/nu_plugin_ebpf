@@ -181,7 +181,7 @@ fn recover_ctx_field_hint(
     match field {
         CtxField::Arg(_) => {
             let ctx = probe_ctx?;
-            if ctx.probe_type.uses_raw_tracepoint_args() {
+            if ctx.uses_raw_tracepoint_args() {
                 Some(MirType::U64)
             } else if ctx.is_userspace() {
                 Some(pointer_hint(AddressSpace::User))

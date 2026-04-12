@@ -610,7 +610,7 @@ impl<'a> HirToMirLowering<'a> {
             CtxField::Arg(_)
                 if self
                     .probe_ctx
-                    .is_some_and(|ctx| ctx.probe_type.uses_raw_tracepoint_args()) =>
+                    .is_some_and(|ctx| ctx.uses_raw_tracepoint_args()) =>
             {
                 (MirType::U64, Some(MirType::U64))
             }

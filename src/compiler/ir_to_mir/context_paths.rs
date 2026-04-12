@@ -345,7 +345,7 @@ impl<'a> HirToMirLowering<'a> {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "context cell path update '.{} = ...' direct packet writes are not supported on {} programs",
                 path_desc,
-                ctx.probe_type.canonical_prefix()
+                ctx.canonical_prefix()
             )));
         }
 

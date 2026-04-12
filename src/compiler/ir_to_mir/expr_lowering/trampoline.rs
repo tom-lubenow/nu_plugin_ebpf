@@ -45,7 +45,7 @@ impl<'a> HirToMirLowering<'a> {
         field: &CtxField,
     ) -> Result<Option<TrampolineValueSpec>, CompileError> {
         match (self.probe_ctx, field) {
-            (Some(ctx), CtxField::Arg(idx)) if ctx.probe_type.uses_btf_trampoline() => {
+            (Some(ctx), CtxField::Arg(idx)) if ctx.uses_btf_trampoline() => {
                 let spec = ctx
                     .btf_arg_spec(*idx as usize)
                     .map_err(CompileError::UnsupportedInstruction)?
@@ -57,10 +57,7 @@ impl<'a> HirToMirLowering<'a> {
                 Ok(Some(spec))
             }
             (Some(ctx), CtxField::RetVal)
-                if matches!(
-                    ctx.probe_type.retval_access(),
-                    ProgramValueAccess::Trampoline
-                ) =>
+                if matches!(ctx.retval_access(), ProgramValueAccess::Trampoline) =>
             {
                 let spec = ctx
                     .btf_ret_spec()

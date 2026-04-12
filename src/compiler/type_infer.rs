@@ -64,7 +64,7 @@ pub(crate) fn validate_program_capabilities(
     let Some(ctx) = probe_ctx else {
         return Ok(());
     };
-    validate_program_capabilities_for_info(func, ctx.probe_type.info())
+    validate_program_capabilities_for_info(func, ctx.program_info())
 }
 
 pub(crate) fn validate_program_capabilities_for_info(

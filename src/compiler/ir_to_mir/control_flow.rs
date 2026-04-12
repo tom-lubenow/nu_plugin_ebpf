@@ -42,7 +42,7 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     fn action_alias_return_value(&self, reg: RegId) -> Option<ProgramReturnAlias> {
-        let program_type = self.probe_ctx.as_ref().map(|ctx| ctx.probe_type)?;
+        let program_type = self.probe_ctx.as_ref().map(|ctx| ctx.program_type())?;
         let alias = self.get_metadata(reg).and_then(|meta| {
             meta.literal_string.clone().or_else(|| {
                 meta.constant_value.as_ref().and_then(|value| match value {

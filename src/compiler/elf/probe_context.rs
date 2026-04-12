@@ -1,6 +1,7 @@
 use super::{
     CompileError, CtxField, CtxWriteTarget, EbpfProgramType, IngressIfindexContextLayout,
-    PacketContextKind, ProbeContext, ProgramTargetKind, ProgramValueAccess, SocketContextLayout,
+    PacketContextKind, ProbeContext, ProgramTargetKind, ProgramTypeInfo, ProgramValueAccess,
+    SocketContextLayout,
 };
 #[cfg(test)]
 use crate::compiler::ctx_field_schema::synthetic_bpf_sock_type;
@@ -57,6 +58,40 @@ impl ProbeContext {
 
     pub(crate) fn parsed_program_spec(&self) -> Option<&ProgramSpec> {
         self.program_spec.as_ref()
+    }
+
+    pub(crate) fn program_type(&self) -> EbpfProgramType {
+        self.parsed_program_spec()
+            .map(|spec| spec.program_type())
+            .unwrap_or(self.probe_type)
+    }
+
+    pub(crate) fn program_info(&self) -> &'static ProgramTypeInfo {
+        self.program_type().info()
+    }
+
+    pub(crate) fn canonical_prefix(&self) -> &'static str {
+        self.program_type().canonical_prefix()
+    }
+
+    pub(crate) fn arg_access(&self) -> ProgramValueAccess {
+        self.program_type().arg_access()
+    }
+
+    pub(crate) fn retval_access(&self) -> ProgramValueAccess {
+        self.program_type().retval_access()
+    }
+
+    pub(crate) fn uses_btf_trampoline(&self) -> bool {
+        self.program_type().uses_btf_trampoline()
+    }
+
+    pub(crate) fn uses_raw_tracepoint_args(&self) -> bool {
+        self.program_type().uses_raw_tracepoint_args()
+    }
+
+    pub(crate) fn supports_ctx_retval(&self) -> bool {
+        self.program_type().supports_ctx_retval()
     }
 
     pub(crate) fn packet_context_kind(&self) -> Option<PacketContextKind> {
@@ -168,17 +203,20 @@ impl ProbeContext {
 
     /// Returns true if this is a return probe
     pub fn is_return_probe(&self) -> bool {
-        self.probe_type.is_return_probe()
+        self.program_type().is_return_probe()
     }
 
     /// Returns true if this is a userspace probe
     pub fn is_userspace(&self) -> bool {
-        self.probe_type.is_userspace()
+        self.program_type().is_userspace()
     }
 
     /// Returns true if this is a tracepoint
     pub fn is_tracepoint(&self) -> bool {
-        matches!(self.probe_type.target_kind(), ProgramTargetKind::Tracepoint)
+        matches!(
+            self.program_type().target_kind(),
+            ProgramTargetKind::Tracepoint
+        )
     }
 
     pub(crate) fn ctx_field_type_spec(&self, field: &CtxField) -> Option<ContextFieldTypeSpec> {
@@ -255,7 +293,7 @@ impl ProbeContext {
     }
 
     pub(crate) fn btf_arg_index_by_name(&self, arg_name: &str) -> Result<Option<usize>, String> {
-        if !self.probe_type.uses_btf_trampoline() {
+        if !self.uses_btf_trampoline() {
             return Ok(None);
         }
 
@@ -305,7 +343,7 @@ impl ProbeContext {
         &self,
         arg_idx: usize,
     ) -> Result<Option<TrampolineValueSpec>, String> {
-        if !self.probe_type.uses_btf_trampoline() {
+        if !self.uses_btf_trampoline() {
             return Ok(None);
         }
 
@@ -348,7 +386,7 @@ impl ProbeContext {
     }
 
     pub(crate) fn btf_arg_type_info(&self, arg_idx: usize) -> Result<Option<TypeInfo>, String> {
-        if !self.probe_type.uses_btf_trampoline() {
+        if !self.uses_btf_trampoline() {
             return Ok(None);
         }
 
@@ -402,7 +440,7 @@ impl ProbeContext {
         field_path: &[TrampolineFieldSelector],
         path_desc: &str,
     ) -> Result<Option<TrampolineFieldProjection>, String> {
-        if !self.probe_type.uses_btf_trampoline() {
+        if !self.uses_btf_trampoline() {
             return Ok(None);
         }
 
@@ -740,9 +778,7 @@ impl ProbeContext {
     pub(crate) fn validate_load_ctx_field(&self, field: &CtxField) -> Result<(), CompileError> {
         self.validate_ctx_field_access(field)?;
         match field {
-            CtxField::Arg(idx)
-                if matches!(self.probe_type.arg_access(), ProgramValueAccess::PtRegs) =>
-            {
+            CtxField::Arg(idx) if matches!(self.arg_access(), ProgramValueAccess::PtRegs) => {
                 let offsets = KernelBtf::get().pt_regs_offsets().map_err(|e| {
                     CompileError::UnsupportedInstruction(format!(
                         "pt_regs argument access unavailable: {e}"
@@ -756,10 +792,7 @@ impl ProbeContext {
                 }
             }
             CtxField::Arg(idx)
-                if matches!(
-                    self.probe_type.arg_access(),
-                    ProgramValueAccess::RawTracepoint
-                ) =>
+                if matches!(self.arg_access(), ProgramValueAccess::RawTracepoint) =>
             {
                 let byte_offset = usize::from(*idx).checked_mul(8).ok_or_else(|| {
                     CompileError::UnsupportedInstruction(
@@ -773,7 +806,7 @@ impl ProbeContext {
                     ))
                 })?;
             }
-            CtxField::Arg(idx) if self.probe_type.uses_btf_trampoline() => {
+            CtxField::Arg(idx) if self.uses_btf_trampoline() => {
                 if self
                     .btf_arg_spec(*idx as usize)
                     .map_err(CompileError::UnsupportedInstruction)?
@@ -784,21 +817,14 @@ impl ProbeContext {
                     ));
                 }
             }
-            CtxField::RetVal
-                if matches!(self.probe_type.retval_access(), ProgramValueAccess::PtRegs) =>
-            {
+            CtxField::RetVal if matches!(self.retval_access(), ProgramValueAccess::PtRegs) => {
                 KernelBtf::get().pt_regs_offsets().map_err(|e| {
                     CompileError::UnsupportedInstruction(format!(
                         "pt_regs return value access unavailable: {e}"
                     ))
                 })?;
             }
-            CtxField::RetVal
-                if matches!(
-                    self.probe_type.retval_access(),
-                    ProgramValueAccess::Trampoline
-                ) =>
-            {
+            CtxField::RetVal if matches!(self.retval_access(), ProgramValueAccess::Trampoline) => {
                 if self
                     .btf_ret_spec()
                     .map_err(CompileError::UnsupportedInstruction)?

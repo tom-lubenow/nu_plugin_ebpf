@@ -121,7 +121,7 @@ impl<'a> TypeInference<'a> {
         errors: &mut Vec<TypeError>,
     ) {
         if let Some(ctx) = self.probe_ctx.as_ref() {
-            Self::validate_program_capability_for_info(inst, ctx.probe_type.info(), errors);
+            Self::validate_program_capability_for_info(inst, ctx.program_info(), errors);
         }
 
         match inst {

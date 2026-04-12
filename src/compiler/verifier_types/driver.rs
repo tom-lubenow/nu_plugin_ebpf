@@ -29,7 +29,7 @@ pub(crate) fn verify_mir_for_probe_context(
         func,
         types,
         &HashMap::new(),
-        Some(probe_ctx.probe_type.info()),
+        Some(probe_ctx.program_info()),
         Some(probe_ctx),
     )
 }
@@ -53,7 +53,7 @@ pub(crate) fn verify_mir_with_subfunction_summaries_for_probe_context(
         func,
         types,
         subfn_summaries,
-        probe_ctx.map(|ctx| ctx.probe_type.info()),
+        probe_ctx.map(|ctx| ctx.program_info()),
         probe_ctx,
     )
 }
@@ -65,7 +65,7 @@ fn verify_mir_with_subfunction_summaries_impl(
     program: Option<&ProgramTypeInfo>,
     probe_ctx: Option<&ProbeContext>,
 ) -> Result<(), Vec<VerifierTypeError>> {
-    let effective_program = probe_ctx.map(|ctx| ctx.probe_type.info()).or(program);
+    let effective_program = probe_ctx.map(|ctx| ctx.program_info()).or(program);
 
     if let Some(program) = effective_program {
         if let Err(errors) = validate_program_capabilities_for_info(func, program) {

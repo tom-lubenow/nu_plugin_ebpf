@@ -440,13 +440,13 @@ impl<'a> HirToMirLowering<'a> {
         let Some(ctx) = self.probe_ctx else {
             return Ok(());
         };
-        if ctx.probe_type.supports_intrinsic(intrinsic) {
+        if ctx.program_type().supports_intrinsic(intrinsic) {
             return Ok(());
         }
         Err(CompileError::UnsupportedInstruction(format!(
             "{} is not supported on {} programs",
             intrinsic.command_name(),
-            ctx.probe_type.canonical_prefix()
+            ctx.canonical_prefix()
         )))
     }
 

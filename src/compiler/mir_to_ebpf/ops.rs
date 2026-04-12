@@ -1409,7 +1409,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             CtxField::Arg(n) => {
                 let n = *n as usize;
                 match self.probe_ctx {
-                    Some(ctx) if ctx.probe_type.uses_btf_trampoline() => {
+                    Some(ctx) if ctx.uses_btf_trampoline() => {
                         let spec = ctx
                             .btf_arg_spec(n)
                             .map_err(CompileError::UnsupportedInstruction)?
@@ -1425,7 +1425,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                             &format!("ctx.arg{n}"),
                         )?;
                     }
-                    Some(ctx) if ctx.probe_type.uses_raw_tracepoint_args() => {
+                    Some(ctx) if ctx.uses_raw_tracepoint_args() => {
                         let offset = Self::raw_tracepoint_arg_offset(n)?;
                         self.instructions
                             .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
@@ -1450,12 +1450,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
             CtxField::RetVal => match self.probe_ctx {
-                Some(ctx)
-                    if matches!(
-                        ctx.probe_type.retval_access(),
-                        ProgramValueAccess::Trampoline
-                    ) =>
-                {
+                Some(ctx) if matches!(ctx.retval_access(), ProgramValueAccess::Trampoline) => {
                     let spec = ctx
                         .btf_ret_spec()
                         .map_err(CompileError::UnsupportedInstruction)?
@@ -1466,7 +1461,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
                 _ => {
                     if let Some(ctx) = self.probe_ctx
-                        && !ctx.probe_type.supports_ctx_retval()
+                        && !ctx.supports_ctx_retval()
                     {
                         return Err(CompileError::RetvalOnNonReturnProbe);
                     }

@@ -173,7 +173,7 @@ impl<'a> TypeInference<'a> {
         let Some(ctx) = self.probe_ctx.as_ref() else {
             return Ok(None);
         };
-        if !ctx.probe_type.uses_btf_trampoline() {
+        if !ctx.uses_btf_trampoline() {
             return Ok(None);
         }
 
@@ -188,10 +188,7 @@ impl<'a> TypeInference<'a> {
         let Some(ctx) = self.probe_ctx.as_ref() else {
             return Ok(None);
         };
-        if !matches!(
-            ctx.probe_type.retval_access(),
-            ProgramValueAccess::Trampoline
-        ) {
+        if !matches!(ctx.retval_access(), ProgramValueAccess::Trampoline) {
             return Ok(None);
         }
 
@@ -237,7 +234,7 @@ impl<'a> TypeInference<'a> {
                 if self
                     .probe_ctx
                     .as_ref()
-                    .is_some_and(|ctx| ctx.probe_type.uses_raw_tracepoint_args())
+                    .is_some_and(|ctx| ctx.uses_raw_tracepoint_args())
                 {
                     return HMType::U64;
                 }
