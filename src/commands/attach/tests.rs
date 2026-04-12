@@ -2015,6 +2015,40 @@ fn make_ctx_path_call_program(cell_path: CellPath, decl_id: DeclId) -> HirProgra
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn assert_ctx_path_count_program_compiles(
+    program_type: EbpfProgramType,
+    target: &str,
+    cell_path: CellPath,
+    context: &str,
+) {
+    let hir = make_ctx_path_call_program(cell_path, DeclId::new(42));
+    let probe_ctx = ProbeContext::new(program_type, target);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "count".to_string());
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("{context} should lower: {err}"));
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .unwrap_or_else(|err| panic!("{context} should compile: {err}"));
+
+    assert!(
+        !result.bytecode.is_empty(),
+        "{context} should produce bytecode"
+    );
+}
+
 fn make_map_put_get_projection_program(
     source_path: CellPath,
     map_put_decl: DeclId,
@@ -3593,6 +3627,78 @@ fn test_compile_raw_tracepoint_ctx_arg_program() {
     .expect("raw tracepoint ctx.arg0 should compile");
 
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_perf_event_ctx_cpu_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+        CellPath {
+            members: vec![string_member("cpu")],
+        },
+        "perf_event ctx.cpu count",
+    );
+}
+
+#[test]
+fn test_compile_socket_filter_ctx_packet_len_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SocketFilter,
+        "udp4:127.0.0.1:31337",
+        CellPath {
+            members: vec![string_member("packet_len")],
+        },
+        "socket_filter ctx.packet_len count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sock_ctx_family_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSock,
+        "/sys/fs/cgroup:sock_create",
+        CellPath {
+            members: vec![string_member("family")],
+        },
+        "cgroup_sock ctx.family count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sock_addr_ctx_user_port_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect4",
+        CellPath {
+            members: vec![string_member("user_port")],
+        },
+        "cgroup_sock_addr ctx.user_port count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sockopt_get_ctx_sockopt_retval_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSockopt,
+        "/sys/fs/cgroup:get",
+        CellPath {
+            members: vec![string_member("sockopt_retval")],
+        },
+        "cgroup_sockopt:get ctx.sockopt_retval count",
+    );
+}
+
+#[test]
+fn test_compile_sk_lookup_ctx_local_port_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SkLookup,
+        "/proc/self/ns/net",
+        CellPath {
+            members: vec![string_member("local_port")],
+        },
+        "sk_lookup ctx.local_port count",
+    );
 }
 
 #[test]
