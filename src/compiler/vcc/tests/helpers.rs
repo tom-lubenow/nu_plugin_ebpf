@@ -1807,6 +1807,110 @@ fn test_verify_mir_for_probe_context_tcp_sock_accepts_cgroup_sockopt() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_skc_to_tcp_sock_rejects_cgroup_sockopt() {
+    let (mut func, entry) = new_mir_function();
+    let sock = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: sock,
+            field: CtxField::Socket,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkcToTcpSock as u32,
+            args: vec![MirValue::VReg(sock)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        sock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        dst,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected skc_to_tcp_sock cgroup_sockopt program-surface error");
+    assert!(err.iter().any(|e| e.message.contains(
+        "helper 'bpf_skc_to_tcp_sock' is only valid in fentry, fexit, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+    )));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skc_to_tcp_sock_accepts_sk_lookup() {
+    let (mut func, entry) = new_mir_function();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    let sock = func.alloc_vreg();
+    let sock_non_null = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: sock,
+            field: CtxField::Socket,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: sock_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(sock),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: sock_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkcToTcpSock as u32,
+        args: vec![MirValue::VReg(sock)],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        sock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(sock_non_null, MirType::Bool);
+    types.insert(
+        dst,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected skc_to_tcp_sock sk_lookup context to verify");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_redirect_peer_accepts_tc_ingress() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();

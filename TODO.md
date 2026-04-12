@@ -167,6 +167,7 @@ Near-term priority order:
   - Recent progress: modeled helper-surface legality now also recognizes `bpf_getsockopt` / `bpf_setsockopt` on `cgroup_sockopt` programs instead of only `sock_ops` and `cgroup_sock_addr`.
   - Recent progress: modeled helper-surface legality now also constrains socket lookup/assignment helpers to the right program families and targets, including `bpf_sk_lookup_{tcp,udp}`, `bpf_skc_lookup_tcp`, `bpf_sk_release`, and ingress-only / zero-flags `bpf_sk_assign` policy with type-inference, verifier_types, and VCC parity coverage.
   - Recent progress: modeled helper-surface legality now also constrains `bpf_get_listener_sock`, `bpf_sk_fullsock`, and `bpf_tcp_sock` to their concrete supported program families, with null-aware verifier/VCC parity tests for `ctx.sk` and looked-up socket inputs.
+  - Recent progress: modeled helper-surface legality now also constrains the `bpf_skc_to_*` socket cast helper family to the supported tracing/socket program families (`fentry`/`fexit`/`tp_btf`, `sk_lookup`, `sk_msg`, `sk_skb`, `sk_skb_parser`, `sock_ops`) with representative type-inference, verifier_types, and VCC coverage.
 
 - [ ] Expand map support to the broader eBPF map ecosystem.
   - Add missing map definitions and loader plumbing for commonly used map families.

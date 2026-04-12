@@ -821,6 +821,20 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkcToTcpSock),
+        Some(
+            "helper 'bpf_skc_to_tcp_sock' is only valid in fentry, fexit, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkcToUnixSock),
+        Some(
+            "helper 'bpf_skc_to_unix_sock' is only valid in fentry, fexit, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::CgroupSysctl.helper_call_error(BpfHelper::SysctlGetCurrentValue),
         None
     );
@@ -878,6 +892,18 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::CgroupSockopt.helper_call_error(BpfHelper::TcpSock),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::SkLookup.helper_call_error(BpfHelper::SkcToTcpSock),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Fentry.helper_call_error(BpfHelper::SkcToTcp6Sock),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::SkSkbParser.helper_call_error(BpfHelper::SkcToUnixSock),
         None
     );
 }

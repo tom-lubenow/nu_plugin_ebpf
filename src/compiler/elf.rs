@@ -1080,6 +1080,29 @@ impl EbpfProgramType {
                     helper.name()
                 ))
             }
+            BpfHelper::SkcToTcpSock
+            | BpfHelper::SkcToTcp6Sock
+            | BpfHelper::SkcToTcpTimewaitSock
+            | BpfHelper::SkcToTcpRequestSock
+            | BpfHelper::SkcToUdp6Sock
+            | BpfHelper::SkcToUnixSock
+                if !matches!(
+                    self,
+                    EbpfProgramType::Fentry
+                        | EbpfProgramType::Fexit
+                        | EbpfProgramType::TpBtf
+                        | EbpfProgramType::SkLookup
+                        | EbpfProgramType::SkMsg
+                        | EbpfProgramType::SkSkb
+                        | EbpfProgramType::SkSkbParser
+                        | EbpfProgramType::SockOps
+                ) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in fentry, fexit, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs",
+                    helper.name()
+                ))
+            }
             BpfHelper::SetSockOpt | BpfHelper::GetSockOpt
                 if !matches!(
                     self,

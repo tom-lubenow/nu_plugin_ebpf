@@ -1596,6 +1596,65 @@ fn test_infer_tcp_sock_helper_in_cgroup_sockopt_program() {
 }
 
 #[test]
+fn test_type_error_skc_to_tcp_sock_helper_rejects_cgroup_sockopt_program() {
+    let mut func = make_test_function();
+    let sock = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: sock,
+        field: CtxField::Socket,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkcToTcpSock as u32,
+        args: vec![MirValue::VReg(sock)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_skc_to_tcp_sock to be rejected on cgroup_sockopt");
+    assert!(errs.iter().any(|e| e.message.contains(
+        "helper 'bpf_skc_to_tcp_sock' is only valid in fentry, fexit, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+    )));
+}
+
+#[test]
+fn test_infer_skc_to_tcp_sock_helper_in_sk_lookup_program() {
+    let mut func = make_test_function();
+    let sock = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: sock,
+        field: CtxField::Socket,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkcToTcpSock as u32,
+        args: vec![MirValue::VReg(sock)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_skc_to_tcp_sock to infer on sk_lookup");
+    match types.get(&dst) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(*address_space, AddressSpace::Kernel);
+        }
+        other => panic!("expected kernel pointer type, got {:?}", other),
+    }
+}
+
+#[test]
 fn test_type_error_redirect_peer_helper_requires_zero_flags() {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();
