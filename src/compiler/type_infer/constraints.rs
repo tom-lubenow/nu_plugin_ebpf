@@ -250,6 +250,18 @@ impl<'a> TypeInference<'a> {
                 self.constrain(dst_ty, ptr_ty, "global_load");
             }
 
+            MirInst::LoadMapFd { dst, map } => {
+                let dst_ty = self.vreg_type(*dst);
+                let map_ty = HMType::MapRef {
+                    key_ty: Box::new(match map.kind {
+                        MapKind::SockMap => HMType::U32,
+                        _ => HMType::U8,
+                    }),
+                    val_ty: Box::new(HMType::U32),
+                };
+                self.constrain(dst_ty, map_ty, "load_map_fd");
+            }
+
             MirInst::LoadCtxField { dst, field, .. } => {
                 self.validate_ctx_field_access(field)?;
                 let dst_ty = self.vreg_type(*dst);

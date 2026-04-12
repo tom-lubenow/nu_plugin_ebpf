@@ -898,6 +898,9 @@ pub enum MirInst {
         args: Vec<VReg>,
     },
 
+    /// Materialize a map reference for helper-call lowering.
+    LoadMapFd { dst: VReg, map: MapRef },
+
     /// Map lookup
     MapLookup { dst: VReg, map: MapRef, key: VReg },
 

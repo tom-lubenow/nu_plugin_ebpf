@@ -233,6 +233,12 @@ fn lower_inst(
                 src: MirValue::VReg(ret_reg),
             });
         }
+        MirInst::LoadMapFd { dst, map } => {
+            out.push(LirInst::LoadMapFd {
+                dst: *dst,
+                map: map.clone(),
+            });
+        }
         MirInst::CallKfunc {
             dst,
             kfunc,

@@ -580,6 +580,7 @@ fn update_def(inst: &mut MirInst, new_dst: VReg) {
         | MirInst::LoadSlot { dst, .. }
         | MirInst::LoadCtxField { dst, .. }
         | MirInst::CallHelper { dst, .. }
+        | MirInst::LoadMapFd { dst, .. }
         | MirInst::CallKfunc { dst, .. }
         | MirInst::CallSubfn { dst, .. }
         | MirInst::MapLookup { dst, .. }

@@ -1875,3 +1875,59 @@ fn test_kfunc_call_rejects_unknown_signature() {
         }
     }
 }
+
+#[test]
+fn test_compile_sockmap_helper_with_loaded_map_fd() {
+    use crate::compiler::elf::BpfMapType;
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_sockmap".to_string(),
+            kind: MapKind::SockMap,
+        },
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkRedirectMap as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::VReg(map),
+            MirValue::Const(7),
+            MirValue::Const(0),
+        ],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+    let compiled =
+        compile_mir_to_ebpf(&program, Some(&probe_ctx)).expect("sockmap helper should compile");
+
+    assert!(compiled.maps.iter().any(|map| {
+        map.name == "demo_sockmap" && map.def.map_type == BpfMapType::SockMap as u32
+    }));
+    assert!(
+        compiled
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == "demo_sockmap"),
+        "expected sockmap relocation"
+    );
+}

@@ -464,6 +464,9 @@ impl<'a> VccLowerer<'a> {
         expected: HelperArgKind,
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
+        if self.is_local_helper_map_ref_arg(helper_id, arg_idx, arg) {
+            return Ok(());
+        }
         match expected {
             HelperArgKind::Scalar => match arg {
                 MirValue::Const(_) => Ok(()),
@@ -628,6 +631,9 @@ impl<'a> VccLowerer<'a> {
                 _ => {}
             }
         }
+        if self.is_local_helper_map_ref_arg(helper_id, arg_idx, arg) {
+            return Ok(());
+        }
         let ptr = self.value_ptr_info(arg).ok_or_else(|| {
             VccError::new(
                 VccErrorKind::TypeMismatch {
@@ -714,6 +720,20 @@ impl<'a> VccLowerer<'a> {
         }
 
         Ok(())
+    }
+
+    fn is_local_helper_map_ref_arg(
+        &self,
+        helper_id: u32,
+        arg_idx: usize,
+        arg: &MirValue,
+    ) -> bool {
+        let MirValue::VReg(vreg) = arg else {
+            return false;
+        };
+        matches!(self.types.get(vreg), Some(MirType::MapRef { .. }))
+            && BpfHelper::from_u32(helper_id)
+                .is_some_and(|helper| helper.supports_local_helper_map_fd(arg_idx))
     }
 
     pub(super) fn check_helper_ringbuf_record_arg(

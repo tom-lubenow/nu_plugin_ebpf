@@ -42,7 +42,7 @@ pub fn call_clobbers(inst: &MirInst) -> &'static [EbpfReg] {
             | MirInst::StartTimer
             | MirInst::StopTimer { .. }
             | MirInst::LoadCtxField { .. }
-    ) {
+        ) {
         &CALLER_SAVED
     } else {
         &[]

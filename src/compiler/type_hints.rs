@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::compiler::context_schema::static_ctx_field_type_spec;
 use crate::compiler::elf::ProbeContext;
 use crate::compiler::mir::{
-    AddressSpace, BinOpKind, CtxField, MapRef, MirFunction, MirInst, MirProgram, MirType,
+    AddressSpace, BinOpKind, CtxField, MapKind, MapRef, MirFunction, MirInst, MirProgram, MirType,
     MirTypeHints, MirValue, StackSlotId, StructField, VReg,
 };
 use crate::kernel_btf::TypeInfo;
@@ -337,6 +337,20 @@ pub(crate) fn infer_instruction_def_type(
             MirType::Ptr {
                 pointee: Box::new(ty.clone()),
                 address_space: AddressSpace::Map,
+            },
+            true,
+        )),
+        MirInst::LoadMapFd { dst, map } => Some((
+            *dst,
+            match map.kind {
+                MapKind::SockMap => MirType::MapRef {
+                    key_ty: Box::new(MirType::U32),
+                    val_ty: Box::new(MirType::U32),
+                },
+                _ => MirType::MapRef {
+                    key_ty: Box::new(MirType::U8),
+                    val_ty: Box::new(MirType::U32),
+                },
             },
             true,
         )),

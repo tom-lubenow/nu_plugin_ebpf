@@ -40,6 +40,7 @@ impl<'a> TypeInference<'a> {
             MirInst::StartTimer | MirInst::StopTimer { .. } => Some(ProgramCapability::Timers),
             MirInst::CallKfunc { .. } => Some(ProgramCapability::KfuncCalls),
             MirInst::TailCall { .. } => Some(ProgramCapability::TailCalls),
+            MirInst::LoadMapFd { .. } => Some(ProgramCapability::GenericMaps),
             MirInst::MapLookup { map, .. }
             | MirInst::MapUpdate { map, .. }
             | MirInst::MapDelete { map, .. }
@@ -626,6 +627,7 @@ impl<'a> TypeInference<'a> {
             MirInst::CallHelper { helper, args, .. } => {
                 self.validate_helper_program_context(*helper, errors);
                 if let Some(sig) = HelperSignature::for_id(*helper) {
+                    let helper_kind = BpfHelper::from_u32(*helper);
                     if args.len() < sig.min_args || args.len() > sig.max_args {
                         errors.push(TypeError::new(format!(
                             "helper {} expects {}..={} arguments, got {}",
@@ -651,7 +653,12 @@ impl<'a> TypeInference<'a> {
                                     self.value_range_for(arg, value_ranges),
                                     ValueRange::Known { min: 0, max: 0 }
                                 );
+                                let is_map_ref = matches!(arg_ty, MirType::MapRef { .. })
+                                    && helper_kind.is_some_and(|helper| {
+                                        helper.supports_local_helper_map_fd(idx)
+                                    });
                                 if !matches!(arg_ty, MirType::Ptr { .. })
+                                    && !is_map_ref
                                     && !(is_known_zero
                                         && Self::helper_pointer_arg_allows_const_zero(*helper, idx))
                                 {

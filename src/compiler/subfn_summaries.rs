@@ -215,6 +215,7 @@ fn apply_alias_inst(
         MirInst::BinOp { dst, .. }
         | MirInst::UnaryOp { dst, .. }
         | MirInst::CallHelper { dst, .. }
+        | MirInst::LoadMapFd { dst, .. }
         | MirInst::CallKfunc { dst, .. }
         | MirInst::MapLookup { dst, .. }
         | MirInst::LoadCtxField { dst, .. }

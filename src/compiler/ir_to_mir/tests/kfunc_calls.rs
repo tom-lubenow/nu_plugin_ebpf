@@ -1,6 +1,7 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
 use crate::compiler::compile_mir_to_ebpf_with_hints;
+use crate::compiler::elf::BpfMapType;
 use crate::compiler::hir::{HirBlock, infer_ctx_param};
 use crate::compiler::hir_type_infer::infer_hir_types;
 use crate::compiler::instruction::BpfHelper;
@@ -1665,5 +1666,115 @@ fn test_kfunc_call_does_not_materialize_derived_named_out_arg() {
             }
         )),
         "derived values should not be materialized into writable out-arg stack slots"
+    );
+}
+
+#[test]
+fn test_helper_call_sockmap_literal_lowers_and_compiles() {
+    let ctx_var = VarId::new(91);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"bpf_sk_redirect_map".to_vec()),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(2),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(b"demo_sockmap".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(3),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![
+                            RegId::new(1),
+                            RegId::new(2),
+                            RegId::new(3),
+                            RegId::new(4),
+                            RegId::new(5),
+                        ],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 6,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("sockmap helper-call should type-check");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sockmap helper-call should lower");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadMapFd {
+            map: MapRef { name, kind: MapKind::SockMap },
+            ..
+        } if name == "demo_sockmap"
+    )));
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::SkRedirectMap as u32 && args.len() == 4
+    )));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("sockmap helper-call should compile");
+
+    assert!(compiled.maps.iter().any(|map| {
+        map.name == "demo_sockmap" && map.def.map_type == BpfMapType::SockMap as u32
+    }));
+    assert!(
+        compiled
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == "demo_sockmap"),
+        "expected sockmap relocation"
     );
 }

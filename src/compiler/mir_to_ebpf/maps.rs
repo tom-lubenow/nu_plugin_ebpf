@@ -280,6 +280,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 | MapKind::LruPerCpuHash
                 | MapKind::Queue
                 | MapKind::Stack
+                | MapKind::SockMap
         )
     }
 
@@ -367,6 +368,32 @@ impl<'a> MirToEbpfCompiler<'a> {
             insn_offset: reloc_offset,
             symbol_name: map_name.to_string(),
         });
+    }
+
+    pub(super) fn compile_load_map_fd_inst(
+        &mut self,
+        dst: VReg,
+        map: &crate::compiler::mir::MapRef,
+    ) -> Result<(), CompileError> {
+        match map.kind {
+            MapKind::SockMap => self.register_generic_map_spec(map, 4, Some(4))?,
+            MapKind::SockHash => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "local sockhash map '{}' is not yet supported; key-size inference is not implemented",
+                    map.name
+                )));
+            }
+            other => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "load-map-fd only supports sockmap today, got {:?} for '{}'",
+                    other, map.name
+                )));
+            }
+        }
+
+        let dst_reg = self.ensure_reg(dst)?;
+        self.emit_map_fd_load(dst_reg, &map.name);
+        Ok(())
     }
 
     fn setup_map_key_arg(
@@ -514,6 +541,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
             MapKind::Queue => BpfMapDef::queue(spec.value_size, max_entries),
             MapKind::Stack => BpfMapDef::stack(spec.value_size, max_entries),
+            MapKind::SockMap => BpfMapDef::sock_map(max_entries),
             other => {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "map kind {:?} is not supported for generic map operations",

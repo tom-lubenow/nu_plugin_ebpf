@@ -526,6 +526,17 @@ impl<'a> VccLowerer<'a> {
                 });
                 self.ptr_regs.insert(VccReg(dst.0), ptr);
             }
+            MirInst::LoadMapFd { dst, .. } => {
+                let ty = self
+                    .types
+                    .get(dst)
+                    .map(vcc_type_from_mir)
+                    .unwrap_or(VccValueType::Unknown);
+                out.push(VccInst::Assume {
+                    dst: VccReg(dst.0),
+                    ty,
+                });
+            }
             MirInst::MapUpdate {
                 map,
                 key,

@@ -7,6 +7,8 @@
 //!
 //! Some instructions (like 64-bit immediate loads) use two 64-bit slots.
 
+use crate::compiler::mir::MapKind;
+
 /// eBPF register identifiers (r0-r10)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -409,6 +411,24 @@ impl BpfHelper {
             "probe_read_kernel_str" => Some(Self::ProbeReadKernelStr),
             _ => None,
         }
+    }
+
+    pub const fn helper_map_arg_kind(self, arg_idx: usize) -> Option<MapKind> {
+        match (self, arg_idx) {
+            (
+                Self::SkRedirectMap | Self::SockMapUpdate | Self::MsgRedirectMap,
+                1,
+            ) => Some(MapKind::SockMap),
+            (
+                Self::SockHashUpdate | Self::MsgRedirectHash | Self::SkRedirectHash,
+                1,
+            ) => Some(MapKind::SockHash),
+            _ => None,
+        }
+    }
+
+    pub const fn supports_local_helper_map_fd(self, arg_idx: usize) -> bool {
+        matches!(self.helper_map_arg_kind(arg_idx), Some(MapKind::SockMap))
     }
 }
 

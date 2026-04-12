@@ -286,6 +286,12 @@ impl<'a> TypeInference<'a> {
             }
             match arg {
                 MirValue::VReg(vreg) => match self.mir_type_for_vreg(*vreg, types) {
+                    MirType::MapRef { .. }
+                        if BpfHelper::from_u32(helper_id)
+                            .is_some_and(|helper| helper.supports_local_helper_map_fd(rule.arg_idx)) =>
+                    {
+                        continue;
+                    }
                     MirType::Ptr {
                         address_space,
                         pointee,

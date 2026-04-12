@@ -227,6 +227,10 @@ pub enum LirInst {
         args: Vec<VReg>, // precolored R1-R5 vregs
         ret: VReg,       // precolored R0 vreg
     },
+    LoadMapFd {
+        dst: VReg,
+        map: MapRef,
+    },
     TailCall {
         prog_map: MapRef,
         index: MirValue,
@@ -388,6 +392,7 @@ impl LirInst {
             | LirInst::CallHelper { ret: dst, .. }
             | LirInst::CallKfunc { ret: dst, .. }
             | LirInst::CallSubfn { ret: dst, .. }
+            | LirInst::LoadMapFd { dst, .. }
             | LirInst::MapLookup { dst, .. }
             | LirInst::LoadGlobal { dst, .. }
             | LirInst::LoadCtxField { dst, .. }
@@ -438,6 +443,7 @@ impl LirInst {
             LirInst::CallSubfn { args, .. } => {
                 uses.extend(args.iter().copied());
             }
+            LirInst::LoadMapFd { .. } => {}
             LirInst::MapLookup { key, .. } => uses.push(*key),
             LirInst::LoadGlobal { .. } => {}
             LirInst::MapUpdate { key, val, .. } => {

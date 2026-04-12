@@ -385,6 +385,13 @@ impl<'a> HirToMirLowering<'a> {
                     args.push(MirValue::VReg(arg_vreg));
                 }
                 for (arg_vreg, arg_reg) in positional_args {
+                    let helper_arg_idx = args.len();
+                    if helper.helper_map_arg_kind(helper_arg_idx).is_some() {
+                        args.push(
+                            self.materialize_helper_map_fd_arg(helper, helper_arg_idx, arg_reg)?,
+                        );
+                        continue;
+                    }
                     let helper_arg_vreg = if self.is_context_reg(arg_reg) {
                         self.materialize_context_pointer_arg()
                     } else {
@@ -1236,5 +1243,53 @@ impl<'a> HirToMirLowering<'a> {
 
         self.clear_call_state();
         Ok(())
+    }
+
+    fn materialize_helper_map_fd_arg(
+        &mut self,
+        helper: BpfHelper,
+        arg_idx: usize,
+        arg_reg: RegId,
+    ) -> Result<MirValue, CompileError> {
+        let Some(map_kind) = helper.helper_map_arg_kind(arg_idx) else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "internal error: helper '{}' arg{} is not a map operand",
+                helper.name(),
+                arg_idx
+            )));
+        };
+        if !helper.supports_local_helper_map_fd(arg_idx) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "helper-call does not yet support local {:?} maps for '{}'; key-size inference is not implemented",
+                map_kind,
+                helper.name()
+            )));
+        }
+        let map_name = match self.literal_string_arg(arg_reg, "helper-call") {
+            Ok(name) => name,
+            Err(_) => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "helper-call arg{} for '{}' must be a literal map name",
+                    arg_idx,
+                    helper.name()
+                )));
+            }
+        };
+        let map_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::LoadMapFd {
+            dst: map_vreg,
+            map: MapRef {
+                name: map_name,
+                kind: map_kind,
+            },
+        });
+        self.vreg_type_hints.insert(
+            map_vreg,
+            MirType::MapRef {
+                key_ty: Box::new(MirType::U32),
+                val_ty: Box::new(MirType::U32),
+            },
+        );
+        Ok(MirValue::VReg(map_vreg))
     }
 }

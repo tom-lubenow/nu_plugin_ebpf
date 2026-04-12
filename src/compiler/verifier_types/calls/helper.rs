@@ -6,6 +6,7 @@ pub(in crate::compiler::verifier_types) fn check_helper_arg(
     arg_idx: usize,
     arg: &MirValue,
     expected: HelperArgKind,
+    types: &HashMap<VReg, MirType>,
     state: &VerifierState,
     slot_sizes: &HashMap<StackSlotId, i64>,
     errors: &mut Vec<VerifierTypeError>,
@@ -22,6 +23,9 @@ pub(in crate::compiler::verifier_types) fn check_helper_arg(
         }
         HelperArgKind::Pointer => {
             if helper_pointer_arg_allows_const_zero(helper_id, arg_idx, arg, state) {
+                return;
+            }
+            if helper_local_map_ref_arg(helper_id, arg_idx, arg, types) {
                 return;
             }
             if !matches!(ty, VerifierType::Ptr { .. }) {
@@ -86,11 +90,15 @@ pub(in crate::compiler::verifier_types) fn check_helper_ptr_arg_value(
     allow_kernel: bool,
     allow_user: bool,
     access_size: Option<usize>,
+    types: &HashMap<VReg, MirType>,
     state: &VerifierState,
     slot_sizes: &HashMap<StackSlotId, i64>,
     errors: &mut Vec<VerifierTypeError>,
 ) {
     if helper_pointer_arg_allows_const_zero(helper_id, arg_idx, arg, state) {
+        return;
+    }
+    if helper_local_map_ref_arg(helper_id, arg_idx, arg, types) {
         return;
     }
     let allowed = helper_allowed_spaces(allow_stack, allow_map, allow_kernel, allow_user);
@@ -161,6 +169,7 @@ pub(in crate::compiler::verifier_types) fn helper_pointer_arg_expected_ref_kind(
 pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
     helper_id: u32,
     args: &[MirValue],
+    types: &HashMap<VReg, MirType>,
     state: &mut VerifierState,
     slot_sizes: &HashMap<StackSlotId, i64>,
     program: Option<&ProgramTypeInfo>,
@@ -200,6 +209,7 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
             rule.allowed.allow_kernel,
             rule.allowed.allow_user,
             access_size,
+            types,
             state,
             slot_sizes,
             errors,
@@ -417,4 +427,18 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
     }
 
     acquire_kind
+}
+
+fn helper_local_map_ref_arg(
+    helper_id: u32,
+    arg_idx: usize,
+    arg: &MirValue,
+    types: &HashMap<VReg, MirType>,
+) -> bool {
+    let MirValue::VReg(vreg) = arg else {
+        return false;
+    };
+    matches!(types.get(vreg), Some(MirType::MapRef { .. }))
+        && BpfHelper::from_u32(helper_id)
+            .is_some_and(|helper| helper.supports_local_helper_map_fd(arg_idx))
 }

@@ -164,6 +164,10 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.compile_call_subfn(*subfn, args)?;
             }
 
+            LirInst::LoadMapFd { dst, map } => {
+                self.compile_load_map_fd_inst(*dst, map)?;
+            }
+
             LirInst::CallKfunc {
                 kfunc,
                 btf_id,

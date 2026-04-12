@@ -47,6 +47,7 @@ impl MirInst {
                     visit_value!(arg);
                 }
             }
+            MirInst::LoadMapFd { .. } => {}
             MirInst::CallKfunc { args, .. } | MirInst::CallSubfn { args, .. } => {
                 for arg in args {
                     f(arg);
@@ -130,6 +131,7 @@ impl MirInst {
             | MirInst::BinOp { dst, .. }
             | MirInst::UnaryOp { dst, .. }
             | MirInst::CallHelper { dst, .. }
+            | MirInst::LoadMapFd { dst, .. }
             | MirInst::CallKfunc { dst, .. }
             | MirInst::CallSubfn { dst, .. }
             | MirInst::MapLookup { dst, .. }
@@ -173,6 +175,7 @@ impl MirInst {
                     add_value(&mut uses, arg);
                 }
             }
+            MirInst::LoadMapFd { .. } => {}
             MirInst::CallKfunc { args, .. } => {
                 for arg in args {
                     uses.push(*arg);

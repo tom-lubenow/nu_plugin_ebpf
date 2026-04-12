@@ -46,13 +46,15 @@ pub(super) fn apply_call_helper_inst(
                 idx,
                 arg,
                 sig.arg_kind(idx),
+                types,
                 state,
                 slot_sizes,
                 errors,
             );
         }
-        let helper_kfunc_acquire_kind =
-            apply_helper_semantics(helper, args, state, slot_sizes, program, probe_ctx, errors);
+        let helper_kfunc_acquire_kind = apply_helper_semantics(
+            helper, args, types, state, slot_sizes, program, probe_ctx, errors,
+        );
 
         let ty = match sig.ret_kind {
             HelperRetKind::Scalar => types
