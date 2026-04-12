@@ -56,6 +56,16 @@ impl ProbeContext {
         synthetic_bpf_sock_type()
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn target(&self) -> &str {
+        &self.target
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn struct_ops_value_type_name(&self) -> Option<&str> {
+        self.struct_ops_value_type_name.as_deref()
+    }
+
     pub(crate) fn parsed_program_spec(&self) -> Option<&ProgramSpec> {
         self.program_spec.as_ref()
     }
@@ -225,7 +235,7 @@ impl ProbeContext {
             .then(|| {
                 self.parsed_program_spec()
                     .and_then(|spec| spec.ctx_field_type_spec(field))
-                    .or_else(|| program_type_ctx_field_type_spec(self.probe_type, field))
+                    .or_else(|| program_type_ctx_field_type_spec(self.program_type(), field))
             })
             .flatten()
     }
@@ -239,7 +249,7 @@ impl ProbeContext {
             .then(|| {
                 self.parsed_program_spec()
                     .and_then(|spec| spec.ctx_field_projection_spec(field))
-                    .or_else(|| program_type_ctx_field_projection_spec(self.probe_type, field))
+                    .or_else(|| program_type_ctx_field_projection_spec(self.program_type(), field))
             })
             .flatten()
     }
@@ -255,7 +265,7 @@ impl ProbeContext {
     }
 
     pub(crate) fn btf_context_label(&self) -> String {
-        match self.probe_type {
+        match self.program_type() {
             EbpfProgramType::StructOps => format!(
                 "struct_ops {}.{}",
                 self.struct_ops_value_type_name
@@ -265,7 +275,7 @@ impl ProbeContext {
             ),
             EbpfProgramType::TpBtf => format!("tp_btf:{}", self.target),
             EbpfProgramType::Lsm => format!("lsm:{}", self.target),
-            _ => format!("{}:{}", self.probe_type.section_prefix(), self.target),
+            _ => format!("{}:{}", self.program_type().section_prefix(), self.target),
         }
     }
 
@@ -298,7 +308,7 @@ impl ProbeContext {
         }
 
         let btf = KernelBtf::get();
-        match self.probe_type {
+        match self.program_type() {
             EbpfProgramType::StructOps => {
                 let value_type_name = self.require_struct_ops_value_type_name()?;
                 btf.struct_ops_callback_arg_index_by_name(value_type_name, &self.target, arg_name)
@@ -331,7 +341,7 @@ impl ProbeContext {
                     format!(
                         "failed to resolve ctx.arg.{} for {}:{}: {}",
                         arg_name,
-                        self.probe_type.section_prefix(),
+                        self.program_type().section_prefix(),
                         self.target,
                         e
                     )
@@ -348,7 +358,7 @@ impl ProbeContext {
         }
 
         let btf = KernelBtf::get();
-        match self.probe_type {
+        match self.program_type() {
             EbpfProgramType::StructOps => {
                 let value_type_name = self.require_struct_ops_value_type_name()?;
                 btf.struct_ops_callback_arg(value_type_name, &self.target, arg_idx)
@@ -377,7 +387,7 @@ impl ProbeContext {
                     format!(
                         "failed to resolve ctx.arg{} for {}:{}: {}",
                         arg_idx,
-                        self.probe_type.section_prefix(),
+                        self.program_type().section_prefix(),
                         self.target,
                         e
                     )
@@ -391,7 +401,7 @@ impl ProbeContext {
         }
 
         let btf = KernelBtf::get();
-        match self.probe_type {
+        match self.program_type() {
             EbpfProgramType::StructOps => {
                 let value_type_name = self.require_struct_ops_value_type_name()?;
                 btf.struct_ops_callback_arg_type_info(value_type_name, &self.target, arg_idx)
@@ -426,7 +436,7 @@ impl ProbeContext {
                     format!(
                         "failed to resolve ctx.arg{} type for {}:{}: {}",
                         arg_idx,
-                        self.probe_type.section_prefix(),
+                        self.program_type().section_prefix(),
                         self.target,
                         e
                     )
@@ -445,7 +455,7 @@ impl ProbeContext {
         }
 
         let btf = KernelBtf::get();
-        match self.probe_type {
+        match self.program_type() {
             EbpfProgramType::StructOps => {
                 let value_type_name = self.require_struct_ops_value_type_name()?;
                 btf.struct_ops_callback_arg_field(
@@ -484,7 +494,7 @@ impl ProbeContext {
                         "failed to resolve ctx.arg{}.{} for {}:{}: {}",
                         arg_idx,
                         path_desc,
-                        self.probe_type.section_prefix(),
+                        self.program_type().section_prefix(),
                         self.target,
                         e
                     )
@@ -493,10 +503,7 @@ impl ProbeContext {
     }
 
     pub(crate) fn btf_ret_spec(&self) -> Result<Option<TrampolineValueSpec>, String> {
-        if !matches!(
-            self.probe_type.retval_access(),
-            ProgramValueAccess::Trampoline
-        ) {
+        if !matches!(self.retval_access(), ProgramValueAccess::Trampoline) {
             return Ok(None);
         }
 
@@ -511,10 +518,7 @@ impl ProbeContext {
     }
 
     pub(crate) fn btf_ret_type_info(&self) -> Result<Option<TypeInfo>, String> {
-        if !matches!(
-            self.probe_type.retval_access(),
-            ProgramValueAccess::Trampoline
-        ) {
+        if !matches!(self.retval_access(), ProgramValueAccess::Trampoline) {
             return Ok(None);
         }
 
@@ -595,15 +599,10 @@ impl ProbeContext {
 
     pub(crate) fn ctx_field_type_info(&self, field: &CtxField) -> Result<Option<TypeInfo>, String> {
         match field {
-            CtxField::Arg(idx) if self.probe_type.uses_btf_trampoline() => {
+            CtxField::Arg(idx) if self.uses_btf_trampoline() => {
                 self.btf_arg_type_info(*idx as usize)
             }
-            CtxField::RetVal
-                if matches!(
-                    self.probe_type.retval_access(),
-                    ProgramValueAccess::Trampoline
-                ) =>
-            {
+            CtxField::RetVal if matches!(self.retval_access(), ProgramValueAccess::Trampoline) => {
                 self.btf_ret_type_info()
             }
             CtxField::TracepointField(name) => self.tracepoint_field_type_info(name),
@@ -616,10 +615,7 @@ impl ProbeContext {
         field_path: &[TrampolineFieldSelector],
         path_desc: &str,
     ) -> Result<Option<TrampolineFieldProjection>, String> {
-        if !matches!(
-            self.probe_type.retval_access(),
-            ProgramValueAccess::Trampoline
-        ) {
+        if !matches!(self.retval_access(), ProgramValueAccess::Trampoline) {
             return Ok(None);
         }
 
@@ -634,7 +630,7 @@ impl ProbeContext {
     }
 
     pub(crate) fn main_function_expected_return_type(&self) -> Result<Option<HMType>, String> {
-        if self.probe_type != EbpfProgramType::StructOps {
+        if self.program_type() != EbpfProgramType::StructOps {
             return Ok(Some(HMType::I64));
         }
 
@@ -680,13 +676,13 @@ impl ProbeContext {
 
     pub(crate) fn resolve_ctx_field_name(&self, field_name: &str) -> Result<CtxField, String> {
         self.parsed_program_spec().map_or_else(
-            || self.probe_type.resolve_ctx_field_name(field_name),
+            || self.program_type().resolve_ctx_field_name(field_name),
             |spec| spec.resolve_ctx_field_name(field_name),
         )
     }
 
     pub(crate) fn resolve_named_ctx_arg(&self, arg_name: &str) -> Result<CtxField, String> {
-        if !self.probe_type.uses_btf_trampoline() {
+        if !self.uses_btf_trampoline() {
             return Err("ctx.arg.<name> is only available on kernel-BTF-backed contexts".into());
         }
 
@@ -747,7 +743,7 @@ impl ProbeContext {
     pub(crate) fn ctx_store_target_error(&self, target: &CtxStoreTarget) -> Option<String> {
         self.parsed_program_spec()
             .and_then(|spec| spec.ctx_store_target_error(target))
-            .or_else(|| self.probe_type.base_ctx_store_target_error(target))
+            .or_else(|| self.program_type().base_ctx_store_target_error(target))
     }
 
     pub(crate) fn validate_ctx_store_target(
@@ -765,7 +761,7 @@ impl ProbeContext {
     pub fn ctx_field_access_error(&self, field: &CtxField) -> Option<String> {
         self.parsed_program_spec()
             .and_then(|spec| spec.ctx_field_access_error(field))
-            .or_else(|| self.probe_type.base_ctx_field_access_error(field))
+            .or_else(|| self.program_type().base_ctx_field_access_error(field))
     }
 
     pub fn validate_ctx_field_access(&self, field: &CtxField) -> Result<(), CompileError> {
@@ -848,18 +844,18 @@ impl ProbeContext {
     pub fn helper_call_error(&self, helper: BpfHelper) -> Option<String> {
         self.parsed_program_spec()
             .and_then(|spec| spec.helper_call_error(helper))
-            .or_else(|| self.probe_type.helper_call_error(helper))
+            .or_else(|| self.program_type().helper_call_error(helper))
     }
 
     pub(crate) fn helper_zero_arg_requirement(
         &self,
         helper: BpfHelper,
     ) -> Option<(usize, &'static str)> {
-        self.probe_type.helper_zero_arg_requirement(helper)
+        self.program_type().helper_zero_arg_requirement(helper)
     }
 
     fn sched_ext_callback(&self) -> Option<&str> {
-        if self.probe_type != EbpfProgramType::StructOps {
+        if self.program_type() != EbpfProgramType::StructOps {
             return None;
         }
         if self.struct_ops_value_type_name.as_deref() != Some("sched_ext_ops") {

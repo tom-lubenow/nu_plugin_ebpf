@@ -1190,13 +1190,13 @@ impl EbpfProgramType {
 #[derive(Debug, Clone)]
 pub struct ProbeContext {
     /// The type of probe (kprobe, uprobe, tracepoint, etc.)
-    pub probe_type: EbpfProgramType,
+    probe_type: EbpfProgramType,
     /// The target function or tracepoint name
-    pub target: String,
+    target: String,
     /// Parsed program model for attach-kind-sensitive policies.
-    pub program_spec: Option<ProgramSpec>,
+    program_spec: Option<ProgramSpec>,
     /// Optional kernel BTF container type for `struct_ops` callbacks.
-    pub struct_ops_value_type_name: Option<String>,
+    struct_ops_value_type_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

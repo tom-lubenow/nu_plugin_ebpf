@@ -512,12 +512,9 @@ fn test_sched_ext_object_can_emit_without_callbacks() {
 fn test_probe_context_for_struct_ops_callback_preserves_value_type_name() {
     let ctx = ProbeContext::new_struct_ops_callback("sched_ext_ops", "select_cpu");
 
-    assert_eq!(ctx.probe_type, EbpfProgramType::StructOps);
-    assert_eq!(ctx.target, "select_cpu");
-    assert_eq!(
-        ctx.struct_ops_value_type_name.as_deref(),
-        Some("sched_ext_ops")
-    );
+    assert_eq!(ctx.program_type(), EbpfProgramType::StructOps);
+    assert_eq!(ctx.target(), "select_cpu");
+    assert_eq!(ctx.struct_ops_value_type_name(), Some("sched_ext_ops"));
 }
 
 #[test]

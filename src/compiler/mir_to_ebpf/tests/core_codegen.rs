@@ -239,10 +239,9 @@ fn test_struct_ops_scalar_callback_uses_exact_main_return_contract() {
     let kernel_ret = KernelBtf::get()
         .struct_ops_callback_ret_type_info(
             probe_ctx
-                .struct_ops_value_type_name
-                .as_deref()
+                .struct_ops_value_type_name()
                 .expect("struct_ops value type should be present"),
-            &probe_ctx.target,
+            probe_ctx.target(),
         )
         .expect("kernel BTF callback return should resolve")
         .expect("candidate should have a return type");
