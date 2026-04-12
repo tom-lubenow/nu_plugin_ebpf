@@ -270,9 +270,10 @@ pub(crate) fn static_ctx_field_projection_spec(
 ) -> Option<ContextFieldProjectionSpec> {
     let type_spec = static_ctx_field_type_spec(field)?;
     Some(match field {
-        CtxField::Data | CtxField::DataEnd => {
-            ContextFieldProjectionSpec::direct(type_spec.runtime_ty)
-        }
+        CtxField::Data
+        | CtxField::DataEnd
+        | CtxField::SockoptOptval
+        | CtxField::SockoptOptvalEnd => ContextFieldProjectionSpec::direct(type_spec.runtime_ty),
         CtxField::Socket => ContextFieldProjectionSpec {
             runtime_ty: type_spec.runtime_ty,
             stack_slot_ty: None,

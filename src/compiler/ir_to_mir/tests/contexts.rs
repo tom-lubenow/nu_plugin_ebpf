@@ -1667,3 +1667,45 @@ fn test_lower_cgroup_sockopt_ctx_optval_field() {
         }
     )));
 }
+
+#[test]
+fn test_lower_cgroup_sockopt_ctx_optval_byte_projection() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("optval"), int_member(0)],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sockopt ctx.optval[0] should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::SockoptOptval,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadSlot {
+                    ty: MirType::U8,
+                    ..
+                }
+            )))
+    );
+}
