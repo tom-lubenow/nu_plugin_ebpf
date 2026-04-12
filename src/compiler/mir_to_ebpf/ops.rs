@@ -729,7 +729,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let ingress_ifindex_offset = match self
                     .probe_ctx
                     .as_ref()
-                    .and_then(|ctx| ctx.ingress_ifindex_context_layout())
+                    .and_then(|ctx| ctx.probe_type.ingress_ifindex_context_layout())
                 {
                     Some(IngressIfindexContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().9,
                     Some(IngressIfindexContextLayout::XdpMd) => Self::xdp_md_offsets().3,
@@ -824,7 +824,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = match self
                     .probe_ctx
                     .as_ref()
-                    .and_then(|ctx| ctx.socket_family_context_layout())
+                    .and_then(|ctx| ctx.probe_type.socket_family_context_layout())
                 {
                     Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().1,
                     Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().1,
@@ -845,7 +845,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = match self
                     .probe_ctx
                     .as_ref()
-                    .and_then(|ctx| ctx.sock_type_context_layout())
+                    .and_then(|ctx| ctx.probe_type.sock_type_context_layout())
                 {
                     Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().2,
                     Some(SocketContextLayout::SockAddr) => Self::bpf_sock_addr_offsets().5,
@@ -870,7 +870,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = match self
                     .probe_ctx
                     .as_ref()
-                    .and_then(|ctx| ctx.protocol_context_layout())
+                    .and_then(|ctx| ctx.probe_type.protocol_context_layout())
                 {
                     Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().3,
                     Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().2,
@@ -894,7 +894,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = match self
                     .probe_ctx
                     .as_ref()
-                    .and_then(|ctx| ctx.socket_ref_context_layout())
+                    .and_then(|ctx| ctx.probe_type.socket_ref_context_layout())
                 {
                     Some(SocketContextLayout::CgroupSock) => {
                         self.instructions
@@ -924,7 +924,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = match self
                     .probe_ctx
                     .as_ref()
-                    .and_then(|ctx| ctx.sock_mark_priority_context_layout())
+                    .and_then(|ctx| ctx.probe_type.sock_mark_priority_context_layout())
                 {
                     Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().4,
                     Some(SocketContextLayout::SkBuff) => Self::sk_buff_mark_priority_offsets().0,
@@ -949,7 +949,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = match self
                     .probe_ctx
                     .as_ref()
-                    .and_then(|ctx| ctx.sock_mark_priority_context_layout())
+                    .and_then(|ctx| ctx.probe_type.sock_mark_priority_context_layout())
                 {
                     Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().5,
                     Some(SocketContextLayout::SkBuff) => Self::sk_buff_mark_priority_offsets().1,
@@ -990,7 +990,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = match self
                     .probe_ctx
                     .as_ref()
-                    .and_then(|ctx| ctx.socket_tuple_context_layout())
+                    .and_then(|ctx| ctx.probe_type.socket_tuple_context_layout())
                 {
                     Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().2,
                     Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().3,
@@ -1015,7 +1015,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = match self
                     .probe_ctx
                     .as_ref()
-                    .and_then(|ctx| ctx.socket_tuple_context_layout())
+                    .and_then(|ctx| ctx.probe_type.socket_tuple_context_layout())
                 {
                     Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().4,
                     Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().5,
@@ -1038,7 +1038,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let layout = self
                     .probe_ctx
                     .as_ref()
-                    .and_then(|ctx| ctx.socket_tuple_context_layout());
+                    .and_then(|ctx| ctx.probe_type.socket_tuple_context_layout());
                 let offset = match layout {
                     Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().6,
                     Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().7,
@@ -1072,7 +1072,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = match self
                     .probe_ctx
                     .as_ref()
-                    .and_then(|ctx| ctx.socket_tuple_context_layout())
+                    .and_then(|ctx| ctx.probe_type.socket_tuple_context_layout())
                 {
                     Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().3,
                     Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().4,
@@ -1097,7 +1097,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = match self
                     .probe_ctx
                     .as_ref()
-                    .and_then(|ctx| ctx.socket_tuple_context_layout())
+                    .and_then(|ctx| ctx.probe_type.socket_tuple_context_layout())
                 {
                     Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().5,
                     Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().6,
@@ -1120,7 +1120,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = match self
                     .probe_ctx
                     .as_ref()
-                    .and_then(|ctx| ctx.socket_tuple_context_layout())
+                    .and_then(|ctx| ctx.probe_type.socket_tuple_context_layout())
                 {
                     Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().7,
                     Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().8,

@@ -1,6 +1,5 @@
 use super::{
-    CompileError, CtxField, EbpfProgramType, IngressIfindexContextLayout, ProbeContext,
-    ProgramTargetKind, ProgramValueAccess, SocketContextLayout,
+    CompileError, CtxField, EbpfProgramType, ProbeContext, ProgramTargetKind, ProgramValueAccess,
 };
 use crate::compiler::context_schema::{
     resolve_probe_ctx_field_name, static_ctx_field_access_error,
@@ -148,86 +147,6 @@ impl ProbeContext {
                 }
             }
             CtxField::SockoptOptlen | CtxField::SockoptRetval => self.ctx_field_access_error(field),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn socket_family_context_layout(&self) -> Option<SocketContextLayout> {
-        match self.probe_type {
-            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
-            EbpfProgramType::CgroupSockAddr => Some(SocketContextLayout::SockAddr),
-            EbpfProgramType::SkLookup => Some(SocketContextLayout::SkLookup),
-            EbpfProgramType::SkMsg => Some(SocketContextLayout::SkMsg),
-            EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser => {
-                Some(SocketContextLayout::SkBuff)
-            }
-            EbpfProgramType::SockOps => Some(SocketContextLayout::SockOps),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn socket_tuple_context_layout(&self) -> Option<SocketContextLayout> {
-        match self.probe_type {
-            EbpfProgramType::SkLookup => Some(SocketContextLayout::SkLookup),
-            EbpfProgramType::SkMsg => Some(SocketContextLayout::SkMsg),
-            EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser => {
-                Some(SocketContextLayout::SkBuff)
-            }
-            EbpfProgramType::SockOps => Some(SocketContextLayout::SockOps),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn sock_type_context_layout(&self) -> Option<SocketContextLayout> {
-        match self.probe_type {
-            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
-            EbpfProgramType::CgroupSockAddr => Some(SocketContextLayout::SockAddr),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn protocol_context_layout(&self) -> Option<SocketContextLayout> {
-        match self.probe_type {
-            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
-            EbpfProgramType::CgroupSockAddr => Some(SocketContextLayout::SockAddr),
-            EbpfProgramType::SkLookup => Some(SocketContextLayout::SkLookup),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn socket_ref_context_layout(&self) -> Option<SocketContextLayout> {
-        match self.probe_type {
-            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
-            EbpfProgramType::CgroupSockAddr => Some(SocketContextLayout::SockAddr),
-            EbpfProgramType::CgroupSockopt => Some(SocketContextLayout::CgroupSockopt),
-            EbpfProgramType::SkLookup => Some(SocketContextLayout::SkLookup),
-            EbpfProgramType::SkMsg => Some(SocketContextLayout::SkMsg),
-            EbpfProgramType::SockOps => Some(SocketContextLayout::SockOps),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn ingress_ifindex_context_layout(&self) -> Option<IngressIfindexContextLayout> {
-        match self.probe_type {
-            EbpfProgramType::Xdp => Some(IngressIfindexContextLayout::XdpMd),
-            EbpfProgramType::SocketFilter
-            | EbpfProgramType::Tc
-            | EbpfProgramType::CgroupSkb
-            | EbpfProgramType::SkSkb
-            | EbpfProgramType::SkSkbParser => Some(IngressIfindexContextLayout::SkBuff),
-            EbpfProgramType::SkLookup => Some(IngressIfindexContextLayout::SkLookup),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn sock_mark_priority_context_layout(&self) -> Option<SocketContextLayout> {
-        match self.probe_type {
-            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
-            EbpfProgramType::SocketFilter
-            | EbpfProgramType::Tc
-            | EbpfProgramType::CgroupSkb
-            | EbpfProgramType::SkSkb
-            | EbpfProgramType::SkSkbParser => Some(SocketContextLayout::SkBuff),
             _ => None,
         }
     }

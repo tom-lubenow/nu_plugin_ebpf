@@ -328,107 +328,103 @@ fn test_program_type_uses_raw_tracepoint_arg_access() {
 }
 
 #[test]
-fn test_probe_context_socket_layouts_follow_program_model() {
-    let cgroup_sock = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+fn test_program_type_socket_layouts_follow_program_model() {
     assert_eq!(
-        cgroup_sock.socket_family_context_layout(),
+        EbpfProgramType::CgroupSock.socket_family_context_layout(),
         Some(SocketContextLayout::CgroupSock)
     );
     assert_eq!(
-        cgroup_sock.sock_type_context_layout(),
+        EbpfProgramType::CgroupSock.sock_type_context_layout(),
         Some(SocketContextLayout::CgroupSock)
     );
     assert_eq!(
-        cgroup_sock.protocol_context_layout(),
+        EbpfProgramType::CgroupSock.protocol_context_layout(),
         Some(SocketContextLayout::CgroupSock)
     );
-    assert_eq!(cgroup_sock.socket_tuple_context_layout(), None);
+    assert_eq!(
+        EbpfProgramType::CgroupSock.socket_tuple_context_layout(),
+        None
+    );
 
-    let sk_skb = ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap");
     assert_eq!(
-        sk_skb.socket_family_context_layout(),
+        EbpfProgramType::SkSkbParser.socket_family_context_layout(),
         Some(SocketContextLayout::SkBuff)
     );
     assert_eq!(
-        sk_skb.socket_tuple_context_layout(),
+        EbpfProgramType::SkSkbParser.socket_tuple_context_layout(),
         Some(SocketContextLayout::SkBuff)
     );
-    assert_eq!(sk_skb.sock_type_context_layout(), None);
-    assert_eq!(sk_skb.protocol_context_layout(), None);
+    assert_eq!(
+        EbpfProgramType::SkSkbParser.sock_type_context_layout(),
+        None
+    );
+    assert_eq!(EbpfProgramType::SkSkbParser.protocol_context_layout(), None);
 }
 
 #[test]
-fn test_probe_context_socket_ref_layouts_follow_program_model() {
-    let cgroup_sock_addr =
-        ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+fn test_program_type_socket_ref_layouts_follow_program_model() {
     assert_eq!(
-        cgroup_sock_addr.socket_ref_context_layout(),
+        EbpfProgramType::CgroupSockAddr.socket_ref_context_layout(),
         Some(SocketContextLayout::SockAddr)
     );
 
-    let cgroup_sockopt =
-        ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:getsockopt");
     assert_eq!(
-        cgroup_sockopt.socket_ref_context_layout(),
+        EbpfProgramType::CgroupSockopt.socket_ref_context_layout(),
         Some(SocketContextLayout::CgroupSockopt)
     );
 
-    let sk_msg = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
     assert_eq!(
-        sk_msg.socket_ref_context_layout(),
+        EbpfProgramType::SkMsg.socket_ref_context_layout(),
         Some(SocketContextLayout::SkMsg)
     );
 
-    let sock_ops = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
     assert_eq!(
-        sock_ops.socket_ref_context_layout(),
+        EbpfProgramType::SockOps.socket_ref_context_layout(),
         Some(SocketContextLayout::SockOps)
     );
 
-    let xdp = ProbeContext::new(EbpfProgramType::Xdp, "lo");
-    assert_eq!(xdp.socket_ref_context_layout(), None);
+    assert_eq!(EbpfProgramType::Xdp.socket_ref_context_layout(), None);
 }
 
 #[test]
-fn test_probe_context_ingress_ifindex_layouts_follow_program_model() {
-    let xdp = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+fn test_program_type_ingress_ifindex_layouts_follow_program_model() {
     assert_eq!(
-        xdp.ingress_ifindex_context_layout(),
+        EbpfProgramType::Xdp.ingress_ifindex_context_layout(),
         Some(IngressIfindexContextLayout::XdpMd)
     );
 
-    let sk_lookup = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
     assert_eq!(
-        sk_lookup.ingress_ifindex_context_layout(),
+        EbpfProgramType::SkLookup.ingress_ifindex_context_layout(),
         Some(IngressIfindexContextLayout::SkLookup)
     );
 
-    let sk_skb = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
     assert_eq!(
-        sk_skb.ingress_ifindex_context_layout(),
+        EbpfProgramType::SkSkb.ingress_ifindex_context_layout(),
         Some(IngressIfindexContextLayout::SkBuff)
     );
 
-    let sk_msg = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
-    assert_eq!(sk_msg.ingress_ifindex_context_layout(), None);
+    assert_eq!(
+        EbpfProgramType::SkMsg.ingress_ifindex_context_layout(),
+        None
+    );
 }
 
 #[test]
-fn test_probe_context_sock_mark_priority_layouts_follow_program_model() {
-    let cgroup_sock = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+fn test_program_type_sock_mark_priority_layouts_follow_program_model() {
     assert_eq!(
-        cgroup_sock.sock_mark_priority_context_layout(),
+        EbpfProgramType::CgroupSock.sock_mark_priority_context_layout(),
         Some(SocketContextLayout::CgroupSock)
     );
 
-    let tc = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     assert_eq!(
-        tc.sock_mark_priority_context_layout(),
+        EbpfProgramType::Tc.sock_mark_priority_context_layout(),
         Some(SocketContextLayout::SkBuff)
     );
 
-    let sock_ops = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
-    assert_eq!(sock_ops.sock_mark_priority_context_layout(), None);
+    assert_eq!(
+        EbpfProgramType::SockOps.sock_mark_priority_context_layout(),
+        None
+    );
 }
 
 #[test]
