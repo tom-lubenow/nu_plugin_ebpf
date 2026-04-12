@@ -1,6 +1,6 @@
 use super::{
-    CompileError, CtxField, CtxWriteTarget, EbpfProgramType, ProbeContext, ProgramTargetKind,
-    ProgramValueAccess,
+    CompileError, CtxField, CtxWriteTarget, EbpfProgramType, IngressIfindexContextLayout,
+    PacketContextKind, ProbeContext, ProgramTargetKind, ProgramValueAccess, SocketContextLayout,
 };
 #[cfg(test)]
 use crate::compiler::ctx_field_schema::synthetic_bpf_sock_type;
@@ -57,6 +57,60 @@ impl ProbeContext {
 
     pub(crate) fn parsed_program_spec(&self) -> Option<&ProgramSpec> {
         self.program_spec.as_ref()
+    }
+
+    pub(crate) fn packet_context_kind(&self) -> Option<PacketContextKind> {
+        self.parsed_program_spec()
+            .and_then(|spec| spec.packet_context_kind())
+            .or_else(|| self.probe_type.packet_context_kind())
+    }
+
+    pub(crate) fn supports_direct_packet_writes(&self) -> bool {
+        self.parsed_program_spec()
+            .map(|spec| spec.supports_direct_packet_writes())
+            .unwrap_or_else(|| self.probe_type.supports_direct_packet_writes())
+    }
+
+    pub(crate) fn socket_family_context_layout(&self) -> Option<SocketContextLayout> {
+        self.parsed_program_spec()
+            .and_then(|spec| spec.socket_family_context_layout())
+            .or_else(|| self.probe_type.socket_family_context_layout())
+    }
+
+    pub(crate) fn socket_tuple_context_layout(&self) -> Option<SocketContextLayout> {
+        self.parsed_program_spec()
+            .and_then(|spec| spec.socket_tuple_context_layout())
+            .or_else(|| self.probe_type.socket_tuple_context_layout())
+    }
+
+    pub(crate) fn sock_type_context_layout(&self) -> Option<SocketContextLayout> {
+        self.parsed_program_spec()
+            .and_then(|spec| spec.sock_type_context_layout())
+            .or_else(|| self.probe_type.sock_type_context_layout())
+    }
+
+    pub(crate) fn protocol_context_layout(&self) -> Option<SocketContextLayout> {
+        self.parsed_program_spec()
+            .and_then(|spec| spec.protocol_context_layout())
+            .or_else(|| self.probe_type.protocol_context_layout())
+    }
+
+    pub(crate) fn socket_ref_context_layout(&self) -> Option<SocketContextLayout> {
+        self.parsed_program_spec()
+            .and_then(|spec| spec.socket_ref_context_layout())
+            .or_else(|| self.probe_type.socket_ref_context_layout())
+    }
+
+    pub(crate) fn ingress_ifindex_context_layout(&self) -> Option<IngressIfindexContextLayout> {
+        self.parsed_program_spec()
+            .and_then(|spec| spec.ingress_ifindex_context_layout())
+            .or_else(|| self.probe_type.ingress_ifindex_context_layout())
+    }
+
+    pub(crate) fn sock_mark_priority_context_layout(&self) -> Option<SocketContextLayout> {
+        self.parsed_program_spec()
+            .and_then(|spec| spec.sock_mark_priority_context_layout())
+            .or_else(|| self.probe_type.sock_mark_priority_context_layout())
     }
 
     fn require_struct_ops_value_type_name(&self) -> Result<&str, String> {

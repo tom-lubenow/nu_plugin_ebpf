@@ -345,7 +345,7 @@ impl<'a> MirToEbpfCompiler<'a> {
 
     pub(super) fn packet_context_kind(&self) -> Result<PacketContextKind, CompileError> {
         self.probe_ctx
-            .and_then(|ctx| ctx.probe_type.packet_context_kind())
+            .and_then(|ctx| ctx.packet_context_kind())
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
                     "packet context fields require a packet-context program type".to_string(),
