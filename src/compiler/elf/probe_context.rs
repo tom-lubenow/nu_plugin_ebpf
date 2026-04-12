@@ -538,97 +538,26 @@ impl ProbeContext {
         field_name: &str,
         index: Option<usize>,
     ) -> Result<CtxStoreTarget, String> {
-        if let Some(result) = self
-            .parsed_program_spec()
+        let parsed_program_spec = self.parsed_program_spec();
+        if let Some(result) = parsed_program_spec
+            .as_ref()
             .and_then(|spec| spec.resolve_special_ctx_store_target(field_name, index))
         {
             return result;
         }
 
-        let word_index = |field_name: &str, index: usize| -> Result<u8, String> {
-            let index = u8::try_from(index)
-                .map_err(|_| format!("ctx.{field_name} index must be in 0..=3, got {index}"))?;
-            if index >= 4 {
-                return Err(format!(
-                    "ctx.{field_name} index must be in 0..=3, got {index}"
-                ));
-            }
-            Ok(index)
-        };
-
         let field = self.resolve_ctx_field_name(field_name)?;
         self.validate_ctx_field_access(&field)
             .map_err(|err| err.to_string())?;
 
-        match (&field, index) {
-            (CtxField::SysctlFilePos, None) => Ok(CtxStoreTarget::SysctlFilePos),
-            (CtxField::SysctlFilePos, Some(_)) => {
-                Err("ctx.file_pos does not support indexed assignment".into())
-            }
-            (CtxField::SockoptRetval, None) => {
-                if let Some(err) = self.cgroup_sockopt_store_field_error(&CtxField::SockoptRetval) {
-                    return Err(err);
-                }
-                Ok(CtxStoreTarget::SockoptRetval)
-            }
-            (CtxField::SockoptRetval, Some(_)) => {
-                Err("ctx.sockopt_retval does not support indexed assignment".into())
-            }
-            (CtxField::SockoptLevel, None) => {
-                if let Some(err) = self.cgroup_sockopt_store_field_error(&CtxField::SockoptLevel) {
-                    return Err(err);
-                }
-                Ok(CtxStoreTarget::SockoptLevel)
-            }
-            (CtxField::SockoptLevel, Some(_)) => {
-                Err("ctx.level does not support indexed assignment".into())
-            }
-            (CtxField::SockoptOptname, None) => {
-                if let Some(err) = self.cgroup_sockopt_store_field_error(&CtxField::SockoptOptname)
-                {
-                    return Err(err);
-                }
-                Ok(CtxStoreTarget::SockoptOptname)
-            }
-            (CtxField::SockoptOptname, Some(_)) => {
-                Err("ctx.optname does not support indexed assignment".into())
-            }
-            (CtxField::SockoptOptlen, None) => {
-                if let Some(err) = self.cgroup_sockopt_store_field_error(&CtxField::SockoptOptlen) {
-                    return Err(err);
-                }
-                Ok(CtxStoreTarget::SockoptOptlen)
-            }
-            (CtxField::SockoptOptlen, Some(_)) => {
-                Err("ctx.optlen does not support indexed assignment".into())
-            }
-            (CtxField::UserIp4, None) => Ok(CtxStoreTarget::CgroupSockAddrUserIp4),
-            (CtxField::UserIp4, Some(_)) => {
-                Err("ctx.user_ip4 does not support indexed assignment".into())
-            }
-            (CtxField::UserIp6, Some(index)) => Ok(CtxStoreTarget::CgroupSockAddrUserIp6Word(
-                word_index("user_ip6", index)?,
-            )),
-            (CtxField::UserIp6, None) => Err(
-                "ctx.user_ip6 assignment requires a fixed index, e.g. $ctx.user_ip6.0 = ...".into(),
-            ),
-            (CtxField::UserPort, None) => Ok(CtxStoreTarget::CgroupSockAddrUserPort),
-            (CtxField::UserPort, Some(_)) => {
-                Err("ctx.user_port does not support indexed assignment".into())
-            }
-            (CtxField::MsgSrcIp4, None) => Ok(CtxStoreTarget::CgroupSockAddrMsgSrcIp4),
-            (CtxField::MsgSrcIp4, Some(_)) => {
-                Err("ctx.msg_src_ip4 does not support indexed assignment".into())
-            }
-            (CtxField::MsgSrcIp6, Some(index)) => Ok(CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(
-                word_index("msg_src_ip6", index)?,
-            )),
-            (CtxField::MsgSrcIp6, None) => Err(
-                "ctx.msg_src_ip6 assignment requires a fixed index, e.g. $ctx.msg_src_ip6.0 = ..."
-                    .into(),
-            ),
-            _ => Err(format!("ctx.{} is read-only", field.display_name())),
+        if let Some(result) = parsed_program_spec
+            .as_ref()
+            .and_then(|spec| spec.resolve_ctx_store_target_for_field(&field, index))
+        {
+            return result;
         }
+
+        Err(format!("ctx.{} is read-only", field.display_name()))
     }
 
     pub(crate) fn resolve_ctx_write_target(
