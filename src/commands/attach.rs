@@ -461,9 +461,10 @@ Context parameter syntax (recommended):
     addresses as fixed arrays of four u32 words rather than a higher-level
     address type. `ctx.sk` uses the same typed `bpf_sock` projection model as
     `cgroup_sock`, `cgroup_sockopt`, `sock_ops`, `sk_lookup`, and `sk_msg`.
-    Modeled socket helpers are available on `connect4` / `connect6` hooks
-    through the ordinary helper surface, including `bpf_bind`,
-    `bpf_getsockopt`, and `bpf_setsockopt`.
+    Modeled socket helpers are available through the ordinary helper surface:
+    `bpf_bind` on `connect4` / `connect6`, and `bpf_getsockopt` /
+    `bpf_setsockopt` on the current `bind*`, `connect*`, `getpeername*`,
+    `getsockname*`, `sendmsg*`, and `recvmsg*` hooks.
 
   sk_lookup fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

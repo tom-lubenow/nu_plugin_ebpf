@@ -430,7 +430,7 @@ fn test_verify_mir_for_program_sysctl_helpers_reject_non_sysctl_programs() {
 }
 
 #[test]
-fn test_verify_mir_for_program_sockopt_helpers_reject_invalid_program_or_attach() {
+fn test_verify_mir_for_program_sockopt_helpers_reject_invalid_program() {
     for (helper, probe_ctx, expected) in [
         (
             BpfHelper::SetSockOpt,
@@ -439,8 +439,8 @@ fn test_verify_mir_for_program_sockopt_helpers_reject_invalid_program_or_attach(
         ),
         (
             BpfHelper::GetSockOpt,
-            ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:bind4"),
-            "helper 'bpf_getsockopt' is only valid on cgroup_sock_addr connect4/connect6 hooks and sock_ops programs",
+            ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read"),
+            "helper 'bpf_getsockopt' is only valid in sock_ops and cgroup_sock_addr programs",
         ),
     ] {
         let (mut func, entry) = new_mir_function();
@@ -5346,46 +5346,50 @@ fn test_verify_mir_helper_sysctl_get_current_value_rejects_small_stack_slot() {
 
 #[test]
 fn test_verify_mir_helper_getsockopt_accepts_cgroup_sock_addr_connect_context() {
-    let (mut func, entry) = new_mir_function();
+    for probe_ctx in [
+        ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4"),
+        ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:bind4"),
+    ] {
+        let (mut func, entry) = new_mir_function();
 
-    let ctx = func.alloc_vreg();
-    let dst = func.alloc_vreg();
-    let optval_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-    func.block_mut(entry)
-        .instructions
-        .push(MirInst::LoadCtxField {
-            dst: ctx,
-            field: CtxField::Context,
-            slot: None,
-        });
-    func.block_mut(entry)
-        .instructions
-        .push(MirInst::CallHelper {
-            dst,
-            helper: BpfHelper::GetSockOpt as u32,
-            args: vec![
-                MirValue::VReg(ctx),
-                MirValue::Const(1),
-                MirValue::Const(2),
-                MirValue::StackSlot(optval_slot),
-                MirValue::Const(16),
-            ],
-        });
-    func.block_mut(entry).terminator = MirInst::Return { val: None };
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let optval_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: BpfHelper::GetSockOpt as u32,
+                args: vec![
+                    MirValue::VReg(ctx),
+                    MirValue::Const(1),
+                    MirValue::Const(2),
+                    MirValue::StackSlot(optval_slot),
+                    MirValue::Const(16),
+                ],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
 
-    let mut types = HashMap::new();
-    types.insert(
-        ctx,
-        MirType::Ptr {
-            pointee: Box::new(MirType::U8),
-            address_space: AddressSpace::Kernel,
-        },
-    );
-    types.insert(dst, MirType::I64);
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
 
-    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
-    verify_mir_for_probe_context(&func, &types, &probe_ctx)
-        .expect("expected getsockopt helper to verify on cgroup_sock_addr connect");
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected getsockopt helper to verify on supported cgroup_sock_addr hooks");
+    }
 }
 
 #[test]

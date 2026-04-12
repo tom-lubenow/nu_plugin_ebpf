@@ -564,6 +564,7 @@ fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
         egress.helper_call_error(BpfHelper::RedirectPeer),
         Some("helper 'bpf_redirect_peer' is only valid in tc ingress programs".to_string())
     );
+    assert!(bind.helper_call_error(BpfHelper::GetSockOpt).is_none());
     assert!(connect.helper_call_error(BpfHelper::Bind).is_none());
     assert_eq!(
         bind.helper_call_error(BpfHelper::Bind),
