@@ -1,4 +1,5 @@
 use super::{CtxField, EbpfProgramType};
+use crate::program_spec::ProgramSpec;
 
 fn ctx_field_alias(program_type: EbpfProgramType, field_name: &str) -> Option<CtxField> {
     match (program_type, field_name) {
@@ -200,6 +201,17 @@ impl EbpfProgramType {
             Ok(resolved)
         } else {
             Ok(CtxField::TracepointField(field_name.to_string()))
+        }
+    }
+}
+
+impl ProgramSpec {
+    pub(crate) fn resolve_ctx_field_name(&self, field_name: &str) -> Result<CtxField, String> {
+        match self {
+            ProgramSpec::Tracepoint { .. } => self
+                .program_type()
+                .resolve_tracepoint_ctx_field_name(field_name),
+            _ => self.program_type().resolve_ctx_field_name(field_name),
         }
     }
 }

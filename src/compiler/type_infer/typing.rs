@@ -299,7 +299,7 @@ impl<'a> TypeInference<'a> {
                         .or_insert_with(|| self.tvar_gen.fresh());
                     HMType::Var(tvar)
                 }),
-            _ => unreachable!("static ctx field types should be handled via context_schema"),
+            _ => unreachable!("static ctx field types should be handled via probe context schema"),
         }
     }
 

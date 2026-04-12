@@ -201,7 +201,7 @@ fn recover_ctx_field_hint(
             runtime_trampoline_root_type(&type_info)
         }
         CtxField::TracepointField(_) | CtxField::KStack | CtxField::UStack => None,
-        _ => unreachable!("static ctx field types should be handled via context_schema"),
+        _ => unreachable!("static ctx field types should be handled via probe context schema"),
     }
 }
 

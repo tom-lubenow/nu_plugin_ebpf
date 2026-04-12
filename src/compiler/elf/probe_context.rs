@@ -2,7 +2,6 @@ use super::{
     CompileError, CtxField, CtxWriteTarget, EbpfProgramType, ProbeContext, ProgramTargetKind,
     ProgramValueAccess,
 };
-use crate::compiler::context_schema::resolve_probe_ctx_field_name;
 #[cfg(test)]
 use crate::compiler::ctx_field_schema::synthetic_bpf_sock_type;
 use crate::compiler::ctx_field_schema::{
@@ -460,7 +459,10 @@ impl ProbeContext {
     }
 
     pub(crate) fn resolve_ctx_field_name(&self, field_name: &str) -> Result<CtxField, String> {
-        resolve_probe_ctx_field_name(self, field_name)
+        self.parsed_program_spec().map_or_else(
+            || self.probe_type.resolve_ctx_field_name(field_name),
+            |spec| spec.resolve_ctx_field_name(field_name),
+        )
     }
 
     pub(crate) fn resolve_named_ctx_arg(&self, arg_name: &str) -> Result<CtxField, String> {
