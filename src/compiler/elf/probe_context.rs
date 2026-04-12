@@ -512,28 +512,9 @@ impl ProbeContext {
                     None
                 }
             }
-            CtxStoreTarget::SysctlFilePos => self.ctx_field_access_error(&CtxField::SysctlFilePos),
-            CtxStoreTarget::SockoptLevel => self.ctx_field_access_error(&CtxField::SockoptLevel),
-            CtxStoreTarget::SockoptOptname => {
-                self.ctx_field_access_error(&CtxField::SockoptOptname)
-            }
-            CtxStoreTarget::SockoptOptlen => self.ctx_field_access_error(&CtxField::SockoptOptlen),
-            CtxStoreTarget::SockoptRetval => self.ctx_field_access_error(&CtxField::SockoptRetval),
-            CtxStoreTarget::CgroupSockAddrUserIp4 => {
-                self.ctx_field_access_error(&CtxField::UserIp4)
-            }
-            CtxStoreTarget::CgroupSockAddrUserIp6Word(_) => {
-                self.ctx_field_access_error(&CtxField::UserIp6)
-            }
-            CtxStoreTarget::CgroupSockAddrUserPort => {
-                self.ctx_field_access_error(&CtxField::UserPort)
-            }
-            CtxStoreTarget::CgroupSockAddrMsgSrcIp4 => {
-                self.ctx_field_access_error(&CtxField::MsgSrcIp4)
-            }
-            CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(_) => {
-                self.ctx_field_access_error(&CtxField::MsgSrcIp6)
-            }
+            _ => target
+                .ctx_field()
+                .and_then(|field| self.ctx_field_access_error(&field)),
         }
     }
 

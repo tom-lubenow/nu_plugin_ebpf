@@ -13,6 +13,24 @@ fn word_index(field_name: &str, index: usize) -> Result<u8, String> {
     Ok(index)
 }
 
+impl CtxStoreTarget {
+    pub(crate) fn ctx_field(&self) -> Option<CtxField> {
+        match self {
+            CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => None,
+            CtxStoreTarget::SysctlFilePos => Some(CtxField::SysctlFilePos),
+            CtxStoreTarget::SockoptLevel => Some(CtxField::SockoptLevel),
+            CtxStoreTarget::SockoptOptname => Some(CtxField::SockoptOptname),
+            CtxStoreTarget::SockoptOptlen => Some(CtxField::SockoptOptlen),
+            CtxStoreTarget::SockoptRetval => Some(CtxField::SockoptRetval),
+            CtxStoreTarget::CgroupSockAddrUserIp4 => Some(CtxField::UserIp4),
+            CtxStoreTarget::CgroupSockAddrUserIp6Word(_) => Some(CtxField::UserIp6),
+            CtxStoreTarget::CgroupSockAddrUserPort => Some(CtxField::UserPort),
+            CtxStoreTarget::CgroupSockAddrMsgSrcIp4 => Some(CtxField::MsgSrcIp4),
+            CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(_) => Some(CtxField::MsgSrcIp6),
+        }
+    }
+}
+
 impl SockOpsTarget {
     fn resolve_special_ctx_store_target(
         &self,
@@ -262,6 +280,19 @@ impl ProgramSpec {
 
     pub(crate) fn ctx_store_target_error(&self, store_target: &CtxStoreTarget) -> Option<String> {
         match self {
+            ProgramSpec::SockOps { .. }
+                if matches!(
+                    store_target,
+                    CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_)
+                ) =>
+            {
+                None
+            }
+            ProgramSpec::CgroupSysctl { .. }
+                if matches!(store_target, CtxStoreTarget::SysctlFilePos) =>
+            {
+                None
+            }
             ProgramSpec::CgroupSockopt { target } => target.ctx_store_target_error(store_target),
             ProgramSpec::CgroupSockAddr { target } => target.ctx_store_target_error(store_target),
             _ => None,
