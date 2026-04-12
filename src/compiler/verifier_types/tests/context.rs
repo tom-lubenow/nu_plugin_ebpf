@@ -242,6 +242,44 @@ fn test_verify_mir_for_probe_context_rejects_sockopt_level_store_on_get_hook() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_accepts_sysctl_file_pos_store() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SysctlFilePos,
+            val: MirValue::Const(4),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+    verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect("expected file_pos store to be accepted on cgroup_sysctl");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_rejects_sysctl_file_pos_store_on_non_sysctl_program() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SysctlFilePos,
+            val: MirValue::Const(4),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let err = verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect_err("expected file_pos store to be rejected outside cgroup_sysctl");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("ctx.file_pos is only available on cgroup_sysctl programs")
+    }));
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_accepts_cgroup_sock_addr_user_ip6_store_on_connect6() {
     let (mut func, entry) = new_mir_function();
     func.block_mut(entry)

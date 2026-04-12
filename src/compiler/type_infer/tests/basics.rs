@@ -2210,6 +2210,45 @@ fn test_type_error_store_sockopt_level_rejects_get_context() {
 }
 
 #[test]
+fn test_type_infer_accepts_store_sysctl_file_pos() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::SysctlFilePos,
+        val: MirValue::Const(4),
+        ty: MirType::U32,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    ti.infer(&func)
+        .expect("cgroup_sysctl file_pos store should type-check");
+}
+
+#[test]
+fn test_type_error_store_sysctl_file_pos_rejects_non_sysctl_context() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::SysctlFilePos,
+        val: MirValue::Const(4),
+        ty: MirType::U32,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("sysctl file_pos store should be rejected outside cgroup_sysctl");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("ctx.file_pos is only available on cgroup_sysctl programs")
+    }));
+}
+
+#[test]
 fn test_type_infer_accepts_store_cgroup_sock_addr_user_ip6_on_connect6() {
     let mut func = make_test_function();
     let block = func.block_mut(BlockId(0));

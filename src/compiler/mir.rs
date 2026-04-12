@@ -718,6 +718,8 @@ pub enum CtxStoreTarget {
     SockOpsReply,
     /// `bpf_sock_ops.replylong[idx]`
     SockOpsReplyLong(u8),
+    /// `bpf_sysctl.file_pos`
+    SysctlFilePos,
     /// `bpf_sockopt.level`
     SockoptLevel,
     /// `bpf_sockopt.optname`
@@ -741,7 +743,9 @@ pub enum CtxStoreTarget {
 impl CtxStoreTarget {
     pub fn value_type(&self) -> MirType {
         match self {
-            CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => MirType::U32,
+            CtxStoreTarget::SockOpsReply
+            | CtxStoreTarget::SockOpsReplyLong(_)
+            | CtxStoreTarget::SysctlFilePos => MirType::U32,
             CtxStoreTarget::SockoptLevel
             | CtxStoreTarget::SockoptOptname
             | CtxStoreTarget::SockoptOptlen
@@ -759,6 +763,12 @@ impl CtxStoreTarget {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
                 format!(
                     "writable sock_ops reply fields require a u32 store, got {:?}",
+                    actual
+                )
+            }
+            CtxStoreTarget::SysctlFilePos => {
+                format!(
+                    "writable cgroup_sysctl file_pos requires a u32 store, got {:?}",
                     actual
                 )
             }
@@ -786,6 +796,9 @@ impl CtxStoreTarget {
         match self {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
                 "writable sock_ops reply fields are only supported on sock_ops programs"
+            }
+            CtxStoreTarget::SysctlFilePos => {
+                "writable cgroup_sysctl file_pos is only supported on cgroup_sysctl programs"
             }
             CtxStoreTarget::SockoptLevel
             | CtxStoreTarget::SockoptOptname

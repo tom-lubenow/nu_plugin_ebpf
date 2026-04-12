@@ -153,7 +153,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 4, 8, 24, 28, 32, 36, 40, 44)
     }
 
-    pub(super) fn bpf_sysctl_offsets() -> (i16, i16) {
+    pub(in crate::compiler::mir_to_ebpf) fn bpf_sysctl_offsets() -> (i16, i16) {
         // struct bpf_sysctl {
         //     __u32 write;
         //     __u32 file_pos;

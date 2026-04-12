@@ -1938,6 +1938,32 @@ fn test_probe_context_rejects_sock_ops_replylong_store_without_fixed_index() {
 }
 
 #[test]
+fn test_probe_context_resolves_cgroup_sysctl_file_pos_store_target() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+    assert_eq!(
+        ctx.resolve_ctx_store_target("file_pos", None, "file_pos")
+            .expect("cgroup_sysctl file_pos target should resolve"),
+        CtxStoreTarget::SysctlFilePos
+    );
+    assert!(
+        ctx.validate_ctx_store_target(&CtxStoreTarget::SysctlFilePos)
+            .is_ok()
+    );
+}
+
+#[test]
+fn test_probe_context_rejects_cgroup_sysctl_file_pos_store_target_on_non_sysctl_program() {
+    let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let err = ctx
+        .validate_ctx_store_target(&CtxStoreTarget::SysctlFilePos)
+        .expect_err("cgroup_sysctl file_pos store target should be rejected outside cgroup_sysctl");
+    assert!(
+        err.to_string()
+            .contains("ctx.file_pos is only available on cgroup_sysctl programs")
+    );
+}
+
+#[test]
 fn test_probe_context_allows_retval_on_fexit() {
     let ctx = ProbeContext::new(EbpfProgramType::Fexit, "ksys_read");
     assert!(ctx.ctx_field_access_error(&CtxField::RetVal).is_none());

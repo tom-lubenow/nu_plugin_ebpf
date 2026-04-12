@@ -95,6 +95,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                     })?,
                 val_reg,
             ),
+            CtxStoreTarget::SysctlFilePos => (Self::bpf_sysctl_offsets().1, val_reg),
             CtxStoreTarget::SockoptLevel => (Self::bpf_sockopt_offsets().2, val_reg),
             CtxStoreTarget::SockoptOptname => (Self::bpf_sockopt_offsets().3, val_reg),
             CtxStoreTarget::SockoptOptlen => (Self::bpf_sockopt_offsets().4, val_reg),

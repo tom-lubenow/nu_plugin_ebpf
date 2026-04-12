@@ -665,6 +665,11 @@ impl ProbeContext {
                 "ctx.replylong assignment requires a fixed index, e.g. $ctx.replylong.0 = ..."
                     .into(),
             ),
+            (EbpfProgramType::CgroupSysctl, "file_pos", None) => {
+                self.validate_ctx_field_access(&CtxField::SysctlFilePos)
+                    .map_err(|err| err.to_string())?;
+                Ok(CtxStoreTarget::SysctlFilePos)
+            }
             (EbpfProgramType::CgroupSockopt, "sockopt_retval", None) => {
                 if let Some(err) = self.cgroup_sockopt_store_field_error(&CtxField::SockoptRetval) {
                     return Err(err);
@@ -728,7 +733,7 @@ impl ProbeContext {
                     .into(),
             ),
             _ => Err(format!(
-                "context cell path update '.{} = ...' is only supported for sock_ops reply fields, writable cgroup_sockopt scalar fields, and cgroup_sock_addr rewrite fields",
+                "context cell path update '.{} = ...' is only supported for sock_ops reply fields, writable cgroup_sysctl file_pos, writable cgroup_sockopt scalar fields, and cgroup_sock_addr rewrite fields",
                 path_desc
             )),
         }
@@ -746,6 +751,7 @@ impl ProbeContext {
                     None
                 }
             }
+            CtxStoreTarget::SysctlFilePos => self.ctx_field_access_error(&CtxField::SysctlFilePos),
             CtxStoreTarget::SockoptLevel => {
                 self.cgroup_sockopt_store_field_error(&CtxField::SockoptLevel)
             }
