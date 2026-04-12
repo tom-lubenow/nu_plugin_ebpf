@@ -241,7 +241,10 @@ impl VccVerifier {
     }
 
     pub(super) fn is_mem_space_allowed(space: VccAddrSpace) -> bool {
-        matches!(space, VccAddrSpace::Stack(_) | VccAddrSpace::MapValue)
+        matches!(
+            space,
+            VccAddrSpace::Stack(_) | VccAddrSpace::MapValue | VccAddrSpace::Packet
+        )
     }
 
     pub(super) fn space_name(space: VccAddrSpace) -> &'static str {

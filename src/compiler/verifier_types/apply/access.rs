@@ -76,7 +76,12 @@ pub(super) fn apply_store_inst(
     check_ptr_access(
         ptr,
         "store",
-        &[AddressSpace::Stack, AddressSpace::Map, AddressSpace::Kernel],
+        &[
+            AddressSpace::Stack,
+            AddressSpace::Map,
+            AddressSpace::Packet,
+            AddressSpace::Kernel,
+        ],
         offset,
         access_size,
         state,

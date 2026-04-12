@@ -772,9 +772,20 @@ impl VccVerifier {
                             self.errors.push(VccError::new(
                                 VccErrorKind::PointerBounds,
                                 format!(
-                                    "store requires pointer in [Stack, Map, guarded ContextBuffer], got {}",
+                                    "store requires pointer in [Stack, Map, Packet, guarded ContextBuffer], got {}",
                                     Self::space_name(ptr_info.space)
                                 ),
+                            ));
+                            return;
+                        }
+                        if ptr_info.space == VccAddrSpace::Packet
+                            && ptr_info
+                                .bounds
+                                .is_none_or(|bounds| bounds.limit == UNKNOWN_PACKET_LIMIT)
+                        {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::PointerBounds,
+                                "store on packet pointers requires a preceding packet end-pointer guard",
                             ));
                             return;
                         }
