@@ -1866,6 +1866,94 @@ fn test_compile_kprobe_cgroup_id_load_calls_helper() {
 }
 
 #[test]
+#[cfg(target_arch = "x86_64")]
+fn test_compile_perf_event_sample_period_load_uses_ctx_dword_offset_168() {
+    let ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+    );
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::LoadCtxField {
+            dst,
+            field: CtxField::PerfSamplePeriod,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_LDX | opcode::BPF_DW | opcode::BPF_MEM
+            && insn.src_reg == EbpfReg::R9.as_u8()
+            && insn.offset == 168
+    }));
+}
+
+#[test]
+#[cfg(target_arch = "x86_64")]
+fn test_compile_perf_event_addr_load_uses_ctx_dword_offset_176() {
+    let ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+    );
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::LoadCtxField {
+            dst,
+            field: CtxField::PerfAddr,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_LDX | opcode::BPF_DW | opcode::BPF_MEM
+            && insn.src_reg == EbpfReg::R9.as_u8()
+            && insn.offset == 176
+    }));
+}
+
+#[test]
 fn test_compile_sk_lookup_socket_load_uses_ctx_pointer_word() {
     let ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
 

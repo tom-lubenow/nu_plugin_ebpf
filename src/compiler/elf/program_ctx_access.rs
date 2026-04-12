@@ -37,6 +37,20 @@ impl EbpfProgramType {
                 field.display_name(),
                 self.canonical_prefix()
             )),
+            CtxField::PerfSamplePeriod | CtxField::PerfAddr
+                if !matches!(self, EbpfProgramType::PerfEvent) =>
+            {
+                Some(format!(
+                    "ctx.{} is only available on perf_event programs",
+                    field.display_name()
+                ))
+            }
+            CtxField::PerfSamplePeriod | CtxField::PerfAddr if !cfg!(target_arch = "x86_64") => {
+                Some(format!(
+                    "ctx.{} is currently only modeled on x86_64 perf_event programs",
+                    field.display_name()
+                ))
+            }
             CtxField::PacketLen if !self.supports_packet_len_ctx_field() => {
                 Some(packet_field_access_error(*self, field))
             }

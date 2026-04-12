@@ -26,6 +26,8 @@ fn generic_ctx_field_from_name(field_name: &str) -> Result<CtxField, String> {
         "cpu" => CtxField::Cpu,
         "ktime" | "timestamp" => CtxField::Timestamp,
         "cgroup_id" => CtxField::CgroupId,
+        "sample_period" => CtxField::PerfSamplePeriod,
+        "addr" => CtxField::PerfAddr,
         "packet_len" | "len" => CtxField::PacketLen,
         "pkt_type" => CtxField::PktType,
         "queue_mapping" => CtxField::QueueMapping,

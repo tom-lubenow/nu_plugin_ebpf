@@ -2170,6 +2170,37 @@ fn test_lower_kprobe_ctx_cgroup_id_field() {
 }
 
 #[test]
+#[cfg(target_arch = "x86_64")]
+fn test_lower_perf_event_ctx_sample_period_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("sample_period")],
+    });
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("perf_event ctx.sample_period should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::PerfSamplePeriod,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_socket_filter_ctx_mark_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("mark")],

@@ -1566,6 +1566,31 @@ fn test_infer_kprobe_cgroup_id_field_as_u64() {
 }
 
 #[test]
+#[cfg(target_arch = "x86_64")]
+fn test_infer_perf_event_sample_period_field_as_u64() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::PerfSamplePeriod,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+    );
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::U64));
+}
+
+#[test]
 fn test_infer_socket_filter_mark_field_as_u32() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();

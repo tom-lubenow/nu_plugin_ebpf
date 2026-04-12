@@ -407,6 +407,10 @@ pub enum CtxField {
     Timestamp,
     /// Current task cgroup ID
     CgroupId,
+    /// perf_event sample period (`bpf_perf_event_data::sample_period`)
+    PerfSamplePeriod,
+    /// perf_event sampled address (`bpf_perf_event_data::addr`)
+    PerfAddr,
     /// XDP packet length (`data_end - data`)
     PacketLen,
     /// skb packet type (`__sk_buff.pkt_type`)
@@ -613,6 +617,8 @@ impl CtxField {
             CtxField::Cpu => "cpu".to_string(),
             CtxField::Timestamp => "timestamp".to_string(),
             CtxField::CgroupId => "cgroup_id".to_string(),
+            CtxField::PerfSamplePeriod => "sample_period".to_string(),
+            CtxField::PerfAddr => "addr".to_string(),
             CtxField::PacketLen => "packet_len".to_string(),
             CtxField::PktType => "pkt_type".to_string(),
             CtxField::QueueMapping => "queue_mapping".to_string(),

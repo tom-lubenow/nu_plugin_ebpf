@@ -34,6 +34,9 @@ ebpf attach --dry-run 'lsm:file_open' {|ctx| $ctx.arg.file.f_flags | count; 0 }
 # Count software cpu-clock samples by CPU
 let id = ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.cpu | count; 0 }
 
+# Count software cpu-clock samples by sampled period (x86_64)
+let id = ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.sample_period | count; 0 }
+
 # Count syscalls by current cgroup ID
 let id = ebpf attach 'kprobe:ksys_read' {|ctx| $ctx.cgroup_id | count }
 ```

@@ -249,6 +249,8 @@ fn raw_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
         | CtxField::SocketUid => ContextFieldTypeSpec::value(MirType::U32),
         CtxField::Timestamp
         | CtxField::CgroupId
+        | CtxField::PerfSamplePeriod
+        | CtxField::PerfAddr
         | CtxField::LookupCookie
         | CtxField::SocketCookie
         | CtxField::NetnsCookie

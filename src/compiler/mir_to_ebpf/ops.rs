@@ -448,6 +448,16 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }
+            CtxField::PerfSamplePeriod => {
+                let (sample_period_offset, _) = Self::perf_event_data_offsets()?;
+                self.instructions
+                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, sample_period_offset));
+            }
+            CtxField::PerfAddr => {
+                let (_, addr_offset) = Self::perf_event_data_offsets()?;
+                self.instructions
+                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, addr_offset));
+            }
             CtxField::SocketCookie => {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R9));

@@ -180,6 +180,19 @@ fn test_program_type_metadata_for_raw_tracepoint() {
 }
 
 #[test]
+fn test_program_type_metadata_for_perf_event() {
+    let info = EbpfProgramType::PerfEvent.info();
+    assert_eq!(info.canonical_prefix, "perf_event");
+    assert_eq!(info.attach_kind, ProgramAttachKind::PerfEvent);
+    assert_eq!(info.target_kind, ProgramTargetKind::PerfEventTarget);
+    assert_eq!(info.arg_access, ProgramValueAccess::None);
+    assert_eq!(info.retval_access, ProgramValueAccess::None);
+    assert!(info.supports_task_ctx_fields);
+    assert!(info.supports_cpu_ctx_field);
+    assert!(info.supports_timestamp_ctx_field);
+}
+
+#[test]
 fn test_program_type_metadata_for_sk_lookup() {
     let info = EbpfProgramType::SkLookup.info();
     assert_eq!(info.canonical_prefix, "sk_lookup");
@@ -2476,6 +2489,36 @@ fn test_probe_context_allows_netns_cookie_on_sk_msg() {
 fn test_probe_context_allows_cgroup_id_on_xdp() {
     let ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     assert!(ctx.ctx_field_access_error(&CtxField::CgroupId).is_none());
+}
+
+#[test]
+#[cfg(target_arch = "x86_64")]
+fn test_probe_context_allows_perf_event_specific_fields() {
+    let ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::PerfSamplePeriod)
+            .is_none()
+    );
+    assert!(ctx.ctx_field_access_error(&CtxField::PerfAddr).is_none());
+}
+
+#[test]
+fn test_probe_context_rejects_perf_event_specific_fields_on_non_perf_event_programs() {
+    let ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let sample_period_err = ctx
+        .ctx_field_access_error(&CtxField::PerfSamplePeriod)
+        .expect("expected sample_period field access error");
+    assert!(
+        sample_period_err.contains("ctx.sample_period is only available on perf_event programs")
+    );
+
+    let addr_err = ctx
+        .ctx_field_access_error(&CtxField::PerfAddr)
+        .expect("expected addr field access error");
+    assert!(addr_err.contains("ctx.addr is only available on perf_event programs"));
 }
 
 #[test]
