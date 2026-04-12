@@ -575,6 +575,16 @@ fn test_probe_context_cgroup_sock_attach_kind_uses_typed_program_spec() {
 }
 
 #[test]
+fn test_probe_context_struct_ops_callback_uses_value_type_program_spec() {
+    let ctx = ProbeContext::new_struct_ops_callback("sched_ext_ops", "select_cpu");
+
+    assert!(matches!(
+        ctx.parsed_program_spec(),
+        Some(ProgramSpec::StructOps { value_type_name }) if value_type_name == "sched_ext_ops"
+    ));
+}
+
+#[test]
 fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
     let ingress = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let egress = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");

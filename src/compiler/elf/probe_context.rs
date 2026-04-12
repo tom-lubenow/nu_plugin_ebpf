@@ -53,8 +53,8 @@ impl ProbeContext {
         synthetic_bpf_sock_type()
     }
 
-    pub(crate) fn parsed_program_spec(&self) -> Option<ProgramSpec> {
-        ProgramSpec::from_program_type_target(self.probe_type, &self.target).ok()
+    pub(crate) fn parsed_program_spec(&self) -> Option<&ProgramSpec> {
+        self.program_spec.as_ref()
     }
 
     fn require_struct_ops_value_type_name(&self) -> Result<&str, String> {
@@ -68,9 +68,11 @@ impl ProbeContext {
 
     /// Create a new probe context
     pub fn new(probe_type: EbpfProgramType, target: impl Into<String>) -> Self {
+        let target = target.into();
         Self {
             probe_type,
-            target: target.into(),
+            program_spec: ProgramSpec::from_program_type_target(probe_type, &target).ok(),
+            target,
             struct_ops_value_type_name: None,
         }
     }
@@ -80,10 +82,15 @@ impl ProbeContext {
         value_type_name: impl Into<String>,
         callback_name: impl Into<String>,
     ) -> Self {
+        let value_type_name = value_type_name.into();
+        let callback_name = callback_name.into();
         Self {
             probe_type: EbpfProgramType::StructOps,
-            target: callback_name.into(),
-            struct_ops_value_type_name: Some(value_type_name.into()),
+            target: callback_name,
+            program_spec: Some(ProgramSpec::StructOps {
+                value_type_name: value_type_name.clone(),
+            }),
+            struct_ops_value_type_name: Some(value_type_name),
         }
     }
 
@@ -93,9 +100,12 @@ impl ProbeContext {
     /// - Not a return probe (retval access will fail)
     /// - Not userspace (read-str defaults to kernel reads)
     pub fn default_for_tests() -> Self {
+        let target = String::new();
         Self {
             probe_type: EbpfProgramType::Kprobe,
-            target: String::new(),
+            target: target.clone(),
+            program_spec: ProgramSpec::from_program_type_target(EbpfProgramType::Kprobe, &target)
+                .ok(),
             struct_ops_value_type_name: None,
         }
     }
@@ -131,7 +141,7 @@ impl ProbeContext {
     /// For tracepoint "syscalls/sys_enter_openat", returns Some(("syscalls", "sys_enter_openat"))
     pub fn tracepoint_parts(&self) -> Option<(String, String)> {
         match self.parsed_program_spec()? {
-            ProgramSpec::Tracepoint { category, name } => Some((category, name)),
+            ProgramSpec::Tracepoint { category, name } => Some((category.clone(), name.clone())),
             _ => None,
         }
     }
@@ -592,7 +602,6 @@ impl ProbeContext {
     ) -> Result<CtxStoreTarget, String> {
         let parsed_program_spec = self.parsed_program_spec();
         if let Some(result) = parsed_program_spec
-            .as_ref()
             .and_then(|spec| spec.resolve_special_ctx_store_target(field_name, index))
         {
             return result;
@@ -603,7 +612,6 @@ impl ProbeContext {
             .map_err(|err| err.to_string())?;
 
         if let Some(result) = parsed_program_spec
-            .as_ref()
             .and_then(|spec| spec.resolve_ctx_store_target_for_field(&field, index))
         {
             return result;
@@ -633,7 +641,6 @@ impl ProbeContext {
             return Some(message);
         }
         self.parsed_program_spec()
-            .as_ref()
             .and_then(|spec| spec.ctx_store_target_error(target))
     }
 
@@ -654,7 +661,6 @@ impl ProbeContext {
             return Some(message);
         }
         self.parsed_program_spec()
-            .as_ref()
             .and_then(|spec| spec.ctx_field_access_error(field))
     }
 

@@ -24,6 +24,7 @@ use super::mir::{
     KSTACK_MAP_NAME, MapRef, MirType, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME,
     TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
 };
+use crate::program_spec::ProgramSpec;
 
 mod probe_context;
 mod program_ctx_access;
@@ -1191,6 +1192,8 @@ pub struct ProbeContext {
     pub probe_type: EbpfProgramType,
     /// The target function or tracepoint name
     pub target: String,
+    /// Parsed program model for attach-kind-sensitive policies.
+    pub program_spec: Option<ProgramSpec>,
     /// Optional kernel BTF container type for `struct_ops` callbacks.
     pub struct_ops_value_type_name: Option<String>,
 }
