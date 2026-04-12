@@ -11,48 +11,11 @@ use crate::compiler::mir::CtxStoreTarget;
 use crate::kernel_btf::{
     KernelBtf, TrampolineFieldProjection, TrampolineFieldSelector, TrampolineValueSpec, TypeInfo,
 };
-use crate::program_spec::{
-    CgroupSockAddrTarget, CgroupSockTarget, CgroupSockoptTarget, ProgramSpec, TcTarget,
-};
+use crate::program_spec::{CgroupSockoptTarget, ProgramSpec};
 
 impl ProbeContext {
     pub(crate) fn parsed_program_spec(&self) -> Option<ProgramSpec> {
         ProgramSpec::from_program_type_target(self.probe_type, &self.target).ok()
-    }
-
-    pub(crate) fn tc_target(&self) -> Option<TcTarget> {
-        match self.parsed_program_spec()? {
-            ProgramSpec::Tc { target } => Some(target),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn tc_is_ingress(&self) -> bool {
-        self.tc_target().is_some_and(|target| target.is_ingress())
-    }
-
-    pub(crate) fn cgroup_sock_target(&self) -> Option<CgroupSockTarget> {
-        match self.parsed_program_spec()? {
-            ProgramSpec::CgroupSock { target } => Some(target),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn cgroup_sock_is_post_bind(&self) -> bool {
-        self.cgroup_sock_target()
-            .is_some_and(|target| target.is_post_bind())
-    }
-
-    fn cgroup_sock_addr_target(&self) -> Option<CgroupSockAddrTarget> {
-        match self.parsed_program_spec()? {
-            ProgramSpec::CgroupSockAddr { target } => Some(target),
-            _ => None,
-        }
-    }
-
-    fn cgroup_sock_addr_is_connect(&self) -> bool {
-        self.cgroup_sock_addr_target()
-            .is_some_and(|target| target.is_connect())
     }
 
     fn cgroup_sockopt_target(&self) -> Option<CgroupSockoptTarget> {
@@ -752,22 +715,8 @@ impl ProbeContext {
         if let Some(message) = self.probe_type.helper_call_error(helper) {
             return Some(message);
         }
-        match helper {
-            BpfHelper::Bind
-                if self.probe_type == EbpfProgramType::CgroupSockAddr
-                    && !self.cgroup_sock_addr_is_connect() =>
-            {
-                Some(format!(
-                    "helper '{}' is only valid on cgroup_sock_addr connect4/connect6 hooks",
-                    helper.name()
-                ))
-            }
-            BpfHelper::RedirectPeer if !self.tc_is_ingress() => Some(format!(
-                "helper '{}' is only valid in tc ingress programs",
-                helper.name()
-            )),
-            _ => None,
-        }
+        self.parsed_program_spec()
+            .and_then(|spec| spec.helper_call_error(helper))
     }
 
     pub(crate) fn helper_zero_arg_requirement(
@@ -850,18 +799,7 @@ impl ProbeContext {
     /// Returns a user-facing error message when a socket projection member is
     /// not valid for this program type or attach context.
     pub fn socket_projection_access_error(&self, member_name: &str) -> Option<String> {
-        let requires_post_bind = matches!(
-            member_name,
-            "src_ip4" | "src_ip6" | "src_port" | "dst_port" | "dst_ip4" | "dst_ip6"
-        );
-        if self.probe_type != EbpfProgramType::CgroupSock || !requires_post_bind {
-            return None;
-        }
-        if self.cgroup_sock_is_post_bind() {
-            return None;
-        }
-        Some(format!(
-            "ctx.sk.{member_name} is only available on cgroup_sock post_bind4/post_bind6 hooks"
-        ))
+        self.parsed_program_spec()
+            .and_then(|spec| spec.socket_projection_access_error(member_name))
     }
 }

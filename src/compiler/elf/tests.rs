@@ -4,6 +4,7 @@ use crate::compiler::hindley_milner::HMType;
 use crate::compiler::mir::{CtxField, CtxStoreTarget, MirType, StructField};
 use crate::compiler::mir_to_ebpf::compile_mir_to_ebpf;
 use crate::kernel_btf::KernelBtf;
+use crate::program_spec::ProgramSpec;
 use aya_obj::{
     EbpfSectionKind, Object as AyaObject,
     btf::{Btf, BtfKind},
@@ -548,8 +549,14 @@ fn test_probe_context_tc_attach_kind_uses_typed_program_spec() {
     let ingress = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let egress = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
 
-    assert!(ingress.tc_is_ingress());
-    assert!(!egress.tc_is_ingress());
+    assert!(matches!(
+        ingress.parsed_program_spec(),
+        Some(ProgramSpec::Tc { target }) if target.is_ingress()
+    ));
+    assert!(matches!(
+        egress.parsed_program_spec(),
+        Some(ProgramSpec::Tc { target }) if !target.is_ingress()
+    ));
 }
 
 #[test]
@@ -557,8 +564,14 @@ fn test_probe_context_cgroup_sock_attach_kind_uses_typed_program_spec() {
     let post_bind = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
     let sock_create = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
 
-    assert!(post_bind.cgroup_sock_is_post_bind());
-    assert!(!sock_create.cgroup_sock_is_post_bind());
+    assert!(matches!(
+        post_bind.parsed_program_spec(),
+        Some(ProgramSpec::CgroupSock { target }) if target.is_post_bind()
+    ));
+    assert!(matches!(
+        sock_create.parsed_program_spec(),
+        Some(ProgramSpec::CgroupSock { target }) if !target.is_post_bind()
+    ));
 }
 
 #[test]
