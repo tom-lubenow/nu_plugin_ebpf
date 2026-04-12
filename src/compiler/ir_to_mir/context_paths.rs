@@ -340,16 +340,11 @@ impl<'a> HirToMirLowering<'a> {
             )));
         };
 
-        if !matches!(
-            ctx.probe_type,
-            EbpfProgramType::Xdp
-                | EbpfProgramType::Tc
-                | EbpfProgramType::SkSkb
-                | EbpfProgramType::SkSkbParser
-        ) {
+        if !ctx.probe_type.supports_direct_packet_writes() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "context cell path update '.{} = ...' packet writes are currently only supported on xdp, tc, sk_skb, and sk_skb_parser programs",
-                path_desc
+                "context cell path update '.{} = ...' direct packet writes are not supported on {} programs",
+                path_desc,
+                ctx.probe_type.canonical_prefix()
             )));
         }
 

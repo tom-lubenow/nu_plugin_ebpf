@@ -2662,7 +2662,8 @@ fn test_lower_sk_msg_ctx_data_byte_assignment_is_rejected() {
     )
     .expect_err("sk_msg ctx.data byte assignment should be rejected");
 
-    assert!(err.to_string().contains(
-        "packet writes are currently only supported on xdp, tc, sk_skb, and sk_skb_parser programs"
-    ));
+    assert!(
+        err.to_string()
+            .contains("direct packet writes are not supported on sk_msg programs")
+    );
 }

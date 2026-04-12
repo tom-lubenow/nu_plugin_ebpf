@@ -279,6 +279,19 @@ fn test_program_type_metadata_for_socket_filter() {
 }
 
 #[test]
+fn test_program_type_direct_packet_write_support_follows_program_model() {
+    assert!(EbpfProgramType::Xdp.supports_direct_packet_writes());
+    assert!(EbpfProgramType::Tc.supports_direct_packet_writes());
+    assert!(EbpfProgramType::SkSkb.supports_direct_packet_writes());
+    assert!(EbpfProgramType::SkSkbParser.supports_direct_packet_writes());
+
+    assert!(!EbpfProgramType::SocketFilter.supports_direct_packet_writes());
+    assert!(!EbpfProgramType::CgroupSkb.supports_direct_packet_writes());
+    assert!(!EbpfProgramType::SkMsg.supports_direct_packet_writes());
+    assert!(!EbpfProgramType::SockOps.supports_direct_packet_writes());
+}
+
+#[test]
 fn test_program_type_return_action_aliases_cover_const_families() {
     assert_eq!(
         EbpfProgramType::Xdp.return_action_alias("PaSs"),

@@ -847,6 +847,10 @@ impl EbpfProgramType {
         self.info().supports_packet_data_ctx_fields
     }
 
+    pub fn supports_direct_packet_writes(&self) -> bool {
+        self.info().supports_direct_packet_writes
+    }
+
     pub fn supports_ingress_ifindex_ctx_field(&self) -> bool {
         self.info().supports_ingress_ifindex_ctx_field
     }
