@@ -4,6 +4,8 @@ pub(super) enum PacketPayloadStepKind {
     Ethernet,
     Ipv4,
     Ipv6,
+    Icmp,
+    Icmpv6,
     Udp,
     Tcp,
 }
@@ -507,6 +509,32 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn packet_icmp_header_type() -> MirType {
+        MirType::Struct {
+            name: Some("__packet_icmp".to_string()),
+            kernel_btf_type_id: None,
+            fields: vec![
+                Self::packet_struct_field("type", MirType::U8, 0),
+                Self::packet_struct_field("code", MirType::U8, 1),
+                Self::packet_struct_field("checksum", MirType::U16, 2),
+                Self::packet_struct_field("body", Self::packet_bytes(4), 4),
+            ],
+        }
+    }
+
+    fn packet_icmpv6_header_type() -> MirType {
+        MirType::Struct {
+            name: Some("__packet_icmpv6".to_string()),
+            kernel_btf_type_id: None,
+            fields: vec![
+                Self::packet_struct_field("type", MirType::U8, 0),
+                Self::packet_struct_field("code", MirType::U8, 1),
+                Self::packet_struct_field("checksum", MirType::U16, 2),
+                Self::packet_struct_field("body", Self::packet_bytes(4), 4),
+            ],
+        }
+    }
+
     fn packet_tcp_header_type() -> MirType {
         MirType::Struct {
             name: Some("__packet_tcp".to_string()),
@@ -563,6 +591,18 @@ impl<'a> HirToMirLowering<'a> {
                 bitfield: None,
                 packet_big_endian: false,
             }),
+            (_, true, "icmp" | "icmphdr") => Some(TypedProjectionStep {
+                offset: 0,
+                ty: Self::packet_icmp_header_type(),
+                bitfield: None,
+                packet_big_endian: false,
+            }),
+            (_, true, "icmpv6" | "icmp6" | "icmpv6hdr" | "icmp6hdr") => Some(TypedProjectionStep {
+                offset: 0,
+                ty: Self::packet_icmpv6_header_type(),
+                bitfield: None,
+                packet_big_endian: false,
+            }),
             (_, true, "tcp" | "tcphdr") => Some(TypedProjectionStep {
                 offset: 0,
                 ty: Self::packet_tcp_header_type(),
@@ -587,6 +627,12 @@ impl<'a> HirToMirLowering<'a> {
                 bitfield: None,
                 packet_big_endian: false,
             }),
+            (Some("__packet_ipv4"), _, "icmp" | "icmphdr") => Some(TypedProjectionStep {
+                offset: current_ty.size(),
+                ty: Self::packet_icmp_header_type(),
+                bitfield: None,
+                packet_big_endian: false,
+            }),
             (Some("__packet_ipv4"), _, "tcp" | "tcphdr") => Some(TypedProjectionStep {
                 offset: current_ty.size(),
                 ty: Self::packet_tcp_header_type(),
@@ -599,6 +645,14 @@ impl<'a> HirToMirLowering<'a> {
                 bitfield: None,
                 packet_big_endian: false,
             }),
+            (Some("__packet_ipv6"), _, "icmpv6" | "icmp6" | "icmpv6hdr" | "icmp6hdr") => {
+                Some(TypedProjectionStep {
+                    offset: current_ty.size(),
+                    ty: Self::packet_icmpv6_header_type(),
+                    bitfield: None,
+                    packet_big_endian: false,
+                })
+            }
             (Some("__packet_ipv6"), _, "tcp" | "tcphdr") => Some(TypedProjectionStep {
                 offset: current_ty.size(),
                 ty: Self::packet_tcp_header_type(),
@@ -627,6 +681,8 @@ impl<'a> HirToMirLowering<'a> {
                 "__packet_eth" => Some(PacketPayloadStepKind::Ethernet),
                 "__packet_ipv4" => Some(PacketPayloadStepKind::Ipv4),
                 "__packet_ipv6" => Some(PacketPayloadStepKind::Ipv6),
+                "__packet_icmp" => Some(PacketPayloadStepKind::Icmp),
+                "__packet_icmpv6" => Some(PacketPayloadStepKind::Icmpv6),
                 "__packet_udp" => Some(PacketPayloadStepKind::Udp),
                 "__packet_tcp" => Some(PacketPayloadStepKind::Tcp),
                 _ => None,
@@ -653,6 +709,8 @@ impl<'a> HirToMirLowering<'a> {
                 "total_len" | "identification" | "flags_fragment_offset" | "checksum",
             ) => true,
             ("__packet_ipv6", "version_tc_flow_label" | "payload_len") => true,
+            ("__packet_icmp", "checksum") => true,
+            ("__packet_icmpv6", "checksum") => true,
             ("__packet_udp", "src" | "dst" | "len" | "checksum") => true,
             (
                 "__packet_tcp",
@@ -1093,6 +1151,14 @@ impl<'a> HirToMirLowering<'a> {
                     op: BinOpKind::Add,
                     lhs: MirValue::VReg(base_ptr_vreg),
                     rhs: MirValue::Const(40),
+                });
+            }
+            PacketPayloadStepKind::Icmp | PacketPayloadStepKind::Icmpv6 => {
+                self.emit(MirInst::BinOp {
+                    dst: payload_ptr_vreg,
+                    op: BinOpKind::Add,
+                    lhs: MirValue::VReg(base_ptr_vreg),
+                    rhs: MirValue::Const(8),
                 });
             }
             PacketPayloadStepKind::Udp => {
