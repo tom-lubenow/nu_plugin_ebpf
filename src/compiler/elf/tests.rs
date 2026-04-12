@@ -1975,6 +1975,15 @@ fn test_probe_context_rejects_cgroup_sysctl_file_pos_store_target_on_non_sysctl_
 }
 
 #[test]
+fn test_probe_context_rejects_cgroup_sysctl_write_store_target_as_read_only() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+    let err = ctx
+        .resolve_ctx_store_target("write", None, "write")
+        .expect_err("cgroup_sysctl write store target should be rejected as read-only");
+    assert!(err.contains("ctx.write is read-only"));
+}
+
+#[test]
 fn test_probe_context_allows_retval_on_fexit() {
     let ctx = ProbeContext::new(EbpfProgramType::Fexit, "ksys_read");
     assert!(ctx.ctx_field_access_error(&CtxField::RetVal).is_none());
@@ -2668,6 +2677,15 @@ fn test_probe_context_rejects_ipv4_store_target_on_ipv6_sock_addr_hook() {
         .resolve_ctx_store_target("user_ip4", None, "user_ip4")
         .expect_err("cgroup_sock_addr connect6 user_ip4 store target should be rejected");
     assert!(err.contains("IPv4 cgroup_sock_addr hooks"));
+}
+
+#[test]
+fn test_probe_context_rejects_cgroup_sock_addr_user_family_store_target_as_read_only() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+    let err = ctx
+        .resolve_ctx_store_target("user_family", None, "user_family")
+        .expect_err("cgroup_sock_addr user_family store target should be rejected as read-only");
+    assert!(err.contains("ctx.user_family is read-only"));
 }
 
 #[test]

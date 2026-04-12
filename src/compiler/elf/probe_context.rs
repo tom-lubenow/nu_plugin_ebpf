@@ -636,7 +636,7 @@ impl ProbeContext {
         &self,
         field_name: &str,
         index: Option<usize>,
-        path_desc: &str,
+        _path_desc: &str,
     ) -> Result<CtxStoreTarget, String> {
         let word_index = |field_name: &str, index: usize| -> Result<u8, String> {
             let index = u8::try_from(index)
@@ -648,9 +648,14 @@ impl ProbeContext {
             }
             Ok(index)
         };
-        match (self.probe_type, field_name, index) {
-            (EbpfProgramType::SockOps, "reply", None) => Ok(CtxStoreTarget::SockOpsReply),
-            (EbpfProgramType::SockOps, "replylong", Some(index)) => {
+        match (field_name, index) {
+            ("reply", None) if self.probe_type == EbpfProgramType::SockOps => {
+                return Ok(CtxStoreTarget::SockOpsReply);
+            }
+            ("reply", Some(_)) if self.probe_type == EbpfProgramType::SockOps => {
+                return Err("ctx.reply does not support indexed assignment".into());
+            }
+            ("replylong", Some(index)) if self.probe_type == EbpfProgramType::SockOps => {
                 let index = u8::try_from(index)
                     .map_err(|_| format!("ctx.replylong index must be in 0..=3, got {}", index))?;
                 if index >= 4 {
@@ -659,83 +664,89 @@ impl ProbeContext {
                         index
                     ));
                 }
-                Ok(CtxStoreTarget::SockOpsReplyLong(index))
+                return Ok(CtxStoreTarget::SockOpsReplyLong(index));
             }
-            (EbpfProgramType::SockOps, "replylong", None) => Err(
-                "ctx.replylong assignment requires a fixed index, e.g. $ctx.replylong.0 = ..."
-                    .into(),
-            ),
-            (EbpfProgramType::CgroupSysctl, "file_pos", None) => {
-                self.validate_ctx_field_access(&CtxField::SysctlFilePos)
-                    .map_err(|err| err.to_string())?;
-                Ok(CtxStoreTarget::SysctlFilePos)
+            ("replylong", None) if self.probe_type == EbpfProgramType::SockOps => {
+                return Err(
+                    "ctx.replylong assignment requires a fixed index, e.g. $ctx.replylong.0 = ..."
+                        .into(),
+                );
             }
-            (EbpfProgramType::CgroupSockopt, "sockopt_retval", None) => {
+            _ => {}
+        }
+
+        let field = self.resolve_ctx_field_name(field_name)?;
+        self.validate_ctx_field_access(&field)
+            .map_err(|err| err.to_string())?;
+
+        match (&field, index) {
+            (CtxField::SysctlFilePos, None) => Ok(CtxStoreTarget::SysctlFilePos),
+            (CtxField::SysctlFilePos, Some(_)) => {
+                Err("ctx.file_pos does not support indexed assignment".into())
+            }
+            (CtxField::SockoptRetval, None) => {
                 if let Some(err) = self.cgroup_sockopt_store_field_error(&CtxField::SockoptRetval) {
                     return Err(err);
                 }
                 Ok(CtxStoreTarget::SockoptRetval)
             }
-            (EbpfProgramType::CgroupSockopt, "level", None) => {
+            (CtxField::SockoptRetval, Some(_)) => {
+                Err("ctx.sockopt_retval does not support indexed assignment".into())
+            }
+            (CtxField::SockoptLevel, None) => {
                 if let Some(err) = self.cgroup_sockopt_store_field_error(&CtxField::SockoptLevel) {
                     return Err(err);
                 }
                 Ok(CtxStoreTarget::SockoptLevel)
             }
-            (EbpfProgramType::CgroupSockopt, "optname", None) => {
+            (CtxField::SockoptLevel, Some(_)) => {
+                Err("ctx.level does not support indexed assignment".into())
+            }
+            (CtxField::SockoptOptname, None) => {
                 if let Some(err) = self.cgroup_sockopt_store_field_error(&CtxField::SockoptOptname)
                 {
                     return Err(err);
                 }
                 Ok(CtxStoreTarget::SockoptOptname)
             }
-            (EbpfProgramType::CgroupSockopt, "optlen", None) => {
+            (CtxField::SockoptOptname, Some(_)) => {
+                Err("ctx.optname does not support indexed assignment".into())
+            }
+            (CtxField::SockoptOptlen, None) => {
                 if let Some(err) = self.cgroup_sockopt_store_field_error(&CtxField::SockoptOptlen) {
                     return Err(err);
                 }
                 Ok(CtxStoreTarget::SockoptOptlen)
             }
-            (EbpfProgramType::CgroupSockAddr, "user_ip4", None) => {
-                self.validate_ctx_field_access(&CtxField::UserIp4)
-                    .map_err(|err| err.to_string())?;
-                Ok(CtxStoreTarget::CgroupSockAddrUserIp4)
+            (CtxField::SockoptOptlen, Some(_)) => {
+                Err("ctx.optlen does not support indexed assignment".into())
             }
-            (EbpfProgramType::CgroupSockAddr, "user_ip6", Some(index)) => {
-                self.validate_ctx_field_access(&CtxField::UserIp6)
-                    .map_err(|err| err.to_string())?;
-                Ok(CtxStoreTarget::CgroupSockAddrUserIp6Word(word_index(
-                    "user_ip6", index,
-                )?))
+            (CtxField::UserIp4, None) => Ok(CtxStoreTarget::CgroupSockAddrUserIp4),
+            (CtxField::UserIp4, Some(_)) => {
+                Err("ctx.user_ip4 does not support indexed assignment".into())
             }
-            (EbpfProgramType::CgroupSockAddr, "user_ip6", None) => Err(
+            (CtxField::UserIp6, Some(index)) => Ok(CtxStoreTarget::CgroupSockAddrUserIp6Word(
+                word_index("user_ip6", index)?,
+            )),
+            (CtxField::UserIp6, None) => Err(
                 "ctx.user_ip6 assignment requires a fixed index, e.g. $ctx.user_ip6.0 = ...".into(),
             ),
-            (EbpfProgramType::CgroupSockAddr, "user_port", None) => {
-                self.validate_ctx_field_access(&CtxField::UserPort)
-                    .map_err(|err| err.to_string())?;
-                Ok(CtxStoreTarget::CgroupSockAddrUserPort)
+            (CtxField::UserPort, None) => Ok(CtxStoreTarget::CgroupSockAddrUserPort),
+            (CtxField::UserPort, Some(_)) => {
+                Err("ctx.user_port does not support indexed assignment".into())
             }
-            (EbpfProgramType::CgroupSockAddr, "msg_src_ip4", None) => {
-                self.validate_ctx_field_access(&CtxField::MsgSrcIp4)
-                    .map_err(|err| err.to_string())?;
-                Ok(CtxStoreTarget::CgroupSockAddrMsgSrcIp4)
+            (CtxField::MsgSrcIp4, None) => Ok(CtxStoreTarget::CgroupSockAddrMsgSrcIp4),
+            (CtxField::MsgSrcIp4, Some(_)) => {
+                Err("ctx.msg_src_ip4 does not support indexed assignment".into())
             }
-            (EbpfProgramType::CgroupSockAddr, "msg_src_ip6", Some(index)) => {
-                self.validate_ctx_field_access(&CtxField::MsgSrcIp6)
-                    .map_err(|err| err.to_string())?;
-                Ok(CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(word_index(
-                    "msg_src_ip6",
-                    index,
-                )?))
-            }
-            (EbpfProgramType::CgroupSockAddr, "msg_src_ip6", None) => Err(
+            (CtxField::MsgSrcIp6, Some(index)) => Ok(CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(
+                word_index("msg_src_ip6", index)?,
+            )),
+            (CtxField::MsgSrcIp6, None) => Err(
                 "ctx.msg_src_ip6 assignment requires a fixed index, e.g. $ctx.msg_src_ip6.0 = ..."
                     .into(),
             ),
-            _ => Err(format!(
-                "context cell path update '.{} = ...' is only supported for sock_ops reply fields, writable cgroup_sysctl file_pos, writable cgroup_sockopt scalar fields and optval byte updates, and cgroup_sock_addr rewrite fields",
-                path_desc
-            )),
+            _ => Err(format!("ctx.{} is read-only", field.display_name())),
         }
     }
 
