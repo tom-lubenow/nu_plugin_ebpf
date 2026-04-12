@@ -307,8 +307,9 @@ Context parameter syntax (recommended):
     available, so forms like `($ctx.data | get 0)` are valid on packet-aware
     sock_ops callbacks. `ctx.sk` uses the same typed `bpf_sock` projection
     model as `cgroup_sock`, `cgroup_sockopt`, `cgroup_sock_addr`, `sk_lookup`,
-    and `sk_msg`. Modeled socket-option helpers also use the ordinary helper
-    surface here, including `bpf_getsockopt` and `bpf_setsockopt`.
+    and `sk_msg`. Modeled sock_ops helpers also use the ordinary helper
+    surface here, including `bpf_getsockopt`, `bpf_setsockopt`, and
+    `bpf_sock_ops_cb_flags_set`.
 
   sk_msg fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

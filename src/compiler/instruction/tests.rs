@@ -75,6 +75,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::GetSockOpt)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_sock_ops_cb_flags_set"),
+        Some(BpfHelper::SockOpsCbFlagsSet)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_bind"),
         Some(BpfHelper::Bind)
     ));
@@ -282,6 +286,14 @@ fn test_helper_signatures_setsockopt_and_getsockopt() {
     assert_eq!(get_sig.arg_kind(3), HelperArgKind::Pointer);
     assert_eq!(get_sig.arg_kind(4), HelperArgKind::Scalar);
     assert_eq!(get_sig.ret_kind, HelperRetKind::Scalar);
+
+    let cb_flags_sig = HelperSignature::for_id(BpfHelper::SockOpsCbFlagsSet as u32)
+        .expect("expected bpf_sock_ops_cb_flags_set helper signature");
+    assert_eq!(cb_flags_sig.min_args, 2);
+    assert_eq!(cb_flags_sig.max_args, 2);
+    assert_eq!(cb_flags_sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(cb_flags_sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(cb_flags_sig.ret_kind, HelperRetKind::Scalar);
 }
 
 #[test]

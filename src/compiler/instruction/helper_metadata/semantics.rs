@@ -875,6 +875,17 @@ impl BpfHelper {
                 positive_size_args: &[4],
                 ringbuf_record_arg0: false,
             },
+            BpfHelper::SockOpsCbFlagsSet => HelperSemantics {
+                ptr_arg_rules: &[HelperPtrArgRule {
+                    arg_idx: 0,
+                    op: "helper sock_ops_cb_flags_set ctx",
+                    allowed: KERNEL,
+                    fixed_size: None,
+                    size_from_arg: None,
+                }],
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
             BpfHelper::Bind => HelperSemantics {
                 ptr_arg_rules: BIND_RULES,
                 positive_size_args: &[2],

@@ -880,6 +880,10 @@ impl EbpfProgramType {
                 "helper '{}' is only valid in cgroup_sock_addr programs",
                 helper.name()
             )),
+            BpfHelper::SockOpsCbFlagsSet if *self != EbpfProgramType::SockOps => Some(format!(
+                "helper '{}' is only valid in sock_ops programs",
+                helper.name()
+            )),
             BpfHelper::SysctlGetName
             | BpfHelper::SysctlGetCurrentValue
             | BpfHelper::SysctlGetNewValue

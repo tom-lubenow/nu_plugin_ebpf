@@ -540,6 +540,47 @@ fn test_verify_mir_for_program_bind_helper_rejects_invalid_program_or_attach() {
 }
 
 #[test]
+fn test_verify_mir_for_program_sock_ops_cb_flags_set_rejects_invalid_program() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SockOpsCbFlagsSet as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected sock_ops_cb_flags_set helper program-surface error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_sock_ops_cb_flags_set' is only valid in sock_ops programs")
+    }));
+}
+
+#[test]
 fn test_verify_mir_helper_redirect_neigh_requires_zero_flags() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();
@@ -5432,6 +5473,43 @@ fn test_verify_mir_helper_bind_accepts_cgroup_sock_addr_connect_context() {
     let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
     verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect("expected bind helper to verify on cgroup_sock_addr connect");
+}
+
+#[test]
+fn test_verify_mir_helper_sock_ops_cb_flags_set_accepts_sock_ops_context() {
+    let (mut func, entry) = new_mir_function();
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SockOpsCbFlagsSet as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected sock_ops_cb_flags_set helper to verify on sock_ops");
 }
 
 #[test]

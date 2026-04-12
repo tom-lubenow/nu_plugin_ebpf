@@ -505,6 +505,37 @@ fn test_type_error_bind_helper_rejects_invalid_program_or_attach() {
 }
 
 #[test]
+fn test_type_error_sock_ops_cb_flags_set_rejects_invalid_program() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SockOpsCbFlagsSet as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(Some(ProbeContext::new(
+        EbpfProgramType::Kprobe,
+        "ksys_read",
+    )));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected sock_ops_cb_flags_set helper to be rejected");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_sock_ops_cb_flags_set' is only valid in sock_ops programs")
+    }));
+}
+
+#[test]
 fn test_infer_sockopt_helpers_in_supported_socket_contexts() {
     for (helper, probe_ctx) in [
         (
@@ -549,6 +580,34 @@ fn test_infer_sockopt_helpers_in_supported_socket_contexts() {
             .expect("expected sockopt helper to infer in supported context");
         assert_eq!(types.get(&dst), Some(&MirType::I64));
     }
+}
+
+#[test]
+fn test_infer_sock_ops_cb_flags_set_in_sock_ops_context() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SockOpsCbFlagsSet as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(Some(ProbeContext::new(
+        EbpfProgramType::SockOps,
+        "/sys/fs/cgroup",
+    )));
+    let types = ti
+        .infer(&func)
+        .expect("expected sock_ops_cb_flags_set helper in sock_ops context");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
 }
 
 #[test]

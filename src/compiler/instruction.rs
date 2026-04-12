@@ -100,6 +100,8 @@ pub enum BpfHelper {
     SetSockOpt = 49,
     /// long bpf_getsockopt(ctx, level, optname, optval, optlen)
     GetSockOpt = 57,
+    /// long bpf_sock_ops_cb_flags_set(bpf_sock, argval)
+    SockOpsCbFlagsSet = 59,
     /// u64 bpf_get_netns_cookie(ctx)
     GetNetnsCookie = 122,
     /// u64 bpf_ktime_get_boot_ns(void)
@@ -231,6 +233,7 @@ impl BpfHelper {
             BpfHelper::GetSocketUid => "bpf_get_socket_uid",
             BpfHelper::SetSockOpt => "bpf_setsockopt",
             BpfHelper::GetSockOpt => "bpf_getsockopt",
+            BpfHelper::SockOpsCbFlagsSet => "bpf_sock_ops_cb_flags_set",
             BpfHelper::GetNetnsCookie => "bpf_get_netns_cookie",
             BpfHelper::KtimeGetBootNs => "bpf_ktime_get_boot_ns",
             BpfHelper::PerfEventOutput => "bpf_perf_event_output",
@@ -317,6 +320,7 @@ impl BpfHelper {
             "get_socket_uid" => Some(Self::GetSocketUid),
             "setsockopt" => Some(Self::SetSockOpt),
             "getsockopt" => Some(Self::GetSockOpt),
+            "sock_ops_cb_flags_set" => Some(Self::SockOpsCbFlagsSet),
             "get_netns_cookie" => Some(Self::GetNetnsCookie),
             "ktime_get_boot_ns" => Some(Self::KtimeGetBootNs),
             "perf_event_output" => Some(Self::PerfEventOutput),

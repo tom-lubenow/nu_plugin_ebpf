@@ -597,6 +597,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         Some("helper 'bpf_bind' is only valid in cgroup_sock_addr programs".to_string())
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SockOpsCbFlagsSet),
+        Some("helper 'bpf_sock_ops_cb_flags_set' is only valid in sock_ops programs".to_string())
+    );
+    assert_eq!(
         EbpfProgramType::CgroupSysctl.helper_call_error(BpfHelper::SysctlGetCurrentValue),
         None
     );
