@@ -433,8 +433,35 @@ impl BpfHelper {
         }
     }
 
+    pub const fn local_helper_map_arg_index(self) -> Option<usize> {
+        match self {
+            Self::TailCall | Self::PerfEventOutput | Self::GetStackId => Some(1),
+            Self::RingbufOutput
+            | Self::RingbufReserve
+            | Self::RingbufQuery
+            | Self::MapPushElem
+            | Self::MapPopElem
+            | Self::MapPeekElem => Some(0),
+            Self::SkRedirectMap
+            | Self::SockMapUpdate
+            | Self::MsgRedirectMap
+            | Self::SockHashUpdate
+            | Self::MsgRedirectHash
+            | Self::SkRedirectHash => Some(1),
+            _ => None,
+        }
+    }
+
+    pub const fn helper_requires_explicit_map_kind(self, arg_idx: usize) -> bool {
+        matches!(self.local_helper_map_arg_index(), Some(idx) if idx == arg_idx)
+            && matches!(self, Self::MapPushElem | Self::MapPopElem | Self::MapPeekElem)
+    }
+
     pub const fn supports_local_helper_map_fd(self, arg_idx: usize) -> bool {
-        self.helper_map_arg_kind(arg_idx).is_some()
+        match self.local_helper_map_arg_index() {
+            Some(idx) => idx == arg_idx,
+            None => false,
+        }
     }
 }
 

@@ -260,8 +260,10 @@ impl<'a> TypeInference<'a> {
                         (HMType::U32, HMType::U32)
                     }
                     MapKind::SockHash => (HMType::Var(self.tvar_gen.fresh()), HMType::U32),
+                    MapKind::Queue | MapKind::Stack | MapKind::RingBuf => {
+                        (HMType::Unknown, HMType::Unknown)
+                    }
                     MapKind::StackTrace => (HMType::U32, HMType::Unknown),
-                    MapKind::RingBuf => (HMType::Unknown, HMType::Unknown),
                     _ => (HMType::Unknown, HMType::Unknown),
                 };
                 let map_ty = HMType::MapRef {
@@ -441,29 +443,55 @@ impl<'a> TypeInference<'a> {
     }
 
     fn constrain_helper_map_args(&mut self, helper: BpfHelper, args: &[MirValue]) {
-        let Some(MirValue::VReg(map_vreg)) = args.get(1) else {
+        let Some(map_arg_idx) = helper.local_helper_map_arg_index() else {
             return;
         };
-        let Some(map_kind) = helper.helper_map_arg_kind(1) else {
+        let Some(MirValue::VReg(map_vreg)) = args.get(map_arg_idx) else {
             return;
         };
 
-        let key_ty = match map_kind {
-            MapKind::SockMap => HMType::U32,
-            MapKind::SockHash => match args.get(2).map(|value| self.value_type(value)) {
-                Some(HMType::Ptr { pointee, .. }) => *pointee,
-                Some(other) => other,
-                None => return,
-            },
+        let map_ty = match helper {
+            BpfHelper::SkRedirectMap | BpfHelper::SockMapUpdate | BpfHelper::MsgRedirectMap => {
+                HMType::MapRef {
+                    key_ty: Box::new(HMType::U32),
+                    val_ty: Box::new(HMType::U32),
+                }
+            }
+            BpfHelper::SockHashUpdate | BpfHelper::MsgRedirectHash | BpfHelper::SkRedirectHash => {
+                let key_ty = match args.get(2).map(|value| self.value_type(value)) {
+                    Some(HMType::Ptr { pointee, .. }) => *pointee,
+                    Some(other) => other,
+                    None => return,
+                };
+                HMType::MapRef {
+                    key_ty: Box::new(key_ty),
+                    val_ty: Box::new(HMType::U32),
+                }
+            }
+            BpfHelper::MapPushElem | BpfHelper::MapPopElem | BpfHelper::MapPeekElem => {
+                let hinted_map_ref = self
+                    .type_hints
+                    .and_then(|hints| hints.get(map_vreg))
+                    .is_some_and(|ty| matches!(ty, MirType::MapRef { .. }));
+                if !hinted_map_ref {
+                    return;
+                }
+                let val_ty = match args.get(1).map(|value| self.value_type(value)) {
+                    Some(HMType::Ptr { pointee, .. }) => *pointee,
+                    Some(other) => other,
+                    None => return,
+                };
+                HMType::MapRef {
+                    key_ty: Box::new(HMType::Unknown),
+                    val_ty: Box::new(val_ty),
+                }
+            }
             _ => return,
         };
 
         self.constrain(
             self.vreg_type(*map_vreg),
-            HMType::MapRef {
-                key_ty: Box::new(key_ty),
-                val_ty: Box::new(HMType::U32),
-            },
+            map_ty,
             format!("helper_map_ref {}", helper.name()),
         );
     }

@@ -373,6 +373,14 @@ pub(crate) fn infer_instruction_def_type(
                 },
                 true,
             )),
+            MapKind::Queue | MapKind::Stack => Some((
+                *dst,
+                hints.get(dst).cloned().unwrap_or(MirType::MapRef {
+                    key_ty: Box::new(MirType::Unknown),
+                    val_ty: Box::new(MirType::Unknown),
+                }),
+                true,
+            )),
             MapKind::SockHash => hints.get(dst).cloned().map(|ty| (*dst, ty, true)),
             _ => None,
         },

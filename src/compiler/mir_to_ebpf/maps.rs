@@ -389,6 +389,13 @@ impl<'a> MirToEbpfCompiler<'a> {
                 };
                 self.register_generic_map_spec(map, key_size, Some(4))?;
             }
+            MapKind::Queue | MapKind::Stack => {
+                let value_size = match self.current_types.get(&dst) {
+                    Some(MirType::MapRef { val_ty, .. }) => val_ty.size().max(1),
+                    _ => 8,
+                };
+                self.register_generic_map_spec(map, 0, Some(value_size))?;
+            }
             MapKind::RingBuf => self.register_generic_map_spec(map, 0, Some(0))?,
             MapKind::StackTrace => self.register_generic_map_spec(map, 4, Some(127 * 8))?,
             MapKind::PerfEventArray | MapKind::ProgArray => {

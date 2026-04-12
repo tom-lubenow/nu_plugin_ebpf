@@ -330,7 +330,6 @@ impl<'a> HirToMirLowering<'a> {
                         "helper-call does not accept flags".into(),
                     ));
                 }
-                self.require_only_named_args("helper-call", &[])?;
 
                 let (_, name_reg) = self.positional_args.first().copied().ok_or_else(|| {
                     CompileError::UnsupportedInstruction(
@@ -352,6 +351,15 @@ impl<'a> HirToMirLowering<'a> {
                         helper.name()
                     ))
                 })?;
+                self.require_only_named_args("helper-call", &["kind"])?;
+                if self.named_args.contains_key("kind")
+                    && !helper.helper_requires_explicit_map_kind(0)
+                {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "helper-call --kind is only supported for helpers whose map family is ambiguous; '{}' already implies its map kind",
+                        helper.name()
+                    )));
+                }
 
                 let positional_args: Vec<_> =
                     self.positional_args.iter().skip(1).copied().collect();
@@ -386,7 +394,7 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 for (arg_vreg, arg_reg) in positional_args {
                     let helper_arg_idx = args.len();
-                    if helper.helper_map_arg_kind(helper_arg_idx).is_some() {
+                    if helper.supports_local_helper_map_fd(helper_arg_idx) {
                         args.push(
                             self.materialize_helper_map_fd_arg(helper, helper_arg_idx, arg_reg)?,
                         );
@@ -1251,13 +1259,6 @@ impl<'a> HirToMirLowering<'a> {
         arg_idx: usize,
         arg_reg: RegId,
     ) -> Result<MirValue, CompileError> {
-        let Some(map_kind) = helper.helper_map_arg_kind(arg_idx) else {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "internal error: helper '{}' arg{} is not a map operand",
-                helper.name(),
-                arg_idx
-            )));
-        };
         let map_name = match self.literal_string_arg(arg_reg, "helper-call") {
             Ok(name) => name,
             Err(_) => {
@@ -1267,6 +1268,17 @@ impl<'a> HirToMirLowering<'a> {
                     helper.name()
                 )));
             }
+        };
+        let map_kind = if let Some(kind) = helper.helper_map_arg_kind(arg_idx) {
+            kind
+        } else if helper.helper_requires_explicit_map_kind(arg_idx) {
+            self.required_queue_stack_map_kind_arg("helper-call")?
+        } else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "internal error: helper '{}' arg{} is not a map operand",
+                helper.name(),
+                arg_idx
+            )));
         };
         let map_vreg = self.func.alloc_vreg();
         self.emit(MirInst::LoadMapFd {
@@ -1282,6 +1294,14 @@ impl<'a> HirToMirLowering<'a> {
                 MirType::MapRef {
                     key_ty: Box::new(MirType::U32),
                     val_ty: Box::new(MirType::U32),
+                },
+            );
+        } else if matches!(map_kind, MapKind::Queue | MapKind::Stack) {
+            self.vreg_type_hints.insert(
+                map_vreg,
+                MirType::MapRef {
+                    key_ty: Box::new(MirType::Unknown),
+                    val_ty: Box::new(MirType::Unknown),
                 },
             );
         }
