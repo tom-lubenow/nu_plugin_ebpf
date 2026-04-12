@@ -1,5 +1,7 @@
 use super::*;
-use crate::compiler::context_schema::static_ctx_field_type_spec;
+use crate::compiler::context_schema::{
+    static_ctx_field_projection_spec, static_ctx_field_type_spec,
+};
 use crate::compiler::mir::AddressSpace;
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TrampolineValueKind, TypeInfo};
 
@@ -310,55 +312,39 @@ impl<'a> HirToMirLowering<'a> {
             ctx.validate_ctx_field_access(&ctx_field)?;
         }
         let trampoline_value_spec = self.trampoline_value_spec(&ctx_field)?;
+        let static_ctx_projection_spec = static_ctx_field_projection_spec(&ctx_field);
 
         if !remaining_members.is_empty() {
-            if matches!(ctx_field, CtxField::Data | CtxField::DataEnd) {
-                let base_ty = MirType::Ptr {
-                    pointee: Box::new(MirType::U8),
-                    address_space: AddressSpace::Packet,
-                };
-                let base_vreg = self.func.alloc_vreg();
-                self.emit(MirInst::LoadCtxField {
-                    dst: base_vreg,
-                    field: ctx_field.clone(),
-                    slot: None,
-                });
-                self.vreg_type_hints.insert(base_vreg, base_ty.clone());
-                let projected_ty = self.lower_typed_value_projection(
-                    src_dst,
-                    dst_vreg,
-                    base_vreg,
-                    &base_ty,
-                    remaining_members,
-                    &Self::typed_value_path_desc(&path.members),
-                    None,
-                )?;
-                let meta = self.get_or_create_metadata(src_dst);
-                meta.is_context = false;
-                meta.field_type = Some(projected_ty);
-                meta.source_var = None;
-                return Ok(());
-            }
-
-            if matches!(ctx_field, CtxField::Socket) {
-                if let (Some(ctx), Some(PathMember::String { val, .. })) =
-                    (self.probe_ctx, remaining_members.first())
-                {
-                    if let Some(message) = ctx.socket_projection_access_error(val) {
-                        return Err(CompileError::UnsupportedInstruction(message));
+            if let Some(spec) = static_ctx_projection_spec.as_ref() {
+                if spec.validate_socket_projection {
+                    if let (Some(ctx), Some(PathMember::String { val, .. })) =
+                        (self.probe_ctx, remaining_members.first())
+                    {
+                        if let Some(message) = ctx.socket_projection_access_error(val) {
+                            return Err(CompileError::UnsupportedInstruction(message));
+                        }
                     }
                 }
-                let base_ty = MirType::Ptr {
-                    pointee: Box::new(Self::synthetic_bpf_sock_type()),
-                    address_space: AddressSpace::Kernel,
-                };
+                let slot = spec.stack_slot_ty.as_ref().map(|stack_slot_ty| {
+                    let slot = self.func.alloc_stack_slot(
+                        align_to_eight(stack_slot_ty.size()),
+                        8,
+                        StackSlotKind::Local,
+                    );
+                    self.record_stack_slot_type(slot, stack_slot_ty.clone());
+                    slot
+                });
+                let base_ty = spec.runtime_ty.clone();
                 let base_vreg = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(base_vreg, base_ty.clone());
                 self.emit(MirInst::LoadCtxField {
                     dst: base_vreg,
                     field: ctx_field.clone(),
-                    slot: None,
+                    slot,
                 });
-                self.vreg_type_hints.insert(base_vreg, base_ty.clone());
+                if spec.normalize_u32_words_host_order {
+                    self.normalize_host_order_u32_array_slot(base_vreg)?;
+                }
                 let projected_ty = self.lower_typed_value_projection(
                     src_dst,
                     dst_vreg,
@@ -425,67 +411,6 @@ impl<'a> HirToMirLowering<'a> {
                     "nested ctx field access requires probe context".into(),
                 )
             })?;
-            if matches!(
-                ctx_field,
-                CtxField::UserIp6
-                    | CtxField::MsgSrcIp6
-                    | CtxField::RemoteIp6
-                    | CtxField::LocalIp6
-                    | CtxField::SockOpsArgs
-                    | CtxField::SkbCb
-            ) {
-                let array_len = if matches!(ctx_field, CtxField::SkbCb) {
-                    5
-                } else {
-                    4
-                };
-                let root_array_ty = MirType::Array {
-                    elem: Box::new(MirType::U32),
-                    len: array_len,
-                };
-                let slot = self.func.alloc_stack_slot(
-                    align_to_eight(root_array_ty.size()),
-                    8,
-                    StackSlotKind::Local,
-                );
-                self.record_stack_slot_type(slot, root_array_ty.clone());
-                let base_ty = MirType::Ptr {
-                    pointee: Box::new(root_array_ty.clone()),
-                    address_space: AddressSpace::Stack,
-                };
-                let base_vreg = self.func.alloc_vreg();
-                self.vreg_type_hints.insert(base_vreg, base_ty.clone());
-                self.emit(MirInst::LoadCtxField {
-                    dst: base_vreg,
-                    field: ctx_field.clone(),
-                    slot: Some(slot),
-                });
-                if matches!(
-                    ctx_field,
-                    CtxField::RemoteIp6
-                        | CtxField::LocalIp6
-                        | CtxField::SockOpsArgs
-                        | CtxField::SkbCb
-                ) {
-                    // Already host-order words; just keep the stack-backed array shape.
-                } else {
-                    self.normalize_host_order_u32_array_slot(base_vreg)?;
-                }
-                let projected_ty = self.lower_typed_value_projection(
-                    src_dst,
-                    dst_vreg,
-                    base_vreg,
-                    &base_ty,
-                    remaining_members,
-                    &Self::typed_value_path_desc(&path.members),
-                    None,
-                )?;
-                let meta = self.get_or_create_metadata(src_dst);
-                meta.is_context = false;
-                meta.field_type = Some(projected_ty);
-                meta.source_var = None;
-                return Ok(());
-            }
             let nested_segments: Vec<TrampolineFieldSelector> = remaining_members
                 .iter()
                 .map(Self::trampoline_field_selector)
@@ -599,24 +524,19 @@ impl<'a> HirToMirLowering<'a> {
                 )),
                 _ => None,
             })
-            .or_else(|| match ctx_field {
-                CtxField::UserIp6
-                | CtxField::MsgSrcIp6
-                | CtxField::RemoteIp6
-                | CtxField::LocalIp6
-                | CtxField::SockOpsArgs => Some(self.func.alloc_stack_slot(
-                    align_to_eight(16),
-                    8,
-                    StackSlotKind::Local,
-                )),
-                CtxField::SkbCb => Some(self.func.alloc_stack_slot(
-                    align_to_eight(20),
-                    8,
-                    StackSlotKind::Local,
-                )),
-                _ => None,
-            })
-            .or_else(|| self.get_metadata(src_dst).and_then(|m| m.string_slot));
+            .or_else(|| self.get_metadata(src_dst).and_then(|m| m.string_slot))
+            .or_else(|| {
+                static_ctx_projection_spec
+                    .as_ref()
+                    .and_then(|spec| spec.stack_slot_ty.as_ref())
+                    .map(|stack_slot_ty| {
+                        self.func.alloc_stack_slot(
+                            align_to_eight(stack_slot_ty.size()),
+                            8,
+                            StackSlotKind::Local,
+                        )
+                    })
+            });
         let precise_trampoline_types = trampoline_value_spec
             .zip(self.trampoline_root_type_info(&ctx_field)?)
             .and_then(|(spec, type_info)| Self::root_trampoline_value_types(&type_info, spec.kind));
@@ -634,28 +554,13 @@ impl<'a> HirToMirLowering<'a> {
         {
             self.record_stack_slot_type(slot, pointee.as_ref().clone());
         }
-        if let Some(slot) = slot
-            && matches!(
-                ctx_field,
-                CtxField::UserIp6
-                    | CtxField::MsgSrcIp6
-                    | CtxField::RemoteIp6
-                    | CtxField::LocalIp6
-                    | CtxField::SockOpsArgs
-                    | CtxField::SkbCb
-            )
-        {
-            self.record_stack_slot_type(
-                slot,
-                MirType::Array {
-                    elem: Box::new(MirType::U32),
-                    len: if matches!(ctx_field, CtxField::SkbCb) {
-                        5
-                    } else {
-                        4
-                    },
-                },
-            );
+        if let (Some(slot), Some(stack_slot_ty)) = (
+            slot,
+            static_ctx_projection_spec
+                .as_ref()
+                .and_then(|spec| spec.stack_slot_ty.as_ref()),
+        ) {
+            self.record_stack_slot_type(slot, stack_slot_ty.clone());
         }
         if let (
             Some(slot),
@@ -724,7 +629,10 @@ impl<'a> HirToMirLowering<'a> {
                 });
             }
         }
-        if matches!(ctx_field, CtxField::UserIp6 | CtxField::MsgSrcIp6) {
+        if static_ctx_projection_spec
+            .as_ref()
+            .is_some_and(|spec| spec.normalize_u32_words_host_order)
+        {
             self.normalize_host_order_u32_array_slot(dst_vreg)?;
         }
 

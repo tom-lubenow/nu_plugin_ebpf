@@ -2,7 +2,6 @@ use super::*;
 use crate::compiler::ProgramValueAccess;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
-use crate::compiler::mir::StructField;
 use crate::compiler::mir::UnaryOpKind;
 use crate::kernel_btf::{
     KernelBtf, TrampolineBitfieldInfo, TrampolineFieldProjection, TrampolineFieldSelector,
@@ -15,85 +14,6 @@ mod trampoline;
 use trampoline::TypedProjectionStep;
 
 impl<'a> HirToMirLowering<'a> {
-    pub(super) fn synthetic_bpf_sock_type() -> MirType {
-        MirType::Struct {
-            name: Some("bpf_sock".to_string()),
-            kernel_btf_type_id: None,
-            fields: vec![
-                StructField {
-                    name: "bound_dev_if".to_string(),
-                    ty: MirType::U32,
-                    offset: 0,
-                    synthetic: false,
-                    bitfield: None,
-                },
-                StructField {
-                    name: "family".to_string(),
-                    ty: MirType::U32,
-                    offset: 4,
-                    synthetic: false,
-                    bitfield: None,
-                },
-                StructField {
-                    name: "type".to_string(),
-                    ty: MirType::U32,
-                    offset: 8,
-                    synthetic: false,
-                    bitfield: None,
-                },
-                StructField {
-                    name: "protocol".to_string(),
-                    ty: MirType::U32,
-                    offset: 12,
-                    synthetic: false,
-                    bitfield: None,
-                },
-                StructField {
-                    name: "mark".to_string(),
-                    ty: MirType::U32,
-                    offset: 16,
-                    synthetic: false,
-                    bitfield: None,
-                },
-                StructField {
-                    name: "priority".to_string(),
-                    ty: MirType::U32,
-                    offset: 20,
-                    synthetic: false,
-                    bitfield: None,
-                },
-                StructField {
-                    name: "src_port".to_string(),
-                    ty: MirType::U32,
-                    offset: 44,
-                    synthetic: false,
-                    bitfield: None,
-                },
-                StructField {
-                    name: "dst_port".to_string(),
-                    ty: MirType::U16,
-                    offset: 48,
-                    synthetic: false,
-                    bitfield: None,
-                },
-                StructField {
-                    name: "state".to_string(),
-                    ty: MirType::U32,
-                    offset: 72,
-                    synthetic: false,
-                    bitfield: None,
-                },
-                StructField {
-                    name: "rx_queue_mapping".to_string(),
-                    ty: MirType::I32,
-                    offset: 76,
-                    synthetic: false,
-                    bitfield: None,
-                },
-            ],
-        }
-    }
-
     pub(super) fn lower_binary_op(
         &mut self,
         lhs_dst: RegId,

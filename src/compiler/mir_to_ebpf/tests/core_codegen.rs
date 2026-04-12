@@ -2952,6 +2952,31 @@ fn test_compile_fentry_array_element_projection() {
 }
 
 #[test]
+fn test_compile_kprobe_comm_array_element_projection() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("comm"), int_member(0)],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_open");
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("comm array element projection should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("comm array element projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_compile_fentry_array_leaf_projection() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("arg0"), string_member("comm")],

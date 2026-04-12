@@ -7,6 +7,14 @@ pub(crate) struct ContextFieldTypeSpec {
     pub runtime_ty: MirType,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ContextFieldProjectionSpec {
+    pub runtime_ty: MirType,
+    pub stack_slot_ty: Option<MirType>,
+    pub normalize_u32_words_host_order: bool,
+    pub validate_socket_projection: bool,
+}
+
 impl ContextFieldTypeSpec {
     fn value(ty: MirType) -> Self {
         Self {
@@ -22,6 +30,29 @@ impl ContextFieldTypeSpec {
                 address_space: AddressSpace::Stack,
             },
             semantic_ty,
+        }
+    }
+}
+
+impl ContextFieldProjectionSpec {
+    fn direct(runtime_ty: MirType) -> Self {
+        Self {
+            runtime_ty,
+            stack_slot_ty: None,
+            normalize_u32_words_host_order: false,
+            validate_socket_projection: false,
+        }
+    }
+
+    fn stack_backed(semantic_ty: MirType, normalize_u32_words_host_order: bool) -> Self {
+        Self {
+            runtime_ty: MirType::Ptr {
+                pointee: Box::new(semantic_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+            stack_slot_ty: Some(semantic_ty),
+            normalize_u32_words_host_order,
+            validate_socket_projection: false,
         }
     }
 }
@@ -231,6 +262,31 @@ pub(crate) fn static_ctx_field_type_spec(field: &CtxField) -> Option<ContextFiel
             return None;
         }
         CtxField::TracepointField(_) => return None,
+    })
+}
+
+pub(crate) fn static_ctx_field_projection_spec(
+    field: &CtxField,
+) -> Option<ContextFieldProjectionSpec> {
+    let type_spec = static_ctx_field_type_spec(field)?;
+    Some(match field {
+        CtxField::Data | CtxField::DataEnd => {
+            ContextFieldProjectionSpec::direct(type_spec.runtime_ty)
+        }
+        CtxField::Socket => ContextFieldProjectionSpec {
+            runtime_ty: type_spec.runtime_ty,
+            stack_slot_ty: None,
+            normalize_u32_words_host_order: false,
+            validate_socket_projection: true,
+        },
+        CtxField::Comm => ContextFieldProjectionSpec::stack_backed(type_spec.semantic_ty, false),
+        CtxField::UserIp6 | CtxField::MsgSrcIp6 => {
+            ContextFieldProjectionSpec::stack_backed(type_spec.semantic_ty, true)
+        }
+        CtxField::RemoteIp6 | CtxField::LocalIp6 | CtxField::SockOpsArgs | CtxField::SkbCb => {
+            ContextFieldProjectionSpec::stack_backed(type_spec.semantic_ty, false)
+        }
+        _ => return None,
     })
 }
 
