@@ -419,6 +419,94 @@ fn test_type_error_sysctl_helpers_reject_non_sysctl_programs() {
 }
 
 #[test]
+fn test_type_error_sockopt_helpers_reject_invalid_program_or_attach() {
+    for (helper, probe_ctx, expected) in [
+        (
+            BpfHelper::SetSockOpt,
+            ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read"),
+            "helper 'bpf_setsockopt' is only valid in sock_ops and cgroup_sock_addr programs",
+        ),
+        (
+            BpfHelper::GetSockOpt,
+            ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:bind4"),
+            "helper 'bpf_getsockopt' is only valid on cgroup_sock_addr connect4/connect6 hooks and sock_ops programs",
+        ),
+    ] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let optval_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(1),
+                MirValue::Const(2),
+                MirValue::StackSlot(optval_slot),
+                MirValue::Const(16),
+            ],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected sockopt helper to be rejected");
+        assert!(errs.iter().any(|e| e.message.contains(expected)));
+    }
+}
+
+#[test]
+fn test_infer_sockopt_helpers_in_supported_socket_contexts() {
+    for (helper, probe_ctx) in [
+        (
+            BpfHelper::SetSockOpt,
+            ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup"),
+        ),
+        (
+            BpfHelper::GetSockOpt,
+            ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4"),
+        ),
+    ] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let optval_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(1),
+                MirValue::Const(2),
+                MirValue::StackSlot(optval_slot),
+                MirValue::Const(16),
+            ],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .expect("expected sockopt helper to infer in supported context");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
 fn test_infer_msg_helpers_in_sk_msg_program() {
     for (helper, args) in [
         (BpfHelper::MsgApplyBytes, vec![MirValue::Const(8)]),

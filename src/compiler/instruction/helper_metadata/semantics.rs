@@ -199,6 +199,40 @@ impl BpfHelper {
             },
         ];
 
+        const SET_SOCKOPT_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper setsockopt ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 3,
+                op: "helper setsockopt optval",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(4),
+            },
+        ];
+
+        const GET_SOCKOPT_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper getsockopt ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 3,
+                op: "helper getsockopt optval",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(4),
+            },
+        ];
+
         const TRACE_PRINTK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 0,
             op: "helper trace_printk fmt",
@@ -812,6 +846,16 @@ impl BpfHelper {
                     size_from_arg: None,
                 }],
                 positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SetSockOpt => HelperSemantics {
+                ptr_arg_rules: SET_SOCKOPT_RULES,
+                positive_size_args: &[4],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::GetSockOpt => HelperSemantics {
+                ptr_arg_rules: GET_SOCKOPT_RULES,
+                positive_size_args: &[4],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::SkCgroupId => HelperSemantics {

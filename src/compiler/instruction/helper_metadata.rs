@@ -29,6 +29,8 @@ impl BpfHelper {
             63 => Some(Self::MsgPullData),
             46 => Some(Self::GetSocketCookie),
             47 => Some(Self::GetSocketUid),
+            49 => Some(Self::SetSockOpt),
+            57 => Some(Self::GetSockOpt),
             122 => Some(Self::GetNetnsCookie),
             125 => Some(Self::KtimeGetBootNs),
             25 => Some(Self::PerfEventOutput),
@@ -179,6 +181,12 @@ impl BpfHelper {
                 min_args: 1,
                 max_args: 1,
                 arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SetSockOpt | BpfHelper::GetSockOpt => HelperSignature {
+                min_args: 5,
+                max_args: 5,
+                arg_kinds: [P, S, S, P, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::SkCgroupId => HelperSignature {

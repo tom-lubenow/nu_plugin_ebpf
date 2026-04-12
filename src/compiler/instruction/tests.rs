@@ -67,6 +67,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::GetSocketUid)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_setsockopt"),
+        Some(BpfHelper::SetSockOpt)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_getsockopt"),
+        Some(BpfHelper::GetSockOpt)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_msg_apply_bytes"),
         Some(BpfHelper::MsgApplyBytes)
     ));
@@ -236,6 +244,31 @@ fn test_helper_signature_get_socket_uid() {
     assert_eq!(sig.max_args, 1);
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signatures_setsockopt_and_getsockopt() {
+    let set_sig = HelperSignature::for_id(BpfHelper::SetSockOpt as u32)
+        .expect("expected bpf_setsockopt helper signature");
+    assert_eq!(set_sig.min_args, 5);
+    assert_eq!(set_sig.max_args, 5);
+    assert_eq!(set_sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(set_sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(set_sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(set_sig.arg_kind(3), HelperArgKind::Pointer);
+    assert_eq!(set_sig.arg_kind(4), HelperArgKind::Scalar);
+    assert_eq!(set_sig.ret_kind, HelperRetKind::Scalar);
+
+    let get_sig = HelperSignature::for_id(BpfHelper::GetSockOpt as u32)
+        .expect("expected bpf_getsockopt helper signature");
+    assert_eq!(get_sig.min_args, 5);
+    assert_eq!(get_sig.max_args, 5);
+    assert_eq!(get_sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(get_sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(get_sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(get_sig.arg_kind(3), HelperArgKind::Pointer);
+    assert_eq!(get_sig.arg_kind(4), HelperArgKind::Scalar);
+    assert_eq!(get_sig.ret_kind, HelperRetKind::Scalar);
 }
 
 #[test]

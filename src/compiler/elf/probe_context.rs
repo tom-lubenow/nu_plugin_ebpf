@@ -91,6 +91,15 @@ impl ProbeContext {
         })
     }
 
+    fn cgroup_sock_addr_is_connect(&self) -> bool {
+        self.cgroup_sock_addr_target().is_some_and(|target| {
+            matches!(
+                target.attach_type,
+                CgroupSockAddrAttachType::Connect4 | CgroupSockAddrAttachType::Connect6
+            )
+        })
+    }
+
     fn cgroup_sockopt_target(&self) -> Option<CgroupSockoptTarget> {
         match self.parsed_program_spec()? {
             ProgramSpec::CgroupSockopt { target } => Some(target),
@@ -966,6 +975,15 @@ impl ProbeContext {
             return Some(message);
         }
         match helper {
+            BpfHelper::SetSockOpt | BpfHelper::GetSockOpt
+                if self.probe_type == EbpfProgramType::CgroupSockAddr
+                    && !self.cgroup_sock_addr_is_connect() =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid on cgroup_sock_addr connect4/connect6 hooks and sock_ops programs",
+                    helper.name()
+                ))
+            }
             BpfHelper::RedirectPeer if !self.tc_is_ingress() => Some(format!(
                 "helper '{}' is only valid in tc ingress programs",
                 helper.name()
