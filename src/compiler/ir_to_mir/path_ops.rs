@@ -374,6 +374,45 @@ impl<'a> HirToMirLowering<'a> {
                 return Ok(());
             }
 
+            if let CtxField::TracepointField(name) = &ctx_field
+                && let Some((
+                    root_semantic_ty,
+                    root_runtime_ty @ MirType::Ptr {
+                        address_space: AddressSpace::Stack,
+                        ..
+                    },
+                )) = self.tracepoint_root_field_types(name)?
+            {
+                let slot = self.func.alloc_stack_slot(
+                    align_to_eight(root_semantic_ty.size()),
+                    8,
+                    StackSlotKind::Local,
+                );
+                self.record_stack_slot_type(slot, root_semantic_ty);
+                let base_vreg = self.func.alloc_vreg();
+                self.vreg_type_hints
+                    .insert(base_vreg, root_runtime_ty.clone());
+                self.emit(MirInst::LoadCtxField {
+                    dst: base_vreg,
+                    field: ctx_field.clone(),
+                    slot: Some(slot),
+                });
+                let projected_ty = self.lower_typed_value_projection(
+                    src_dst,
+                    dst_vreg,
+                    base_vreg,
+                    &root_runtime_ty,
+                    remaining_members,
+                    &Self::typed_value_path_desc(&path.members),
+                    None,
+                )?;
+                let meta = self.get_or_create_metadata(src_dst);
+                meta.is_context = false;
+                meta.field_type = Some(projected_ty);
+                meta.source_var = None;
+                return Ok(());
+            }
+
             let ctx = self.probe_ctx.ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
                     "nested ctx field access requires probe context".into(),

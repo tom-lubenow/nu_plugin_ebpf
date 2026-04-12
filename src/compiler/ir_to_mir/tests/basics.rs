@@ -1316,6 +1316,59 @@ fn test_lower_tracepoint_args_leaf_emit_uses_full_byte_size() {
 }
 
 #[test]
+fn test_lower_tracepoint_args_index_projection_uses_stack_backed_numeric_get() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("args"), int_member(0)],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "syscalls/sys_enter_openat");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tracepoint args index projection should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::TracepointField(name),
+                    slot: Some(_),
+                    ..
+                } if name == "args"
+            )),
+        "expected tracepoint aggregate field root to materialize into a backing slot"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::U64,
+                    offset: 0,
+                    ..
+                }
+            )),
+        "expected indexed tracepoint arg projection to load the selected u64 element from stack"
+    );
+}
+
+#[test]
 fn test_lower_fentry_array_leaf_count_uses_string_counter_map() {
     let hir = make_ctx_path_call_program(
         CellPath {
