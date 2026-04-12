@@ -1,5 +1,6 @@
 use super::helpers::*;
 use super::*;
+use crate::compiler::BpfHelper;
 use crate::compiler::EbpfProgramType;
 use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
@@ -1027,6 +1028,114 @@ fn test_lower_map_push_respects_stack_kind() {
         })
         .expect("expected generic map push");
     assert_eq!(kind, MapKind::Stack);
+}
+
+#[test]
+fn test_lower_map_push_registers_queue_value_schema() {
+    let hir = make_map_push_program(DeclId::new(42), 0, "queue");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-push".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("queue map-push should register a value schema");
+
+    assert!(matches!(
+        result.generic_map_value_types.get(&MapRef {
+            name: "recent_pids".to_string(),
+            kind: MapKind::Queue,
+        }),
+        Some(ty) if !matches!(ty, MirType::Unknown)
+    ));
+}
+
+#[test]
+fn test_lower_map_peek_uses_prior_queue_schema() {
+    let hir = make_map_peek_program(Some(DeclId::new(42)), DeclId::new(43), "queue");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([
+        (DeclId::new(42), "map-push".to_string()),
+        (DeclId::new(43), "map-peek".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("map-peek should lower after a typed map-push");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadMapFd {
+                    map: MapRef { name, kind: MapKind::Queue },
+                    ..
+                } if name == "recent_pids"
+            ))
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::MapPeekElem as u32 && args.len() == 2
+            ))
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. }))
+    );
+    assert!(result.type_hints.main.values().any(|ty| matches!(
+        ty,
+        MirType::MapRef { val_ty, .. } if !matches!(val_ty.as_ref(), MirType::Unknown)
+    )));
+}
+
+#[test]
+fn test_lower_map_pop_requires_known_queue_schema() {
+    let hir = make_map_pop_program(None, DeclId::new(42), "queue");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-pop".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("map-pop without a known value schema should fail");
+
+    assert!(
+        err.to_string()
+            .contains("map-pop requires known value layout for 'recent_pids'")
+    );
 }
 
 #[test]

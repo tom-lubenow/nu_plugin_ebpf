@@ -1888,11 +1888,13 @@ fn test_compile_sockmap_helper_with_loaded_map_fd() {
     let ctx = func.alloc_vreg();
     let map = func.alloc_vreg();
     let dst = func.alloc_vreg();
-    func.block_mut(entry).instructions.push(MirInst::LoadCtxField {
-        dst: ctx,
-        field: CtxField::Context,
-        slot: None,
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
     func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
         dst: map,
         map: MapRef {
@@ -1900,16 +1902,18 @@ fn test_compile_sockmap_helper_with_loaded_map_fd() {
             kind: MapKind::SockMap,
         },
     });
-    func.block_mut(entry).instructions.push(MirInst::CallHelper {
-        dst,
-        helper: BpfHelper::SkRedirectMap as u32,
-        args: vec![
-            MirValue::VReg(ctx),
-            MirValue::VReg(map),
-            MirValue::Const(7),
-            MirValue::Const(0),
-        ],
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkRedirectMap as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::VReg(map),
+                MirValue::Const(7),
+                MirValue::Const(0),
+            ],
+        });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let program = MirProgram {
@@ -1950,11 +1954,13 @@ fn test_compile_ringbuf_query_helper_with_loaded_map_fd() {
             kind: MapKind::RingBuf,
         },
     });
-    func.block_mut(entry).instructions.push(MirInst::CallHelper {
-        dst,
-        helper: BpfHelper::RingbufQuery as u32,
-        args: vec![MirValue::VReg(map), MirValue::Const(0)],
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RingbufQuery as u32,
+            args: vec![MirValue::VReg(map), MirValue::Const(0)],
+        });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let program = MirProgram {
@@ -1989,11 +1995,13 @@ fn test_compile_perf_event_output_helper_with_loaded_map_fd() {
     let map = func.alloc_vreg();
     let data = func.alloc_vreg();
     let dst = func.alloc_vreg();
-    func.block_mut(entry).instructions.push(MirInst::LoadCtxField {
-        dst: ctx,
-        field: CtxField::Context,
-        slot: None,
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
     func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
         dst: map,
         map: MapRef {
@@ -2005,17 +2013,19 @@ fn test_compile_perf_event_output_helper_with_loaded_map_fd() {
         dst: data,
         src: MirValue::StackSlot(slot),
     });
-    func.block_mut(entry).instructions.push(MirInst::CallHelper {
-        dst,
-        helper: BpfHelper::PerfEventOutput as u32,
-        args: vec![
-            MirValue::VReg(ctx),
-            MirValue::VReg(map),
-            MirValue::Const(0),
-            MirValue::VReg(data),
-            MirValue::Const(16),
-        ],
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::PerfEventOutput as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::VReg(map),
+                MirValue::Const(0),
+                MirValue::VReg(data),
+                MirValue::Const(16),
+            ],
+        });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let program = MirProgram {
@@ -2050,11 +2060,13 @@ fn test_compile_get_stackid_helper_with_loaded_map_fd() {
     let ctx = func.alloc_vreg();
     let map = func.alloc_vreg();
     let dst = func.alloc_vreg();
-    func.block_mut(entry).instructions.push(MirInst::LoadCtxField {
-        dst: ctx,
-        field: CtxField::Context,
-        slot: None,
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
     func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
         dst: map,
         map: MapRef {
@@ -2062,11 +2074,13 @@ fn test_compile_get_stackid_helper_with_loaded_map_fd() {
             kind: MapKind::StackTrace,
         },
     });
-    func.block_mut(entry).instructions.push(MirInst::CallHelper {
-        dst,
-        helper: BpfHelper::GetStackId as u32,
-        args: vec![MirValue::VReg(ctx), MirValue::VReg(map), MirValue::Const(0)],
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetStackId as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::VReg(map), MirValue::Const(0)],
+        });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let program = MirProgram {
@@ -2101,11 +2115,13 @@ fn test_compile_tail_call_helper_with_loaded_map_fd() {
     let ctx = func.alloc_vreg();
     let map = func.alloc_vreg();
     let dst = func.alloc_vreg();
-    func.block_mut(entry).instructions.push(MirInst::LoadCtxField {
-        dst: ctx,
-        field: CtxField::Context,
-        slot: None,
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
     func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
         dst: map,
         map: MapRef {
@@ -2113,11 +2129,13 @@ fn test_compile_tail_call_helper_with_loaded_map_fd() {
             kind: MapKind::ProgArray,
         },
     });
-    func.block_mut(entry).instructions.push(MirInst::CallHelper {
-        dst,
-        helper: BpfHelper::TailCall as u32,
-        args: vec![MirValue::VReg(ctx), MirValue::VReg(map), MirValue::Const(0)],
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::TailCall as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::VReg(map), MirValue::Const(0)],
+        });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let program = MirProgram {
@@ -2164,19 +2182,137 @@ fn test_compile_map_push_helper_with_loaded_queue_map_fd() {
         dst: value,
         src: MirValue::StackSlot(slot),
     });
-    func.block_mut(entry).instructions.push(MirInst::CallHelper {
-        dst,
-        helper: BpfHelper::MapPushElem as u32,
-        args: vec![MirValue::VReg(map), MirValue::VReg(value), MirValue::Const(0)],
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::MapPushElem as u32,
+            args: vec![
+                MirValue::VReg(map),
+                MirValue::VReg(value),
+                MirValue::Const(0),
+            ],
+        });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let program = MirProgram {
         main: func,
         subfunctions: vec![],
     };
-    let compiled =
-        compile_mir_to_ebpf(&program, None).expect("map_push helper with local queue should compile");
+    let compiled = compile_mir_to_ebpf(&program, None)
+        .expect("map_push helper with local queue should compile");
+
+    let map = compiled
+        .maps
+        .iter()
+        .find(|map| map.name == "demo_queue")
+        .expect("expected queue map");
+    assert_eq!(map.def.map_type, BpfMapType::Queue as u32);
+    assert_eq!(map.def.value_size, 8);
+    assert!(
+        compiled
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == "demo_queue"),
+        "expected queue relocation"
+    );
+}
+
+#[test]
+fn test_compile_map_peek_helper_with_loaded_queue_map_fd() {
+    use crate::compiler::elf::BpfMapType;
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let map = func.alloc_vreg();
+    let value = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_queue".to_string(),
+            kind: MapKind::Queue,
+        },
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: value,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::MapPeekElem as u32,
+            args: vec![MirValue::VReg(map), MirValue::VReg(value)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let compiled = compile_mir_to_ebpf(&program, None)
+        .expect("map_peek helper with local queue should compile");
+
+    let map = compiled
+        .maps
+        .iter()
+        .find(|map| map.name == "demo_queue")
+        .expect("expected queue map");
+    assert_eq!(map.def.map_type, BpfMapType::Queue as u32);
+    assert_eq!(map.def.value_size, 8);
+    assert!(
+        compiled
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == "demo_queue"),
+        "expected queue relocation"
+    );
+}
+
+#[test]
+fn test_compile_map_pop_helper_with_loaded_queue_map_fd() {
+    use crate::compiler::elf::BpfMapType;
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let map = func.alloc_vreg();
+    let value = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_queue".to_string(),
+            kind: MapKind::Queue,
+        },
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: value,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::MapPopElem as u32,
+            args: vec![MirValue::VReg(map), MirValue::VReg(value)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let compiled = compile_mir_to_ebpf(&program, None)
+        .expect("map_pop helper with local queue should compile");
 
     let map = compiled
         .maps

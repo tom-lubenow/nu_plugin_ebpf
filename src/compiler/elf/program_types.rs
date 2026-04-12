@@ -912,4 +912,6 @@ pub(super) const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[
     ProgramIntrinsic::MapPut,
     ProgramIntrinsic::MapDelete,
     ProgramIntrinsic::MapPush,
+    ProgramIntrinsic::MapPeek,
+    ProgramIntrinsic::MapPop,
 ];

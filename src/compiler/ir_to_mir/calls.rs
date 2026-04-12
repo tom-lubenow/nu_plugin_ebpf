@@ -395,9 +395,11 @@ impl<'a> HirToMirLowering<'a> {
                 for (arg_vreg, arg_reg) in positional_args {
                     let helper_arg_idx = args.len();
                     if helper.supports_local_helper_map_fd(helper_arg_idx) {
-                        args.push(
-                            self.materialize_helper_map_fd_arg(helper, helper_arg_idx, arg_reg)?,
-                        );
+                        args.push(self.materialize_helper_map_fd_arg(
+                            helper,
+                            helper_arg_idx,
+                            arg_reg,
+                        )?);
                         continue;
                     }
                     let helper_arg_vreg = if self.is_context_reg(arg_reg) {
@@ -561,47 +563,7 @@ impl<'a> HirToMirLowering<'a> {
                     val: value_vreg,
                     flags,
                 });
-
-                let value_ty = value_reg
-                    .and_then(|reg| self.get_metadata(reg))
-                    .and_then(|m| m.field_type.clone());
-                let value_constant = value_reg
-                    .and_then(|reg| self.get_metadata(reg))
-                    .and_then(|m| m.constant_value.clone());
-                let value_semantics = value_reg
-                    .map(|reg| self.tracked_value_semantics(reg, value_constant.as_ref()))
-                    .transpose()?
-                    .flatten();
-                if let Some(value_ty) = value_ty {
-                    let stored_value_ty = self.stored_generic_map_value_type(&value_ty);
-                    if self.externally_seeded_map_value_types.contains(&map_ref) {
-                        if let Some(existing) = self.named_map_value_type(&map_ref) {
-                            if existing != &stored_value_ty {
-                                return Err(CompileError::UnsupportedInstruction(format!(
-                                    "map-put value type for '{}' conflicts with pinned map schema",
-                                    map_ref.name
-                                )));
-                            }
-                        }
-                    }
-                    self.register_named_map_value_type(&map_ref, &stored_value_ty);
-                }
-                if let Some(value_semantics) = value_semantics {
-                    if self
-                        .externally_seeded_map_value_semantics
-                        .contains(&map_ref)
-                    {
-                        if let Some(existing) = self.named_map_value_semantics(&map_ref) {
-                            if existing != &value_semantics {
-                                return Err(CompileError::UnsupportedInstruction(format!(
-                                    "map-put value semantics for '{}' conflicts with pinned map schema",
-                                    map_ref.name
-                                )));
-                            }
-                        }
-                    }
-                    self.register_named_map_value_semantics(&map_ref, &value_semantics);
-                }
+                self.record_named_map_value_schema_from_reg(&map_ref, value_reg, "map-put")?;
 
                 self.emit(MirInst::Copy {
                     dst: dst_vreg,
@@ -654,6 +616,10 @@ impl<'a> HirToMirLowering<'a> {
                             "map-push requires a value from pipeline input".into(),
                         )
                     })?;
+                let value_reg = self
+                    .pipeline_input_reg
+                    .or_else(|| src_dst_had_value.then_some(src_dst));
+                self.record_named_map_value_schema_from_reg(&map_ref, value_reg, "map-push")?;
 
                 self.emit(MirInst::MapPush {
                     map: map_ref,
@@ -665,6 +631,24 @@ impl<'a> HirToMirLowering<'a> {
                     src: MirValue::Const(0),
                 });
                 self.reset_call_result_metadata(src_dst);
+            }
+
+            "map-peek" => {
+                self.lower_queue_stack_map_take(
+                    src_dst,
+                    dst_vreg,
+                    "map-peek",
+                    BpfHelper::MapPeekElem,
+                )?;
+            }
+
+            "map-pop" => {
+                self.lower_queue_stack_map_take(
+                    src_dst,
+                    dst_vreg,
+                    "map-pop",
+                    BpfHelper::MapPopElem,
+                )?;
             }
 
             "map-delete" => {
@@ -1250,6 +1234,189 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         self.clear_call_state();
+        Ok(())
+    }
+
+    fn record_named_map_value_schema_from_reg(
+        &mut self,
+        map_ref: &MapRef,
+        value_reg: Option<RegId>,
+        context: &str,
+    ) -> Result<(), CompileError> {
+        let value_ty = value_reg
+            .and_then(|reg| self.get_metadata(reg))
+            .and_then(|m| m.field_type.clone());
+        let value_constant = value_reg
+            .and_then(|reg| self.get_metadata(reg))
+            .and_then(|m| m.constant_value.clone());
+        let value_semantics = value_reg
+            .map(|reg| self.tracked_value_semantics(reg, value_constant.as_ref()))
+            .transpose()?
+            .flatten();
+        if let Some(value_ty) = value_ty {
+            let stored_value_ty = self.stored_generic_map_value_type(&value_ty);
+            if self.externally_seeded_map_value_types.contains(map_ref)
+                && let Some(existing) = self.named_map_value_type(map_ref)
+                && existing != &stored_value_ty
+            {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} value type for '{}' conflicts with pinned map schema",
+                    map_ref.name
+                )));
+            }
+            self.register_named_map_value_type(map_ref, &stored_value_ty);
+        }
+        if let Some(value_semantics) = value_semantics {
+            if self.externally_seeded_map_value_semantics.contains(map_ref)
+                && let Some(existing) = self.named_map_value_semantics(map_ref)
+                && existing != &value_semantics
+            {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} value semantics for '{}' conflicts with pinned map schema",
+                    map_ref.name
+                )));
+            }
+            self.register_named_map_value_semantics(map_ref, &value_semantics);
+        }
+        Ok(())
+    }
+
+    fn lower_queue_stack_map_take(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        context: &str,
+        helper: BpfHelper,
+    ) -> Result<(), CompileError> {
+        if !self.named_flags.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} does not accept flags"
+            )));
+        }
+        if self.pipeline_input.is_some() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} does not accept pipeline input"
+            )));
+        }
+        self.require_only_named_args(context, &["kind"])?;
+
+        let (_, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{context} requires a literal map name as the first positional argument"
+            ))
+        })?;
+        if self.positional_args.len() > 1 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} only accepts a map name positional argument"
+            )));
+        }
+
+        let map_name = self.literal_string_arg(map_reg, context)?;
+        self.validate_generic_map_name(&map_name, context)?;
+        let map_kind = self.required_queue_stack_map_kind_arg(context)?;
+        let map_ref = MapRef {
+            name: map_name,
+            kind: map_kind,
+        };
+        let stored_ty = self
+            .named_map_value_type(&map_ref)
+            .cloned()
+            .filter(|ty| !matches!(ty, MirType::Unknown))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{context} requires known value layout for '{}'; establish it with a prior typed map-push or pinned schema",
+                    map_ref.name
+                ))
+            })?;
+        let stored_semantics = self.named_map_value_semantics(&map_ref).cloned();
+
+        let map_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::LoadMapFd {
+            dst: map_vreg,
+            map: map_ref,
+        });
+        self.vreg_type_hints.insert(
+            map_vreg,
+            MirType::MapRef {
+                key_ty: Box::new(MirType::Unknown),
+                val_ty: Box::new(stored_ty.clone()),
+            },
+        );
+
+        let out_slot = self.func.alloc_stack_slot(
+            align_to_eight(stored_ty.size().max(1)),
+            stored_ty.align().max(1),
+            StackSlotKind::Local,
+        );
+        self.record_stack_slot_type(out_slot, stored_ty.clone());
+
+        let out_ptr_ty = MirType::Ptr {
+            pointee: Box::new(stored_ty.clone()),
+            address_space: AddressSpace::Stack,
+        };
+        let out_ptr_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: out_ptr_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints
+            .insert(out_ptr_vreg, out_ptr_ty.clone());
+
+        let status_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::CallHelper {
+            dst: status_vreg,
+            helper: helper as u32,
+            args: vec![MirValue::VReg(map_vreg), MirValue::VReg(out_ptr_vreg)],
+        });
+        self.vreg_type_hints.insert(status_vreg, MirType::I64);
+
+        let has_value_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: has_value_vreg,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(status_vreg),
+            rhs: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(has_value_vreg, MirType::Bool);
+
+        let success_block = self.func.alloc_block();
+        let empty_block = self.func.alloc_block();
+        let continue_block = self.func.alloc_block();
+        self.terminate(MirInst::Branch {
+            cond: has_value_vreg,
+            if_true: success_block,
+            if_false: empty_block,
+        });
+
+        self.current_block = success_block;
+        self.emit(MirInst::Copy {
+            dst: dst_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.terminate(MirInst::Jump {
+            target: continue_block,
+        });
+
+        self.current_block = empty_block;
+        self.emit(MirInst::Copy {
+            dst: dst_vreg,
+            src: MirValue::Const(0),
+        });
+        self.terminate(MirInst::Jump {
+            target: continue_block,
+        });
+
+        self.current_block = continue_block;
+        self.vreg_type_hints.insert(dst_vreg, out_ptr_ty.clone());
+        self.reset_call_result_metadata(src_dst);
+        if matches!(stored_ty, MirType::Array { .. } | MirType::Struct { .. }) {
+            let meta = self.get_or_create_metadata(src_dst);
+            meta.field_type = Some(out_ptr_ty);
+            if let Some(semantics) = stored_semantics {
+                meta.annotated_semantics = Some(semantics);
+            }
+        }
+
         Ok(())
     }
 

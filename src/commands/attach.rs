@@ -581,6 +581,8 @@ Advanced commands:
   helper-call       - Call a modeled BPF helper by name
   kfunc-call        - Call a typed kernel kfunc by name (optional --btf-id)
   map-push          - Push into a named queue or stack map (--kind queue|stack)
+  map-peek          - Peek the next queue/stack value as a maybe-null pointer
+  map-pop           - Pop the next queue/stack value as a maybe-null pointer
 
 Flags:
   --stream (-s)     Stream events in real-time. The command blocks and yields

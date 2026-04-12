@@ -56,6 +56,8 @@ impl Plugin for EbpfPlugin {
             Box::new(MapPut),
             Box::new(MapDelete),
             Box::new(MapPush),
+            Box::new(MapPeek),
+            Box::new(MapPop),
         ]
     }
 }

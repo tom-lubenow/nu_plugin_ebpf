@@ -11,7 +11,8 @@
 //! - helper-call: Invoke a modeled BPF helper by name
 //! - kfunc-call: Invoke a typed kernel kfunc by name
 //! - global-define / global-get / global-set: Named compiler-managed per-program globals
-//! - map-get / map-put / map-delete / map-push: Generic BPF map operations
+//! - map-get / map-put / map-delete / map-push / map-peek / map-pop:
+//!   Generic BPF map operations
 
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
 use nu_protocol::{
@@ -346,7 +347,7 @@ Example:
             .named(
                 "kind",
                 SyntaxShape::String,
-                "Map kind: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash; queue/stack are not valid for map-get)",
+                "Map kind: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash; queue/stack use map-peek or map-pop instead)",
                 None,
             )
             .category(Category::Experimental)
@@ -727,7 +728,9 @@ impl PluginCommand for MapPush {
     fn extra_description(&self) -> &str {
         r#"Pushes the pipeline input into a named queue or stack map. Use
 `--kind queue` for FIFO behavior or `--kind stack` for LIFO behavior. Unlike
-`map-put`, queue/stack maps do not take an explicit key.
+`map-put`, queue/stack maps do not take an explicit key. The pushed value
+layout becomes available to later `map-peek` and `map-pop` uses in the same
+closure, and to pinned peers when attached with the same `--pin` group.
 
 Example:
   $ctx.pid | map-push recent_pids --kind queue"#
@@ -768,6 +771,120 @@ Example:
         _input: PipelineData,
     ) -> Result<PipelineData, LabeledError> {
         Ok(PipelineData::Value(Value::int(0, call.head), None))
+    }
+}
+
+#[derive(Clone)]
+pub struct MapPeek;
+
+impl PluginCommand for MapPeek {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "map-peek"
+    }
+
+    fn description(&self) -> &str {
+        "Peek the next value from a named queue or stack BPF map without removing it."
+    }
+
+    fn extra_description(&self) -> &str {
+        r#"Loads the next queue/stack value into a compiler-managed stack buffer and
+returns a maybe-null pointer to that buffer. The map value layout must already
+be known from an earlier typed `map-push` or from a pinned schema shared with
+`ebpf attach --pin`.
+
+Example:
+  let top = (map-peek recent_pids --kind stack)
+  if $top != 0 { $top | emit }"#
+    }
+
+    fn signature(&self) -> Signature {
+        Signature::build("map-peek")
+            .input_output_types(vec![(Type::Nothing, Type::Any)])
+            .required("name", SyntaxShape::String, "Map name")
+            .named(
+                "kind",
+                SyntaxShape::String,
+                "Map kind: queue or stack (required)",
+                None,
+            )
+            .category(Category::Experimental)
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "ebpf attach --dry-run 'kprobe:ksys_read' {|ctx| let top = (map-peek recent_pids --kind stack); if $top != 0 { $top | emit } }",
+            description: "Peek the current top value from a named stack map",
+            result: None,
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        _input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        Ok(PipelineData::Value(Value::nothing(call.head), None))
+    }
+}
+
+#[derive(Clone)]
+pub struct MapPop;
+
+impl PluginCommand for MapPop {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "map-pop"
+    }
+
+    fn description(&self) -> &str {
+        "Pop the next value from a named queue or stack BPF map."
+    }
+
+    fn extra_description(&self) -> &str {
+        r#"Removes the next queue/stack value, copies it into a compiler-managed
+stack buffer, and returns a maybe-null pointer to that buffer. The map value
+layout must already be known from an earlier typed `map-push` or from a pinned
+schema shared with `ebpf attach --pin`.
+
+Example:
+  let next = (map-pop recent_pids --kind queue)
+  if $next != 0 { $next | emit }"#
+    }
+
+    fn signature(&self) -> Signature {
+        Signature::build("map-pop")
+            .input_output_types(vec![(Type::Nothing, Type::Any)])
+            .required("name", SyntaxShape::String, "Map name")
+            .named(
+                "kind",
+                SyntaxShape::String,
+                "Map kind: queue or stack (required)",
+                None,
+            )
+            .category(Category::Experimental)
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "ebpf attach --dry-run 'kprobe:ksys_read' {|ctx| let next = (map-pop recent_pids --kind queue); if $next != 0 { $next | emit } }",
+            description: "Pop the current front value from a named queue map",
+            result: None,
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        _input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        Ok(PipelineData::Value(Value::nothing(call.head), None))
     }
 }
 

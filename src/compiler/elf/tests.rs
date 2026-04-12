@@ -779,6 +779,14 @@ fn test_program_intrinsic_command_registry() {
         Some(ProgramIntrinsic::MapPush)
     );
     assert_eq!(
+        ProgramIntrinsic::from_command_name("map-peek"),
+        Some(ProgramIntrinsic::MapPeek)
+    );
+    assert_eq!(
+        ProgramIntrinsic::from_command_name("map-pop"),
+        Some(ProgramIntrinsic::MapPop)
+    );
+    assert_eq!(
         ProgramIntrinsic::from_command_name("global-set"),
         Some(ProgramIntrinsic::GlobalSet)
     );
@@ -797,6 +805,14 @@ fn test_program_intrinsic_command_registry() {
     );
     assert_eq!(
         ProgramIntrinsic::MapPush.required_capability(),
+        ProgramCapability::GenericMaps
+    );
+    assert_eq!(
+        ProgramIntrinsic::MapPeek.required_capability(),
+        ProgramCapability::GenericMaps
+    );
+    assert_eq!(
+        ProgramIntrinsic::MapPop.required_capability(),
         ProgramCapability::GenericMaps
     );
 }

@@ -812,6 +812,101 @@ pub(super) fn make_map_push_program(map_push_decl: DeclId, flags: i64, kind: &st
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+pub(super) fn make_map_peek_program(
+    map_push_decl: Option<DeclId>,
+    map_peek_decl: DeclId,
+    kind: &str,
+) -> HirProgram {
+    make_map_take_program(map_push_decl, map_peek_decl, kind)
+}
+
+pub(super) fn make_map_pop_program(
+    map_push_decl: Option<DeclId>,
+    map_pop_decl: DeclId,
+    kind: &str,
+) -> HirProgram {
+    make_map_take_program(map_push_decl, map_pop_decl, kind)
+}
+
+fn make_map_take_program(
+    map_push_decl: Option<DeclId>,
+    map_take_decl: DeclId,
+    kind: &str,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let seeded = map_push_decl.is_some();
+    let mut stmts = vec![
+        HirStmt::LoadVariable {
+            dst: RegId::new(0),
+            var_id: ctx_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("pid")],
+            })),
+        },
+        HirStmt::FollowCellPath {
+            src_dst: RegId::new(0),
+            path: RegId::new(1),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::String(b"recent_pids".to_vec()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(3),
+            lit: HirLiteral::String(kind.as_bytes().to_vec()),
+        },
+    ];
+
+    if let Some(map_push_decl) = map_push_decl {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(4),
+            lit: HirLiteral::Int(0),
+        });
+        stmts.push(HirStmt::Call {
+            decl_id: map_push_decl,
+            src_dst: RegId::new(0),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                named: vec![
+                    (b"kind".to_vec(), RegId::new(3)),
+                    (b"flags".to_vec(), RegId::new(4)),
+                ],
+                ..Default::default()
+            },
+        });
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id: map_take_decl,
+        src_dst: RegId::new(0),
+        args: HirCallArgs {
+            positional: vec![RegId::new(2)],
+            named: vec![(b"kind".to_vec(), RegId::new(3))],
+            ..Default::default()
+        },
+    });
+
+    let spans_len = stmts.len().max(1) + 1;
+    let register_count = if seeded { 5 } else { 4 };
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); spans_len],
+        ast: vec![None; spans_len],
+        comments: vec![],
+        register_count,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 pub(super) fn make_map_copy_projection_program(
     map_put_decl: DeclId,
     map_get_decl: DeclId,
