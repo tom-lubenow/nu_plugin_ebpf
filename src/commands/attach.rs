@@ -133,6 +133,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.data.u16be.6 } - Read a big-endian 16-bit packet scalar (here: bytes 12..13)
     {|ctx| $ctx.data.eth.ethertype } - Read the Ethernet ethertype through a typed packet header view
     {|ctx| $ctx.data.eth.payload.ipv4.protocol } - Step past Ethernet and up to two stacked VLAN tags, then parse IPv4
+    {|ctx| $ctx.data.eth.payload.ipv6.next_header } - Step past Ethernet and up to two stacked VLAN tags, then parse IPv6
     {|ctx| $ctx.data.eth.payload.ipv4.payload.tcp.payload.0 } - Step through variable IPv4/TCP headers and read the first TCP payload byte
     XDP-only extras:
     {|ctx| $ctx.rx_queue_index } - Get RX queue index
@@ -150,12 +151,12 @@ Context parameter syntax (recommended):
     paths for the default neighbor-resolution form. Raw numeric return
     codes still work. Packet reads currently support scalar byte access
     through `get`/indexing, direct `u16be`/`u32be` cell-path scalar loads,
-    and typed header views `eth`, `ipv4`, `udp`, and `tcp`. Those views also
-    support `payload` stepping: `eth.payload` skips Ethernet and up to two
-    stacked VLAN tags when present, `ipv4.payload` uses the runtime IHL, and
-    `tcp.payload` uses the runtime data offset. IPv4/TCP options are skipped
-    correctly by those payload steps, but deeper option parsing is still not
-    modeled.
+    and typed header views `eth`, `ipv4`, `ipv6`, `udp`, and `tcp`. Those
+    views also support `payload` stepping: `eth.payload` skips Ethernet and
+    up to two stacked VLAN tags when present, `ipv4.payload` uses the
+    runtime IHL, `ipv6.payload` skips the fixed IPv6 header, and
+    `tcp.payload` uses the runtime data offset. IPv4/TCP options and IPv6
+    extension headers are still not modeled.
 
   perf_event targets:
     {|ctx| $ctx.cpu }    - Get current CPU ID for the sampled event

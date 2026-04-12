@@ -3,6 +3,7 @@ use super::*;
 pub(super) enum PacketPayloadStepKind {
     Ethernet,
     Ipv4,
+    Ipv6,
     Udp,
     Tcp,
 }
@@ -478,6 +479,21 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn packet_ipv6_header_type() -> MirType {
+        MirType::Struct {
+            name: Some("__packet_ipv6".to_string()),
+            kernel_btf_type_id: None,
+            fields: vec![
+                Self::packet_struct_field("version_tc_flow_label", MirType::U32, 0),
+                Self::packet_struct_field("payload_len", MirType::U16, 4),
+                Self::packet_struct_field("next_header", MirType::U8, 6),
+                Self::packet_struct_field("hop_limit", MirType::U8, 7),
+                Self::packet_struct_field("src", Self::packet_bytes(16), 8),
+                Self::packet_struct_field("dst", Self::packet_bytes(16), 24),
+            ],
+        }
+    }
+
     fn packet_udp_header_type() -> MirType {
         MirType::Struct {
             name: Some("__packet_udp".to_string()),
@@ -535,6 +551,12 @@ impl<'a> HirToMirLowering<'a> {
                 bitfield: None,
                 packet_big_endian: false,
             }),
+            (_, true, "ipv6" | "ipv6hdr" | "ip6hdr") => Some(TypedProjectionStep {
+                offset: 0,
+                ty: Self::packet_ipv6_header_type(),
+                bitfield: None,
+                packet_big_endian: false,
+            }),
             (_, true, "udp" | "udphdr") => Some(TypedProjectionStep {
                 offset: 0,
                 ty: Self::packet_udp_header_type(),
@@ -553,6 +575,12 @@ impl<'a> HirToMirLowering<'a> {
                 bitfield: None,
                 packet_big_endian: false,
             }),
+            (Some("__packet_eth"), _, "ipv6" | "ipv6hdr" | "ip6hdr") => Some(TypedProjectionStep {
+                offset: current_ty.size(),
+                ty: Self::packet_ipv6_header_type(),
+                bitfield: None,
+                packet_big_endian: false,
+            }),
             (Some("__packet_ipv4"), _, "udp" | "udphdr") => Some(TypedProjectionStep {
                 offset: current_ty.size(),
                 ty: Self::packet_udp_header_type(),
@@ -560,6 +588,18 @@ impl<'a> HirToMirLowering<'a> {
                 packet_big_endian: false,
             }),
             (Some("__packet_ipv4"), _, "tcp" | "tcphdr") => Some(TypedProjectionStep {
+                offset: current_ty.size(),
+                ty: Self::packet_tcp_header_type(),
+                bitfield: None,
+                packet_big_endian: false,
+            }),
+            (Some("__packet_ipv6"), _, "udp" | "udphdr") => Some(TypedProjectionStep {
+                offset: current_ty.size(),
+                ty: Self::packet_udp_header_type(),
+                bitfield: None,
+                packet_big_endian: false,
+            }),
+            (Some("__packet_ipv6"), _, "tcp" | "tcphdr") => Some(TypedProjectionStep {
                 offset: current_ty.size(),
                 ty: Self::packet_tcp_header_type(),
                 bitfield: None,
@@ -586,6 +626,7 @@ impl<'a> HirToMirLowering<'a> {
             } => match name.as_str() {
                 "__packet_eth" => Some(PacketPayloadStepKind::Ethernet),
                 "__packet_ipv4" => Some(PacketPayloadStepKind::Ipv4),
+                "__packet_ipv6" => Some(PacketPayloadStepKind::Ipv6),
                 "__packet_udp" => Some(PacketPayloadStepKind::Udp),
                 "__packet_tcp" => Some(PacketPayloadStepKind::Tcp),
                 _ => None,
@@ -611,6 +652,7 @@ impl<'a> HirToMirLowering<'a> {
                 "__packet_ipv4",
                 "total_len" | "identification" | "flags_fragment_offset" | "checksum",
             ) => true,
+            ("__packet_ipv6", "version_tc_flow_label" | "payload_len") => true,
             ("__packet_udp", "src" | "dst" | "len" | "checksum") => true,
             (
                 "__packet_tcp",
@@ -1043,6 +1085,14 @@ impl<'a> HirToMirLowering<'a> {
                     op: BinOpKind::Add,
                     lhs: MirValue::VReg(base_ptr_vreg),
                     rhs: MirValue::VReg(ihl_vreg),
+                });
+            }
+            PacketPayloadStepKind::Ipv6 => {
+                self.emit(MirInst::BinOp {
+                    dst: payload_ptr_vreg,
+                    op: BinOpKind::Add,
+                    lhs: MirValue::VReg(base_ptr_vreg),
+                    rhs: MirValue::Const(40),
                 });
             }
             PacketPayloadStepKind::Udp => {
