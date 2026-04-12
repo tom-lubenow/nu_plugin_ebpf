@@ -613,7 +613,7 @@ pub(crate) fn static_ctx_field_access_error(
             ))
         }
         CtxField::Socket if !program_type.supports_socket_ref_ctx_field() => Some(format!(
-            "ctx.{} is only available on cgroup_sock, cgroup_sockopt, sk_lookup, and sk_msg programs",
+            "ctx.{} is only available on cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_msg, and sock_ops programs",
             field.display_name()
         )),
         CtxField::LookupCookie if !program_type.supports_lookup_cookie_ctx_field() => {

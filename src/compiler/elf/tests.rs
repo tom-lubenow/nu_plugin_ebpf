@@ -346,6 +346,13 @@ fn test_probe_context_socket_layouts_follow_program_model() {
 
 #[test]
 fn test_probe_context_socket_ref_layouts_follow_program_model() {
+    let cgroup_sock_addr =
+        ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+    assert_eq!(
+        cgroup_sock_addr.socket_ref_context_layout(),
+        Some(SocketContextLayout::SockAddr)
+    );
+
     let cgroup_sockopt =
         ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:getsockopt");
     assert_eq!(
@@ -357,6 +364,12 @@ fn test_probe_context_socket_ref_layouts_follow_program_model() {
     assert_eq!(
         sk_msg.socket_ref_context_layout(),
         Some(SocketContextLayout::SkMsg)
+    );
+
+    let sock_ops = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    assert_eq!(
+        sock_ops.socket_ref_context_layout(),
+        Some(SocketContextLayout::SockOps)
     );
 
     let xdp = ProbeContext::new(EbpfProgramType::Xdp, "lo");
@@ -2115,6 +2128,7 @@ fn test_probe_context_allows_sock_fields_on_cgroup_sock() {
 #[test]
 fn test_probe_context_allows_sock_addr_fields_on_cgroup_sock_addr() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+    assert!(ctx.ctx_field_access_error(&CtxField::Socket).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::UserFamily).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::UserIp4).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::UserPort).is_none());
@@ -2198,6 +2212,7 @@ fn test_probe_context_allows_sk_lookup_fields() {
 #[test]
 fn test_probe_context_allows_socket_cookie_on_sock_ops() {
     let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    assert!(ctx.ctx_field_access_error(&CtxField::Socket).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::SocketCookie)
             .is_none()

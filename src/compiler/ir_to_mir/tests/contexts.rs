@@ -660,6 +660,33 @@ fn test_lower_cgroup_sockopt_ctx_socket_family_field() {
 }
 
 #[test]
+fn test_lower_cgroup_sock_addr_ctx_socket_family_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("sk"), string_member("family")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock_addr ctx.sk.family should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Socket,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_cgroup_sockopt_ctx_sockopt_retval_assignment() {
     let ctx_var = VarId::new(0);
     let func = HirFunction {
@@ -1658,6 +1685,33 @@ fn test_lower_sock_ops_ctx_skb_len_field() {
         inst,
         MirInst::LoadCtxField {
             field: CtxField::SockOpsSkbLen,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_sock_ops_ctx_socket_state_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("sk"), string_member("state")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sock_ops ctx.sk.state should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Socket,
             ..
         }
     )));

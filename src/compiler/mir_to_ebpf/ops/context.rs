@@ -136,21 +136,20 @@ impl<'a> MirToEbpfCompiler<'a> {
     }
 
     pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_addr_offsets()
-    -> (i16, i16, i16, i16, i16, i16, i16, i16, i16) {
+    -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16) {
         // struct bpf_sock_addr {
         //     __u32 user_family;
         //     __u32 user_ip4;
         //     __u32 user_ip6[4];
-        //     ...
         //     __u32 user_port;
-        //     ...
         //     __u32 family;
         //     __u32 type;
         //     __u32 protocol;
         //     __u32 msg_src_ip4;
         //     __u32 msg_src_ip6[4];
+        //     struct bpf_sock *sk;
         // };
-        (0, 4, 8, 24, 28, 32, 36, 40, 44)
+        (0, 4, 8, 24, 28, 32, 36, 40, 44, 64)
     }
 
     pub(in crate::compiler::mir_to_ebpf) fn bpf_sysctl_offsets() -> (i16, i16) {
@@ -170,8 +169,8 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 4, 8)
     }
 
-    pub(in crate::compiler::mir_to_ebpf) fn bpf_sockopt_offsets() -> (i16, i16, i16, i16, i16, i16)
-    {
+    pub(in crate::compiler::mir_to_ebpf) fn bpf_sockopt_offsets()
+    -> (i16, i16, i16, i16, i16, i16, i16) {
         // struct bpf_sockopt {
         //     __u64 sk;
         //     __u64 optval;
@@ -181,7 +180,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         //     __s32 optlen;
         //     __s32 retval;
         // };
-        (8, 16, 24, 28, 32, 36)
+        (0, 8, 16, 24, 28, 32, 36)
     }
 
     pub(super) fn bpf_sock_offsets() -> (i16, i16, i16, i16, i16, i16) {
@@ -213,8 +212,8 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 8, 12, 16, 20, 36, 40, 44, 60, 64)
     }
 
-    pub(super) fn bpf_sock_ops_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16, i16)
-    {
+    pub(super) fn bpf_sock_ops_offsets()
+    -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16, i16, i16) {
         // struct bpf_sock_ops {
         //     __u32 op;
         //     union { __u32 args[4]; __u32 reply; __u32 replylong[4]; };
@@ -229,8 +228,10 @@ impl<'a> MirToEbpfCompiler<'a> {
         //     ...
         //     __u32 bpf_sock_ops_cb_flags;
         //     __u32 state;
+        //     ...
+        //     struct bpf_sock *sk;
         // };
-        (0, 20, 24, 28, 32, 48, 64, 68, 72, 84, 88)
+        (0, 20, 24, 28, 32, 48, 64, 68, 72, 84, 88, 184)
     }
 
     pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_ops_args_offset() -> i16 {

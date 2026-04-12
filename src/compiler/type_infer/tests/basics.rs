@@ -1325,6 +1325,33 @@ fn test_infer_sk_msg_socket_field_as_kernel_pointer() {
 }
 
 #[test]
+fn test_infer_sock_ops_socket_field_as_kernel_pointer() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::Socket,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert!(matches!(
+        types.get(&v0),
+        Some(&MirType::Ptr {
+            address_space: AddressSpace::Kernel,
+            ..
+        })
+    ));
+}
+
+#[test]
 fn test_infer_sk_msg_socket_field_includes_extended_metadata() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();

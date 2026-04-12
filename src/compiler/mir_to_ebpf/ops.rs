@@ -892,16 +892,13 @@ impl<'a> MirToEbpfCompiler<'a> {
                         return Ok(());
                     }
                     Some(SocketContextLayout::CgroupSockopt) => Self::bpf_sockopt_offsets().0,
+                    Some(SocketContextLayout::SockAddr) => Self::bpf_sock_addr_offsets().9,
                     Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().0,
                     Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_sock_offset(),
-                    Some(
-                        SocketContextLayout::SockAddr
-                        | SocketContextLayout::SkBuff
-                        | SocketContextLayout::SockOps,
-                    )
-                    | None => {
+                    Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().11,
+                    Some(SocketContextLayout::SkBuff) | None => {
                         return Err(CompileError::UnsupportedInstruction(
-                            "ctx.sk is only available on cgroup_sock, cgroup_sockopt, sk_lookup, and sk_msg programs".to_string(),
+                            "ctx.sk is only available on cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_msg, and sock_ops programs".to_string(),
                         ));
                     }
                 };
@@ -1333,32 +1330,32 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::SockoptLevel => {
-                let offset = Self::bpf_sockopt_offsets().2;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
-            }
-            CtxField::SockoptOptname => {
                 let offset = Self::bpf_sockopt_offsets().3;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
-            CtxField::SockoptOptlen => {
+            CtxField::SockoptOptname => {
                 let offset = Self::bpf_sockopt_offsets().4;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
-            CtxField::SockoptOptval => {
-                let offset = Self::bpf_sockopt_offsets().0;
+            CtxField::SockoptOptlen => {
+                let offset = Self::bpf_sockopt_offsets().5;
                 self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
-            CtxField::SockoptOptvalEnd => {
+            CtxField::SockoptOptval => {
                 let offset = Self::bpf_sockopt_offsets().1;
                 self.instructions
                     .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
             }
+            CtxField::SockoptOptvalEnd => {
+                let offset = Self::bpf_sockopt_offsets().2;
+                self.instructions
+                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+            }
             CtxField::SockoptRetval => {
-                let offset = Self::bpf_sockopt_offsets().5;
+                let offset = Self::bpf_sockopt_offsets().6;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }

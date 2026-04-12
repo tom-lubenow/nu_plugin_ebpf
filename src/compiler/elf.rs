@@ -909,9 +909,11 @@ impl EbpfProgramType {
         matches!(
             self,
             EbpfProgramType::CgroupSock
+                | EbpfProgramType::CgroupSockAddr
                 | EbpfProgramType::CgroupSockopt
                 | EbpfProgramType::SkLookup
                 | EbpfProgramType::SkMsg
+                | EbpfProgramType::SockOps
         )
     }
 

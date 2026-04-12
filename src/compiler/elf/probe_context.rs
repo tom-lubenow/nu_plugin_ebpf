@@ -169,9 +169,11 @@ impl ProbeContext {
     pub(crate) fn socket_ref_context_layout(&self) -> Option<SocketContextLayout> {
         match self.probe_type {
             EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
+            EbpfProgramType::CgroupSockAddr => Some(SocketContextLayout::SockAddr),
             EbpfProgramType::CgroupSockopt => Some(SocketContextLayout::CgroupSockopt),
             EbpfProgramType::SkLookup => Some(SocketContextLayout::SkLookup),
             EbpfProgramType::SkMsg => Some(SocketContextLayout::SkMsg),
+            EbpfProgramType::SockOps => Some(SocketContextLayout::SockOps),
             _ => None,
         }
     }
