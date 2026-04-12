@@ -601,6 +601,18 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         Some("helper 'bpf_sock_ops_cb_flags_set' is only valid in sock_ops programs".to_string())
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::LoadHdrOpt),
+        Some("helper 'bpf_load_hdr_opt' is only valid in sock_ops programs".to_string())
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::StoreHdrOpt),
+        Some("helper 'bpf_store_hdr_opt' is only valid in sock_ops programs".to_string())
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::ReserveHdrOpt),
+        Some("helper 'bpf_reserve_hdr_opt' is only valid in sock_ops programs".to_string())
+    );
+    assert_eq!(
         EbpfProgramType::CgroupSysctl.helper_call_error(BpfHelper::SysctlGetCurrentValue),
         None
     );

@@ -106,6 +106,12 @@ pub enum BpfHelper {
     GetNetnsCookie = 122,
     /// u64 bpf_ktime_get_boot_ns(void)
     KtimeGetBootNs = 125,
+    /// long bpf_load_hdr_opt(skops, searchby_res, len, flags)
+    LoadHdrOpt = 142,
+    /// long bpf_store_hdr_opt(skops, from, len, flags)
+    StoreHdrOpt = 143,
+    /// long bpf_reserve_hdr_opt(skops, len, flags)
+    ReserveHdrOpt = 144,
     /// int bpf_perf_event_output(ctx, map, flags, data, size)
     PerfEventOutput = 25,
     /// long bpf_get_stackid(ctx, map, flags)
@@ -236,6 +242,9 @@ impl BpfHelper {
             BpfHelper::SockOpsCbFlagsSet => "bpf_sock_ops_cb_flags_set",
             BpfHelper::GetNetnsCookie => "bpf_get_netns_cookie",
             BpfHelper::KtimeGetBootNs => "bpf_ktime_get_boot_ns",
+            BpfHelper::LoadHdrOpt => "bpf_load_hdr_opt",
+            BpfHelper::StoreHdrOpt => "bpf_store_hdr_opt",
+            BpfHelper::ReserveHdrOpt => "bpf_reserve_hdr_opt",
             BpfHelper::PerfEventOutput => "bpf_perf_event_output",
             BpfHelper::GetStackId => "bpf_get_stackid",
             BpfHelper::SkLookupTcp => "bpf_sk_lookup_tcp",
@@ -323,6 +332,9 @@ impl BpfHelper {
             "sock_ops_cb_flags_set" => Some(Self::SockOpsCbFlagsSet),
             "get_netns_cookie" => Some(Self::GetNetnsCookie),
             "ktime_get_boot_ns" => Some(Self::KtimeGetBootNs),
+            "load_hdr_opt" => Some(Self::LoadHdrOpt),
+            "store_hdr_opt" => Some(Self::StoreHdrOpt),
+            "reserve_hdr_opt" => Some(Self::ReserveHdrOpt),
             "perf_event_output" => Some(Self::PerfEventOutput),
             "get_stackid" => Some(Self::GetStackId),
             "sk_lookup_tcp" => Some(Self::SkLookupTcp),

@@ -581,6 +581,66 @@ fn test_verify_mir_for_program_sock_ops_cb_flags_set_rejects_invalid_program() {
 }
 
 #[test]
+fn test_verify_mir_for_program_sock_ops_hdr_opt_helpers_reject_invalid_program() {
+    for helper in [
+        BpfHelper::LoadHdrOpt,
+        BpfHelper::StoreHdrOpt,
+        BpfHelper::ReserveHdrOpt,
+    ] {
+        let (mut func, entry) = new_mir_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let args = match helper {
+            BpfHelper::LoadHdrOpt | BpfHelper::StoreHdrOpt => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+            ],
+            BpfHelper::ReserveHdrOpt => {
+                vec![MirValue::VReg(ctx), MirValue::Const(16), MirValue::Const(0)]
+            }
+            _ => unreachable!(),
+        };
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args,
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected sock_ops hdr-opt helper program-surface error");
+        assert!(err.iter().any(|e| e.message.contains(&format!(
+            "helper '{}' is only valid in sock_ops programs",
+            helper.name()
+        ))));
+    }
+}
+
+#[test]
 fn test_verify_mir_helper_redirect_neigh_requires_zero_flags() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();
@@ -5510,6 +5570,62 @@ fn test_verify_mir_helper_sock_ops_cb_flags_set_accepts_sock_ops_context() {
     let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
     verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect("expected sock_ops_cb_flags_set helper to verify on sock_ops");
+}
+
+#[test]
+fn test_verify_mir_helper_sock_ops_hdr_opt_helpers_accept_sock_ops_context() {
+    for helper in [
+        BpfHelper::LoadHdrOpt,
+        BpfHelper::StoreHdrOpt,
+        BpfHelper::ReserveHdrOpt,
+    ] {
+        let (mut func, entry) = new_mir_function();
+
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let args = match helper {
+            BpfHelper::LoadHdrOpt | BpfHelper::StoreHdrOpt => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+            ],
+            BpfHelper::ReserveHdrOpt => {
+                vec![MirValue::VReg(ctx), MirValue::Const(16), MirValue::Const(0)]
+            }
+            _ => unreachable!(),
+        };
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args,
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected sock_ops hdr-opt helpers to verify on sock_ops");
+    }
 }
 
 #[test]

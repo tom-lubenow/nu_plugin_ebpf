@@ -308,8 +308,12 @@ Context parameter syntax (recommended):
     sock_ops callbacks. `ctx.sk` uses the same typed `bpf_sock` projection
     model as `cgroup_sock`, `cgroup_sockopt`, `cgroup_sock_addr`, `sk_lookup`,
     and `sk_msg`. Modeled sock_ops helpers also use the ordinary helper
-    surface here, including `bpf_getsockopt`, `bpf_setsockopt`, and
-    `bpf_sock_ops_cb_flags_set`.
+    surface here, including `bpf_getsockopt`, `bpf_setsockopt`,
+    `bpf_sock_ops_cb_flags_set`, and the TCP header-option helpers
+    `bpf_load_hdr_opt`, `bpf_store_hdr_opt`, and `bpf_reserve_hdr_opt`.
+    The compiler currently models the sock_ops program surface plus
+    pointer/size and zero-flag constraints for those header-option helpers,
+    while callback-op-specific verifier restrictions still remain kernel-enforced.
 
   sk_msg fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

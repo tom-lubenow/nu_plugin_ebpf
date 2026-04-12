@@ -884,6 +884,14 @@ impl EbpfProgramType {
                 "helper '{}' is only valid in sock_ops programs",
                 helper.name()
             )),
+            BpfHelper::LoadHdrOpt | BpfHelper::StoreHdrOpt | BpfHelper::ReserveHdrOpt
+                if *self != EbpfProgramType::SockOps =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in sock_ops programs",
+                    helper.name()
+                ))
+            }
             BpfHelper::SysctlGetName
             | BpfHelper::SysctlGetCurrentValue
             | BpfHelper::SysctlGetNewValue

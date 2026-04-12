@@ -486,6 +486,53 @@ fn test_verify_mir_helper_redirect_peer_requires_zero_flags() {
 }
 
 #[test]
+fn test_verify_mir_helper_store_hdr_opt_requires_zero_flags() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::StoreHdrOpt as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(16),
+                MirValue::Const(1),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected store_hdr_opt flags error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_store_hdr_opt' requires arg3 = 0")
+    }));
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_redirect_peer_rejects_tc_egress() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

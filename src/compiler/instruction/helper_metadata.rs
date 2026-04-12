@@ -35,6 +35,9 @@ impl BpfHelper {
             59 => Some(Self::SockOpsCbFlagsSet),
             122 => Some(Self::GetNetnsCookie),
             125 => Some(Self::KtimeGetBootNs),
+            142 => Some(Self::LoadHdrOpt),
+            143 => Some(Self::StoreHdrOpt),
+            144 => Some(Self::ReserveHdrOpt),
             25 => Some(Self::PerfEventOutput),
             27 => Some(Self::GetStackId),
             84 => Some(Self::SkLookupTcp),
@@ -200,6 +203,18 @@ impl BpfHelper {
             BpfHelper::SockOpsCbFlagsSet => HelperSignature {
                 min_args: 2,
                 max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::LoadHdrOpt | BpfHelper::StoreHdrOpt => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::ReserveHdrOpt => HelperSignature {
+                min_args: 3,
+                max_args: 3,
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
@@ -419,6 +434,8 @@ impl BpfHelper {
         match self {
             BpfHelper::RedirectNeigh => Some((3, "helper 'bpf_redirect_neigh' requires arg3 = 0")),
             BpfHelper::RedirectPeer => Some((1, "helper 'bpf_redirect_peer' requires arg1 = 0")),
+            BpfHelper::StoreHdrOpt => Some((3, "helper 'bpf_store_hdr_opt' requires arg3 = 0")),
+            BpfHelper::ReserveHdrOpt => Some((2, "helper 'bpf_reserve_hdr_opt' requires arg2 = 0")),
             _ => None,
         }
     }

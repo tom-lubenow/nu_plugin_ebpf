@@ -536,6 +536,56 @@ fn test_type_error_sock_ops_cb_flags_set_rejects_invalid_program() {
 }
 
 #[test]
+fn test_type_error_sock_ops_hdr_opt_helpers_reject_invalid_program() {
+    for helper in [
+        BpfHelper::LoadHdrOpt,
+        BpfHelper::StoreHdrOpt,
+        BpfHelper::ReserveHdrOpt,
+    ] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let args = match helper {
+            BpfHelper::LoadHdrOpt | BpfHelper::StoreHdrOpt => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+            ],
+            BpfHelper::ReserveHdrOpt => {
+                vec![MirValue::VReg(ctx), MirValue::Const(16), MirValue::Const(0)]
+            }
+            _ => unreachable!(),
+        };
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(Some(ProbeContext::new(
+            EbpfProgramType::Kprobe,
+            "ksys_read",
+        )));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected sock_ops hdr-opt helper to be rejected");
+        assert!(errs.iter().any(|e| e.message.contains(&format!(
+            "helper '{}' is only valid in sock_ops programs",
+            helper.name()
+        ))));
+    }
+}
+
+#[test]
 fn test_infer_sockopt_helpers_in_supported_socket_contexts() {
     for (helper, probe_ctx) in [
         (
@@ -583,6 +633,53 @@ fn test_infer_sockopt_helpers_in_supported_socket_contexts() {
 }
 
 #[test]
+fn test_infer_sock_ops_hdr_opt_helpers_in_sock_ops_context() {
+    for helper in [
+        BpfHelper::LoadHdrOpt,
+        BpfHelper::StoreHdrOpt,
+        BpfHelper::ReserveHdrOpt,
+    ] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let args = match helper {
+            BpfHelper::LoadHdrOpt | BpfHelper::StoreHdrOpt => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+            ],
+            BpfHelper::ReserveHdrOpt => {
+                vec![MirValue::VReg(ctx), MirValue::Const(16), MirValue::Const(0)]
+            }
+            _ => unreachable!(),
+        };
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(Some(ProbeContext::new(
+            EbpfProgramType::SockOps,
+            "/sys/fs/cgroup",
+        )));
+        let types = ti
+            .infer(&func)
+            .expect("expected sock_ops hdr-opt helper in sock_ops context");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
 fn test_infer_sock_ops_cb_flags_set_in_sock_ops_context() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
@@ -608,6 +705,43 @@ fn test_infer_sock_ops_cb_flags_set_in_sock_ops_context() {
         .infer(&func)
         .expect("expected sock_ops_cb_flags_set helper in sock_ops context");
     assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_store_hdr_opt_helper_requires_zero_flags() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::StoreHdrOpt as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(16),
+            MirValue::Const(1),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(Some(ProbeContext::new(
+        EbpfProgramType::SockOps,
+        "/sys/fs/cgroup",
+    )));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_store_hdr_opt flags to require zero");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_store_hdr_opt' requires arg3 = 0")
+    }));
 }
 
 #[test]

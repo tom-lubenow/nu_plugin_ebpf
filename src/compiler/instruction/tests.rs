@@ -79,6 +79,18 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::SockOpsCbFlagsSet)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_load_hdr_opt"),
+        Some(BpfHelper::LoadHdrOpt)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_store_hdr_opt"),
+        Some(BpfHelper::StoreHdrOpt)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_reserve_hdr_opt"),
+        Some(BpfHelper::ReserveHdrOpt)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_bind"),
         Some(BpfHelper::Bind)
     ));
@@ -294,6 +306,35 @@ fn test_helper_signatures_setsockopt_and_getsockopt() {
     assert_eq!(cb_flags_sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(cb_flags_sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(cb_flags_sig.ret_kind, HelperRetKind::Scalar);
+
+    let load_hdr_sig = HelperSignature::for_id(BpfHelper::LoadHdrOpt as u32)
+        .expect("expected bpf_load_hdr_opt helper signature");
+    assert_eq!(load_hdr_sig.min_args, 4);
+    assert_eq!(load_hdr_sig.max_args, 4);
+    assert_eq!(load_hdr_sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(load_hdr_sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(load_hdr_sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(load_hdr_sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(load_hdr_sig.ret_kind, HelperRetKind::Scalar);
+
+    let store_hdr_sig = HelperSignature::for_id(BpfHelper::StoreHdrOpt as u32)
+        .expect("expected bpf_store_hdr_opt helper signature");
+    assert_eq!(store_hdr_sig.min_args, 4);
+    assert_eq!(store_hdr_sig.max_args, 4);
+    assert_eq!(store_hdr_sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(store_hdr_sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(store_hdr_sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(store_hdr_sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(store_hdr_sig.ret_kind, HelperRetKind::Scalar);
+
+    let reserve_hdr_sig = HelperSignature::for_id(BpfHelper::ReserveHdrOpt as u32)
+        .expect("expected bpf_reserve_hdr_opt helper signature");
+    assert_eq!(reserve_hdr_sig.min_args, 3);
+    assert_eq!(reserve_hdr_sig.max_args, 3);
+    assert_eq!(reserve_hdr_sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(reserve_hdr_sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(reserve_hdr_sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(reserve_hdr_sig.ret_kind, HelperRetKind::Scalar);
 }
 
 #[test]

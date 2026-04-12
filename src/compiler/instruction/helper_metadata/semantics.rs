@@ -250,6 +250,40 @@ impl BpfHelper {
             },
         ];
 
+        const LOAD_HDR_OPT_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper load_hdr_opt ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper load_hdr_opt searchby_res",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
+
+        const STORE_HDR_OPT_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper store_hdr_opt ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper store_hdr_opt from",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
+
         const TRACE_PRINTK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 0,
             op: "helper trace_printk fmt",
@@ -884,6 +918,27 @@ impl BpfHelper {
                     size_from_arg: None,
                 }],
                 positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::LoadHdrOpt => HelperSemantics {
+                ptr_arg_rules: LOAD_HDR_OPT_RULES,
+                positive_size_args: &[2],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::StoreHdrOpt => HelperSemantics {
+                ptr_arg_rules: STORE_HDR_OPT_RULES,
+                positive_size_args: &[2],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::ReserveHdrOpt => HelperSemantics {
+                ptr_arg_rules: &[HelperPtrArgRule {
+                    arg_idx: 0,
+                    op: "helper reserve_hdr_opt ctx",
+                    allowed: KERNEL,
+                    fixed_size: None,
+                    size_from_arg: None,
+                }],
+                positive_size_args: &[1],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::Bind => HelperSemantics {
