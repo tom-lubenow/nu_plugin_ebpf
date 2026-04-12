@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::compiler::ctx_field_schema::static_ctx_field_type_spec;
 use crate::compiler::elf::ProbeContext;
 use crate::compiler::mir::{
     AddressSpace, BinOpKind, CtxField, MapKind, MapRef, MirFunction, MirInst, MirProgram, MirType,
@@ -169,7 +168,10 @@ fn recover_ctx_field_hint(
         return Some(pointer_hint(AddressSpace::Stack));
     }
 
-    if let Some(spec) = static_ctx_field_type_spec(field) {
+    let static_spec = probe_ctx
+        .and_then(|ctx| ctx.ctx_field_type_spec(field))
+        .or_else(|| ProbeContext::static_ctx_field_type_spec(field));
+    if let Some(spec) = static_spec {
         return Some(spec.runtime_ty);
     }
 
@@ -547,7 +549,6 @@ pub(crate) fn recover_optimized_mir_type_hints(
 mod tests {
     use super::*;
     use crate::compiler::EbpfProgramType;
-    use crate::compiler::ctx_field_schema::synthetic_bpf_sock_type;
     use crate::compiler::mir::StackSlotKind;
     use crate::kernel_btf::KernelBtf;
 
@@ -618,7 +619,7 @@ mod tests {
 
     #[test]
     fn test_synthetic_bpf_sock_type_uses_uapi_offsets() {
-        let MirType::Struct { fields, .. } = synthetic_bpf_sock_type() else {
+        let MirType::Struct { fields, .. } = ProbeContext::synthetic_socket_type() else {
             panic!("synthetic_bpf_sock_type should return a struct");
         };
 

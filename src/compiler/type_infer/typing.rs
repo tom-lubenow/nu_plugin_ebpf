@@ -1,6 +1,5 @@
 use super::*;
 use crate::compiler::ProgramValueAccess;
-use crate::compiler::ctx_field_schema::static_ctx_field_type_spec;
 use crate::kernel_btf::{KernelBtf, TypeInfo};
 
 impl<'a> TypeInference<'a> {
@@ -246,7 +245,12 @@ impl<'a> TypeInference<'a> {
     }
 
     pub(super) fn ctx_field_type(&mut self, field: &CtxField) -> HMType {
-        if let Some(spec) = static_ctx_field_type_spec(field) {
+        let static_spec = self
+            .probe_ctx
+            .as_ref()
+            .and_then(|ctx| ctx.ctx_field_type_spec(field))
+            .or_else(|| ProbeContext::static_ctx_field_type_spec(field));
+        if let Some(spec) = static_spec {
             return HMType::from_mir_type(&spec.runtime_ty);
         }
 

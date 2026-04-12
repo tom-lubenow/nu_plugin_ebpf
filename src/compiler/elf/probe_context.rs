@@ -3,15 +3,38 @@ use super::{
     ProgramValueAccess,
 };
 use crate::compiler::context_schema::resolve_probe_ctx_field_name;
+#[cfg(test)]
+use crate::compiler::ctx_field_schema::synthetic_bpf_sock_type;
+use crate::compiler::ctx_field_schema::{
+    ContextFieldProjectionSpec, ContextFieldTypeSpec, static_ctx_field_projection_spec,
+    static_ctx_field_type_spec,
+};
 use crate::compiler::hindley_milner::HMType;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::CtxStoreTarget;
+#[cfg(test)]
+use crate::compiler::mir::MirType;
 use crate::kernel_btf::{
     KernelBtf, TrampolineFieldProjection, TrampolineFieldSelector, TrampolineValueSpec, TypeInfo,
 };
 use crate::program_spec::ProgramSpec;
 
 impl ProbeContext {
+    pub(crate) fn static_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
+        static_ctx_field_type_spec(field)
+    }
+
+    pub(crate) fn static_ctx_field_projection_spec(
+        field: &CtxField,
+    ) -> Option<ContextFieldProjectionSpec> {
+        static_ctx_field_projection_spec(field)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn synthetic_socket_type() -> MirType {
+        synthetic_bpf_sock_type()
+    }
+
     pub(crate) fn parsed_program_spec(&self) -> Option<ProgramSpec> {
         ProgramSpec::from_program_type_target(self.probe_type, &self.target).ok()
     }
@@ -72,6 +95,17 @@ impl ProbeContext {
     /// Returns true if this is a tracepoint
     pub fn is_tracepoint(&self) -> bool {
         matches!(self.probe_type.target_kind(), ProgramTargetKind::Tracepoint)
+    }
+
+    pub(crate) fn ctx_field_type_spec(&self, field: &CtxField) -> Option<ContextFieldTypeSpec> {
+        Self::static_ctx_field_type_spec(field)
+    }
+
+    pub(crate) fn ctx_field_projection_spec(
+        &self,
+        field: &CtxField,
+    ) -> Option<ContextFieldProjectionSpec> {
+        Self::static_ctx_field_projection_spec(field)
     }
 
     /// Get tracepoint category and name

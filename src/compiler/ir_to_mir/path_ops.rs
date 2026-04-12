@@ -1,7 +1,4 @@
 use super::*;
-use crate::compiler::ctx_field_schema::{
-    static_ctx_field_projection_spec, static_ctx_field_type_spec,
-};
 use crate::compiler::mir::AddressSpace;
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TrampolineValueKind, TypeInfo};
 
@@ -336,7 +333,10 @@ impl<'a> HirToMirLowering<'a> {
             ctx.validate_ctx_field_access(&ctx_field)?;
         }
         let trampoline_value_spec = self.trampoline_value_spec(&ctx_field)?;
-        let static_ctx_projection_spec = static_ctx_field_projection_spec(&ctx_field);
+        let static_ctx_projection_spec = self
+            .probe_ctx
+            .and_then(|ctx| ctx.ctx_field_projection_spec(&ctx_field))
+            .or_else(|| ProbeContext::static_ctx_field_projection_spec(&ctx_field));
 
         if !remaining_members.is_empty() {
             if let Some(spec) = static_ctx_projection_spec.as_ref() {
@@ -610,7 +610,10 @@ impl<'a> HirToMirLowering<'a> {
             slot,
         });
 
-        let static_ctx_field_types = static_ctx_field_type_spec(&ctx_field);
+        let static_ctx_field_types = self
+            .probe_ctx
+            .and_then(|ctx| ctx.ctx_field_type_spec(&ctx_field))
+            .or_else(|| ProbeContext::static_ctx_field_type_spec(&ctx_field));
         let (field_type, runtime_type_hint) = match &ctx_field {
             CtxField::Arg(_)
                 if self
