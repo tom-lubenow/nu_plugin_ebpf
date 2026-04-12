@@ -56,6 +56,7 @@ impl<'a> HirToMirLowering<'a> {
         base_vreg: VReg,
         base_runtime_ty: &MirType,
         idx: MirValue,
+        root_ctx_field: Option<&CtxField>,
     ) -> Result<MirType, CompileError> {
         let dst_vreg = self.get_vreg(dst_reg);
         let path_desc = match &idx {
@@ -145,7 +146,25 @@ impl<'a> HirToMirLowering<'a> {
 
         match address_space {
             AddressSpace::Kernel | AddressSpace::User => {
-                if matches!(element_ty, MirType::Array { .. } | MirType::Struct { .. }) {
+                if *address_space == AddressSpace::Kernel
+                    && let Some(end_field) =
+                        root_ctx_field.and_then(CtxField::bounded_context_end_field)
+                {
+                    if matches!(element_ty, MirType::Array { .. } | MirType::Struct { .. }) {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "numeric get on bounded context buffers currently supports only scalar elements, got {:?}",
+                            element_ty
+                        )));
+                    }
+                    self.emit_context_buffer_guarded_load(
+                        dst_vreg,
+                        element_ptr_vreg,
+                        0,
+                        &element_ty,
+                        end_field,
+                        &path_desc,
+                    )?;
+                } else if matches!(element_ty, MirType::Array { .. } | MirType::Struct { .. }) {
                     let projected_slot = self.func.alloc_stack_slot(
                         align_to_eight(element_ty.size()),
                         8,
@@ -237,6 +256,7 @@ impl<'a> HirToMirLowering<'a> {
         let meta = self.get_or_create_metadata(dst_reg);
         meta.is_context = false;
         meta.field_type = Some(element_ty.clone());
+        meta.root_ctx_field = root_ctx_field.cloned();
 
         Ok(element_ty)
     }
@@ -296,11 +316,13 @@ impl<'a> HirToMirLowering<'a> {
                 &base_runtime_ty,
                 &path.members,
                 &path_desc,
+                None,
                 projected_semantics.as_ref(),
             )?;
             let meta = self.get_or_create_metadata(src_dst);
             meta.is_context = false;
             meta.field_type = Some(projected_ty);
+            meta.root_ctx_field = None;
             meta.annotated_semantics = projected_semantics;
             meta.source_var = None;
             return Ok(());
@@ -352,11 +374,13 @@ impl<'a> HirToMirLowering<'a> {
                     &base_ty,
                     remaining_members,
                     &Self::typed_value_path_desc(&path.members),
+                    Some(&ctx_field),
                     None,
                 )?;
                 let meta = self.get_or_create_metadata(src_dst);
                 meta.is_context = false;
                 meta.field_type = Some(projected_ty);
+                meta.root_ctx_field = Some(ctx_field.clone());
                 meta.source_var = None;
                 return Ok(());
             }
@@ -397,11 +421,13 @@ impl<'a> HirToMirLowering<'a> {
                     &root_runtime_ty,
                     remaining_members,
                     &Self::typed_value_path_desc(&path.members),
+                    Some(&ctx_field),
                     None,
                 )?;
                 let meta = self.get_or_create_metadata(src_dst);
                 meta.is_context = false;
                 meta.field_type = Some(projected_ty);
+                meta.root_ctx_field = Some(ctx_field.clone());
                 meta.source_var = None;
                 return Ok(());
             }
@@ -493,6 +519,7 @@ impl<'a> HirToMirLowering<'a> {
             let meta = self.get_or_create_metadata(src_dst);
             meta.is_context = false;
             meta.field_type = Some(projected_ty);
+            meta.root_ctx_field = Some(ctx_field.clone());
             meta.source_var = None;
             return Ok(());
         }
@@ -639,6 +666,7 @@ impl<'a> HirToMirLowering<'a> {
         let meta = self.get_or_create_metadata(src_dst);
         meta.is_context = false;
         meta.field_type = Some(field_type);
+        meta.root_ctx_field = Some(ctx_field);
         meta.source_var = None;
 
         Ok(())

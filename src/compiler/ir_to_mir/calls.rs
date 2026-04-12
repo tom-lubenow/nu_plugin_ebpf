@@ -1098,6 +1098,11 @@ impl<'a> HirToMirLowering<'a> {
                 let input_reg = self
                     .pipeline_input_reg
                     .or(src_dst_had_value.then_some(src_dst));
+                let result_vreg = if src_dst_had_value {
+                    self.assign_fresh_vreg(src_dst)
+                } else {
+                    dst_vreg
+                };
                 let (idx_vreg, idx_reg) =
                     self.positional_args.first().copied().ok_or_else(|| {
                         CompileError::UnsupportedInstruction(
@@ -1129,7 +1134,7 @@ impl<'a> HirToMirLowering<'a> {
                 if let Some(meta) = input_meta {
                     if meta.list_buffer.is_some() {
                         self.emit(MirInst::ListGet {
-                            dst: dst_vreg,
+                            dst: result_vreg,
                             list: input_vreg,
                             idx: idx.clone(),
                         });
@@ -1159,11 +1164,15 @@ impl<'a> HirToMirLowering<'a> {
 
                     match &base_runtime_ty {
                         MirType::Ptr { .. } => {
+                            let root_ctx_field = self
+                                .get_metadata(input_reg)
+                                .and_then(|meta| meta.root_ctx_field.clone());
                             self.lower_dynamic_typed_numeric_get(
                                 src_dst,
                                 input_vreg,
                                 &base_runtime_ty,
                                 idx,
+                                root_ctx_field.as_ref(),
                             )?;
                         }
                         _ => {

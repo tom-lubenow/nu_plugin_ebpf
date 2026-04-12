@@ -18,10 +18,28 @@ pub(super) fn apply_load_inst(
     errors: &mut Vec<VerifierTypeError>,
 ) {
     let access_size = types.get(&dst).map(|ty| ty.size()).unwrap_or(8);
+    if let VerifierType::Ptr {
+        space: AddressSpace::Kernel,
+        bounds,
+        ..
+    } = state.get(ptr)
+    {
+        match bounds.map(|bounds| bounds.origin()) {
+            Some(PtrOrigin::ContextBuffer(_)) => {}
+            _ => errors.push(VerifierTypeError::new(
+                "load on kernel pointers requires bounded context-buffer provenance",
+            )),
+        }
+    }
     check_ptr_access(
         ptr,
         "load",
-        &[AddressSpace::Stack, AddressSpace::Map, AddressSpace::Packet],
+        &[
+            AddressSpace::Stack,
+            AddressSpace::Map,
+            AddressSpace::Packet,
+            AddressSpace::Kernel,
+        ],
         offset,
         access_size,
         state,
@@ -42,10 +60,23 @@ pub(super) fn apply_store_inst(
     errors: &mut Vec<VerifierTypeError>,
 ) {
     let access_size = ty.size();
+    if let VerifierType::Ptr {
+        space: AddressSpace::Kernel,
+        bounds,
+        ..
+    } = state.get(ptr)
+    {
+        match bounds.map(|bounds| bounds.origin()) {
+            Some(PtrOrigin::ContextBuffer(_)) => {}
+            _ => errors.push(VerifierTypeError::new(
+                "store on kernel pointers requires bounded context-buffer provenance",
+            )),
+        }
+    }
     check_ptr_access(
         ptr,
         "store",
-        &[AddressSpace::Stack, AddressSpace::Map],
+        &[AddressSpace::Stack, AddressSpace::Map, AddressSpace::Kernel],
         offset,
         access_size,
         state,
@@ -198,6 +229,34 @@ pub(super) fn apply_load_ctx_field_inst(
             }
             VerifierType::Ptr {
                 space: AddressSpace::Packet,
+                ..
+            } => {}
+            _ => {}
+        }
+    }
+    if matches!(field, CtxField::SockoptOptval) {
+        match ty {
+            VerifierType::Ptr {
+                space: AddressSpace::Kernel,
+                nullability,
+                bounds: None,
+                ..
+            } => {
+                ty = VerifierType::Ptr {
+                    space: AddressSpace::Kernel,
+                    nullability,
+                    bounds: Some(PtrBounds::new(
+                        PtrOrigin::ContextBuffer(dst),
+                        0,
+                        0,
+                        UNKNOWN_CONTEXT_BUFFER_LIMIT,
+                    )),
+                    ringbuf_ref: None,
+                    kfunc_ref: None,
+                };
+            }
+            VerifierType::Ptr {
+                space: AddressSpace::Kernel,
                 ..
             } => {}
             _ => {}

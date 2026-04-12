@@ -24,9 +24,11 @@ pub(super) enum PtrOrigin {
     Stack(StackSlotId),
     Map,
     Packet(VReg),
+    ContextBuffer(VReg),
 }
 
 pub(super) const UNKNOWN_PACKET_LIMIT: i64 = i64::MAX / 4;
+pub(super) const UNKNOWN_CONTEXT_BUFFER_LIMIT: i64 = i64::MAX / 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct PtrBounds {
@@ -108,6 +110,10 @@ pub(super) enum Guard {
         op: BinOpKind,
     },
     PacketEnd {
+        ptr: VReg,
+        op: BinOpKind,
+    },
+    ContextBufferEnd {
         ptr: VReg,
         op: BinOpKind,
     },
@@ -363,6 +369,36 @@ impl VerifierState {
                 continue;
             }
             let next_limit = if bounds.limit() == UNKNOWN_PACKET_LIMIT {
+                safe_limit
+            } else {
+                bounds.limit().max(safe_limit)
+            };
+            *reg = VerifierType::Ptr {
+                space,
+                nullability,
+                bounds: Some(bounds.with_limit(next_limit)),
+                ringbuf_ref,
+                kfunc_ref,
+            };
+        }
+    }
+
+    pub(super) fn refine_context_buffer_prefix_limit(&mut self, root: VReg, safe_limit: i64) {
+        for reg in &mut self.regs {
+            let VerifierType::Ptr {
+                space,
+                nullability,
+                bounds: Some(bounds),
+                ringbuf_ref,
+                kfunc_ref,
+            } = *reg
+            else {
+                continue;
+            };
+            if space != AddressSpace::Kernel || bounds.origin() != PtrOrigin::ContextBuffer(root) {
+                continue;
+            }
+            let next_limit = if bounds.limit() == UNKNOWN_CONTEXT_BUFFER_LIMIT {
                 safe_limit
             } else {
                 bounds.limit().max(safe_limit)

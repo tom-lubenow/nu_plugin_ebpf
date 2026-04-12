@@ -10,6 +10,115 @@ fn new_mir_function() -> (MirFunction, BlockId) {
     (func, entry)
 }
 
+fn kernel_u8_ptr() -> MirType {
+    MirType::Ptr {
+        pointee: Box::new(MirType::U8),
+        address_space: AddressSpace::Kernel,
+    }
+}
+
+fn make_sockopt_optval_store_function(
+    with_end_guard: bool,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let guard_block = func.alloc_block();
+    let store_block = func.alloc_block();
+    let join_block = func.alloc_block();
+
+    let optval = func.alloc_vreg();
+    let non_null = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: optval,
+            field: CtxField::SockoptOptval,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(optval),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: non_null,
+        if_true: guard_block,
+        if_false: join_block,
+    };
+
+    if with_end_guard {
+        let optval_end = func.alloc_vreg();
+        let access_end = func.alloc_vreg();
+        let len_ok = func.alloc_vreg();
+
+        func.block_mut(guard_block)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: optval_end,
+                field: CtxField::SockoptOptvalEnd,
+                slot: None,
+            });
+        func.block_mut(guard_block)
+            .instructions
+            .push(MirInst::BinOp {
+                dst: access_end,
+                op: BinOpKind::Add,
+                lhs: MirValue::VReg(optval),
+                rhs: MirValue::Const(1),
+            });
+        func.block_mut(guard_block)
+            .instructions
+            .push(MirInst::BinOp {
+                dst: len_ok,
+                op: BinOpKind::Le,
+                lhs: MirValue::VReg(access_end),
+                rhs: MirValue::VReg(optval_end),
+            });
+        func.block_mut(guard_block).terminator = MirInst::Branch {
+            cond: len_ok,
+            if_true: store_block,
+            if_false: join_block,
+        };
+    } else {
+        func.block_mut(guard_block).terminator = MirInst::Jump {
+            target: store_block,
+        };
+    }
+
+    func.block_mut(store_block)
+        .instructions
+        .push(MirInst::Store {
+            ptr: optval,
+            offset: 0,
+            val: MirValue::Const(42),
+            ty: MirType::U8,
+        });
+    func.block_mut(store_block).terminator = MirInst::Jump { target: join_block };
+    func.block_mut(join_block).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(optval, kernel_u8_ptr());
+    if with_end_guard {
+        let block = func.block(guard_block);
+        for inst in &block.instructions {
+            match inst {
+                MirInst::LoadCtxField { dst, field, .. }
+                    if matches!(field, CtxField::SockoptOptvalEnd) =>
+                {
+                    types.insert(*dst, kernel_u8_ptr());
+                }
+                MirInst::BinOp { dst, op, .. } if matches!(op, BinOpKind::Add) => {
+                    types.insert(*dst, kernel_u8_ptr());
+                }
+                _ => {}
+            }
+        }
+    }
+
+    (func, types)
+}
+
 fn find_void_fexit_candidate() -> String {
     let mut attempts = Vec::new();
     for func_name in ["wake_up_new_task", "security_file_open", "__audit_free"] {
@@ -218,6 +327,23 @@ fn test_verify_mir_for_probe_context_accepts_sockopt_optlen_store_on_get_hook() 
     let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
     verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
         .expect("expected optlen store to be accepted on cgroup_sockopt:get");
+}
+
+#[test]
+fn test_verify_mir_accepts_guarded_sockopt_optval_byte_store() {
+    let (func, types) = make_sockopt_optval_store_function(true);
+    verify_mir(&func, &types).expect("expected guarded sockopt optval store to verify");
+}
+
+#[test]
+fn test_verify_mir_rejects_unguarded_sockopt_optval_byte_store() {
+    let (func, types) = make_sockopt_optval_store_function(false);
+    let err =
+        verify_mir(&func, &types).expect_err("expected unguarded sockopt optval store to fail");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("store on bounded context buffers requires a preceding end-pointer guard")
+    }));
 }
 
 #[test]

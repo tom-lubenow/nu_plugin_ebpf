@@ -157,6 +157,30 @@ pub(in crate::compiler::verifier_types) fn refine_on_branch(
                 }
                 next.refine_packet_prefix_limit(root, safe_limit);
             }
+            Guard::ContextBufferEnd { ptr, op } => {
+                let Some(effective_op) = effective_branch_compare(op, take_true) else {
+                    return next;
+                };
+                if !matches!(effective_op, BinOpKind::Le | BinOpKind::Lt) {
+                    return next;
+                }
+                let VerifierType::Ptr {
+                    space: AddressSpace::Kernel,
+                    bounds: Some(bounds),
+                    ..
+                } = next.get(ptr)
+                else {
+                    return next;
+                };
+                let PtrOrigin::ContextBuffer(root) = bounds.origin() else {
+                    return next;
+                };
+                let safe_limit = bounds.max().saturating_sub(1);
+                if safe_limit < 0 {
+                    return next;
+                }
+                next.refine_context_buffer_prefix_limit(root, safe_limit);
+            }
         }
     }
     next

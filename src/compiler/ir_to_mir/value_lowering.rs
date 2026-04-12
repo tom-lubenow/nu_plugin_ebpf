@@ -374,6 +374,7 @@ impl<'a> HirToMirLowering<'a> {
                 &path,
                 &field.name,
                 None,
+                None,
             )?;
             let field_semantics = record
                 .get(&field.name)

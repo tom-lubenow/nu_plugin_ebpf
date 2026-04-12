@@ -33,6 +33,15 @@ impl VccVerifier {
                         self.refine_packet_end_compare(&mut true_state, ptr_reg, op, true);
                         self.refine_packet_end_compare(&mut false_state, ptr_reg, op, false);
                     }
+                    VccCondRefinement::ContextBufferEnd { ptr_reg, op } => {
+                        self.refine_context_buffer_end_compare(&mut true_state, ptr_reg, op, true);
+                        self.refine_context_buffer_end_compare(
+                            &mut false_state,
+                            ptr_reg,
+                            op,
+                            false,
+                        );
+                    }
                     VccCondRefinement::ScalarCmpConst { reg, op, value } => {
                         self.refine_scalar_compare_const(&mut true_state, reg, op, value, true);
                         self.refine_scalar_compare_const(&mut false_state, reg, op, value, false);
@@ -122,6 +131,40 @@ impl VccVerifier {
             return;
         }
         state.refine_packet_prefix_limit(root, safe_limit);
+    }
+
+    pub(super) fn refine_context_buffer_end_compare(
+        &self,
+        state: &mut VccState,
+        ptr_reg: VccReg,
+        op: VccBinOp,
+        take_true: bool,
+    ) {
+        if !state.is_reachable() {
+            return;
+        }
+        let effective_op = if take_true {
+            Some(op)
+        } else {
+            Self::invert_compare(op)
+        };
+        let Some(effective_op) = effective_op else {
+            return;
+        };
+        if !matches!(effective_op, VccBinOp::Le | VccBinOp::Lt) {
+            return;
+        }
+        let Ok(VccValueType::Ptr(ptr)) = state.reg_type(ptr_reg) else {
+            return;
+        };
+        let (Some(root), Some(bounds)) = (ptr.context_buffer_root, ptr.bounds) else {
+            return;
+        };
+        let safe_limit = bounds.max.saturating_sub(1);
+        if safe_limit < 0 {
+            return;
+        }
+        state.refine_context_buffer_prefix_limit(root, safe_limit);
     }
 
     pub(super) fn refine_scalar_compare_const(

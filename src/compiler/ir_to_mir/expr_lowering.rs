@@ -326,6 +326,131 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    pub(super) fn emit_context_buffer_guarded_load(
+        &mut self,
+        dst_vreg: VReg,
+        base_ptr_vreg: VReg,
+        read_offset_bytes: usize,
+        load_ty: &MirType,
+        end_field: CtxField,
+        path_desc: &str,
+    ) -> Result<(), CompileError> {
+        if matches!(
+            load_ty,
+            MirType::Array { .. }
+                | MirType::Struct { .. }
+                | MirType::Ptr { .. }
+                | MirType::MapRef { .. }
+                | MirType::Unknown
+        ) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "bounded context-buffer load for '{}' requires a scalar element type, got {:?}",
+                path_desc, load_ty
+            )));
+        }
+
+        let access_size = i64::try_from(load_ty.size()).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "bounded context-buffer load for '{}' has unsupported size {}",
+                path_desc,
+                load_ty.size()
+            ))
+        })?;
+        if access_size <= 0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "bounded context-buffer load for '{}' requires positive size",
+                path_desc
+            )));
+        }
+
+        let ptr_ty = MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        };
+        self.vreg_type_hints.insert(dst_vreg, load_ty.clone());
+        self.emit(MirInst::Copy {
+            dst: dst_vreg,
+            src: MirValue::Const(0),
+        });
+
+        let non_null_cond_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: non_null_cond_vreg,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(base_ptr_vreg),
+            rhs: MirValue::Const(0),
+        });
+
+        let guard_block = self.func.alloc_block();
+        let load_block = self.func.alloc_block();
+        let join_block = self.func.alloc_block();
+        self.terminate(MirInst::Branch {
+            cond: non_null_cond_vreg,
+            if_true: guard_block,
+            if_false: join_block,
+        });
+
+        self.current_block = guard_block;
+        let read_ptr_vreg = if read_offset_bytes == 0 {
+            base_ptr_vreg
+        } else {
+            let read_ptr_vreg = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(read_ptr_vreg, ptr_ty.clone());
+            self.emit(MirInst::BinOp {
+                dst: read_ptr_vreg,
+                op: BinOpKind::Add,
+                lhs: MirValue::VReg(base_ptr_vreg),
+                rhs: MirValue::Const(i64::from(Self::trampoline_projection_offset_i32(
+                    read_offset_bytes,
+                    path_desc,
+                )?)),
+            });
+            read_ptr_vreg
+        };
+
+        let end_vreg = self.func.alloc_vreg();
+        self.vreg_type_hints.insert(end_vreg, ptr_ty.clone());
+        self.emit(MirInst::LoadCtxField {
+            dst: end_vreg,
+            field: end_field,
+            slot: None,
+        });
+
+        let access_end_vreg = self.func.alloc_vreg();
+        self.vreg_type_hints.insert(access_end_vreg, ptr_ty);
+        self.emit(MirInst::BinOp {
+            dst: access_end_vreg,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(read_ptr_vreg),
+            rhs: MirValue::Const(access_size),
+        });
+
+        let within_bounds_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: within_bounds_vreg,
+            op: BinOpKind::Le,
+            lhs: MirValue::VReg(access_end_vreg),
+            rhs: MirValue::VReg(end_vreg),
+        });
+        self.terminate(MirInst::Branch {
+            cond: within_bounds_vreg,
+            if_true: load_block,
+            if_false: join_block,
+        });
+
+        self.current_block = load_block;
+        self.emit(MirInst::Load {
+            dst: dst_vreg,
+            ptr: read_ptr_vreg,
+            offset: 0,
+            ty: load_ty.clone(),
+        });
+        self.terminate(MirInst::Jump { target: join_block });
+
+        self.current_block = join_block;
+        Ok(())
+    }
+
     pub(super) fn emit_packet_big_endian_scalar_normalize(
         &mut self,
         dst_vreg: VReg,
@@ -520,6 +645,7 @@ impl<'a> HirToMirLowering<'a> {
         base_runtime_ty: &MirType,
         path_members: &[PathMember],
         path_desc: &str,
+        root_ctx_field: Option<&CtxField>,
         projected_semantics: Option<&AnnotatedValueSemantics>,
     ) -> Result<MirType, CompileError> {
         let projected_by_ref =
@@ -1099,48 +1225,67 @@ impl<'a> HirToMirLowering<'a> {
                             }
                         }
                         AddressSpace::Kernel | AddressSpace::User => {
-                            let projected_slot = self.func.alloc_stack_slot(
-                                align_to_eight(next_ty.size()),
-                                8,
-                                StackSlotKind::Local,
-                            );
-                            self.record_stack_slot_type(projected_slot, next_ty.clone());
-                            self.emit_trampoline_probe_read_to_slot(
-                                *base_vreg,
-                                *address_space,
-                                field_offset,
-                                projected_slot,
-                                &next_ty,
-                                path_desc,
-                            )?;
-                            let loaded_vreg = if bitfield.is_some() {
-                                let storage_vreg = self.func.alloc_vreg();
-                                self.vreg_type_hints.insert(storage_vreg, next_ty.clone());
-                                self.emit(MirInst::LoadSlot {
-                                    dst: storage_vreg,
-                                    slot: projected_slot,
-                                    offset: 0,
-                                    ty: next_ty.clone(),
-                                });
-                                storage_vreg
-                            } else {
-                                dst_vreg
-                            };
-                            if let Some(bitfield) = bitfield {
-                                self.emit_bitfield_extract(
+                            if *address_space == AddressSpace::Kernel
+                                && root_ctx_field == Some(&CtxField::SockoptOptval)
+                            {
+                                if bitfield.is_some() {
+                                    return Err(CompileError::UnsupportedInstruction(format!(
+                                        "bounded context-buffer path '{}' does not support bitfield extraction",
+                                        path_desc
+                                    )));
+                                }
+                                self.emit_context_buffer_guarded_load(
                                     dst_vreg,
-                                    loaded_vreg,
+                                    *base_vreg,
+                                    field_offset,
                                     &next_ty,
-                                    bitfield,
+                                    CtxField::SockoptOptvalEnd,
+                                    path_desc,
                                 )?;
                             } else {
-                                self.vreg_type_hints.insert(dst_vreg, next_ty.clone());
-                                self.emit(MirInst::LoadSlot {
-                                    dst: dst_vreg,
-                                    slot: projected_slot,
-                                    offset: 0,
-                                    ty: next_ty.clone(),
-                                });
+                                let projected_slot = self.func.alloc_stack_slot(
+                                    align_to_eight(next_ty.size()),
+                                    8,
+                                    StackSlotKind::Local,
+                                );
+                                self.record_stack_slot_type(projected_slot, next_ty.clone());
+                                self.emit_trampoline_probe_read_to_slot(
+                                    *base_vreg,
+                                    *address_space,
+                                    field_offset,
+                                    projected_slot,
+                                    &next_ty,
+                                    path_desc,
+                                )?;
+                                let loaded_vreg = if bitfield.is_some() {
+                                    let storage_vreg = self.func.alloc_vreg();
+                                    self.vreg_type_hints.insert(storage_vreg, next_ty.clone());
+                                    self.emit(MirInst::LoadSlot {
+                                        dst: storage_vreg,
+                                        slot: projected_slot,
+                                        offset: 0,
+                                        ty: next_ty.clone(),
+                                    });
+                                    storage_vreg
+                                } else {
+                                    dst_vreg
+                                };
+                                if let Some(bitfield) = bitfield {
+                                    self.emit_bitfield_extract(
+                                        dst_vreg,
+                                        loaded_vreg,
+                                        &next_ty,
+                                        bitfield,
+                                    )?;
+                                } else {
+                                    self.vreg_type_hints.insert(dst_vreg, next_ty.clone());
+                                    self.emit(MirInst::LoadSlot {
+                                        dst: dst_vreg,
+                                        slot: projected_slot,
+                                        offset: 0,
+                                        ty: next_ty.clone(),
+                                    });
+                                }
                             }
                         }
                         AddressSpace::Packet => {

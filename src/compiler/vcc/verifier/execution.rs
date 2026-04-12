@@ -308,6 +308,8 @@ impl VccVerifier {
                         bounds,
                         packet_root: None,
                         packet_end: false,
+                        context_buffer_root: None,
+                        context_buffer_end: false,
                         ringbuf_ref: None,
                         kfunc_ref: None,
                     }),
@@ -340,6 +342,8 @@ impl VccVerifier {
                             self.scalar_reg_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         let packet_end_cmp =
                             self.packet_end_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
+                        let context_buffer_end_cmp =
+                            self.context_buffer_end_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         let lhs_is_ptr = matches!(lhs_ty, VccValueType::Ptr(_));
                         let rhs_is_ptr = matches!(rhs_ty, VccValueType::Ptr(_));
                         if lhs_is_ptr || rhs_is_ptr {
@@ -448,6 +452,14 @@ impl VccVerifier {
                                     op: cmp_op,
                                 },
                             );
+                        } else if let Some((ptr_reg, cmp_op)) = context_buffer_end_cmp {
+                            state.set_cond_refinement(
+                                *dst,
+                                VccCondRefinement::ContextBufferEnd {
+                                    ptr_reg,
+                                    op: cmp_op,
+                                },
+                            );
                         }
                     }
                     VccBinOp::Lt | VccBinOp::Le | VccBinOp::Gt | VccBinOp::Ge => {
@@ -457,6 +469,8 @@ impl VccVerifier {
                             self.scalar_reg_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         let packet_end_cmp =
                             self.packet_end_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
+                        let context_buffer_end_cmp =
+                            self.context_buffer_end_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         let lhs_is_ptr = matches!(lhs_ty, VccValueType::Ptr(_));
                         let rhs_is_ptr = matches!(rhs_ty, VccValueType::Ptr(_));
                         if lhs_is_ptr || rhs_is_ptr {
@@ -464,6 +478,10 @@ impl VccVerifier {
                                 (VccValueType::Ptr(lp), VccValueType::Ptr(rp))
                                     if lp.space == VccAddrSpace::Packet
                                         && rp.space == VccAddrSpace::Packet => {}
+                                (VccValueType::Ptr(lp), VccValueType::Ptr(rp))
+                                    if lp.space == VccAddrSpace::Kernel
+                                        && rp.space == VccAddrSpace::Kernel
+                                        && context_buffer_end_cmp.is_some() => {}
                                 _ => {
                                     self.errors.push(VccError::new(
                                         VccErrorKind::TypeMismatch {
@@ -528,6 +546,14 @@ impl VccVerifier {
                             state.set_cond_refinement(
                                 *dst,
                                 VccCondRefinement::PacketEnd {
+                                    ptr_reg,
+                                    op: cmp_op,
+                                },
+                            );
+                        } else if let Some((ptr_reg, cmp_op)) = context_buffer_end_cmp {
+                            state.set_cond_refinement(
+                                *dst,
+                                VccCondRefinement::ContextBufferEnd {
                                     ptr_reg,
                                     op: cmp_op,
                                 },
@@ -624,6 +650,8 @@ impl VccVerifier {
                         bounds,
                         packet_root: base_ptr.packet_root,
                         packet_end: base_ptr.packet_end,
+                        context_buffer_root: base_ptr.context_buffer_root,
+                        context_buffer_end: base_ptr.context_buffer_end,
                         ringbuf_ref: base_ptr.ringbuf_ref,
                         kfunc_ref: base_ptr.kfunc_ref,
                     }),
@@ -648,14 +676,18 @@ impl VccVerifier {
                             self.errors.push(err);
                             return;
                         }
-                        if !matches!(
+                        let load_allowed = matches!(
                             ptr_info.space,
-                            VccAddrSpace::Stack(_) | VccAddrSpace::MapValue | VccAddrSpace::Packet
-                        ) {
+                            VccAddrSpace::Stack(_)
+                                | VccAddrSpace::MapValue
+                                | VccAddrSpace::Packet
+                        ) || (ptr_info.space == VccAddrSpace::Kernel
+                            && ptr_info.context_buffer_root.is_some());
+                        if !load_allowed {
                             self.errors.push(VccError::new(
                                 VccErrorKind::PointerBounds,
                                 format!(
-                                    "load requires pointer in [Stack, Map, Packet], got {}",
+                                    "load requires pointer in [Stack, Map, Packet, guarded ContextBuffer], got {}",
                                     Self::space_name(ptr_info.space)
                                 ),
                             ));
@@ -669,6 +701,17 @@ impl VccVerifier {
                             self.errors.push(VccError::new(
                                 VccErrorKind::PointerBounds,
                                 "load on packet pointers requires a preceding data_end guard",
+                            ));
+                            return;
+                        }
+                        if ptr_info.space == VccAddrSpace::Kernel
+                            && ptr_info
+                                .bounds
+                                .is_none_or(|bounds| bounds.limit == UNKNOWN_CONTEXT_BUFFER_LIMIT)
+                        {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::PointerBounds,
+                                "load on bounded context buffers requires a preceding end-pointer guard",
                             ));
                             return;
                         }
@@ -718,13 +761,27 @@ impl VccVerifier {
                             self.errors.push(err);
                             return;
                         }
-                        if !Self::is_mem_space_allowed(ptr_info.space) {
+                        let store_allowed = Self::is_mem_space_allowed(ptr_info.space)
+                            || (ptr_info.space == VccAddrSpace::Kernel
+                                && ptr_info.context_buffer_root.is_some());
+                        if !store_allowed {
                             self.errors.push(VccError::new(
                                 VccErrorKind::PointerBounds,
                                 format!(
-                                    "store requires pointer in [Stack, Map], got {}",
+                                    "store requires pointer in [Stack, Map, guarded ContextBuffer], got {}",
                                     Self::space_name(ptr_info.space)
                                 ),
+                            ));
+                            return;
+                        }
+                        if ptr_info.space == VccAddrSpace::Kernel
+                            && ptr_info
+                                .bounds
+                                .is_none_or(|bounds| bounds.limit == UNKNOWN_CONTEXT_BUFFER_LIMIT)
+                        {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::PointerBounds,
+                                "store on bounded context buffers requires a preceding end-pointer guard",
                             ));
                             return;
                         }

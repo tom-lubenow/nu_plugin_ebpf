@@ -70,6 +70,10 @@ enum VccCondRefinement {
         ptr_reg: VccReg,
         op: VccBinOp,
     },
+    ContextBufferEnd {
+        ptr_reg: VccReg,
+        op: VccBinOp,
+    },
     ScalarCmpConst {
         reg: VccReg,
         op: VccBinOp,
@@ -218,6 +222,30 @@ impl VccState {
                 continue;
             };
             let next_limit = if bounds.limit == UNKNOWN_PACKET_LIMIT {
+                safe_limit
+            } else {
+                bounds.limit.max(safe_limit)
+            };
+            ptr.bounds = Some(VccBounds {
+                min: bounds.min,
+                max: bounds.max,
+                limit: next_limit,
+            });
+        }
+    }
+
+    fn refine_context_buffer_prefix_limit(&mut self, root: VccReg, safe_limit: i64) {
+        for ty in self.reg_types.values_mut() {
+            let VccValueType::Ptr(ptr) = ty else {
+                continue;
+            };
+            if ptr.space != VccAddrSpace::Kernel || ptr.context_buffer_root != Some(root) {
+                continue;
+            }
+            let Some(bounds) = ptr.bounds else {
+                continue;
+            };
+            let next_limit = if bounds.limit == UNKNOWN_CONTEXT_BUFFER_LIMIT {
                 safe_limit
             } else {
                 bounds.limit.max(safe_limit)
@@ -705,6 +733,7 @@ impl VccState {
         self.cond_refinements.retain(|_, info| match info {
             VccCondRefinement::PtrNull { ringbuf_ref, .. } => *ringbuf_ref != Some(id),
             VccCondRefinement::PacketEnd { .. } => true,
+            VccCondRefinement::ContextBufferEnd { .. } => true,
             VccCondRefinement::ScalarCmpConst { .. } => true,
             VccCondRefinement::ScalarCmpRegs { .. } => true,
         });
@@ -728,6 +757,7 @@ impl VccState {
         self.cond_refinements.retain(|_, info| match info {
             VccCondRefinement::PtrNull { kfunc_ref, .. } => *kfunc_ref != Some(id),
             VccCondRefinement::PacketEnd { .. } => true,
+            VccCondRefinement::ContextBufferEnd { .. } => true,
             VccCondRefinement::ScalarCmpConst { .. } => true,
             VccCondRefinement::ScalarCmpRegs { .. } => true,
         });
@@ -904,6 +934,8 @@ impl VccState {
                     bounds: None,
                     packet_root: ptr.packet_root,
                     packet_end: ptr.packet_end,
+                    context_buffer_root: ptr.context_buffer_root,
+                    context_buffer_end: ptr.context_buffer_end,
                     ringbuf_ref: None,
                     kfunc_ref: None,
                 }),
@@ -1212,6 +1244,16 @@ impl VccState {
                             limit: l.limit.max(r.limit),
                         })
                     }
+                    (Some(l), Some(r))
+                        if lp.space == VccAddrSpace::Kernel
+                            && lp.context_buffer_root == rp.context_buffer_root =>
+                    {
+                        Some(VccBounds {
+                            min: l.min.min(r.min),
+                            max: l.max.max(r.max),
+                            limit: l.limit.max(r.limit),
+                        })
+                    }
                     _ => None,
                 };
                 let ringbuf_ref = match (lp.ringbuf_ref, rp.ringbuf_ref) {
@@ -1233,6 +1275,12 @@ impl VccState {
                         None
                     },
                     packet_end: lp.packet_end && rp.packet_end,
+                    context_buffer_root: if lp.context_buffer_root == rp.context_buffer_root {
+                        lp.context_buffer_root
+                    } else {
+                        None
+                    },
+                    context_buffer_end: lp.context_buffer_end && rp.context_buffer_end,
                     ringbuf_ref,
                     kfunc_ref,
                 })

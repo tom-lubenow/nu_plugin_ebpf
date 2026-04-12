@@ -95,6 +95,7 @@ pub struct VccBounds {
 }
 
 const UNKNOWN_PACKET_LIMIT: i64 = i64::MAX / 4;
+const UNKNOWN_CONTEXT_BUFFER_LIMIT: i64 = i64::MAX / 4;
 
 impl VccBounds {
     fn shifted(self, offset: VccRange) -> Option<VccBounds> {
@@ -159,6 +160,8 @@ pub struct VccPointerInfo {
     pub bounds: Option<VccBounds>,
     pub packet_root: Option<VccReg>,
     pub packet_end: bool,
+    pub context_buffer_root: Option<VccReg>,
+    pub context_buffer_end: bool,
     pub ringbuf_ref: Option<VccReg>,
     pub kfunc_ref: Option<VccReg>,
 }
@@ -759,6 +762,8 @@ fn vcc_type_from_mir(ty: &MirType) -> VccValueType {
                 bounds,
                 packet_root: None,
                 packet_end: false,
+                context_buffer_root: None,
+                context_buffer_end: false,
                 ringbuf_ref: None,
                 kfunc_ref: None,
             })

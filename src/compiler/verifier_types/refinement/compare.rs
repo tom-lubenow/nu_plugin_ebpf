@@ -26,7 +26,7 @@ pub(in crate::compiler::verifier_types) fn guard_from_compare(
             if matches!(lhs_ty, VerifierType::Ptr { .. })
                 || matches!(rhs_ty, VerifierType::Ptr { .. })
             {
-                return packet_end_guard(op, *lhs, *rhs, state);
+                return bounded_end_guard(op, *lhs, *rhs, state);
             }
             Some(Guard::RangeCmp {
                 lhs: *lhs,
@@ -75,15 +75,24 @@ pub(in crate::compiler::verifier_types) fn guard_from_compare_reg_const(
     Some(Guard::Range { reg, op, value })
 }
 
-fn packet_end_guard(op: BinOpKind, lhs: VReg, rhs: VReg, state: &VerifierState) -> Option<Guard> {
+fn bounded_end_guard(op: BinOpKind, lhs: VReg, rhs: VReg, state: &VerifierState) -> Option<Guard> {
     let lhs_ty = state.get(lhs);
     let rhs_ty = state.get(rhs);
 
-    let make_guard = |ptr: VReg, normalized_op: BinOpKind| match normalized_op {
+    let make_packet_guard = |ptr: VReg, normalized_op: BinOpKind| match normalized_op {
         BinOpKind::Le | BinOpKind::Lt | BinOpKind::Ge | BinOpKind::Gt => Some(Guard::PacketEnd {
             ptr,
             op: normalized_op,
         }),
+        _ => None,
+    };
+    let make_context_buffer_guard = |ptr: VReg, normalized_op: BinOpKind| match normalized_op {
+        BinOpKind::Le | BinOpKind::Lt | BinOpKind::Ge | BinOpKind::Gt => {
+            Some(Guard::ContextBufferEnd {
+                ptr,
+                op: normalized_op,
+            })
+        }
         _ => None,
     };
 
@@ -101,7 +110,7 @@ fn packet_end_guard(op: BinOpKind, lhs: VReg, rhs: VReg, state: &VerifierState) 
         ) if matches!(bounds.origin(), PtrOrigin::Packet(_))
             && state.ctx_field_source(rhs) == Some(&CtxField::DataEnd) =>
         {
-            make_guard(lhs, op)
+            make_packet_guard(lhs, op)
         }
         (
             VerifierType::Ptr {
@@ -116,7 +125,49 @@ fn packet_end_guard(op: BinOpKind, lhs: VReg, rhs: VReg, state: &VerifierState) 
         ) if matches!(bounds.origin(), PtrOrigin::Packet(_))
             && state.ctx_field_source(lhs) == Some(&CtxField::DataEnd) =>
         {
-            make_guard(rhs, swap_compare(op)?)
+            make_packet_guard(rhs, swap_compare(op)?)
+        }
+        (
+            VerifierType::Ptr {
+                space: AddressSpace::Kernel,
+                bounds: Some(bounds),
+                ..
+            },
+            VerifierType::Ptr {
+                space: AddressSpace::Kernel,
+                ..
+            },
+        ) if matches!(bounds.origin(), PtrOrigin::ContextBuffer(_))
+            && state.ctx_field_source(rhs) == Some(&CtxField::SockoptOptvalEnd) =>
+        {
+            let PtrOrigin::ContextBuffer(root) = bounds.origin() else {
+                unreachable!();
+            };
+            if state.ctx_field_source(root) != Some(&CtxField::SockoptOptval) {
+                return None;
+            }
+            make_context_buffer_guard(lhs, op)
+        }
+        (
+            VerifierType::Ptr {
+                space: AddressSpace::Kernel,
+                ..
+            },
+            VerifierType::Ptr {
+                space: AddressSpace::Kernel,
+                bounds: Some(bounds),
+                ..
+            },
+        ) if matches!(bounds.origin(), PtrOrigin::ContextBuffer(_))
+            && state.ctx_field_source(lhs) == Some(&CtxField::SockoptOptvalEnd) =>
+        {
+            let PtrOrigin::ContextBuffer(root) = bounds.origin() else {
+                unreachable!();
+            };
+            if state.ctx_field_source(root) != Some(&CtxField::SockoptOptval) {
+                return None;
+            }
+            make_context_buffer_guard(rhs, swap_compare(op)?)
         }
         _ => None,
     }
@@ -173,6 +224,10 @@ pub(in crate::compiler::verifier_types) fn invert_guard(guard: Guard) -> Option<
             op: negate_compare(op)?,
         }),
         Guard::PacketEnd { ptr, op } => Some(Guard::PacketEnd {
+            ptr,
+            op: negate_compare(op)?,
+        }),
+        Guard::ContextBufferEnd { ptr, op } => Some(Guard::ContextBufferEnd {
             ptr,
             op: negate_compare(op)?,
         }),

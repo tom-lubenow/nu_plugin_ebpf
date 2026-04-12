@@ -65,7 +65,10 @@ fn join_bounds(a: Option<PtrBounds>, b: Option<PtrBounds>) -> Option<PtrBounds> 
             ))
         }
         (Some(a), Some(b))
-            if matches!(a.origin(), PtrOrigin::Packet(_)) && a.origin() == b.origin() =>
+            if matches!(
+                a.origin(),
+                PtrOrigin::Packet(_) | PtrOrigin::ContextBuffer(_)
+            ) && a.origin() == b.origin() =>
         {
             Some(PtrBounds::new(
                 a.origin(),

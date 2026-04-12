@@ -135,6 +135,8 @@ impl<'a> VccLowerer<'a> {
                                 bounds: stack_bounds(size),
                                 packet_root: None,
                                 packet_end: false,
+                                context_buffer_root: None,
+                                context_buffer_end: false,
                                 ringbuf_ref: None,
                                 kfunc_ref: None,
                             },
@@ -345,6 +347,8 @@ impl<'a> VccLowerer<'a> {
                             bounds: stack_bounds(size),
                             packet_root: None,
                             packet_end: false,
+                            context_buffer_root: None,
+                            context_buffer_end: false,
                             ringbuf_ref: None,
                             kfunc_ref: None,
                         },
@@ -362,11 +366,9 @@ impl<'a> VccLowerer<'a> {
                                 .unwrap_or_else(|| vcc_type_from_mir(mir_ty))
                         })
                         .unwrap_or(VccValueType::Unknown);
-                    if let VccValueType::Ptr(ref mut info) = ty
-                        && info.space == VccAddrSpace::Packet
-                    {
+                    if let VccValueType::Ptr(ref mut info) = ty {
                         match field {
-                            CtxField::Data => {
+                            CtxField::Data if info.space == VccAddrSpace::Packet => {
                                 info.bounds = Some(VccBounds {
                                     min: 0,
                                     max: 0,
@@ -375,9 +377,22 @@ impl<'a> VccLowerer<'a> {
                                 info.packet_root = Some(VccReg(dst.0));
                                 info.packet_end = false;
                             }
-                            CtxField::DataEnd => {
+                            CtxField::DataEnd if info.space == VccAddrSpace::Packet => {
                                 info.packet_root = None;
                                 info.packet_end = true;
+                            }
+                            CtxField::SockoptOptval if info.space == VccAddrSpace::Kernel => {
+                                info.bounds = Some(VccBounds {
+                                    min: 0,
+                                    max: 0,
+                                    limit: UNKNOWN_CONTEXT_BUFFER_LIMIT,
+                                });
+                                info.context_buffer_root = Some(VccReg(dst.0));
+                                info.context_buffer_end = false;
+                            }
+                            CtxField::SockoptOptvalEnd if info.space == VccAddrSpace::Kernel => {
+                                info.context_buffer_root = None;
+                                info.context_buffer_end = true;
                             }
                             _ => {}
                         }
@@ -463,6 +478,8 @@ impl<'a> VccLowerer<'a> {
                         bounds: None,
                         packet_root: None,
                         packet_end: false,
+                        context_buffer_root: None,
+                        context_buffer_end: false,
                         ringbuf_ref: None,
                         kfunc_ref: None,
                     },
@@ -497,6 +514,8 @@ impl<'a> VccLowerer<'a> {
                     bounds,
                     packet_root: None,
                     packet_end: false,
+                    context_buffer_root: None,
+                    context_buffer_end: false,
                     ringbuf_ref: None,
                     kfunc_ref: None,
                 };

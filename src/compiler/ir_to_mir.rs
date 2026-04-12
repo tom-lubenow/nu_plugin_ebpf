@@ -190,6 +190,8 @@ struct RegMetadata {
     record_fields: Vec<RecordField>,
     /// Type of value in this register (for context fields)
     field_type: Option<MirType>,
+    /// Originating root context field for values derived from a specific ctx field.
+    root_ctx_field: Option<CtxField>,
     /// Direct backing variable for values loaded from `LoadVariable`.
     /// This is intentionally cleared by transformations that produce new values.
     source_var: Option<VarId>,

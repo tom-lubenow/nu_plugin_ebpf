@@ -705,6 +705,13 @@ impl CtxField {
             CtxField::TracepointField(name) => name.clone(),
         }
     }
+
+    pub fn bounded_context_end_field(&self) -> Option<CtxField> {
+        match self {
+            CtxField::SockoptOptval => Some(CtxField::SockoptOptvalEnd),
+            _ => None,
+        }
+    }
 }
 
 /// Writable context-field targets.

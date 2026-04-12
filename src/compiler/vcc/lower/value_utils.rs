@@ -33,6 +33,8 @@ impl<'a> VccLowerer<'a> {
                 bounds: stack_bounds(size),
                 packet_root: None,
                 packet_end: false,
+                context_buffer_root: None,
+                context_buffer_end: false,
                 ringbuf_ref: None,
                 kfunc_ref: None,
             },
@@ -56,6 +58,8 @@ impl<'a> VccLowerer<'a> {
                     bounds: stack_bounds(size),
                     packet_root: None,
                     packet_end: false,
+                    context_buffer_root: None,
+                    context_buffer_end: false,
                     ringbuf_ref: None,
                     kfunc_ref: None,
                 })
@@ -108,6 +112,8 @@ impl<'a> VccLowerer<'a> {
                         bounds: None,
                         packet_root: None,
                         packet_end: false,
+                        context_buffer_root: None,
+                        context_buffer_end: false,
                         ringbuf_ref: Some(VccReg(dst.0)),
                         kfunc_ref: None,
                     });
@@ -119,6 +125,8 @@ impl<'a> VccLowerer<'a> {
                         bounds: None,
                         packet_root: None,
                         packet_end: false,
+                        context_buffer_root: None,
+                        context_buffer_end: false,
                         ringbuf_ref: None,
                         kfunc_ref: None,
                     });
@@ -144,6 +152,8 @@ impl<'a> VccLowerer<'a> {
                         bounds: None,
                         packet_root: None,
                         packet_end: false,
+                        context_buffer_root: None,
+                        context_buffer_end: false,
                         ringbuf_ref: None,
                         kfunc_ref: None,
                     });
@@ -155,6 +165,8 @@ impl<'a> VccLowerer<'a> {
                         bounds: None,
                         packet_root: None,
                         packet_end: false,
+                        context_buffer_root: None,
+                        context_buffer_end: false,
                         ringbuf_ref: None,
                         kfunc_ref: Some(VccReg(dst.0)),
                     });
@@ -170,6 +182,8 @@ impl<'a> VccLowerer<'a> {
                         bounds: None,
                         packet_root: None,
                         packet_end: false,
+                        context_buffer_root: None,
+                        context_buffer_end: false,
                         ringbuf_ref: None,
                         kfunc_ref: None,
                     }),
@@ -210,6 +224,8 @@ impl<'a> VccLowerer<'a> {
                     bounds: None,
                     packet_root: None,
                     packet_end: false,
+                    context_buffer_root: None,
+                    context_buffer_end: false,
                     ringbuf_ref: None,
                     kfunc_ref: if Self::kfunc_acquire_kind(kfunc).is_some() {
                         Some(VccReg(dst.0))

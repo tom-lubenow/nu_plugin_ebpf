@@ -204,6 +204,9 @@ impl<'a> TypeInference<'a> {
                                 (Some(lhs_space), Some(rhs_space))
                                     if lhs_space == AddressSpace::Packet
                                         && rhs_space == AddressSpace::Packet => {}
+                                (Some(lhs_space), Some(rhs_space))
+                                    if lhs_space == AddressSpace::Kernel
+                                        && rhs_space == AddressSpace::Kernel => {}
                                 _ => errors.push(TypeError::new(
                                     "ordering comparisons on pointers are not supported"
                                         .to_string(),
