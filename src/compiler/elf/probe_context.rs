@@ -637,11 +637,9 @@ impl ProbeContext {
     }
 
     pub(crate) fn ctx_store_target_error(&self, target: &CtxStoreTarget) -> Option<String> {
-        if let Some(message) = self.probe_type.base_ctx_store_target_error(target) {
-            return Some(message);
-        }
         self.parsed_program_spec()
             .and_then(|spec| spec.ctx_store_target_error(target))
+            .or_else(|| self.probe_type.base_ctx_store_target_error(target))
     }
 
     pub(crate) fn validate_ctx_store_target(
@@ -657,11 +655,9 @@ impl ProbeContext {
     /// Returns a user-facing error message when a context field is not valid
     /// for this program type.
     pub fn ctx_field_access_error(&self, field: &CtxField) -> Option<String> {
-        if let Some(message) = self.probe_type.base_ctx_field_access_error(field) {
-            return Some(message);
-        }
         self.parsed_program_spec()
             .and_then(|spec| spec.ctx_field_access_error(field))
+            .or_else(|| self.probe_type.base_ctx_field_access_error(field))
     }
 
     pub fn validate_ctx_field_access(&self, field: &CtxField) -> Result<(), CompileError> {
@@ -754,11 +750,9 @@ impl ProbeContext {
     /// Returns a user-facing error message when a helper is not valid
     /// for this program type or attach context.
     pub fn helper_call_error(&self, helper: BpfHelper) -> Option<String> {
-        if let Some(message) = self.probe_type.helper_call_error(helper) {
-            return Some(message);
-        }
         self.parsed_program_spec()
             .and_then(|spec| spec.helper_call_error(helper))
+            .or_else(|| self.probe_type.helper_call_error(helper))
     }
 
     pub(crate) fn helper_zero_arg_requirement(

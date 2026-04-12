@@ -41,12 +41,18 @@ impl CgroupSockTarget {
 }
 
 impl ProgramSpec {
-    pub(crate) fn helper_call_error(&self, helper: BpfHelper) -> Option<String> {
+    fn attach_helper_call_error(&self, helper: BpfHelper) -> Option<String> {
         match self {
             ProgramSpec::Tc { target } => target.helper_call_error(helper),
             ProgramSpec::CgroupSockAddr { target } => target.helper_call_error(helper),
             _ => None,
         }
+    }
+
+    pub(crate) fn helper_call_error(&self, helper: BpfHelper) -> Option<String> {
+        self.program_type()
+            .helper_call_error(helper)
+            .or_else(|| self.attach_helper_call_error(helper))
     }
 
     pub(crate) fn socket_projection_access_error(&self, member_name: &str) -> Option<String> {

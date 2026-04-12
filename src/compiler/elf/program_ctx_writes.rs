@@ -232,12 +232,18 @@ impl CgroupSockAddrTarget {
 }
 
 impl ProgramSpec {
-    pub(crate) fn ctx_field_access_error(&self, field: &CtxField) -> Option<String> {
+    fn attach_ctx_field_access_error(&self, field: &CtxField) -> Option<String> {
         match self {
             ProgramSpec::CgroupSockopt { target } => target.ctx_field_access_error(field),
             ProgramSpec::CgroupSockAddr { target } => target.ctx_field_access_error(field),
             _ => None,
         }
+    }
+
+    pub(crate) fn ctx_field_access_error(&self, field: &CtxField) -> Option<String> {
+        self.program_type()
+            .base_ctx_field_access_error(field)
+            .or_else(|| self.attach_ctx_field_access_error(field))
     }
 
     pub(crate) fn resolve_special_ctx_store_target(
@@ -293,7 +299,7 @@ impl ProgramSpec {
         }
     }
 
-    pub(crate) fn ctx_store_target_error(&self, store_target: &CtxStoreTarget) -> Option<String> {
+    fn attach_ctx_store_target_error(&self, store_target: &CtxStoreTarget) -> Option<String> {
         match self {
             ProgramSpec::SockOps { .. }
                 if matches!(
@@ -312,5 +318,11 @@ impl ProgramSpec {
             ProgramSpec::CgroupSockAddr { target } => target.ctx_store_target_error(store_target),
             _ => None,
         }
+    }
+
+    pub(crate) fn ctx_store_target_error(&self, store_target: &CtxStoreTarget) -> Option<String> {
+        self.program_type()
+            .base_ctx_store_target_error(store_target)
+            .or_else(|| self.attach_ctx_store_target_error(store_target))
     }
 }
