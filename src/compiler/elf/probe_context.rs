@@ -50,21 +50,6 @@ impl ProbeContext {
         }
     }
 
-    fn cgroup_sock_addr_is_ipv4(&self) -> bool {
-        self.cgroup_sock_addr_target()
-            .is_some_and(|target| target.is_ipv4())
-    }
-
-    fn cgroup_sock_addr_is_ipv6(&self) -> bool {
-        self.cgroup_sock_addr_target()
-            .is_some_and(|target| target.is_ipv6())
-    }
-
-    fn cgroup_sock_addr_has_msg_source(&self) -> bool {
-        self.cgroup_sock_addr_target()
-            .is_some_and(|target| target.has_msg_source())
-    }
-
     fn cgroup_sock_addr_is_connect(&self) -> bool {
         self.cgroup_sock_addr_target()
             .is_some_and(|target| target.is_connect())
@@ -77,18 +62,16 @@ impl ProbeContext {
         }
     }
 
-    fn cgroup_sockopt_is_get(&self) -> bool {
-        self.cgroup_sockopt_target()
-            .is_some_and(|target| target.is_get())
-    }
-
     fn cgroup_sockopt_store_field_error(&self, field: &CtxField) -> Option<String> {
         match field {
             CtxField::SockoptLevel | CtxField::SockoptOptname => {
                 if let Some(message) = self.ctx_field_access_error(field) {
                     return Some(message);
                 }
-                if self.cgroup_sockopt_is_get() {
+                if self
+                    .cgroup_sockopt_target()
+                    .is_some_and(|target| target.is_get())
+                {
                     Some(format!(
                         "ctx.{} is only writable on cgroup_sockopt:set hooks",
                         field.display_name()
@@ -636,44 +619,24 @@ impl ProbeContext {
             return Some(message);
         }
         let program_type = self.probe_type;
+        let parsed_program_spec = self.parsed_program_spec();
 
         match field {
             CtxField::UserIp4 if !program_type.supports_cgroup_sock_addr_ctx_fields() => {
                 Some("ctx.user_ip4 is only available on cgroup_sock_addr programs".to_string())
             }
-            CtxField::UserIp4 if !self.cgroup_sock_addr_is_ipv4() => Some(
-                "ctx.user_ip4 is only available on IPv4 cgroup_sock_addr hooks (*4)".to_string(),
-            ),
             CtxField::UserIp6 if !program_type.supports_cgroup_sock_addr_ctx_fields() => {
                 Some("ctx.user_ip6 is only available on cgroup_sock_addr programs".to_string())
             }
-            CtxField::UserIp6 if !self.cgroup_sock_addr_is_ipv6() => Some(
-                "ctx.user_ip6 is only available on IPv6 cgroup_sock_addr hooks (*6)".to_string(),
-            ),
             CtxField::MsgSrcIp4 if !program_type.supports_cgroup_sock_addr_ctx_fields() => {
                 Some("ctx.msg_src_ip4 is only available on cgroup_sock_addr programs".to_string())
             }
-            CtxField::MsgSrcIp4 if !self.cgroup_sock_addr_is_ipv4() => Some(
-                "ctx.msg_src_ip4 is only available on IPv4 cgroup_sock_addr hooks (*4)".to_string(),
-            ),
-            CtxField::MsgSrcIp4 if !self.cgroup_sock_addr_has_msg_source() => Some(
-                "ctx.msg_src_ip4 is only available on cgroup_sock_addr sendmsg*/recvmsg* hooks"
-                    .to_string(),
-            ),
             CtxField::MsgSrcIp6 if !program_type.supports_cgroup_sock_addr_ctx_fields() => {
                 Some("ctx.msg_src_ip6 is only available on cgroup_sock_addr programs".to_string())
             }
-            CtxField::MsgSrcIp6 if !self.cgroup_sock_addr_is_ipv6() => Some(
-                "ctx.msg_src_ip6 is only available on IPv6 cgroup_sock_addr hooks (*6)".to_string(),
-            ),
-            CtxField::MsgSrcIp6 if !self.cgroup_sock_addr_has_msg_source() => Some(
-                "ctx.msg_src_ip6 is only available on cgroup_sock_addr sendmsg*/recvmsg* hooks"
-                    .to_string(),
-            ),
-            CtxField::SockoptRetval if !self.cgroup_sockopt_is_get() => {
-                Some("ctx.sockopt_retval is only available on cgroup_sockopt:get hooks".to_string())
-            }
-            _ => None,
+            _ => parsed_program_spec
+                .as_ref()
+                .and_then(|spec| spec.ctx_field_access_error(field)),
         }
     }
 

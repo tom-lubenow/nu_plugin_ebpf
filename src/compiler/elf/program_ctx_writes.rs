@@ -35,6 +35,15 @@ impl SockOpsTarget {
 }
 
 impl CgroupSockoptTarget {
+    fn ctx_field_access_error(&self, field: &CtxField) -> Option<String> {
+        match field {
+            CtxField::SockoptRetval if !self.is_get() => {
+                Some("ctx.sockopt_retval is only available on cgroup_sockopt:get hooks".into())
+            }
+            _ => None,
+        }
+    }
+
     fn resolve_ctx_store_target_for_field(
         &self,
         field: &CtxField,
@@ -92,6 +101,32 @@ impl CgroupSockoptTarget {
 }
 
 impl CgroupSockAddrTarget {
+    fn ctx_field_access_error(&self, field: &CtxField) -> Option<String> {
+        match field {
+            CtxField::UserIp4 if !self.is_ipv4() => {
+                Some("ctx.user_ip4 is only available on IPv4 cgroup_sock_addr hooks (*4)".into())
+            }
+            CtxField::UserIp6 if !self.is_ipv6() => {
+                Some("ctx.user_ip6 is only available on IPv6 cgroup_sock_addr hooks (*6)".into())
+            }
+            CtxField::MsgSrcIp4 if !self.is_ipv4() => {
+                Some("ctx.msg_src_ip4 is only available on IPv4 cgroup_sock_addr hooks (*4)".into())
+            }
+            CtxField::MsgSrcIp4 if !self.has_msg_source() => Some(
+                "ctx.msg_src_ip4 is only available on cgroup_sock_addr sendmsg*/recvmsg* hooks"
+                    .into(),
+            ),
+            CtxField::MsgSrcIp6 if !self.is_ipv6() => {
+                Some("ctx.msg_src_ip6 is only available on IPv6 cgroup_sock_addr hooks (*6)".into())
+            }
+            CtxField::MsgSrcIp6 if !self.has_msg_source() => Some(
+                "ctx.msg_src_ip6 is only available on cgroup_sock_addr sendmsg*/recvmsg* hooks"
+                    .into(),
+            ),
+            _ => None,
+        }
+    }
+
     fn resolve_ctx_store_target_for_field(
         &self,
         field: &CtxField,
@@ -129,6 +164,14 @@ impl CgroupSockAddrTarget {
 }
 
 impl ProgramSpec {
+    pub(crate) fn ctx_field_access_error(&self, field: &CtxField) -> Option<String> {
+        match self {
+            ProgramSpec::CgroupSockopt { target } => target.ctx_field_access_error(field),
+            ProgramSpec::CgroupSockAddr { target } => target.ctx_field_access_error(field),
+            _ => None,
+        }
+    }
+
     pub(crate) fn resolve_special_ctx_store_target(
         &self,
         field_name: &str,
