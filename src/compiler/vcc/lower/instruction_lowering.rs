@@ -688,6 +688,7 @@ impl<'a> VccLowerer<'a> {
             }
             MirInst::CallHelper { dst, helper, args } => {
                 self.verify_helper_call(*helper, args, out)?;
+                let helper_kind = BpfHelper::from_u32(*helper);
                 let ty = self.helper_return_type(*helper, *dst);
                 out.push(VccInst::Assume {
                     dst: VccReg(dst.0),
@@ -696,7 +697,7 @@ impl<'a> VccLowerer<'a> {
                 if let VccValueType::Ptr(info) = ty {
                     self.ptr_regs.insert(VccReg(dst.0), info);
                 }
-                if matches!(BpfHelper::from_u32(*helper), Some(BpfHelper::KptrXchg))
+                if matches!(helper_kind, Some(BpfHelper::KptrXchg))
                     && let Some(arg1) = args.get(1)
                 {
                     let src = self.lower_value(arg1, out);
@@ -705,20 +706,32 @@ impl<'a> VccLowerer<'a> {
                         src,
                     });
                 }
+                if matches!(
+                    helper_kind,
+                    Some(
+                        BpfHelper::XdpAdjustHead
+                            | BpfHelper::XdpAdjustMeta
+                            | BpfHelper::XdpAdjustTail
+                    )
+                ) {
+                    out.push(VccInst::InvalidatePacketPointers);
+                    self.entry_ctx_field_regs.remove(&Self::ctx_field_key(&CtxField::Data));
+                    self.entry_ctx_field_regs
+                        .remove(&Self::ctx_field_key(&CtxField::DataMeta));
+                    self.entry_ctx_field_regs
+                        .remove(&Self::ctx_field_key(&CtxField::DataEnd));
+                }
                 if let Some(kind) = Self::helper_acquire_kind(*helper) {
                     out.push(VccInst::KfuncAcquire {
                         id: VccReg(dst.0),
                         kind,
                     });
                 }
-                if matches!(
-                    BpfHelper::from_u32(*helper),
-                    Some(BpfHelper::RingbufReserve)
-                ) {
+                if matches!(helper_kind, Some(BpfHelper::RingbufReserve)) {
                     out.push(VccInst::RingbufAcquire { id: VccReg(dst.0) });
                 }
                 if matches!(
-                    BpfHelper::from_u32(*helper),
+                    helper_kind,
                     Some(BpfHelper::RingbufSubmit | BpfHelper::RingbufDiscard)
                 ) {
                     if let Some(arg0) = args.first() {

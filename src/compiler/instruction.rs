@@ -70,12 +70,16 @@ pub enum BpfHelper {
     GetPrandomU32 = 7,
     /// u32 bpf_get_smp_processor_id(void)
     GetSmpProcessorId = 8,
+    /// long bpf_xdp_adjust_head(xdp_md, delta)
+    XdpAdjustHead = 44,
     /// long bpf_redirect(ifindex, flags)
     Redirect = 23,
     /// long bpf_redirect_neigh(ifindex, params, plen, flags)
     RedirectNeigh = 152,
     /// long bpf_redirect_peer(ifindex, flags)
     RedirectPeer = 155,
+    /// long bpf_xdp_adjust_meta(xdp_md, delta)
+    XdpAdjustMeta = 54,
     /// long bpf_tail_call(ctx, prog_array_map, index)
     TailCall = 12,
     /// u64 bpf_get_current_pid_tgid(void)
@@ -146,6 +150,8 @@ pub enum BpfHelper {
     MsgPushData = 90,
     /// long bpf_msg_pop_data(msg, start, len, flags)
     MsgPopData = 91,
+    /// long bpf_xdp_adjust_tail(xdp_md, delta)
+    XdpAdjustTail = 65,
     /// struct bpf_sock *bpf_sk_fullsock(sk)
     SkFullsock = 95,
     /// long bpf_rc_repeat(ctx)
@@ -237,9 +243,11 @@ impl BpfHelper {
             BpfHelper::TracePrintk => "bpf_trace_printk",
             BpfHelper::GetPrandomU32 => "bpf_get_prandom_u32",
             BpfHelper::GetSmpProcessorId => "bpf_get_smp_processor_id",
+            BpfHelper::XdpAdjustHead => "bpf_xdp_adjust_head",
             BpfHelper::Redirect => "bpf_redirect",
             BpfHelper::RedirectNeigh => "bpf_redirect_neigh",
             BpfHelper::RedirectPeer => "bpf_redirect_peer",
+            BpfHelper::XdpAdjustMeta => "bpf_xdp_adjust_meta",
             BpfHelper::TailCall => "bpf_tail_call",
             BpfHelper::GetCurrentPidTgid => "bpf_get_current_pid_tgid",
             BpfHelper::GetCurrentUidGid => "bpf_get_current_uid_gid",
@@ -275,6 +283,7 @@ impl BpfHelper {
             BpfHelper::MapPeekElem => "bpf_map_peek_elem",
             BpfHelper::MsgPushData => "bpf_msg_push_data",
             BpfHelper::MsgPopData => "bpf_msg_pop_data",
+            BpfHelper::XdpAdjustTail => "bpf_xdp_adjust_tail",
             BpfHelper::RcRepeat => "bpf_rc_repeat",
             BpfHelper::RcKeydown => "bpf_rc_keydown",
             BpfHelper::RcPointerRel => "bpf_rc_pointer_rel",
@@ -333,9 +342,11 @@ impl BpfHelper {
             "trace_printk" => Some(Self::TracePrintk),
             "get_prandom_u32" => Some(Self::GetPrandomU32),
             "get_smp_processor_id" => Some(Self::GetSmpProcessorId),
+            "xdp_adjust_head" => Some(Self::XdpAdjustHead),
             "redirect" => Some(Self::Redirect),
             "redirect_neigh" => Some(Self::RedirectNeigh),
             "redirect_peer" => Some(Self::RedirectPeer),
+            "xdp_adjust_meta" => Some(Self::XdpAdjustMeta),
             "tail_call" => Some(Self::TailCall),
             "get_current_pid_tgid" => Some(Self::GetCurrentPidTgid),
             "get_current_uid_gid" => Some(Self::GetCurrentUidGid),
@@ -371,6 +382,7 @@ impl BpfHelper {
             "map_peek_elem" => Some(Self::MapPeekElem),
             "msg_push_data" => Some(Self::MsgPushData),
             "msg_pop_data" => Some(Self::MsgPopData),
+            "xdp_adjust_tail" => Some(Self::XdpAdjustTail),
             "rc_repeat" => Some(Self::RcRepeat),
             "rc_keydown" => Some(Self::RcKeydown),
             "rc_pointer_rel" => Some(Self::RcPointerRel),
@@ -421,14 +433,12 @@ impl BpfHelper {
             (Self::RingbufOutput | Self::RingbufReserve | Self::RingbufQuery, 0) => {
                 Some(MapKind::RingBuf)
             }
-            (
-                Self::SkRedirectMap | Self::SockMapUpdate | Self::MsgRedirectMap,
-                1,
-            ) => Some(MapKind::SockMap),
-            (
-                Self::SockHashUpdate | Self::MsgRedirectHash | Self::SkRedirectHash,
-                1,
-            ) => Some(MapKind::SockHash),
+            (Self::SkRedirectMap | Self::SockMapUpdate | Self::MsgRedirectMap, 1) => {
+                Some(MapKind::SockMap)
+            }
+            (Self::SockHashUpdate | Self::MsgRedirectHash | Self::SkRedirectHash, 1) => {
+                Some(MapKind::SockHash)
+            }
             _ => None,
         }
     }
@@ -454,7 +464,10 @@ impl BpfHelper {
 
     pub const fn helper_requires_explicit_map_kind(self, arg_idx: usize) -> bool {
         matches!(self.local_helper_map_arg_index(), Some(idx) if idx == arg_idx)
-            && matches!(self, Self::MapPushElem | Self::MapPopElem | Self::MapPeekElem)
+            && matches!(
+                self,
+                Self::MapPushElem | Self::MapPopElem | Self::MapPeekElem
+            )
     }
 
     pub const fn supports_local_helper_map_fd(self, arg_idx: usize) -> bool {

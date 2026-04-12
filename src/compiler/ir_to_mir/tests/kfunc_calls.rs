@@ -1725,8 +1725,8 @@ fn test_helper_call_sockmap_literal_lowers_and_compiles() {
     let mut decl_names = HashMap::new();
     decl_names.insert(DeclId::new(42), "helper-call".to_string());
     let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
-    let hir_types = infer_hir_types(&hir_program, &decl_names)
-        .expect("sockmap helper-call should type-check");
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("sockmap helper-call should type-check");
 
     let mut result = lower_hir_to_mir_with_hints(
         &hir_program,
@@ -1835,8 +1835,8 @@ fn test_helper_call_sockhash_literal_lowers_and_compiles() {
     let mut decl_names = HashMap::new();
     decl_names.insert(DeclId::new(42), "helper-call".to_string());
     let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockhash");
-    let hir_types = infer_hir_types(&hir_program, &decl_names)
-        .expect("sockhash helper-call should type-check");
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("sockhash helper-call should type-check");
 
     let mut result = lower_hir_to_mir_with_hints(
         &hir_program,
@@ -2008,7 +2008,12 @@ fn test_helper_call_map_push_literal_queue_lowers_and_compiles() {
                     decl_id: DeclId::new(42),
                     src_dst: RegId::new(0),
                     args: HirCallArgs {
-                        positional: vec![RegId::new(1), RegId::new(2), RegId::new(3), RegId::new(4)],
+                        positional: vec![
+                            RegId::new(1),
+                            RegId::new(2),
+                            RegId::new(3),
+                            RegId::new(4),
+                        ],
                         named: vec![(b"kind".to_vec(), RegId::new(5))],
                         ..Default::default()
                     },
@@ -2027,8 +2032,8 @@ fn test_helper_call_map_push_literal_queue_lowers_and_compiles() {
     let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
     let mut decl_names = HashMap::new();
     decl_names.insert(DeclId::new(42), "helper-call".to_string());
-    let hir_types = infer_hir_types(&hir_program, &decl_names)
-        .expect("map_push helper-call should type-check");
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("map_push helper-call should type-check");
 
     let mut result = lower_hir_to_mir_with_hints(
         &hir_program,

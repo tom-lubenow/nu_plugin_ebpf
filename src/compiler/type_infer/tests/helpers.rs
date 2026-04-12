@@ -309,6 +309,61 @@ fn test_infer_redirect_helper_in_tc_program() {
 }
 
 #[test]
+fn test_type_error_xdp_adjust_meta_helper_rejects_non_xdp_programs() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::XdpAdjustMeta as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_xdp_adjust_meta to be rejected on non-xdp programs");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_xdp_adjust_meta' is only valid in xdp programs")
+    }));
+}
+
+#[test]
+fn test_infer_xdp_adjust_meta_helper_in_xdp_program() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::XdpAdjustMeta as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_xdp_adjust_meta helper to infer on xdp programs");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
 fn test_type_error_msg_helpers_reject_non_sk_msg_programs() {
     for (helper, args) in [
         (BpfHelper::MsgApplyBytes, vec![MirValue::Const(8)]),

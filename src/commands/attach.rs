@@ -149,6 +149,11 @@ Context parameter syntax (recommended):
     for `0`, or `pass` / `keep` / `allow` to snapshot the full packet by
     returning `ctx.packet_len`. `helper-call "bpf_redirect" IFINDEX FLAGS`
     is also type-checked on XDP/TC paths; XDP requires `FLAGS = 0`.
+    XDP also models `helper-call "bpf_xdp_adjust_head" $ctx DELTA`,
+    `helper-call "bpf_xdp_adjust_meta" $ctx DELTA`, and
+    `helper-call "bpf_xdp_adjust_tail" $ctx DELTA`. After any of those
+    helpers, reload `ctx.data`, `ctx.data_meta`, and `ctx.data_end`
+    before reading packet bytes again.
     `helper-call "bpf_redirect_peer" IFINDEX FLAGS` is modeled on
     `tc:...:ingress` and also requires `FLAGS = 0`.
     `helper-call "bpf_redirect_neigh" IFINDEX 0 0 0` is modeled on tc

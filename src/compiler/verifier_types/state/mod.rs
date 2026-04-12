@@ -383,6 +383,26 @@ impl VerifierState {
         }
     }
 
+    pub(super) fn invalidate_packet_pointers(&mut self) {
+        for idx in 0..self.regs.len() {
+            if !matches!(
+                self.regs[idx],
+                VerifierType::Ptr {
+                    space: AddressSpace::Packet,
+                    ..
+                }
+            ) {
+                continue;
+            }
+            self.regs[idx] = VerifierType::Unknown;
+            self.ranges[idx] = ValueRange::Unknown;
+            self.non_zero[idx] = false;
+            self.not_equal[idx].clear();
+            self.ctx_field_sources[idx] = None;
+            self.guards.remove(&VReg(idx as u32));
+        }
+    }
+
     pub(super) fn refine_context_buffer_prefix_limit(&mut self, root: VReg, safe_limit: i64) {
         for reg in &mut self.regs {
             let VerifierType::Ptr {

@@ -301,6 +301,7 @@ pub enum VccInst {
         dst: VccReg,
         args: Vec<(VccBlockId, VccReg)>,
     },
+    InvalidatePacketPointers,
     RingbufAcquire {
         id: VccReg,
     },

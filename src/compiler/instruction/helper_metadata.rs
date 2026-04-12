@@ -16,9 +16,11 @@ impl BpfHelper {
             6 => Some(Self::TracePrintk),
             7 => Some(Self::GetPrandomU32),
             8 => Some(Self::GetSmpProcessorId),
+            44 => Some(Self::XdpAdjustHead),
             23 => Some(Self::Redirect),
             152 => Some(Self::RedirectNeigh),
             155 => Some(Self::RedirectPeer),
+            54 => Some(Self::XdpAdjustMeta),
             12 => Some(Self::TailCall),
             14 => Some(Self::GetCurrentPidTgid),
             15 => Some(Self::GetCurrentUidGid),
@@ -54,6 +56,7 @@ impl BpfHelper {
             89 => Some(Self::MapPeekElem),
             90 => Some(Self::MsgPushData),
             91 => Some(Self::MsgPopData),
+            65 => Some(Self::XdpAdjustTail),
             77 => Some(Self::RcRepeat),
             78 => Some(Self::RcKeydown),
             92 => Some(Self::RcPointerRel),
@@ -170,6 +173,14 @@ impl BpfHelper {
                 arg_kinds: [S, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
+            BpfHelper::XdpAdjustHead | BpfHelper::XdpAdjustMeta | BpfHelper::XdpAdjustTail => {
+                HelperSignature {
+                    min_args: 2,
+                    max_args: 2,
+                    arg_kinds: [P, S, S, S, S],
+                    ret_kind: HelperRetKind::Scalar,
+                }
+            }
             BpfHelper::Redirect => HelperSignature {
                 min_args: 2,
                 max_args: 2,

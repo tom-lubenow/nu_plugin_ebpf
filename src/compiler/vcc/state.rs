@@ -234,6 +234,38 @@ impl VccState {
         }
     }
 
+    pub(super) fn invalidate_packet_pointers(&mut self) {
+        let mut invalidated = Vec::new();
+        for (reg, ty) in self.reg_types.iter_mut() {
+            let is_packet_ptr = matches!(
+                ty,
+                VccValueType::Ptr(VccPointerInfo {
+                    space: VccAddrSpace::Packet,
+                    ..
+                })
+            );
+            if is_packet_ptr {
+                *ty = VccValueType::Unknown;
+                invalidated.push(*reg);
+            }
+        }
+        for reg in &invalidated {
+            self.not_equal_consts.remove(reg);
+        }
+        self.cond_refinements.retain(|reg, info| {
+            if invalidated.contains(reg) {
+                return false;
+            }
+            match info {
+                VccCondRefinement::PtrNull { ptr_reg, .. }
+                | VccCondRefinement::PacketEnd { ptr_reg, .. } => !invalidated.contains(ptr_reg),
+                VccCondRefinement::ContextBufferEnd { .. }
+                | VccCondRefinement::ScalarCmpConst { .. }
+                | VccCondRefinement::ScalarCmpRegs { .. } => true,
+            }
+        });
+    }
+
     fn refine_context_buffer_prefix_limit(&mut self, root: VccReg, safe_limit: i64) {
         for ty in self.reg_types.values_mut() {
             let VccValueType::Ptr(ptr) = ty else {

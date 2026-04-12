@@ -850,6 +850,9 @@ impl VccVerifier {
                     state.set_cond_refinement(*dst, refinement);
                 }
             }
+            VccInst::InvalidatePacketPointers => {
+                state.invalidate_packet_pointers();
+            }
             VccInst::RingbufAcquire { id } => {
                 state.set_live_ringbuf_ref(*id, true);
             }

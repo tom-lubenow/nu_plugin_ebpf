@@ -13,6 +13,13 @@ impl BpfHelper {
         const KERNEL: HelperAllowedPtrSpaces =
             HelperAllowedPtrSpaces::new(false, false, true, false);
         const USER: HelperAllowedPtrSpaces = HelperAllowedPtrSpaces::new(false, false, false, true);
+        const XDP_ADJUST_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper xdp_adjust ctx",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
 
         const MAP_LOOKUP_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
@@ -1027,6 +1034,13 @@ impl BpfHelper {
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
+            BpfHelper::XdpAdjustHead | BpfHelper::XdpAdjustMeta | BpfHelper::XdpAdjustTail => {
+                HelperSemantics {
+                    ptr_arg_rules: XDP_ADJUST_RULES,
+                    positive_size_args: &[],
+                    ringbuf_record_arg0: false,
+                }
+            }
             BpfHelper::RedirectNeigh => HelperSemantics {
                 ptr_arg_rules: REDIRECT_NEIGH_RULES,
                 positive_size_args: &[],

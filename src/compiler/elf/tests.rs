@@ -594,6 +594,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         Some("helper 'bpf_redirect' is only valid in xdp and tc programs".to_string())
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::XdpAdjustMeta),
+        Some("helper 'bpf_xdp_adjust_meta' is only valid in xdp programs".to_string())
+    );
+    assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkRedirectMap),
         Some(
             "helper 'bpf_sk_redirect_map' is only valid in sk_skb and sk_skb_parser programs"
@@ -652,6 +656,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::SkSkbParser.helper_call_error(BpfHelper::SkRedirectHash),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::XdpAdjustHead),
         None
     );
 }

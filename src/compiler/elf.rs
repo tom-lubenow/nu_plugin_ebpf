@@ -869,6 +869,14 @@ impl EbpfProgramType {
                     helper.name()
                 ))
             }
+            BpfHelper::XdpAdjustHead | BpfHelper::XdpAdjustMeta | BpfHelper::XdpAdjustTail
+                if *self != EbpfProgramType::Xdp =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in xdp programs",
+                    helper.name()
+                ))
+            }
             BpfHelper::Redirect if !matches!(self, EbpfProgramType::Xdp | EbpfProgramType::Tc) => {
                 Some(format!(
                     "helper '{}' is only valid in xdp and tc programs",

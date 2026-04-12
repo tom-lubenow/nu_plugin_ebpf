@@ -426,6 +426,13 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         }
     }
 
+    if matches!(
+        helper,
+        BpfHelper::XdpAdjustHead | BpfHelper::XdpAdjustMeta | BpfHelper::XdpAdjustTail
+    ) {
+        state.invalidate_packet_pointers();
+    }
+
     acquire_kind
 }
 
