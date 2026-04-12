@@ -375,27 +375,33 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             if let CtxField::TracepointField(name) = &ctx_field
-                && let Some((
-                    root_semantic_ty,
-                    root_runtime_ty @ MirType::Ptr {
+                && let Some((root_semantic_ty, root_runtime_ty @ MirType::Ptr { .. })) =
+                    self.tracepoint_root_field_types(name)?
+            {
+                let slot = if matches!(
+                    root_runtime_ty,
+                    MirType::Ptr {
                         address_space: AddressSpace::Stack,
                         ..
-                    },
-                )) = self.tracepoint_root_field_types(name)?
-            {
-                let slot = self.func.alloc_stack_slot(
-                    align_to_eight(root_semantic_ty.size()),
-                    8,
-                    StackSlotKind::Local,
-                );
-                self.record_stack_slot_type(slot, root_semantic_ty);
+                    }
+                ) {
+                    let slot = self.func.alloc_stack_slot(
+                        align_to_eight(root_semantic_ty.size()),
+                        8,
+                        StackSlotKind::Local,
+                    );
+                    self.record_stack_slot_type(slot, root_semantic_ty.clone());
+                    Some(slot)
+                } else {
+                    None
+                };
                 let base_vreg = self.func.alloc_vreg();
                 self.vreg_type_hints
                     .insert(base_vreg, root_runtime_ty.clone());
                 self.emit(MirInst::LoadCtxField {
                     dst: base_vreg,
                     field: ctx_field.clone(),
-                    slot: Some(slot),
+                    slot,
                 });
                 let projected_ty = self.lower_typed_value_projection(
                     src_dst,

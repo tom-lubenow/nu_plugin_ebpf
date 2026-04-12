@@ -12,6 +12,26 @@ use nu_protocol::ast::CellPath;
 use nu_protocol::{DeclId, Record, RegId, Span, Type, Value, VarId};
 use std::collections::HashMap;
 
+fn find_tracepoint_pointer_field_candidate() -> Option<(String, String)> {
+    for (target, field_name) in [
+        ("syscalls/sys_enter_openat", "filename"),
+        ("syscalls/sys_enter_openat2", "filename"),
+        ("syscalls/sys_enter_execve", "filename"),
+    ] {
+        let (category, name) = target.split_once('/')?;
+        let Ok(ctx) = KernelBtf::get().get_tracepoint_context(category, name) else {
+            continue;
+        };
+        let Some(field) = ctx.get_field(field_name) else {
+            continue;
+        };
+        if field.type_info.is_ptr() {
+            return Some((target.to_string(), field_name.to_string()));
+        }
+    }
+    None
+}
+
 #[test]
 fn test_mir_function_creation() {
     let mut func = MirFunction::new();
@@ -1365,6 +1385,64 @@ fn test_lower_tracepoint_args_index_projection_uses_stack_backed_numeric_get() {
                 }
             )),
         "expected indexed tracepoint arg projection to load the selected u64 element from stack"
+    );
+}
+
+#[test]
+fn test_lower_tracepoint_pointer_index_projection_uses_helper_read() {
+    let Some((target, field_name)) = find_tracepoint_pointer_field_candidate() else {
+        return;
+    };
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member(&field_name), int_member(0)],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tracepoint, &target);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tracepoint pointer index projection should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::TracepointField(name),
+                    slot: None,
+                    ..
+                } if name == &field_name
+            )),
+        "expected tracepoint pointer root to stay as a direct ctx field load"
+    );
+    let helper_reads = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::CallHelper { helper, .. }
+                    if *helper == BpfHelper::ProbeReadKernel as u32
+                        || *helper == BpfHelper::ProbeReadUser as u32
+            )
+        })
+        .count();
+    assert!(
+        helper_reads >= 1,
+        "expected pointer-root tracepoint projection to use probe-read helpers"
     );
 }
 
