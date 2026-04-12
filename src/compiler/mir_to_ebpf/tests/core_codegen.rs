@@ -141,6 +141,46 @@ fn make_ctx_path_program(path: CellPath) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_ctx_upsert_program(path: CellPath, lit: HirLiteral) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(path)),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit,
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                    new_value: RegId::new(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 5],
+        ast: vec![None; 5],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 #[test]
 fn test_return_zero() {
     let ir = make_ir_block(vec![
@@ -3202,6 +3242,38 @@ fn test_compile_xdp_u16be_packet_projection() {
         Some(&lowering.type_hints),
     )
     .expect("u16be packet projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_xdp_ethertype_packet_assignment() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![
+                string_member("data"),
+                string_member("eth"),
+                string_member("ethertype"),
+            ],
+        },
+        HirLiteral::Int(0x86dd),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp ethertype packet assignment should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("xdp ethertype packet assignment should compile");
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 

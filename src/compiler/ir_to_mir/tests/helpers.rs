@@ -87,6 +87,46 @@ pub(super) fn make_ctx_path_call_program(path: CellPath, decl_id: DeclId) -> Hir
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+pub(super) fn make_ctx_upsert_program(path: CellPath, lit: HirLiteral) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(path)),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit,
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                    new_value: RegId::new(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 5],
+        ast: vec![None; 5],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 pub(super) fn make_return_literal_program(lit: HirLiteral) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {

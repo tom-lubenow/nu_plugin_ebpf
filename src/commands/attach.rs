@@ -169,13 +169,20 @@ Context parameter syntax (recommended):
     codes still work. Packet reads currently support scalar byte access
     through `get`/indexing, direct `u16be`/`u32be` cell-path scalar loads,
     and typed header views `eth`, `ipv4`, `ipv6`, `icmp`, `icmpv6`, `udp`,
-    and `tcp`. Those views also support `payload` stepping: `eth.payload`
-    skips Ethernet and up to two stacked VLAN tags when present,
-    `ipv4.payload` uses the runtime IHL, `ipv6.payload` skips the fixed
-    IPv6 header, `icmp.payload` / `icmpv6.payload` skip the fixed 8-byte
-    ICMP header, and `tcp.payload` uses the runtime data offset. IPv4/TCP
-    options, ICMP subtype-specific body decoding, and IPv6 extension
-    headers are still not modeled.
+    and `tcp`. On `xdp`, `tc`, `sk_skb`, and `sk_skb_parser`, those same
+    scalar/header paths are also writable after shadowing the closure
+    parameter as mutable, for example `mut ctx = $ctx; $ctx.data.0 = 0xff`,
+    `mut ctx = $ctx; $ctx.data.u16be.6 = 0x86dd`, or
+    `mut ctx = $ctx; $ctx.data.eth.ethertype = 0x86dd`. These lower to
+    guarded packet stores and automatically normalize big-endian packet
+    scalars back to network byte order. Other packet families remain
+    read-only for direct packet writes. Those views also support `payload`
+    stepping: `eth.payload` skips Ethernet and up to two stacked VLAN tags
+    when present, `ipv4.payload` uses the runtime IHL, `ipv6.payload`
+    skips the fixed IPv6 header, `icmp.payload` / `icmpv6.payload` skip
+    the fixed 8-byte ICMP header, and `tcp.payload` uses the runtime data
+    offset. IPv4/TCP options, ICMP subtype-specific body decoding, and
+    IPv6 extension headers are still not modeled.
 
   perf_event targets:
     {|ctx| $ctx.cpu }    - Get current CPU ID for the sampled event

@@ -74,27 +74,30 @@ impl<'a> HirToMirLowering<'a> {
             .map_err(CompileError::UnsupportedInstruction)
     }
 
-    pub(super) fn lower_context_upsert_cell_path(
-        &mut self,
-        src_dst: RegId,
+    fn packet_ctx_store_root_from_path(
+        &self,
         path: &CellPath,
+    ) -> Result<Option<(CtxField, usize)>, CompileError> {
+        let (field, index) = self.resolve_ctx_field_from_path(path)?;
+        Ok(matches!(field, CtxField::Data | CtxField::DataMeta).then_some((field, index)))
+    }
+
+    fn materialize_scalar_assignment_value(
+        &mut self,
         new_value: RegId,
-    ) -> Result<(), CompileError> {
-        if let Some(index) = self.cgroup_sockopt_optval_index_from_path(path)? {
-            return self.lower_cgroup_sockopt_optval_byte_update(src_dst, index, new_value, path);
-        }
-        let target = self.resolve_ctx_store_target_from_path(path)?;
+        target_ty: &MirType,
+        path_desc: &str,
+    ) -> Result<VReg, CompileError> {
         let new_value_vreg = self.get_vreg(new_value);
         let new_value_runtime_ty = self
             .typed_value_runtime_type(new_value, new_value_vreg)
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
                     "context cell path update '.{} = ...' requires type information for the new value",
-                    Self::typed_value_path_desc(&path.members)
+                    path_desc
                 ))
             })?;
-        let target_ty = target.value_type();
-        let stored_vreg = match new_value_runtime_ty {
+        match new_value_runtime_ty {
             MirType::Bool
             | MirType::I8
             | MirType::U8
@@ -110,15 +113,333 @@ impl<'a> HirToMirLowering<'a> {
                     dst: widened,
                     src: MirValue::VReg(new_value_vreg),
                 });
-                widened
+                Ok(widened)
             }
-            _ => {
+            _ => Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' requires an integer-compatible scalar value",
+                path_desc
+            ))),
+        }
+    }
+
+    fn resolve_packet_store_target(
+        &mut self,
+        base_vreg: VReg,
+        path_members: &[PathMember],
+        path_desc: &str,
+    ) -> Result<(VReg, usize, MirType, bool), CompileError> {
+        enum PacketStoreCursor {
+            Pointer {
+                base_vreg: VReg,
+                base_offset: usize,
+                target_ty: MirType,
+                direct: bool,
+            },
+            Scalar {
+                base_vreg: VReg,
+                base_offset: usize,
+                element_ty: MirType,
+                element_size: usize,
+                big_endian: bool,
+            },
+        }
+
+        let mut cursor = PacketStoreCursor::Pointer {
+            base_vreg,
+            base_offset: 0,
+            target_ty: MirType::U8,
+            direct: true,
+        };
+
+        for (segment_idx, member) in path_members.iter().enumerate() {
+            let is_last = segment_idx + 1 == path_members.len();
+
+            if let PacketStoreCursor::Scalar {
+                base_vreg,
+                base_offset,
+                element_ty,
+                element_size,
+                big_endian,
+            } = &cursor
+            {
+                let packet_offset = match member {
+                    PathMember::Int { val, .. } => {
+                        let index = usize::try_from(*val).map_err(|_| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "context cell path update '.{} = ...' requires a non-negative packet scalar index",
+                                path_desc
+                            ))
+                        })?;
+                        base_offset
+                            .checked_add(index.checked_mul(*element_size).ok_or_else(|| {
+                                CompileError::UnsupportedInstruction(format!(
+                                    "context cell path update '.{} = ...' packet scalar index overflowed",
+                                    path_desc
+                                ))
+                            })?)
+                            .ok_or_else(|| {
+                                CompileError::UnsupportedInstruction(format!(
+                                    "context cell path update '.{} = ...' offset overflowed",
+                                    path_desc
+                                ))
+                            })?
+                    }
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "context cell path update '.{} = ...' expects a numeric index after a packet scalar view",
+                            path_desc
+                        )));
+                    }
+                };
+
+                if !is_last {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "context cell path update '.{} = ...' does not support nested projection after a packet scalar index",
+                        path_desc
+                    )));
+                }
+
+                return Ok((*base_vreg, packet_offset, element_ty.clone(), *big_endian));
+            }
+
+            let PacketStoreCursor::Pointer {
+                base_vreg,
+                base_offset,
+                target_ty,
+                direct,
+            } = &cursor
+            else {
+                unreachable!();
+            };
+
+            if let Some(kind) = Self::packet_payload_step_kind(target_ty, member) {
+                let payload_ptr_vreg =
+                    self.emit_packet_payload_ptr_step(*base_vreg, *base_offset, kind, path_desc)?;
+                if is_last {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "context cell path update '.{} = ...' requires a scalar packet field, not a payload pointer",
+                        path_desc
+                    )));
+                }
+                cursor = PacketStoreCursor::Pointer {
+                    base_vreg: payload_ptr_vreg,
+                    base_offset: 0,
+                    target_ty: MirType::U8,
+                    direct: true,
+                };
+                continue;
+            }
+
+            if let Some(view) = Self::packet_header_view_spec(target_ty, member) {
+                let view_offset = view.offset;
+                let view_ty = view.ty;
+                let field_offset = base_offset.checked_add(view_offset).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "context cell path update '.{} = ...' offset overflowed",
+                        path_desc
+                    ))
+                })?;
+                if is_last {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "context cell path update '.{} = ...' requires a scalar packet field, not a header view",
+                        path_desc
+                    )));
+                }
+                cursor = PacketStoreCursor::Pointer {
+                    base_vreg: *base_vreg,
+                    base_offset: field_offset,
+                    target_ty: view_ty,
+                    direct: false,
+                };
+                continue;
+            }
+
+            if matches!(target_ty, MirType::U8)
+                && let Some((element_ty, element_size, big_endian)) =
+                    Self::packet_scalar_view_spec(member)
+            {
+                if is_last {
+                    return Ok((*base_vreg, *base_offset, element_ty, big_endian));
+                }
+                cursor = PacketStoreCursor::Scalar {
+                    base_vreg: *base_vreg,
+                    base_offset: *base_offset,
+                    element_ty,
+                    element_size,
+                    big_endian,
+                };
+                continue;
+            }
+
+            let step = match (direct, member) {
+                (true, PathMember::Int { val, .. })
+                    if !matches!(target_ty, MirType::Array { .. }) =>
+                {
+                    Self::resolve_pointer_sequence_index_step(target_ty, *val, path_desc)?
+                }
+                _ => Self::resolve_typed_value_projection_step(target_ty, member, path_desc)?,
+            };
+
+            if step.bitfield.is_some() {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "context cell path update '.{} = ...' requires an integer-compatible scalar value",
-                    Self::typed_value_path_desc(&path.members)
+                    "context cell path update '.{} = ...' does not support packet bitfield stores",
+                    path_desc
                 )));
             }
+
+            let field_offset = base_offset.checked_add(step.offset).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "context cell path update '.{} = ...' offset overflowed",
+                    path_desc
+                ))
+            })?;
+
+            if is_last {
+                if matches!(step.ty, MirType::Array { .. } | MirType::Struct { .. }) {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "context cell path update '.{} = ...' requires a scalar packet field, not {:?}",
+                        path_desc, step.ty
+                    )));
+                }
+                return Ok((*base_vreg, field_offset, step.ty, step.packet_big_endian));
+            }
+
+            cursor = PacketStoreCursor::Pointer {
+                base_vreg: *base_vreg,
+                base_offset: field_offset,
+                target_ty: step.ty,
+                direct: false,
+            };
+        }
+
+        Err(CompileError::UnsupportedInstruction(format!(
+            "context cell path update '.{} = ...' cannot target an empty packet path",
+            path_desc
+        )))
+    }
+
+    fn lower_packet_ctx_update(
+        &mut self,
+        src_dst: RegId,
+        root_field: CtxField,
+        path_members: &[PathMember],
+        new_value: RegId,
+        path_desc: &str,
+    ) -> Result<(), CompileError> {
+        if path_members.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' requires a scalar packet field, not the root packet pointer",
+                path_desc
+            )));
+        }
+
+        let Some(ctx) = self.probe_ctx else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' requires probe context",
+                path_desc
+            )));
         };
+
+        if !matches!(
+            ctx.probe_type,
+            EbpfProgramType::Xdp
+                | EbpfProgramType::Tc
+                | EbpfProgramType::SkSkb
+                | EbpfProgramType::SkSkbParser
+        ) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' packet writes are currently only supported on xdp, tc, sk_skb, and sk_skb_parser programs",
+                path_desc
+            )));
+        }
+
+        ctx.validate_load_ctx_field(&root_field)?;
+        let end_field = Self::packet_guard_end_field(Some(&root_field));
+        ctx.validate_load_ctx_field(&end_field)?;
+
+        let packet_ptr_ty = MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Packet,
+        };
+        let packet_root_vreg = self.func.alloc_vreg();
+        self.vreg_type_hints
+            .insert(packet_root_vreg, packet_ptr_ty.clone());
+        self.emit(MirInst::LoadCtxField {
+            dst: packet_root_vreg,
+            field: root_field,
+            slot: None,
+        });
+
+        let (packet_base_vreg, packet_offset, store_ty, packet_big_endian) =
+            self.resolve_packet_store_target(packet_root_vreg, path_members, path_desc)?;
+        let mut stored_vreg =
+            self.materialize_scalar_assignment_value(new_value, &store_ty, path_desc)?;
+        if packet_big_endian {
+            let normalized_vreg = self.func.alloc_vreg();
+            self.vreg_type_hints
+                .insert(normalized_vreg, store_ty.clone());
+            self.emit(MirInst::Copy {
+                dst: normalized_vreg,
+                src: MirValue::VReg(stored_vreg),
+            });
+            self.emit_packet_big_endian_scalar_normalize(normalized_vreg, &store_ty)?;
+            stored_vreg = normalized_vreg;
+        }
+
+        let packet_store_vreg = if packet_offset == 0 {
+            packet_base_vreg
+        } else {
+            let packet_store_vreg = self.func.alloc_vreg();
+            self.vreg_type_hints
+                .insert(packet_store_vreg, packet_ptr_ty.clone());
+            self.emit(MirInst::BinOp {
+                dst: packet_store_vreg,
+                op: BinOpKind::Add,
+                lhs: MirValue::VReg(packet_base_vreg),
+                rhs: MirValue::Const(i64::from(Self::trampoline_projection_offset_i32(
+                    packet_offset,
+                    path_desc,
+                )?)),
+            });
+            packet_store_vreg
+        };
+
+        self.emit_packet_guarded_store(
+            packet_store_vreg,
+            stored_vreg,
+            &store_ty,
+            end_field,
+            path_desc,
+        )?;
+
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.is_context = true;
+        Ok(())
+    }
+
+    pub(super) fn lower_context_upsert_cell_path(
+        &mut self,
+        src_dst: RegId,
+        path: &CellPath,
+        new_value: RegId,
+    ) -> Result<(), CompileError> {
+        let path_desc = Self::typed_value_path_desc(&path.members);
+        if let Some(index) = self.cgroup_sockopt_optval_index_from_path(path)? {
+            return self.lower_cgroup_sockopt_optval_byte_update(src_dst, index, new_value, path);
+        }
+        if let Some((root_field, index)) = self.packet_ctx_store_root_from_path(path)? {
+            return self.lower_packet_ctx_update(
+                src_dst,
+                root_field,
+                &path.members[index..],
+                new_value,
+                &path_desc,
+            );
+        }
+        let target = self.resolve_ctx_store_target_from_path(path)?;
+        let target_ty = target.value_type();
+        let stored_vreg =
+            self.materialize_scalar_assignment_value(new_value, &target_ty, &path_desc)?;
         self.emit(MirInst::StoreCtxField {
             target,
             val: MirValue::VReg(stored_vreg),
@@ -165,40 +486,8 @@ impl<'a> HirToMirLowering<'a> {
         ctx.validate_load_ctx_field(&CtxField::SockoptOptval)?;
         ctx.validate_load_ctx_field(&CtxField::SockoptOptvalEnd)?;
 
-        let new_value_vreg = self.get_vreg(new_value);
-        let new_value_runtime_ty = self
-            .typed_value_runtime_type(new_value, new_value_vreg)
-            .ok_or_else(|| {
-                CompileError::UnsupportedInstruction(format!(
-                    "context cell path update '.{} = ...' requires type information for the new value",
-                    path_desc
-                ))
-            })?;
-        let stored_vreg = match new_value_runtime_ty {
-            MirType::Bool
-            | MirType::I8
-            | MirType::U8
-            | MirType::I16
-            | MirType::U16
-            | MirType::I32
-            | MirType::U32
-            | MirType::I64
-            | MirType::U64 => {
-                let widened = self.func.alloc_vreg();
-                self.vreg_type_hints.insert(widened, MirType::U8);
-                self.emit(MirInst::Copy {
-                    dst: widened,
-                    src: MirValue::VReg(new_value_vreg),
-                });
-                widened
-            }
-            _ => {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "context cell path update '.{} = ...' requires an integer-compatible scalar value",
-                    path_desc
-                )));
-            }
-        };
+        let stored_vreg =
+            self.materialize_scalar_assignment_value(new_value, &MirType::U8, &path_desc)?;
 
         let ptr_ty = MirType::Ptr {
             pointee: Box::new(MirType::U8),

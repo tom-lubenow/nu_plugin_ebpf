@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) enum PacketPayloadStepKind {
+pub(in crate::compiler::ir_to_mir) enum PacketPayloadStepKind {
     Ethernet,
     Ipv4,
     Ipv6,
@@ -552,7 +552,7 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    pub(super) fn packet_header_view_spec(
+    pub(in crate::compiler::ir_to_mir) fn packet_header_view_spec(
         current_ty: &MirType,
         member: &PathMember,
     ) -> Option<TypedProjectionStep> {
@@ -663,7 +663,7 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    pub(super) fn packet_payload_step_kind(
+    pub(in crate::compiler::ir_to_mir) fn packet_payload_step_kind(
         current_ty: &MirType,
         member: &PathMember,
     ) -> Option<PacketPayloadStepKind> {
@@ -721,7 +721,7 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    pub(super) fn resolve_typed_value_projection_step(
+    pub(in crate::compiler::ir_to_mir) fn resolve_typed_value_projection_step(
         current_ty: &MirType,
         member: &PathMember,
         path_desc: &str,
@@ -841,7 +841,7 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
-    pub(super) fn resolve_pointer_sequence_index_step(
+    pub(in crate::compiler::ir_to_mir) fn resolve_pointer_sequence_index_step(
         current_ty: &MirType,
         index: usize,
         path_desc: &str,
@@ -860,7 +860,9 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
-    pub(super) fn packet_scalar_view_spec(member: &PathMember) -> Option<(MirType, usize, bool)> {
+    pub(in crate::compiler::ir_to_mir) fn packet_scalar_view_spec(
+        member: &PathMember,
+    ) -> Option<(MirType, usize, bool)> {
         let PathMember::String { val, .. } = member else {
             return None;
         };
@@ -981,7 +983,7 @@ impl<'a> HirToMirLowering<'a> {
         vlan_present
     }
 
-    pub(super) fn emit_packet_payload_ptr_step(
+    pub(in crate::compiler::ir_to_mir) fn emit_packet_payload_ptr_step(
         &mut self,
         base_vreg: VReg,
         base_offset: usize,

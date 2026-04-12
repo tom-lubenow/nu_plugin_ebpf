@@ -233,7 +233,7 @@ impl<'a> HirToMirLowering<'a> {
         MirValue::VReg(const_vreg)
     }
 
-    fn packet_guard_end_field(root_ctx_field: Option<&CtxField>) -> CtxField {
+    pub(super) fn packet_guard_end_field(root_ctx_field: Option<&CtxField>) -> CtxField {
         root_ctx_field
             .and_then(CtxField::bounded_end_field)
             .unwrap_or(CtxField::DataEnd)
@@ -347,6 +347,94 @@ impl<'a> HirToMirLowering<'a> {
             CtxField::DataEnd,
             path_desc,
         )
+    }
+
+    pub(super) fn emit_packet_guarded_store(
+        &mut self,
+        packet_ptr_vreg: VReg,
+        val_vreg: VReg,
+        store_ty: &MirType,
+        end_field: CtxField,
+        path_desc: &str,
+    ) -> Result<(), CompileError> {
+        if matches!(
+            store_ty,
+            MirType::Array { .. }
+                | MirType::Struct { .. }
+                | MirType::Ptr { .. }
+                | MirType::MapRef { .. }
+                | MirType::Unknown
+        ) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "packet store for '{}' requires a scalar element type, got {:?}",
+                path_desc, store_ty
+            )));
+        }
+
+        let access_size = i64::try_from(store_ty.size()).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "packet store for '{}' has unsupported size {}",
+                path_desc,
+                store_ty.size()
+            ))
+        })?;
+        if access_size <= 0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "packet store for '{}' requires positive size",
+                path_desc
+            )));
+        }
+
+        let packet_ptr_ty = MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Packet,
+        };
+        let data_end_vreg = self.func.alloc_vreg();
+        self.vreg_type_hints
+            .insert(data_end_vreg, packet_ptr_ty.clone());
+        self.emit(MirInst::LoadCtxField {
+            dst: data_end_vreg,
+            field: end_field,
+            slot: None,
+        });
+
+        let access_end_vreg = self.func.alloc_vreg();
+        self.vreg_type_hints
+            .insert(access_end_vreg, packet_ptr_ty.clone());
+        self.emit(MirInst::BinOp {
+            dst: access_end_vreg,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(packet_ptr_vreg),
+            rhs: MirValue::Const(access_size),
+        });
+
+        let cond_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: cond_vreg,
+            op: BinOpKind::Le,
+            lhs: MirValue::VReg(access_end_vreg),
+            rhs: MirValue::VReg(data_end_vreg),
+        });
+
+        let store_block = self.func.alloc_block();
+        let join_block = self.func.alloc_block();
+        self.terminate(MirInst::Branch {
+            cond: cond_vreg,
+            if_true: store_block,
+            if_false: join_block,
+        });
+
+        self.current_block = store_block;
+        self.emit(MirInst::Store {
+            ptr: packet_ptr_vreg,
+            offset: 0,
+            val: MirValue::VReg(val_vreg),
+            ty: store_ty.clone(),
+        });
+        self.terminate(MirInst::Jump { target: join_block });
+
+        self.current_block = join_block;
+        Ok(())
     }
 
     pub(super) fn emit_context_buffer_guarded_load(
