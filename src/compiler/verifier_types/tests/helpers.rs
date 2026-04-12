@@ -319,6 +319,170 @@ fn test_verify_mir_for_program_msg_apply_bytes_rejects_non_sk_msg_programs() {
 }
 
 #[test]
+fn test_verify_mir_for_program_socket_map_helpers_reject_invalid_programs() {
+    for (helper, expected) in [
+        (
+            BpfHelper::SockMapUpdate,
+            "helper 'bpf_sock_map_update' is only valid in sock_ops programs",
+        ),
+        (
+            BpfHelper::SockHashUpdate,
+            "helper 'bpf_sock_hash_update' is only valid in sock_ops programs",
+        ),
+        (
+            BpfHelper::MsgRedirectMap,
+            "helper 'bpf_msg_redirect_map' is only valid in sk_msg programs",
+        ),
+        (
+            BpfHelper::MsgRedirectHash,
+            "helper 'bpf_msg_redirect_hash' is only valid in sk_msg programs",
+        ),
+        (
+            BpfHelper::SkRedirectMap,
+            "helper 'bpf_sk_redirect_map' is only valid in sk_skb and sk_skb_parser programs",
+        ),
+        (
+            BpfHelper::SkRedirectHash,
+            "helper 'bpf_sk_redirect_hash' is only valid in sk_skb and sk_skb_parser programs",
+        ),
+    ] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let key_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+        let args = match helper {
+            BpfHelper::SockMapUpdate | BpfHelper::SockHashUpdate => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(key_slot),
+                MirValue::Const(0),
+            ],
+            BpfHelper::MsgRedirectMap | BpfHelper::SkRedirectMap => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+            BpfHelper::MsgRedirectHash | BpfHelper::SkRedirectHash => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(key_slot),
+                MirValue::Const(0),
+            ],
+            _ => unreachable!(),
+        };
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args,
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir_for_program(&func, &types, EbpfProgramType::Kprobe.info())
+            .expect_err("expected socket-map helper program-surface error");
+        assert!(err.iter().any(|e| e.message.contains(expected)));
+    }
+}
+
+#[test]
+fn test_verify_mir_for_program_socket_map_helpers_accept_supported_programs() {
+    for (helper, program_info) in [
+        (BpfHelper::SockMapUpdate, EbpfProgramType::SockOps.info()),
+        (BpfHelper::SockHashUpdate, EbpfProgramType::SockOps.info()),
+        (BpfHelper::MsgRedirectMap, EbpfProgramType::SkMsg.info()),
+        (BpfHelper::MsgRedirectHash, EbpfProgramType::SkMsg.info()),
+        (BpfHelper::SkRedirectMap, EbpfProgramType::SkSkb.info()),
+        (
+            BpfHelper::SkRedirectHash,
+            EbpfProgramType::SkSkbParser.info(),
+        ),
+    ] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let key_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+        let args = match helper {
+            BpfHelper::SockMapUpdate | BpfHelper::SockHashUpdate => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(key_slot),
+                MirValue::Const(0),
+            ],
+            BpfHelper::MsgRedirectMap | BpfHelper::SkRedirectMap => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+            BpfHelper::MsgRedirectHash | BpfHelper::SkRedirectHash => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(key_slot),
+                MirValue::Const(0),
+            ],
+            _ => unreachable!(),
+        };
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args,
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        verify_mir_for_program(&func, &types, program_info)
+            .expect("expected socket-map helper in supported program");
+    }
+}
+
+#[test]
 fn test_verify_mir_for_program_sysctl_helpers_reject_non_sysctl_programs() {
     for (helper, extra_args) in [
         (

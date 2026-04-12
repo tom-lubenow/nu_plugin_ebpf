@@ -31,9 +31,15 @@ impl BpfHelper {
             46 => Some(Self::GetSocketCookie),
             47 => Some(Self::GetSocketUid),
             49 => Some(Self::SetSockOpt),
+            52 => Some(Self::SkRedirectMap),
+            53 => Some(Self::SockMapUpdate),
             57 => Some(Self::GetSockOpt),
             59 => Some(Self::SockOpsCbFlagsSet),
+            60 => Some(Self::MsgRedirectMap),
             122 => Some(Self::GetNetnsCookie),
+            70 => Some(Self::SockHashUpdate),
+            71 => Some(Self::MsgRedirectHash),
+            72 => Some(Self::SkRedirectHash),
             125 => Some(Self::KtimeGetBootNs),
             142 => Some(Self::LoadHdrOpt),
             143 => Some(Self::StoreHdrOpt),
@@ -194,6 +200,18 @@ impl BpfHelper {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
+            BpfHelper::SkRedirectMap | BpfHelper::MsgRedirectMap => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SockMapUpdate => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, P, P, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
             BpfHelper::SetSockOpt | BpfHelper::GetSockOpt => HelperSignature {
                 min_args: 5,
                 max_args: 5,
@@ -206,6 +224,14 @@ impl BpfHelper {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
+            BpfHelper::SockHashUpdate | BpfHelper::MsgRedirectHash | BpfHelper::SkRedirectHash => {
+                HelperSignature {
+                    min_args: 4,
+                    max_args: 4,
+                    arg_kinds: [P, P, P, S, S],
+                    ret_kind: HelperRetKind::Scalar,
+                }
+            }
             BpfHelper::LoadHdrOpt | BpfHelper::StoreHdrOpt => HelperSignature {
                 min_args: 4,
                 max_args: 4,

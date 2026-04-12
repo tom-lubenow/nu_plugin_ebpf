@@ -187,6 +187,8 @@ impl<'a> HirToMirLowering<'a> {
             "lru-per-cpu-hash" | "lru-percpu-hash" | "lru_per_cpu_hash" | "lrupercpuhash" => {
                 Some(MapKind::LruPerCpuHash)
             }
+            "sock-map" | "sock_map" | "sockmap" => Some(MapKind::SockMap),
+            "sock-hash" | "sock_hash" | "sockhash" => Some(MapKind::SockHash),
             _ => None,
         }
     }
@@ -198,7 +200,7 @@ impl<'a> HirToMirLowering<'a> {
         let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
         Self::parse_generic_map_kind(&kind).ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must be one of: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash"
+                "{context} --kind must be one of: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, sockmap, sockhash"
             ))
         })
     }
@@ -264,6 +266,12 @@ impl<'a> HirToMirLowering<'a> {
                 map_kind, map_name
             )));
         }
+        if matches!(map_kind, MapKind::SockMap | MapKind::SockHash) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map-delete is not supported for socket map kind {:?} ('{}'); socket maps require specialized redirect/update helpers instead of generic map-delete",
+                map_kind, map_name
+            )));
+        }
         Ok(())
     }
 
@@ -278,6 +286,12 @@ impl<'a> HirToMirLowering<'a> {
                 map_kind, map_name
             )));
         }
+        if matches!(map_kind, MapKind::SockMap | MapKind::SockHash) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map-get is not supported for socket map kind {:?} ('{}'); use specialized socket-map helpers instead",
+                map_kind, map_name
+            )));
+        }
         Ok(())
     }
 
@@ -289,6 +303,12 @@ impl<'a> HirToMirLowering<'a> {
         if matches!(map_kind, MapKind::Queue | MapKind::Stack) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map-put is not supported for map kind {:?} ('{}'); use map-push instead",
+                map_kind, map_name
+            )));
+        }
+        if matches!(map_kind, MapKind::SockMap | MapKind::SockHash) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map-put is not supported for socket map kind {:?} ('{}'); use specialized socket-map update helpers instead",
                 map_kind, map_name
             )));
         }

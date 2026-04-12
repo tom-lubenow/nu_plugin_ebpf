@@ -233,6 +233,136 @@ impl BpfHelper {
             },
         ];
 
+        const SK_REDIRECT_MAP_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper sk_redirect_map skb",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper sk_redirect_map map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+        ];
+
+        const SOCK_MAP_UPDATE_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper sock_map_update ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper sock_map_update map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper sock_map_update key",
+                allowed: STACK_MAP,
+                fixed_size: Some(4),
+                size_from_arg: None,
+            },
+        ];
+
+        const MSG_REDIRECT_MAP_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper msg_redirect_map msg",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper msg_redirect_map map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+        ];
+
+        const SOCK_HASH_UPDATE_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper sock_hash_update ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper sock_hash_update map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper sock_hash_update key",
+                allowed: STACK_MAP,
+                fixed_size: Some(1),
+                size_from_arg: None,
+            },
+        ];
+
+        const MSG_REDIRECT_HASH_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper msg_redirect_hash msg",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper msg_redirect_hash map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper msg_redirect_hash key",
+                allowed: STACK_MAP,
+                fixed_size: Some(1),
+                size_from_arg: None,
+            },
+        ];
+
+        const SK_REDIRECT_HASH_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper sk_redirect_hash skb",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper sk_redirect_hash map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper sk_redirect_hash key",
+                allowed: STACK_MAP,
+                fixed_size: Some(1),
+                size_from_arg: None,
+            },
+        ];
+
         const BIND_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -859,6 +989,36 @@ impl BpfHelper {
                     fixed_size: None,
                     size_from_arg: None,
                 }],
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkRedirectMap => HelperSemantics {
+                ptr_arg_rules: SK_REDIRECT_MAP_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SockMapUpdate => HelperSemantics {
+                ptr_arg_rules: SOCK_MAP_UPDATE_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::MsgRedirectMap => HelperSemantics {
+                ptr_arg_rules: MSG_REDIRECT_MAP_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SockHashUpdate => HelperSemantics {
+                ptr_arg_rules: SOCK_HASH_UPDATE_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::MsgRedirectHash => HelperSemantics {
+                ptr_arg_rules: MSG_REDIRECT_HASH_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkRedirectHash => HelperSemantics {
+                ptr_arg_rules: SK_REDIRECT_HASH_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

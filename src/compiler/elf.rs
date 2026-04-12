@@ -46,6 +46,8 @@ pub enum BpfMapType {
     LruHash = 9,
     LruPerCpuHash = 10,
     LpmTrie = 11,
+    SockMap = 14,
+    SockHash = 18,
     Queue = 22,
     Stack = 23,
     StackTrace = 7,
@@ -154,6 +156,30 @@ impl BpfMapDef {
             map_type: BpfMapType::LruPerCpuHash as u32,
             key_size,
             value_size,
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a generic sockmap definition.
+    pub fn sock_map(max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::SockMap as u32,
+            key_size: 4,
+            value_size: 4,
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a generic sockhash definition.
+    pub fn sock_hash(key_size: u32, max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::SockHash as u32,
+            key_size,
+            value_size: 4,
             max_entries,
             map_flags: 0,
             pinning: BpfPinningType::None,
@@ -858,10 +884,20 @@ impl EbpfProgramType {
             | BpfHelper::MsgPullData
             | BpfHelper::MsgPushData
             | BpfHelper::MsgPopData
+            | BpfHelper::MsgRedirectMap
+            | BpfHelper::MsgRedirectHash
                 if *self != EbpfProgramType::SkMsg =>
             {
                 Some(format!(
                     "helper '{}' is only valid in sk_msg programs",
+                    helper.name()
+                ))
+            }
+            BpfHelper::SkRedirectMap | BpfHelper::SkRedirectHash
+                if !matches!(self, EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in sk_skb and sk_skb_parser programs",
                     helper.name()
                 ))
             }
@@ -884,6 +920,14 @@ impl EbpfProgramType {
                 "helper '{}' is only valid in sock_ops programs",
                 helper.name()
             )),
+            BpfHelper::SockMapUpdate | BpfHelper::SockHashUpdate
+                if *self != EbpfProgramType::SockOps =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in sock_ops programs",
+                    helper.name()
+                ))
+            }
             BpfHelper::LoadHdrOpt | BpfHelper::StoreHdrOpt | BpfHelper::ReserveHdrOpt
                 if *self != EbpfProgramType::SockOps =>
             {

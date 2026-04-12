@@ -98,12 +98,24 @@ pub enum BpfHelper {
     GetSocketUid = 47,
     /// long bpf_setsockopt(ctx, level, optname, optval, optlen)
     SetSockOpt = 49,
+    /// long bpf_sk_redirect_map(skb, map, key, flags)
+    SkRedirectMap = 52,
+    /// long bpf_sock_map_update(skops, map, key, flags)
+    SockMapUpdate = 53,
     /// long bpf_getsockopt(ctx, level, optname, optval, optlen)
     GetSockOpt = 57,
     /// long bpf_sock_ops_cb_flags_set(bpf_sock, argval)
     SockOpsCbFlagsSet = 59,
+    /// long bpf_msg_redirect_map(msg, map, key, flags)
+    MsgRedirectMap = 60,
     /// u64 bpf_get_netns_cookie(ctx)
     GetNetnsCookie = 122,
+    /// long bpf_sock_hash_update(skops, map, key, flags)
+    SockHashUpdate = 70,
+    /// long bpf_msg_redirect_hash(msg, map, key, flags)
+    MsgRedirectHash = 71,
+    /// long bpf_sk_redirect_hash(skb, map, key, flags)
+    SkRedirectHash = 72,
     /// u64 bpf_ktime_get_boot_ns(void)
     KtimeGetBootNs = 125,
     /// long bpf_load_hdr_opt(skops, searchby_res, len, flags)
@@ -238,9 +250,15 @@ impl BpfHelper {
             BpfHelper::GetSocketCookie => "bpf_get_socket_cookie",
             BpfHelper::GetSocketUid => "bpf_get_socket_uid",
             BpfHelper::SetSockOpt => "bpf_setsockopt",
+            BpfHelper::SkRedirectMap => "bpf_sk_redirect_map",
+            BpfHelper::SockMapUpdate => "bpf_sock_map_update",
             BpfHelper::GetSockOpt => "bpf_getsockopt",
             BpfHelper::SockOpsCbFlagsSet => "bpf_sock_ops_cb_flags_set",
+            BpfHelper::MsgRedirectMap => "bpf_msg_redirect_map",
             BpfHelper::GetNetnsCookie => "bpf_get_netns_cookie",
+            BpfHelper::SockHashUpdate => "bpf_sock_hash_update",
+            BpfHelper::MsgRedirectHash => "bpf_msg_redirect_hash",
+            BpfHelper::SkRedirectHash => "bpf_sk_redirect_hash",
             BpfHelper::KtimeGetBootNs => "bpf_ktime_get_boot_ns",
             BpfHelper::LoadHdrOpt => "bpf_load_hdr_opt",
             BpfHelper::StoreHdrOpt => "bpf_store_hdr_opt",
@@ -328,9 +346,15 @@ impl BpfHelper {
             "get_socket_cookie" => Some(Self::GetSocketCookie),
             "get_socket_uid" => Some(Self::GetSocketUid),
             "setsockopt" => Some(Self::SetSockOpt),
+            "sk_redirect_map" => Some(Self::SkRedirectMap),
+            "sock_map_update" => Some(Self::SockMapUpdate),
             "getsockopt" => Some(Self::GetSockOpt),
             "sock_ops_cb_flags_set" => Some(Self::SockOpsCbFlagsSet),
+            "msg_redirect_map" => Some(Self::MsgRedirectMap),
             "get_netns_cookie" => Some(Self::GetNetnsCookie),
+            "sock_hash_update" => Some(Self::SockHashUpdate),
+            "msg_redirect_hash" => Some(Self::MsgRedirectHash),
+            "sk_redirect_hash" => Some(Self::SkRedirectHash),
             "ktime_get_boot_ns" => Some(Self::KtimeGetBootNs),
             "load_hdr_opt" => Some(Self::LoadHdrOpt),
             "store_hdr_opt" => Some(Self::StoreHdrOpt),

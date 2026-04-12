@@ -708,6 +708,171 @@ fn test_infer_sock_ops_cb_flags_set_in_sock_ops_context() {
 }
 
 #[test]
+fn test_type_error_socket_map_helpers_reject_invalid_programs() {
+    for (helper, program_type, spec, expected) in [
+        (
+            BpfHelper::SockMapUpdate,
+            EbpfProgramType::Kprobe,
+            "ksys_read",
+            "helper 'bpf_sock_map_update' is only valid in sock_ops programs",
+        ),
+        (
+            BpfHelper::SockHashUpdate,
+            EbpfProgramType::Kprobe,
+            "ksys_read",
+            "helper 'bpf_sock_hash_update' is only valid in sock_ops programs",
+        ),
+        (
+            BpfHelper::MsgRedirectMap,
+            EbpfProgramType::Tc,
+            "lo:ingress",
+            "helper 'bpf_msg_redirect_map' is only valid in sk_msg programs",
+        ),
+        (
+            BpfHelper::MsgRedirectHash,
+            EbpfProgramType::Tc,
+            "lo:ingress",
+            "helper 'bpf_msg_redirect_hash' is only valid in sk_msg programs",
+        ),
+        (
+            BpfHelper::SkRedirectMap,
+            EbpfProgramType::Kprobe,
+            "ksys_read",
+            "helper 'bpf_sk_redirect_map' is only valid in sk_skb and sk_skb_parser programs",
+        ),
+        (
+            BpfHelper::SkRedirectHash,
+            EbpfProgramType::Kprobe,
+            "ksys_read",
+            "helper 'bpf_sk_redirect_hash' is only valid in sk_skb and sk_skb_parser programs",
+        ),
+    ] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let key_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+        let args = match helper {
+            BpfHelper::SockMapUpdate | BpfHelper::SockHashUpdate => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(key_slot),
+                MirValue::Const(0),
+            ],
+            BpfHelper::MsgRedirectMap | BpfHelper::SkRedirectMap => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+            BpfHelper::MsgRedirectHash | BpfHelper::SkRedirectHash => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(key_slot),
+                MirValue::Const(0),
+            ],
+            _ => unreachable!(),
+        };
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(program_type, spec);
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected socket-map helper to be rejected outside its program family");
+        assert!(errs.iter().any(|e| e.message.contains(expected)));
+    }
+}
+
+#[test]
+fn test_infer_socket_map_helpers_in_supported_programs() {
+    for (helper, probe_ctx) in [
+        (
+            BpfHelper::SockMapUpdate,
+            ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup"),
+        ),
+        (
+            BpfHelper::SockHashUpdate,
+            ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup"),
+        ),
+        (
+            BpfHelper::MsgRedirectMap,
+            ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap"),
+        ),
+        (
+            BpfHelper::MsgRedirectHash,
+            ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap"),
+        ),
+        (
+            BpfHelper::SkRedirectMap,
+            ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap"),
+        ),
+        (
+            BpfHelper::SkRedirectHash,
+            ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap"),
+        ),
+    ] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let key_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+        let args = match helper {
+            BpfHelper::SockMapUpdate | BpfHelper::SockHashUpdate => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(key_slot),
+                MirValue::Const(0),
+            ],
+            BpfHelper::MsgRedirectMap | BpfHelper::SkRedirectMap => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+            BpfHelper::MsgRedirectHash | BpfHelper::SkRedirectHash => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(key_slot),
+                MirValue::Const(0),
+            ],
+            _ => unreachable!(),
+        };
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .expect("expected socket-map helper to infer in supported program");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
 fn test_type_error_store_hdr_opt_helper_requires_zero_flags() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

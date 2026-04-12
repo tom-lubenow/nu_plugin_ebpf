@@ -71,12 +71,36 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::SetSockOpt)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_sk_redirect_map"),
+        Some(BpfHelper::SkRedirectMap)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_sock_map_update"),
+        Some(BpfHelper::SockMapUpdate)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_getsockopt"),
         Some(BpfHelper::GetSockOpt)
     ));
     assert!(matches!(
         BpfHelper::from_name("bpf_sock_ops_cb_flags_set"),
         Some(BpfHelper::SockOpsCbFlagsSet)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_msg_redirect_map"),
+        Some(BpfHelper::MsgRedirectMap)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_sock_hash_update"),
+        Some(BpfHelper::SockHashUpdate)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_msg_redirect_hash"),
+        Some(BpfHelper::MsgRedirectHash)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_sk_redirect_hash"),
+        Some(BpfHelper::SkRedirectHash)
     ));
     assert!(matches!(
         BpfHelper::from_name("bpf_load_hdr_opt"),
@@ -335,6 +359,69 @@ fn test_helper_signatures_setsockopt_and_getsockopt() {
     assert_eq!(reserve_hdr_sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(reserve_hdr_sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(reserve_hdr_sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signatures_socket_map_helpers() {
+    let sk_redirect_map_sig = HelperSignature::for_id(BpfHelper::SkRedirectMap as u32)
+        .expect("expected bpf_sk_redirect_map helper signature");
+    assert_eq!(sk_redirect_map_sig.min_args, 4);
+    assert_eq!(sk_redirect_map_sig.max_args, 4);
+    assert_eq!(sk_redirect_map_sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sk_redirect_map_sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sk_redirect_map_sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sk_redirect_map_sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sk_redirect_map_sig.ret_kind, HelperRetKind::Scalar);
+
+    let sock_map_update_sig = HelperSignature::for_id(BpfHelper::SockMapUpdate as u32)
+        .expect("expected bpf_sock_map_update helper signature");
+    assert_eq!(sock_map_update_sig.min_args, 4);
+    assert_eq!(sock_map_update_sig.max_args, 4);
+    assert_eq!(sock_map_update_sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sock_map_update_sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sock_map_update_sig.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(sock_map_update_sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sock_map_update_sig.ret_kind, HelperRetKind::Scalar);
+
+    let msg_redirect_map_sig = HelperSignature::for_id(BpfHelper::MsgRedirectMap as u32)
+        .expect("expected bpf_msg_redirect_map helper signature");
+    assert_eq!(msg_redirect_map_sig.min_args, 4);
+    assert_eq!(msg_redirect_map_sig.max_args, 4);
+    assert_eq!(msg_redirect_map_sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(msg_redirect_map_sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(msg_redirect_map_sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(msg_redirect_map_sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(msg_redirect_map_sig.ret_kind, HelperRetKind::Scalar);
+
+    let sock_hash_update_sig = HelperSignature::for_id(BpfHelper::SockHashUpdate as u32)
+        .expect("expected bpf_sock_hash_update helper signature");
+    assert_eq!(sock_hash_update_sig.min_args, 4);
+    assert_eq!(sock_hash_update_sig.max_args, 4);
+    assert_eq!(sock_hash_update_sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sock_hash_update_sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sock_hash_update_sig.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(sock_hash_update_sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sock_hash_update_sig.ret_kind, HelperRetKind::Scalar);
+
+    let msg_redirect_hash_sig = HelperSignature::for_id(BpfHelper::MsgRedirectHash as u32)
+        .expect("expected bpf_msg_redirect_hash helper signature");
+    assert_eq!(msg_redirect_hash_sig.min_args, 4);
+    assert_eq!(msg_redirect_hash_sig.max_args, 4);
+    assert_eq!(msg_redirect_hash_sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(msg_redirect_hash_sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(msg_redirect_hash_sig.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(msg_redirect_hash_sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(msg_redirect_hash_sig.ret_kind, HelperRetKind::Scalar);
+
+    let sk_redirect_hash_sig = HelperSignature::for_id(BpfHelper::SkRedirectHash as u32)
+        .expect("expected bpf_sk_redirect_hash helper signature");
+    assert_eq!(sk_redirect_hash_sig.min_args, 4);
+    assert_eq!(sk_redirect_hash_sig.max_args, 4);
+    assert_eq!(sk_redirect_hash_sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sk_redirect_hash_sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sk_redirect_hash_sig.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(sk_redirect_hash_sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sk_redirect_hash_sig.ret_kind, HelperRetKind::Scalar);
 }
 
 #[test]

@@ -67,6 +67,8 @@ pub enum MapKind {
     Stack,
     RingBuf,
     StackTrace,
+    SockMap,
+    SockHash,
     ProgArray,
 }
 

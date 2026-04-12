@@ -1144,6 +1144,72 @@ fn test_lower_map_put_rejects_queue_kind() {
 }
 
 #[test]
+fn test_lower_map_get_rejects_sockmap_kind() {
+    let mut hir = make_map_get_projection_program(DeclId::new(42), DeclId::new(43));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([
+        (DeclId::new(42), "map-get".to_string()),
+        (DeclId::new(43), "count".to_string()),
+    ]);
+
+    for stmt in &mut hir.main.blocks[0].stmts {
+        if let HirStmt::LoadLiteral {
+            dst,
+            lit: HirLiteral::String(kind),
+        } = stmt
+            && *dst == RegId::new(3)
+        {
+            *kind = b"sockmap".to_vec();
+        }
+    }
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("sockmap map-get should be rejected during lowering");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("map-get is not supported for socket map kind"));
+            assert!(msg.contains("SockMap"));
+            assert!(msg.contains("use specialized socket-map helpers instead"));
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
+fn test_lower_map_put_rejects_sockhash_kind() {
+    let hir = make_map_put_program(DeclId::new(42), 0, "sockhash");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-put".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("sockhash map-put should be rejected during lowering");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("map-put is not supported for socket map kind"));
+            assert!(msg.contains("SockHash"));
+            assert!(msg.contains("use specialized socket-map update helpers instead"));
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
 fn test_lower_map_delete_rejects_queue_kind() {
     let hir = make_map_delete_program(DeclId::new(42), "queue");
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
@@ -1163,6 +1229,36 @@ fn test_lower_map_delete_rejects_queue_kind() {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(msg.contains("map delete is not supported for map kind"));
             assert!(msg.contains("Queue"));
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
+fn test_lower_map_delete_rejects_sockmap_kind() {
+    let hir = make_map_delete_program(DeclId::new(42), "sockmap");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-delete".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("sockmap map-delete should be rejected during lowering");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("map-delete is not supported for socket map kind"));
+            assert!(msg.contains("SockMap"));
+            assert!(
+                msg.contains(
+                    "socket maps require specialized redirect/update helpers instead of generic map-delete"
+                )
+            );
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }
