@@ -96,7 +96,7 @@ The closure receives a context parameter with these fields:
 | `local_ip4` | Local IPv4 address in host byte order | sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `local_ip6` | Local IPv6 address as four host-order `u32` words | sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `local_port` | Local port in host byte order | sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
-| `sk` | Typed `bpf_sock *` pointer for socket projection such as `$ctx.sk.family` or `$ctx.sk.bound_dev_if`; currently exposes `bound_dev_if`, `family`, `type`, `protocol`, `mark`, `priority`, `src_port`, `dst_port` (raw network byte order), `state`, and `rx_queue_mapping` | cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_lookup, sk_msg, sock_ops |
+| `sk` | Typed `bpf_sock *` pointer for socket projection such as `$ctx.sk.family` or `$ctx.sk.bound_dev_if`; currently exposes `bound_dev_if`, `family`, `type`, `protocol`, `mark`, `priority`, `src_ip4`, `src_ip6`, `src_port`, `dst_port` (raw network byte order), `dst_ip4`, `dst_ip6`, `state`, and `rx_queue_mapping` | cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_lookup, sk_msg, sock_ops |
 | `cookie` | Socket lookup cookie | sk_lookup |
 | `level` | Socket-option level | cgroup_sockopt |
 | `optname` | Socket-option name | cgroup_sockopt |

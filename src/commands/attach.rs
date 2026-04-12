@@ -251,7 +251,7 @@ Context parameter syntax (recommended):
   cgroup_sock fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
-    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include family, type, protocol, mark, priority, src_port, dst_port, state, and rx_queue_mapping)
+    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_ip4, src_ip6, src_port, dst_port, dst_ip4, dst_ip6, state, and rx_queue_mapping)
     {|ctx| $ctx.family }  - Get socket family
     {|ctx| $ctx.sock_type } - Get socket type
     {|ctx| $ctx.protocol } - Get socket protocol
@@ -325,7 +325,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.skb_len } - Get the total packet length when packet metadata is available
     {|ctx| $ctx.skb_tcp_flags } - Get packet TCP flags when packet metadata is available
     {|ctx| $ctx.skb_hwtstamp } - Get packet hardware timestamp when packet metadata is available
-    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_port, dst_port, state, and rx_queue_mapping)
+    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_ip4, src_ip6, src_port, dst_port, dst_ip4, dst_ip6, state, and rx_queue_mapping)
     Note: sock_ops uses raw integer return codes. Observation-only examples
     should return `1`. `ctx.reply` and `ctx.replylong.<0-3>` are writable raw
     `u32` words after shadowing the immutable closure parameter as mutable, for
@@ -351,7 +351,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.packet_len } - Get total message size in bytes
     {|ctx| $ctx.data }    - Get the packet/message data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet/message access
-    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include family, type, protocol, mark, priority, src_port, dst_port, state, and rx_queue_mapping)
+    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_ip4, src_ip6, src_port, dst_port, dst_ip4, dst_ip6, state, and rx_queue_mapping)
     {|ctx| $ctx.family }  - Get socket family
     {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order
     {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words
@@ -477,7 +477,7 @@ Context parameter syntax (recommended):
   cgroup_sockopt fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
-    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include family, type, protocol, mark, priority, src_port, dst_port, state, and rx_queue_mapping)
+    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_ip4, src_ip6, src_port, dst_port, dst_ip4, dst_ip6, state, and rx_queue_mapping)
     {|ctx| $ctx.level }   - Get the socket-option level
     {|ctx| $ctx.optname } - Get the socket-option name
     {|ctx| $ctx.optlen }  - Get the socket-option length
@@ -506,7 +506,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.family }  - Get kernel socket family
     {|ctx| $ctx.sock_type } - Get socket type
     {|ctx| $ctx.protocol } - Get socket protocol
-    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_port, dst_port, state, and rx_queue_mapping)
+    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_ip4, src_ip6, src_port, dst_port, dst_ip4, dst_ip6, state, and rx_queue_mapping)
     {|ctx| $ctx.msg_src_ip4 } - Get the IPv4 source address in host byte order on sendmsg4/recvmsg4
     {|ctx| $ctx.msg_src_ip6 } - Get the IPv6 source address as four host-order u32 words on sendmsg6/recvmsg6
     Note: cgroup_sock_addr closures can return `allow` or `deny` instead of
@@ -522,7 +522,7 @@ Context parameter syntax (recommended):
   sk_lookup fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
-    {|ctx| $ctx.sk.bound_dev_if } - Project the selected socket through a typed bpf_sock pointer (fields include family, type, protocol, mark, priority, src_port, dst_port, state, and rx_queue_mapping)
+    {|ctx| $ctx.sk.bound_dev_if } - Project the selected socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_ip4, src_ip6, src_port, dst_port, dst_ip4, dst_ip6, state, and rx_queue_mapping)
     {|ctx| $ctx.family }  - Get socket family
     {|ctx| $ctx.protocol } - Get IP protocol
     {|ctx| $ctx.cookie }  - Get the socket lookup cookie
