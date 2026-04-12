@@ -581,9 +581,29 @@ mod tests {
         assert!(fields.iter().any(|field| field.name == "src_port"
             && field.ty == MirType::U32
             && field.offset == 44));
+        assert!(fields.iter().any(|field| field.name == "src_ip4"
+            && field.ty == MirType::U32
+            && field.offset == 24));
+        assert!(fields.iter().any(|field| field.name == "src_ip6"
+            && field.ty
+                == MirType::Array {
+                    elem: Box::new(MirType::U32),
+                    len: 4,
+                }
+            && field.offset == 28));
         assert!(fields.iter().any(|field| field.name == "dst_port"
             && field.ty == MirType::U16
             && field.offset == 48));
+        assert!(fields.iter().any(|field| field.name == "dst_ip4"
+            && field.ty == MirType::U32
+            && field.offset == 52));
+        assert!(fields.iter().any(|field| field.name == "dst_ip6"
+            && field.ty
+                == MirType::Array {
+                    elem: Box::new(MirType::U32),
+                    len: 4,
+                }
+            && field.offset == 56));
         assert!(
             fields.iter().any(|field| field.name == "state"
                 && field.ty == MirType::U32

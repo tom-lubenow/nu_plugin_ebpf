@@ -105,6 +105,23 @@ pub(crate) fn synthetic_bpf_sock_type() -> MirType {
                 bitfield: None,
             },
             StructField {
+                name: "src_ip4".to_string(),
+                ty: MirType::U32,
+                offset: 24,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "src_ip6".to_string(),
+                ty: MirType::Array {
+                    elem: Box::new(MirType::U32),
+                    len: 4,
+                },
+                offset: 28,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
                 name: "src_port".to_string(),
                 ty: MirType::U32,
                 offset: 44,
@@ -115,6 +132,23 @@ pub(crate) fn synthetic_bpf_sock_type() -> MirType {
                 name: "dst_port".to_string(),
                 ty: MirType::U16,
                 offset: 48,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "dst_ip4".to_string(),
+                ty: MirType::U32,
+                offset: 52,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "dst_ip6".to_string(),
+                ty: MirType::Array {
+                    elem: Box::new(MirType::U32),
+                    len: 4,
+                },
+                offset: 56,
                 synthetic: false,
                 bitfield: None,
             },

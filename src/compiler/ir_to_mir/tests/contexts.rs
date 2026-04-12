@@ -792,6 +792,90 @@ fn test_lower_sk_lookup_ctx_socket_bound_dev_if_field() {
 }
 
 #[test]
+fn test_lower_sk_lookup_ctx_socket_src_ip4_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("sk"), string_member("src_ip4")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_lookup ctx.sk.src_ip4 should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Socket,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadSlot {
+                    ty: MirType::U32,
+                    ..
+                }
+            )))
+    );
+}
+
+#[test]
+fn test_lower_sk_lookup_ctx_socket_src_ip6_index_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("sk"), string_member("src_ip6"), int_member(0)],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_lookup ctx.sk.src_ip6[0] should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Socket,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadSlot {
+                    ty: MirType::U32,
+                    ..
+                }
+            )))
+    );
+}
+
+#[test]
 fn test_lower_sk_msg_ctx_socket_family_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("sk"), string_member("family")],
