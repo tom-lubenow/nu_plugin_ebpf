@@ -71,7 +71,7 @@ impl<'a> HirToMirLowering<'a> {
             }
         };
 
-        ctx.resolve_ctx_write_target(&field_name, index, &path_desc)
+        ctx.resolve_ctx_write_target(&field_name, index)
             .map_err(CompileError::UnsupportedInstruction)
     }
 

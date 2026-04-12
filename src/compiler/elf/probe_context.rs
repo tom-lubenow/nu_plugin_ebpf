@@ -537,8 +537,14 @@ impl ProbeContext {
         &self,
         field_name: &str,
         index: Option<usize>,
-        _path_desc: &str,
     ) -> Result<CtxStoreTarget, String> {
+        if let Some(result) = self
+            .parsed_program_spec()
+            .and_then(|spec| spec.resolve_special_ctx_store_target(field_name, index))
+        {
+            return result;
+        }
+
         let word_index = |field_name: &str, index: usize| -> Result<u8, String> {
             let index = u8::try_from(index)
                 .map_err(|_| format!("ctx.{field_name} index must be in 0..=3, got {index}"))?;
@@ -549,32 +555,6 @@ impl ProbeContext {
             }
             Ok(index)
         };
-        match (field_name, index) {
-            ("reply", None) if self.probe_type == EbpfProgramType::SockOps => {
-                return Ok(CtxStoreTarget::SockOpsReply);
-            }
-            ("reply", Some(_)) if self.probe_type == EbpfProgramType::SockOps => {
-                return Err("ctx.reply does not support indexed assignment".into());
-            }
-            ("replylong", Some(index)) if self.probe_type == EbpfProgramType::SockOps => {
-                let index = u8::try_from(index)
-                    .map_err(|_| format!("ctx.replylong index must be in 0..=3, got {}", index))?;
-                if index >= 4 {
-                    return Err(format!(
-                        "ctx.replylong index must be in 0..=3, got {}",
-                        index
-                    ));
-                }
-                return Ok(CtxStoreTarget::SockOpsReplyLong(index));
-            }
-            ("replylong", None) if self.probe_type == EbpfProgramType::SockOps => {
-                return Err(
-                    "ctx.replylong assignment requires a fixed index, e.g. $ctx.replylong.0 = ..."
-                        .into(),
-                );
-            }
-            _ => {}
-        }
 
         let field = self.resolve_ctx_field_name(field_name)?;
         self.validate_ctx_field_access(&field)
@@ -655,23 +635,15 @@ impl ProbeContext {
         &self,
         field_name: &str,
         index: Option<usize>,
-        path_desc: &str,
     ) -> Result<CtxWriteTarget, String> {
-        if field_name == "optval" {
-            self.validate_ctx_field_access(&CtxField::SockoptOptval)
-                .map_err(|err| err.to_string())?;
-            self.validate_ctx_field_access(&CtxField::SockoptOptvalEnd)
-                .map_err(|err| err.to_string())?;
-            let Some(index) = index else {
-                return Err(
-                    "ctx.optval assignment requires a fixed index, e.g. $ctx.optval.0 = ..."
-                        .to_string(),
-                );
-            };
-            return Ok(CtxWriteTarget::SockoptOptvalByte(index));
+        if let Some(result) = self
+            .parsed_program_spec()
+            .and_then(|spec| spec.resolve_special_ctx_write_target(field_name, index))
+        {
+            return result;
         }
 
-        self.resolve_ctx_store_target(field_name, index, path_desc)
+        self.resolve_ctx_store_target(field_name, index)
             .map(CtxWriteTarget::StoreField)
     }
 

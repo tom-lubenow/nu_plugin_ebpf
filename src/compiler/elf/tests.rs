@@ -2059,12 +2059,12 @@ fn test_probe_context_allows_arg_on_tp_btf() {
 fn test_probe_context_resolves_sock_ops_store_targets() {
     let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
     assert_eq!(
-        ctx.resolve_ctx_store_target("reply", None, "reply")
+        ctx.resolve_ctx_store_target("reply", None)
             .expect("sock_ops reply target should resolve"),
         CtxStoreTarget::SockOpsReply
     );
     assert_eq!(
-        ctx.resolve_ctx_store_target("replylong", Some(2), "replylong.2")
+        ctx.resolve_ctx_store_target("replylong", Some(2))
             .expect("sock_ops replylong target should resolve"),
         CtxStoreTarget::SockOpsReplyLong(2)
     );
@@ -2099,7 +2099,7 @@ fn test_probe_context_rejects_sock_ops_store_target_on_non_sock_ops_program() {
 fn test_probe_context_rejects_sock_ops_replylong_store_without_fixed_index() {
     let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
     let err = ctx
-        .resolve_ctx_store_target("replylong", None, "replylong")
+        .resolve_ctx_store_target("replylong", None)
         .expect_err("replylong without index should be rejected");
     assert!(err.contains("requires a fixed index"));
 }
@@ -2108,7 +2108,7 @@ fn test_probe_context_rejects_sock_ops_replylong_store_without_fixed_index() {
 fn test_probe_context_resolves_cgroup_sysctl_file_pos_store_target() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
     assert_eq!(
-        ctx.resolve_ctx_store_target("file_pos", None, "file_pos")
+        ctx.resolve_ctx_store_target("file_pos", None)
             .expect("cgroup_sysctl file_pos target should resolve"),
         CtxStoreTarget::SysctlFilePos
     );
@@ -2134,7 +2134,7 @@ fn test_probe_context_rejects_cgroup_sysctl_file_pos_store_target_on_non_sysctl_
 fn test_probe_context_rejects_cgroup_sysctl_write_store_target_as_read_only() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
     let err = ctx
-        .resolve_ctx_store_target("write", None, "write")
+        .resolve_ctx_store_target("write", None)
         .expect_err("cgroup_sysctl write store target should be rejected as read-only");
     assert!(err.contains("ctx.write is read-only"));
 }
@@ -2726,7 +2726,7 @@ fn test_probe_context_rejects_sockopt_retval_on_cgroup_sockopt_set() {
 fn test_probe_context_resolves_cgroup_sockopt_retval_store_target() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
     assert_eq!(
-        ctx.resolve_ctx_store_target("sockopt_retval", None, "sockopt_retval")
+        ctx.resolve_ctx_store_target("sockopt_retval", None)
             .expect("cgroup_sockopt:get retval target should resolve"),
         CtxStoreTarget::SockoptRetval
     );
@@ -2741,19 +2741,19 @@ fn test_probe_context_resolves_cgroup_sockopt_scalar_store_targets() {
     let set_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set");
     assert_eq!(
         set_ctx
-            .resolve_ctx_store_target("level", None, "level")
+            .resolve_ctx_store_target("level", None)
             .expect("cgroup_sockopt:set level target should resolve"),
         CtxStoreTarget::SockoptLevel
     );
     assert_eq!(
         set_ctx
-            .resolve_ctx_store_target("optname", None, "optname")
+            .resolve_ctx_store_target("optname", None)
             .expect("cgroup_sockopt:set optname target should resolve"),
         CtxStoreTarget::SockoptOptname
     );
     assert_eq!(
         set_ctx
-            .resolve_ctx_store_target("optlen", None, "optlen")
+            .resolve_ctx_store_target("optlen", None)
             .expect("cgroup_sockopt:set optlen target should resolve"),
         CtxStoreTarget::SockoptOptlen
     );
@@ -2776,7 +2776,7 @@ fn test_probe_context_resolves_cgroup_sockopt_scalar_store_targets() {
     let get_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
     assert_eq!(
         get_ctx
-            .resolve_ctx_store_target("optlen", None, "optlen")
+            .resolve_ctx_store_target("optlen", None)
             .expect("cgroup_sockopt:get optlen target should resolve"),
         CtxStoreTarget::SockoptOptlen
     );
@@ -2791,7 +2791,7 @@ fn test_probe_context_resolves_cgroup_sockopt_scalar_store_targets() {
 fn test_probe_context_resolves_cgroup_sockopt_optval_byte_write_target() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
     assert_eq!(
-        ctx.resolve_ctx_write_target("optval", Some(2), "optval.2")
+        ctx.resolve_ctx_write_target("optval", Some(2))
             .expect("cgroup_sockopt:get optval.2 target should resolve"),
         CtxWriteTarget::SockoptOptvalByte(2)
     );
@@ -2801,7 +2801,7 @@ fn test_probe_context_resolves_cgroup_sockopt_optval_byte_write_target() {
 fn test_probe_context_rejects_cgroup_sockopt_optval_write_without_fixed_index() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
     let err = ctx
-        .resolve_ctx_write_target("optval", None, "optval")
+        .resolve_ctx_write_target("optval", None)
         .expect_err("cgroup_sockopt optval write without fixed index should be rejected");
     assert!(err.contains("requires a fixed index"));
 }
@@ -2810,7 +2810,7 @@ fn test_probe_context_rejects_cgroup_sockopt_optval_write_without_fixed_index() 
 fn test_probe_context_rejects_optval_write_target_outside_cgroup_sockopt() {
     let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_openat2");
     let err = ctx
-        .resolve_ctx_write_target("optval", Some(0), "optval.0")
+        .resolve_ctx_write_target("optval", Some(0))
         .expect_err("optval writes should be rejected outside cgroup_sockopt");
     assert!(err.contains("ctx.optval is only available on cgroup_sockopt programs"));
 }
@@ -2819,7 +2819,7 @@ fn test_probe_context_rejects_optval_write_target_outside_cgroup_sockopt() {
 fn test_probe_context_rejects_cgroup_sockopt_set_retval_store_target() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set");
     let err = ctx
-        .resolve_ctx_store_target("sockopt_retval", None, "sockopt_retval")
+        .resolve_ctx_store_target("sockopt_retval", None)
         .expect_err("cgroup_sockopt:set retval store target should be rejected");
     assert!(err.contains("cgroup_sockopt:get"));
 }
@@ -2828,7 +2828,7 @@ fn test_probe_context_rejects_cgroup_sockopt_set_retval_store_target() {
 fn test_probe_context_rejects_cgroup_sockopt_get_level_store_target() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
     let err = ctx
-        .resolve_ctx_store_target("level", None, "level")
+        .resolve_ctx_store_target("level", None)
         .expect_err("cgroup_sockopt:get level store target should be rejected");
     assert!(err.contains("ctx.level is only writable on cgroup_sockopt:set hooks"));
 }
@@ -2837,12 +2837,12 @@ fn test_probe_context_rejects_cgroup_sockopt_get_level_store_target() {
 fn test_probe_context_resolves_cgroup_sock_addr_ipv4_store_targets() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
     assert_eq!(
-        ctx.resolve_ctx_store_target("user_ip4", None, "user_ip4")
+        ctx.resolve_ctx_store_target("user_ip4", None)
             .expect("cgroup_sock_addr connect4 user_ip4 target should resolve"),
         CtxStoreTarget::CgroupSockAddrUserIp4
     );
     assert_eq!(
-        ctx.resolve_ctx_store_target("user_port", None, "user_port")
+        ctx.resolve_ctx_store_target("user_port", None)
             .expect("cgroup_sock_addr connect4 user_port target should resolve"),
         CtxStoreTarget::CgroupSockAddrUserPort
     );
@@ -2860,7 +2860,7 @@ fn test_probe_context_resolves_cgroup_sock_addr_ipv4_store_targets() {
 fn test_probe_context_rejects_ipv4_store_target_on_ipv6_sock_addr_hook() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect6");
     let err = ctx
-        .resolve_ctx_store_target("user_ip4", None, "user_ip4")
+        .resolve_ctx_store_target("user_ip4", None)
         .expect_err("cgroup_sock_addr connect6 user_ip4 store target should be rejected");
     assert!(err.contains("IPv4 cgroup_sock_addr hooks"));
 }
@@ -2869,7 +2869,7 @@ fn test_probe_context_rejects_ipv4_store_target_on_ipv6_sock_addr_hook() {
 fn test_probe_context_rejects_cgroup_sock_addr_user_family_store_target_as_read_only() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
     let err = ctx
-        .resolve_ctx_store_target("user_family", None, "user_family")
+        .resolve_ctx_store_target("user_family", None)
         .expect_err("cgroup_sock_addr user_family store target should be rejected as read-only");
     assert!(err.contains("ctx.user_family is read-only"));
 }
@@ -2879,7 +2879,7 @@ fn test_probe_context_resolves_cgroup_sock_addr_ipv6_and_msg_source_store_target
     let connect6 = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect6");
     assert_eq!(
         connect6
-            .resolve_ctx_store_target("user_ip6", Some(2), "user_ip6.2")
+            .resolve_ctx_store_target("user_ip6", Some(2))
             .expect("cgroup_sock_addr connect6 user_ip6.2 target should resolve"),
         CtxStoreTarget::CgroupSockAddrUserIp6Word(2)
     );
@@ -2892,7 +2892,7 @@ fn test_probe_context_resolves_cgroup_sock_addr_ipv6_and_msg_source_store_target
     let sendmsg4 = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:sendmsg4");
     assert_eq!(
         sendmsg4
-            .resolve_ctx_store_target("msg_src_ip4", None, "msg_src_ip4")
+            .resolve_ctx_store_target("msg_src_ip4", None)
             .expect("cgroup_sock_addr sendmsg4 msg_src_ip4 target should resolve"),
         CtxStoreTarget::CgroupSockAddrMsgSrcIp4
     );
@@ -2900,7 +2900,7 @@ fn test_probe_context_resolves_cgroup_sock_addr_ipv6_and_msg_source_store_target
     let sendmsg6 = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:sendmsg6");
     assert_eq!(
         sendmsg6
-            .resolve_ctx_store_target("msg_src_ip6", Some(3), "msg_src_ip6.3")
+            .resolve_ctx_store_target("msg_src_ip6", Some(3))
             .expect("cgroup_sock_addr sendmsg6 msg_src_ip6.3 target should resolve"),
         CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(3)
     );
