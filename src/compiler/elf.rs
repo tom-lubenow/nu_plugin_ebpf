@@ -1058,6 +1058,28 @@ impl EbpfProgramType {
                     helper.name()
                 ))
             }
+            BpfHelper::GetListenerSock | BpfHelper::SkFullsock
+                if !matches!(self, EbpfProgramType::Tc | EbpfProgramType::CgroupSkb) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in tc and cgroup_skb programs",
+                    helper.name()
+                ))
+            }
+            BpfHelper::TcpSock
+                if !matches!(
+                    self,
+                    EbpfProgramType::Tc
+                        | EbpfProgramType::CgroupSkb
+                        | EbpfProgramType::CgroupSockopt
+                        | EbpfProgramType::SockOps
+                ) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in tc, cgroup_skb, cgroup_sockopt, and sock_ops programs",
+                    helper.name()
+                ))
+            }
             BpfHelper::SetSockOpt | BpfHelper::GetSockOpt
                 if !matches!(
                     self,

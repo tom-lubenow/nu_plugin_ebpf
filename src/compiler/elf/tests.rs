@@ -803,6 +803,24 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         Some("helper 'bpf_sk_assign' is only valid in tc and sk_lookup programs".to_string())
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::GetListenerSock),
+        Some(
+            "helper 'bpf_get_listener_sock' is only valid in tc and cgroup_skb programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkFullsock),
+        Some("helper 'bpf_sk_fullsock' is only valid in tc and cgroup_skb programs".to_string())
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::TcpSock),
+        Some(
+            "helper 'bpf_tcp_sock' is only valid in tc, cgroup_skb, cgroup_sockopt, and sock_ops programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::CgroupSysctl.helper_call_error(BpfHelper::SysctlGetCurrentValue),
         None
     );
@@ -848,6 +866,18 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::Tc.helper_call_error(BpfHelper::SkAssign),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSkb.helper_call_error(BpfHelper::GetListenerSock),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSkb.helper_call_error(BpfHelper::SkFullsock),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSockopt.helper_call_error(BpfHelper::TcpSock),
         None
     );
 }
