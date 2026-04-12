@@ -640,8 +640,18 @@ impl ProbeContext {
                     .map_err(|err| err.to_string())?;
                 Ok(CtxStoreTarget::SockoptRetval)
             }
+            (EbpfProgramType::CgroupSockAddr, "user_ip4", None) => {
+                self.validate_ctx_field_access(&CtxField::UserIp4)
+                    .map_err(|err| err.to_string())?;
+                Ok(CtxStoreTarget::CgroupSockAddrUserIp4)
+            }
+            (EbpfProgramType::CgroupSockAddr, "user_port", None) => {
+                self.validate_ctx_field_access(&CtxField::UserPort)
+                    .map_err(|err| err.to_string())?;
+                Ok(CtxStoreTarget::CgroupSockAddrUserPort)
+            }
             _ => Err(format!(
-                "context cell path update '.{} = ...' is only supported for sock_ops reply fields and cgroup_sockopt:get sockopt_retval",
+                "context cell path update '.{} = ...' is only supported for sock_ops reply fields, cgroup_sockopt:get sockopt_retval, and cgroup_sock_addr rewrite fields",
                 path_desc
             )),
         }
@@ -660,6 +670,12 @@ impl ProbeContext {
                 }
             }
             CtxStoreTarget::SockoptRetval => self.ctx_field_access_error(&CtxField::SockoptRetval),
+            CtxStoreTarget::CgroupSockAddrUserIp4 => {
+                self.ctx_field_access_error(&CtxField::UserIp4)
+            }
+            CtxStoreTarget::CgroupSockAddrUserPort => {
+                self.ctx_field_access_error(&CtxField::UserPort)
+            }
         }
     }
 

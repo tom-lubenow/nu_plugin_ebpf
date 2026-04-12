@@ -83,20 +83,34 @@ impl<'a> MirToEbpfCompiler<'a> {
             ));
         };
         ctx.validate_ctx_store_target(target)?;
-        let offset = match target {
-            CtxStoreTarget::SockOpsReply => Self::bpf_sock_ops_args_offset(),
-            CtxStoreTarget::SockOpsReplyLong(index) => {
+        let val_reg = self.value_to_reg(val)?;
+        let (offset, store_reg) = match target {
+            CtxStoreTarget::SockOpsReply => (Self::bpf_sock_ops_args_offset(), val_reg),
+            CtxStoreTarget::SockOpsReplyLong(index) => (
                 Self::bpf_sock_ops_args_offset()
                     + i16::from(*index).checked_mul(4).ok_or_else(|| {
                         CompileError::UnsupportedInstruction(
                             "sock_ops replylong index overflowed".into(),
                         )
-                    })?
+                    })?,
+                val_reg,
+            ),
+            CtxStoreTarget::SockoptRetval => (Self::bpf_sockopt_offsets().5, val_reg),
+            CtxStoreTarget::CgroupSockAddrUserIp4 => {
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
+                self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
+                (Self::bpf_sock_addr_offsets().1, EbpfReg::R0)
             }
-            CtxStoreTarget::SockoptRetval => Self::bpf_sockopt_offsets().5,
+            CtxStoreTarget::CgroupSockAddrUserPort => {
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
+                self.instructions.push(EbpfInsn::lsh64_imm(EbpfReg::R0, 16));
+                self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
+                (Self::bpf_sock_addr_offsets().3, EbpfReg::R0)
+            }
         };
-        let val_reg = self.value_to_reg(val)?;
-        self.emit_store(EbpfReg::R9, offset, val_reg, size)?;
+        self.emit_store(EbpfReg::R9, offset, store_reg, size)?;
         Ok(())
     }
 

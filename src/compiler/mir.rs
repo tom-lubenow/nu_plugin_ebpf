@@ -720,6 +720,10 @@ pub enum CtxStoreTarget {
     SockOpsReplyLong(u8),
     /// `bpf_sockopt.retval`
     SockoptRetval,
+    /// `bpf_sock_addr.user_ip4` (stored in network byte order)
+    CgroupSockAddrUserIp4,
+    /// `bpf_sock_addr.user_port` (stored in network byte order)
+    CgroupSockAddrUserPort,
 }
 
 impl CtxStoreTarget {
@@ -727,6 +731,9 @@ impl CtxStoreTarget {
         match self {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => MirType::U32,
             CtxStoreTarget::SockoptRetval => MirType::I32,
+            CtxStoreTarget::CgroupSockAddrUserIp4 | CtxStoreTarget::CgroupSockAddrUserPort => {
+                MirType::U32
+            }
         }
     }
 
@@ -742,6 +749,12 @@ impl CtxStoreTarget {
                 "writable cgroup_sockopt retval requires an i32 store, got {:?}",
                 actual
             ),
+            CtxStoreTarget::CgroupSockAddrUserIp4 | CtxStoreTarget::CgroupSockAddrUserPort => {
+                format!(
+                    "writable cgroup_sock_addr rewrite fields require a u32 store, got {:?}",
+                    actual
+                )
+            }
         }
     }
 
@@ -752,6 +765,9 @@ impl CtxStoreTarget {
             }
             CtxStoreTarget::SockoptRetval => {
                 "writable sockopt_retval requires cgroup_sockopt:get context"
+            }
+            CtxStoreTarget::CgroupSockAddrUserIp4 | CtxStoreTarget::CgroupSockAddrUserPort => {
+                "writable cgroup_sock_addr rewrite fields require cgroup_sock_addr context"
             }
         }
     }

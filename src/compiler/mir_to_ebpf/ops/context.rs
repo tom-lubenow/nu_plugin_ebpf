@@ -135,7 +135,8 @@ impl<'a> MirToEbpfCompiler<'a> {
         72
     }
 
-    pub(super) fn bpf_sock_addr_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16) {
+    pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_addr_offsets()
+    -> (i16, i16, i16, i16, i16, i16, i16, i16, i16) {
         // struct bpf_sock_addr {
         //     __u32 user_family;
         //     __u32 user_ip4;

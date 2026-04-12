@@ -64,7 +64,7 @@ impl<'a> HirToMirLowering<'a> {
             }
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "context cell path update '.{} = ...' is only supported for sock_ops reply fields and cgroup_sockopt:get sockopt_retval",
+                    "context cell path update '.{} = ...' is only supported for sock_ops reply fields, cgroup_sockopt:get sockopt_retval, and cgroup_sock_addr rewrite fields",
                     path_desc
                 )));
             }

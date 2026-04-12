@@ -2542,6 +2542,38 @@ fn test_probe_context_rejects_cgroup_sockopt_set_retval_store_target() {
 }
 
 #[test]
+fn test_probe_context_resolves_cgroup_sock_addr_ipv4_store_targets() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+    assert_eq!(
+        ctx.resolve_ctx_store_target("user_ip4", None, "user_ip4")
+            .expect("cgroup_sock_addr connect4 user_ip4 target should resolve"),
+        CtxStoreTarget::CgroupSockAddrUserIp4
+    );
+    assert_eq!(
+        ctx.resolve_ctx_store_target("user_port", None, "user_port")
+            .expect("cgroup_sock_addr connect4 user_port target should resolve"),
+        CtxStoreTarget::CgroupSockAddrUserPort
+    );
+    assert!(
+        ctx.validate_ctx_store_target(&CtxStoreTarget::CgroupSockAddrUserIp4)
+            .is_ok()
+    );
+    assert!(
+        ctx.validate_ctx_store_target(&CtxStoreTarget::CgroupSockAddrUserPort)
+            .is_ok()
+    );
+}
+
+#[test]
+fn test_probe_context_rejects_ipv4_store_target_on_ipv6_sock_addr_hook() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect6");
+    let err = ctx
+        .resolve_ctx_store_target("user_ip4", None, "user_ip4")
+        .expect_err("cgroup_sock_addr connect6 user_ip4 store target should be rejected");
+    assert!(err.contains("IPv4 cgroup_sock_addr hooks"));
+}
+
+#[test]
 fn test_probe_context_rejects_xdp_only_packet_fields_on_tc() {
     let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let rx_err = ctx
