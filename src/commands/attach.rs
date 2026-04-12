@@ -189,6 +189,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.ktime }  - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.pid }    - Get current thread ID at sample time
     {|ctx| $ctx.comm }   - Get current command name at sample time
+    {|ctx| $ctx.arg0 }   - Get sampled ABI register slot 0 from the saved pt_regs frame
     {|ctx| $ctx.sample_period } - Get the sampled perf period (x86_64)
     {|ctx| $ctx.addr }   - Get the sampled address, when present (x86_64)
     Note: initial perf_event support covers software `cpu-clock`,
@@ -794,6 +795,11 @@ Requirements:
             Example {
                 example: "ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.cpu | count; 0 }",
                 description: "Count software cpu-clock samples by CPU",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.arg0 | count; 0 }",
+                description: "Count software cpu-clock samples by sampled pt_regs arg0 register",
                 result: None,
             },
             Example {

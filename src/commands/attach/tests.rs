@@ -3642,6 +3642,18 @@ fn test_compile_perf_event_ctx_cpu_counter_program() {
 }
 
 #[test]
+fn test_compile_perf_event_ctx_arg0_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+        CellPath {
+            members: vec![string_member("arg0")],
+        },
+        "perf_event ctx.arg0 count",
+    );
+}
+
+#[test]
 #[cfg(target_arch = "x86_64")]
 fn test_compile_perf_event_ctx_sample_period_counter_program() {
     assert_ctx_path_count_program_compiles(

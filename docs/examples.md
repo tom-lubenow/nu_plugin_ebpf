@@ -34,6 +34,9 @@ ebpf attach --dry-run 'lsm:file_open' {|ctx| $ctx.arg.file.f_flags | count; 0 }
 # Count software cpu-clock samples by CPU
 let id = ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.cpu | count; 0 }
 
+# Count software cpu-clock samples by sampled pt_regs arg0 register
+let id = ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.arg0 | count; 0 }
+
 # Count software cpu-clock samples by sampled period (x86_64)
 let id = ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.sample_period | count; 0 }
 

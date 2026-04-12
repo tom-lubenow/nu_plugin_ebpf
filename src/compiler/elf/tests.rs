@@ -185,7 +185,7 @@ fn test_program_type_metadata_for_perf_event() {
     assert_eq!(info.canonical_prefix, "perf_event");
     assert_eq!(info.attach_kind, ProgramAttachKind::PerfEvent);
     assert_eq!(info.target_kind, ProgramTargetKind::PerfEventTarget);
-    assert_eq!(info.arg_access, ProgramValueAccess::None);
+    assert_eq!(info.arg_access, ProgramValueAccess::PtRegs);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
     assert!(info.supports_task_ctx_fields);
     assert!(info.supports_cpu_ctx_field);
@@ -2142,6 +2142,15 @@ fn test_probe_context_allows_arg_on_fentry() {
 #[test]
 fn test_probe_context_allows_arg_on_tp_btf() {
     let ctx = ProbeContext::new(EbpfProgramType::TpBtf, "sys_enter");
+    assert!(ctx.ctx_field_access_error(&CtxField::Arg(0)).is_none());
+}
+
+#[test]
+fn test_probe_context_allows_arg_on_perf_event() {
+    let ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+    );
     assert!(ctx.ctx_field_access_error(&CtxField::Arg(0)).is_none());
 }
 

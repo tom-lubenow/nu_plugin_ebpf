@@ -495,6 +495,36 @@ fn test_lower_raw_tracepoint_ctx_arg_field() {
 }
 
 #[test]
+fn test_lower_perf_event_ctx_arg_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("arg0")],
+    });
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("perf_event ctx.arg0 should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Arg(0),
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_cgroup_sock_post_bind_ctx_socket_src_port_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("sk"), string_member("src_port")],

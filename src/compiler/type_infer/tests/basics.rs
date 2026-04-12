@@ -453,6 +453,30 @@ fn test_type_error_tracepoint_arg_is_rejected() {
 }
 
 #[test]
+fn test_infer_perf_event_arg_is_i64() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::Arg(0),
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+    );
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::I64));
+}
+
+#[test]
 fn test_infer_tracepoint_id_field_is_concrete_integer() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();
