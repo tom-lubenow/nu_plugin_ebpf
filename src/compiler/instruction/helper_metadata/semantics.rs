@@ -27,6 +27,22 @@ impl BpfHelper {
             fixed_size: None,
             size_from_arg: None,
         }];
+        const SKB_STORE_BYTES_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper skb_store_bytes skb",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper skb_store_bytes from",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(3),
+            },
+        ];
 
         const MAP_LOOKUP_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
@@ -1003,6 +1019,20 @@ impl BpfHelper {
                     fixed_size: None,
                     size_from_arg: None,
                 }],
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkbStoreBytes => HelperSemantics {
+                ptr_arg_rules: SKB_STORE_BYTES_RULES,
+                positive_size_args: &[3],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::L3CsumReplace
+            | BpfHelper::L4CsumReplace
+            | BpfHelper::GetHashRecalc
+            | BpfHelper::CsumUpdate
+            | BpfHelper::SetHashInvalid => HelperSemantics {
+                ptr_arg_rules: SKB_MUTATE_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

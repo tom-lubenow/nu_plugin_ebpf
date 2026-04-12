@@ -70,10 +70,22 @@ pub enum BpfHelper {
     GetPrandomU32 = 7,
     /// u32 bpf_get_smp_processor_id(void)
     GetSmpProcessorId = 8,
+    /// long bpf_skb_store_bytes(skb, offset, from, len, flags)
+    SkbStoreBytes = 9,
+    /// long bpf_l3_csum_replace(skb, offset, from, to, size)
+    L3CsumReplace = 10,
+    /// long bpf_l4_csum_replace(skb, offset, from, to, flags)
+    L4CsumReplace = 11,
     /// long bpf_skb_change_tail(skb, len, flags)
     SkbChangeTail = 38,
     /// long bpf_skb_pull_data(skb, len)
     SkbPullData = 39,
+    /// u32 bpf_get_hash_recalc(skb)
+    GetHashRecalc = 34,
+    /// s64 bpf_csum_update(skb, csum)
+    CsumUpdate = 40,
+    /// void bpf_set_hash_invalid(skb)
+    SetHashInvalid = 41,
     /// long bpf_skb_change_head(skb, len, flags)
     SkbChangeHead = 43,
     /// long bpf_xdp_adjust_head(xdp_md, delta)
@@ -251,8 +263,14 @@ impl BpfHelper {
             BpfHelper::TracePrintk => "bpf_trace_printk",
             BpfHelper::GetPrandomU32 => "bpf_get_prandom_u32",
             BpfHelper::GetSmpProcessorId => "bpf_get_smp_processor_id",
+            BpfHelper::SkbStoreBytes => "bpf_skb_store_bytes",
+            BpfHelper::L3CsumReplace => "bpf_l3_csum_replace",
+            BpfHelper::L4CsumReplace => "bpf_l4_csum_replace",
             BpfHelper::SkbChangeTail => "bpf_skb_change_tail",
             BpfHelper::SkbPullData => "bpf_skb_pull_data",
+            BpfHelper::GetHashRecalc => "bpf_get_hash_recalc",
+            BpfHelper::CsumUpdate => "bpf_csum_update",
+            BpfHelper::SetHashInvalid => "bpf_set_hash_invalid",
             BpfHelper::SkbChangeHead => "bpf_skb_change_head",
             BpfHelper::XdpAdjustHead => "bpf_xdp_adjust_head",
             BpfHelper::Redirect => "bpf_redirect",
@@ -354,8 +372,14 @@ impl BpfHelper {
             "trace_printk" => Some(Self::TracePrintk),
             "get_prandom_u32" => Some(Self::GetPrandomU32),
             "get_smp_processor_id" => Some(Self::GetSmpProcessorId),
+            "skb_store_bytes" => Some(Self::SkbStoreBytes),
+            "l3_csum_replace" => Some(Self::L3CsumReplace),
+            "l4_csum_replace" => Some(Self::L4CsumReplace),
             "skb_change_tail" => Some(Self::SkbChangeTail),
             "skb_pull_data" => Some(Self::SkbPullData),
+            "get_hash_recalc" => Some(Self::GetHashRecalc),
+            "csum_update" => Some(Self::CsumUpdate),
+            "set_hash_invalid" => Some(Self::SetHashInvalid),
             "skb_change_head" => Some(Self::SkbChangeHead),
             "xdp_adjust_head" => Some(Self::XdpAdjustHead),
             "redirect" => Some(Self::Redirect),

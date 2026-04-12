@@ -483,21 +483,18 @@ fn test_verify_mir_for_program_socket_map_helpers_accept_supported_programs() {
 }
 
 #[test]
-fn test_verify_mir_for_program_skb_packet_mutation_helpers_reject_invalid_programs() {
-    for (helper, args) in [
-        (
-            BpfHelper::SkbChangeTail,
-            vec![MirValue::Const(64), MirValue::Const(0)],
-        ),
-        (BpfHelper::SkbPullData, vec![MirValue::Const(64)]),
-        (
-            BpfHelper::SkbChangeHead,
-            vec![MirValue::Const(14), MirValue::Const(0)],
-        ),
-        (
-            BpfHelper::SkbAdjustRoom,
-            vec![MirValue::Const(14), MirValue::Const(0), MirValue::Const(0)],
-        ),
+fn test_verify_mir_for_program_skb_packet_edit_helpers_reject_invalid_programs() {
+    for helper in [
+        BpfHelper::SkbStoreBytes,
+        BpfHelper::L3CsumReplace,
+        BpfHelper::L4CsumReplace,
+        BpfHelper::GetHashRecalc,
+        BpfHelper::SkbChangeTail,
+        BpfHelper::SkbPullData,
+        BpfHelper::CsumUpdate,
+        BpfHelper::SetHashInvalid,
+        BpfHelper::SkbChangeHead,
+        BpfHelper::SkbAdjustRoom,
     ] {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();
@@ -505,6 +502,30 @@ fn test_verify_mir_for_program_skb_packet_mutation_helpers_reject_invalid_progra
 
         let ctx = func.alloc_vreg();
         let dst = func.alloc_vreg();
+        let buf_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+        let args = match helper {
+            BpfHelper::SkbStoreBytes => vec![
+                MirValue::Const(0),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(4),
+                MirValue::Const(0),
+            ],
+            BpfHelper::L3CsumReplace | BpfHelper::L4CsumReplace => vec![
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+            BpfHelper::GetHashRecalc | BpfHelper::SetHashInvalid => vec![],
+            BpfHelper::SkbChangeTail | BpfHelper::SkbChangeHead => {
+                vec![MirValue::Const(64), MirValue::Const(0)]
+            }
+            BpfHelper::SkbPullData | BpfHelper::CsumUpdate => vec![MirValue::Const(64)],
+            BpfHelper::SkbAdjustRoom => {
+                vec![MirValue::Const(14), MirValue::Const(0), MirValue::Const(0)]
+            }
+            _ => unreachable!(),
+        };
         func.block_mut(entry)
             .instructions
             .push(MirInst::LoadCtxField {
@@ -534,7 +555,7 @@ fn test_verify_mir_for_program_skb_packet_mutation_helpers_reject_invalid_progra
         types.insert(dst, MirType::I64);
 
         let err = verify_mir_for_program(&func, &types, EbpfProgramType::Kprobe.info())
-            .expect_err("expected skb packet-mutation helper program-surface error");
+            .expect_err("expected skb packet-edit helper program-surface error");
         assert!(err.iter().any(|e| {
             e.message.contains(&format!(
                 "helper '{}' is only valid in tc, sk_skb, and sk_skb_parser programs",
@@ -542,6 +563,115 @@ fn test_verify_mir_for_program_skb_packet_mutation_helpers_reject_invalid_progra
             ))
         }));
     }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_store_bytes_accepts_in_bounds_source_buffer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let ctx = func.alloc_vreg();
+    let len = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: len,
+        src: MirValue::Const(4),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkbStoreBytes as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(0),
+                MirValue::StackSlot(buf_slot),
+                MirValue::VReg(len),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(len, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected skb_store_bytes to accept in-bounds stack buffer");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_store_bytes_rejects_out_of_bounds_source_buffer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let ctx = func.alloc_vreg();
+    let len = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(2, 2, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: len,
+        src: MirValue::Const(4),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkbStoreBytes as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(0),
+                MirValue::StackSlot(buf_slot),
+                MirValue::VReg(len),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(len, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected skb_store_bytes to reject out-of-bounds stack buffer");
+    assert!(
+        err.iter().any(|e| e.message.contains("out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
 }
 
 #[test]

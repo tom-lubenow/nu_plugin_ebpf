@@ -878,7 +878,13 @@ impl EbpfProgramType {
                 ))
             }
             BpfHelper::SkbChangeTail
+            | BpfHelper::SkbStoreBytes
+            | BpfHelper::L3CsumReplace
+            | BpfHelper::L4CsumReplace
+            | BpfHelper::GetHashRecalc
             | BpfHelper::SkbPullData
+            | BpfHelper::CsumUpdate
+            | BpfHelper::SetHashInvalid
             | BpfHelper::SkbChangeHead
             | BpfHelper::SkbAdjustRoom
                 if !matches!(

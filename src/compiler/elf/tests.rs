@@ -605,6 +605,20 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkbStoreBytes),
+        Some(
+            "helper 'bpf_skb_store_bytes' is only valid in tc, sk_skb, and sk_skb_parser programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::L3CsumReplace),
+        Some(
+            "helper 'bpf_l3_csum_replace' is only valid in tc, sk_skb, and sk_skb_parser programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkRedirectMap),
         Some(
             "helper 'bpf_sk_redirect_map' is only valid in sk_skb and sk_skb_parser programs"
@@ -675,6 +689,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::SkSkb.helper_call_error(BpfHelper::SkbAdjustRoom),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbStoreBytes),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::SkSkb.helper_call_error(BpfHelper::GetHashRecalc),
         None
     );
     assert_eq!(
