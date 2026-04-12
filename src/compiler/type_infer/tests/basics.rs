@@ -2152,3 +2152,43 @@ fn test_type_error_store_sockopt_retval_rejects_set_context() {
             .contains("ctx.sockopt_retval is only available on cgroup_sockopt:get hooks")
     }));
 }
+
+#[test]
+fn test_type_infer_accepts_store_cgroup_sock_addr_user_ip6_on_connect6() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::CgroupSockAddrUserIp6Word(0),
+        val: MirValue::Const(0x20010db8),
+        ty: MirType::U32,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect6");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    ti.infer(&func)
+        .expect("cgroup_sock_addr user_ip6.0 store should type-check on connect6");
+}
+
+#[test]
+fn test_type_error_store_cgroup_sock_addr_msg_src_ip4_rejects_non_msg_hook() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::CgroupSockAddrMsgSrcIp4,
+        val: MirValue::Const(0x7f000001),
+        ty: MirType::U32,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("msg_src_ip4 store should be rejected on non-msg cgroup_sock_addr hook");
+    assert!(errs.iter().any(|e| {
+        e.message.contains(
+            "ctx.msg_src_ip4 is only available on cgroup_sock_addr sendmsg*/recvmsg* hooks",
+        )
+    }));
+}
