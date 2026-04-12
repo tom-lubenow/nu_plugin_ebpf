@@ -1,6 +1,6 @@
 use super::*;
 use crate::compiler::ProgramValueAccess;
-use crate::compiler::context_schema::static_ctx_field_type_spec;
+use crate::compiler::ctx_field_schema::static_ctx_field_type_spec;
 use crate::kernel_btf::{KernelBtf, TypeInfo};
 
 impl<'a> TypeInference<'a> {

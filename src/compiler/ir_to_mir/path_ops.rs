@@ -1,5 +1,5 @@
 use super::*;
-use crate::compiler::context_schema::{
+use crate::compiler::ctx_field_schema::{
     static_ctx_field_projection_spec, static_ctx_field_type_spec,
 };
 use crate::compiler::mir::AddressSpace;

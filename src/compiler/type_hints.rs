@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::compiler::context_schema::static_ctx_field_type_spec;
+use crate::compiler::ctx_field_schema::static_ctx_field_type_spec;
 use crate::compiler::elf::ProbeContext;
 use crate::compiler::mir::{
     AddressSpace, BinOpKind, CtxField, MapKind, MapRef, MirFunction, MirInst, MirProgram, MirType,
@@ -547,7 +547,7 @@ pub(crate) fn recover_optimized_mir_type_hints(
 mod tests {
     use super::*;
     use crate::compiler::EbpfProgramType;
-    use crate::compiler::context_schema::synthetic_bpf_sock_type;
+    use crate::compiler::ctx_field_schema::synthetic_bpf_sock_type;
     use crate::compiler::mir::StackSlotKind;
     use crate::kernel_btf::KernelBtf;
 
