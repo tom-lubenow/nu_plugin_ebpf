@@ -1019,6 +1019,45 @@ impl EbpfProgramType {
                     helper.name()
                 ))
             }
+            BpfHelper::SkLookupTcp | BpfHelper::SkLookupUdp | BpfHelper::SkcLookupTcp
+                if !matches!(
+                    self,
+                    EbpfProgramType::Xdp
+                        | EbpfProgramType::Tc
+                        | EbpfProgramType::CgroupSkb
+                        | EbpfProgramType::CgroupSockAddr
+                        | EbpfProgramType::SkSkb
+                ) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in xdp, tc, cgroup_skb, cgroup_sock_addr, and sk_skb programs",
+                    helper.name()
+                ))
+            }
+            BpfHelper::SkRelease
+                if !matches!(
+                    self,
+                    EbpfProgramType::Xdp
+                        | EbpfProgramType::Tc
+                        | EbpfProgramType::CgroupSkb
+                        | EbpfProgramType::CgroupSockAddr
+                        | EbpfProgramType::SkLookup
+                        | EbpfProgramType::SkSkb
+                ) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in xdp, tc, cgroup_skb, cgroup_sock_addr, sk_lookup, and sk_skb programs",
+                    helper.name()
+                ))
+            }
+            BpfHelper::SkAssign
+                if !matches!(self, EbpfProgramType::Tc | EbpfProgramType::SkLookup) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in tc and sk_lookup programs",
+                    helper.name()
+                ))
+            }
             BpfHelper::SetSockOpt | BpfHelper::GetSockOpt
                 if !matches!(
                     self,
@@ -1078,6 +1117,9 @@ impl EbpfProgramType {
         match (helper, self) {
             (BpfHelper::Redirect, EbpfProgramType::Xdp) => {
                 Some((1, "helper 'bpf_redirect' requires arg1 = 0 in xdp programs"))
+            }
+            (BpfHelper::SkAssign, EbpfProgramType::Tc) => {
+                Some((2, "helper 'bpf_sk_assign' requires arg2 = 0 in tc programs"))
             }
             _ => None,
         }

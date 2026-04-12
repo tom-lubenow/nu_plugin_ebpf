@@ -1230,6 +1230,165 @@ fn test_type_error_redirect_peer_helper_rejects_tc_egress() {
 }
 
 #[test]
+fn test_type_error_sk_lookup_tcp_helper_rejects_invalid_program() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkLookupTcp as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(tuple_slot),
+            MirValue::Const(16),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_sk_lookup_tcp to be rejected on kprobe");
+    assert!(errs.iter().any(|e| {
+        e.message.contains(
+            "helper 'bpf_sk_lookup_tcp' is only valid in xdp, tc, cgroup_skb, cgroup_sock_addr, and sk_skb programs",
+        )
+    }));
+}
+
+#[test]
+fn test_infer_sk_lookup_tcp_helper_in_xdp_program() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkLookupTcp as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(tuple_slot),
+            MirValue::Const(16),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_sk_lookup_tcp to infer on xdp");
+    match types.get(&dst) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(*address_space, AddressSpace::Kernel);
+        }
+        other => panic!("expected kernel pointer type, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_type_error_sk_assign_helper_rejects_tc_egress() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkAssign as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(0), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_sk_assign to be rejected on tc egress");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_sk_assign' is only valid in tc ingress programs")
+    }));
+}
+
+#[test]
+fn test_type_error_sk_assign_helper_requires_zero_flags_in_tc() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkAssign as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(0), MirValue::Const(1)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_sk_assign flags to require zero on tc");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_sk_assign' requires arg2 = 0 in tc programs")
+    }));
+}
+
+#[test]
+fn test_infer_sk_assign_helper_in_sk_lookup_program() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkAssign as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(0), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_sk_assign to infer on sk_lookup");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
 fn test_type_error_redirect_peer_helper_requires_zero_flags() {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();

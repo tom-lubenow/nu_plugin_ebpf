@@ -1192,6 +1192,248 @@ fn test_verify_mir_for_probe_context_redirect_peer_rejects_tc_egress() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_sk_lookup_tcp_rejects_invalid_program() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkLookupTcp as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(tuple_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected sk_lookup_tcp helper program-surface error");
+    assert!(err.iter().any(|e| e.message.contains(
+        "helper 'bpf_sk_lookup_tcp' is only valid in xdp, tc, cgroup_skb, cgroup_sock_addr, and sk_skb programs"
+    )));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_sk_lookup_tcp_accepts_xdp() {
+    let (mut func, entry) = new_mir_function();
+    let release = func.alloc_block();
+    let done = func.alloc_block();
+    let ctx = func.alloc_vreg();
+    let sock = func.alloc_vreg();
+    let sock_non_null = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: sock,
+            helper: BpfHelper::SkLookupTcp as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(tuple_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: sock_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(sock),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: sock_non_null,
+        if_true: release,
+        if_false: done,
+    };
+
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkRelease as u32,
+            args: vec![MirValue::VReg(sock)],
+        });
+    func.block_mut(release).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        sock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(sock_non_null, MirType::Bool);
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected sk_lookup_tcp xdp context to verify");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_sk_assign_rejects_tc_egress() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkAssign as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(0), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected sk_assign tc-egress context error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_sk_assign' is only valid in tc ingress programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_sk_assign_requires_zero_flags_in_tc() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkAssign as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(0), MirValue::Const(1)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected sk_assign tc flags error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_sk_assign' requires arg2 = 0 in tc programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_sk_assign_accepts_sk_lookup() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkAssign as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(0), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected sk_assign sk_lookup context to verify");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_redirect_peer_accepts_tc_ingress() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();

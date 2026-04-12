@@ -656,11 +656,18 @@ fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
     let bind = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:bind4");
     let sockopt_get = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
     let sockopt_set = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set");
+    let sk_lookup = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    let xdp = ProbeContext::new(EbpfProgramType::Xdp, "lo");
 
     assert!(ingress.helper_call_error(BpfHelper::RedirectPeer).is_none());
+    assert!(ingress.helper_call_error(BpfHelper::SkAssign).is_none());
     assert_eq!(
         egress.helper_call_error(BpfHelper::RedirectPeer),
         Some("helper 'bpf_redirect_peer' is only valid in tc ingress programs".to_string())
+    );
+    assert_eq!(
+        egress.helper_call_error(BpfHelper::SkAssign),
+        Some("helper 'bpf_sk_assign' is only valid in tc ingress programs".to_string())
     );
     assert!(bind.helper_call_error(BpfHelper::GetSockOpt).is_none());
     assert!(connect.helper_call_error(BpfHelper::Bind).is_none());
@@ -674,6 +681,8 @@ fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
             .helper_call_error(BpfHelper::SetSockOpt)
             .is_none()
     );
+    assert!(sk_lookup.helper_call_error(BpfHelper::SkAssign).is_none());
+    assert!(xdp.helper_call_error(BpfHelper::SkLookupTcp).is_none());
     assert_eq!(
         bind.helper_call_error(BpfHelper::Bind),
         Some(
@@ -776,6 +785,24 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         Some("helper 'bpf_reserve_hdr_opt' is only valid in sock_ops programs".to_string())
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkLookupTcp),
+        Some(
+            "helper 'bpf_sk_lookup_tcp' is only valid in xdp, tc, cgroup_skb, cgroup_sock_addr, and sk_skb programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkRelease),
+        Some(
+            "helper 'bpf_sk_release' is only valid in xdp, tc, cgroup_skb, cgroup_sock_addr, sk_lookup, and sk_skb programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkAssign),
+        Some("helper 'bpf_sk_assign' is only valid in tc and sk_lookup programs".to_string())
+    );
+    assert_eq!(
         EbpfProgramType::CgroupSysctl.helper_call_error(BpfHelper::SysctlGetCurrentValue),
         None
     );
@@ -811,6 +838,18 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         EbpfProgramType::SkSkbParser.helper_call_error(BpfHelper::SkbChangeTail),
         None
     );
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkLookupUdp),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::SkLookup.helper_call_error(BpfHelper::SkRelease),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Tc.helper_call_error(BpfHelper::SkAssign),
+        None
+    );
 }
 
 #[test]
@@ -823,18 +862,35 @@ fn test_program_type_helper_zero_arg_requirement_uses_program_surface() {
         EbpfProgramType::Tc.helper_zero_arg_requirement(BpfHelper::Redirect),
         None
     );
+    assert_eq!(
+        EbpfProgramType::Tc.helper_zero_arg_requirement(BpfHelper::SkAssign),
+        Some((2, "helper 'bpf_sk_assign' requires arg2 = 0 in tc programs"))
+    );
+    assert_eq!(
+        EbpfProgramType::SkLookup.helper_zero_arg_requirement(BpfHelper::SkAssign),
+        None
+    );
 }
 
 #[test]
 fn test_probe_context_helper_zero_arg_requirement_uses_program_type() {
     let xdp = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     let tc = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let sk_lookup = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
 
     assert_eq!(
         xdp.helper_zero_arg_requirement(BpfHelper::Redirect),
         Some((1, "helper 'bpf_redirect' requires arg1 = 0 in xdp programs"))
     );
     assert_eq!(tc.helper_zero_arg_requirement(BpfHelper::Redirect), None);
+    assert_eq!(
+        tc.helper_zero_arg_requirement(BpfHelper::SkAssign),
+        Some((2, "helper 'bpf_sk_assign' requires arg2 = 0 in tc programs"))
+    );
+    assert_eq!(
+        sk_lookup.helper_zero_arg_requirement(BpfHelper::SkAssign),
+        None
+    );
 }
 
 #[test]

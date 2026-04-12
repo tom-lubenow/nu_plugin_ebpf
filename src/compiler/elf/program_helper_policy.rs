@@ -8,6 +8,10 @@ impl TcTarget {
                 "helper '{}' is only valid in tc ingress programs",
                 helper.name()
             )),
+            BpfHelper::SkAssign if !self.is_ingress() => Some(format!(
+                "helper '{}' is only valid in tc ingress programs",
+                helper.name()
+            )),
             _ => None,
         }
     }
