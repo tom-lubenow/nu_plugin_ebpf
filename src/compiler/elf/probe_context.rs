@@ -491,29 +491,12 @@ impl ProbeContext {
     }
 
     pub(crate) fn ctx_store_target_error(&self, target: &CtxStoreTarget) -> Option<String> {
-        if let Some(message) = self
-            .parsed_program_spec()
-            .as_ref()
-            .and_then(|spec| spec.ctx_store_target_error(target))
-        {
+        if let Some(message) = self.probe_type.base_ctx_store_target_error(target) {
             return Some(message);
         }
-
-        match target {
-            CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
-                if self.probe_type != EbpfProgramType::SockOps {
-                    Some(
-                        "writable sock_ops reply fields are only supported on sock_ops programs"
-                            .to_string(),
-                    )
-                } else {
-                    None
-                }
-            }
-            _ => target
-                .ctx_field()
-                .and_then(|field| self.ctx_field_access_error(&field)),
-        }
+        self.parsed_program_spec()
+            .as_ref()
+            .and_then(|spec| spec.ctx_store_target_error(target))
     }
 
     pub(crate) fn validate_ctx_store_target(

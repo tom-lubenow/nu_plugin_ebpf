@@ -1,4 +1,4 @@
-use super::CtxWriteTarget;
+use super::{CtxWriteTarget, EbpfProgramType};
 use crate::compiler::mir::{CtxField, CtxStoreTarget};
 use crate::program_spec::{CgroupSockAddrTarget, CgroupSockoptTarget, ProgramSpec, SockOpsTarget};
 
@@ -27,6 +27,21 @@ impl CtxStoreTarget {
             CtxStoreTarget::CgroupSockAddrUserPort => Some(CtxField::UserPort),
             CtxStoreTarget::CgroupSockAddrMsgSrcIp4 => Some(CtxField::MsgSrcIp4),
             CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(_) => Some(CtxField::MsgSrcIp6),
+        }
+    }
+}
+
+impl EbpfProgramType {
+    pub(crate) fn base_ctx_store_target_error(&self, target: &CtxStoreTarget) -> Option<String> {
+        match target {
+            CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_)
+                if *self != EbpfProgramType::SockOps =>
+            {
+                Some(target.missing_context_error().to_string())
+            }
+            _ => target
+                .ctx_field()
+                .and_then(|field| self.base_ctx_field_access_error(&field)),
         }
     }
 }
