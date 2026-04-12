@@ -5,8 +5,8 @@ use super::{
 #[cfg(test)]
 use crate::compiler::ctx_field_schema::synthetic_bpf_sock_type;
 use crate::compiler::ctx_field_schema::{
-    ContextFieldProjectionSpec, ContextFieldTypeSpec, static_ctx_field_projection_spec,
-    static_ctx_field_type_spec,
+    ContextFieldProjectionSpec, ContextFieldTypeSpec, program_type_ctx_field_projection_spec,
+    program_type_ctx_field_type_spec, static_ctx_field_projection_spec, static_ctx_field_type_spec,
 };
 use crate::compiler::hindley_milner::HMType;
 use crate::compiler::instruction::BpfHelper;
@@ -130,7 +130,11 @@ impl ProbeContext {
     pub(crate) fn ctx_field_type_spec(&self, field: &CtxField) -> Option<ContextFieldTypeSpec> {
         self.ctx_field_access_error(field)
             .is_none()
-            .then(|| Self::static_ctx_field_type_spec(field))
+            .then(|| {
+                self.parsed_program_spec()
+                    .and_then(|spec| spec.ctx_field_type_spec(field))
+                    .or_else(|| program_type_ctx_field_type_spec(self.probe_type, field))
+            })
             .flatten()
     }
 
@@ -140,7 +144,11 @@ impl ProbeContext {
     ) -> Option<ContextFieldProjectionSpec> {
         self.ctx_field_access_error(field)
             .is_none()
-            .then(|| Self::static_ctx_field_projection_spec(field))
+            .then(|| {
+                self.parsed_program_spec()
+                    .and_then(|spec| spec.ctx_field_projection_spec(field))
+                    .or_else(|| program_type_ctx_field_projection_spec(self.probe_type, field))
+            })
             .flatten()
     }
 

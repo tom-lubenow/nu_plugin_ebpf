@@ -1,4 +1,7 @@
-use crate::compiler::mir::{AddressSpace, CtxField, MirType, StructField};
+use crate::compiler::{
+    EbpfProgramType,
+    mir::{AddressSpace, CtxField, MirType, StructField},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ContextFieldTypeSpec {
@@ -169,7 +172,7 @@ pub(crate) fn synthetic_bpf_sock_type() -> MirType {
     }
 }
 
-pub(crate) fn static_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
+fn raw_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
     Some(match field {
         CtxField::Pid
         | CtxField::Tid
@@ -300,10 +303,23 @@ pub(crate) fn static_ctx_field_type_spec(field: &CtxField) -> Option<ContextFiel
     })
 }
 
-pub(crate) fn static_ctx_field_projection_spec(
+pub(crate) fn static_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
+    raw_ctx_field_type_spec(field)
+}
+
+pub(crate) fn program_type_ctx_field_type_spec(
+    program_type: EbpfProgramType,
     field: &CtxField,
-) -> Option<ContextFieldProjectionSpec> {
-    let type_spec = static_ctx_field_type_spec(field)?;
+) -> Option<ContextFieldTypeSpec> {
+    program_type
+        .base_ctx_field_access_error(field)
+        .is_none()
+        .then(|| raw_ctx_field_type_spec(field))
+        .flatten()
+}
+
+fn raw_ctx_field_projection_spec(field: &CtxField) -> Option<ContextFieldProjectionSpec> {
+    let type_spec = raw_ctx_field_type_spec(field)?;
     Some(match field {
         CtxField::Data
         | CtxField::DataMeta
@@ -325,4 +341,21 @@ pub(crate) fn static_ctx_field_projection_spec(
         }
         _ => return None,
     })
+}
+
+pub(crate) fn static_ctx_field_projection_spec(
+    field: &CtxField,
+) -> Option<ContextFieldProjectionSpec> {
+    raw_ctx_field_projection_spec(field)
+}
+
+pub(crate) fn program_type_ctx_field_projection_spec(
+    program_type: EbpfProgramType,
+    field: &CtxField,
+) -> Option<ContextFieldProjectionSpec> {
+    program_type
+        .base_ctx_field_access_error(field)
+        .is_none()
+        .then(|| raw_ctx_field_projection_spec(field))
+        .flatten()
 }

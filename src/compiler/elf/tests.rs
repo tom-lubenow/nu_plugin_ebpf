@@ -626,6 +626,19 @@ fn test_probe_context_ctx_field_projection_spec_respects_context_legality() {
 }
 
 #[test]
+fn test_probe_context_ctx_field_type_spec_is_program_type_aware_within_skb_family() {
+    let socket_filter = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let sk_skb = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+
+    assert!(
+        socket_filter
+            .ctx_field_type_spec(&CtxField::Family)
+            .is_none()
+    );
+    assert!(sk_skb.ctx_field_type_spec(&CtxField::Family).is_some());
+}
+
+#[test]
 fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
     let ingress = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let egress = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");

@@ -29,6 +29,7 @@ use crate::program_spec::ProgramSpec;
 mod probe_context;
 mod program_ctx_access;
 mod program_ctx_names;
+mod program_ctx_schema;
 mod program_ctx_writes;
 mod program_helper_policy;
 mod program_impl;
