@@ -233,6 +233,23 @@ impl BpfHelper {
             },
         ];
 
+        const BIND_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper bind ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper bind addr",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
+
         const TRACE_PRINTK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 0,
             op: "helper trace_printk fmt",
@@ -856,6 +873,11 @@ impl BpfHelper {
             BpfHelper::GetSockOpt => HelperSemantics {
                 ptr_arg_rules: GET_SOCKOPT_RULES,
                 positive_size_args: &[4],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::Bind => HelperSemantics {
+                ptr_arg_rules: BIND_RULES,
+                positive_size_args: &[2],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::SkCgroupId => HelperSemantics {

@@ -75,6 +75,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::GetSockOpt)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_bind"),
+        Some(BpfHelper::Bind)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_msg_apply_bytes"),
         Some(BpfHelper::MsgApplyBytes)
     ));
@@ -248,6 +252,15 @@ fn test_helper_signature_get_socket_uid() {
 
 #[test]
 fn test_helper_signatures_setsockopt_and_getsockopt() {
+    let bind_sig = HelperSignature::for_id(BpfHelper::Bind as u32)
+        .expect("expected bpf_bind helper signature");
+    assert_eq!(bind_sig.min_args, 3);
+    assert_eq!(bind_sig.max_args, 3);
+    assert_eq!(bind_sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(bind_sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(bind_sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(bind_sig.ret_kind, HelperRetKind::Scalar);
+
     let set_sig = HelperSignature::for_id(BpfHelper::SetSockOpt as u32)
         .expect("expected bpf_setsockopt helper signature");
     assert_eq!(set_sig.min_args, 5);

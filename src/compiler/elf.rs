@@ -876,6 +876,10 @@ impl EbpfProgramType {
                     helper.name()
                 ))
             }
+            BpfHelper::Bind if *self != EbpfProgramType::CgroupSockAddr => Some(format!(
+                "helper '{}' is only valid in cgroup_sock_addr programs",
+                helper.name()
+            )),
             BpfHelper::SysctlGetName
             | BpfHelper::SysctlGetCurrentValue
             | BpfHelper::SysctlGetNewValue

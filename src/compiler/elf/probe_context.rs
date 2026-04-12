@@ -975,6 +975,15 @@ impl ProbeContext {
             return Some(message);
         }
         match helper {
+            BpfHelper::Bind
+                if self.probe_type == EbpfProgramType::CgroupSockAddr
+                    && !self.cgroup_sock_addr_is_connect() =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid on cgroup_sock_addr connect4/connect6 hooks",
+                    helper.name()
+                ))
+            }
             BpfHelper::SetSockOpt | BpfHelper::GetSockOpt
                 if self.probe_type == EbpfProgramType::CgroupSockAddr
                     && !self.cgroup_sock_addr_is_connect() =>

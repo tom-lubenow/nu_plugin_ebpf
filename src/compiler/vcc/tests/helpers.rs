@@ -487,6 +487,59 @@ fn test_verify_mir_for_program_sockopt_helpers_reject_invalid_program_or_attach(
 }
 
 #[test]
+fn test_verify_mir_for_program_bind_helper_rejects_invalid_program_or_attach() {
+    for (probe_ctx, expected) in [
+        (
+            ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read"),
+            "helper 'bpf_bind' is only valid in cgroup_sock_addr programs",
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:bind4"),
+            "helper 'bpf_bind' is only valid on cgroup_sock_addr connect4/connect6 hooks",
+        ),
+    ] {
+        let (mut func, entry) = new_mir_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let addr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: BpfHelper::Bind as u32,
+                args: vec![
+                    MirValue::VReg(ctx),
+                    MirValue::StackSlot(addr_slot),
+                    MirValue::Const(16),
+                ],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected bind helper program-surface error");
+        assert!(err.iter().any(|e| e.message.contains(expected)));
+    }
+}
+
+#[test]
 fn test_verify_mir_helper_redirect_neigh_requires_zero_flags() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();
@@ -5333,6 +5386,48 @@ fn test_verify_mir_helper_getsockopt_accepts_cgroup_sock_addr_connect_context() 
     let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
     verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect("expected getsockopt helper to verify on cgroup_sock_addr connect");
+}
+
+#[test]
+fn test_verify_mir_helper_bind_accepts_cgroup_sock_addr_connect_context() {
+    let (mut func, entry) = new_mir_function();
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let addr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::Bind as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(addr_slot),
+                MirValue::Const(16),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected bind helper to verify on cgroup_sock_addr connect");
 }
 
 #[test]

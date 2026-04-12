@@ -90,6 +90,8 @@ pub enum BpfHelper {
     MsgCorkBytes = 62,
     /// long bpf_msg_pull_data(msg, start, end, flags)
     MsgPullData = 63,
+    /// long bpf_bind(ctx, addr, addr_len)
+    Bind = 64,
     /// u64 bpf_get_socket_cookie(ctx)
     GetSocketCookie = 46,
     /// u32 bpf_get_socket_uid(ctx)
@@ -224,6 +226,7 @@ impl BpfHelper {
             BpfHelper::MsgApplyBytes => "bpf_msg_apply_bytes",
             BpfHelper::MsgCorkBytes => "bpf_msg_cork_bytes",
             BpfHelper::MsgPullData => "bpf_msg_pull_data",
+            BpfHelper::Bind => "bpf_bind",
             BpfHelper::GetSocketCookie => "bpf_get_socket_cookie",
             BpfHelper::GetSocketUid => "bpf_get_socket_uid",
             BpfHelper::SetSockOpt => "bpf_setsockopt",
@@ -309,6 +312,7 @@ impl BpfHelper {
             "msg_apply_bytes" => Some(Self::MsgApplyBytes),
             "msg_cork_bytes" => Some(Self::MsgCorkBytes),
             "msg_pull_data" => Some(Self::MsgPullData),
+            "bind" => Some(Self::Bind),
             "get_socket_cookie" => Some(Self::GetSocketCookie),
             "get_socket_uid" => Some(Self::GetSocketUid),
             "setsockopt" => Some(Self::SetSockOpt),

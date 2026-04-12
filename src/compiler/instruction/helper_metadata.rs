@@ -27,6 +27,7 @@ impl BpfHelper {
             61 => Some(Self::MsgApplyBytes),
             62 => Some(Self::MsgCorkBytes),
             63 => Some(Self::MsgPullData),
+            64 => Some(Self::Bind),
             46 => Some(Self::GetSocketCookie),
             47 => Some(Self::GetSocketUid),
             49 => Some(Self::SetSockOpt),
@@ -133,6 +134,12 @@ impl BpfHelper {
                     ret_kind: HelperRetKind::Scalar,
                 }
             }
+            BpfHelper::Bind => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
             BpfHelper::ProbeRead | BpfHelper::ProbeReadUser | BpfHelper::ProbeReadKernel => {
                 HelperSignature {
                     min_args: 3,

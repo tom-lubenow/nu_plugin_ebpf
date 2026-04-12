@@ -556,11 +556,21 @@ fn test_probe_context_cgroup_sock_attach_kind_uses_typed_program_spec() {
 fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
     let ingress = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let egress = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
+    let connect = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+    let bind = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:bind4");
 
     assert!(ingress.helper_call_error(BpfHelper::RedirectPeer).is_none());
     assert_eq!(
         egress.helper_call_error(BpfHelper::RedirectPeer),
         Some("helper 'bpf_redirect_peer' is only valid in tc ingress programs".to_string())
+    );
+    assert!(connect.helper_call_error(BpfHelper::Bind).is_none());
+    assert_eq!(
+        bind.helper_call_error(BpfHelper::Bind),
+        Some(
+            "helper 'bpf_bind' is only valid on cgroup_sock_addr connect4/connect6 hooks"
+                .to_string()
+        )
     );
 }
 
@@ -580,6 +590,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
             "helper 'bpf_sysctl_get_current_value' is only valid in cgroup_sysctl programs"
                 .to_string()
         )
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::Bind),
+        Some("helper 'bpf_bind' is only valid in cgroup_sock_addr programs".to_string())
     );
     assert_eq!(
         EbpfProgramType::CgroupSysctl.helper_call_error(BpfHelper::SysctlGetCurrentValue),
