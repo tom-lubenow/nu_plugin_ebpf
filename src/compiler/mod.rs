@@ -18,6 +18,7 @@
 
 mod btf;
 pub mod cfg;
+mod context_schema;
 mod elf;
 pub mod graph_coloring;
 pub mod hindley_milner;

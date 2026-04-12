@@ -1,27 +1,9 @@
 use super::*;
 use crate::compiler::ProgramValueAccess;
+use crate::compiler::context_schema::static_ctx_field_type_spec;
 use crate::kernel_btf::{KernelBtf, TypeInfo};
 
 impl<'a> TypeInference<'a> {
-    fn synthetic_bpf_sock_hm_type() -> HMType {
-        HMType::Struct {
-            name: Some("bpf_sock".to_string()),
-            kernel_btf_type_id: None,
-            fields: vec![
-                ("bound_dev_if".to_string(), HMType::U32),
-                ("family".to_string(), HMType::U32),
-                ("type".to_string(), HMType::U32),
-                ("protocol".to_string(), HMType::U32),
-                ("mark".to_string(), HMType::U32),
-                ("priority".to_string(), HMType::U32),
-                ("src_port".to_string(), HMType::U32),
-                ("dst_port".to_string(), HMType::U16),
-                ("state".to_string(), HMType::U32),
-                ("rx_queue_mapping".to_string(), HMType::I32),
-            ],
-        }
-    }
-
     fn byte_array_mir_type(size: usize) -> Option<MirType> {
         if size == 0 {
             return None;
@@ -264,133 +246,11 @@ impl<'a> TypeInference<'a> {
     }
 
     pub(super) fn ctx_field_type(&mut self, field: &CtxField) -> HMType {
+        if let Some(spec) = static_ctx_field_type_spec(field) {
+            return HMType::from_mir_type(&spec.runtime_ty);
+        }
+
         match field {
-            CtxField::Context => HMType::Ptr {
-                pointee: Box::new(HMType::U8),
-                address_space: AddressSpace::Kernel,
-            },
-            CtxField::Pid
-            | CtxField::Tid
-            | CtxField::Uid
-            | CtxField::Gid
-            | CtxField::Cpu
-            | CtxField::PacketLen
-            | CtxField::PktType
-            | CtxField::QueueMapping
-            | CtxField::EthProtocol
-            | CtxField::VlanPresent
-            | CtxField::VlanTci
-            | CtxField::VlanProto
-            | CtxField::TcClassid
-            | CtxField::NapiId
-            | CtxField::WireLen
-            | CtxField::GsoSegs
-            | CtxField::GsoSize
-            | CtxField::IngressIfindex
-            | CtxField::Ifindex
-            | CtxField::RxQueueIndex
-            | CtxField::EgressIfindex
-            | CtxField::TcIndex
-            | CtxField::SkbHash
-            | CtxField::UserFamily
-            | CtxField::UserIp4
-            | CtxField::UserPort
-            | CtxField::Family
-            | CtxField::SockType
-            | CtxField::Protocol
-            | CtxField::BoundDevIf
-            | CtxField::SockMark
-            | CtxField::SockPriority
-            | CtxField::MsgSrcIp4
-            | CtxField::RemoteIp4
-            | CtxField::RemotePort
-            | CtxField::LocalIp4
-            | CtxField::LocalPort
-            | CtxField::LircSample
-            | CtxField::LircValue
-            | CtxField::LircMode
-            | CtxField::DeviceAccessType
-            | CtxField::DeviceMajor
-            | CtxField::DeviceMinor
-            | CtxField::SockOp
-            | CtxField::IsFullsock
-            | CtxField::SockOpsSndCwnd
-            | CtxField::SockOpsSrttUs
-            | CtxField::SockOpsCbFlags
-            | CtxField::SockState
-            | CtxField::SockOpsRttMin
-            | CtxField::SockOpsSndSsthresh
-            | CtxField::SockOpsRcvNxt
-            | CtxField::SockOpsSndNxt
-            | CtxField::SockOpsSndUna
-            | CtxField::SockOpsMssCache
-            | CtxField::SockOpsEcnFlags
-            | CtxField::SockOpsRateDelivered
-            | CtxField::SockOpsRateIntervalUs
-            | CtxField::SockOpsPacketsOut
-            | CtxField::SockOpsRetransOut
-            | CtxField::SockOpsTotalRetrans
-            | CtxField::SockOpsSegsIn
-            | CtxField::SockOpsDataSegsIn
-            | CtxField::SockOpsSegsOut
-            | CtxField::SockOpsDataSegsOut
-            | CtxField::SockOpsLostOut
-            | CtxField::SockOpsSackedOut
-            | CtxField::SockOpsSkTxhash
-            | CtxField::SockOpsSkbLen
-            | CtxField::SockOpsSkbTcpFlags
-            | CtxField::SysctlWrite
-            | CtxField::SysctlFilePos => HMType::U32,
-
-            CtxField::SockoptLevel
-            | CtxField::SockoptOptname
-            | CtxField::SockoptOptlen
-            | CtxField::SockoptRetval => HMType::I32,
-            CtxField::Socket => HMType::Ptr {
-                pointee: Box::new(Self::synthetic_bpf_sock_hm_type()),
-                address_space: AddressSpace::Kernel,
-            },
-
-            CtxField::SockoptOptval | CtxField::SockoptOptvalEnd => HMType::Ptr {
-                pointee: Box::new(HMType::U8),
-                address_space: AddressSpace::Kernel,
-            },
-
-            CtxField::UserIp6
-            | CtxField::MsgSrcIp6
-            | CtxField::RemoteIp6
-            | CtxField::LocalIp6
-            | CtxField::SockOpsArgs => HMType::Ptr {
-                pointee: Box::new(HMType::Array {
-                    elem: Box::new(HMType::U32),
-                    len: 4,
-                }),
-                address_space: AddressSpace::Stack,
-            },
-            CtxField::SkbCb => HMType::Ptr {
-                pointee: Box::new(HMType::Array {
-                    elem: Box::new(HMType::U32),
-                    len: 5,
-                }),
-                address_space: AddressSpace::Stack,
-            },
-
-            CtxField::Data | CtxField::DataEnd => HMType::Ptr {
-                pointee: Box::new(HMType::U8),
-                address_space: AddressSpace::Packet,
-            },
-
-            CtxField::Timestamp
-            | CtxField::CgroupId
-            | CtxField::LookupCookie
-            | CtxField::SocketCookie
-            | CtxField::NetnsCookie
-            | CtxField::Hwtstamp
-            | CtxField::SockOpsBytesReceived
-            | CtxField::SockOpsBytesAcked
-            | CtxField::SockOpsSkbHwtstamp => HMType::U64,
-            CtxField::SocketUid => HMType::U32,
-
             CtxField::Arg(idx) => {
                 if let Some(ty) = self.trampoline_arg_type(*idx).ok().flatten() {
                     return ty;
@@ -424,14 +284,6 @@ impl<'a> TypeInference<'a> {
             }
             CtxField::KStack | CtxField::UStack => HMType::I64,
 
-            CtxField::Comm => HMType::Ptr {
-                pointee: Box::new(HMType::Array {
-                    elem: Box::new(HMType::U8),
-                    len: 16,
-                }),
-                address_space: AddressSpace::Stack,
-            },
-
             CtxField::TracepointField(name) => self
                 .tracepoint_field_type(name)
                 .ok()
@@ -443,6 +295,7 @@ impl<'a> TypeInference<'a> {
                         .or_insert_with(|| self.tvar_gen.fresh());
                     HMType::Var(tvar)
                 }),
+            _ => unreachable!("static ctx field types should be handled via context_schema"),
         }
     }
 

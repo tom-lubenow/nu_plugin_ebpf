@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::context_schema::static_ctx_field_type_spec;
 use crate::compiler::mir::AddressSpace;
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TrampolineValueKind, TypeInfo};
 
@@ -675,147 +676,8 @@ impl<'a> HirToMirLowering<'a> {
             slot,
         });
 
+        let static_ctx_field_types = static_ctx_field_type_spec(&ctx_field);
         let (field_type, runtime_type_hint) = match &ctx_field {
-            CtxField::Comm => {
-                let semantic_ty = MirType::Array {
-                    elem: Box::new(MirType::U8),
-                    len: 16,
-                };
-                let runtime_ty = MirType::Ptr {
-                    pointee: Box::new(semantic_ty.clone()),
-                    address_space: AddressSpace::Stack,
-                };
-                (semantic_ty, Some(runtime_ty))
-            }
-            CtxField::UserIp6
-            | CtxField::MsgSrcIp6
-            | CtxField::RemoteIp6
-            | CtxField::LocalIp6
-            | CtxField::SockOpsArgs
-            | CtxField::SkbCb => {
-                let semantic_ty = MirType::Array {
-                    elem: Box::new(MirType::U32),
-                    len: if matches!(ctx_field, CtxField::SkbCb) {
-                        5
-                    } else {
-                        4
-                    },
-                };
-                let runtime_ty = MirType::Ptr {
-                    pointee: Box::new(semantic_ty.clone()),
-                    address_space: AddressSpace::Stack,
-                };
-                (semantic_ty, Some(runtime_ty))
-            }
-            CtxField::Pid | CtxField::Tid | CtxField::Uid | CtxField::Gid => {
-                (MirType::U32, Some(MirType::U32))
-            }
-            CtxField::CgroupId => (MirType::U64, Some(MirType::U64)),
-            CtxField::Cpu
-            | CtxField::PacketLen
-            | CtxField::PktType
-            | CtxField::QueueMapping
-            | CtxField::EthProtocol
-            | CtxField::VlanPresent
-            | CtxField::VlanTci
-            | CtxField::VlanProto
-            | CtxField::TcClassid
-            | CtxField::NapiId
-            | CtxField::WireLen
-            | CtxField::GsoSegs
-            | CtxField::GsoSize
-            | CtxField::IngressIfindex
-            | CtxField::Ifindex
-            | CtxField::RxQueueIndex
-            | CtxField::EgressIfindex
-            | CtxField::TcIndex
-            | CtxField::SkbHash
-            | CtxField::UserFamily
-            | CtxField::UserIp4
-            | CtxField::UserPort
-            | CtxField::Family
-            | CtxField::SockType
-            | CtxField::Protocol
-            | CtxField::BoundDevIf
-            | CtxField::SockMark
-            | CtxField::SockPriority
-            | CtxField::MsgSrcIp4
-            | CtxField::RemoteIp4
-            | CtxField::RemotePort
-            | CtxField::LocalIp4
-            | CtxField::LocalPort
-            | CtxField::LircSample
-            | CtxField::LircValue
-            | CtxField::LircMode
-            | CtxField::DeviceAccessType
-            | CtxField::DeviceMajor
-            | CtxField::DeviceMinor
-            | CtxField::SockOp
-            | CtxField::IsFullsock
-            | CtxField::SockOpsSndCwnd
-            | CtxField::SockOpsSrttUs
-            | CtxField::SockOpsCbFlags
-            | CtxField::SockState
-            | CtxField::SockOpsRttMin
-            | CtxField::SockOpsSndSsthresh
-            | CtxField::SockOpsRcvNxt
-            | CtxField::SockOpsSndNxt
-            | CtxField::SockOpsSndUna
-            | CtxField::SockOpsMssCache
-            | CtxField::SockOpsEcnFlags
-            | CtxField::SockOpsRateDelivered
-            | CtxField::SockOpsRateIntervalUs
-            | CtxField::SockOpsPacketsOut
-            | CtxField::SockOpsRetransOut
-            | CtxField::SockOpsTotalRetrans
-            | CtxField::SockOpsSegsIn
-            | CtxField::SockOpsDataSegsIn
-            | CtxField::SockOpsSegsOut
-            | CtxField::SockOpsDataSegsOut
-            | CtxField::SockOpsLostOut
-            | CtxField::SockOpsSackedOut
-            | CtxField::SockOpsSkTxhash
-            | CtxField::SockOpsSkbLen
-            | CtxField::SockOpsSkbTcpFlags
-            | CtxField::SysctlWrite
-            | CtxField::SysctlFilePos => (MirType::U32, Some(MirType::U32)),
-            CtxField::Socket => (
-                MirType::Ptr {
-                    pointee: Box::new(Self::synthetic_bpf_sock_type()),
-                    address_space: AddressSpace::Kernel,
-                },
-                Some(MirType::Ptr {
-                    pointee: Box::new(Self::synthetic_bpf_sock_type()),
-                    address_space: AddressSpace::Kernel,
-                }),
-            ),
-            CtxField::Hwtstamp => (MirType::U64, Some(MirType::U64)),
-            CtxField::Timestamp
-            | CtxField::LookupCookie
-            | CtxField::SocketCookie
-            | CtxField::NetnsCookie
-            | CtxField::SockOpsBytesReceived
-            | CtxField::SockOpsBytesAcked
-            | CtxField::SockOpsSkbHwtstamp => (MirType::U64, Some(MirType::U64)),
-            CtxField::SocketUid => (MirType::U32, Some(MirType::U32)),
-            CtxField::SockoptLevel
-            | CtxField::SockoptOptname
-            | CtxField::SockoptOptlen
-            | CtxField::SockoptRetval => (MirType::I32, Some(MirType::I32)),
-            CtxField::SockoptOptval | CtxField::SockoptOptvalEnd => {
-                let ptr_ty = MirType::Ptr {
-                    pointee: Box::new(MirType::U8),
-                    address_space: AddressSpace::Kernel,
-                };
-                (ptr_ty.clone(), Some(ptr_ty))
-            }
-            CtxField::Data | CtxField::DataEnd => {
-                let ptr_ty = MirType::Ptr {
-                    pointee: Box::new(MirType::U8),
-                    address_space: AddressSpace::Packet,
-                };
-                (ptr_ty.clone(), Some(ptr_ty))
-            }
             CtxField::Arg(_)
                 if self
                     .probe_ctx
@@ -826,6 +688,10 @@ impl<'a> HirToMirLowering<'a> {
             CtxField::TracepointField(_) => tracepoint_root_types
                 .map(|(semantic_ty, runtime_ty)| (semantic_ty, Some(runtime_ty)))
                 .unwrap_or((MirType::I64, None)),
+            _ if static_ctx_field_types.is_some() => {
+                let spec = static_ctx_field_types.unwrap();
+                (spec.semantic_ty, Some(spec.runtime_ty))
+            }
             _ => precise_trampoline_types
                 .map(|(semantic_ty, runtime_ty)| (semantic_ty, Some(runtime_ty)))
                 .unwrap_or_else(|| match trampoline_value_spec.map(|spec| spec.kind) {

@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::compiler::context_schema::static_ctx_field_type_spec;
 use crate::compiler::elf::ProbeContext;
 use crate::compiler::mir::{
     AddressSpace, BinOpKind, CtxField, MapRef, MirFunction, MirInst, MirProgram, MirType,
@@ -159,85 +160,6 @@ fn runtime_trampoline_root_type(type_info: &TypeInfo) -> Option<MirType> {
     }
 }
 
-fn synthetic_bpf_sock_type() -> MirType {
-    MirType::Struct {
-        name: Some("bpf_sock".to_string()),
-        kernel_btf_type_id: None,
-        fields: vec![
-            StructField {
-                name: "bound_dev_if".to_string(),
-                ty: MirType::U32,
-                offset: 0,
-                synthetic: false,
-                bitfield: None,
-            },
-            StructField {
-                name: "family".to_string(),
-                ty: MirType::U32,
-                offset: 4,
-                synthetic: false,
-                bitfield: None,
-            },
-            StructField {
-                name: "type".to_string(),
-                ty: MirType::U32,
-                offset: 8,
-                synthetic: false,
-                bitfield: None,
-            },
-            StructField {
-                name: "protocol".to_string(),
-                ty: MirType::U32,
-                offset: 12,
-                synthetic: false,
-                bitfield: None,
-            },
-            StructField {
-                name: "mark".to_string(),
-                ty: MirType::U32,
-                offset: 16,
-                synthetic: false,
-                bitfield: None,
-            },
-            StructField {
-                name: "priority".to_string(),
-                ty: MirType::U32,
-                offset: 20,
-                synthetic: false,
-                bitfield: None,
-            },
-            StructField {
-                name: "src_port".to_string(),
-                ty: MirType::U32,
-                offset: 44,
-                synthetic: false,
-                bitfield: None,
-            },
-            StructField {
-                name: "dst_port".to_string(),
-                ty: MirType::U16,
-                offset: 48,
-                synthetic: false,
-                bitfield: None,
-            },
-            StructField {
-                name: "state".to_string(),
-                ty: MirType::U32,
-                offset: 72,
-                synthetic: false,
-                bitfield: None,
-            },
-            StructField {
-                name: "rx_queue_mapping".to_string(),
-                ty: MirType::I32,
-                offset: 76,
-                synthetic: false,
-                bitfield: None,
-            },
-        ],
-    }
-}
-
 fn recover_ctx_field_hint(
     probe_ctx: Option<&ProbeContext>,
     field: &CtxField,
@@ -247,134 +169,11 @@ fn recover_ctx_field_hint(
         return Some(pointer_hint(AddressSpace::Stack));
     }
 
+    if let Some(spec) = static_ctx_field_type_spec(field) {
+        return Some(spec.runtime_ty);
+    }
+
     match field {
-        CtxField::Pid
-        | CtxField::Tid
-        | CtxField::Uid
-        | CtxField::Gid
-        | CtxField::Cpu
-        | CtxField::PacketLen
-        | CtxField::PktType
-        | CtxField::QueueMapping
-        | CtxField::EthProtocol
-        | CtxField::VlanPresent
-        | CtxField::VlanTci
-        | CtxField::VlanProto
-        | CtxField::TcClassid
-        | CtxField::NapiId
-        | CtxField::WireLen
-        | CtxField::GsoSegs
-        | CtxField::GsoSize
-        | CtxField::IngressIfindex
-        | CtxField::Ifindex
-        | CtxField::RxQueueIndex
-        | CtxField::EgressIfindex
-        | CtxField::TcIndex
-        | CtxField::SkbHash
-        | CtxField::UserFamily
-        | CtxField::UserIp4
-        | CtxField::UserPort
-        | CtxField::Family
-        | CtxField::SockType
-        | CtxField::Protocol
-        | CtxField::BoundDevIf
-        | CtxField::SockMark
-        | CtxField::SockPriority
-        | CtxField::MsgSrcIp4
-        | CtxField::RemoteIp4
-        | CtxField::RemotePort
-        | CtxField::LocalIp4
-        | CtxField::LocalPort
-        | CtxField::LircSample
-        | CtxField::LircValue
-        | CtxField::LircMode
-        | CtxField::DeviceAccessType
-        | CtxField::DeviceMajor
-        | CtxField::DeviceMinor
-        | CtxField::SockOp
-        | CtxField::IsFullsock
-        | CtxField::SockOpsSndCwnd
-        | CtxField::SockOpsSrttUs
-        | CtxField::SockOpsCbFlags
-        | CtxField::SockState
-        | CtxField::SockOpsRttMin
-        | CtxField::SockOpsSndSsthresh
-        | CtxField::SockOpsRcvNxt
-        | CtxField::SockOpsSndNxt
-        | CtxField::SockOpsSndUna
-        | CtxField::SockOpsMssCache
-        | CtxField::SockOpsEcnFlags
-        | CtxField::SockOpsRateDelivered
-        | CtxField::SockOpsRateIntervalUs
-        | CtxField::SockOpsPacketsOut
-        | CtxField::SockOpsRetransOut
-        | CtxField::SockOpsTotalRetrans
-        | CtxField::SockOpsSegsIn
-        | CtxField::SockOpsDataSegsIn
-        | CtxField::SockOpsSegsOut
-        | CtxField::SockOpsDataSegsOut
-        | CtxField::SockOpsLostOut
-        | CtxField::SockOpsSackedOut
-        | CtxField::SockOpsSkTxhash
-        | CtxField::SockOpsSkbLen
-        | CtxField::SockOpsSkbTcpFlags
-        | CtxField::SysctlWrite
-        | CtxField::SysctlFilePos => Some(MirType::U32),
-        CtxField::Hwtstamp
-        | CtxField::SockOpsSkbHwtstamp
-        | CtxField::SockOpsBytesReceived
-        | CtxField::SockOpsBytesAcked => Some(MirType::U64),
-        CtxField::SockoptLevel
-        | CtxField::SockoptOptname
-        | CtxField::SockoptOptlen
-        | CtxField::SockoptRetval => Some(MirType::I32),
-        CtxField::Context => Some(MirType::Ptr {
-            pointee: Box::new(MirType::U8),
-            address_space: AddressSpace::Kernel,
-        }),
-        CtxField::Socket => Some(MirType::Ptr {
-            pointee: Box::new(synthetic_bpf_sock_type()),
-            address_space: AddressSpace::Kernel,
-        }),
-        CtxField::SockoptOptval | CtxField::SockoptOptvalEnd => Some(MirType::Ptr {
-            pointee: Box::new(MirType::U8),
-            address_space: AddressSpace::Kernel,
-        }),
-        CtxField::UserIp6
-        | CtxField::MsgSrcIp6
-        | CtxField::RemoteIp6
-        | CtxField::LocalIp6
-        | CtxField::SockOpsArgs => Some(MirType::Ptr {
-            pointee: Box::new(MirType::Array {
-                elem: Box::new(MirType::U32),
-                len: 4,
-            }),
-            address_space: AddressSpace::Stack,
-        }),
-        CtxField::SkbCb => Some(MirType::Ptr {
-            pointee: Box::new(MirType::Array {
-                elem: Box::new(MirType::U32),
-                len: 5,
-            }),
-            address_space: AddressSpace::Stack,
-        }),
-        CtxField::Data | CtxField::DataEnd => Some(MirType::Ptr {
-            pointee: Box::new(MirType::U8),
-            address_space: AddressSpace::Packet,
-        }),
-        CtxField::Timestamp
-        | CtxField::CgroupId
-        | CtxField::LookupCookie
-        | CtxField::SocketCookie
-        | CtxField::NetnsCookie => Some(MirType::U64),
-        CtxField::SocketUid => Some(MirType::U32),
-        CtxField::Comm => Some(MirType::Ptr {
-            pointee: Box::new(MirType::Array {
-                elem: Box::new(MirType::U8),
-                len: 16,
-            }),
-            address_space: AddressSpace::Stack,
-        }),
         CtxField::Arg(idx) => {
             let ctx = probe_ctx?;
             if ctx.probe_type.uses_btf_trampoline() {
@@ -399,7 +198,8 @@ fn recover_ctx_field_hint(
             let type_info = ctx.btf_ret_type_info().ok().flatten()?;
             runtime_trampoline_root_type(&type_info)
         }
-        _ => None,
+        CtxField::TracepointField(_) | CtxField::KStack | CtxField::UStack => None,
+        _ => unreachable!("static ctx field types should be handled via context_schema"),
     }
 }
 
@@ -703,6 +503,7 @@ pub(crate) fn recover_optimized_mir_type_hints(
 mod tests {
     use super::*;
     use crate::compiler::EbpfProgramType;
+    use crate::compiler::context_schema::synthetic_bpf_sock_type;
     use crate::compiler::mir::StackSlotKind;
     use crate::kernel_btf::KernelBtf;
 

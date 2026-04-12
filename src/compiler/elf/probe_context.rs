@@ -2,6 +2,7 @@ use super::{
     CompileError, CtxField, EbpfProgramType, IngressIfindexContextLayout, ProbeContext,
     ProgramTargetKind, ProgramValueAccess, SocketContextLayout,
 };
+use crate::compiler::context_schema::resolve_probe_ctx_field_name;
 use crate::compiler::hindley_milner::HMType;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::CtxStoreTarget;
@@ -588,25 +589,7 @@ impl ProbeContext {
     }
 
     pub(crate) fn resolve_ctx_field_name(&self, field_name: &str) -> Result<CtxField, String> {
-        if matches!(self.probe_type, EbpfProgramType::Tracepoint) {
-            let resolved = self.probe_type.resolve_ctx_field_name(field_name)?;
-            return Ok(match resolved {
-                CtxField::Pid
-                | CtxField::Tid
-                | CtxField::Uid
-                | CtxField::Gid
-                | CtxField::Comm
-                | CtxField::Cpu
-                | CtxField::Timestamp
-                | CtxField::CgroupId
-                | CtxField::KStack
-                | CtxField::UStack
-                | CtxField::Arg(_) => resolved,
-                _ => CtxField::TracepointField(field_name.to_string()),
-            });
-        }
-
-        self.probe_type.resolve_ctx_field_name(field_name)
+        resolve_probe_ctx_field_name(self, field_name)
     }
 
     pub(crate) fn resolve_named_ctx_arg(&self, arg_name: &str) -> Result<CtxField, String> {
