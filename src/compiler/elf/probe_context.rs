@@ -2,9 +2,7 @@ use super::{
     CompileError, CtxField, CtxWriteTarget, EbpfProgramType, ProbeContext, ProgramTargetKind,
     ProgramValueAccess,
 };
-use crate::compiler::context_schema::{
-    resolve_probe_ctx_field_name, static_ctx_field_access_error,
-};
+use crate::compiler::context_schema::resolve_probe_ctx_field_name;
 use crate::compiler::hindley_milner::HMType;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::CtxStoreTarget;
@@ -531,7 +529,7 @@ impl ProbeContext {
     /// Returns a user-facing error message when a context field is not valid
     /// for this program type.
     pub fn ctx_field_access_error(&self, field: &CtxField) -> Option<String> {
-        if let Some(message) = static_ctx_field_access_error(self, field) {
+        if let Some(message) = self.probe_type.base_ctx_field_access_error(field) {
             return Some(message);
         }
         let program_type = self.probe_type;

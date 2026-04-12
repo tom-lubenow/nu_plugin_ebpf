@@ -27,6 +27,7 @@ use super::mir::{
 };
 
 mod probe_context;
+mod program_ctx_access;
 mod program_ctx_writes;
 mod program_helper_policy;
 mod program_impl;
