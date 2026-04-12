@@ -1,5 +1,6 @@
 use super::{
-    CompileError, CtxField, EbpfProgramType, ProbeContext, ProgramTargetKind, ProgramValueAccess,
+    CompileError, CtxField, CtxWriteTarget, EbpfProgramType, ProbeContext, ProgramTargetKind,
+    ProgramValueAccess,
 };
 use crate::compiler::context_schema::{
     resolve_probe_ctx_field_name, static_ctx_field_access_error,
@@ -648,6 +649,30 @@ impl ProbeContext {
             ),
             _ => Err(format!("ctx.{} is read-only", field.display_name())),
         }
+    }
+
+    pub(crate) fn resolve_ctx_write_target(
+        &self,
+        field_name: &str,
+        index: Option<usize>,
+        path_desc: &str,
+    ) -> Result<CtxWriteTarget, String> {
+        if field_name == "optval" {
+            self.validate_ctx_field_access(&CtxField::SockoptOptval)
+                .map_err(|err| err.to_string())?;
+            self.validate_ctx_field_access(&CtxField::SockoptOptvalEnd)
+                .map_err(|err| err.to_string())?;
+            let Some(index) = index else {
+                return Err(
+                    "ctx.optval assignment requires a fixed index, e.g. $ctx.optval.0 = ..."
+                        .to_string(),
+                );
+            };
+            return Ok(CtxWriteTarget::SockoptOptvalByte(index));
+        }
+
+        self.resolve_ctx_store_target(field_name, index, path_desc)
+            .map(CtxWriteTarget::StoreField)
     }
 
     pub(crate) fn ctx_store_target_error(&self, target: &CtxStoreTarget) -> Option<String> {

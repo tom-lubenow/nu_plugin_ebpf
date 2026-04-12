@@ -1,6 +1,7 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
-use crate::compiler::mir::{AddressSpace, CtxStoreTarget};
+use crate::compiler::elf::CtxWriteTarget;
+use crate::compiler::mir::AddressSpace;
 
 impl<'a> HirToMirLowering<'a> {
     fn ctx_path_member_name(member: &PathMember) -> Result<String, CompileError> {
@@ -46,10 +47,10 @@ impl<'a> HirToMirLowering<'a> {
         Ok((field, 1))
     }
 
-    fn resolve_ctx_store_target_from_path(
+    fn resolve_ctx_write_target_from_path(
         &self,
         path: &CellPath,
-    ) -> Result<CtxStoreTarget, CompileError> {
+    ) -> Result<CtxWriteTarget, CompileError> {
         let path_desc = Self::typed_value_path_desc(&path.members);
         let Some(ctx) = self.probe_ctx else {
             return Err(CompileError::UnsupportedInstruction(format!(
@@ -64,13 +65,13 @@ impl<'a> HirToMirLowering<'a> {
             }
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "context cell path update '.{} = ...' is only supported for sock_ops reply fields, writable cgroup_sysctl file_pos, writable cgroup_sockopt scalar fields and optval byte updates, and cgroup_sock_addr rewrite fields",
+                    "context cell path update '.{} = ...' only supports a direct writable field or a fixed integer index",
                     path_desc
                 )));
             }
         };
 
-        ctx.resolve_ctx_store_target(&field_name, index, &path_desc)
+        ctx.resolve_ctx_write_target(&field_name, index, &path_desc)
             .map_err(CompileError::UnsupportedInstruction)
     }
 
@@ -419,9 +420,6 @@ impl<'a> HirToMirLowering<'a> {
         new_value: RegId,
     ) -> Result<(), CompileError> {
         let path_desc = Self::typed_value_path_desc(&path.members);
-        if let Some(index) = self.cgroup_sockopt_optval_index_from_path(path)? {
-            return self.lower_cgroup_sockopt_optval_byte_update(src_dst, index, new_value, path);
-        }
         if let Some((root_field, index)) = self.packet_ctx_store_root_from_path(path)? {
             return self.lower_packet_ctx_update(
                 src_dst,
@@ -431,37 +429,27 @@ impl<'a> HirToMirLowering<'a> {
                 &path_desc,
             );
         }
-        let target = self.resolve_ctx_store_target_from_path(path)?;
-        let target_ty = target.value_type();
-        let stored_vreg =
-            self.materialize_scalar_assignment_value(new_value, &target_ty, &path_desc)?;
-        self.emit(MirInst::StoreCtxField {
-            target,
-            val: MirValue::VReg(stored_vreg),
-            ty: target_ty,
-        });
+        match self.resolve_ctx_write_target_from_path(path)? {
+            CtxWriteTarget::StoreField(target) => {
+                let target_ty = target.value_type();
+                let stored_vreg =
+                    self.materialize_scalar_assignment_value(new_value, &target_ty, &path_desc)?;
+                self.emit(MirInst::StoreCtxField {
+                    target,
+                    val: MirValue::VReg(stored_vreg),
+                    ty: target_ty,
+                });
+            }
+            CtxWriteTarget::SockoptOptvalByte(index) => {
+                self.lower_cgroup_sockopt_optval_byte_update(
+                    src_dst, index, new_value, &path_desc,
+                )?;
+                return Ok(());
+            }
+        }
         let meta = self.get_or_create_metadata(src_dst);
         meta.is_context = true;
         Ok(())
-    }
-
-    fn cgroup_sockopt_optval_index_from_path(
-        &self,
-        path: &CellPath,
-    ) -> Result<Option<usize>, CompileError> {
-        let [member, PathMember::Int { val: index, .. }] = path.members.as_slice() else {
-            return Ok(None);
-        };
-        if Self::ctx_path_member_name(member)? != "optval" {
-            return Ok(None);
-        }
-        let index = usize::try_from(*index).map_err(|_| {
-            CompileError::UnsupportedInstruction(format!(
-                "context cell path update '.{} = ...' requires a non-negative optval byte index",
-                Self::typed_value_path_desc(&path.members)
-            ))
-        })?;
-        Ok(Some(index))
     }
 
     fn lower_cgroup_sockopt_optval_byte_update(
@@ -469,9 +457,8 @@ impl<'a> HirToMirLowering<'a> {
         src_dst: RegId,
         index: usize,
         new_value: RegId,
-        path: &CellPath,
+        path_desc: &str,
     ) -> Result<(), CompileError> {
-        let path_desc = Self::typed_value_path_desc(&path.members);
         let Some(ctx) = self.probe_ctx else {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "context cell path update '.{} = ...' requires probe context",

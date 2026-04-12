@@ -19,6 +19,7 @@ use super::btf::BtfBuilder;
 use super::context_schema::{resolve_program_ctx_field_name, resolve_untyped_ctx_field_name};
 use super::instruction::BpfHelper;
 use super::instruction::EbpfBuilder;
+use super::mir::CtxStoreTarget;
 use super::mir::{
     BYTES_COUNTER_MAP_NAME, BitfieldInfo, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME,
     KSTACK_MAP_NAME, MapRef, MirType, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME,
@@ -1315,6 +1316,12 @@ pub enum ProgramValueAccess {
 pub(crate) enum ProgramReturnAlias {
     Const(i64),
     PacketLen,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum CtxWriteTarget {
+    StoreField(CtxStoreTarget),
+    SockoptOptvalByte(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

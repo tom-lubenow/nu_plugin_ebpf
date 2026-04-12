@@ -2788,6 +2788,34 @@ fn test_probe_context_resolves_cgroup_sockopt_scalar_store_targets() {
 }
 
 #[test]
+fn test_probe_context_resolves_cgroup_sockopt_optval_byte_write_target() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+    assert_eq!(
+        ctx.resolve_ctx_write_target("optval", Some(2), "optval.2")
+            .expect("cgroup_sockopt:get optval.2 target should resolve"),
+        CtxWriteTarget::SockoptOptvalByte(2)
+    );
+}
+
+#[test]
+fn test_probe_context_rejects_cgroup_sockopt_optval_write_without_fixed_index() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+    let err = ctx
+        .resolve_ctx_write_target("optval", None, "optval")
+        .expect_err("cgroup_sockopt optval write without fixed index should be rejected");
+    assert!(err.contains("requires a fixed index"));
+}
+
+#[test]
+fn test_probe_context_rejects_optval_write_target_outside_cgroup_sockopt() {
+    let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_openat2");
+    let err = ctx
+        .resolve_ctx_write_target("optval", Some(0), "optval.0")
+        .expect_err("optval writes should be rejected outside cgroup_sockopt");
+    assert!(err.contains("ctx.optval is only available on cgroup_sockopt programs"));
+}
+
+#[test]
 fn test_probe_context_rejects_cgroup_sockopt_set_retval_store_target() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set");
     let err = ctx
