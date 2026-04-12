@@ -16,7 +16,6 @@ use object::{
 
 use super::CompileError;
 use super::btf::BtfBuilder;
-use super::context_schema::{resolve_program_ctx_field_name, resolve_untyped_ctx_field_name};
 use super::instruction::BpfHelper;
 use super::instruction::EbpfBuilder;
 use super::mir::CtxStoreTarget;
@@ -28,6 +27,7 @@ use super::mir::{
 
 mod probe_context;
 mod program_ctx_access;
+mod program_ctx_names;
 mod program_ctx_writes;
 mod program_helper_policy;
 mod program_impl;
@@ -1077,15 +1077,6 @@ impl EbpfProgramType {
             }
             _ => None,
         }
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn resolve_ctx_field_name(&self, field_name: &str) -> Result<CtxField, String> {
-        resolve_program_ctx_field_name(*self, field_name)
-    }
-
-    pub(crate) fn resolve_untyped_ctx_field_name(field_name: &str) -> Result<CtxField, String> {
-        resolve_untyped_ctx_field_name(field_name)
     }
 
     pub fn supports_skb_ctx_fields(&self) -> bool {
