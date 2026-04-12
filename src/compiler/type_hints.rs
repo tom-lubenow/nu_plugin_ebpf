@@ -175,13 +175,15 @@ fn recover_ctx_field_hint(
         return Some(spec.runtime_ty);
     }
 
+    if let Some(type_info) = probe_ctx.and_then(|ctx| ctx.ctx_field_type_info(field).ok().flatten())
+    {
+        return runtime_trampoline_root_type(&type_info);
+    }
+
     match field {
-        CtxField::Arg(idx) => {
+        CtxField::Arg(_) => {
             let ctx = probe_ctx?;
-            if ctx.probe_type.uses_btf_trampoline() {
-                let type_info = ctx.btf_arg_type_info(*idx as usize).ok().flatten()?;
-                runtime_trampoline_root_type(&type_info)
-            } else if ctx.probe_type.uses_raw_tracepoint_args() {
+            if ctx.probe_type.uses_raw_tracepoint_args() {
                 Some(MirType::U64)
             } else if ctx.is_userspace() {
                 Some(pointer_hint(AddressSpace::User))
@@ -189,17 +191,7 @@ fn recover_ctx_field_hint(
                 None
             }
         }
-        CtxField::RetVal => {
-            let ctx = probe_ctx?;
-            if !matches!(
-                ctx.probe_type.retval_access(),
-                crate::compiler::ProgramValueAccess::Trampoline
-            ) {
-                return None;
-            }
-            let type_info = ctx.btf_ret_type_info().ok().flatten()?;
-            runtime_trampoline_root_type(&type_info)
-        }
+        CtxField::RetVal => None,
         CtxField::TracepointField(_) | CtxField::KStack | CtxField::UStack => None,
         _ => unreachable!("static ctx field types should be handled via probe context schema"),
     }

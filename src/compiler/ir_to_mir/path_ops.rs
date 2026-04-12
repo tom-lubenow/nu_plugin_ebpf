@@ -1,6 +1,6 @@
 use super::*;
 use crate::compiler::mir::AddressSpace;
-use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TrampolineValueKind, TypeInfo};
+use crate::kernel_btf::{TrampolineFieldSelector, TrampolineValueKind, TypeInfo};
 
 impl<'a> HirToMirLowering<'a> {
     fn tracepoint_root_field_types(
@@ -10,23 +10,21 @@ impl<'a> HirToMirLowering<'a> {
         let Some(ctx) = self.probe_ctx else {
             return Ok(None);
         };
-        let Some((category, tp_name)) = ctx.tracepoint_parts() else {
-            return Ok(None);
-        };
-        let Ok(trace_ctx) = KernelBtf::get().get_tracepoint_context(&category, &tp_name) else {
-            return Ok(None);
-        };
-        let Some(field) = trace_ctx.get_field(name) else {
+        let Some(type_info) = ctx
+            .ctx_field_type_info(&CtxField::TracepointField(name.to_string()))
+            .ok()
+            .flatten()
+        else {
             return Ok(None);
         };
 
-        let types = match &field.type_info {
+        let types = match &type_info {
             TypeInfo::Struct { .. } | TypeInfo::Array { .. } => {
-                let Some(semantic_ty) = Self::projected_trampoline_field_type(&field.type_info)
-                    .or_else(|| {
-                        (field.size > 0).then(|| MirType::Array {
+                let Some(semantic_ty) =
+                    Self::projected_trampoline_field_type(&type_info).or_else(|| {
+                        (type_info.size() > 0).then(|| MirType::Array {
                             elem: Box::new(MirType::U8),
-                            len: field.size,
+                            len: type_info.size(),
                         })
                     })
                 else {
@@ -39,8 +37,7 @@ impl<'a> HirToMirLowering<'a> {
                 Some((semantic_ty, runtime_ty))
             }
             _ => {
-                let ty =
-                    Self::projected_trampoline_field_type(&field.type_info).unwrap_or(MirType::I64);
+                let ty = Self::projected_trampoline_field_type(&type_info).unwrap_or(MirType::I64);
                 Some((ty.clone(), ty))
             }
         };

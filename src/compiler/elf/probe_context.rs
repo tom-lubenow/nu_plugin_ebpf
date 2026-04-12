@@ -391,6 +391,44 @@ impl ProbeContext {
             })
     }
 
+    pub(crate) fn tracepoint_field_type_info(
+        &self,
+        field_name: &str,
+    ) -> Result<Option<TypeInfo>, String> {
+        let Some((category, tp_name)) = self.tracepoint_parts() else {
+            return Ok(None);
+        };
+        let trace_ctx = KernelBtf::get()
+            .get_tracepoint_context(&category, &tp_name)
+            .map_err(|e| {
+                format!(
+                    "failed to resolve ctx.{} type for tracepoint:{}/{}: {}",
+                    field_name, category, tp_name, e
+                )
+            })?;
+        Ok(trace_ctx
+            .get_field(field_name)
+            .map(|field| field.type_info.clone()))
+    }
+
+    pub(crate) fn ctx_field_type_info(&self, field: &CtxField) -> Result<Option<TypeInfo>, String> {
+        match field {
+            CtxField::Arg(idx) if self.probe_type.uses_btf_trampoline() => {
+                self.btf_arg_type_info(*idx as usize)
+            }
+            CtxField::RetVal
+                if matches!(
+                    self.probe_type.retval_access(),
+                    ProgramValueAccess::Trampoline
+                ) =>
+            {
+                self.btf_ret_type_info()
+            }
+            CtxField::TracepointField(name) => self.tracepoint_field_type_info(name),
+            _ => Ok(None),
+        }
+    }
+
     pub(crate) fn btf_ret_field_projection(
         &self,
         field_path: &[TrampolineFieldSelector],

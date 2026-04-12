@@ -1,6 +1,6 @@
 use super::*;
 use crate::compiler::ProgramValueAccess;
-use crate::kernel_btf::{KernelBtf, TypeInfo};
+use crate::kernel_btf::TypeInfo;
 
 impl<'a> TypeInference<'a> {
     fn byte_array_mir_type(size: usize) -> Option<MirType> {
@@ -154,6 +154,21 @@ impl<'a> TypeInference<'a> {
         )?))
     }
 
+    fn ctx_hm_type_from_type_info(type_info: &TypeInfo) -> HMType {
+        match type_info {
+            TypeInfo::Struct { .. } | TypeInfo::Array { .. } => HMType::Ptr {
+                pointee: Box::new(Self::hm_type_from_type_info(type_info).unwrap_or(
+                    HMType::Array {
+                        elem: Box::new(HMType::U8),
+                        len: type_info.size(),
+                    },
+                )),
+                address_space: AddressSpace::Stack,
+            },
+            _ => Self::hm_type_from_type_info(type_info).unwrap_or(HMType::I64),
+        }
+    }
+
     fn trampoline_arg_type(&self, idx: u8) -> Result<Option<HMType>, TypeError> {
         let Some(ctx) = self.probe_ctx.as_ref() else {
             return Ok(None);
@@ -163,21 +178,10 @@ impl<'a> TypeInference<'a> {
         }
 
         let type_info = ctx
-            .btf_arg_type_info(idx as usize)
+            .ctx_field_type_info(&CtxField::Arg(idx))
             .map_err(TypeError::new)?
             .ok_or_else(|| TypeError::new(ctx.btf_arg_unavailable_error(idx as usize)))?;
-        Ok(Some(match type_info {
-            TypeInfo::Struct { .. } | TypeInfo::Array { .. } => HMType::Ptr {
-                pointee: Box::new(Self::hm_type_from_type_info(&type_info).unwrap_or(
-                    HMType::Array {
-                        elem: Box::new(HMType::U8),
-                        len: type_info.size(),
-                    },
-                )),
-                address_space: AddressSpace::Stack,
-            },
-            _ => Self::hm_type_from_type_info(&type_info).unwrap_or(HMType::I64),
-        }))
+        Ok(Some(Self::ctx_hm_type_from_type_info(&type_info)))
     }
 
     fn trampoline_ret_type(&self) -> Result<Option<HMType>, TypeError> {
@@ -192,48 +196,23 @@ impl<'a> TypeInference<'a> {
         }
 
         let type_info = ctx
-            .btf_ret_type_info()
+            .ctx_field_type_info(&CtxField::RetVal)
             .map_err(TypeError::new)?
             .ok_or_else(|| TypeError::new(ctx.btf_ret_unavailable_error()))?;
-        Ok(Some(match type_info {
-            TypeInfo::Struct { .. } | TypeInfo::Array { .. } => HMType::Ptr {
-                pointee: Box::new(Self::hm_type_from_type_info(&type_info).unwrap_or(
-                    HMType::Array {
-                        elem: Box::new(HMType::U8),
-                        len: type_info.size(),
-                    },
-                )),
-                address_space: AddressSpace::Stack,
-            },
-            _ => Self::hm_type_from_type_info(&type_info).unwrap_or(HMType::I64),
-        }))
+        Ok(Some(Self::ctx_hm_type_from_type_info(&type_info)))
     }
 
     fn tracepoint_field_type(&self, name: &str) -> Result<Option<HMType>, TypeError> {
         let Some(ctx) = self.probe_ctx.as_ref() else {
             return Ok(None);
         };
-        let Some((category, tp_name)) = ctx.tracepoint_parts() else {
+        let Some(type_info) = ctx
+            .ctx_field_type_info(&CtxField::TracepointField(name.to_string()))
+            .map_err(TypeError::new)?
+        else {
             return Ok(None);
         };
-        let trace_ctx = KernelBtf::get()
-            .get_tracepoint_context(&category, &tp_name)
-            .map_err(|err| TypeError::new(err.to_string()))?;
-        let Some(field) = trace_ctx.get_field(name) else {
-            return Ok(None);
-        };
-        Ok(Some(match &field.type_info {
-            TypeInfo::Struct { .. } | TypeInfo::Array { .. } => HMType::Ptr {
-                pointee: Box::new(Self::hm_type_from_type_info(&field.type_info).unwrap_or(
-                    HMType::Array {
-                        elem: Box::new(HMType::U8),
-                        len: field.type_info.size(),
-                    },
-                )),
-                address_space: AddressSpace::Stack,
-            },
-            _ => Self::hm_type_from_type_info(&field.type_info).unwrap_or(HMType::I64),
-        }))
+        Ok(Some(Self::ctx_hm_type_from_type_info(&type_info)))
     }
 
     pub(super) fn validate_ctx_field_access(&self, field: &CtxField) -> Result<(), TypeError> {

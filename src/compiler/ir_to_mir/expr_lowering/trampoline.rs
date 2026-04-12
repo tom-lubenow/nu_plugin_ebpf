@@ -295,19 +295,11 @@ impl<'a> HirToMirLowering<'a> {
         &self,
         field: &CtxField,
     ) -> Result<Option<TypeInfo>, CompileError> {
-        match (self.probe_ctx, field) {
-            (Some(ctx), CtxField::Arg(idx)) if ctx.probe_type.uses_btf_trampoline() => ctx
-                .btf_arg_type_info(*idx as usize)
-                .map_err(CompileError::UnsupportedInstruction),
-            (Some(ctx), CtxField::RetVal)
-                if matches!(
-                    ctx.probe_type.retval_access(),
-                    ProgramValueAccess::Trampoline
-                ) =>
-            {
-                ctx.btf_ret_type_info()
+        match field {
+            CtxField::Arg(_) | CtxField::RetVal => self.probe_ctx.map_or(Ok(None), |ctx| {
+                ctx.ctx_field_type_info(field)
                     .map_err(CompileError::UnsupportedInstruction)
-            }
+            }),
             _ => Ok(None),
         }
     }
