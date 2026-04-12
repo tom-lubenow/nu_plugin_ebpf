@@ -233,6 +233,127 @@ fn test_verify_mir_for_program_redirect_allows_non_zero_flags_outside_xdp() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_sockopt_helpers_reject_invalid_program() {
+    for (helper, expected) in [
+        (
+            BpfHelper::SetSockOpt,
+            "helper 'bpf_setsockopt' is only valid in sock_ops, cgroup_sock_addr, and cgroup_sockopt programs",
+        ),
+        (
+            BpfHelper::GetSockOpt,
+            "helper 'bpf_getsockopt' is only valid in sock_ops, cgroup_sock_addr, and cgroup_sockopt programs",
+        ),
+    ] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let optval_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args: vec![
+                    MirValue::VReg(ctx),
+                    MirValue::Const(1),
+                    MirValue::Const(2),
+                    MirValue::StackSlot(optval_slot),
+                    MirValue::Const(16),
+                ],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected sockopt helper program-surface error");
+        assert!(err.iter().any(|e| e.message.contains(expected)));
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_sockopt_helpers_accept_cgroup_sockopt() {
+    for probe_ctx in [
+        ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get"),
+        ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set"),
+    ] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let optval_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: BpfHelper::GetSockOpt as u32,
+                args: vec![
+                    MirValue::VReg(ctx),
+                    MirValue::Const(1),
+                    MirValue::Const(2),
+                    MirValue::StackSlot(optval_slot),
+                    MirValue::Const(16),
+                ],
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: BpfHelper::SetSockOpt as u32,
+                args: vec![
+                    MirValue::VReg(ctx),
+                    MirValue::Const(1),
+                    MirValue::Const(2),
+                    MirValue::StackSlot(optval_slot),
+                    MirValue::Const(16),
+                ],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected sockopt helpers to verify on cgroup_sockopt");
+    }
+}
+
+#[test]
 fn test_verify_mir_for_program_redirect_rejects_non_packet_programs() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
