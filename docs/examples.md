@@ -80,6 +80,9 @@ let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.op | count; 1 }
 # Inspect the first sock_ops argument word through the normal fixed-array path
 let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| ($ctx.args | get 0) | count; 1 }
 
+# Project the current sock_ops socket through the typed bpf_sock view
+let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.sk.family | count; 1 }
+
 # Write the raw sock_ops reply word through ordinary assignment
 let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| mut ctx = $ctx; $ctx.reply = 1; $ctx.op | count; 1 }
 
@@ -121,6 +124,9 @@ let id = ebpf attach 'cgroup_sockopt:/sys/fs/cgroup:get' {|ctx| mut ctx = $ctx; 
 
 # Count requested ports on cgroup connect4 hooks
 let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect4' {|ctx| $ctx.user_port | count; 'allow' }
+
+# Project the current cgroup_sock_addr socket through the typed bpf_sock view
+let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect4' {|ctx| $ctx.sk.family | count; 'allow' }
 
 # Inspect the last host-order IPv6 word on cgroup connect6 hooks
 let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect6' {|ctx| ($ctx.user_ip6 | get 3) | count; 'allow' }

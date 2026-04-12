@@ -295,6 +295,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.skb_len } - Get the total packet length when packet metadata is available
     {|ctx| $ctx.skb_tcp_flags } - Get packet TCP flags when packet metadata is available
     {|ctx| $ctx.skb_hwtstamp } - Get packet hardware timestamp when packet metadata is available
+    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_port, dst_port, state, and rx_queue_mapping)
     Note: sock_ops uses raw integer return codes. Observation-only examples
     should return `1`. `ctx.reply` and `ctx.replylong.<0-3>` are writable raw
     `u32` words after shadowing the immutable closure parameter as mutable, for
@@ -304,7 +305,10 @@ Context parameter syntax (recommended):
     for example `($ctx.args | get 0)`. `ctx.data` / `ctx.data_end` use the
     same guarded packet access model as XDP and tc when packet metadata is
     available, so forms like `($ctx.data | get 0)` are valid on packet-aware
-    sock_ops callbacks.
+    sock_ops callbacks. `ctx.sk` uses the same typed `bpf_sock` projection
+    model as `cgroup_sock`, `cgroup_sockopt`, `cgroup_sock_addr`, `sk_lookup`,
+    and `sk_msg`. Modeled socket-option helpers also use the ordinary helper
+    surface here, including `bpf_getsockopt` and `bpf_setsockopt`.
 
   sk_msg fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
@@ -449,12 +453,17 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.family }  - Get kernel socket family
     {|ctx| $ctx.sock_type } - Get socket type
     {|ctx| $ctx.protocol } - Get socket protocol
+    {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_port, dst_port, state, and rx_queue_mapping)
     {|ctx| $ctx.msg_src_ip4 } - Get the IPv4 source address in host byte order on sendmsg4/recvmsg4
     {|ctx| $ctx.msg_src_ip6 } - Get the IPv6 source address as four host-order u32 words on sendmsg6/recvmsg6
     Note: cgroup_sock_addr closures can return `allow` or `deny` instead of
     raw `1`/`0` result codes. This initial slice still exposes IPv6
     addresses as fixed arrays of four u32 words rather than a higher-level
-    address type.
+    address type. `ctx.sk` uses the same typed `bpf_sock` projection model as
+    `cgroup_sock`, `cgroup_sockopt`, `sock_ops`, `sk_lookup`, and `sk_msg`.
+    Modeled socket-option helpers are available on `connect4` / `connect6`
+    hooks through the ordinary helper surface, including `bpf_getsockopt` and
+    `bpf_setsockopt`.
 
   sk_lookup fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
