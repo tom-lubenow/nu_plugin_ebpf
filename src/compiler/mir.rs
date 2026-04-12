@@ -437,6 +437,8 @@ pub enum CtxField {
     Hwtstamp,
     /// XDP packet data pointer
     Data,
+    /// XDP packet metadata pointer
+    DataMeta,
     /// XDP packet data_end pointer
     DataEnd,
     /// XDP ingress interface index
@@ -626,6 +628,7 @@ impl CtxField {
             CtxField::GsoSize => "gso_size".to_string(),
             CtxField::Hwtstamp => "hwtstamp".to_string(),
             CtxField::Data => "data".to_string(),
+            CtxField::DataMeta => "data_meta".to_string(),
             CtxField::DataEnd => "data_end".to_string(),
             CtxField::IngressIfindex => "ingress_ifindex".to_string(),
             CtxField::Ifindex => "ifindex".to_string(),
@@ -709,8 +712,9 @@ impl CtxField {
         }
     }
 
-    pub fn bounded_context_end_field(&self) -> Option<CtxField> {
+    pub fn bounded_end_field(&self) -> Option<CtxField> {
         match self {
+            CtxField::DataMeta => Some(CtxField::Data),
             CtxField::SockoptOptval => Some(CtxField::SockoptOptvalEnd),
             _ => None,
         }

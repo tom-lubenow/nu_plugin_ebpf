@@ -691,6 +691,16 @@ impl<'a> MirToEbpfCompiler<'a> {
                     }
                 };
             }
+            CtxField::DataMeta => {
+                let PacketContextKind::XdpMd = self.packet_context_kind()? else {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "ctx.data_meta is only available on xdp programs".to_string(),
+                    ));
+                };
+                let data_meta_offset = Self::xdp_md_offsets().2;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_meta_offset));
+            }
             CtxField::DataEnd => {
                 match self.packet_context_kind()? {
                     PacketContextKind::XdpMd => {

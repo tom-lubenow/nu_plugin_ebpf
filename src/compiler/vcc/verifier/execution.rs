@@ -307,6 +307,8 @@ impl VccVerifier {
                         nullability: VccNullability::NonNull,
                         bounds,
                         packet_root: None,
+                        packet_root_field: None,
+                        packet_ctx_field: None,
                         packet_end: false,
                         context_buffer_root: None,
                         context_buffer_end: false,
@@ -649,9 +651,11 @@ impl VccVerifier {
                         nullability: base_ptr.nullability,
                         bounds,
                         packet_root: base_ptr.packet_root,
-                        packet_end: base_ptr.packet_end,
+                        packet_root_field: base_ptr.packet_root_field,
+                        packet_ctx_field: None,
+                        packet_end: false,
                         context_buffer_root: base_ptr.context_buffer_root,
-                        context_buffer_end: base_ptr.context_buffer_end,
+                        context_buffer_end: false,
                         ringbuf_ref: base_ptr.ringbuf_ref,
                         kfunc_ref: base_ptr.kfunc_ref,
                     }),
@@ -700,7 +704,7 @@ impl VccVerifier {
                         {
                             self.errors.push(VccError::new(
                                 VccErrorKind::PointerBounds,
-                                "load on packet pointers requires a preceding data_end guard",
+                                "load on packet pointers requires a preceding packet end-pointer guard",
                             ));
                             return;
                         }

@@ -206,7 +206,7 @@ pub(super) fn apply_load_ctx_field_inst(
             kfunc_ref: None,
         };
     }
-    if matches!(field, CtxField::Data) {
+    if matches!(field, CtxField::Data | CtxField::DataMeta) {
         match ty {
             VerifierType::Ptr {
                 space: AddressSpace::Packet,

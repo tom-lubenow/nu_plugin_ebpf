@@ -95,6 +95,16 @@ fn bounded_end_guard(op: BinOpKind, lhs: VReg, rhs: VReg, state: &VerifierState)
         }
         _ => None,
     };
+    let packet_end_matches = |ptr_bounds: PtrBounds, end_reg: VReg| {
+        let PtrOrigin::Packet(root) = ptr_bounds.origin() else {
+            return false;
+        };
+        match state.ctx_field_source(root) {
+            Some(CtxField::Data) => state.ctx_field_source(end_reg) == Some(&CtxField::DataEnd),
+            Some(CtxField::DataMeta) => state.ctx_field_source(end_reg) == Some(&CtxField::Data),
+            _ => false,
+        }
+    };
 
     match (lhs_ty, rhs_ty) {
         (
@@ -107,9 +117,7 @@ fn bounded_end_guard(op: BinOpKind, lhs: VReg, rhs: VReg, state: &VerifierState)
                 space: AddressSpace::Packet,
                 ..
             },
-        ) if matches!(bounds.origin(), PtrOrigin::Packet(_))
-            && state.ctx_field_source(rhs) == Some(&CtxField::DataEnd) =>
-        {
+        ) if matches!(bounds.origin(), PtrOrigin::Packet(_)) && packet_end_matches(bounds, rhs) => {
             make_packet_guard(lhs, op)
         }
         (
@@ -122,9 +130,7 @@ fn bounded_end_guard(op: BinOpKind, lhs: VReg, rhs: VReg, state: &VerifierState)
                 bounds: Some(bounds),
                 ..
             },
-        ) if matches!(bounds.origin(), PtrOrigin::Packet(_))
-            && state.ctx_field_source(lhs) == Some(&CtxField::DataEnd) =>
-        {
+        ) if matches!(bounds.origin(), PtrOrigin::Packet(_)) && packet_end_matches(bounds, lhs) => {
             make_packet_guard(rhs, swap_compare(op)?)
         }
         (

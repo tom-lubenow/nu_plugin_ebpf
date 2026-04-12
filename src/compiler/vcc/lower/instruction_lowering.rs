@@ -27,6 +27,7 @@ impl<'a> VccLowerer<'a> {
             CtxField::GsoSize => "gso_size".to_string(),
             CtxField::Hwtstamp => "hwtstamp".to_string(),
             CtxField::Data => "data".to_string(),
+            CtxField::DataMeta => "data_meta".to_string(),
             CtxField::DataEnd => "data_end".to_string(),
             CtxField::IngressIfindex => "ingress_ifindex".to_string(),
             CtxField::Ifindex => "ifindex".to_string(),
@@ -134,6 +135,8 @@ impl<'a> VccLowerer<'a> {
                                 nullability: VccNullability::NonNull,
                                 bounds: stack_bounds(size),
                                 packet_root: None,
+                                packet_root_field: None,
+                                packet_ctx_field: None,
                                 packet_end: false,
                                 context_buffer_root: None,
                                 context_buffer_end: false,
@@ -260,7 +263,11 @@ impl<'a> VccLowerer<'a> {
                             base: base_reg,
                             offset,
                         });
-                        self.ptr_regs.insert(dst_reg, base_ptr);
+                        let mut derived_ptr = base_ptr;
+                        derived_ptr.packet_ctx_field = None;
+                        derived_ptr.packet_end = false;
+                        derived_ptr.context_buffer_end = false;
+                        self.ptr_regs.insert(dst_reg, derived_ptr);
                     }
                     _ => {
                         let vcc_lhs = self.lower_value(lhs, out);
@@ -346,6 +353,8 @@ impl<'a> VccLowerer<'a> {
                             nullability: VccNullability::NonNull,
                             bounds: stack_bounds(size),
                             packet_root: None,
+                            packet_root_field: None,
+                            packet_ctx_field: None,
                             packet_end: false,
                             context_buffer_root: None,
                             context_buffer_end: false,
@@ -375,10 +384,25 @@ impl<'a> VccLowerer<'a> {
                                     limit: UNKNOWN_PACKET_LIMIT,
                                 });
                                 info.packet_root = Some(VccReg(dst.0));
+                                info.packet_root_field = Some(VccPacketCtxField::Data);
+                                info.packet_ctx_field = Some(VccPacketCtxField::Data);
+                                info.packet_end = false;
+                            }
+                            CtxField::DataMeta if info.space == VccAddrSpace::Packet => {
+                                info.bounds = Some(VccBounds {
+                                    min: 0,
+                                    max: 0,
+                                    limit: UNKNOWN_PACKET_LIMIT,
+                                });
+                                info.packet_root = Some(VccReg(dst.0));
+                                info.packet_root_field = Some(VccPacketCtxField::DataMeta);
+                                info.packet_ctx_field = Some(VccPacketCtxField::DataMeta);
                                 info.packet_end = false;
                             }
                             CtxField::DataEnd if info.space == VccAddrSpace::Packet => {
                                 info.packet_root = None;
+                                info.packet_root_field = None;
+                                info.packet_ctx_field = Some(VccPacketCtxField::DataEnd);
                                 info.packet_end = true;
                             }
                             CtxField::SockoptOptval if info.space == VccAddrSpace::Kernel => {
@@ -477,6 +501,8 @@ impl<'a> VccLowerer<'a> {
                         nullability: VccNullability::MaybeNull,
                         bounds: None,
                         packet_root: None,
+                        packet_root_field: None,
+                        packet_ctx_field: None,
                         packet_end: false,
                         context_buffer_root: None,
                         context_buffer_end: false,
@@ -513,6 +539,8 @@ impl<'a> VccLowerer<'a> {
                     nullability: VccNullability::NonNull,
                     bounds,
                     packet_root: None,
+                    packet_root_field: None,
+                    packet_ctx_field: None,
                     packet_end: false,
                     context_buffer_root: None,
                     context_buffer_end: false,

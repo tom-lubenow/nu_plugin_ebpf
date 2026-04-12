@@ -140,10 +140,15 @@ impl VccVerifier {
                 let VccValueType::Ptr(end) = end_ty else {
                     return None;
                 };
+                let expected_end = match ptr.packet_root_field {
+                    Some(VccPacketCtxField::Data) => Some(VccPacketCtxField::DataEnd),
+                    Some(VccPacketCtxField::DataMeta) => Some(VccPacketCtxField::Data),
+                    _ => None,
+                };
                 if ptr.space != VccAddrSpace::Packet
                     || end.space != VccAddrSpace::Packet
                     || ptr.packet_root.is_none()
-                    || !end.packet_end
+                    || end.packet_ctx_field != expected_end
                 {
                     return None;
                 }

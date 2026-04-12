@@ -154,11 +154,20 @@ pub enum VccNullability {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VccPacketCtxField {
+    Data,
+    DataMeta,
+    DataEnd,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VccPointerInfo {
     pub space: VccAddrSpace,
     pub nullability: VccNullability,
     pub bounds: Option<VccBounds>,
     pub packet_root: Option<VccReg>,
+    pub packet_root_field: Option<VccPacketCtxField>,
+    pub packet_ctx_field: Option<VccPacketCtxField>,
     pub packet_end: bool,
     pub context_buffer_root: Option<VccReg>,
     pub context_buffer_end: bool,
@@ -761,6 +770,8 @@ fn vcc_type_from_mir(ty: &MirType) -> VccValueType {
                 },
                 bounds,
                 packet_root: None,
+                packet_root_field: None,
+                packet_ctx_field: None,
                 packet_end: false,
                 context_buffer_root: None,
                 context_buffer_end: false,

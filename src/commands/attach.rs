@@ -138,6 +138,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.data.eth.payload.ipv6.payload.icmpv6.code } - Step through IPv6 and read the ICMPv6 code byte
     {|ctx| $ctx.data.eth.payload.ipv4.payload.tcp.payload.0 } - Step through variable IPv4/TCP headers and read the first TCP payload byte
     XDP-only extras:
+    {|ctx| $ctx.data_meta } - Get the XDP packet metadata pointer
+    {|ctx| ($ctx.data_meta | get 0) } - Read the first metadata byte with an auto-generated `ctx.data` guard
     {|ctx| $ctx.rx_queue_index } - Get RX queue index
     {|ctx| $ctx.egress_ifindex } - Get egress interface index
     Note: XDP closures can return action aliases like `pass`, `drop`,

@@ -933,6 +933,8 @@ impl VccState {
                     nullability: VccNullability::MaybeNull,
                     bounds: None,
                     packet_root: ptr.packet_root,
+                    packet_root_field: ptr.packet_root_field,
+                    packet_ctx_field: ptr.packet_ctx_field,
                     packet_end: ptr.packet_end,
                     context_buffer_root: ptr.context_buffer_root,
                     context_buffer_end: ptr.context_buffer_end,
@@ -1271,6 +1273,16 @@ impl VccState {
                     bounds,
                     packet_root: if lp.packet_root == rp.packet_root {
                         lp.packet_root
+                    } else {
+                        None
+                    },
+                    packet_root_field: if lp.packet_root_field == rp.packet_root_field {
+                        lp.packet_root_field
+                    } else {
+                        None
+                    },
+                    packet_ctx_field: if lp.packet_ctx_field == rp.packet_ctx_field {
+                        lp.packet_ctx_field
                     } else {
                         None
                     },

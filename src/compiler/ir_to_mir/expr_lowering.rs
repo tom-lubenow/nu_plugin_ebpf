@@ -233,11 +233,18 @@ impl<'a> HirToMirLowering<'a> {
         MirValue::VReg(const_vreg)
     }
 
-    pub(super) fn emit_xdp_packet_guarded_load(
+    fn packet_guard_end_field(root_ctx_field: Option<&CtxField>) -> CtxField {
+        root_ctx_field
+            .and_then(CtxField::bounded_end_field)
+            .unwrap_or(CtxField::DataEnd)
+    }
+
+    pub(super) fn emit_packet_guarded_load(
         &mut self,
         dst_vreg: VReg,
         packet_ptr_vreg: VReg,
         load_ty: &MirType,
+        end_field: CtxField,
         path_desc: &str,
     ) -> Result<(), CompileError> {
         if matches!(
@@ -249,21 +256,21 @@ impl<'a> HirToMirLowering<'a> {
                 | MirType::Unknown
         ) {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "xdp packet load for '{}' requires a scalar element type, got {:?}",
+                "packet load for '{}' requires a scalar element type, got {:?}",
                 path_desc, load_ty
             )));
         }
 
         let access_size = i64::try_from(load_ty.size()).map_err(|_| {
             CompileError::UnsupportedInstruction(format!(
-                "xdp packet load for '{}' has unsupported size {}",
+                "packet load for '{}' has unsupported size {}",
                 path_desc,
                 load_ty.size()
             ))
         })?;
         if access_size <= 0 {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "xdp packet load for '{}' requires positive size",
+                "packet load for '{}' requires positive size",
                 path_desc
             )));
         }
@@ -283,7 +290,7 @@ impl<'a> HirToMirLowering<'a> {
             .insert(data_end_vreg, packet_ptr_ty.clone());
         self.emit(MirInst::LoadCtxField {
             dst: data_end_vreg,
-            field: CtxField::DataEnd,
+            field: end_field,
             slot: None,
         });
 
@@ -324,6 +331,22 @@ impl<'a> HirToMirLowering<'a> {
 
         self.current_block = join_block;
         Ok(())
+    }
+
+    pub(super) fn emit_xdp_packet_guarded_load(
+        &mut self,
+        dst_vreg: VReg,
+        packet_ptr_vreg: VReg,
+        load_ty: &MirType,
+        path_desc: &str,
+    ) -> Result<(), CompileError> {
+        self.emit_packet_guarded_load(
+            dst_vreg,
+            packet_ptr_vreg,
+            load_ty,
+            CtxField::DataEnd,
+            path_desc,
+        )
     }
 
     pub(super) fn emit_context_buffer_guarded_load(
@@ -765,10 +788,11 @@ impl<'a> HirToMirLowering<'a> {
                     dst_vreg,
                 );
 
-                self.emit_xdp_packet_guarded_load(
+                self.emit_packet_guarded_load(
                     dst_vreg,
                     packet_ptr_vreg,
                     element_ty,
+                    Self::packet_guard_end_field(root_ctx_field),
                     path_desc,
                 )?;
                 if *big_endian {
@@ -966,10 +990,11 @@ impl<'a> HirToMirLowering<'a> {
                             },
                             dst_vreg,
                         );
-                        self.emit_xdp_packet_guarded_load(
+                        self.emit_packet_guarded_load(
                             dst_vreg,
                             packet_ptr_vreg,
                             &element_ty,
+                            Self::packet_guard_end_field(root_ctx_field),
                             path_desc,
                         )?;
                         if big_endian {
@@ -1328,10 +1353,11 @@ impl<'a> HirToMirLowering<'a> {
                                 },
                                 dst_vreg,
                             );
-                            self.emit_xdp_packet_guarded_load(
+                            self.emit_packet_guarded_load(
                                 dst_vreg,
                                 packet_ptr_vreg,
                                 &next_ty,
+                                Self::packet_guard_end_field(root_ctx_field),
                                 path_desc,
                             )?;
                             if packet_big_endian {

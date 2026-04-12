@@ -147,8 +147,7 @@ impl<'a> HirToMirLowering<'a> {
         match address_space {
             AddressSpace::Kernel | AddressSpace::User => {
                 if *address_space == AddressSpace::Kernel
-                    && let Some(end_field) =
-                        root_ctx_field.and_then(CtxField::bounded_context_end_field)
+                    && let Some(end_field) = root_ctx_field.and_then(CtxField::bounded_end_field)
                 {
                     if matches!(element_ty, MirType::Array { .. } | MirType::Struct { .. }) {
                         return Err(CompileError::UnsupportedInstruction(format!(
@@ -221,10 +220,13 @@ impl<'a> HirToMirLowering<'a> {
                         element_ty
                     )));
                 }
-                self.emit_xdp_packet_guarded_load(
+                self.emit_packet_guarded_load(
                     dst_vreg,
                     element_ptr_vreg,
                     &element_ty,
+                    root_ctx_field
+                        .and_then(CtxField::bounded_end_field)
+                        .unwrap_or(CtxField::DataEnd),
                     &path_desc,
                 )?;
             }

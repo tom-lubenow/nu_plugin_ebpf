@@ -284,10 +284,12 @@ pub(crate) fn static_ctx_field_type_spec(field: &CtxField) -> Option<ContextFiel
             elem: Box::new(MirType::U32),
             len: 5,
         }),
-        CtxField::Data | CtxField::DataEnd => ContextFieldTypeSpec::value(MirType::Ptr {
-            pointee: Box::new(MirType::U8),
-            address_space: AddressSpace::Packet,
-        }),
+        CtxField::Data | CtxField::DataMeta | CtxField::DataEnd => {
+            ContextFieldTypeSpec::value(MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Packet,
+            })
+        }
         CtxField::Comm => ContextFieldTypeSpec::stack_backed(MirType::Array {
             elem: Box::new(MirType::U8),
             len: 16,
@@ -305,6 +307,7 @@ pub(crate) fn static_ctx_field_projection_spec(
     let type_spec = static_ctx_field_type_spec(field)?;
     Some(match field {
         CtxField::Data
+        | CtxField::DataMeta
         | CtxField::DataEnd
         | CtxField::SockoptOptval
         | CtxField::SockoptOptvalEnd => ContextFieldProjectionSpec::direct(type_spec.runtime_ty),
@@ -365,6 +368,7 @@ fn generic_ctx_field_from_name(field_name: &str) -> Result<CtxField, String> {
         "gso_size" => CtxField::GsoSize,
         "hwtstamp" => CtxField::Hwtstamp,
         "data" => CtxField::Data,
+        "data_meta" => CtxField::DataMeta,
         "data_end" => CtxField::DataEnd,
         "ingress_ifindex" => CtxField::IngressIfindex,
         "rx_queue_index" => CtxField::RxQueueIndex,
@@ -582,6 +586,10 @@ pub(crate) fn static_ctx_field_access_error(
         CtxField::Data | CtxField::DataEnd if !program_type.supports_packet_data_ctx_fields() => {
             Some(packet_field_error(field))
         }
+        CtxField::DataMeta if !matches!(program_type, EbpfProgramType::Xdp) => Some(format!(
+            "ctx.{} is only available on xdp programs",
+            field.display_name()
+        )),
         CtxField::IngressIfindex if !program_type.supports_ingress_ifindex_ctx_field() => {
             Some(packet_field_error(field))
         }

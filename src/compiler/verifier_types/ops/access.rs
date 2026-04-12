@@ -77,7 +77,7 @@ pub(in crate::compiler::verifier_types) fn check_ptr_bounds(
     let Some(bounds) = bounds else {
         if space == AddressSpace::Packet {
             errors.push(VerifierTypeError::new(format!(
-                "{op} on packet pointers requires a preceding data_end guard"
+                "{op} on packet pointers requires a preceding packet end-pointer guard"
             )));
         }
         return;
@@ -93,7 +93,7 @@ pub(in crate::compiler::verifier_types) fn check_ptr_bounds(
 
     if space == AddressSpace::Packet && bounds.limit() == UNKNOWN_PACKET_LIMIT {
         errors.push(VerifierTypeError::new(format!(
-            "{op} on packet pointers requires a preceding data_end guard"
+            "{op} on packet pointers requires a preceding packet end-pointer guard"
         )));
         return;
     }
