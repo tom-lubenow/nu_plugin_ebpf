@@ -11,41 +11,11 @@ use crate::compiler::mir::CtxStoreTarget;
 use crate::kernel_btf::{
     KernelBtf, TrampolineFieldProjection, TrampolineFieldSelector, TrampolineValueSpec, TypeInfo,
 };
-use crate::program_spec::{CgroupSockoptTarget, ProgramSpec};
+use crate::program_spec::ProgramSpec;
 
 impl ProbeContext {
     pub(crate) fn parsed_program_spec(&self) -> Option<ProgramSpec> {
         ProgramSpec::from_program_type_target(self.probe_type, &self.target).ok()
-    }
-
-    fn cgroup_sockopt_target(&self) -> Option<CgroupSockoptTarget> {
-        match self.parsed_program_spec()? {
-            ProgramSpec::CgroupSockopt { target } => Some(target),
-            _ => None,
-        }
-    }
-
-    fn cgroup_sockopt_store_field_error(&self, field: &CtxField) -> Option<String> {
-        match field {
-            CtxField::SockoptLevel | CtxField::SockoptOptname => {
-                if let Some(message) = self.ctx_field_access_error(field) {
-                    return Some(message);
-                }
-                if self
-                    .cgroup_sockopt_target()
-                    .is_some_and(|target| target.is_get())
-                {
-                    Some(format!(
-                        "ctx.{} is only writable on cgroup_sockopt:set hooks",
-                        field.display_name()
-                    ))
-                } else {
-                    None
-                }
-            }
-            CtxField::SockoptOptlen | CtxField::SockoptRetval => self.ctx_field_access_error(field),
-            _ => None,
-        }
     }
 
     fn require_struct_ops_value_type_name(&self) -> Result<&str, String> {
@@ -523,6 +493,14 @@ impl ProbeContext {
     }
 
     pub(crate) fn ctx_store_target_error(&self, target: &CtxStoreTarget) -> Option<String> {
+        if let Some(message) = self
+            .parsed_program_spec()
+            .as_ref()
+            .and_then(|spec| spec.ctx_store_target_error(target))
+        {
+            return Some(message);
+        }
+
         match target {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
                 if self.probe_type != EbpfProgramType::SockOps {
@@ -535,18 +513,12 @@ impl ProbeContext {
                 }
             }
             CtxStoreTarget::SysctlFilePos => self.ctx_field_access_error(&CtxField::SysctlFilePos),
-            CtxStoreTarget::SockoptLevel => {
-                self.cgroup_sockopt_store_field_error(&CtxField::SockoptLevel)
-            }
+            CtxStoreTarget::SockoptLevel => self.ctx_field_access_error(&CtxField::SockoptLevel),
             CtxStoreTarget::SockoptOptname => {
-                self.cgroup_sockopt_store_field_error(&CtxField::SockoptOptname)
+                self.ctx_field_access_error(&CtxField::SockoptOptname)
             }
-            CtxStoreTarget::SockoptOptlen => {
-                self.cgroup_sockopt_store_field_error(&CtxField::SockoptOptlen)
-            }
-            CtxStoreTarget::SockoptRetval => {
-                self.cgroup_sockopt_store_field_error(&CtxField::SockoptRetval)
-            }
+            CtxStoreTarget::SockoptOptlen => self.ctx_field_access_error(&CtxField::SockoptOptlen),
+            CtxStoreTarget::SockoptRetval => self.ctx_field_access_error(&CtxField::SockoptRetval),
             CtxStoreTarget::CgroupSockAddrUserIp4 => {
                 self.ctx_field_access_error(&CtxField::UserIp4)
             }

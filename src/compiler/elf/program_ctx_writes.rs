@@ -98,6 +98,20 @@ impl CgroupSockoptTarget {
             }
         })
     }
+
+    fn ctx_store_target_error(&self, target: &CtxStoreTarget) -> Option<String> {
+        match target {
+            CtxStoreTarget::SockoptLevel if self.is_get() => {
+                Some("ctx.level is only writable on cgroup_sockopt:set hooks".into())
+            }
+            CtxStoreTarget::SockoptOptname if self.is_get() => {
+                Some("ctx.optname is only writable on cgroup_sockopt:set hooks".into())
+            }
+            CtxStoreTarget::SockoptRetval => self.ctx_field_access_error(&CtxField::SockoptRetval),
+            CtxStoreTarget::SockoptOptlen => None,
+            _ => None,
+        }
+    }
 }
 
 impl CgroupSockAddrTarget {
@@ -161,6 +175,27 @@ impl CgroupSockAddrTarget {
             _ => None,
         }
     }
+
+    fn ctx_store_target_error(&self, target: &CtxStoreTarget) -> Option<String> {
+        match target {
+            CtxStoreTarget::CgroupSockAddrUserIp4 => {
+                self.ctx_field_access_error(&CtxField::UserIp4)
+            }
+            CtxStoreTarget::CgroupSockAddrUserIp6Word(_) => {
+                self.ctx_field_access_error(&CtxField::UserIp6)
+            }
+            CtxStoreTarget::CgroupSockAddrUserPort => {
+                self.ctx_field_access_error(&CtxField::UserPort)
+            }
+            CtxStoreTarget::CgroupSockAddrMsgSrcIp4 => {
+                self.ctx_field_access_error(&CtxField::MsgSrcIp4)
+            }
+            CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(_) => {
+                self.ctx_field_access_error(&CtxField::MsgSrcIp6)
+            }
+            _ => None,
+        }
+    }
 }
 
 impl ProgramSpec {
@@ -221,6 +256,14 @@ impl ProgramSpec {
             ProgramSpec::CgroupSockopt { target } => {
                 target.resolve_special_ctx_write_target(field_name, index)
             }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn ctx_store_target_error(&self, store_target: &CtxStoreTarget) -> Option<String> {
+        match self {
+            ProgramSpec::CgroupSockopt { target } => target.ctx_store_target_error(store_target),
+            ProgramSpec::CgroupSockAddr { target } => target.ctx_store_target_error(store_target),
             _ => None,
         }
     }
