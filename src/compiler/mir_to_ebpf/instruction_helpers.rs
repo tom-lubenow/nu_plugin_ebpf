@@ -102,12 +102,36 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
                 (Self::bpf_sock_addr_offsets().1, EbpfReg::R0)
             }
+            CtxStoreTarget::CgroupSockAddrUserIp6Word(index) => {
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
+                self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
+                (
+                    Self::bpf_sock_addr_offsets().2 + i16::from(*index) * 4,
+                    EbpfReg::R0,
+                )
+            }
             CtxStoreTarget::CgroupSockAddrUserPort => {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
                 self.instructions.push(EbpfInsn::lsh64_imm(EbpfReg::R0, 16));
                 self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
                 (Self::bpf_sock_addr_offsets().3, EbpfReg::R0)
+            }
+            CtxStoreTarget::CgroupSockAddrMsgSrcIp4 => {
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
+                self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
+                (Self::bpf_sock_addr_offsets().7, EbpfReg::R0)
+            }
+            CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(index) => {
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
+                self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
+                (
+                    Self::bpf_sock_addr_offsets().8 + i16::from(*index) * 4,
+                    EbpfReg::R0,
+                )
             }
         };
         self.emit_store(EbpfReg::R9, offset, store_reg, size)?;

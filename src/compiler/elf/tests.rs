@@ -2574,6 +2574,38 @@ fn test_probe_context_rejects_ipv4_store_target_on_ipv6_sock_addr_hook() {
 }
 
 #[test]
+fn test_probe_context_resolves_cgroup_sock_addr_ipv6_and_msg_source_store_targets() {
+    let connect6 = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect6");
+    assert_eq!(
+        connect6
+            .resolve_ctx_store_target("user_ip6", Some(2), "user_ip6.2")
+            .expect("cgroup_sock_addr connect6 user_ip6.2 target should resolve"),
+        CtxStoreTarget::CgroupSockAddrUserIp6Word(2)
+    );
+    assert!(
+        connect6
+            .validate_ctx_store_target(&CtxStoreTarget::CgroupSockAddrUserIp6Word(2))
+            .is_ok()
+    );
+
+    let sendmsg4 = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:sendmsg4");
+    assert_eq!(
+        sendmsg4
+            .resolve_ctx_store_target("msg_src_ip4", None, "msg_src_ip4")
+            .expect("cgroup_sock_addr sendmsg4 msg_src_ip4 target should resolve"),
+        CtxStoreTarget::CgroupSockAddrMsgSrcIp4
+    );
+
+    let sendmsg6 = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:sendmsg6");
+    assert_eq!(
+        sendmsg6
+            .resolve_ctx_store_target("msg_src_ip6", Some(3), "msg_src_ip6.3")
+            .expect("cgroup_sock_addr sendmsg6 msg_src_ip6.3 target should resolve"),
+        CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(3)
+    );
+}
+
+#[test]
 fn test_probe_context_rejects_xdp_only_packet_fields_on_tc() {
     let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let rx_err = ctx

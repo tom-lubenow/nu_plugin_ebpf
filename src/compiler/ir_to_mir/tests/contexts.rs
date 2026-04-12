@@ -788,6 +788,134 @@ fn test_lower_cgroup_sock_addr_ctx_user_port_assignment() {
 }
 
 #[test]
+fn test_lower_cgroup_sock_addr_ctx_user_ip6_index_assignment() {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("user_ip6"), int_member(0)],
+                    })),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(0x20010db8),
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                    new_value: RegId::new(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(b"allow".to_vec()),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect6");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock_addr ctx.user_ip6.0 assignment should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::StoreCtxField {
+            target: CtxStoreTarget::CgroupSockAddrUserIp6Word(0),
+            ty: MirType::U32,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_cgroup_sock_addr_ctx_msg_src_ip4_assignment() {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("msg_src_ip4")],
+                    })),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(0x7f000001),
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                    new_value: RegId::new(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(b"allow".to_vec()),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:sendmsg4");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock_addr ctx.msg_src_ip4 assignment should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::StoreCtxField {
+            target: CtxStoreTarget::CgroupSockAddrMsgSrcIp4,
+            ty: MirType::U32,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_sk_lookup_action_alias_return_to_const() {
     let hir = make_return_literal_program(HirLiteral::String(b"pass".to_vec()));
     let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");

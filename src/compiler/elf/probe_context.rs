@@ -618,6 +618,16 @@ impl ProbeContext {
         index: Option<usize>,
         path_desc: &str,
     ) -> Result<CtxStoreTarget, String> {
+        let word_index = |field_name: &str, index: usize| -> Result<u8, String> {
+            let index = u8::try_from(index)
+                .map_err(|_| format!("ctx.{field_name} index must be in 0..=3, got {index}"))?;
+            if index >= 4 {
+                return Err(format!(
+                    "ctx.{field_name} index must be in 0..=3, got {index}"
+                ));
+            }
+            Ok(index)
+        };
         match (self.probe_type, field_name, index) {
             (EbpfProgramType::SockOps, "reply", None) => Ok(CtxStoreTarget::SockOpsReply),
             (EbpfProgramType::SockOps, "replylong", Some(index)) => {
@@ -645,11 +655,38 @@ impl ProbeContext {
                     .map_err(|err| err.to_string())?;
                 Ok(CtxStoreTarget::CgroupSockAddrUserIp4)
             }
+            (EbpfProgramType::CgroupSockAddr, "user_ip6", Some(index)) => {
+                self.validate_ctx_field_access(&CtxField::UserIp6)
+                    .map_err(|err| err.to_string())?;
+                Ok(CtxStoreTarget::CgroupSockAddrUserIp6Word(word_index(
+                    "user_ip6", index,
+                )?))
+            }
+            (EbpfProgramType::CgroupSockAddr, "user_ip6", None) => Err(
+                "ctx.user_ip6 assignment requires a fixed index, e.g. $ctx.user_ip6.0 = ...".into(),
+            ),
             (EbpfProgramType::CgroupSockAddr, "user_port", None) => {
                 self.validate_ctx_field_access(&CtxField::UserPort)
                     .map_err(|err| err.to_string())?;
                 Ok(CtxStoreTarget::CgroupSockAddrUserPort)
             }
+            (EbpfProgramType::CgroupSockAddr, "msg_src_ip4", None) => {
+                self.validate_ctx_field_access(&CtxField::MsgSrcIp4)
+                    .map_err(|err| err.to_string())?;
+                Ok(CtxStoreTarget::CgroupSockAddrMsgSrcIp4)
+            }
+            (EbpfProgramType::CgroupSockAddr, "msg_src_ip6", Some(index)) => {
+                self.validate_ctx_field_access(&CtxField::MsgSrcIp6)
+                    .map_err(|err| err.to_string())?;
+                Ok(CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(word_index(
+                    "msg_src_ip6",
+                    index,
+                )?))
+            }
+            (EbpfProgramType::CgroupSockAddr, "msg_src_ip6", None) => Err(
+                "ctx.msg_src_ip6 assignment requires a fixed index, e.g. $ctx.msg_src_ip6.0 = ..."
+                    .into(),
+            ),
             _ => Err(format!(
                 "context cell path update '.{} = ...' is only supported for sock_ops reply fields, cgroup_sockopt:get sockopt_retval, and cgroup_sock_addr rewrite fields",
                 path_desc
@@ -673,8 +710,17 @@ impl ProbeContext {
             CtxStoreTarget::CgroupSockAddrUserIp4 => {
                 self.ctx_field_access_error(&CtxField::UserIp4)
             }
+            CtxStoreTarget::CgroupSockAddrUserIp6Word(_) => {
+                self.ctx_field_access_error(&CtxField::UserIp6)
+            }
             CtxStoreTarget::CgroupSockAddrUserPort => {
                 self.ctx_field_access_error(&CtxField::UserPort)
+            }
+            CtxStoreTarget::CgroupSockAddrMsgSrcIp4 => {
+                self.ctx_field_access_error(&CtxField::MsgSrcIp4)
+            }
+            CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(_) => {
+                self.ctx_field_access_error(&CtxField::MsgSrcIp6)
             }
         }
     }

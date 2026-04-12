@@ -722,8 +722,14 @@ pub enum CtxStoreTarget {
     SockoptRetval,
     /// `bpf_sock_addr.user_ip4` (stored in network byte order)
     CgroupSockAddrUserIp4,
+    /// `bpf_sock_addr.user_ip6[idx]` (stored in network byte order)
+    CgroupSockAddrUserIp6Word(u8),
     /// `bpf_sock_addr.user_port` (stored in network byte order)
     CgroupSockAddrUserPort,
+    /// `bpf_sock_addr.msg_src_ip4` (stored in network byte order)
+    CgroupSockAddrMsgSrcIp4,
+    /// `bpf_sock_addr.msg_src_ip6[idx]` (stored in network byte order)
+    CgroupSockAddrMsgSrcIp6Word(u8),
 }
 
 impl CtxStoreTarget {
@@ -731,9 +737,11 @@ impl CtxStoreTarget {
         match self {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => MirType::U32,
             CtxStoreTarget::SockoptRetval => MirType::I32,
-            CtxStoreTarget::CgroupSockAddrUserIp4 | CtxStoreTarget::CgroupSockAddrUserPort => {
-                MirType::U32
-            }
+            CtxStoreTarget::CgroupSockAddrUserIp4
+            | CtxStoreTarget::CgroupSockAddrUserIp6Word(_)
+            | CtxStoreTarget::CgroupSockAddrUserPort
+            | CtxStoreTarget::CgroupSockAddrMsgSrcIp4
+            | CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(_) => MirType::U32,
         }
     }
 
@@ -749,7 +757,11 @@ impl CtxStoreTarget {
                 "writable cgroup_sockopt retval requires an i32 store, got {:?}",
                 actual
             ),
-            CtxStoreTarget::CgroupSockAddrUserIp4 | CtxStoreTarget::CgroupSockAddrUserPort => {
+            CtxStoreTarget::CgroupSockAddrUserIp4
+            | CtxStoreTarget::CgroupSockAddrUserIp6Word(_)
+            | CtxStoreTarget::CgroupSockAddrUserPort
+            | CtxStoreTarget::CgroupSockAddrMsgSrcIp4
+            | CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(_) => {
                 format!(
                     "writable cgroup_sock_addr rewrite fields require a u32 store, got {:?}",
                     actual
@@ -766,7 +778,11 @@ impl CtxStoreTarget {
             CtxStoreTarget::SockoptRetval => {
                 "writable sockopt_retval requires cgroup_sockopt:get context"
             }
-            CtxStoreTarget::CgroupSockAddrUserIp4 | CtxStoreTarget::CgroupSockAddrUserPort => {
+            CtxStoreTarget::CgroupSockAddrUserIp4
+            | CtxStoreTarget::CgroupSockAddrUserIp6Word(_)
+            | CtxStoreTarget::CgroupSockAddrUserPort
+            | CtxStoreTarget::CgroupSockAddrMsgSrcIp4
+            | CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(_) => {
                 "writable cgroup_sock_addr rewrite fields require cgroup_sock_addr context"
             }
         }
