@@ -14,7 +14,8 @@ use crate::compiler::mir::CtxStoreTarget;
 #[cfg(test)]
 use crate::compiler::mir::MirType;
 use crate::kernel_btf::{
-    KernelBtf, TrampolineFieldProjection, TrampolineFieldSelector, TrampolineValueSpec, TypeInfo,
+    FieldInfo, KernelBtf, TracepointContext, TrampolineFieldProjection, TrampolineFieldSelector,
+    TrampolineValueSpec, TypeInfo,
 };
 use crate::program_spec::ProgramSpec;
 
@@ -395,20 +396,65 @@ impl ProbeContext {
         &self,
         field_name: &str,
     ) -> Result<Option<TypeInfo>, String> {
+        let Some(field_info) = self.tracepoint_field_info(field_name)? else {
+            return Ok(None);
+        };
+        Ok(Some(field_info.type_info))
+    }
+
+    pub(crate) fn tracepoint_context(&self) -> Result<Option<TracepointContext>, String> {
         let Some((category, tp_name)) = self.tracepoint_parts() else {
             return Ok(None);
         };
-        let trace_ctx = KernelBtf::get()
+        KernelBtf::get()
             .get_tracepoint_context(&category, &tp_name)
+            .map(Some)
             .map_err(|e| {
                 format!(
-                    "failed to resolve ctx.{} type for tracepoint:{}/{}: {}",
-                    field_name, category, tp_name, e
+                    "failed to resolve tracepoint context for tracepoint:{}/{}: {}",
+                    category, tp_name, e
                 )
-            })?;
-        Ok(trace_ctx
-            .get_field(field_name)
-            .map(|field| field.type_info.clone()))
+            })
+    }
+
+    pub(crate) fn tracepoint_field_info(
+        &self,
+        field_name: &str,
+    ) -> Result<Option<FieldInfo>, String> {
+        let Some(trace_ctx) = self.tracepoint_context()? else {
+            return Ok(None);
+        };
+        Ok(trace_ctx.get_field(field_name).cloned())
+    }
+
+    fn tracepoint_context_or_error(&self) -> Result<TracepointContext, CompileError> {
+        let (category, tp_name) =
+            self.tracepoint_parts()
+                .ok_or_else(|| CompileError::TracepointContextError {
+                    category: "unknown".into(),
+                    name: self.target.clone(),
+                    reason: "Invalid tracepoint format. Expected 'category/name'".into(),
+                })?;
+        KernelBtf::get()
+            .get_tracepoint_context(&category, &tp_name)
+            .map_err(|e| CompileError::TracepointContextError {
+                category,
+                name: tp_name,
+                reason: e.to_string(),
+            })
+    }
+
+    pub(crate) fn tracepoint_field_info_or_error(
+        &self,
+        field_name: &str,
+    ) -> Result<FieldInfo, CompileError> {
+        let trace_ctx = self.tracepoint_context_or_error()?;
+        trace_ctx.get_field(field_name).cloned().ok_or_else(|| {
+            CompileError::TracepointFieldNotFound {
+                field: field_name.to_string(),
+                available: trace_ctx.field_names().join(", "),
+            }
+        })
     }
 
     pub(crate) fn ctx_field_type_info(&self, field: &CtxField) -> Result<Option<TypeInfo>, String> {
@@ -674,26 +720,7 @@ impl ProbeContext {
                 }
             }
             CtxField::TracepointField(name) => {
-                let (category, tp_name) = self.tracepoint_parts().ok_or_else(|| {
-                    CompileError::TracepointContextError {
-                        category: "unknown".into(),
-                        name: self.target.clone(),
-                        reason: "Invalid tracepoint format. Expected 'category/name'".into(),
-                    }
-                })?;
-                let ctx = KernelBtf::get()
-                    .get_tracepoint_context(&category, &tp_name)
-                    .map_err(|e| CompileError::TracepointContextError {
-                        category: category.clone(),
-                        name: tp_name.clone(),
-                        reason: e.to_string(),
-                    })?;
-                if !ctx.has_field(name) {
-                    return Err(CompileError::TracepointFieldNotFound {
-                        field: name.clone(),
-                        available: ctx.field_names().join(", "),
-                    });
-                }
+                self.tracepoint_field_info_or_error(name)?;
             }
             _ => {}
         }
