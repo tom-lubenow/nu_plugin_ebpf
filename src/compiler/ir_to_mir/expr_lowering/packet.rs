@@ -834,6 +834,53 @@ impl<'a> HirToMirLowering<'a> {
         });
     }
 
+    fn emit_packet_vlan_ethertype_match(&mut self, ethertype_vreg: VReg) -> VReg {
+        let vlan_8021q = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: vlan_8021q,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(ethertype_vreg),
+            rhs: MirValue::Const(0x8100),
+        });
+        self.emit_normalize_boolean_vreg(vlan_8021q, vlan_8021q);
+
+        let vlan_8021ad = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: vlan_8021ad,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(ethertype_vreg),
+            rhs: MirValue::Const(0x88a8),
+        });
+        self.emit_normalize_boolean_vreg(vlan_8021ad, vlan_8021ad);
+
+        let vlan_9100 = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: vlan_9100,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(ethertype_vreg),
+            rhs: MirValue::Const(0x9100),
+        });
+        self.emit_normalize_boolean_vreg(vlan_9100, vlan_9100);
+
+        let vlan_present = self.func.alloc_vreg();
+        self.vreg_type_hints.insert(vlan_present, MirType::Bool);
+        self.emit(MirInst::BinOp {
+            dst: vlan_present,
+            op: BinOpKind::Or,
+            lhs: MirValue::VReg(vlan_8021q),
+            rhs: MirValue::VReg(vlan_8021ad),
+        });
+        self.emit_normalize_boolean_vreg(vlan_present, vlan_present);
+        self.emit(MirInst::BinOp {
+            dst: vlan_present,
+            op: BinOpKind::Or,
+            lhs: MirValue::VReg(vlan_present),
+            rhs: MirValue::VReg(vlan_9100),
+        });
+        self.emit_normalize_boolean_vreg(vlan_present, vlan_present);
+        vlan_present
+    }
+
     pub(super) fn emit_packet_payload_ptr_step(
         &mut self,
         base_vreg: VReg,
@@ -885,57 +932,7 @@ impl<'a> HirToMirLowering<'a> {
                     true,
                     path_desc,
                 )?;
-
-                let vlan_8021q = self.func.alloc_vreg();
-                self.emit(MirInst::BinOp {
-                    dst: vlan_8021q,
-                    op: BinOpKind::Eq,
-                    lhs: MirValue::VReg(ethertype_vreg),
-                    rhs: MirValue::Const(0x8100),
-                });
-                self.emit_normalize_boolean_vreg(vlan_8021q, vlan_8021q);
-                let vlan_8021ad = self.func.alloc_vreg();
-                self.emit(MirInst::BinOp {
-                    dst: vlan_8021ad,
-                    op: BinOpKind::Eq,
-                    lhs: MirValue::VReg(ethertype_vreg),
-                    rhs: MirValue::Const(0x88a8),
-                });
-                self.emit_normalize_boolean_vreg(vlan_8021ad, vlan_8021ad);
-                let vlan_9100 = self.func.alloc_vreg();
-                self.emit(MirInst::BinOp {
-                    dst: vlan_9100,
-                    op: BinOpKind::Eq,
-                    lhs: MirValue::VReg(ethertype_vreg),
-                    rhs: MirValue::Const(0x9100),
-                });
-                self.emit_normalize_boolean_vreg(vlan_9100, vlan_9100);
-
-                let vlan_present = self.func.alloc_vreg();
-                self.vreg_type_hints.insert(vlan_present, MirType::Bool);
-                self.emit(MirInst::BinOp {
-                    dst: vlan_present,
-                    op: BinOpKind::Or,
-                    lhs: MirValue::VReg(vlan_8021q),
-                    rhs: MirValue::VReg(vlan_8021ad),
-                });
-                self.emit_normalize_boolean_vreg(vlan_present, vlan_present);
-                self.emit(MirInst::BinOp {
-                    dst: vlan_present,
-                    op: BinOpKind::Or,
-                    lhs: MirValue::VReg(vlan_present),
-                    rhs: MirValue::VReg(vlan_9100),
-                });
-                self.emit_normalize_boolean_vreg(vlan_present, vlan_present);
-
-                let vlan_bytes_vreg = self.func.alloc_vreg();
-                self.vreg_type_hints.insert(vlan_bytes_vreg, MirType::U64);
-                self.emit(MirInst::BinOp {
-                    dst: vlan_bytes_vreg,
-                    op: BinOpKind::Shl,
-                    lhs: MirValue::VReg(vlan_present),
-                    rhs: MirValue::Const(2),
-                });
+                let outer_vlan_present = self.emit_packet_vlan_ethertype_match(ethertype_vreg);
 
                 let eth_payload_base_vreg = self.func.alloc_vreg();
                 self.vreg_type_hints.insert(
@@ -951,12 +948,69 @@ impl<'a> HirToMirLowering<'a> {
                     lhs: MirValue::VReg(base_ptr_vreg),
                     rhs: MirValue::Const(14),
                 });
+
+                self.emit(MirInst::Copy {
+                    dst: payload_ptr_vreg,
+                    src: MirValue::VReg(eth_payload_base_vreg),
+                });
+
+                let stacked_vlan_block = self.func.alloc_block();
+                let continue_block = self.func.alloc_block();
+                self.terminate(MirInst::Branch {
+                    cond: outer_vlan_present,
+                    if_true: stacked_vlan_block,
+                    if_false: continue_block,
+                });
+
+                self.current_block = stacked_vlan_block;
+                let inner_ethertype_vreg = self.func.alloc_vreg();
+                self.vreg_type_hints
+                    .insert(inner_ethertype_vreg, MirType::U16);
+                self.emit_packet_scalar_load_at_offset(
+                    inner_ethertype_vreg,
+                    base_ptr_vreg,
+                    16,
+                    &MirType::U16,
+                    true,
+                    path_desc,
+                )?;
+                let inner_vlan_present =
+                    self.emit_packet_vlan_ethertype_match(inner_ethertype_vreg);
+
+                let inner_vlan_bytes_vreg = self.func.alloc_vreg();
+                self.vreg_type_hints
+                    .insert(inner_vlan_bytes_vreg, MirType::U64);
+                self.emit(MirInst::BinOp {
+                    dst: inner_vlan_bytes_vreg,
+                    op: BinOpKind::Shl,
+                    lhs: MirValue::VReg(inner_vlan_present),
+                    rhs: MirValue::Const(2),
+                });
+
+                let first_vlan_payload_vreg = self.func.alloc_vreg();
+                self.vreg_type_hints.insert(
+                    first_vlan_payload_vreg,
+                    MirType::Ptr {
+                        pointee: Box::new(MirType::U8),
+                        address_space: AddressSpace::Packet,
+                    },
+                );
+                self.emit(MirInst::BinOp {
+                    dst: first_vlan_payload_vreg,
+                    op: BinOpKind::Add,
+                    lhs: MirValue::VReg(eth_payload_base_vreg),
+                    rhs: MirValue::Const(4),
+                });
                 self.emit(MirInst::BinOp {
                     dst: payload_ptr_vreg,
                     op: BinOpKind::Add,
-                    lhs: MirValue::VReg(eth_payload_base_vreg),
-                    rhs: MirValue::VReg(vlan_bytes_vreg),
+                    lhs: MirValue::VReg(first_vlan_payload_vreg),
+                    rhs: MirValue::VReg(inner_vlan_bytes_vreg),
                 });
+                self.terminate(MirInst::Jump {
+                    target: continue_block,
+                });
+                self.current_block = continue_block;
             }
             PacketPayloadStepKind::Ipv4 => {
                 let version_ihl_vreg = self.func.alloc_vreg();

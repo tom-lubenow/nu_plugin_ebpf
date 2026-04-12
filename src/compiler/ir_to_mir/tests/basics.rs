@@ -907,19 +907,31 @@ fn test_lower_xdp_eth_payload_ipv4_protocol_projection_adds_vlan_and_ipv4_payloa
         })
         .collect();
 
-    assert!(eq_consts.contains(&0x8100));
-    assert!(eq_consts.contains(&0x88a8));
-    assert!(eq_consts.contains(&0x9100));
+    assert_eq!(
+        eq_consts.iter().filter(|value| **value == 0x8100).count(),
+        2
+    );
+    assert_eq!(
+        eq_consts.iter().filter(|value| **value == 0x88a8).count(),
+        2
+    );
+    assert_eq!(
+        eq_consts.iter().filter(|value| **value == 0x9100).count(),
+        2
+    );
     assert!(
         blocks
             .iter()
-            .any(|block| block.instructions.iter().any(|inst| matches!(
+            .flat_map(|block| block.instructions.iter())
+            .filter(|inst| matches!(
                 inst,
                 MirInst::Load {
                     ty: MirType::U16,
                     ..
                 }
-            )))
+            ))
+            .count()
+            >= 2
     );
     assert!(
         blocks
