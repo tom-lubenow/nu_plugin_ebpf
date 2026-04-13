@@ -864,6 +864,27 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         Some("helper 'bpf_inode_storage_delete' is only valid in lsm programs".to_string())
     );
     assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkStorageGet),
+        Some(
+            "helper 'bpf_sk_storage_get' is only valid in tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkStorageDelete),
+        Some(
+            "helper 'bpf_sk_storage_delete' is only valid in tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSock.helper_call_error(BpfHelper::SkStorageDelete),
+        Some(
+            "helper 'bpf_sk_storage_delete' is only valid in tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::CgroupSysctl.helper_call_error(BpfHelper::SysctlGetCurrentValue),
         None
     );
@@ -961,6 +982,22 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::Lsm.helper_call_error(BpfHelper::InodeStorageDelete),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSock.helper_call_error(BpfHelper::SkStorageGet),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSockopt.helper_call_error(BpfHelper::SkStorageDelete),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Fentry.helper_call_error(BpfHelper::SkStorageGet),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::StructOps.helper_call_error(BpfHelper::SkStorageDelete),
         None
     );
 }

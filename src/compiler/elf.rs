@@ -1132,6 +1132,49 @@ impl EbpfProgramType {
                     helper.name()
                 ))
             }
+            BpfHelper::SkStorageGet
+                if !matches!(
+                    self,
+                    EbpfProgramType::Tc
+                        | EbpfProgramType::CgroupSkb
+                        | EbpfProgramType::CgroupSock
+                        | EbpfProgramType::CgroupSockAddr
+                        | EbpfProgramType::CgroupSockopt
+                        | EbpfProgramType::SockOps
+                        | EbpfProgramType::SkMsg
+                        | EbpfProgramType::StructOps
+                        | EbpfProgramType::Fentry
+                        | EbpfProgramType::Fexit
+                        | EbpfProgramType::TpBtf
+                        | EbpfProgramType::Lsm
+                ) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm programs",
+                    helper.name()
+                ))
+            }
+            BpfHelper::SkStorageDelete
+                if !matches!(
+                    self,
+                    EbpfProgramType::Tc
+                        | EbpfProgramType::CgroupSkb
+                        | EbpfProgramType::CgroupSockAddr
+                        | EbpfProgramType::CgroupSockopt
+                        | EbpfProgramType::SockOps
+                        | EbpfProgramType::SkMsg
+                        | EbpfProgramType::StructOps
+                        | EbpfProgramType::Fentry
+                        | EbpfProgramType::Fexit
+                        | EbpfProgramType::TpBtf
+                        | EbpfProgramType::Lsm
+                ) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm programs",
+                    helper.name()
+                ))
+            }
             BpfHelper::SockFromFile
                 if !matches!(
                     self,

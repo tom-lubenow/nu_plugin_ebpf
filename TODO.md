@@ -292,6 +292,7 @@ Near-term priority order:
   - Recent progress: named `global-get` / `global-set` now expose compiler-managed `.data` / `.bss` globals in the closure language, with layout inferred from same-program `global-set` use and constant first writes seeding initialized data.
   - Recent progress: helper program-surface validation now constrains `bpf_sock_from_file` to tracing-style probe programs (`fentry`, `fexit`, `tp_btf`) across ELF policy, type inference, verifier_types, and VCC coverage.
   - Recent progress: helper program-surface validation now constrains `bpf_task_storage_get/delete` to tracing/tracepoint/perf-event/lsm/kprobe-family programs and `bpf_inode_storage_get/delete` to `lsm`, with matching ELF/type/verifier/VCC coverage.
+  - Recent progress: helper program-surface validation now constrains `bpf_sk_storage_get/delete`, including the `cgroup_sock` asymmetry (`get` allowed, `delete` rejected), across ELF policy, type inference, verifier_types, and VCC coverage.
   - Remaining: broaden mutable globals beyond current scalar/string/binary/list/record cases and add richer explicit global declarations/initializers.
 
 ## Ergonomics and quality
