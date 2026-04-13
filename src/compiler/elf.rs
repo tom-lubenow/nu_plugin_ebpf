@@ -1103,6 +1103,17 @@ impl EbpfProgramType {
                     helper.name()
                 ))
             }
+            BpfHelper::SockFromFile
+                if !matches!(
+                    self,
+                    EbpfProgramType::Fentry | EbpfProgramType::Fexit | EbpfProgramType::TpBtf
+                ) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in fentry, fexit, and tp_btf programs",
+                    helper.name()
+                ))
+            }
             BpfHelper::SetSockOpt | BpfHelper::GetSockOpt
                 if !matches!(
                     self,

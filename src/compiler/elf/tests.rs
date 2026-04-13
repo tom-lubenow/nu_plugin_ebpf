@@ -835,6 +835,13 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SockFromFile),
+        Some(
+            "helper 'bpf_sock_from_file' is only valid in fentry, fexit, and tp_btf programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::CgroupSysctl.helper_call_error(BpfHelper::SysctlGetCurrentValue),
         None
     );
@@ -904,6 +911,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::SkSkbParser.helper_call_error(BpfHelper::SkcToUnixSock),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Fentry.helper_call_error(BpfHelper::SockFromFile),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::TpBtf.helper_call_error(BpfHelper::SockFromFile),
         None
     );
 }

@@ -290,6 +290,7 @@ Near-term priority order:
   - Recent progress: the backend/ELF layer now emits explicit `.data` and `.bss` global sections with named symbols and Aya-parseable data maps.
   - Recent progress: reassigned captured numeric scalars, strings, fixed binary values, numeric constant lists, and representable constant records now lower as compiler-managed mutable globals backed by `.data`/`.bss`.
   - Recent progress: named `global-get` / `global-set` now expose compiler-managed `.data` / `.bss` globals in the closure language, with layout inferred from same-program `global-set` use and constant first writes seeding initialized data.
+  - Recent progress: helper program-surface validation now constrains `bpf_sock_from_file` to tracing-style probe programs (`fentry`, `fexit`, `tp_btf`) across ELF policy, type inference, verifier_types, and VCC coverage.
   - Remaining: broaden mutable globals beyond current scalar/string/binary/list/record cases and add richer explicit global declarations/initializers.
 
 ## Ergonomics and quality

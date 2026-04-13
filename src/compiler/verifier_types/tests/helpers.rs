@@ -1783,6 +1783,261 @@ fn test_verify_mir_for_probe_context_skc_to_tcp_sock_accepts_sk_lookup() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_sock_from_file_rejects_kprobe() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let file_check = func.alloc_block();
+    let call = func.alloc_block();
+    let release_task = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let task_non_null = func.alloc_vreg();
+    let file = func.alloc_vreg();
+    let file_non_null = func.alloc_vreg();
+    let sock = func.alloc_vreg();
+    let put_ret = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: task_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: task_non_null,
+        if_true: file_check,
+        if_false: done,
+    };
+
+    func.block_mut(file_check)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: file,
+            kfunc: "bpf_get_task_exe_file".to_string(),
+            btf_id: None,
+            args: vec![task],
+        });
+    func.block_mut(file_check)
+        .instructions
+        .push(MirInst::BinOp {
+            dst: file_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(file),
+            rhs: MirValue::Const(0),
+        });
+    func.block_mut(file_check).terminator = MirInst::Branch {
+        cond: file_non_null,
+        if_true: call,
+        if_false: release_task,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: sock,
+        helper: BpfHelper::SockFromFile as u32,
+        args: vec![MirValue::VReg(file)],
+    });
+    func.block_mut(call).instructions.push(MirInst::CallKfunc {
+        dst: put_ret,
+        kfunc: "bpf_put_file".to_string(),
+        btf_id: None,
+        args: vec![file],
+    });
+    func.block_mut(call).instructions.push(MirInst::CallKfunc {
+        dst: release_ret,
+        kfunc: "bpf_task_release".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+
+    func.block_mut(release_task)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_task_release".to_string(),
+            btf_id: None,
+            args: vec![task],
+        });
+    func.block_mut(release_task).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(task_non_null, MirType::Bool);
+    types.insert(
+        file,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(file_non_null, MirType::Bool);
+    types.insert(
+        sock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(put_ret, MirType::I64);
+    types.insert(release_ret, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected sock_from_file kprobe program-surface error");
+    assert!(err.iter().any(|e| e.message.contains(
+        "helper 'bpf_sock_from_file' is only valid in fentry, fexit, and tp_btf programs"
+    )));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_sock_from_file_accepts_fentry() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let file_check = func.alloc_block();
+    let call = func.alloc_block();
+    let release_task = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let task_non_null = func.alloc_vreg();
+    let file = func.alloc_vreg();
+    let file_non_null = func.alloc_vreg();
+    let sock = func.alloc_vreg();
+    let put_ret = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: task_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: task_non_null,
+        if_true: file_check,
+        if_false: done,
+    };
+
+    func.block_mut(file_check)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: file,
+            kfunc: "bpf_get_task_exe_file".to_string(),
+            btf_id: None,
+            args: vec![task],
+        });
+    func.block_mut(file_check)
+        .instructions
+        .push(MirInst::BinOp {
+            dst: file_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(file),
+            rhs: MirValue::Const(0),
+        });
+    func.block_mut(file_check).terminator = MirInst::Branch {
+        cond: file_non_null,
+        if_true: call,
+        if_false: release_task,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: sock,
+        helper: BpfHelper::SockFromFile as u32,
+        args: vec![MirValue::VReg(file)],
+    });
+    func.block_mut(call).instructions.push(MirInst::CallKfunc {
+        dst: put_ret,
+        kfunc: "bpf_put_file".to_string(),
+        btf_id: None,
+        args: vec![file],
+    });
+    func.block_mut(call).instructions.push(MirInst::CallKfunc {
+        dst: release_ret,
+        kfunc: "bpf_task_release".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+
+    func.block_mut(release_task)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_task_release".to_string(),
+            btf_id: None,
+            args: vec![task],
+        });
+    func.block_mut(release_task).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(task_non_null, MirType::Bool);
+    types.insert(
+        file,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(file_non_null, MirType::Bool);
+    types.insert(
+        sock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(put_ret, MirType::I64);
+    types.insert(release_ret, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "tcp_connect");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected sock_from_file fentry context to verify");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_redirect_peer_accepts_tc_ingress() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
