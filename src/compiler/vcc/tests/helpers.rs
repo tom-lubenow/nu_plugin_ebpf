@@ -2160,6 +2160,197 @@ fn test_verify_mir_for_probe_context_sock_from_file_accepts_fentry() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_task_storage_get_rejects_xdp() {
+    let (mut func, entry) = new_mir_function();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+    let task = func.alloc_vreg();
+    let task_non_null = func.alloc_vreg();
+    let storage = func.alloc_vreg();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: task_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: task_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: storage,
+        helper: BpfHelper::TaskStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(task),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(task_non_null, MirType::Bool);
+    types.insert(
+        storage,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected task_storage_get xdp program-surface error");
+    assert!(err.iter().any(|e| e.message.contains(
+        "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, and lsm programs"
+    )));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_task_storage_get_accepts_kretprobe() {
+    let (mut func, entry) = new_mir_function();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let task_non_null = func.alloc_vreg();
+    let storage = func.alloc_vreg();
+    let cleanup_ret = func.alloc_vreg();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: task_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: task_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: storage,
+        helper: BpfHelper::TaskStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(task),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    func.block_mut(call).instructions.push(MirInst::CallKfunc {
+        dst: cleanup_ret,
+        kfunc: "bpf_task_release".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(task_non_null, MirType::Bool);
+    types.insert(
+        storage,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(cleanup_ret, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kretprobe, "do_sys_openat2");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected task_storage_get kretprobe context to verify");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_inode_storage_get_rejects_kprobe() {
+    let (mut func, entry) = new_mir_function();
+    let inode = func.alloc_vreg();
+    let storage = func.alloc_vreg();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: inode,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: storage,
+            helper: BpfHelper::InodeStorageGet as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::VReg(inode),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        inode,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        storage,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected inode_storage_get kprobe program-surface error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_inode_storage_get' is only valid in lsm programs")
+    }));
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_redirect_peer_accepts_tc_ingress() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();

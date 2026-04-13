@@ -842,6 +842,28 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::TaskStorageGet),
+        Some(
+            "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, and lsm programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::TaskStorageDelete),
+        Some(
+            "helper 'bpf_task_storage_delete' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, and lsm programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::InodeStorageGet),
+        Some("helper 'bpf_inode_storage_get' is only valid in lsm programs".to_string())
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::InodeStorageDelete),
+        Some("helper 'bpf_inode_storage_delete' is only valid in lsm programs".to_string())
+    );
+    assert_eq!(
         EbpfProgramType::CgroupSysctl.helper_call_error(BpfHelper::SysctlGetCurrentValue),
         None
     );
@@ -919,6 +941,26 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::TpBtf.helper_call_error(BpfHelper::SockFromFile),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Kretprobe.helper_call_error(BpfHelper::TaskStorageGet),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Uprobe.helper_call_error(BpfHelper::TaskStorageDelete),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Fentry.helper_call_error(BpfHelper::TaskStorageGet),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Lsm.helper_call_error(BpfHelper::InodeStorageGet),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Lsm.helper_call_error(BpfHelper::InodeStorageDelete),
         None
     );
 }

@@ -1740,6 +1740,161 @@ fn test_infer_sock_from_file_helper_in_fentry_program() {
 }
 
 #[test]
+fn test_type_error_task_storage_get_helper_rejects_xdp_program() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TaskStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(task),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_task_storage_get to be rejected on xdp");
+    assert!(errs.iter().any(|e| e.message.contains(
+        "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, and lsm programs"
+    )));
+}
+
+#[test]
+fn test_infer_task_storage_get_helper_in_kretprobe_program() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TaskStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(task),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kretprobe, "do_sys_openat2");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_task_storage_get to infer on kretprobe");
+    match types.get(&dst) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(*address_space, AddressSpace::Map);
+        }
+        other => panic!("expected map pointer type, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_type_error_inode_storage_get_helper_rejects_kprobe_program() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let inode = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: inode,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::InodeStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(inode),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_inode_storage_get to be rejected on kprobe");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_inode_storage_get' is only valid in lsm programs")
+    }));
+}
+
+#[test]
+fn test_infer_inode_storage_get_helper_in_lsm_program() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let inode = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: inode,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::InodeStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(inode),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "file_open");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_inode_storage_get to infer on lsm");
+    match types.get(&dst) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(*address_space, AddressSpace::Map);
+        }
+        other => panic!("expected map pointer type, got {:?}", other),
+    }
+}
+
+#[test]
 fn test_type_error_redirect_peer_helper_requires_zero_flags() {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();

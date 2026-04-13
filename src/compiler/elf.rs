@@ -1103,6 +1103,35 @@ impl EbpfProgramType {
                     helper.name()
                 ))
             }
+            BpfHelper::TaskStorageGet | BpfHelper::TaskStorageDelete
+                if !matches!(
+                    self,
+                    EbpfProgramType::Kprobe
+                        | EbpfProgramType::Kretprobe
+                        | EbpfProgramType::Uprobe
+                        | EbpfProgramType::Uretprobe
+                        | EbpfProgramType::PerfEvent
+                        | EbpfProgramType::RawTracepoint
+                        | EbpfProgramType::Tracepoint
+                        | EbpfProgramType::Fentry
+                        | EbpfProgramType::Fexit
+                        | EbpfProgramType::TpBtf
+                        | EbpfProgramType::Lsm
+                ) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, and lsm programs",
+                    helper.name()
+                ))
+            }
+            BpfHelper::InodeStorageGet | BpfHelper::InodeStorageDelete
+                if *self != EbpfProgramType::Lsm =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in lsm programs",
+                    helper.name()
+                ))
+            }
             BpfHelper::SockFromFile
                 if !matches!(
                     self,
