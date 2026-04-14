@@ -60,6 +60,40 @@ fn test_xdp_section_name() {
 }
 
 #[test]
+fn test_ebpf_program_caches_typed_program_spec() {
+    let prog = EbpfProgram::from_bytecode(EbpfProgramType::Xdp, "lo", "test", vec![]);
+    let section = prog.clone().into_program_section();
+
+    assert!(matches!(
+        prog.parsed_program_spec(),
+        Some(ProgramSpec::Xdp { target }) if target.interface == "lo"
+    ));
+    assert!(matches!(
+        section.parsed_program_spec(),
+        Some(ProgramSpec::Xdp { target }) if target.interface == "lo"
+    ));
+}
+
+#[test]
+fn test_ebpf_program_preserves_noncanonical_uprobe_target_string_with_cached_program_spec() {
+    let prog = EbpfProgram::from_bytecode(
+        EbpfProgramType::Uprobe,
+        "/usr/bin/app:main+16",
+        "test",
+        vec![],
+    );
+
+    assert_eq!(prog.target, "/usr/bin/app:main+16");
+    assert!(matches!(
+        prog.parsed_program_spec(),
+        Some(ProgramSpec::Uprobe { target })
+            if target.binary_path == "/usr/bin/app"
+                && target.function_name.as_deref() == Some("main")
+                && target.offset == 16
+    ));
+}
+
+#[test]
 fn test_lirc_mode2_section_name() {
     let prog = EbpfProgram::from_bytecode(EbpfProgramType::LircMode2, "/dev/lirc0", "test", vec![]);
     assert_eq!(

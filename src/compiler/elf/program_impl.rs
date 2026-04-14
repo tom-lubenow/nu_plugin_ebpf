@@ -8,13 +8,26 @@ use crate::program_spec::ProgramSpec;
 
 mod struct_ops;
 
+fn parsed_program_spec_for_program(
+    prog_type: EbpfProgramType,
+    target: &str,
+) -> Option<ProgramSpec> {
+    ProgramSpec::from_program_type_target(prog_type, target).ok()
+}
+
+fn require_program_spec_for_program(
+    prog_type: EbpfProgramType,
+    target: &str,
+) -> Result<ProgramSpec, CompileError> {
+    ProgramSpec::from_program_type_target(prog_type, target)
+        .map_err(|err| CompileError::InvalidProgram(err.to_string()))
+}
+
 fn section_name_for_program(
     prog_type: EbpfProgramType,
     target: &str,
 ) -> Result<String, CompileError> {
-    Ok(ProgramSpec::from_program_type_target(prog_type, target)
-        .map_err(|err| CompileError::InvalidProgram(err.to_string()))?
-        .section_name())
+    Ok(require_program_spec_for_program(prog_type, target)?.section_name())
 }
 
 impl EbpfProgram {
@@ -25,10 +38,12 @@ impl EbpfProgram {
         name: impl Into<String>,
         builder: EbpfBuilder,
     ) -> Self {
+        let target = target.into();
         let bytecode = builder.build();
         Self {
             prog_type,
-            target: target.into(),
+            program_spec: parsed_program_spec_for_program(prog_type, &target),
+            target,
             name: name.into(),
             main_size: bytecode.len(),
             bytecode,
@@ -53,10 +68,12 @@ impl EbpfProgram {
         name: impl Into<String>,
         bytecode: Vec<u8>,
     ) -> Self {
+        let target = target.into();
         let main_size = bytecode.len();
         Self {
             prog_type,
-            target: target.into(),
+            program_spec: parsed_program_spec_for_program(prog_type, &target),
+            target,
             name: name.into(),
             bytecode,
             main_size,
@@ -89,9 +106,11 @@ impl EbpfProgram {
         generic_map_value_types: HashMap<MapRef, MirType>,
         generic_map_value_semantics: HashMap<MapRef, AnnotatedValueSemantics>,
     ) -> Self {
+        let target = target.into();
         Self {
             prog_type,
-            target: target.into(),
+            program_spec: parsed_program_spec_for_program(prog_type, &target),
+            target,
             name: name.into(),
             bytecode,
             main_size,
@@ -145,6 +164,7 @@ impl EbpfProgram {
         let EbpfProgram {
             prog_type,
             target,
+            program_spec,
             name,
             bytecode,
             main_size,
@@ -173,6 +193,7 @@ impl EbpfProgram {
                 section_name_override: None,
                 prog_type,
                 target,
+                program_spec,
                 name,
                 bytecode,
                 main_size,
@@ -192,6 +213,7 @@ impl EbpfProgram {
             section_name_override: None,
             prog_type: self.prog_type,
             target: self.target,
+            program_spec: self.program_spec,
             name: self.name,
             bytecode: self.bytecode,
             main_size: self.main_size,
@@ -220,6 +242,7 @@ impl EbpfProgram {
         ));
         section.prog_type = EbpfProgramType::StructOps;
         section.target = callback_name.clone();
+        section.program_spec = None;
         section.name = callback_name;
         section
     }
@@ -521,6 +544,10 @@ impl EbpfProgram {
 }
 
 impl EbpfProgramSection {
+    pub fn parsed_program_spec(&self) -> Option<&ProgramSpec> {
+        self.program_spec.as_ref()
+    }
+
     pub fn with_section_name_override(mut self, section_name: impl Into<String>) -> Self {
         self.section_name_override = Some(section_name.into());
         self
@@ -529,6 +556,9 @@ impl EbpfProgramSection {
     pub fn section_name(&self) -> Result<String, CompileError> {
         if let Some(section_name) = &self.section_name_override {
             return Ok(section_name.clone());
+        }
+        if let Some(program_spec) = &self.program_spec {
+            return Ok(program_spec.section_name());
         }
         section_name_for_program(self.prog_type, &self.target)
     }
@@ -726,6 +756,7 @@ impl EbpfObject {
             let temp = EbpfProgram {
                 prog_type: program.prog_type,
                 target: program.target.clone(),
+                program_spec: program.program_spec.clone(),
                 name: program.name.clone(),
                 bytecode: program.bytecode.clone(),
                 main_size: program.main_size,
@@ -1311,6 +1342,10 @@ impl EbpfObject {
 }
 
 impl EbpfProgram {
+    pub fn parsed_program_spec(&self) -> Option<&ProgramSpec> {
+        self.program_spec.as_ref()
+    }
+
     /// Generate an ELF object file containing this program.
     pub fn to_elf(&self) -> Result<Vec<u8>, CompileError> {
         self.clone().into_object().to_elf()

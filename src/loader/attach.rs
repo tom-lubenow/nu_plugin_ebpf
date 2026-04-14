@@ -80,7 +80,19 @@ impl EbpfState {
             .ok_or_else(|| LoadError::ProgramNotFound(program.name.clone()))?;
 
         let mut owned_socket = None;
-        let spec = ProgramSpec::from_program_type_target(program.prog_type, &program.target)?;
+        let spec = program
+            .parsed_program_spec()
+            .cloned()
+            .or_else(|| {
+                ProgramSpec::from_program_type_target(program.prog_type, &program.target).ok()
+            })
+            .ok_or_else(|| {
+                LoadError::Load(format!(
+                    "Invalid {} target '{}'",
+                    program.prog_type.canonical_prefix(),
+                    program.target
+                ))
+            })?;
 
         // Attach based on program type
         match program.prog_type.attach_kind() {

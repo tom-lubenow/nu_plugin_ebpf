@@ -1078,6 +1078,8 @@ pub struct EbpfProgramSection {
     pub prog_type: EbpfProgramType,
     /// The target function/tracepoint name
     pub target: String,
+    /// Parsed program model for target-sensitive section naming and attach policy.
+    pub program_spec: Option<ProgramSpec>,
     /// The program name (used as symbol name)
     pub name: String,
     /// The raw bytecode
@@ -1227,6 +1229,8 @@ pub struct EbpfProgram {
     pub prog_type: EbpfProgramType,
     /// The target function/tracepoint name
     pub target: String,
+    /// Parsed program model for target-sensitive section naming and attach policy.
+    pub program_spec: Option<ProgramSpec>,
     /// The program name (used as symbol name)
     pub name: String,
     /// The raw bytecode
