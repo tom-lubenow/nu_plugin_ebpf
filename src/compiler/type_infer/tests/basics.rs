@@ -1423,6 +1423,48 @@ fn test_infer_sk_msg_socket_field_includes_extended_metadata() {
 }
 
 #[test]
+fn test_infer_tc_socket_field_includes_extended_metadata() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::Socket,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    let Some(MirType::Ptr { pointee, .. }) = types.get(&v0) else {
+        panic!("expected ctx.sk to infer as a pointer");
+    };
+    let MirType::Struct { fields, .. } = pointee.as_ref() else {
+        panic!("expected ctx.sk pointee to be a struct");
+    };
+
+    assert!(
+        fields
+            .iter()
+            .any(|field| field.name == "src_port" && field.ty == MirType::U32)
+    );
+    assert!(
+        fields
+            .iter()
+            .any(|field| field.name == "dst_port" && field.ty == MirType::U16)
+    );
+    assert!(
+        fields
+            .iter()
+            .any(|field| field.name == "rx_queue_mapping" && field.ty == MirType::I32)
+    );
+}
+
+#[test]
 fn test_infer_sk_msg_remote_ip6_field_as_stack_backed_u32_array() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();

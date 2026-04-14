@@ -94,6 +94,11 @@ impl EbpfProgramType {
 
     pub(crate) fn socket_ref_context_layout(&self) -> Option<SocketContextLayout> {
         match self {
+            EbpfProgramType::SocketFilter
+            | EbpfProgramType::Tc
+            | EbpfProgramType::CgroupSkb
+            | EbpfProgramType::SkSkb
+            | EbpfProgramType::SkSkbParser => Some(SocketContextLayout::SkBuff),
             EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
             EbpfProgramType::CgroupSockAddr => Some(SocketContextLayout::SockAddr),
             EbpfProgramType::CgroupSockopt => Some(SocketContextLayout::CgroupSockopt),

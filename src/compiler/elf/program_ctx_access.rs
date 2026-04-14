@@ -112,7 +112,7 @@ impl EbpfProgramType {
                 ))
             }
             CtxField::Socket if !self.supports_socket_ref_ctx_field() => Some(format!(
-                "ctx.{} is only available on cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_msg, and sock_ops programs",
+                "ctx.{} is only available on socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs",
                 field.display_name()
             )),
             CtxField::LookupCookie if !self.supports_lookup_cookie_ctx_field() => Some(format!(

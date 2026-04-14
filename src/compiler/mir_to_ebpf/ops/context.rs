@@ -112,7 +112,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         (8, 32)
     }
 
-    pub(super) fn sk_buff_socket_offsets() -> (i16, i16, i16, i16, i16, i16, i16) {
+    pub(super) fn sk_buff_socket_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16) {
         // struct __sk_buff {
         //     ...
         //     __u32 data;
@@ -125,8 +125,10 @@ impl<'a> MirToEbpfCompiler<'a> {
         //     __u32 local_ip6[4];   // network byte order
         //     __u32 remote_port;    // network byte order (u32)
         //     __u32 local_port;     // host byte order
+        //     ...
+        //     struct bpf_sock *sk;
         // };
-        (88, 92, 96, 100, 116, 132, 136)
+        (88, 92, 96, 100, 116, 132, 136, 168)
     }
 
     pub(super) fn sk_msg_md_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16) {

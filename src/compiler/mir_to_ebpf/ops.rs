@@ -916,9 +916,10 @@ impl<'a> MirToEbpfCompiler<'a> {
                     Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().0,
                     Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_sock_offset(),
                     Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().11,
-                    Some(SocketContextLayout::SkBuff) | None => {
+                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().7,
+                    None => {
                         return Err(CompileError::UnsupportedInstruction(
-                            "ctx.sk is only available on cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_msg, and sock_ops programs".to_string(),
+                            "ctx.sk is only available on socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
                         ));
                     }
                 };

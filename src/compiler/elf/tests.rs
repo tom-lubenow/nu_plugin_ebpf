@@ -412,6 +412,11 @@ fn test_program_type_socket_layouts_follow_program_model() {
 #[test]
 fn test_program_type_socket_ref_layouts_follow_program_model() {
     assert_eq!(
+        EbpfProgramType::SocketFilter.socket_ref_context_layout(),
+        Some(SocketContextLayout::SkBuff)
+    );
+
+    assert_eq!(
         EbpfProgramType::CgroupSockAddr.socket_ref_context_layout(),
         Some(SocketContextLayout::SockAddr)
     );
@@ -2788,6 +2793,7 @@ fn test_probe_context_allows_socket_field_on_cgroup_sockopt() {
 #[test]
 fn test_probe_context_allows_socket_filter_packet_fields() {
     let ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    assert!(ctx.ctx_field_access_error(&CtxField::Socket).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::PktType).is_none());
     assert!(
@@ -2849,6 +2855,33 @@ fn test_probe_context_allows_socket_cookie_on_sock_ops() {
     assert!(ctx.ctx_field_access_error(&CtxField::Socket).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::SocketCookie)
+            .is_none()
+    );
+}
+
+#[test]
+fn test_probe_context_allows_socket_field_on_skb_backed_packet_programs() {
+    let socket_filter = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let tc = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let cgroup_skb = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+    let sk_skb = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+    let sk_skb_parser = ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap");
+
+    assert!(
+        socket_filter
+            .ctx_field_access_error(&CtxField::Socket)
+            .is_none()
+    );
+    assert!(tc.ctx_field_access_error(&CtxField::Socket).is_none());
+    assert!(
+        cgroup_skb
+            .ctx_field_access_error(&CtxField::Socket)
+            .is_none()
+    );
+    assert!(sk_skb.ctx_field_access_error(&CtxField::Socket).is_none());
+    assert!(
+        sk_skb_parser
+            .ctx_field_access_error(&CtxField::Socket)
             .is_none()
     );
 }
