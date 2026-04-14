@@ -37,7 +37,14 @@ impl<'a> VccLowerer<'a> {
 
             for (idx, arg) in args.iter().enumerate() {
                 let arg_kind = sig.arg_kind(idx);
-                self.verify_helper_arg_value(helper_id, idx, arg, arg_kind, out)?;
+                self.verify_helper_arg_value(
+                    helper_id,
+                    idx,
+                    arg,
+                    arg_kind,
+                    self.helper_pointer_arg_allows_maybe_null(helper_id, idx),
+                    out,
+                )?;
                 if matches!(arg_kind, HelperArgKind::Pointer)
                     && let Some(expected_kind) =
                         Self::helper_pointer_arg_expected_ref_kind(helper_id, idx)
@@ -463,6 +470,7 @@ impl<'a> VccLowerer<'a> {
         arg_idx: usize,
         arg: &MirValue,
         expected: HelperArgKind,
+        allow_maybe_null: bool,
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
         if self.is_local_helper_map_ref_arg(helper_id, arg_idx, arg) {
@@ -512,6 +520,8 @@ impl<'a> VccLowerer<'a> {
                             ),
                         });
                         Ok(())
+                    } else if allow_maybe_null {
+                        self.require_pointer_reg(*vreg)
                     } else {
                         self.check_ptr_range(*vreg, 1, out)
                     }
@@ -978,6 +988,21 @@ impl<'a> VccLowerer<'a> {
                 .is_some_and(MirType::is_socket_cookie_socket_ptr),
             MirValue::Const(_) | MirValue::StackSlot(_) => false,
         }
+    }
+
+    fn helper_pointer_arg_allows_maybe_null(&self, helper_id: u32, arg_idx: usize) -> bool {
+        if !matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::GetSocketCookie))
+            || arg_idx != 0
+        {
+            return false;
+        }
+        self.probe_ctx
+            .and_then(|ctx| ctx.get_socket_cookie_arg_policy())
+            .or_else(|| {
+                self.program
+                    .and_then(|program| program.program_type.get_socket_cookie_arg_policy())
+            })
+            .is_some_and(GetSocketCookieArgPolicy::allows_maybe_null)
     }
 
     pub(super) fn verify_map_key(

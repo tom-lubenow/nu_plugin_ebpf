@@ -325,10 +325,7 @@ fn test_verify_mir_for_probe_context_get_socket_cookie_rejects_fentry_context_po
 #[test]
 fn test_verify_mir_for_probe_context_get_socket_cookie_accepts_fentry_socket_pointer() {
     let (mut func, entry) = new_mir_function();
-    let call = func.alloc_block();
-    let done = func.alloc_block();
     let sk = func.alloc_vreg();
-    let sk_non_null = func.alloc_vreg();
     let dst = func.alloc_vreg();
 
     func.block_mut(entry)
@@ -338,24 +335,14 @@ fn test_verify_mir_for_probe_context_get_socket_cookie_accepts_fentry_socket_poi
             field: CtxField::Arg(0),
             slot: None,
         });
-    func.block_mut(entry).instructions.push(MirInst::BinOp {
-        dst: sk_non_null,
-        op: BinOpKind::Ne,
-        lhs: MirValue::VReg(sk),
-        rhs: MirValue::Const(0),
-    });
-    func.block_mut(entry).terminator = MirInst::Branch {
-        cond: sk_non_null,
-        if_true: call,
-        if_false: done,
-    };
-    func.block_mut(call).instructions.push(MirInst::CallHelper {
-        dst,
-        helper: BpfHelper::GetSocketCookie as u32,
-        args: vec![MirValue::VReg(sk)],
-    });
-    func.block_mut(call).terminator = MirInst::Return { val: None };
-    func.block_mut(done).terminator = MirInst::Return { val: None };
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetSocketCookie as u32,
+            args: vec![MirValue::VReg(sk)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
     types.insert(
@@ -365,7 +352,6 @@ fn test_verify_mir_for_probe_context_get_socket_cookie_accepts_fentry_socket_poi
             address_space: AddressSpace::Kernel,
         },
     );
-    types.insert(sk_non_null, MirType::Bool);
     types.insert(dst, MirType::I64);
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "tcp_connect");

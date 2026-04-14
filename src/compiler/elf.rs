@@ -65,6 +65,10 @@ impl GetSocketCookieArgPolicy {
             ),
         }
     }
+
+    pub(crate) fn allows_maybe_null(self) -> bool {
+        matches!(self, Self::Socket)
+    }
 }
 
 /// BPF map types (subset of types we might use)

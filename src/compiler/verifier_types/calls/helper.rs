@@ -90,6 +90,7 @@ pub(in crate::compiler::verifier_types) fn check_helper_ptr_arg_value(
     allow_map: bool,
     allow_kernel: bool,
     allow_user: bool,
+    allow_maybe_null: bool,
     access_size: Option<usize>,
     types: &HashMap<VReg, MirType>,
     state: &VerifierState,
@@ -105,12 +106,60 @@ pub(in crate::compiler::verifier_types) fn check_helper_ptr_arg_value(
     let allowed = helper_allowed_spaces(allow_stack, allow_map, allow_kernel, allow_user);
     match arg {
         MirValue::VReg(vreg) => {
-            let Some(VerifierType::Ptr { space, bounds, .. }) =
-                require_ptr_with_space(*vreg, op, allowed, state, errors)
-            else {
+            let ptr = if allow_maybe_null {
+                match state.get(*vreg) {
+                    VerifierType::Ptr {
+                        space,
+                        bounds,
+                        nullability,
+                        ..
+                    } => {
+                        if !allowed.contains(&space) {
+                            errors.push(VerifierTypeError::new(format!(
+                                "{op} expects pointer in {:?}, got {:?}",
+                                allowed, space
+                            )));
+                            return;
+                        }
+                        Some((space, bounds, nullability))
+                    }
+                    VerifierType::Uninit => {
+                        errors.push(VerifierTypeError::new(format!(
+                            "{op} uses uninitialized pointer v{}",
+                            vreg.0
+                        )));
+                        None
+                    }
+                    other => {
+                        errors.push(VerifierTypeError::new(format!(
+                            "{op} requires pointer type, got {:?}",
+                            other
+                        )));
+                        None
+                    }
+                }
+            } else {
+                require_ptr_with_space(*vreg, op, allowed, state, errors).map(|ty| match ty {
+                    VerifierType::Ptr {
+                        space,
+                        bounds,
+                        nullability,
+                        ..
+                    } => (space, bounds, nullability),
+                    _ => unreachable!("require_ptr_with_space only returns pointer types"),
+                })
+            };
+            let Some((space, bounds, nullability)) = ptr else {
                 return;
             };
             if let Some(size) = access_size {
+                if allow_maybe_null && !matches!(nullability, Nullability::NonNull) {
+                    errors.push(VerifierTypeError::new(format!(
+                        "{op} may dereference null pointer v{} (add a null check)",
+                        vreg.0
+                    )));
+                    return;
+                }
                 check_ptr_bounds(op, space, bounds, 0, size, errors);
             }
         }
@@ -184,6 +233,8 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
     let semantics = helper.semantics();
     let mut acquire_kind = helper_acquire_ref_kind(helper);
     let mut positive_size_bounds: [Option<usize>; 5] = [None; 5];
+    let allow_maybe_null_for_arg =
+        |arg_idx: usize| helper_allows_maybe_null_arg(helper, arg_idx, program, probe_ctx);
     for size_arg in semantics.positive_size_args {
         if let Some(value) = args.get(*size_arg) {
             positive_size_bounds[*size_arg] =
@@ -209,6 +260,7 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
             rule.allowed.allow_map,
             rule.allowed.allow_kernel,
             rule.allowed.allow_user,
+            allow_maybe_null_for_arg(rule.arg_idx),
             access_size,
             types,
             state,
@@ -483,6 +535,21 @@ fn helper_arg_is_raw_context_pointer(arg: &MirValue, state: &VerifierState) -> b
         MirValue::VReg(vreg) => state.ctx_field_source(*vreg) == Some(&CtxField::Context),
         MirValue::Const(_) | MirValue::StackSlot(_) => false,
     }
+}
+
+fn helper_allows_maybe_null_arg(
+    helper: BpfHelper,
+    arg_idx: usize,
+    program: Option<&ProgramTypeInfo>,
+    probe_ctx: Option<&ProbeContext>,
+) -> bool {
+    if !matches!(helper, BpfHelper::GetSocketCookie) || arg_idx != 0 {
+        return false;
+    }
+    probe_ctx
+        .and_then(|ctx| ctx.get_socket_cookie_arg_policy())
+        .or_else(|| program.and_then(|program| program.program_type.get_socket_cookie_arg_policy()))
+        .is_some_and(GetSocketCookieArgPolicy::allows_maybe_null)
 }
 
 fn helper_arg_is_socket_cookie_socket_pointer(
