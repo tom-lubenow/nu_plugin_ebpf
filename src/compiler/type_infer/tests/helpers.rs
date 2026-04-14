@@ -168,7 +168,7 @@ fn test_infer_helper_ctx_argument_from_context_pointer_load() {
     });
     block.terminator = MirInst::Return { val: None };
 
-    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
     let mut ti = TypeInference::new(Some(probe_ctx));
     let types = ti
         .infer(&func)
@@ -185,6 +185,34 @@ fn test_infer_helper_ctx_argument_from_context_pointer_load() {
         other => panic!("expected kernel context pointer type, got {:?}", other),
     }
     assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_get_socket_cookie_helper_rejects_sk_lookup_program() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetSocketCookie as u32,
+        args: vec![MirValue::VReg(ctx)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_socket_cookie to be rejected on sk_lookup");
+    assert!(errs.iter().any(|e| e.message.contains(
+        "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, tp_btf, socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs"
+    )));
 }
 
 #[test]

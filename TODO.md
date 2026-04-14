@@ -177,6 +177,7 @@ Near-term priority order:
   - Recent progress: modeled helper-surface legality now also constrains the `bpf_skc_to_*` socket cast helper family to the supported tracing/socket program families (`fentry`/`fexit`/`tp_btf`, `sk_lookup`, `sk_msg`, `sk_skb`, `sk_skb_parser`, `sock_ops`) with representative type-inference, verifier_types, and VCC coverage.
   - Recent progress: modeled helper-surface legality now also distinguishes socket identity helpers from similarly named ctx fields, constraining `bpf_get_socket_uid` and `bpf_get_netns_cookie` to the concrete upstream-supported program families with type-inference, verifier_types, and VCC parity coverage.
   - Recent progress: modeled helper-surface legality now also constrains `bpf_sk_cgroup_id` and `bpf_sk_ancestor_cgroup_id` to `cgroup_skb`, and the user-facing `sk_msg` docs/help no longer advertise those helpers on `ctx.sk`.
+  - Recent progress: modeled helper-surface legality now also constrains `bpf_get_socket_cookie` to the concrete upstream-supported tracing/socket program families instead of allowing false positives like `sk_lookup`; remaining work here is the richer arg-shape split between skb/context/socket/tracing-pointer forms.
 
 - [ ] Expand map support to the broader eBPF map ecosystem.
   - Add missing map definitions and loader plumbing for commonly used map families.

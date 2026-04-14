@@ -997,6 +997,27 @@ impl EbpfProgramType {
                 "helper '{}' is only valid in tc programs",
                 helper.name()
             )),
+            BpfHelper::GetSocketCookie
+                if !matches!(
+                    self,
+                    EbpfProgramType::Fentry
+                        | EbpfProgramType::Fexit
+                        | EbpfProgramType::TpBtf
+                        | EbpfProgramType::SocketFilter
+                        | EbpfProgramType::Tc
+                        | EbpfProgramType::CgroupSkb
+                        | EbpfProgramType::CgroupSock
+                        | EbpfProgramType::CgroupSockAddr
+                        | EbpfProgramType::SockOps
+                        | EbpfProgramType::SkSkb
+                        | EbpfProgramType::SkSkbParser
+                ) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in fentry, fexit, tp_btf, socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs",
+                    helper.name()
+                ))
+            }
             BpfHelper::GetSocketUid
                 if !matches!(
                     self,

@@ -206,6 +206,83 @@ fn test_verify_mir_accepts_helper_context_argument_from_ctx_pointer_load() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_get_socket_cookie_rejects_sk_lookup() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetSocketCookie as u32,
+            args: vec![MirValue::VReg(ctx)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected get_socket_cookie sk_lookup program-surface error");
+    assert!(err.iter().any(|e| e.message.contains(
+        "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, tp_btf, socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs"
+    )));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_get_socket_cookie_accepts_socket_filter() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetSocketCookie as u32,
+            args: vec![MirValue::VReg(ctx)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected get_socket_cookie socket_filter context to verify");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_get_socket_uid_rejects_cgroup_skb() {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();

@@ -711,6 +711,13 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         Some("helper 'bpf_redirect' is only valid in xdp and tc programs".to_string())
     );
     assert_eq!(
+        EbpfProgramType::SkLookup.helper_call_error(BpfHelper::GetSocketCookie),
+        Some(
+            "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, tp_btf, socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::XdpAdjustMeta),
         Some("helper 'bpf_xdp_adjust_meta' is only valid in xdp programs".to_string())
     );
@@ -924,6 +931,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::SkSkbParser.helper_call_error(BpfHelper::SkRedirectHash),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::SocketFilter.helper_call_error(BpfHelper::GetSocketCookie),
         None
     );
     assert_eq!(
