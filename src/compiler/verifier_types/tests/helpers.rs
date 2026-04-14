@@ -121,6 +121,56 @@ fn test_verify_mir_accepts_helper_context_argument_from_ctx_pointer_load() {
 }
 
 #[test]
+fn test_verify_mir_accepts_helper_context_argument_from_ctx_pointer_copy() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let ctx_copy = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: ctx_copy,
+        src: MirValue::VReg(ctx),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetSocketCookie as u32,
+            args: vec![MirValue::VReg(ctx_copy)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        ctx_copy,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types)
+        .expect("expected copied raw ctx pointer to satisfy helper context argument");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_get_socket_cookie_rejects_sk_lookup() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
@@ -328,6 +378,62 @@ fn test_verify_mir_for_probe_context_get_socket_cookie_rejects_socket_filter_con
     let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected socket_filter get_socket_cookie(0) to fail");
+    assert!(err.iter().any(|e| e.message.contains(
+        "helper 'bpf_get_socket_cookie' arg0 expects raw ctx pointer in socket_filter programs"
+    )));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_get_socket_cookie_rejects_offset_context_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let ctx_offset = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: ctx_offset,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(ctx),
+        rhs: MirValue::Const(8),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetSocketCookie as u32,
+            args: vec![MirValue::VReg(ctx_offset)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        ctx_offset,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected offset raw ctx pointer to fail get_socket_cookie");
     assert!(err.iter().any(|e| e.message.contains(
         "helper 'bpf_get_socket_cookie' arg0 expects raw ctx pointer in socket_filter programs"
     )));
