@@ -615,6 +615,30 @@ fn test_probe_context_xdp_uses_typed_program_spec() {
 }
 
 #[test]
+fn test_probe_context_from_program_spec_uses_structured_target() {
+    let spec = ProgramSpec::from_program_type_target(EbpfProgramType::Xdp, "lo")
+        .expect("xdp program spec should parse");
+    let ctx = ProbeContext::from_program_spec(spec.clone());
+
+    assert_eq!(ctx.target(), "lo");
+    assert_eq!(ctx.parsed_program_spec(), Some(&spec));
+}
+
+#[test]
+fn test_probe_context_new_preserves_noncanonical_uprobe_target_string() {
+    let ctx = ProbeContext::new(EbpfProgramType::Uprobe, "/usr/bin/app:main+16");
+
+    assert_eq!(ctx.target(), "/usr/bin/app:main+16");
+    assert!(matches!(
+        ctx.parsed_program_spec(),
+        Some(ProgramSpec::Uprobe { target })
+            if target.binary_path == "/usr/bin/app"
+                && target.function_name.as_deref() == Some("main")
+                && target.offset == 16
+    ));
+}
+
+#[test]
 fn test_probe_context_ctx_field_type_spec_respects_context_legality() {
     let kprobe = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_openat2");
     let tc = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");

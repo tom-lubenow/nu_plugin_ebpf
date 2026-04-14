@@ -183,12 +183,34 @@ impl ProbeContext {
         })
     }
 
+    fn from_program_spec_parts(program_spec: ProgramSpec, target: String) -> Self {
+        let probe_type = program_spec.program_type();
+        let struct_ops_value_type_name = match &program_spec {
+            ProgramSpec::StructOps { value_type_name } => Some(value_type_name.clone()),
+            _ => None,
+        };
+        Self {
+            probe_type,
+            target,
+            program_spec: Some(program_spec),
+            struct_ops_value_type_name,
+        }
+    }
+
+    pub fn from_program_spec(program_spec: ProgramSpec) -> Self {
+        let target = program_spec.target_string();
+        Self::from_program_spec_parts(program_spec, target)
+    }
+
     /// Create a new probe context
     pub fn new(probe_type: EbpfProgramType, target: impl Into<String>) -> Self {
         let target = target.into();
+        if let Ok(program_spec) = ProgramSpec::from_program_type_target(probe_type, &target) {
+            return Self::from_program_spec_parts(program_spec, target);
+        }
         Self {
             probe_type,
-            program_spec: ProgramSpec::from_program_type_target(probe_type, &target).ok(),
+            program_spec: None,
             target,
             struct_ops_value_type_name: None,
         }
@@ -201,14 +223,7 @@ impl ProbeContext {
     ) -> Self {
         let value_type_name = value_type_name.into();
         let callback_name = callback_name.into();
-        Self {
-            probe_type: EbpfProgramType::StructOps,
-            target: callback_name,
-            program_spec: Some(ProgramSpec::StructOps {
-                value_type_name: value_type_name.clone(),
-            }),
-            struct_ops_value_type_name: Some(value_type_name),
-        }
+        Self::from_program_spec_parts(ProgramSpec::StructOps { value_type_name }, callback_name)
     }
 
     /// Create a default probe context for tests or legacy code

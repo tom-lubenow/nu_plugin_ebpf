@@ -1021,9 +1021,9 @@ fn run_attach(
         }
         _ => {
             let closure = value_to_spanned_closure(body, call.head)?;
-            let prog_type = program_spec.program_type();
-            let target = program_spec.target_string();
-            let probe_context = ProbeContext::new(prog_type, &target);
+            let probe_context = ProbeContext::from_program_spec(program_spec);
+            let prog_type = probe_context.program_type();
+            let target = probe_context.target().to_string();
             let compiled = compile_closure_with_context(
                 engine,
                 &closure,
