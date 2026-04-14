@@ -92,6 +92,7 @@ impl<'a> VccLowerer<'a> {
             out.push(VccInst::Assume {
                 dst: VccReg(dst.0),
                 ty: vcc_ty,
+                ctx_field_source: None,
             });
             if let VccValueType::Ptr(info) = vcc_ty {
                 self.ptr_regs.insert(VccReg(dst.0), info);
@@ -315,6 +316,7 @@ impl<'a> VccLowerer<'a> {
                     max: max as i64,
                 }),
             },
+            ctx_field_source: None,
         });
     }
 

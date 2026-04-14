@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::EbpfProgramType;
 use crate::compiler::mir::BlockId;
 
 impl<'a> VccLowerer<'a> {
@@ -224,6 +225,7 @@ impl<'a> VccLowerer<'a> {
                         out.push(VccInst::Assume {
                             dst: VccReg(dst.0),
                             ty: dst_ty,
+                            ctx_field_source: None,
                         });
                     }
                 }
@@ -243,6 +245,15 @@ impl<'a> VccLowerer<'a> {
             }
             MirInst::LoadCtxField { dst, field, slot } => {
                 self.verify_ctx_field_load(field)?;
+                if self
+                    .probe_ctx
+                    .is_some_and(|ctx| ctx.program_type() == EbpfProgramType::SockOps)
+                    && ProbeContext::sock_ops_packet_field_requires_callback_proof(field)
+                {
+                    out.push(VccInst::AssertSockOpsPacketField {
+                        field: field.clone(),
+                    });
+                }
                 if slot.is_none() {
                     let key = Self::ctx_field_key(field);
                     if let Some(src) = self.entry_ctx_field_regs.get(&key).copied() {
@@ -361,6 +372,7 @@ impl<'a> VccLowerer<'a> {
                     out.push(VccInst::Assume {
                         dst: VccReg(dst.0),
                         ty,
+                        ctx_field_source: Some(field.clone()),
                     });
                     if let VccValueType::Ptr(info) = ty {
                         self.ptr_regs.insert(VccReg(dst.0), info);
@@ -404,6 +416,7 @@ impl<'a> VccLowerer<'a> {
                 out.push(VccInst::Assume {
                     dst: VccReg(dst.0),
                     ty: VccValueType::Bool,
+                    ctx_field_source: None,
                 });
             }
             MirInst::MapLookup { dst, map, key } => {
@@ -454,6 +467,7 @@ impl<'a> VccLowerer<'a> {
                 out.push(VccInst::Assume {
                     dst: VccReg(dst.0),
                     ty,
+                    ctx_field_source: None,
                 });
                 if let VccValueType::Ptr(info) = ty {
                     self.ptr_regs.insert(VccReg(dst.0), info);
@@ -486,6 +500,7 @@ impl<'a> VccLowerer<'a> {
                 out.push(VccInst::Assume {
                     dst: VccReg(dst.0),
                     ty,
+                    ctx_field_source: None,
                 });
                 self.ptr_regs.insert(VccReg(dst.0), ptr);
             }
@@ -498,6 +513,7 @@ impl<'a> VccLowerer<'a> {
                 out.push(VccInst::Assume {
                     dst: VccReg(dst.0),
                     ty,
+                    ctx_field_source: None,
                 });
             }
             MirInst::MapUpdate {
@@ -619,6 +635,7 @@ impl<'a> VccLowerer<'a> {
                 out.push(VccInst::Assume {
                     dst: VccReg(dst.0),
                     ty,
+                    ctx_field_source: None,
                 });
             }
             MirInst::CallHelper { dst, helper, args } => {
@@ -628,6 +645,7 @@ impl<'a> VccLowerer<'a> {
                 out.push(VccInst::Assume {
                     dst: VccReg(dst.0),
                     ty,
+                    ctx_field_source: None,
                 });
                 if let VccValueType::Ptr(info) = ty {
                     self.ptr_regs.insert(VccReg(dst.0), info);
@@ -686,6 +704,7 @@ impl<'a> VccLowerer<'a> {
                 out.push(VccInst::Assume {
                     dst: VccReg(dst.0),
                     ty,
+                    ctx_field_source: None,
                 });
                 if let VccValueType::Ptr(info) = ty {
                     self.ptr_regs.insert(VccReg(dst.0), info);
@@ -1173,6 +1192,7 @@ impl<'a> VccLowerer<'a> {
                 out.push(VccInst::Assume {
                     dst: VccReg(dst.0),
                     ty,
+                    ctx_field_source: None,
                 });
             }
             MirInst::ReadStr {
@@ -1269,15 +1289,16 @@ impl<'a> VccLowerer<'a> {
                         }
 
                         let delta = self.temp_reg();
-                        out.push(VccInst::Assume {
-                            dst: delta,
-                            ty: VccValueType::Scalar {
-                                range: Some(VccRange {
-                                    min: 0,
-                                    max: copy_len as i64,
-                                }),
-                            },
-                        });
+                out.push(VccInst::Assume {
+                    dst: delta,
+                    ty: VccValueType::Scalar {
+                        range: Some(VccRange {
+                            min: 0,
+                            max: copy_len as i64,
+                        }),
+                    },
+                    ctx_field_source: None,
+                });
                         out.push(VccInst::BinOp {
                             dst: len_reg,
                             op: VccBinOp::Add,
@@ -1300,15 +1321,16 @@ impl<'a> VccLowerer<'a> {
                         }
 
                         let delta = self.temp_reg();
-                        out.push(VccInst::Assume {
-                            dst: delta,
-                            ty: VccValueType::Scalar {
-                                range: Some(VccRange {
-                                    min: 1,
-                                    max: max_digits as i64,
-                                }),
-                            },
-                        });
+                out.push(VccInst::Assume {
+                    dst: delta,
+                    ty: VccValueType::Scalar {
+                        range: Some(VccRange {
+                            min: 1,
+                            max: max_digits as i64,
+                        }),
+                    },
+                    ctx_field_source: None,
+                });
                         out.push(VccInst::BinOp {
                             dst: len_reg,
                             op: VccBinOp::Add,
@@ -1346,6 +1368,7 @@ impl<'a> VccLowerer<'a> {
                             max: max_digits as i64,
                         }),
                     },
+                    ctx_field_source: None,
                 });
             }
             MirInst::RecordStore {

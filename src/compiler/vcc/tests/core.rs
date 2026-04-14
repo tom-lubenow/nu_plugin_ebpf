@@ -86,6 +86,7 @@ fn test_ptr_add_unknown_offset_on_stack() {
     func.block_mut(entry).instructions.push(VccInst::Assume {
         dst: tmp,
         ty: VccValueType::Scalar { range: None },
+        ctx_field_source: None,
     });
     func.block_mut(entry).instructions.push(VccInst::PtrAdd {
         dst: out,
@@ -834,6 +835,7 @@ fn test_unknown_stack_object_destroy_rejected_after_mixed_join() {
     func.block_mut(entry).instructions.push(VccInst::Assume {
         dst: cond,
         ty: VccValueType::Scalar { range: None },
+        ctx_field_source: None,
     });
     func.block_mut(entry).terminator = VccTerminator::Branch {
         cond: VccValue::Reg(cond),

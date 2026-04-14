@@ -231,6 +231,7 @@ pub enum VccInst {
     Assume {
         dst: VccReg,
         ty: VccValueType,
+        ctx_field_source: Option<CtxField>,
     },
     AssertScalar {
         value: VccValue,
@@ -250,6 +251,9 @@ pub enum VccInst {
         when_value: VccValue,
         when_expected: i64,
         message: String,
+    },
+    AssertSockOpsPacketField {
+        field: CtxField,
     },
     AssertKnownConst {
         value: VccValue,

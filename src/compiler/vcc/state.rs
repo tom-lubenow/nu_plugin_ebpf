@@ -10,6 +10,7 @@ fn unknown_stack_object_type_key(
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct VccState {
     reg_types: HashMap<VccReg, VccValueType>,
+    ctx_field_sources: HashMap<VccReg, CtxField>,
     not_equal_consts: HashMap<VccReg, Vec<i64>>,
     live_ringbuf_refs: HashMap<VccReg, bool>,
     live_kfunc_refs: HashMap<VccReg, Option<KfuncRefKind>>,
@@ -92,6 +93,7 @@ impl VccState {
     fn with_seed(seed: HashMap<VccReg, VccValueType>) -> Self {
         Self {
             reg_types: seed,
+            ctx_field_sources: HashMap::new(),
             not_equal_consts: HashMap::new(),
             live_ringbuf_refs: HashMap::new(),
             live_kfunc_refs: HashMap::new(),
@@ -151,8 +153,37 @@ impl VccState {
 
     fn set_reg(&mut self, reg: VccReg, ty: VccValueType) {
         self.reg_types.insert(reg, ty);
+        self.ctx_field_sources.remove(&reg);
         self.not_equal_consts.remove(&reg);
         self.cond_refinements.remove(&reg);
+    }
+
+    fn set_ctx_field_source(&mut self, reg: VccReg, source: Option<CtxField>) {
+        if let Some(source) = source {
+            self.ctx_field_sources.insert(reg, source);
+        } else {
+            self.ctx_field_sources.remove(&reg);
+        }
+    }
+
+    fn ctx_field_source(&self, reg: VccReg) -> Option<&CtxField> {
+        self.ctx_field_sources.get(&reg)
+    }
+
+    fn proves_ctx_field_value_range<F>(&self, field: &CtxField, predicate: F) -> bool
+    where
+        F: Fn(i64) -> bool,
+    {
+        self.ctx_field_sources.iter().any(|(reg, source)| {
+            if source != field {
+                return false;
+            }
+            let Ok(VccValueType::Scalar { range: Some(range) }) = self.reg_type(*reg) else {
+                return false;
+            };
+            let width = range.max.saturating_sub(range.min);
+            width <= 64 && (range.min..=range.max).all(&predicate)
+        })
     }
 
     fn set_not_equal_const(&mut self, reg: VccReg, value: i64) {
@@ -250,6 +281,7 @@ impl VccState {
             }
         }
         for reg in &invalidated {
+            self.ctx_field_sources.remove(reg);
             self.not_equal_consts.remove(reg);
         }
         self.cond_refinements.retain(|reg, info| {
@@ -813,6 +845,14 @@ impl VccState {
                 }
             }
         }
+        let mut ctx_field_sources = HashMap::new();
+        for (reg, left) in &self.ctx_field_sources {
+            if let Some(right) = other.ctx_field_sources.get(reg)
+                && left == right
+            {
+                ctx_field_sources.insert(*reg, left.clone());
+            }
+        }
         let mut live_ringbuf_refs = self.live_ringbuf_refs.clone();
         for (id, live) in &other.live_ringbuf_refs {
             let current = live_ringbuf_refs.get(id).copied().unwrap_or(false);
@@ -867,6 +907,7 @@ impl VccState {
         );
         VccState {
             reg_types: merged,
+            ctx_field_sources,
             not_equal_consts,
             live_ringbuf_refs,
             live_kfunc_refs,
@@ -981,6 +1022,7 @@ impl VccState {
         }
         VccState {
             reg_types: widened,
+            ctx_field_sources: self.ctx_field_sources.clone(),
             not_equal_consts: HashMap::new(),
             live_ringbuf_refs: self.live_ringbuf_refs.clone(),
             live_kfunc_refs: self.live_kfunc_refs.clone(),

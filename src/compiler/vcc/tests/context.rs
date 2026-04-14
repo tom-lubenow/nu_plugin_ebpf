@@ -25,6 +25,18 @@ fn kernel_u8_ptr() -> MirType {
     }
 }
 
+fn packet_u8_ptr() -> MirType {
+    MirType::Ptr {
+        pointee: Box::new(MirType::U8),
+        address_space: AddressSpace::Packet,
+    }
+}
+
+const BPF_SOCK_OPS_RTO_CB: i64 = 8;
+const BPF_SOCK_OPS_PARSE_HDR_OPT_CB: i64 = 13;
+const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
+const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
+
 fn make_sockopt_optval_store_function(
     with_end_guard: bool,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
@@ -233,6 +245,229 @@ fn test_verify_mir_for_probe_context_rejects_unavailable_trampoline_arg_load() {
         "unexpected errors: {:?}",
         err
     );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_rejects_unguarded_sock_ops_packet_len_load() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst,
+            field: CtxField::PacketLen,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::U32);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected unguarded sock_ops packet_len load to be rejected");
+    assert!(err.iter().any(|e| {
+        e.message.contains(
+            "ctx.packet_len on sock_ops requires proving a packet-aware ctx.op callback before use",
+        )
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_accepts_guarded_sock_ops_packet_len_load() {
+    let (mut func, entry) = new_mir_function();
+    let guarded = func.alloc_block();
+    let done = func.alloc_block();
+    let op = func.alloc_vreg();
+    let matches = func.alloc_vreg();
+    let len = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: op,
+            field: CtxField::SockOp,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: matches,
+        op: BinOpKind::Eq,
+        lhs: MirValue::VReg(op),
+        rhs: MirValue::Const(BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: matches,
+        if_true: guarded,
+        if_false: done,
+    };
+
+    func.block_mut(guarded)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: len,
+            field: CtxField::PacketLen,
+            slot: None,
+        });
+    func.block_mut(guarded).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(op, MirType::I32);
+    types.insert(matches, MirType::Bool);
+    types.insert(len, MirType::U32);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected guarded sock_ops packet_len load to verify");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_rejects_sock_ops_data_load_for_non_packet_callback() {
+    let (mut func, entry) = new_mir_function();
+    let guarded = func.alloc_block();
+    let done = func.alloc_block();
+    let op = func.alloc_vreg();
+    let matches = func.alloc_vreg();
+    let data = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: op,
+            field: CtxField::SockOp,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: matches,
+        op: BinOpKind::Eq,
+        lhs: MirValue::VReg(op),
+        rhs: MirValue::Const(BPF_SOCK_OPS_RTO_CB),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: matches,
+        if_true: guarded,
+        if_false: done,
+    };
+
+    func.block_mut(guarded)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: data,
+            field: CtxField::Data,
+            slot: None,
+        });
+    func.block_mut(guarded).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(op, MirType::I32);
+    types.insert(matches, MirType::Bool);
+    types.insert(data, packet_u8_ptr());
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected non-packet sock_ops callback to reject ctx.data");
+    assert!(err.iter().any(|e| {
+        e.message.contains(
+            "ctx.data on sock_ops requires proving a packet-aware ctx.op callback before use",
+        )
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_accepts_sock_ops_data_load_for_parse_hdr_opt() {
+    let (mut func, entry) = new_mir_function();
+    let guarded = func.alloc_block();
+    let done = func.alloc_block();
+    let op = func.alloc_vreg();
+    let matches = func.alloc_vreg();
+    let data = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: op,
+            field: CtxField::SockOp,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: matches,
+        op: BinOpKind::Eq,
+        lhs: MirValue::VReg(op),
+        rhs: MirValue::Const(BPF_SOCK_OPS_PARSE_HDR_OPT_CB),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: matches,
+        if_true: guarded,
+        if_false: done,
+    };
+
+    func.block_mut(guarded)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: data,
+            field: CtxField::Data,
+            slot: None,
+        });
+    func.block_mut(guarded).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(op, MirType::I32);
+    types.insert(matches, MirType::Bool);
+    types.insert(data, packet_u8_ptr());
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected parse_hdr_opt sock_ops callback to allow ctx.data");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_accepts_sock_ops_tcp_flags_on_hdr_opt_len() {
+    let (mut func, entry) = new_mir_function();
+    let guarded = func.alloc_block();
+    let done = func.alloc_block();
+    let op = func.alloc_vreg();
+    let matches = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: op,
+            field: CtxField::SockOp,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: matches,
+        op: BinOpKind::Eq,
+        lhs: MirValue::VReg(op),
+        rhs: MirValue::Const(BPF_SOCK_OPS_HDR_OPT_LEN_CB),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: matches,
+        if_true: guarded,
+        if_false: done,
+    };
+
+    func.block_mut(guarded)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: flags,
+            field: CtxField::SockOpsSkbTcpFlags,
+            slot: None,
+        });
+    func.block_mut(guarded).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(op, MirType::I32);
+    types.insert(matches, MirType::Bool);
+    types.insert(flags, MirType::U32);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected hdr_opt_len sock_ops callback to allow skb_tcp_flags");
 }
 
 #[test]

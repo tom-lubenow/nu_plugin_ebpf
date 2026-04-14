@@ -88,6 +88,7 @@ impl VccVerifier {
         } else {
             VccNullability::Null
         };
+        let ctx_field_source = state.ctx_field_source(ptr_reg).cloned();
         if !non_null {
             if let Some(ref_id) = ringbuf_ref {
                 state.set_live_ringbuf_ref(ref_id, false);
@@ -97,6 +98,7 @@ impl VccVerifier {
             }
         }
         state.set_reg(ptr_reg, VccValueType::Ptr(ptr));
+        state.set_ctx_field_source(ptr_reg, ctx_field_source);
     }
 
     pub(super) fn refine_packet_end_compare(
@@ -201,7 +203,9 @@ impl VccVerifier {
             state.mark_unreachable();
             return;
         };
+        let ctx_field_source = state.ctx_field_source(reg).cloned();
         state.set_reg(reg, VccValueType::Scalar { range: refined });
+        state.set_ctx_field_source(reg, ctx_field_source);
         for excluded in prior_excluded {
             state.set_not_equal_const(reg, excluded);
         }
@@ -398,7 +402,10 @@ impl VccVerifier {
 
         let lhs_excluded = state.not_equal_consts(lhs).to_vec();
         let rhs_excluded = state.not_equal_consts(rhs).to_vec();
+        let lhs_ctx_field_source = state.ctx_field_source(lhs).cloned();
+        let rhs_ctx_field_source = state.ctx_field_source(rhs).cloned();
         state.set_reg(lhs, VccValueType::Scalar { range: new_lhs });
+        state.set_ctx_field_source(lhs, lhs_ctx_field_source);
         for value in lhs_excluded {
             state.set_not_equal_const(lhs, value);
         }
@@ -406,6 +413,7 @@ impl VccVerifier {
 
         if rhs != lhs {
             state.set_reg(rhs, VccValueType::Scalar { range: new_rhs });
+            state.set_ctx_field_source(rhs, rhs_ctx_field_source);
             for value in rhs_excluded {
                 state.set_not_equal_const(rhs, value);
             }

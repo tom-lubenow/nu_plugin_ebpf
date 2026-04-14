@@ -30,7 +30,12 @@ impl VccVerifier {
                         VccValue::Imm(v) if *v != 0 => (None, vec![0]),
                         _ => (None, Vec::new()),
                     };
+                    let src_ctx_field = match src {
+                        VccValue::Reg(src_reg) => state.ctx_field_source(*src_reg).cloned(),
+                        _ => None,
+                    };
                     state.set_reg(*dst, ty);
+                    state.set_ctx_field_source(*dst, src_ctx_field);
                     if let Some(refinement) = copied_refinement {
                         state.set_cond_refinement(*dst, refinement);
                     }
@@ -40,8 +45,13 @@ impl VccVerifier {
                 }
                 Err(err) => self.errors.push(err),
             },
-            VccInst::Assume { dst, ty } => {
+            VccInst::Assume {
+                dst,
+                ty,
+                ctx_field_source,
+            } => {
                 state.set_reg(*dst, *ty);
+                state.set_ctx_field_source(*dst, ctx_field_source.clone());
             }
             VccInst::AssertScalar { value } => match state.value_type(*value) {
                 Ok(ty) => {
@@ -166,6 +176,16 @@ impl VccVerifier {
                     self.errors.push(VccError::new(
                         VccErrorKind::UnsupportedInstruction,
                         message.clone(),
+                    ));
+                }
+            }
+            VccInst::AssertSockOpsPacketField { field } => {
+                if !state.proves_ctx_field_value_range(&CtxField::SockOp, |op| {
+                    ProbeContext::sock_ops_packet_field_allows_callback_op(field, op)
+                }) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        ProbeContext::sock_ops_packet_field_callback_guard_error(field),
                     ));
                 }
             }
@@ -845,6 +865,21 @@ impl VccVerifier {
                 }
                 let ty = merged.unwrap_or(VccValueType::Unknown);
                 state.set_reg(*dst, ty);
+                let mut merged_ctx_field: Option<Option<CtxField>> = None;
+                for (_, reg) in args {
+                    let next = state.ctx_field_source(*reg).cloned();
+                    merged_ctx_field = Some(match merged_ctx_field {
+                        None => next,
+                        Some(existing) if existing == next => existing,
+                        _ => None,
+                    });
+                    if matches!(merged_ctx_field, Some(None)) {
+                        break;
+                    }
+                }
+                if let Some(Some(source)) = merged_ctx_field {
+                    state.set_ctx_field_source(*dst, Some(source));
+                }
                 let mut merged_refinement: Option<Option<VccCondRefinement>> = None;
                 for (_, reg) in args {
                     let next = state.cond_refinement(*reg);
