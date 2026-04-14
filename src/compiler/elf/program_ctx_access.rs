@@ -126,7 +126,7 @@ impl EbpfProgramType {
                 field.display_name()
             )),
             CtxField::SocketUid if !self.supports_socket_uid_ctx_field() => Some(format!(
-                "ctx.{} is only available on socket_filter, tc, cgroup_skb, and sk_skb programs",
+                "ctx.{} is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
                 field.display_name()
             )),
             CtxField::NetnsCookie if !self.supports_netns_cookie_ctx_field() => Some(format!(

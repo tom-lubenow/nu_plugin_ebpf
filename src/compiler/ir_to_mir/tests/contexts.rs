@@ -2200,6 +2200,33 @@ fn test_lower_socket_filter_ctx_socket_uid_field() {
 }
 
 #[test]
+fn test_lower_sk_skb_parser_ctx_socket_uid_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("socket_uid")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_skb_parser ctx.socket_uid should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::SocketUid,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_cgroup_sock_ctx_socket_cookie_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("socket_cookie")],
@@ -2242,6 +2269,33 @@ fn test_lower_sk_msg_ctx_netns_cookie_field() {
         &HashMap::new(),
     )
     .expect("sk_msg ctx.netns_cookie should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::NetnsCookie,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_cgroup_sockopt_ctx_netns_cookie_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("netns_cookie")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sockopt ctx.netns_cookie should lower");
 
     let block = result.program.main.block(result.program.main.entry);
     assert!(block.instructions.iter().any(|inst| matches!(

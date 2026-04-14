@@ -207,6 +207,7 @@ impl EbpfProgramType {
                 | EbpfProgramType::Tc
                 | EbpfProgramType::CgroupSkb
                 | EbpfProgramType::SkSkb
+                | EbpfProgramType::SkSkbParser
         )
     }
 

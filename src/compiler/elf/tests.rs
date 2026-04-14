@@ -946,17 +946,11 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::CgroupSkb.helper_call_error(BpfHelper::GetSocketUid),
-        Some(
-            "helper 'bpf_get_socket_uid' is only valid in socket_filter, tc, sk_skb, and sk_skb_parser programs"
-                .to_string()
-        )
+        None
     );
     assert_eq!(
         EbpfProgramType::CgroupSockopt.helper_call_error(BpfHelper::GetNetnsCookie),
-        Some(
-            "helper 'bpf_get_netns_cookie' is only valid in socket_filter, tc, cgroup_sock, cgroup_sock_addr, sock_ops, and sk_msg programs"
-                .to_string()
-        )
+        None
     );
     assert_eq!(
         EbpfProgramType::SkMsg.helper_call_error(BpfHelper::SkCgroupId),
@@ -2958,6 +2952,23 @@ fn test_probe_context_allows_socket_uid_on_tc() {
 }
 
 #[test]
+fn test_probe_context_allows_socket_uid_on_cgroup_skb_and_sk_skb_parser() {
+    let cgroup_skb = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+    let sk_skb_parser = ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap");
+
+    assert!(
+        cgroup_skb
+            .ctx_field_access_error(&CtxField::SocketUid)
+            .is_none()
+    );
+    assert!(
+        sk_skb_parser
+            .ctx_field_access_error(&CtxField::SocketUid)
+            .is_none()
+    );
+}
+
+#[test]
 fn test_probe_context_allows_packet_data_fields_on_sock_ops() {
     let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
     assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
@@ -2982,6 +2993,23 @@ fn test_probe_context_allows_extra_metric_fields_on_sock_ops() {
 fn test_probe_context_allows_netns_cookie_on_sk_msg() {
     let ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
     assert!(ctx.ctx_field_access_error(&CtxField::NetnsCookie).is_none());
+}
+
+#[test]
+fn test_probe_context_allows_netns_cookie_on_cgroup_skb_and_cgroup_sockopt() {
+    let cgroup_skb = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+    let cgroup_sockopt = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+
+    assert!(
+        cgroup_skb
+            .ctx_field_access_error(&CtxField::NetnsCookie)
+            .is_none()
+    );
+    assert!(
+        cgroup_sockopt
+            .ctx_field_access_error(&CtxField::NetnsCookie)
+            .is_none()
+    );
 }
 
 #[test]
@@ -3038,7 +3066,7 @@ fn test_probe_context_rejects_socket_uid_on_sk_lookup() {
         .ctx_field_access_error(&CtxField::SocketUid)
         .expect("expected socket_uid field access error");
     assert!(err.contains(
-        "ctx.socket_uid is only available on socket_filter, tc, cgroup_skb, and sk_skb programs"
+        "ctx.socket_uid is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
     ));
 }
 

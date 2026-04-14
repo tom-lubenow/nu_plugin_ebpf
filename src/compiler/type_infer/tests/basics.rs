@@ -1590,6 +1590,27 @@ fn test_infer_socket_filter_socket_uid_field_as_u32() {
 }
 
 #[test]
+fn test_infer_sk_skb_parser_socket_uid_field_as_u32() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::SocketUid,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::U32));
+}
+
+#[test]
 fn test_infer_sk_msg_netns_cookie_field_as_u64() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();
@@ -1604,6 +1625,27 @@ fn test_infer_sk_msg_netns_cookie_field_as_u64() {
     func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
 
     let ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::U64));
+}
+
+#[test]
+fn test_infer_cgroup_sockopt_netns_cookie_field_as_u64() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::NetnsCookie,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
     let mut ti = TypeInference::new(Some(ctx));
     let types = ti.infer(&func).unwrap();
 

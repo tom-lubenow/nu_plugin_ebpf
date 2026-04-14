@@ -521,7 +521,7 @@ fn test_verify_mir_for_probe_context_get_socket_cookie_accepts_cgroup_sock_socke
 }
 
 #[test]
-fn test_verify_mir_for_probe_context_get_socket_uid_rejects_cgroup_skb() {
+fn test_verify_mir_for_probe_context_get_socket_uid_accepts_cgroup_skb() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
     func.entry = entry;
@@ -555,11 +555,8 @@ fn test_verify_mir_for_probe_context_get_socket_uid_rejects_cgroup_skb() {
     types.insert(dst, MirType::I64);
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
-    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
-        .expect_err("expected get_socket_uid cgroup_skb program-surface error");
-    assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_get_socket_uid' is only valid in socket_filter, tc, sk_skb, and sk_skb_parser programs"
-    )));
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected get_socket_uid cgroup_skb context to verify");
 }
 
 #[test]
@@ -602,7 +599,7 @@ fn test_verify_mir_for_probe_context_get_socket_uid_accepts_tc() {
 }
 
 #[test]
-fn test_verify_mir_for_probe_context_get_netns_cookie_rejects_cgroup_sockopt() {
+fn test_verify_mir_for_probe_context_get_netns_cookie_accepts_cgroup_sockopt() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
     func.entry = entry;
@@ -636,11 +633,8 @@ fn test_verify_mir_for_probe_context_get_netns_cookie_rejects_cgroup_sockopt() {
     types.insert(dst, MirType::I64);
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
-    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
-        .expect_err("expected get_netns_cookie cgroup_sockopt program-surface error");
-    assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_get_netns_cookie' is only valid in socket_filter, tc, cgroup_sock, cgroup_sock_addr, sock_ops, and sk_msg programs"
-    )));
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected get_netns_cookie cgroup_sockopt context to verify");
 }
 
 #[test]

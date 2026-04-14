@@ -124,12 +124,13 @@ impl EbpfProgramType {
                     self,
                     EbpfProgramType::SocketFilter
                         | EbpfProgramType::Tc
+                        | EbpfProgramType::CgroupSkb
                         | EbpfProgramType::SkSkb
                         | EbpfProgramType::SkSkbParser
                 ) =>
             {
                 Some(format!(
-                    "helper '{}' is only valid in socket_filter, tc, sk_skb, and sk_skb_parser programs",
+                    "helper '{}' is only valid in socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
                     helper.name()
                 ))
             }
@@ -138,14 +139,16 @@ impl EbpfProgramType {
                     self,
                     EbpfProgramType::SocketFilter
                         | EbpfProgramType::Tc
+                        | EbpfProgramType::CgroupSkb
                         | EbpfProgramType::CgroupSock
+                        | EbpfProgramType::CgroupSockopt
                         | EbpfProgramType::CgroupSockAddr
                         | EbpfProgramType::SockOps
                         | EbpfProgramType::SkMsg
                 ) =>
             {
                 Some(format!(
-                    "helper '{}' is only valid in socket_filter, tc, cgroup_sock, cgroup_sock_addr, sock_ops, and sk_msg programs",
+                    "helper '{}' is only valid in socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sock_ops, and sk_msg programs",
                     helper.name()
                 ))
             }

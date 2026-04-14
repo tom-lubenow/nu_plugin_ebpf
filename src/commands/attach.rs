@@ -127,7 +127,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.tc_index } - Get the skb tc_index on skb-backed packet programs
     {|ctx| $ctx.hash }    - Get the skb hash on skb-backed packet programs
     {|ctx| $ctx.socket_cookie } - Get the stable socket cookie on supported socket-backed contexts
-    {|ctx| $ctx.socket_uid } - Get the socket owner UID on socket_filter, tc, cgroup_skb, and sk_skb
+    {|ctx| $ctx.socket_uid } - Get the socket owner UID on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser
     {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie on supported socket-backed contexts
     {|ctx| $ctx.mark }    - Get the skb mark on skb-backed packet programs
     {|ctx| $ctx.priority } - Get the skb priority on skb-backed packet programs

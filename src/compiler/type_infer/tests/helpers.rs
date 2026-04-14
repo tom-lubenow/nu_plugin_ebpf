@@ -406,7 +406,7 @@ fn test_infer_get_socket_cookie_helper_from_cgroup_sock_socket_alias() {
 }
 
 #[test]
-fn test_type_error_get_socket_uid_helper_rejects_cgroup_skb_program() {
+fn test_infer_get_socket_uid_helper_in_cgroup_skb_program() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -425,12 +425,10 @@ fn test_type_error_get_socket_uid_helper_rejects_cgroup_skb_program() {
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
     let mut ti = TypeInference::new(Some(probe_ctx));
-    let errs = ti
+    let types = ti
         .infer(&func)
-        .expect_err("expected bpf_get_socket_uid to be rejected on cgroup_skb");
-    assert!(errs.iter().any(|e| e.message.contains(
-        "helper 'bpf_get_socket_uid' is only valid in socket_filter, tc, sk_skb, and sk_skb_parser programs"
-    )));
+        .expect("expected bpf_get_socket_uid to infer on cgroup_skb");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
 }
 
 #[test]
@@ -460,7 +458,7 @@ fn test_infer_get_socket_uid_helper_in_tc_program() {
 }
 
 #[test]
-fn test_type_error_get_netns_cookie_helper_rejects_cgroup_sockopt_program() {
+fn test_infer_get_netns_cookie_helper_in_cgroup_sockopt_program() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -479,12 +477,10 @@ fn test_type_error_get_netns_cookie_helper_rejects_cgroup_sockopt_program() {
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
     let mut ti = TypeInference::new(Some(probe_ctx));
-    let errs = ti
+    let types = ti
         .infer(&func)
-        .expect_err("expected bpf_get_netns_cookie to be rejected on cgroup_sockopt");
-    assert!(errs.iter().any(|e| e.message.contains(
-        "helper 'bpf_get_netns_cookie' is only valid in socket_filter, tc, cgroup_sock, cgroup_sock_addr, sock_ops, and sk_msg programs"
-    )));
+        .expect("expected bpf_get_netns_cookie to infer on cgroup_sockopt");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
 }
 
 #[test]
