@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::EbpfProgramType;
 use crate::compiler::mir::CtxStoreTarget;
 
 fn scalar_value_range_for_type(types: &HashMap<VReg, MirType>, dst: VReg) -> ValueRange {
@@ -179,10 +180,19 @@ pub(super) fn apply_load_ctx_field_inst(
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
-    if let Some(ctx) = probe_ctx
-        && let Err(err) = ctx.validate_load_ctx_field(field)
-    {
-        errors.push(VerifierTypeError::new(err.to_string()));
+    if let Some(ctx) = probe_ctx {
+        if let Err(err) = ctx.validate_load_ctx_field(field) {
+            errors.push(VerifierTypeError::new(err.to_string()));
+        } else if ctx.program_type() == EbpfProgramType::SockOps
+            && ProbeContext::sock_ops_packet_field_requires_callback_proof(field)
+            && !state.proves_ctx_field_value_range(&CtxField::SockOp, |op| {
+                ProbeContext::sock_ops_packet_field_allows_callback_op(field, op)
+            })
+        {
+            errors.push(VerifierTypeError::new(
+                ProbeContext::sock_ops_packet_field_callback_guard_error(field),
+            ));
+        }
     }
     let mut ty = state.find_ctx_field_type(field).unwrap_or_else(|| {
         types

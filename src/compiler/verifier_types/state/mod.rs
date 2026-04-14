@@ -30,6 +30,19 @@ pub(super) enum PtrOrigin {
 pub(super) const UNKNOWN_PACKET_LIMIT: i64 = i64::MAX / 4;
 pub(super) const UNKNOWN_CONTEXT_BUFFER_LIMIT: i64 = i64::MAX / 4;
 
+fn value_range_satisfies_only<F>(range: ValueRange, predicate: &F) -> bool
+where
+    F: Fn(i64) -> bool,
+{
+    match range {
+        ValueRange::Known { min, max } if min <= max => {
+            let width = max.saturating_sub(min);
+            width <= 64 && (min..=max).all(predicate)
+        }
+        _ => false,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct PtrBounds {
     origin: PtrOrigin,
@@ -351,6 +364,20 @@ impl VerifierState {
                 };
             }
         }
+    }
+
+    pub(super) fn proves_ctx_field_value_range<F>(&self, field: &CtxField, predicate: F) -> bool
+    where
+        F: Fn(i64) -> bool,
+    {
+        self.ctx_field_sources
+            .iter()
+            .enumerate()
+            .any(|(idx, source)| {
+                source.as_ref() == Some(field)
+                    && !matches!(self.regs[idx], VerifierType::Uninit)
+                    && value_range_satisfies_only(self.ranges[idx], &predicate)
+            })
     }
 
     pub(super) fn refine_packet_prefix_limit(&mut self, root: VReg, safe_limit: i64) {

@@ -354,8 +354,10 @@ Context parameter syntax (recommended):
     `bpf_sock_ops_cb_flags_set`, and the TCP header-option helpers
     `bpf_load_hdr_opt`, `bpf_store_hdr_opt`, and `bpf_reserve_hdr_opt`.
     The compiler currently models the sock_ops program surface plus
-    pointer/size and zero-flag constraints for those header-option helpers,
-    while callback-op-specific verifier restrictions still remain kernel-enforced.
+    pointer/size and zero-flag constraints for those header-option helpers.
+    Packet-data and packet-metadata fields now require a proven packet-aware
+    `ctx.op` branch before use; remaining helper-specific callback-op
+    restrictions still remain kernel-enforced.
 
   sk_msg fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
