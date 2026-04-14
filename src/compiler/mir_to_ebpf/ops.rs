@@ -677,6 +677,19 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, tstamp_offset));
             }
+            CtxField::TstampType => {
+                let tstamp_type_offset = match self.packet_context_kind()? {
+                    PacketContextKind::SkBuff => Self::sk_buff_tstamp_type_offset(),
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.tstamp_type is only available on skb-backed packet programs"
+                                .to_string(),
+                        ));
+                    }
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxb(dst, EbpfReg::R9, tstamp_type_offset));
+            }
             CtxField::Hwtstamp => {
                 let hwtstamp_offset = match self.packet_context_kind()? {
                     PacketContextKind::SkBuff => Self::sk_buff_extended_meta_offsets().5,

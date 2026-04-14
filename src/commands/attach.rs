@@ -118,6 +118,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.gso_segs } - Get the skb gso_segs on skb-backed packet programs
     {|ctx| $ctx.gso_size } - Get the skb gso_size on skb-backed packet programs
     {|ctx| $ctx.tstamp } - Get the skb timestamp on skb-backed packet programs
+    {|ctx| $ctx.tstamp_type } - Get the skb timestamp type on skb-backed packet programs
     {|ctx| $ctx.hwtstamp } - Get the skb hardware timestamp on skb-backed packet programs
     {|ctx| $ctx.data }    - Get packet data pointer
     {|ctx| $ctx.data_end } - Get packet end pointer
@@ -403,6 +404,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.gso_segs } - Get the skb gso_segs
     {|ctx| $ctx.gso_size } - Get the skb gso_size
     {|ctx| $ctx.tstamp } - Get the skb timestamp
+    {|ctx| $ctx.tstamp_type } - Get the skb timestamp type
     {|ctx| $ctx.hwtstamp } - Get the skb hardware timestamp
     {|ctx| $ctx.data }    - Get the packet data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet access
@@ -452,6 +454,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.gso_segs } - Get the skb gso_segs
     {|ctx| $ctx.gso_size } - Get the skb gso_size
     {|ctx| $ctx.tstamp } - Get the skb timestamp
+    {|ctx| $ctx.tstamp_type } - Get the skb timestamp type
     {|ctx| $ctx.hwtstamp } - Get the skb hardware timestamp
     {|ctx| $ctx.data }    - Get the packet data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet access

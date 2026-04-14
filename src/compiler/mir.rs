@@ -539,6 +539,8 @@ pub enum CtxField {
     GsoSize,
     /// skb timestamp (`__sk_buff.tstamp`)
     Tstamp,
+    /// skb timestamp type (`__sk_buff.tstamp_type`)
+    TstampType,
     /// skb hwtstamp (`__sk_buff.hwtstamp`)
     Hwtstamp,
     /// XDP packet data pointer
@@ -735,6 +737,7 @@ impl CtxField {
             CtxField::GsoSegs => "gso_segs".to_string(),
             CtxField::GsoSize => "gso_size".to_string(),
             CtxField::Tstamp => "tstamp".to_string(),
+            CtxField::TstampType => "tstamp_type".to_string(),
             CtxField::Hwtstamp => "hwtstamp".to_string(),
             CtxField::Data => "data".to_string(),
             CtxField::DataMeta => "data_meta".to_string(),

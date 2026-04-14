@@ -427,6 +427,33 @@ fn test_lower_tc_ctx_tstamp_field() {
 }
 
 #[test]
+fn test_lower_tc_ctx_tstamp_type_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("tstamp_type")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tc ctx.tstamp_type should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::TstampType,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_kprobe_reserved_sock_ops_name_reports_sock_ops_error() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("op")],

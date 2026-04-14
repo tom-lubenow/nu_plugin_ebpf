@@ -75,6 +75,19 @@ impl<'a> MirToEbpfCompiler<'a> {
         152
     }
 
+    pub(super) fn sk_buff_tstamp_type_offset() -> i16 {
+        // struct __sk_buff {
+        //     ...
+        //     __u64 tstamp;
+        //     __u32 wire_len;
+        //     __u32 gso_segs;
+        //     struct bpf_sock *sk;
+        //     __u32 gso_size;
+        //     __u8  tstamp_type;
+        // };
+        180
+    }
+
     pub(super) fn sk_buff_packet_meta_offsets() -> (i16, i16) {
         // struct __sk_buff {
         //     __u32 len;

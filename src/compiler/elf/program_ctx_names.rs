@@ -42,6 +42,7 @@ fn generic_ctx_field_from_name(field_name: &str) -> Result<CtxField, String> {
         "gso_segs" => CtxField::GsoSegs,
         "gso_size" => CtxField::GsoSize,
         "tstamp" => CtxField::Tstamp,
+        "tstamp_type" => CtxField::TstampType,
         "hwtstamp" => CtxField::Hwtstamp,
         "data" => CtxField::Data,
         "data_meta" => CtxField::DataMeta,

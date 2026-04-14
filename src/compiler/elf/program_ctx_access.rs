@@ -67,6 +67,7 @@ impl EbpfProgramType {
             | CtxField::GsoSegs
             | CtxField::GsoSize
             | CtxField::Tstamp
+            | CtxField::TstampType
             | CtxField::Hwtstamp
                 if !self.supports_skb_ctx_fields() =>
             {

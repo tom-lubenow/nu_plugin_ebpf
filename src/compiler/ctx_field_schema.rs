@@ -247,6 +247,7 @@ fn raw_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
         | CtxField::SysctlWrite
         | CtxField::SysctlFilePos
         | CtxField::SocketUid => ContextFieldTypeSpec::value(MirType::U32),
+        CtxField::TstampType => ContextFieldTypeSpec::value(MirType::U8),
         CtxField::Timestamp
         | CtxField::CgroupId
         | CtxField::PerfSamplePeriod
