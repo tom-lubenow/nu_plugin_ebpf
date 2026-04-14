@@ -605,6 +605,16 @@ fn test_probe_context_cgroup_sysctl_uses_typed_program_spec() {
 }
 
 #[test]
+fn test_probe_context_xdp_uses_typed_program_spec() {
+    let ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    assert!(matches!(
+        ctx.parsed_program_spec(),
+        Some(ProgramSpec::Xdp { target }) if target.interface == "lo"
+    ));
+}
+
+#[test]
 fn test_probe_context_ctx_field_type_spec_respects_context_legality() {
     let kprobe = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_openat2");
     let tc = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");

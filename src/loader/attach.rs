@@ -217,12 +217,15 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach lsm: {e}")))?;
             }
             ProgramAttachKind::Xdp => {
+                let ProgramSpec::Xdp { target } = &spec else {
+                    unreachable!("xdp attach kind must use xdp program spec");
+                };
                 let xdp: &mut Xdp = prog
                     .try_into()
                     .map_err(|e| LoadError::Load(format!("Failed to convert to Xdp: {e}")))?;
                 xdp.load()
                     .map_err(|e| LoadError::Load(format!("Failed to load xdp: {e}")))?;
-                xdp.attach(&program.target, XdpFlags::SKB_MODE)
+                xdp.attach(&target.interface, XdpFlags::SKB_MODE)
                     .map_err(|e| LoadError::Attach(format!("Failed to attach xdp: {e}")))?;
             }
             ProgramAttachKind::PerfEvent => {

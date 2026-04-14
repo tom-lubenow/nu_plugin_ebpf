@@ -119,6 +119,32 @@ fn parse_offset(s: &str) -> Result<u64, ProgramSpecParseError> {
     }
 }
 
+/// Parsed xdp target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XdpTarget {
+    /// Network interface name.
+    pub interface: String,
+}
+
+impl XdpTarget {
+    /// Parse an xdp target string of the form `interface`.
+    pub fn parse(target: &str) -> Result<Self, ProgramSpecParseError> {
+        if target.is_empty() {
+            return Err(ProgramSpecParseError::new(
+                "xdp interface target cannot be empty",
+            ));
+        }
+
+        Ok(Self {
+            interface: target.to_string(),
+        })
+    }
+
+    pub fn target_string(&self) -> String {
+        self.interface.clone()
+    }
+}
+
 /// Parsed tc target information.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TcTarget {
@@ -1122,7 +1148,7 @@ pub enum ProgramSpec {
     RawTracepoint { name: String },
     Uprobe { target: UprobeTarget },
     Uretprobe { target: UprobeTarget },
-    Xdp { interface: String },
+    Xdp { target: XdpTarget },
     PerfEvent { target: PerfEventTarget },
     SocketFilter { target: SocketFilterTarget },
     SkLookup { target: SkLookupTarget },
@@ -1203,7 +1229,7 @@ impl ProgramSpec {
                 target: UprobeTarget::parse(target)?,
             }),
             EbpfProgramType::Xdp => Ok(ProgramSpec::Xdp {
-                interface: target.to_string(),
+                target: XdpTarget::parse(target)?,
             }),
             EbpfProgramType::PerfEvent => Ok(ProgramSpec::PerfEvent {
                 target: PerfEventTarget::parse(target)?,
@@ -1301,7 +1327,7 @@ impl ProgramSpec {
             ProgramSpec::Uprobe { target } | ProgramSpec::Uretprobe { target } => {
                 target.target_string()
             }
-            ProgramSpec::Xdp { interface } => interface.clone(),
+            ProgramSpec::Xdp { target } => target.target_string(),
             ProgramSpec::PerfEvent { target } => target.target_string(),
             ProgramSpec::SocketFilter { target } => target.target_string(),
             ProgramSpec::SkLookup { target } => target.target_string(),
@@ -1394,5 +1420,14 @@ mod tests {
         let err =
             CgroupSysctlTarget::parse("").expect_err("empty cgroup_sysctl path should be rejected");
         assert_eq!(err.to_string(), "cgroup_sysctl cgroup path cannot be empty");
+    }
+
+    #[test]
+    fn test_xdp_target_requires_non_empty_interface() {
+        let target = XdpTarget::parse("lo").expect("xdp target should parse");
+        assert_eq!(target.target_string(), "lo");
+
+        let err = XdpTarget::parse("").expect_err("empty xdp interface should be rejected");
+        assert_eq!(err.to_string(), "xdp interface target cannot be empty");
     }
 }
