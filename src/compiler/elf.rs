@@ -1027,6 +1027,14 @@ impl EbpfProgramType {
                     helper.name()
                 ))
             }
+            BpfHelper::SkCgroupId | BpfHelper::SkAncestorCgroupId
+                if *self != EbpfProgramType::CgroupSkb =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in cgroup_skb programs",
+                    helper.name()
+                ))
+            }
             BpfHelper::MsgApplyBytes
             | BpfHelper::MsgCorkBytes
             | BpfHelper::MsgPullData

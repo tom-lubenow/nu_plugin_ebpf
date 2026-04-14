@@ -856,6 +856,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::SkMsg.helper_call_error(BpfHelper::SkCgroupId),
+        Some("helper 'bpf_sk_cgroup_id' is only valid in cgroup_skb programs".to_string())
+    );
+    assert_eq!(
+        EbpfProgramType::SkMsg.helper_call_error(BpfHelper::SkAncestorCgroupId),
+        Some("helper 'bpf_sk_ancestor_cgroup_id' is only valid in cgroup_skb programs".to_string())
+    );
+    assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::TcpCheckSyncookie),
         Some("helper 'bpf_tcp_check_syncookie' is only valid in xdp and tc programs".to_string())
     );
@@ -924,6 +932,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::SkMsg.helper_call_error(BpfHelper::GetNetnsCookie),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSkb.helper_call_error(BpfHelper::SkCgroupId),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSkb.helper_call_error(BpfHelper::SkAncestorCgroupId),
         None
     );
     assert_eq!(

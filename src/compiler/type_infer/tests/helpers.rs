@@ -1282,7 +1282,7 @@ fn test_infer_msg_helpers_in_sk_msg_program() {
 }
 
 #[test]
-fn test_infer_sk_cgroup_helpers_from_socket_pointer() {
+fn test_type_error_sk_cgroup_helpers_reject_sk_msg_program() {
     for (helper, args) in [
         (BpfHelper::SkCgroupId, vec![]),
         (BpfHelper::SkAncestorCgroupId, vec![MirValue::Const(0)]),
@@ -1307,9 +1307,79 @@ fn test_infer_sk_cgroup_helpers_from_socket_pointer() {
 
         let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
         let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected sk_cgroup helper to be rejected on sk_msg");
+        assert!(errs.iter().any(|e| e.message.contains("helper 'bpf_sk_")
+            && e.message.contains("is only valid in cgroup_skb programs")));
+    }
+}
+
+#[test]
+fn test_infer_sk_cgroup_helpers_in_cgroup_skb_program() {
+    for (helper, args) in [
+        (BpfHelper::SkCgroupId, vec![]),
+        (BpfHelper::SkAncestorCgroupId, vec![MirValue::Const(0)]),
+    ] {
+        let mut func = make_test_function();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+        let ctx = func.alloc_vreg();
+        let sock = func.alloc_vreg();
+        let sock_non_null = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let cleanup_ret = func.alloc_vreg();
+        let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+        let entry = func.block_mut(BlockId(0));
+        entry.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        entry.instructions.push(MirInst::CallHelper {
+            dst: sock,
+            helper: BpfHelper::SkLookupTcp as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(tuple_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+        entry.instructions.push(MirInst::BinOp {
+            dst: sock_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(sock),
+            rhs: MirValue::Const(0),
+        });
+        entry.terminator = MirInst::Branch {
+            cond: sock_non_null,
+            if_true: call,
+            if_false: done,
+        };
+
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: std::iter::once(MirValue::VReg(sock))
+                .chain(args.into_iter())
+                .collect(),
+        });
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst: cleanup_ret,
+            helper: BpfHelper::SkRelease as u32,
+            args: vec![MirValue::VReg(sock)],
+        });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
         let types = ti
             .infer(&func)
-            .expect("expected socket helper to infer from ctx.sk");
+            .expect("expected sk_cgroup helper to infer on cgroup_skb");
         assert_eq!(types.get(&dst), Some(&MirType::I64));
     }
 }

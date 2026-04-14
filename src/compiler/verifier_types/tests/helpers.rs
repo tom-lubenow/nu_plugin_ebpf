@@ -283,6 +283,147 @@ fn test_verify_mir_for_probe_context_get_netns_cookie_accepts_sk_msg() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_sk_cgroup_helpers_reject_sk_msg() {
+    for (helper, args) in [
+        (BpfHelper::SkCgroupId, vec![]),
+        (BpfHelper::SkAncestorCgroupId, vec![MirValue::Const(0)]),
+    ] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let sk = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: sk,
+                field: CtxField::Socket,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args: std::iter::once(MirValue::VReg(sk))
+                    .chain(args.into_iter())
+                    .collect(),
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            sk,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected sk_cgroup helper sk_msg program-surface error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("is only valid in cgroup_skb programs"))
+        );
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_sk_cgroup_helpers_accept_cgroup_skb() {
+    for (helper, args) in [
+        (BpfHelper::SkCgroupId, vec![]),
+        (BpfHelper::SkAncestorCgroupId, vec![MirValue::Const(0)]),
+    ] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let call = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let ctx = func.alloc_vreg();
+        let sock = func.alloc_vreg();
+        let sock_non_null = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let cleanup_ret = func.alloc_vreg();
+        let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: sock,
+                helper: BpfHelper::SkLookupTcp as u32,
+                args: vec![
+                    MirValue::VReg(ctx),
+                    MirValue::StackSlot(tuple_slot),
+                    MirValue::Const(16),
+                    MirValue::Const(0),
+                    MirValue::Const(0),
+                ],
+            });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: sock_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(sock),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: sock_non_null,
+            if_true: call,
+            if_false: done,
+        };
+
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: std::iter::once(MirValue::VReg(sock))
+                .chain(args.into_iter())
+                .collect(),
+        });
+        func.block_mut(call).instructions.push(MirInst::CallHelper {
+            dst: cleanup_ret,
+            helper: BpfHelper::SkRelease as u32,
+            args: vec![MirValue::VReg(sock)],
+        });
+        func.block_mut(call).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(
+            sock,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(sock_non_null, MirType::Bool);
+        types.insert(dst, MirType::I64);
+        types.insert(cleanup_ret, MirType::I64);
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected sk_cgroup helper cgroup_skb context to verify");
+    }
+}
+
+#[test]
 fn test_verify_mir_rejects_subfn_calls_with_more_than_five_args() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
