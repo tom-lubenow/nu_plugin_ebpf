@@ -8,8 +8,8 @@
 //! - stop-timer: Stop timer and return elapsed nanoseconds
 //! - read-str: Read string from userspace memory pointer
 //! - read-kernel-str: Read string from kernel memory pointer
-//! - helper-call: Invoke a modeled BPF helper by name
-//! - kfunc-call: Invoke a typed kernel kfunc by name
+//! - helper-call: Escape hatch for invoking a modeled BPF helper by name
+//! - kfunc-call: Escape hatch for invoking a typed kernel kfunc by name
 //! - global-define / global-get / global-set: Named compiler-managed per-program globals
 //! - map-get / map-put / map-delete / map-push / map-peek / map-pop:
 //!   Generic BPF map operations
@@ -199,14 +199,17 @@ impl PluginCommand for HelperCall {
     }
 
     fn description(&self) -> &str {
-        "Call a modeled BPF helper by name from an eBPF closure."
+        "Escape hatch: call a modeled BPF helper by name from an eBPF closure."
     }
 
     fn extra_description(&self) -> &str {
         r#"Advanced helper for invoking modeled BPF helpers by name.
 The first positional argument must be a literal helper name such as
 `bpf_get_current_pid_tgid` or `bpf_get_socket_cookie`. If the helper takes
-arguments, pipeline input becomes arg0 when present."#
+arguments, pipeline input becomes arg0 when present.
+
+Prefer a first-class command or ordinary Nushell syntax when the operation is
+already modeled directly."#
     }
 
     fn signature(&self) -> Signature {
@@ -251,13 +254,16 @@ impl PluginCommand for KfuncCall {
     }
 
     fn description(&self) -> &str {
-        "Call a kernel kfunc by name from an eBPF closure."
+        "Escape hatch: call a kernel kfunc by name from an eBPF closure."
     }
 
     fn extra_description(&self) -> &str {
         r#"Advanced helper for invoking BTF-described kernel kfuncs.
 The first positional argument must be a literal kfunc name.
-If omitted, --btf-id is resolved automatically from kernel BTF."#
+If omitted, --btf-id is resolved automatically from kernel BTF.
+
+Prefer a first-class command or ordinary Nushell syntax when the operation is
+already modeled directly."#
     }
 
     fn signature(&self) -> Signature {

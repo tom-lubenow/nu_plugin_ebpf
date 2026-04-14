@@ -3939,6 +3939,235 @@ fn test_helper_tcp_gen_syncookie_rejects_non_kernel_sk_pointer() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_tcp_check_syncookie_rejects_kprobe() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: ret,
+            helper: BpfHelper::TcpCheckSyncookie as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::VReg(ctx),
+                MirValue::Const(20),
+                MirValue::VReg(ctx),
+                MirValue::Const(20),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(ret, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected tcp_check_syncookie kprobe program-surface error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_tcp_check_syncookie' is only valid in xdp and tc programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_tcp_check_syncookie_accepts_xdp() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let sock = func.alloc_vreg();
+    let sock_non_null = func.alloc_vreg();
+    let syncookie_ret = func.alloc_vreg();
+    let cleanup_ret = func.alloc_vreg();
+    let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: sock,
+            helper: BpfHelper::SkLookupTcp as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(tuple_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: sock_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(sock),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: sock_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: syncookie_ret,
+        helper: BpfHelper::TcpCheckSyncookie as u32,
+        args: vec![
+            MirValue::VReg(sock),
+            MirValue::VReg(sock),
+            MirValue::Const(20),
+            MirValue::VReg(sock),
+            MirValue::Const(20),
+        ],
+    });
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: cleanup_ret,
+        helper: BpfHelper::SkRelease as u32,
+        args: vec![MirValue::VReg(sock)],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        sock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(sock_non_null, MirType::Bool);
+    types.insert(syncookie_ret, MirType::I64);
+    types.insert(cleanup_ret, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected tcp_check_syncookie xdp context to verify");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_tcp_gen_syncookie_accepts_tc() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let sock = func.alloc_vreg();
+    let sock_non_null = func.alloc_vreg();
+    let syncookie_ret = func.alloc_vreg();
+    let cleanup_ret = func.alloc_vreg();
+    let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: sock,
+            helper: BpfHelper::SkLookupTcp as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(tuple_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: sock_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(sock),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: sock_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: syncookie_ret,
+        helper: BpfHelper::TcpGenSyncookie as u32,
+        args: vec![
+            MirValue::VReg(sock),
+            MirValue::VReg(sock),
+            MirValue::Const(20),
+            MirValue::VReg(sock),
+            MirValue::Const(20),
+        ],
+    });
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: cleanup_ret,
+        helper: BpfHelper::SkRelease as u32,
+        args: vec![MirValue::VReg(sock)],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        sock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(sock_non_null, MirType::Bool);
+    types.insert(syncookie_ret, MirType::I64);
+    types.insert(cleanup_ret, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected tcp_gen_syncookie tc context to verify");
+}
+
+#[test]
 fn test_helper_sk_storage_get_allows_null_init_value() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

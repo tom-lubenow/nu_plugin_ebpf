@@ -1034,6 +1034,14 @@ impl EbpfProgramType {
                     helper.name()
                 ))
             }
+            BpfHelper::TcpCheckSyncookie | BpfHelper::TcpGenSyncookie
+                if !matches!(self, EbpfProgramType::Xdp | EbpfProgramType::Tc) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in xdp and tc programs",
+                    helper.name()
+                ))
+            }
             BpfHelper::SkRelease
                 if !matches!(
                     self,

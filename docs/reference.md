@@ -145,6 +145,14 @@ Generic map `--kind` now supports `hash`, `array`, `queue`, `stack`, `lpm-trie`,
 
 Read-only closure captures now lower as real constants for supported types (`int`, `bool`, `string`, `binary`, `nothing`, constant records, and numeric constant lists`) instead of only working when inlined manually. That means existing Nushell structure can keep driving compile-time positions such as generic map names, for example `let map_name = "seen_paths"; $ctx.arg0.f_path | map-put $map_name $ctx.pid --kind hash`. Reassigned captured numeric scalars, strings, fixed binary values, numeric constant lists, and representable constant records now take the next step and lower as compiler-managed mutable globals backed by `.data` or `.bss`, so ordinary Nushell variable flow can express per-program state without dropping down to explicit maps for the smallest cases. That mutable path is still intentionally honest: it works for values with a real byte layout and tracked runtime metadata, not for metadata-only record builders that have never been materialized.
 
+## Language Surface Policy
+
+- Prefer ordinary Nushell syntax plus the small first-class eBPF command set (`emit`, `count`, `histogram`, `start-timer`, `stop-timer`, `read-str`, and `read-kernel-str`) whenever the operation has an honest language form.
+- Prefer leading typed `mut` bindings for private compiler-managed globals. Use `global-define`, `global-get`, and `global-set` when you truly need an explicit shared name or a source-order-independent declaration.
+- Treat `map-*` and `global-*` as convenience surface around concrete eBPF capabilities, not as a goal to invent a second parallel language when plain Nushell syntax would be clearer.
+- Treat `helper-call` and `kfunc-call` as escape hatches for kernel ABI surface we have not yet lifted into a smaller, more idiomatic language primitive.
+- Compiler-internal helper and kfunc modeling is permanent even if escape-hatch commands shrink later. The compiler still has to know signatures, legal program families, pointer/ref semantics, and verifier-facing rules.
+
 ## Commands
 
 | Command | Description |
@@ -169,8 +177,8 @@ Read-only closure captures now lower as real constants for supported types (`int
 | `stop-timer` | Calculate elapsed time |
 | `read-str` | Read string from user memory (`--max-len` to cap, default 128) |
 | `read-kernel-str` | Read string from kernel memory (`--max-len` to cap, default 128) |
-| `helper-call` | Call a modeled BPF helper by name, such as `bpf_get_current_pid_tgid` |
-| `kfunc-call` | Call a typed kernel kfunc by name, resolved from kernel BTF when possible |
+| `helper-call` | Escape hatch: call a modeled BPF helper by literal name, such as `bpf_get_current_pid_tgid` |
+| `kfunc-call` | Escape hatch: call a typed kernel kfunc by literal name, resolved from kernel BTF when possible |
 | `global-define` | Declare a named compiler-managed program global when a leading typed `mut` binding is not enough; `--zero` uses a runtime exemplar, `--type` declares a zero-initialized scalar, `bytes:N`, `string:N`, `list:i64:N`, or nested `record{field:type,...}` global directly |
 | `global-get` | Load a named compiler-managed program global declared with `global-define` or inferred from `global-set` |
 | `global-set` | Store the pipeline input into a named compiler-managed program global |

@@ -842,6 +842,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::TcpCheckSyncookie),
+        Some("helper 'bpf_tcp_check_syncookie' is only valid in xdp and tc programs".to_string())
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::TcpGenSyncookie),
+        Some("helper 'bpf_tcp_gen_syncookie' is only valid in xdp and tc programs".to_string())
+    );
+    assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::TaskStorageGet),
         Some(
             "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, and lsm programs"
@@ -962,6 +970,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::TpBtf.helper_call_error(BpfHelper::SockFromFile),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::TcpCheckSyncookie),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Tc.helper_call_error(BpfHelper::TcpGenSyncookie),
         None
     );
     assert_eq!(

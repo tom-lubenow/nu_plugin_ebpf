@@ -1,7 +1,7 @@
 # TODO
 
 Status legend: `[x]` done, `[~]` in progress, `[ ]` todo.
-Last updated: 2026-04-12.
+Last updated: 2026-04-13.
 
 ## Current compiler gaps
 
@@ -149,6 +149,13 @@ Last updated: 2026-04-12.
   - Added regression tests for the fallback path after simulated block removal/reordering.
 
 ## Roadmap to a general-purpose eBPF language
+
+### Language surface policy
+
+- [~] Keep the user-facing surface small and Nushell-first.
+  - Prefer ordinary Nushell syntax, typed context projection, and leading typed `mut` bindings over bespoke helper commands when the underlying operation has an honest language form.
+  - Treat `helper-call` and `kfunc-call` as explicit escape hatches for kernel ABI surface we do not yet model directly.
+  - Keep compiler-internal helper/kfunc modeling even if those escape hatches shrink over time: the compiler still needs signatures, legal program families, pointer/ref semantics, and verifier-facing rules.
 
 Near-term priority order:
 1. Make the program model explicitly program-type-aware (targets, section naming, helper surface, attach/load path).
