@@ -595,6 +595,16 @@ fn test_probe_context_struct_ops_callback_uses_value_type_program_spec() {
 }
 
 #[test]
+fn test_probe_context_cgroup_sysctl_uses_typed_program_spec() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+
+    assert!(matches!(
+        ctx.parsed_program_spec(),
+        Some(ProgramSpec::CgroupSysctl { target }) if target.cgroup_path == "/sys/fs/cgroup"
+    ));
+}
+
+#[test]
 fn test_probe_context_ctx_field_type_spec_respects_context_legality() {
     let kprobe = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_openat2");
     let tc = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");

@@ -5,7 +5,7 @@ use crate::compiler::{
     ir_to_mir::AnnotatedValueSemantics,
 };
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
-use crate::program_spec::DEFAULT_PERF_EVENT_PERIOD;
+use crate::program_spec::{CgroupSysctlTarget, DEFAULT_PERF_EVENT_PERIOD};
 use std::collections::HashMap;
 
 #[test]
@@ -502,7 +502,9 @@ fn test_parse_program_spec_cgroup_sysctl_is_structured() {
     assert_eq!(
         spec,
         ProgramSpec::CgroupSysctl {
-            cgroup_path: "/sys/fs/cgroup".to_string(),
+            target: CgroupSysctlTarget {
+                cgroup_path: "/sys/fs/cgroup".to_string(),
+            },
         }
     );
     assert_eq!(spec.to_string(), "cgroup_sysctl:/sys/fs/cgroup");

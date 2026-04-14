@@ -680,16 +680,16 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach cgroup_sock: {e}")))?;
             }
             ProgramAttachKind::CgroupSysctl => {
-                let ProgramSpec::CgroupSysctl { cgroup_path } = &spec else {
+                let ProgramSpec::CgroupSysctl { target } = &spec else {
                     unreachable!("cgroup_sysctl attach kind must use cgroup_sysctl program spec");
                 };
-                let cgroup = std::fs::File::open(cgroup_path).map_err(|e| {
+                let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied
                     } else {
                         LoadError::Attach(format!(
                             "Failed to open cgroup path {}: {e}",
-                            cgroup_path
+                            target.cgroup_path
                         ))
                     }
                 })?;

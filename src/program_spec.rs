@@ -346,6 +346,36 @@ impl CgroupDeviceTarget {
     }
 }
 
+/// Parsed cgroup_sysctl target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CgroupSysctlTarget {
+    /// Filesystem path to the cgroup directory.
+    pub cgroup_path: String,
+}
+
+impl CgroupSysctlTarget {
+    /// Parse a cgroup_sysctl target string of the form `/sys/fs/cgroup`.
+    pub fn parse(target: &str) -> Result<Self, ProgramSpecParseError> {
+        if target.is_empty() {
+            return Err(ProgramSpecParseError::new(
+                "cgroup_sysctl cgroup path cannot be empty",
+            ));
+        }
+
+        Ok(Self {
+            cgroup_path: target.to_string(),
+        })
+    }
+
+    pub fn target_string(&self) -> String {
+        self.cgroup_path.clone()
+    }
+
+    pub fn section_name(&self) -> &'static str {
+        "cgroup/sysctl"
+    }
+}
+
 /// Parsed sock_ops target information.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SockOpsTarget {
@@ -1104,7 +1134,7 @@ pub enum ProgramSpec {
     Tc { target: TcTarget },
     CgroupSkb { target: CgroupSkbTarget },
     CgroupSock { target: CgroupSockTarget },
-    CgroupSysctl { cgroup_path: String },
+    CgroupSysctl { target: CgroupSysctlTarget },
     CgroupSockopt { target: CgroupSockoptTarget },
     CgroupSockAddr { target: CgroupSockAddrTarget },
     LircMode2 { target: LircMode2Target },
@@ -1209,7 +1239,7 @@ impl ProgramSpec {
                 target: CgroupSockTarget::parse(target)?,
             }),
             EbpfProgramType::CgroupSysctl => Ok(ProgramSpec::CgroupSysctl {
-                cgroup_path: target.to_string(),
+                target: CgroupSysctlTarget::parse(target)?,
             }),
             EbpfProgramType::CgroupSockopt => Ok(ProgramSpec::CgroupSockopt {
                 target: CgroupSockoptTarget::parse(target)?,
@@ -1283,7 +1313,7 @@ impl ProgramSpec {
             ProgramSpec::Tc { target } => target.target_string(),
             ProgramSpec::CgroupSkb { target } => target.target_string(),
             ProgramSpec::CgroupSock { target } => target.target_string(),
-            ProgramSpec::CgroupSysctl { cgroup_path } => cgroup_path.clone(),
+            ProgramSpec::CgroupSysctl { target } => target.target_string(),
             ProgramSpec::CgroupSockopt { target } => target.target_string(),
             ProgramSpec::CgroupSockAddr { target } => target.target_string(),
             ProgramSpec::LircMode2 { target } => target.target_string(),
@@ -1295,7 +1325,7 @@ impl ProgramSpec {
         match self {
             ProgramSpec::CgroupSkb { target } => target.section_name(),
             ProgramSpec::CgroupSock { target } => target.section_name(),
-            ProgramSpec::CgroupSysctl { .. } => "cgroup/sysctl".to_string(),
+            ProgramSpec::CgroupSysctl { target } => target.section_name().to_string(),
             ProgramSpec::CgroupSockopt { target } => target.section_name().to_string(),
             ProgramSpec::CgroupSockAddr { target } => target.section_name(),
             ProgramSpec::CgroupDevice { target } => target.section_name().to_string(),
@@ -1352,5 +1382,17 @@ mod tests {
 
         assert!(get.is_get());
         assert!(!set.is_get());
+    }
+
+    #[test]
+    fn test_cgroup_sysctl_target_requires_non_empty_path() {
+        let target =
+            CgroupSysctlTarget::parse("/sys/fs/cgroup").expect("cgroup_sysctl target should parse");
+        assert_eq!(target.target_string(), "/sys/fs/cgroup");
+        assert_eq!(target.section_name(), "cgroup/sysctl");
+
+        let err =
+            CgroupSysctlTarget::parse("").expect_err("empty cgroup_sysctl path should be rejected");
+        assert_eq!(err.to_string(), "cgroup_sysctl cgroup path cannot be empty");
     }
 }
