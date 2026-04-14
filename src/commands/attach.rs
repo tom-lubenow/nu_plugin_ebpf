@@ -117,6 +117,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.wire_len } - Get the skb wire_len on skb-backed packet programs
     {|ctx| $ctx.gso_segs } - Get the skb gso_segs on skb-backed packet programs
     {|ctx| $ctx.gso_size } - Get the skb gso_size on skb-backed packet programs
+    {|ctx| $ctx.tstamp } - Get the skb timestamp on skb-backed packet programs
     {|ctx| $ctx.hwtstamp } - Get the skb hardware timestamp on skb-backed packet programs
     {|ctx| $ctx.data }    - Get packet data pointer
     {|ctx| $ctx.data_end } - Get packet end pointer
@@ -183,6 +184,8 @@ Context parameter syntax (recommended):
     the fixed 8-byte ICMP header, and `tcp.payload` uses the runtime data
     offset. IPv4/TCP options, ICMP subtype-specific body decoding, and
     IPv6 extension headers are still not modeled.
+    On skb-backed packet programs, `ctx.tstamp` is also writable through
+    ordinary assignment, for example `mut ctx = $ctx; $ctx.tstamp = 123`.
 
   perf_event targets:
     {|ctx| $ctx.cpu }    - Get current CPU ID for the sampled event
@@ -395,6 +398,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.wire_len } - Get the skb wire_len
     {|ctx| $ctx.gso_segs } - Get the skb gso_segs
     {|ctx| $ctx.gso_size } - Get the skb gso_size
+    {|ctx| $ctx.tstamp } - Get the skb timestamp
     {|ctx| $ctx.hwtstamp } - Get the skb hardware timestamp
     {|ctx| $ctx.data }    - Get the packet data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet access
@@ -443,6 +447,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.wire_len } - Get the skb wire_len
     {|ctx| $ctx.gso_segs } - Get the skb gso_segs
     {|ctx| $ctx.gso_size } - Get the skb gso_size
+    {|ctx| $ctx.tstamp } - Get the skb timestamp
     {|ctx| $ctx.hwtstamp } - Get the skb hardware timestamp
     {|ctx| $ctx.data }    - Get the packet data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet access

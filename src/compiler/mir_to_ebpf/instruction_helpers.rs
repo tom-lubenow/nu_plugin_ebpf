@@ -71,9 +71,9 @@ impl<'a> MirToEbpfCompiler<'a> {
         ty: &MirType,
     ) -> Result<(), CompileError> {
         let size = ty.size();
-        if size != 4 {
+        if !matches!(size, 4 | 8) {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "writable context fields currently require a 4-byte scalar store, got {:?}",
+                "writable context fields currently require a 4-byte or 8-byte scalar store, got {:?}",
                 ty
             )));
         }
@@ -95,6 +95,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                     })?,
                 val_reg,
             ),
+            CtxStoreTarget::SkbTstamp => (Self::sk_buff_tstamp_offset(), val_reg),
             CtxStoreTarget::SysctlFilePos => (Self::bpf_sysctl_offsets().1, val_reg),
             CtxStoreTarget::SockoptLevel => (Self::bpf_sockopt_offsets().3, val_reg),
             CtxStoreTarget::SockoptOptname => (Self::bpf_sockopt_offsets().4, val_reg),

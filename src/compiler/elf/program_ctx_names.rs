@@ -41,6 +41,7 @@ fn generic_ctx_field_from_name(field_name: &str) -> Result<CtxField, String> {
         "wire_len" => CtxField::WireLen,
         "gso_segs" => CtxField::GsoSegs,
         "gso_size" => CtxField::GsoSize,
+        "tstamp" => CtxField::Tstamp,
         "hwtstamp" => CtxField::Hwtstamp,
         "data" => CtxField::Data,
         "data_meta" => CtxField::DataMeta,

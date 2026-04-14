@@ -66,6 +66,7 @@ impl EbpfProgramType {
             | CtxField::WireLen
             | CtxField::GsoSegs
             | CtxField::GsoSize
+            | CtxField::Tstamp
             | CtxField::Hwtstamp
                 if !self.supports_skb_ctx_fields() =>
             {

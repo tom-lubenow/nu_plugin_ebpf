@@ -537,6 +537,8 @@ pub enum CtxField {
     GsoSegs,
     /// skb gso_size (`__sk_buff.gso_size`)
     GsoSize,
+    /// skb timestamp (`__sk_buff.tstamp`)
+    Tstamp,
     /// skb hwtstamp (`__sk_buff.hwtstamp`)
     Hwtstamp,
     /// XDP packet data pointer
@@ -732,6 +734,7 @@ impl CtxField {
             CtxField::WireLen => "wire_len".to_string(),
             CtxField::GsoSegs => "gso_segs".to_string(),
             CtxField::GsoSize => "gso_size".to_string(),
+            CtxField::Tstamp => "tstamp".to_string(),
             CtxField::Hwtstamp => "hwtstamp".to_string(),
             CtxField::Data => "data".to_string(),
             CtxField::DataMeta => "data_meta".to_string(),
@@ -838,6 +841,8 @@ pub enum CtxStoreTarget {
     SockOpsReply,
     /// `bpf_sock_ops.replylong[idx]`
     SockOpsReplyLong(u8),
+    /// `__sk_buff.tstamp`
+    SkbTstamp,
     /// `bpf_sysctl.file_pos`
     SysctlFilePos,
     /// `bpf_sockopt.level`
@@ -866,6 +871,7 @@ impl CtxStoreTarget {
             CtxStoreTarget::SockOpsReply
             | CtxStoreTarget::SockOpsReplyLong(_)
             | CtxStoreTarget::SysctlFilePos => MirType::U32,
+            CtxStoreTarget::SkbTstamp => MirType::U64,
             CtxStoreTarget::SockoptLevel
             | CtxStoreTarget::SockoptOptname
             | CtxStoreTarget::SockoptOptlen
@@ -885,6 +891,9 @@ impl CtxStoreTarget {
                     "writable sock_ops reply fields require a u32 store, got {:?}",
                     actual
                 )
+            }
+            CtxStoreTarget::SkbTstamp => {
+                format!("writable skb tstamp requires a u64 store, got {:?}", actual)
             }
             CtxStoreTarget::SysctlFilePos => {
                 format!(
@@ -916,6 +925,9 @@ impl CtxStoreTarget {
         match self {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
                 "writable sock_ops reply fields are only supported on sock_ops programs"
+            }
+            CtxStoreTarget::SkbTstamp => {
+                "writable skb tstamp is only supported on skb-backed packet programs"
             }
             CtxStoreTarget::SysctlFilePos => {
                 "writable cgroup_sysctl file_pos is only supported on cgroup_sysctl programs"

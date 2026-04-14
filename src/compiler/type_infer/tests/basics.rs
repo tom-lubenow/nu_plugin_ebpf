@@ -1741,6 +1741,27 @@ fn test_infer_socket_filter_pkt_type_field_as_u32() {
 }
 
 #[test]
+fn test_infer_socket_filter_tstamp_field_as_u64() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::Tstamp,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::U64));
+}
+
+#[test]
 fn test_infer_socket_filter_hwtstamp_field_as_u64() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();
@@ -2225,6 +2246,46 @@ fn test_unification_through_binop() {
     assert_eq!(types.get(&v0), Some(&MirType::U32));
     assert_eq!(types.get(&v1), Some(&MirType::U32));
     assert_eq!(types.get(&v2), Some(&MirType::Bool));
+}
+
+#[test]
+fn test_type_infer_accepts_store_skb_tstamp_on_tc() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::SkbTstamp,
+        val: MirValue::Const(7),
+        ty: MirType::U64,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    ti.infer(&func)
+        .expect("skb tstamp store should type-check on tc");
+}
+
+#[test]
+fn test_type_error_store_skb_tstamp_rejects_non_skb_context() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::SkbTstamp,
+        val: MirValue::Const(7),
+        ty: MirType::U64,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("skb tstamp store should be rejected outside skb-backed contexts");
+    assert!(errs.iter().any(|e| {
+        e.message.contains(
+            "ctx.tstamp is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
+        )
+    }));
 }
 
 #[test]

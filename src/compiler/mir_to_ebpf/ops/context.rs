@@ -65,6 +65,16 @@ impl<'a> MirToEbpfCompiler<'a> {
         140
     }
 
+    pub(crate) fn sk_buff_tstamp_offset() -> i16 {
+        // struct __sk_buff {
+        //     ...
+        //     __u32 data_meta;
+        //     struct bpf_flow_keys *flow_keys;
+        //     __u64 tstamp;
+        // };
+        152
+    }
+
     pub(super) fn sk_buff_packet_meta_offsets() -> (i16, i16) {
         // struct __sk_buff {
         //     __u32 len;

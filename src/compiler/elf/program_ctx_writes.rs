@@ -17,6 +17,7 @@ impl CtxStoreTarget {
     pub(crate) fn ctx_field(&self) -> Option<CtxField> {
         match self {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => None,
+            CtxStoreTarget::SkbTstamp => Some(CtxField::Tstamp),
             CtxStoreTarget::SysctlFilePos => Some(CtxField::SysctlFilePos),
             CtxStoreTarget::SockoptLevel => Some(CtxField::SockoptLevel),
             CtxStoreTarget::SockoptOptname => Some(CtxField::SockoptOptname),
@@ -264,6 +265,16 @@ impl ProgramSpec {
         field: &CtxField,
         index: Option<usize>,
     ) -> Option<Result<CtxStoreTarget, String>> {
+        if self.program_type().supports_skb_ctx_fields() {
+            match (field, index) {
+                (CtxField::Tstamp, None) => return Some(Ok(CtxStoreTarget::SkbTstamp)),
+                (CtxField::Tstamp, Some(_)) => {
+                    return Some(Err("ctx.tstamp does not support indexed assignment".into()));
+                }
+                _ => {}
+            }
+        }
+
         match self {
             ProgramSpec::CgroupSysctl { .. } => match (field, index) {
                 (CtxField::SysctlFilePos, None) => Some(Ok(CtxStoreTarget::SysctlFilePos)),

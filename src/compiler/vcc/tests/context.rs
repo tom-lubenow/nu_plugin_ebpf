@@ -323,6 +323,23 @@ fn test_verify_mir_for_probe_context_accepts_sockopt_optlen_store_on_get_hook() 
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_accepts_skb_tstamp_store_on_tc() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbTstamp,
+            val: MirValue::Const(123),
+            ty: MirType::U64,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "tc:lo:ingress");
+    verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect("expected skb tstamp store to be accepted on tc");
+}
+
+#[test]
 fn test_verify_mir_accepts_guarded_sockopt_optval_byte_store() {
     let (func, types) = make_sockopt_optval_store_function(true);
     verify_mir(&func, &types).expect("expected guarded sockopt optval store to verify");
@@ -357,6 +374,28 @@ fn test_verify_mir_for_probe_context_rejects_sockopt_level_store_on_get_hook() {
     assert!(err.iter().any(|e| {
         e.message
             .contains("ctx.level is only writable on cgroup_sockopt:set hooks")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_rejects_skb_tstamp_store_on_non_skb_program() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbTstamp,
+            val: MirValue::Const(123),
+            ty: MirType::U64,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let err = verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect_err("expected skb tstamp store to be rejected outside skb-backed programs");
+    assert!(err.iter().any(|e| {
+        e.message.contains(
+            "ctx.tstamp is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
+        )
     }));
 }
 

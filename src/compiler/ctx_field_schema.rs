@@ -254,6 +254,7 @@ fn raw_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
         | CtxField::LookupCookie
         | CtxField::SocketCookie
         | CtxField::NetnsCookie
+        | CtxField::Tstamp
         | CtxField::Hwtstamp
         | CtxField::SockOpsBytesReceived
         | CtxField::SockOpsBytesAcked

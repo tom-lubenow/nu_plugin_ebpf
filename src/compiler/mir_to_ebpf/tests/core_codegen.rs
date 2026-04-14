@@ -1563,6 +1563,46 @@ fn test_compile_sk_skb_queue_mapping_load_uses_real_skb_queue_mapping_offset() {
 }
 
 #[test]
+fn test_compile_sk_skb_tstamp_load_uses_real_skb_tstamp_offset() {
+    let ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::LoadCtxField {
+            dst,
+            field: CtxField::Tstamp,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_LDX | opcode::BPF_DW | opcode::BPF_MEM
+            && insn.src_reg == EbpfReg::R9.as_u8()
+            && insn.offset == 152
+    }));
+}
+
+#[test]
 fn test_compile_sk_skb_hwtstamp_load_uses_real_skb_hwtstamp_offset() {
     let ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
 
@@ -3037,6 +3077,50 @@ fn test_compile_cgroup_sysctl_file_pos_store_uses_file_pos_offset() {
         insn.opcode == opcode::BPF_STX | opcode::BPF_W | opcode::BPF_MEM
             && insn.dst_reg == EbpfReg::R9.as_u8()
             && insn.offset == 4
+    }));
+}
+
+#[test]
+fn test_compile_tc_tstamp_store_uses_real_skb_tstamp_offset() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let value = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(LirInst::Copy {
+        dst: value,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbTstamp,
+            val: MirValue::VReg(value),
+            ty: MirType::U64,
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_STX | opcode::BPF_DW | opcode::BPF_MEM
+            && insn.dst_reg == EbpfReg::R9.as_u8()
+            && insn.offset == 152
     }));
 }
 

@@ -2614,6 +2614,33 @@ fn test_probe_context_resolves_cgroup_sysctl_file_pos_store_target() {
 }
 
 #[test]
+fn test_probe_context_resolves_skb_tstamp_store_target_on_tc() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    assert_eq!(
+        ctx.resolve_ctx_store_target("tstamp", None)
+            .expect("tc tstamp target should resolve"),
+        CtxStoreTarget::SkbTstamp
+    );
+    assert!(
+        ctx.validate_ctx_store_target(&CtxStoreTarget::SkbTstamp)
+            .is_ok()
+    );
+}
+
+#[test]
+fn test_probe_context_rejects_skb_tstamp_store_target_on_non_skb_program() {
+    let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let err = ctx
+        .validate_ctx_store_target(&CtxStoreTarget::SkbTstamp)
+        .expect_err("skb tstamp store target should be rejected outside skb-backed contexts");
+    assert!(
+        err.to_string().contains(
+            "ctx.tstamp is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
+        )
+    );
+}
+
+#[test]
 fn test_probe_context_rejects_cgroup_sysctl_file_pos_store_target_on_non_sysctl_program() {
     let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
     let err = ctx
@@ -2697,6 +2724,7 @@ fn test_probe_context_allows_packet_fields_on_tc() {
     assert!(ctx.ctx_field_access_error(&CtxField::WireLen).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Tstamp).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Hwtstamp).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
@@ -2742,6 +2770,7 @@ fn test_probe_context_allows_packet_fields_on_cgroup_skb() {
     assert!(ctx.ctx_field_access_error(&CtxField::WireLen).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Tstamp).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Hwtstamp).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
@@ -2834,6 +2863,7 @@ fn test_probe_context_allows_socket_filter_packet_fields() {
     assert!(ctx.ctx_field_access_error(&CtxField::WireLen).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Tstamp).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Hwtstamp).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
@@ -3036,6 +3066,7 @@ fn test_probe_context_allows_sk_skb_fields() {
     assert!(ctx.ctx_field_access_error(&CtxField::WireLen).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Tstamp).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Hwtstamp).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
@@ -3079,6 +3110,7 @@ fn test_probe_context_allows_sk_skb_parser_socket_fields() {
     assert!(ctx.ctx_field_access_error(&CtxField::WireLen).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Tstamp).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Hwtstamp).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::TcIndex).is_none());
