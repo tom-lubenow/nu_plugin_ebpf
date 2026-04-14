@@ -1206,6 +1206,58 @@ fn test_program_type_get_socket_cookie_arg_policy_tracks_program_model() {
 }
 
 #[test]
+fn test_helper_backed_ctx_field_surface_stays_within_helper_surface() {
+    let programs = [
+        (EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337"),
+        (EbpfProgramType::Tc, "lo:ingress"),
+        (EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress"),
+        (EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create"),
+        (EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get"),
+        (EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4"),
+        (EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap"),
+        (EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap"),
+        (EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap"),
+        (EbpfProgramType::SockOps, "/sys/fs/cgroup"),
+    ];
+
+    let helper_backed_fields = [
+        (CtxField::SocketCookie, BpfHelper::GetSocketCookie),
+        (CtxField::SocketUid, BpfHelper::GetSocketUid),
+        (CtxField::NetnsCookie, BpfHelper::GetNetnsCookie),
+    ];
+
+    for (program_type, target) in programs {
+        let ctx = ProbeContext::new(program_type, target);
+
+        for (field, helper) in &helper_backed_fields {
+            if ctx.ctx_field_access_error(&field).is_none() {
+                assert!(
+                    program_type.helper_call_error(*helper).is_none(),
+                    "ctx.{} is available on {} but helper '{}' is rejected",
+                    field.display_name(),
+                    program_type.canonical_prefix(),
+                    helper.name()
+                );
+
+                if *field == CtxField::SocketCookie {
+                    assert!(
+                        matches!(
+                            program_type.get_socket_cookie_arg_policy(),
+                            Some(
+                                GetSocketCookieArgPolicy::Context
+                                    | GetSocketCookieArgPolicy::ContextOrSocket
+                            )
+                        ),
+                        "ctx.socket_cookie is available on {} but raw ctx is not accepted by bpf_get_socket_cookie",
+                        program_type.canonical_prefix()
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn test_probe_context_helper_zero_arg_requirement_uses_program_type() {
     let xdp = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     let tc = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
