@@ -2672,6 +2672,9 @@ fn test_probe_context_models_raw_context_pointer_aliases() {
     let cgroup_sock = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
     let cgroup_sockopt = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
 
+    assert!(EbpfProgramType::CgroupSock.ctx_field_is_raw_context_pointer(&CtxField::Context));
+    assert!(EbpfProgramType::CgroupSock.ctx_field_is_raw_context_pointer(&CtxField::Socket));
+    assert!(!EbpfProgramType::CgroupSockopt.ctx_field_is_raw_context_pointer(&CtxField::Socket));
     assert!(cgroup_sock.ctx_field_is_raw_context_pointer(&CtxField::Context));
     assert!(cgroup_sock.ctx_field_is_raw_context_pointer(&CtxField::Socket));
     assert!(!cgroup_sock.ctx_field_is_raw_context_pointer(&CtxField::Family));

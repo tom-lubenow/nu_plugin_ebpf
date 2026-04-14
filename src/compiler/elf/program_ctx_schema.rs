@@ -238,15 +238,19 @@ impl EbpfProgramType {
     pub fn supports_lirc_ctx_fields(&self) -> bool {
         matches!(self.context_family(), ProgramContextFamily::LircMode2)
     }
-}
 
-impl ProgramSpec {
     pub(crate) fn ctx_field_is_raw_context_pointer(&self, field: &CtxField) -> bool {
         matches!(field, CtxField::Context)
             || matches!(
                 (self, field),
-                (ProgramSpec::CgroupSock { .. }, CtxField::Socket)
+                (EbpfProgramType::CgroupSock, CtxField::Socket)
             )
+    }
+}
+
+impl ProgramSpec {
+    pub(crate) fn ctx_field_is_raw_context_pointer(&self, field: &CtxField) -> bool {
+        self.program_type().ctx_field_is_raw_context_pointer(field)
     }
 
     pub(crate) fn packet_context_kind(&self) -> Option<PacketContextKind> {

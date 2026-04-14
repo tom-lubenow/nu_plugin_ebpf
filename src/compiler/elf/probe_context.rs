@@ -127,13 +127,7 @@ impl ProbeContext {
 
     pub(crate) fn ctx_field_is_raw_context_pointer(&self, field: &CtxField) -> bool {
         self.parsed_program_spec().map_or_else(
-            || {
-                matches!(field, CtxField::Context)
-                    || matches!(
-                        (self.program_type(), field),
-                        (EbpfProgramType::CgroupSock, CtxField::Socket)
-                    )
-            },
+            || self.program_type().ctx_field_is_raw_context_pointer(field),
             |spec| spec.ctx_field_is_raw_context_pointer(field),
         )
     }

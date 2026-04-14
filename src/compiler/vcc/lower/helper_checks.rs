@@ -1,6 +1,5 @@
 use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
-use crate::compiler::EbpfProgramType;
 use crate::compiler::instruction::{KfuncRefKind, unknown_kfunc_signature_message};
 
 impl<'a> VccLowerer<'a> {
@@ -1033,11 +1032,7 @@ impl<'a> VccLowerer<'a> {
             return ctx.ctx_field_is_raw_context_pointer(field);
         }
         if let Some(program) = self.program {
-            return matches!(field, CtxField::Context)
-                || matches!(
-                    (program.program_type, field),
-                    (EbpfProgramType::CgroupSock, CtxField::Socket)
-                );
+            return program.program_type.ctx_field_is_raw_context_pointer(field);
         }
         matches!(field, CtxField::Context)
     }
