@@ -188,11 +188,12 @@ impl<'a> TypeInference<'a> {
                         self.constrain(dst_ty, HMType::I64, "kfunc_call");
                     }
                     KfuncRetKind::PointerMaybeNull => {
-                        let pointee = HMType::Var(self.tvar_gen.fresh());
-                        let ptr_ty = HMType::Ptr {
-                            pointee: Box::new(pointee),
-                            address_space: AddressSpace::Kernel,
-                        };
+                        let ptr_ty = Self::precise_kfunc_return_mir_type(kfunc)
+                            .map(|ty| HMType::from_mir_type(&ty))
+                            .unwrap_or_else(|| HMType::Ptr {
+                                pointee: Box::new(HMType::Var(self.tvar_gen.fresh())),
+                                address_space: AddressSpace::Kernel,
+                            });
                         self.constrain(dst_ty, ptr_ty, "kfunc_call_ptr_ret");
                     }
                 }

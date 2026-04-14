@@ -430,6 +430,26 @@ impl<'a> TypeInference<'a> {
         if matches!(helper, BpfHelper::GetSocketCookie) {
             self.validate_get_socket_cookie_arg_shape(args, types, value_ranges, errors);
         }
+        if matches!(helper, BpfHelper::SockFromFile) {
+            self.validate_named_helper_arg_shape(
+                helper,
+                args,
+                types,
+                MirType::is_file_ptr,
+                "file pointer",
+                errors,
+            );
+        }
+        if matches!(helper, BpfHelper::TaskPtRegs) {
+            self.validate_named_helper_arg_shape(
+                helper,
+                args,
+                types,
+                MirType::is_task_struct_ptr,
+                "task pointer",
+                errors,
+            );
+        }
     }
 
     fn validate_get_socket_cookie_arg_shape(
@@ -498,6 +518,31 @@ impl<'a> TypeInference<'a> {
                 .mir_type_for_vreg(*vreg, types)
                 .is_socket_cookie_socket_ptr(),
             MirValue::Const(_) | MirValue::StackSlot(_) => false,
+        }
+    }
+
+    fn validate_named_helper_arg_shape(
+        &self,
+        helper: BpfHelper,
+        args: &[MirValue],
+        types: &HashMap<VReg, MirType>,
+        predicate: fn(&MirType) -> bool,
+        expected: &str,
+        errors: &mut Vec<TypeError>,
+    ) {
+        let Some(arg) = args.first() else {
+            return;
+        };
+        let matches = match arg {
+            MirValue::VReg(vreg) => predicate(&self.mir_type_for_vreg(*vreg, types)),
+            MirValue::Const(_) | MirValue::StackSlot(_) => false,
+        };
+        if !matches {
+            errors.push(TypeError::new(format!(
+                "helper '{}' arg0 expects {}",
+                helper.name(),
+                expected
+            )));
         }
     }
 

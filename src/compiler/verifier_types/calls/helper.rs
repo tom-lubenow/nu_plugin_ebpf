@@ -319,6 +319,28 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
     if matches!(helper, BpfHelper::GetSocketCookie) {
         validate_get_socket_cookie_arg_shape(args, types, state, program, probe_ctx, errors);
     }
+    if matches!(helper, BpfHelper::SockFromFile) {
+        validate_named_helper_arg_shape(
+            helper,
+            args,
+            types,
+            state,
+            MirType::is_file_ptr,
+            "file pointer",
+            errors,
+        );
+    }
+    if matches!(helper, BpfHelper::TaskPtRegs) {
+        validate_named_helper_arg_shape(
+            helper,
+            args,
+            types,
+            state,
+            MirType::is_task_struct_ptr,
+            "task pointer",
+            errors,
+        );
+    }
 
     for (arg_idx, arg) in args.iter().enumerate().take(5) {
         let Some(expected_kind) = helper_pointer_arg_expected_ref_kind(helper, arg_idx) else {
@@ -584,6 +606,48 @@ fn helper_arg_is_socket_cookie_socket_pointer(
             .is_some_and(MirType::is_socket_cookie_socket_ptr),
         MirValue::Const(_) | MirValue::StackSlot(_) => false,
     }
+}
+
+fn validate_named_helper_arg_shape(
+    helper: BpfHelper,
+    args: &[MirValue],
+    types: &HashMap<VReg, MirType>,
+    state: &VerifierState,
+    predicate: fn(&MirType) -> bool,
+    expected: &str,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some(arg) = args.first() else {
+        return;
+    };
+    if helper_arg_has_tracked_kfunc_ref(arg, state) {
+        return;
+    }
+    let matches = match arg {
+        MirValue::VReg(vreg) => types.get(vreg).is_some_and(predicate),
+        MirValue::Const(_) | MirValue::StackSlot(_) => false,
+    };
+    if !matches {
+        errors.push(VerifierTypeError::new(format!(
+            "helper '{}' arg0 expects {}",
+            helper.name(),
+            expected
+        )));
+    }
+}
+
+fn helper_arg_has_tracked_kfunc_ref(arg: &MirValue, state: &VerifierState) -> bool {
+    let MirValue::VReg(vreg) = arg else {
+        return false;
+    };
+    matches!(
+        state.get(*vreg),
+        VerifierType::Ptr {
+            space: AddressSpace::Kernel,
+            kfunc_ref: Some(_),
+            ..
+        }
+    )
 }
 
 fn helper_local_map_ref_arg(

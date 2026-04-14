@@ -951,6 +951,26 @@ impl<'a> VccLowerer<'a> {
             )?;
         }
 
+        if matches!(helper, BpfHelper::GetSocketCookie) {
+            self.verify_get_socket_cookie_arg_shape(args)?;
+        }
+        if matches!(helper, BpfHelper::SockFromFile) {
+            self.verify_named_helper_arg_shape(
+                helper,
+                args,
+                MirType::is_file_ptr,
+                "file pointer",
+            )?;
+        }
+        if matches!(helper, BpfHelper::TaskPtRegs) {
+            self.verify_named_helper_arg_shape(
+                helper,
+                args,
+                MirType::is_task_struct_ptr,
+                "task pointer",
+            )?;
+        }
+
         Ok(())
     }
 
@@ -1022,6 +1042,38 @@ impl<'a> VccLowerer<'a> {
                 .is_some_and(MirType::is_socket_cookie_socket_ptr),
             MirValue::Const(_) | MirValue::StackSlot(_) => false,
         }
+    }
+
+    fn verify_named_helper_arg_shape(
+        &self,
+        helper: BpfHelper,
+        args: &[MirValue],
+        predicate: fn(&MirType) -> bool,
+        expected: &str,
+    ) -> Result<(), VccError> {
+        let Some(arg) = args.first() else {
+            return Ok(());
+        };
+        if self.helper_arg_has_tracked_kfunc_ref(arg) {
+            return Ok(());
+        }
+        let matches = match arg {
+            MirValue::VReg(vreg) => self.types.get(vreg).is_some_and(predicate),
+            MirValue::Const(_) | MirValue::StackSlot(_) => false,
+        };
+        if matches {
+            Ok(())
+        } else {
+            Err(VccError::new(
+                VccErrorKind::UnsupportedInstruction,
+                format!("helper '{}' arg0 expects {}", helper.name(), expected),
+            ))
+        }
+    }
+
+    fn helper_arg_has_tracked_kfunc_ref(&self, arg: &MirValue) -> bool {
+        self.value_ptr_info(arg)
+            .is_some_and(|info| matches!(info.space, VccAddrSpace::Kernel) && info.kfunc_ref.is_some())
     }
 
     fn helper_pointer_arg_allows_maybe_null(&self, helper_id: u32, arg_idx: usize) -> bool {

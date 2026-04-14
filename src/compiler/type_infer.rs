@@ -200,6 +200,16 @@ pub struct TypeInference<'a> {
 }
 
 impl<'a> TypeInference<'a> {
+    pub(super) fn precise_kfunc_return_mir_type(kfunc: &str) -> Option<MirType> {
+        match kfunc {
+            "bpf_task_acquire" | "bpf_task_from_pid" | "bpf_task_from_vpid" => {
+                Some(MirType::named_kernel_struct_ptr("task_struct"))
+            }
+            "bpf_get_task_exe_file" => Some(MirType::named_kernel_struct_ptr("file")),
+            _ => None,
+        }
+    }
+
     /// Create a new type inference pass
     pub fn new(probe_ctx: Option<ProbeContext>) -> Self {
         Self::new_with_env(probe_ctx, None, None, None, None)

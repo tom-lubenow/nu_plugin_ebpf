@@ -183,6 +183,38 @@ impl MirType {
         )
     }
 
+    pub fn opaque_named_struct(name: &str) -> Self {
+        MirType::Struct {
+            name: Some(name.to_string()),
+            kernel_btf_type_id: None,
+            fields: vec![StructField {
+                name: "__opaque".to_string(),
+                ty: MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: 1,
+                },
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            }],
+        }
+    }
+
+    pub fn named_kernel_struct_ptr(name: &str) -> Self {
+        MirType::Ptr {
+            pointee: Box::new(Self::opaque_named_struct(name)),
+            address_space: AddressSpace::Kernel,
+        }
+    }
+
+    pub fn is_task_struct_ptr(&self) -> bool {
+        self.is_named_kernel_struct_ptr(&["task_struct"])
+    }
+
+    pub fn is_file_ptr(&self) -> bool {
+        self.is_named_kernel_struct_ptr(&["file"])
+    }
+
     pub fn is_socket_cookie_socket_ptr(&self) -> bool {
         matches!(
             self,
@@ -191,6 +223,30 @@ impl MirType {
                 pointee,
             } if pointee.is_socket_cookie_socket_pointee()
         )
+    }
+
+    fn is_named_kernel_struct_ptr(&self, candidates: &[&str]) -> bool {
+        let MirType::Ptr {
+            address_space: AddressSpace::Kernel,
+            pointee,
+        } = self
+        else {
+            return false;
+        };
+        pointee.has_struct_name(candidates)
+    }
+
+    fn has_struct_name(&self, candidates: &[&str]) -> bool {
+        let MirType::Struct {
+            name: Some(name), ..
+        } = self
+        else {
+            return false;
+        };
+        let lower = name.to_ascii_lowercase();
+        candidates
+            .iter()
+            .any(|candidate| lower == candidate.to_ascii_lowercase())
     }
 
     fn is_socket_cookie_socket_pointee(&self) -> bool {

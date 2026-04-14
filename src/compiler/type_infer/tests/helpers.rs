@@ -2061,6 +2061,16 @@ fn test_infer_sock_from_file_helper_in_fentry_program() {
     let types = ti
         .infer(&func)
         .expect("expected bpf_sock_from_file to infer on fentry");
+    assert!(
+        types.get(&task).is_some_and(MirType::is_task_struct_ptr),
+        "expected task vreg to infer as task_struct pointer, got {:?}",
+        types.get(&task)
+    );
+    assert!(
+        types.get(&file).is_some_and(MirType::is_file_ptr),
+        "expected file vreg to infer as file pointer, got {:?}",
+        types.get(&file)
+    );
     match types.get(&dst) {
         Some(MirType::Ptr { address_space, .. }) => {
             assert_eq!(*address_space, AddressSpace::Kernel);
@@ -4079,6 +4089,11 @@ fn test_infer_helper_task_pt_regs_returns_kernel_pointer() {
 
     let mut ti = TypeInference::new(None);
     let types = ti.infer(&func).unwrap();
+    assert!(
+        types.get(&task).is_some_and(MirType::is_task_struct_ptr),
+        "expected task vreg to infer as task_struct pointer, got {:?}",
+        types.get(&task)
+    );
     match types.get(&dst) {
         Some(MirType::Ptr { address_space, .. }) => {
             assert_eq!(*address_space, AddressSpace::Kernel);
@@ -4281,6 +4296,62 @@ fn test_type_error_helper_sock_from_file_rejects_non_kernel_pointer() {
 }
 
 #[test]
+fn test_infer_helper_sock_from_file_accepts_named_file_pointer() {
+    let mut func = make_test_function();
+    let file = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SockFromFile as u32,
+        args: vec![MirValue::VReg(file)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let hints = HashMap::from([(file, MirType::named_kernel_struct_ptr("file"))]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "tcp_connect");
+    let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
+    let types = ti
+        .infer(&func)
+        .expect("expected named file pointer to satisfy bpf_sock_from_file");
+    assert_eq!(
+        types.get(&dst).and_then(TypeInference::mir_ptr_space),
+        Some(AddressSpace::Kernel)
+    );
+}
+
+#[test]
+fn test_type_error_helper_sock_from_file_rejects_anonymous_kernel_pointer() {
+    let mut func = make_test_function();
+    let file = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SockFromFile as u32,
+        args: vec![MirValue::VReg(file)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let hints = HashMap::from([(
+        file,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    )]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "tcp_connect");
+    let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected anonymous kernel pointer to fail bpf_sock_from_file");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_sock_from_file' arg0 expects file pointer")
+    }));
+}
+
+#[test]
 fn test_type_error_helper_task_pt_regs_rejects_non_kernel_pointer() {
     let mut func = make_test_function();
     let task_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
@@ -4305,6 +4376,60 @@ fn test_type_error_helper_task_pt_regs_rejects_non_kernel_pointer() {
     assert!(errs.iter().any(|e| {
         e.message
             .contains("helper task_pt_regs task expects pointer in [Kernel], got Stack")
+    }));
+}
+
+#[test]
+fn test_infer_helper_task_pt_regs_accepts_named_task_pointer() {
+    let mut func = make_test_function();
+    let task = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TaskPtRegs as u32,
+        args: vec![MirValue::VReg(task)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let hints = HashMap::from([(task, MirType::named_kernel_struct_ptr("task_struct"))]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let types = ti
+        .infer(&func)
+        .expect("expected named task pointer to satisfy bpf_task_pt_regs");
+    assert_eq!(
+        types.get(&dst).and_then(TypeInference::mir_ptr_space),
+        Some(AddressSpace::Kernel)
+    );
+}
+
+#[test]
+fn test_type_error_helper_task_pt_regs_rejects_anonymous_kernel_pointer() {
+    let mut func = make_test_function();
+    let task = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TaskPtRegs as u32,
+        args: vec![MirValue::VReg(task)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let hints = HashMap::from([(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    )]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected anonymous kernel pointer to fail bpf_task_pt_regs");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_task_pt_regs' arg0 expects task pointer")
     }));
 }
 

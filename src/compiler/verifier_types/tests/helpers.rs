@@ -2635,6 +2635,215 @@ fn test_verify_mir_for_probe_context_sock_from_file_accepts_fentry() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_sock_from_file_accepts_named_file_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let file = func.alloc_vreg();
+    let file_non_null = func.alloc_vreg();
+    let sock = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: file_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(file),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: file_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: sock,
+        helper: BpfHelper::SockFromFile as u32,
+        args: vec![MirValue::VReg(file)],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(file, MirType::named_kernel_struct_ptr("file"));
+    types.insert(file_non_null, MirType::Bool);
+    types.insert(
+        sock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "tcp_connect");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected named file pointer to satisfy sock_from_file");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_sock_from_file_rejects_anonymous_kernel_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let file = func.alloc_vreg();
+    let file_non_null = func.alloc_vreg();
+    let sock = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: file_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(file),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: file_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: sock,
+        helper: BpfHelper::SockFromFile as u32,
+        args: vec![MirValue::VReg(file)],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        file,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(file_non_null, MirType::Bool);
+    types.insert(
+        sock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "tcp_connect");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected anonymous kernel pointer to fail sock_from_file");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_sock_from_file' arg0 expects file pointer")
+    }));
+}
+
+#[test]
+fn test_verify_mir_helper_task_pt_regs_accepts_named_task_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let task = func.alloc_vreg();
+    let task_non_null = func.alloc_vreg();
+    let regs = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: task_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: task_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: regs,
+        helper: BpfHelper::TaskPtRegs as u32,
+        args: vec![MirValue::VReg(task)],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(task, MirType::named_kernel_struct_ptr("task_struct"));
+    types.insert(task_non_null, MirType::Bool);
+    types.insert(
+        regs,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    verify_mir(&func, &types).expect("expected named task pointer to satisfy task_pt_regs");
+}
+
+#[test]
+fn test_verify_mir_helper_task_pt_regs_rejects_anonymous_kernel_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let task = func.alloc_vreg();
+    let task_non_null = func.alloc_vreg();
+    let regs = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: task_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: task_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: regs,
+        helper: BpfHelper::TaskPtRegs as u32,
+        args: vec![MirValue::VReg(task)],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(task_non_null, MirType::Bool);
+    types.insert(
+        regs,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected anonymous kernel pointer to fail task_pt_regs");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_task_pt_regs' arg0 expects task pointer")
+    }));
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_task_storage_get_rejects_xdp() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
