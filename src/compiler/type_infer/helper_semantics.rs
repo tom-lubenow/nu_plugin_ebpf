@@ -261,6 +261,7 @@ impl<'a> TypeInference<'a> {
         args: &[MirValue],
         types: &HashMap<VReg, MirType>,
         value_ranges: &HashMap<VReg, ValueRange>,
+        direct_ctx_field_sources: &HashMap<VReg, CtxField>,
         stack_bounds: &HashMap<VReg, StackBounds>,
         slot_sizes: &HashMap<StackSlotId, i64>,
         errors: &mut Vec<TypeError>,
@@ -429,7 +430,13 @@ impl<'a> TypeInference<'a> {
         }
 
         if matches!(helper, BpfHelper::GetSocketCookie) {
-            self.validate_get_socket_cookie_arg_shape(args, types, value_ranges, errors);
+            self.validate_get_socket_cookie_arg_shape(
+                args,
+                types,
+                value_ranges,
+                direct_ctx_field_sources,
+                errors,
+            );
         }
         for arg_idx in 0..args.len() {
             let Some((predicate, expected)) = helper_expected_named_arg_shape(helper, arg_idx)
@@ -447,6 +454,7 @@ impl<'a> TypeInference<'a> {
         args: &[MirValue],
         types: &HashMap<VReg, MirType>,
         value_ranges: &HashMap<VReg, ValueRange>,
+        direct_ctx_field_sources: &HashMap<VReg, CtxField>,
         errors: &mut Vec<TypeError>,
     ) {
         let Some(program_type) = self.probe_ctx.as_ref().map(|ctx| ctx.program_type()) else {
@@ -471,9 +479,11 @@ impl<'a> TypeInference<'a> {
             return;
         }
         let matches_policy = match policy {
-            GetSocketCookieArgPolicy::Context => self.helper_arg_is_raw_context_pointer(arg, types),
+            GetSocketCookieArgPolicy::Context => {
+                self.helper_arg_is_raw_context_pointer(arg, direct_ctx_field_sources)
+            }
             GetSocketCookieArgPolicy::ContextOrSocket => {
-                self.helper_arg_is_raw_context_pointer(arg, types)
+                self.helper_arg_is_raw_context_pointer(arg, direct_ctx_field_sources)
                     || self.helper_arg_is_socket_cookie_socket_pointer(arg, types)
             }
             GetSocketCookieArgPolicy::Socket => {
@@ -490,10 +500,15 @@ impl<'a> TypeInference<'a> {
     fn helper_arg_is_raw_context_pointer(
         &self,
         arg: &MirValue,
-        types: &HashMap<VReg, MirType>,
+        direct_ctx_field_sources: &HashMap<VReg, CtxField>,
     ) -> bool {
         match arg {
-            MirValue::VReg(vreg) => self.mir_type_for_vreg(*vreg, types).is_raw_kernel_u8_ptr(),
+            MirValue::VReg(vreg) => direct_ctx_field_sources.get(vreg).is_some_and(|field| {
+                ProbeContext::resolve_ctx_field_is_raw_context_pointer(
+                    self.probe_ctx.as_ref(),
+                    field,
+                )
+            }),
             MirValue::Const(_) | MirValue::StackSlot(_) => false,
         }
     }

@@ -82,6 +82,8 @@ impl<'a> TypeInference<'a> {
     ) {
         let list_caps = self.compute_list_caps(func);
         let value_ranges = self.compute_value_ranges(func, types, &list_caps);
+        let direct_ctx_field_sources =
+            self.compute_direct_ctx_field_sources(func, types, &list_caps);
         let stack_bounds = self.compute_stack_bounds(func, types, &value_ranges);
         let slot_sizes: HashMap<StackSlotId, i64> = func
             .stack_slots
@@ -95,6 +97,7 @@ impl<'a> TypeInference<'a> {
                     inst,
                     types,
                     &value_ranges,
+                    &direct_ctx_field_sources,
                     &stack_bounds,
                     &slot_sizes,
                     errors,
@@ -104,6 +107,7 @@ impl<'a> TypeInference<'a> {
                 &block.terminator,
                 types,
                 &value_ranges,
+                &direct_ctx_field_sources,
                 &stack_bounds,
                 &slot_sizes,
                 errors,
@@ -116,6 +120,7 @@ impl<'a> TypeInference<'a> {
         inst: &MirInst,
         types: &HashMap<VReg, MirType>,
         value_ranges: &HashMap<VReg, ValueRange>,
+        direct_ctx_field_sources: &HashMap<VReg, CtxField>,
         stack_bounds: &HashMap<VReg, StackBounds>,
         slot_sizes: &HashMap<StackSlotId, i64>,
         errors: &mut Vec<TypeError>,
@@ -675,6 +680,7 @@ impl<'a> TypeInference<'a> {
                         args,
                         types,
                         value_ranges,
+                        direct_ctx_field_sources,
                         stack_bounds,
                         slot_sizes,
                         errors,

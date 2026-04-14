@@ -188,6 +188,37 @@ fn test_infer_helper_ctx_argument_from_context_pointer_load() {
 }
 
 #[test]
+fn test_infer_helper_ctx_argument_from_context_pointer_copy() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let ctx_copy = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: ctx_copy,
+        src: MirValue::VReg(ctx),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetSocketCookie as u32,
+        args: vec![MirValue::VReg(ctx_copy)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected copied raw ctx pointer to satisfy helper context argument");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
 fn test_type_error_get_socket_cookie_helper_rejects_sk_lookup_program() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
@@ -280,6 +311,41 @@ fn test_type_error_get_socket_cookie_helper_rejects_socket_filter_const_zero() {
     let errs = ti
         .infer(&func)
         .expect_err("expected socket_filter get_socket_cookie(0) to be rejected");
+    assert!(errs.iter().any(|e| e.message.contains(
+        "helper 'bpf_get_socket_cookie' arg0 expects raw ctx pointer in socket_filter programs"
+    )));
+}
+
+#[test]
+fn test_type_error_get_socket_cookie_helper_rejects_offset_context_pointer() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let ctx_offset = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::BinOp {
+        dst: ctx_offset,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(ctx),
+        rhs: MirValue::Const(8),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetSocketCookie as u32,
+        args: vec![MirValue::VReg(ctx_offset)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected offset raw ctx pointer to be rejected for bpf_get_socket_cookie");
     assert!(errs.iter().any(|e| e.message.contains(
         "helper 'bpf_get_socket_cookie' arg0 expects raw ctx pointer in socket_filter programs"
     )));
