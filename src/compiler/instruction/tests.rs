@@ -147,6 +147,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::SkbAdjustRoom)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_skb_set_tstamp"),
+        Some(BpfHelper::SkbSetTstamp)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_msg_push_data"),
         Some(BpfHelper::MsgPushData)
     ));
@@ -600,6 +604,15 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::SkbSetTstamp as u32)
+        .expect("expected bpf_skb_set_tstamp helper signature");
+    assert_eq!(sig.min_args, 3);
+    assert_eq!(sig.max_args, 3);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 
 #[test]
@@ -699,6 +712,15 @@ fn test_helpers_with_reserved_zero_flags() {
     );
     assert_eq!(BpfHelper::SkbPullData.zero_scalar_arg_requirement(), None);
     assert_eq!(BpfHelper::SkbAdjustRoom.zero_scalar_arg_requirement(), None);
+    assert_eq!(BpfHelper::SkbSetTstamp.zero_scalar_arg_requirement(), None);
+    assert_eq!(
+        BpfHelper::SkbSetTstamp.zero_scalar_arg_requirement_when_arg_zero(),
+        Some((
+            1,
+            2,
+            "helper 'bpf_skb_set_tstamp' requires arg1 = 0 when arg2 is 0"
+        ))
+    );
 }
 
 #[test]

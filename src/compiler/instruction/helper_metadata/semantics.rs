@@ -1039,7 +1039,8 @@ impl BpfHelper {
             BpfHelper::SkbChangeTail
             | BpfHelper::SkbPullData
             | BpfHelper::SkbChangeHead
-            | BpfHelper::SkbAdjustRoom => HelperSemantics {
+            | BpfHelper::SkbAdjustRoom
+            | BpfHelper::SkbSetTstamp => HelperSemantics {
                 ptr_arg_rules: SKB_MUTATE_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,

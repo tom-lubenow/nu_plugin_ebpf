@@ -813,6 +813,102 @@ fn test_infer_skb_packet_mutation_helpers_in_supported_programs() {
 }
 
 #[test]
+fn test_type_error_skb_set_tstamp_helper_rejects_non_tc_program() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkbSetTstamp as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(123),
+            MirValue::Const(1),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_skb_set_tstamp to be rejected outside tc");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_skb_set_tstamp' is only valid in tc programs")
+    }));
+}
+
+#[test]
+fn test_type_error_skb_set_tstamp_helper_requires_zero_tstamp_for_unspec_type() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkbSetTstamp as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(123),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected unspec tstamp type to require zero timestamp");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_skb_set_tstamp' requires arg1 = 0 when arg2 is 0")
+    }));
+}
+
+#[test]
+fn test_infer_skb_set_tstamp_helper_in_tc_program() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkbSetTstamp as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(123),
+            MirValue::Const(1),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected tc bpf_skb_set_tstamp helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
 fn test_type_error_msg_helpers_reject_non_sk_msg_programs() {
     for (helper, args) in [
         (BpfHelper::MsgApplyBytes, vec![MirValue::Const(8)]),

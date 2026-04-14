@@ -1042,6 +1042,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         None
     );
     assert_eq!(
+        EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbSetTstamp),
+        None
+    );
+    assert_eq!(
         EbpfProgramType::CgroupSkb.helper_call_error(BpfHelper::SkCgroupId),
         None
     );
@@ -1060,6 +1064,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::SkSkb.helper_call_error(BpfHelper::SkbAdjustRoom),
         None
+    );
+    assert_eq!(
+        EbpfProgramType::SkSkb.helper_call_error(BpfHelper::SkbSetTstamp),
+        Some("helper 'bpf_skb_set_tstamp' is only valid in tc programs".to_string())
     );
     assert_eq!(
         EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbStoreBytes),

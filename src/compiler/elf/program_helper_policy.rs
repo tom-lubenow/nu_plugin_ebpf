@@ -90,6 +90,10 @@ impl EbpfProgramType {
                     helper.name()
                 ))
             }
+            BpfHelper::SkbSetTstamp if *self != EbpfProgramType::Tc => Some(format!(
+                "helper '{}' is only valid in tc programs",
+                helper.name()
+            )),
             BpfHelper::RedirectNeigh if *self != EbpfProgramType::Tc => Some(format!(
                 "helper '{}' is only valid in tc programs",
                 helper.name()

@@ -42,6 +42,7 @@ impl BpfHelper {
             46 => Some(Self::GetSocketCookie),
             47 => Some(Self::GetSocketUid),
             50 => Some(Self::SkbAdjustRoom),
+            192 => Some(Self::SkbSetTstamp),
             49 => Some(Self::SetSockOpt),
             52 => Some(Self::SkRedirectMap),
             53 => Some(Self::SockMapUpdate),
@@ -196,6 +197,12 @@ impl BpfHelper {
             BpfHelper::SkbAdjustRoom => HelperSignature {
                 min_args: 4,
                 max_args: 4,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SkbSetTstamp => HelperSignature {
+                min_args: 3,
+                max_args: 3,
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
@@ -539,6 +546,11 @@ impl BpfHelper {
                 2,
                 1,
                 "helper 'bpf_redirect_neigh' requires arg2 = 0 when arg1 is null",
+            )),
+            BpfHelper::SkbSetTstamp => Some((
+                1,
+                2,
+                "helper 'bpf_skb_set_tstamp' requires arg1 = 0 when arg2 is 0",
             )),
             _ => None,
         }

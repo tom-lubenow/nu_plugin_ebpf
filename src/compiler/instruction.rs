@@ -122,6 +122,8 @@ pub enum BpfHelper {
     GetSocketUid = 47,
     /// long bpf_skb_adjust_room(skb, len_diff, mode, flags)
     SkbAdjustRoom = 50,
+    /// long bpf_skb_set_tstamp(skb, tstamp, tstamp_type)
+    SkbSetTstamp = 192,
     /// long bpf_setsockopt(ctx, level, optname, optval, optlen)
     SetSockOpt = 49,
     /// long bpf_sk_redirect_map(skb, map, key, flags)
@@ -289,6 +291,7 @@ impl BpfHelper {
             BpfHelper::GetSocketCookie => "bpf_get_socket_cookie",
             BpfHelper::GetSocketUid => "bpf_get_socket_uid",
             BpfHelper::SkbAdjustRoom => "bpf_skb_adjust_room",
+            BpfHelper::SkbSetTstamp => "bpf_skb_set_tstamp",
             BpfHelper::SetSockOpt => "bpf_setsockopt",
             BpfHelper::SkRedirectMap => "bpf_sk_redirect_map",
             BpfHelper::SockMapUpdate => "bpf_sock_map_update",
@@ -398,6 +401,7 @@ impl BpfHelper {
             "get_socket_cookie" => Some(Self::GetSocketCookie),
             "get_socket_uid" => Some(Self::GetSocketUid),
             "skb_adjust_room" => Some(Self::SkbAdjustRoom),
+            "skb_set_tstamp" => Some(Self::SkbSetTstamp),
             "setsockopt" => Some(Self::SetSockOpt),
             "sk_redirect_map" => Some(Self::SkRedirectMap),
             "sock_map_update" => Some(Self::SockMapUpdate),
