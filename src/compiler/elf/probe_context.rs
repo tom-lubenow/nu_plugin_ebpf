@@ -41,6 +41,15 @@ impl ProbeContext {
         )
     }
 
+    pub(crate) fn resolve_ctx_field_is_raw_context_pointer(
+        probe_ctx: Option<&Self>,
+        field: &CtxField,
+    ) -> bool {
+        probe_ctx.map_or(matches!(field, CtxField::Context), |ctx| {
+            ctx.ctx_field_is_raw_context_pointer(field)
+        })
+    }
+
     pub(crate) fn static_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
         static_ctx_field_type_spec(field)
     }
@@ -114,6 +123,19 @@ impl ProbeContext {
         self.parsed_program_spec()
             .map(|spec| spec.supports_direct_packet_writes())
             .unwrap_or_else(|| self.probe_type.supports_direct_packet_writes())
+    }
+
+    pub(crate) fn ctx_field_is_raw_context_pointer(&self, field: &CtxField) -> bool {
+        self.parsed_program_spec().map_or_else(
+            || {
+                matches!(field, CtxField::Context)
+                    || matches!(
+                        (self.program_type(), field),
+                        (EbpfProgramType::CgroupSock, CtxField::Socket)
+                    )
+            },
+            |spec| spec.ctx_field_is_raw_context_pointer(field),
+        )
     }
 
     pub(crate) fn socket_family_context_layout(&self) -> Option<SocketContextLayout> {

@@ -6,6 +6,14 @@ use crate::compiler::ctx_field_schema::{
 use crate::program_spec::ProgramSpec;
 
 impl ProgramSpec {
+    pub(crate) fn ctx_field_is_raw_context_pointer(&self, field: &CtxField) -> bool {
+        matches!(field, CtxField::Context)
+            || matches!(
+                (self, field),
+                (ProgramSpec::CgroupSock { .. }, CtxField::Socket)
+            )
+    }
+
     pub(crate) fn packet_context_kind(&self) -> Option<PacketContextKind> {
         self.program_type().packet_context_kind()
     }

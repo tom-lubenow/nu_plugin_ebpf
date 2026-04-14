@@ -267,11 +267,7 @@ pub(super) fn apply_load_ctx_field_inst(
             _ => {}
         }
     }
-    if (matches!(field, CtxField::Context)
-        || matches!(field, CtxField::Socket)
-            && probe_ctx.is_some_and(|ctx| {
-                ctx.program_type() == crate::compiler::EbpfProgramType::CgroupSock
-            }))
+    if ProbeContext::resolve_ctx_field_is_raw_context_pointer(probe_ctx, field)
         && let VerifierType::Ptr {
             space,
             bounds,
