@@ -660,7 +660,7 @@ impl<'a> TypeInference<'a> {
                                 if !matches!(arg_ty, MirType::Ptr { .. })
                                     && !is_map_ref
                                     && !(is_known_zero
-                                        && Self::helper_pointer_arg_allows_const_zero(*helper, idx))
+                                        && self.helper_pointer_arg_allows_const_zero(*helper, idx))
                                 {
                                     errors.push(TypeError::new(format!(
                                         "helper {} arg{} expects pointer, got {:?}",

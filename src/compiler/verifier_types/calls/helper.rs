@@ -9,6 +9,8 @@ pub(in crate::compiler::verifier_types) fn check_helper_arg(
     expected: HelperArgKind,
     types: &HashMap<VReg, MirType>,
     state: &VerifierState,
+    program: Option<&ProgramTypeInfo>,
+    probe_ctx: Option<&ProbeContext>,
     slot_sizes: &HashMap<StackSlotId, i64>,
     errors: &mut Vec<VerifierTypeError>,
 ) {
@@ -23,7 +25,9 @@ pub(in crate::compiler::verifier_types) fn check_helper_arg(
             }
         }
         HelperArgKind::Pointer => {
-            if helper_pointer_arg_allows_const_zero(helper_id, arg_idx, arg, state) {
+            if helper_pointer_arg_allows_const_zero(
+                helper_id, arg_idx, arg, state, program, probe_ctx,
+            ) {
                 return;
             }
             if helper_local_map_ref_arg(helper_id, arg_idx, arg, types) {
@@ -44,19 +48,25 @@ pub(in crate::compiler::verifier_types) fn helper_pointer_arg_allows_const_zero(
     arg_idx: usize,
     arg: &MirValue,
     state: &VerifierState,
+    program: Option<&ProgramTypeInfo>,
+    probe_ctx: Option<&ProbeContext>,
 ) -> bool {
-    matches!(
-        (BpfHelper::from_u32(helper_id), arg_idx),
+    let Some(helper) = BpfHelper::from_u32(helper_id) else {
+        return false;
+    };
+    (matches!(
+        (Some(helper), arg_idx),
         (Some(BpfHelper::KptrXchg), 1)
             | (Some(BpfHelper::RedirectNeigh), 1)
             | (Some(BpfHelper::SkAssign), 1)
             | (Some(BpfHelper::SkStorageGet), 2)
             | (Some(BpfHelper::InodeStorageGet), 2)
             | (Some(BpfHelper::TaskStorageGet), 2)
-    ) && matches!(
-        value_range(arg, state),
-        ValueRange::Known { min: 0, max: 0 }
-    )
+    ) || helper_allows_maybe_null_arg(helper, arg_idx, program, probe_ctx))
+        && matches!(
+            value_range(arg, state),
+            ValueRange::Known { min: 0, max: 0 }
+        )
 }
 
 pub(in crate::compiler::verifier_types) fn helper_positive_size_upper_bound(
@@ -94,10 +104,12 @@ pub(in crate::compiler::verifier_types) fn check_helper_ptr_arg_value(
     access_size: Option<usize>,
     types: &HashMap<VReg, MirType>,
     state: &VerifierState,
+    program: Option<&ProgramTypeInfo>,
+    probe_ctx: Option<&ProbeContext>,
     slot_sizes: &HashMap<StackSlotId, i64>,
     errors: &mut Vec<VerifierTypeError>,
 ) {
-    if helper_pointer_arg_allows_const_zero(helper_id, arg_idx, arg, state) {
+    if helper_pointer_arg_allows_const_zero(helper_id, arg_idx, arg, state, program, probe_ctx) {
         return;
     }
     if helper_local_map_ref_arg(helper_id, arg_idx, arg, types) {
@@ -264,6 +276,8 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
             access_size,
             types,
             state,
+            program,
+            probe_ctx,
             slot_sizes,
             errors,
         );
@@ -515,6 +529,14 @@ fn validate_get_socket_cookie_arg_shape(
     let Some(arg) = args.first() else {
         return;
     };
+    if policy.allows_maybe_null()
+        && matches!(
+            value_range(arg, state),
+            ValueRange::Known { min: 0, max: 0 }
+        )
+    {
+        return;
+    }
     let matches_policy = match policy {
         GetSocketCookieArgPolicy::Context => helper_arg_is_raw_context_pointer(arg, state),
         GetSocketCookieArgPolicy::ContextOrSocket => {

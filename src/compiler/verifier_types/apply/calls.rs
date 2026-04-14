@@ -48,6 +48,8 @@ pub(super) fn apply_call_helper_inst(
                 sig.arg_kind(idx),
                 types,
                 state,
+                program,
+                probe_ctx,
                 slot_sizes,
                 errors,
             );

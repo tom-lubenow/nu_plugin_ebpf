@@ -118,7 +118,11 @@ impl<'a> TypeInference<'a> {
         kfunc_unknown_stack_object_copy_shared(kfunc)
     }
 
-    pub(super) fn helper_pointer_arg_allows_const_zero(helper_id: u32, arg_idx: usize) -> bool {
+    pub(super) fn helper_pointer_arg_allows_const_zero(
+        &self,
+        helper_id: u32,
+        arg_idx: usize,
+    ) -> bool {
         matches!(
             (BpfHelper::from_u32(helper_id), arg_idx),
             (Some(BpfHelper::KptrXchg), 1)
@@ -127,7 +131,17 @@ impl<'a> TypeInference<'a> {
                 | (Some(BpfHelper::SkStorageGet), 2)
                 | (Some(BpfHelper::InodeStorageGet), 2)
                 | (Some(BpfHelper::TaskStorageGet), 2)
-        )
+        ) || self
+            .probe_ctx
+            .as_ref()
+            .and_then(|ctx| ctx.get_socket_cookie_arg_policy())
+            .is_some_and(|policy| {
+                matches!(
+                    BpfHelper::from_u32(helper_id),
+                    Some(BpfHelper::GetSocketCookie)
+                ) && arg_idx == 0
+                    && policy.allows_maybe_null()
+            })
     }
 
     pub(super) fn helper_ptr_space_allowed(
@@ -277,7 +291,7 @@ impl<'a> TypeInference<'a> {
                 (None, Some(size_arg)) => positive_size_bounds[size_arg],
                 (None, None) => None,
             };
-            if Self::helper_pointer_arg_allows_const_zero(helper_id, rule.arg_idx)
+            if self.helper_pointer_arg_allows_const_zero(helper_id, rule.arg_idx)
                 && matches!(
                     self.value_range_for(arg, value_ranges),
                     ValueRange::Known { min: 0, max: 0 }
@@ -414,7 +428,7 @@ impl<'a> TypeInference<'a> {
         }
 
         if matches!(helper, BpfHelper::GetSocketCookie) {
-            self.validate_get_socket_cookie_arg_shape(args, types, errors);
+            self.validate_get_socket_cookie_arg_shape(args, types, value_ranges, errors);
         }
     }
 
@@ -422,6 +436,7 @@ impl<'a> TypeInference<'a> {
         &self,
         args: &[MirValue],
         types: &HashMap<VReg, MirType>,
+        value_ranges: &HashMap<VReg, ValueRange>,
         errors: &mut Vec<TypeError>,
     ) {
         let Some(program_type) = self.probe_ctx.as_ref().map(|ctx| ctx.program_type()) else {
@@ -437,6 +452,14 @@ impl<'a> TypeInference<'a> {
         let Some(arg) = args.first() else {
             return;
         };
+        if policy.allows_maybe_null()
+            && matches!(
+                self.value_range_for(arg, value_ranges),
+                ValueRange::Known { min: 0, max: 0 }
+            )
+        {
+            return;
+        }
         let matches_policy = match policy {
             GetSocketCookieArgPolicy::Context => self.helper_arg_is_raw_context_pointer(arg, types),
             GetSocketCookieArgPolicy::ContextOrSocket => {

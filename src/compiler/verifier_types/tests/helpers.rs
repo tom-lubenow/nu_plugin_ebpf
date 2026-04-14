@@ -283,6 +283,57 @@ fn test_verify_mir_for_probe_context_get_socket_cookie_accepts_fentry_socket_poi
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_get_socket_cookie_accepts_fentry_const_zero() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetSocketCookie as u32,
+            args: vec![MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "tcp_connect");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected tracing get_socket_cookie(0) to verify");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_get_socket_cookie_rejects_socket_filter_const_zero() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetSocketCookie as u32,
+            args: vec![MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected socket_filter get_socket_cookie(0) to fail");
+    assert!(err.iter().any(|e| e.message.contains(
+        "helper 'bpf_get_socket_cookie' arg0 expects raw ctx pointer in socket_filter programs"
+    )));
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_get_socket_cookie_rejects_cgroup_sock_addr_socket_field() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

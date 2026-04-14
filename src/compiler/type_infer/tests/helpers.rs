@@ -244,6 +244,48 @@ fn test_type_error_get_socket_cookie_helper_rejects_fentry_context_pointer() {
 }
 
 #[test]
+fn test_infer_get_socket_cookie_helper_accepts_fentry_const_zero() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetSocketCookie as u32,
+        args: vec![MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "tcp_connect");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected null literal to satisfy tracing get_socket_cookie");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_get_socket_cookie_helper_rejects_socket_filter_const_zero() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetSocketCookie as u32,
+        args: vec![MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected socket_filter get_socket_cookie(0) to be rejected");
+    assert!(errs.iter().any(|e| e.message.contains(
+        "helper 'bpf_get_socket_cookie' arg0 expects raw ctx pointer in socket_filter programs"
+    )));
+}
+
+#[test]
 fn test_type_error_get_socket_cookie_helper_rejects_cgroup_sock_addr_socket_field() {
     let mut func = make_test_function();
     let sk = func.alloc_vreg();

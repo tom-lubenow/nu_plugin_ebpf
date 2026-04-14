@@ -361,6 +361,7 @@ impl<'a> VccLowerer<'a> {
     }
 
     pub(super) fn helper_pointer_arg_allows_const_zero(
+        &self,
         helper_id: u32,
         arg_idx: usize,
     ) -> bool {
@@ -372,7 +373,18 @@ impl<'a> VccLowerer<'a> {
                 | (Some(BpfHelper::SkStorageGet), 2)
                 | (Some(BpfHelper::InodeStorageGet), 2)
                 | (Some(BpfHelper::TaskStorageGet), 2)
-        )
+        ) || self
+            .probe_ctx
+            .and_then(|ctx| ctx.get_socket_cookie_arg_policy())
+            .or_else(|| {
+                self.program
+                    .and_then(|program| program.program_type.get_socket_cookie_arg_policy())
+            })
+            .is_some_and(|policy| {
+                matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::GetSocketCookie))
+                    && arg_idx == 0
+                    && policy.allows_maybe_null()
+            })
     }
 
     fn verify_helper_scalar_const_eq(
@@ -493,8 +505,14 @@ impl<'a> VccLowerer<'a> {
             },
             HelperArgKind::Pointer => match arg {
                 MirValue::Const(_) => {
+                    if matches!(
+                        (BpfHelper::from_u32(helper_id), arg_idx, arg),
+                        (Some(BpfHelper::GetSocketCookie), 0, MirValue::Const(0))
+                    ) {
+                        return Ok(());
+                    }
                     if matches!(arg, MirValue::Const(0))
-                        && Self::helper_pointer_arg_allows_const_zero(helper_id, arg_idx)
+                        && self.helper_pointer_arg_allows_const_zero(helper_id, arg_idx)
                     {
                         Ok(())
                     } else {
@@ -508,8 +526,14 @@ impl<'a> VccLowerer<'a> {
                     }
                 }
                 MirValue::VReg(vreg) => {
+                    if matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::GetSocketCookie))
+                        && arg_idx == 0
+                        && !self.is_pointer_reg(*vreg)
+                    {
+                        return Ok(());
+                    }
                     if !self.is_pointer_reg(*vreg)
-                        && Self::helper_pointer_arg_allows_const_zero(helper_id, arg_idx)
+                        && self.helper_pointer_arg_allows_const_zero(helper_id, arg_idx)
                     {
                         out.push(VccInst::AssertConstEq {
                             value: VccValue::Reg(VccReg(vreg.0)),
@@ -625,7 +649,7 @@ impl<'a> VccLowerer<'a> {
         dynamic_size: Option<&MirValue>,
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
-        if Self::helper_pointer_arg_allows_const_zero(helper_id, arg_idx) {
+        if self.helper_pointer_arg_allows_const_zero(helper_id, arg_idx) {
             match arg {
                 MirValue::Const(0) => return Ok(()),
                 MirValue::VReg(vreg) if self.value_ptr_info(arg).is_none() => {
@@ -856,6 +880,10 @@ impl<'a> VccLowerer<'a> {
             }
         }
 
+        if matches!(helper, BpfHelper::GetSocketCookie) {
+            self.verify_get_socket_cookie_arg_shape(args)?;
+        }
+
         for rule in semantics.ptr_arg_rules {
             let Some(arg) = args.get(rule.arg_idx) else {
                 continue;
@@ -923,10 +951,6 @@ impl<'a> VccLowerer<'a> {
             )?;
         }
 
-        if matches!(helper, BpfHelper::GetSocketCookie) {
-            self.verify_get_socket_cookie_arg_shape(args)?;
-        }
-
         Ok(())
     }
 
@@ -951,6 +975,16 @@ impl<'a> VccLowerer<'a> {
         let Some(arg) = args.first() else {
             return Ok(());
         };
+        if policy.allows_maybe_null()
+            && matches!(arg, MirValue::Const(0))
+        {
+            return Ok(());
+        }
+        if policy.allows_maybe_null()
+            && matches!(arg, MirValue::VReg(vreg) if !self.is_pointer_reg(*vreg))
+        {
+            return Ok(());
+        }
         let matches_policy = match policy {
             GetSocketCookieArgPolicy::Context => self.helper_arg_is_raw_context_pointer(arg),
             GetSocketCookieArgPolicy::ContextOrSocket => {
