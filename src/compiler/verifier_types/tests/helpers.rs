@@ -202,6 +202,182 @@ fn test_verify_mir_for_probe_context_get_socket_cookie_accepts_socket_filter() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_get_socket_cookie_rejects_fentry_context_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetSocketCookie as u32,
+            args: vec![MirValue::VReg(ctx)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "tcp_connect");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected fentry raw ctx pointer to fail get_socket_cookie");
+    assert!(err.iter().any(|e| e.message.contains(
+        "helper 'bpf_get_socket_cookie' arg0 expects socket pointer in fentry programs"
+    )));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_get_socket_cookie_accepts_fentry_socket_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let sk = func.alloc_vreg();
+    let sk_non_null = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: sk,
+            field: CtxField::Arg(0),
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: sk_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(sk),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: sk_non_null,
+        if_true: call,
+        if_false: done,
+    };
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetSocketCookie as u32,
+        args: vec![MirValue::VReg(sk)],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        sk,
+        MirType::Ptr {
+            pointee: Box::new(ProbeContext::synthetic_socket_type()),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(sk_non_null, MirType::Bool);
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "tcp_connect");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected socket pointer arg to satisfy fentry get_socket_cookie");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_get_socket_cookie_rejects_cgroup_sock_addr_socket_field() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let sk = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: sk,
+            field: CtxField::Socket,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetSocketCookie as u32,
+            args: vec![MirValue::VReg(sk)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        sk,
+        MirType::Ptr {
+            pointee: Box::new(ProbeContext::synthetic_socket_type()),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected cgroup_sock_addr ctx.sk to fail get_socket_cookie");
+    assert!(err.iter().any(|e| e.message.contains(
+        "helper 'bpf_get_socket_cookie' arg0 expects raw ctx pointer in cgroup_sock_addr programs"
+    )));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_get_socket_cookie_accepts_cgroup_sock_socket_alias() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let sk = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: sk,
+            field: CtxField::Socket,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetSocketCookie as u32,
+            args: vec![MirValue::VReg(sk)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        sk,
+        MirType::Ptr {
+            pointee: Box::new(ProbeContext::synthetic_socket_type()),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected cgroup_sock ctx.sk alias to satisfy get_socket_cookie");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_get_socket_uid_rejects_cgroup_skb() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

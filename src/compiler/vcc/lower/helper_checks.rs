@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::unknown_kfunc_signature_message;
 
 impl<'a> VccLowerer<'a> {
@@ -912,7 +913,71 @@ impl<'a> VccLowerer<'a> {
             )?;
         }
 
+        if matches!(helper, BpfHelper::GetSocketCookie) {
+            self.verify_get_socket_cookie_arg_shape(args)?;
+        }
+
         Ok(())
+    }
+
+    fn verify_get_socket_cookie_arg_shape(
+        &self,
+        args: &[MirValue],
+    ) -> Result<(), VccError> {
+        let Some(program_type) = self
+            .probe_ctx
+            .map(|ctx| ctx.program_type())
+            .or_else(|| self.program.map(|program| program.program_type))
+        else {
+            return Ok(());
+        };
+        let Some(policy) = self
+            .probe_ctx
+            .and_then(|ctx| ctx.get_socket_cookie_arg_policy())
+            .or_else(|| self.program.and_then(|program| program.program_type.get_socket_cookie_arg_policy()))
+        else {
+            return Ok(());
+        };
+        let Some(arg) = args.first() else {
+            return Ok(());
+        };
+        let matches_policy = match policy {
+            GetSocketCookieArgPolicy::Context => self.helper_arg_is_raw_context_pointer(arg),
+            GetSocketCookieArgPolicy::ContextOrSocket => {
+                self.helper_arg_is_raw_context_pointer(arg)
+                    || self.helper_arg_is_socket_cookie_socket_pointer(arg)
+            }
+            GetSocketCookieArgPolicy::Socket => {
+                self.helper_arg_is_socket_cookie_socket_pointer(arg)
+            }
+        };
+        if matches_policy {
+            Ok(())
+        } else {
+            Err(VccError::new(
+                VccErrorKind::UnsupportedInstruction,
+                policy.error_message(BpfHelper::GetSocketCookie, program_type),
+            ))
+        }
+    }
+
+    fn helper_arg_is_raw_context_pointer(&self, arg: &MirValue) -> bool {
+        match arg {
+            MirValue::VReg(vreg) => {
+                self.effective_ptr_space(*vreg) == Some(VccAddrSpace::Context)
+            }
+            MirValue::Const(_) | MirValue::StackSlot(_) => false,
+        }
+    }
+
+    fn helper_arg_is_socket_cookie_socket_pointer(&self, arg: &MirValue) -> bool {
+        match arg {
+            MirValue::VReg(vreg) => self
+                .types
+                .get(vreg)
+                .is_some_and(MirType::is_socket_cookie_socket_ptr),
+            MirValue::Const(_) | MirValue::StackSlot(_) => false,
+        }
     }
 
     pub(super) fn verify_map_key(

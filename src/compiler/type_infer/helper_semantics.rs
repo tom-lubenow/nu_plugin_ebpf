@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::kernel_btf::KernelBtf;
 
 impl<'a> TypeInference<'a> {
@@ -410,6 +411,70 @@ impl<'a> TypeInference<'a> {
             && !arg_is_known_zero(arg_idx)
         {
             errors.push(TypeError::new(message));
+        }
+
+        if matches!(helper, BpfHelper::GetSocketCookie) {
+            self.validate_get_socket_cookie_arg_shape(args, types, errors);
+        }
+    }
+
+    fn validate_get_socket_cookie_arg_shape(
+        &self,
+        args: &[MirValue],
+        types: &HashMap<VReg, MirType>,
+        errors: &mut Vec<TypeError>,
+    ) {
+        let Some(program_type) = self.probe_ctx.as_ref().map(|ctx| ctx.program_type()) else {
+            return;
+        };
+        let Some(policy) = self
+            .probe_ctx
+            .as_ref()
+            .and_then(|ctx| ctx.get_socket_cookie_arg_policy())
+        else {
+            return;
+        };
+        let Some(arg) = args.first() else {
+            return;
+        };
+        let matches_policy = match policy {
+            GetSocketCookieArgPolicy::Context => self.helper_arg_is_raw_context_pointer(arg, types),
+            GetSocketCookieArgPolicy::ContextOrSocket => {
+                self.helper_arg_is_raw_context_pointer(arg, types)
+                    || self.helper_arg_is_socket_cookie_socket_pointer(arg, types)
+            }
+            GetSocketCookieArgPolicy::Socket => {
+                self.helper_arg_is_socket_cookie_socket_pointer(arg, types)
+            }
+        };
+        if !matches_policy {
+            errors.push(TypeError::new(
+                policy.error_message(BpfHelper::GetSocketCookie, program_type),
+            ));
+        }
+    }
+
+    fn helper_arg_is_raw_context_pointer(
+        &self,
+        arg: &MirValue,
+        types: &HashMap<VReg, MirType>,
+    ) -> bool {
+        match arg {
+            MirValue::VReg(vreg) => self.mir_type_for_vreg(*vreg, types).is_raw_kernel_u8_ptr(),
+            MirValue::Const(_) | MirValue::StackSlot(_) => false,
+        }
+    }
+
+    fn helper_arg_is_socket_cookie_socket_pointer(
+        &self,
+        arg: &MirValue,
+        types: &HashMap<VReg, MirType>,
+    ) -> bool {
+        match arg {
+            MirValue::VReg(vreg) => self
+                .mir_type_for_vreg(*vreg, types)
+                .is_socket_cookie_socket_ptr(),
+            MirValue::Const(_) | MirValue::StackSlot(_) => false,
         }
     }
 

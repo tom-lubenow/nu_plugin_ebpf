@@ -1,7 +1,7 @@
 use super::{
-    CompileError, CtxField, CtxWriteTarget, EbpfProgramType, IngressIfindexContextLayout,
-    PacketContextKind, ProbeContext, ProgramTargetKind, ProgramTypeInfo, ProgramValueAccess,
-    SocketContextLayout,
+    CompileError, CtxField, CtxWriteTarget, EbpfProgramType, GetSocketCookieArgPolicy,
+    IngressIfindexContextLayout, PacketContextKind, ProbeContext, ProgramTargetKind,
+    ProgramTypeInfo, ProgramValueAccess, SocketContextLayout,
 };
 #[cfg(test)]
 use crate::compiler::ctx_field_schema::synthetic_bpf_sock_type;
@@ -852,6 +852,10 @@ impl ProbeContext {
         helper: BpfHelper,
     ) -> Option<(usize, &'static str)> {
         self.program_type().helper_zero_arg_requirement(helper)
+    }
+
+    pub(crate) fn get_socket_cookie_arg_policy(&self) -> Option<GetSocketCookieArgPolicy> {
+        self.program_type().get_socket_cookie_arg_policy()
     }
 
     fn sched_ext_callback(&self) -> Option<&str> {

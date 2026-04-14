@@ -173,6 +173,42 @@ impl MirType {
         }
     }
 
+    pub fn is_raw_kernel_u8_ptr(&self) -> bool {
+        matches!(
+            self,
+            MirType::Ptr {
+                address_space: AddressSpace::Kernel,
+                pointee,
+            } if matches!(pointee.as_ref(), MirType::U8)
+        )
+    }
+
+    pub fn is_socket_cookie_socket_ptr(&self) -> bool {
+        matches!(
+            self,
+            MirType::Ptr {
+                address_space: AddressSpace::Kernel,
+                pointee,
+            } if pointee.is_socket_cookie_socket_pointee()
+        )
+    }
+
+    fn is_socket_cookie_socket_pointee(&self) -> bool {
+        let MirType::Struct {
+            name: Some(name), ..
+        } = self
+        else {
+            return false;
+        };
+        let lower = name.to_ascii_lowercase();
+        lower == "sock"
+            || lower == "sock_common"
+            || lower == "bpf_sock"
+            || lower.starts_with("sock_")
+            || lower.ends_with("_sock")
+            || lower.contains("_sock_")
+    }
+
     /// Inclusive scalar value bounds when they fit in the analysis range model.
     pub fn scalar_value_range(&self) -> Option<(i64, i64)> {
         match self {

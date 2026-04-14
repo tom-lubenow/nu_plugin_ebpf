@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::{ProbeContext, ProgramTypeInfo};
 
 pub(in crate::compiler::verifier_types) fn check_helper_arg(
@@ -249,6 +250,10 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         errors.push(VerifierTypeError::new(message));
     }
 
+    if matches!(helper, BpfHelper::GetSocketCookie) {
+        validate_get_socket_cookie_arg_shape(args, types, state, program, probe_ctx, errors);
+    }
+
     for (arg_idx, arg) in args.iter().enumerate().take(5) {
         let Some(expected_kind) = helper_pointer_arg_expected_ref_kind(helper, arg_idx) else {
             continue;
@@ -431,6 +436,65 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
     }
 
     acquire_kind
+}
+
+fn validate_get_socket_cookie_arg_shape(
+    args: &[MirValue],
+    types: &HashMap<VReg, MirType>,
+    state: &VerifierState,
+    program: Option<&ProgramTypeInfo>,
+    probe_ctx: Option<&ProbeContext>,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some(program_type) = probe_ctx
+        .map(|ctx| ctx.program_type())
+        .or_else(|| program.map(|program| program.program_type))
+    else {
+        return;
+    };
+    let Some(policy) = probe_ctx
+        .and_then(|ctx| ctx.get_socket_cookie_arg_policy())
+        .or_else(|| {
+            program.and_then(|program| program.program_type.get_socket_cookie_arg_policy())
+        })
+    else {
+        return;
+    };
+    let Some(arg) = args.first() else {
+        return;
+    };
+    let matches_policy = match policy {
+        GetSocketCookieArgPolicy::Context => helper_arg_is_raw_context_pointer(arg, state),
+        GetSocketCookieArgPolicy::ContextOrSocket => {
+            helper_arg_is_raw_context_pointer(arg, state)
+                || helper_arg_is_socket_cookie_socket_pointer(arg, types)
+        }
+        GetSocketCookieArgPolicy::Socket => helper_arg_is_socket_cookie_socket_pointer(arg, types),
+    };
+    if !matches_policy {
+        errors.push(VerifierTypeError::new(
+            policy.error_message(BpfHelper::GetSocketCookie, program_type),
+        ));
+    }
+}
+
+fn helper_arg_is_raw_context_pointer(arg: &MirValue, state: &VerifierState) -> bool {
+    match arg {
+        MirValue::VReg(vreg) => state.ctx_field_source(*vreg) == Some(&CtxField::Context),
+        MirValue::Const(_) | MirValue::StackSlot(_) => false,
+    }
+}
+
+fn helper_arg_is_socket_cookie_socket_pointer(
+    arg: &MirValue,
+    types: &HashMap<VReg, MirType>,
+) -> bool {
+    match arg {
+        MirValue::VReg(vreg) => types
+            .get(vreg)
+            .is_some_and(MirType::is_socket_cookie_socket_ptr),
+        MirValue::Const(_) | MirValue::StackSlot(_) => false,
+    }
 }
 
 fn helper_local_map_ref_arg(

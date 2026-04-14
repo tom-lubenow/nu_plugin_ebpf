@@ -319,7 +319,9 @@ impl<'a> VccLowerer<'a> {
                             _ => {}
                         }
                     }
-                    if matches!(field, CtxField::Context)
+                    if (matches!(field, CtxField::Context)
+                        || matches!(field, CtxField::Socket)
+                            && self.probe_ctx.is_some_and(|ctx| ctx.program_type() == crate::compiler::EbpfProgramType::CgroupSock))
                         && let VccValueType::Ptr(ref mut info) = ty
                     {
                         info.space = VccAddrSpace::Context;

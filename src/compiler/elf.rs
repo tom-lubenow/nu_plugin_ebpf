@@ -38,6 +38,35 @@ mod program_types;
 use program_types::*;
 pub use program_types::{ProgramContextFamily, ProgramTypeInfo};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GetSocketCookieArgPolicy {
+    Context,
+    ContextOrSocket,
+    Socket,
+}
+
+impl GetSocketCookieArgPolicy {
+    pub(crate) fn error_message(self, helper: BpfHelper, program_type: EbpfProgramType) -> String {
+        match self {
+            Self::Context => format!(
+                "helper '{}' arg0 expects raw ctx pointer in {} programs",
+                helper.name(),
+                program_type.canonical_prefix()
+            ),
+            Self::ContextOrSocket => format!(
+                "helper '{}' arg0 expects raw ctx pointer or socket pointer in {} programs",
+                helper.name(),
+                program_type.canonical_prefix()
+            ),
+            Self::Socket => format!(
+                "helper '{}' arg0 expects socket pointer in {} programs",
+                helper.name(),
+                program_type.canonical_prefix()
+            ),
+        }
+    }
+}
+
 /// BPF map types (subset of types we might use)
 #[derive(Debug, Clone, Copy)]
 #[repr(u32)]
@@ -1315,6 +1344,23 @@ impl EbpfProgramType {
             }
             (BpfHelper::SkAssign, EbpfProgramType::Tc) => {
                 Some((2, "helper 'bpf_sk_assign' requires arg2 = 0 in tc programs"))
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn get_socket_cookie_arg_policy(&self) -> Option<GetSocketCookieArgPolicy> {
+        match self {
+            EbpfProgramType::SocketFilter
+            | EbpfProgramType::Tc
+            | EbpfProgramType::CgroupSkb
+            | EbpfProgramType::CgroupSockAddr
+            | EbpfProgramType::SockOps
+            | EbpfProgramType::SkSkb
+            | EbpfProgramType::SkSkbParser => Some(GetSocketCookieArgPolicy::Context),
+            EbpfProgramType::CgroupSock => Some(GetSocketCookieArgPolicy::ContextOrSocket),
+            EbpfProgramType::Fentry | EbpfProgramType::Fexit | EbpfProgramType::TpBtf => {
+                Some(GetSocketCookieArgPolicy::Socket)
             }
             _ => None,
         }

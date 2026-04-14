@@ -216,6 +216,88 @@ fn test_type_error_get_socket_cookie_helper_rejects_sk_lookup_program() {
 }
 
 #[test]
+fn test_type_error_get_socket_cookie_helper_rejects_fentry_context_pointer() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetSocketCookie as u32,
+        args: vec![MirValue::VReg(ctx)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "tcp_connect");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected fentry raw ctx pointer to be rejected for bpf_get_socket_cookie");
+    assert!(errs.iter().any(|e| e.message.contains(
+        "helper 'bpf_get_socket_cookie' arg0 expects socket pointer in fentry programs"
+    )));
+}
+
+#[test]
+fn test_type_error_get_socket_cookie_helper_rejects_cgroup_sock_addr_socket_field() {
+    let mut func = make_test_function();
+    let sk = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: sk,
+        field: CtxField::Socket,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetSocketCookie as u32,
+        args: vec![MirValue::VReg(sk)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected cgroup_sock_addr ctx.sk to be rejected for bpf_get_socket_cookie");
+    assert!(errs.iter().any(|e| e.message.contains(
+        "helper 'bpf_get_socket_cookie' arg0 expects raw ctx pointer in cgroup_sock_addr programs"
+    )));
+}
+
+#[test]
+fn test_infer_get_socket_cookie_helper_from_cgroup_sock_socket_alias() {
+    let mut func = make_test_function();
+    let sk = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: sk,
+        field: CtxField::Socket,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetSocketCookie as u32,
+        args: vec![MirValue::VReg(sk)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected cgroup_sock ctx.sk alias to satisfy bpf_get_socket_cookie");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
 fn test_type_error_get_socket_uid_helper_rejects_cgroup_skb_program() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

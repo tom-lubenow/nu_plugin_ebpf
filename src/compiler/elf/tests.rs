@@ -1088,6 +1088,26 @@ fn test_program_type_helper_zero_arg_requirement_uses_program_surface() {
 }
 
 #[test]
+fn test_program_type_get_socket_cookie_arg_policy_tracks_program_model() {
+    assert_eq!(
+        EbpfProgramType::SocketFilter.get_socket_cookie_arg_policy(),
+        Some(GetSocketCookieArgPolicy::Context)
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSock.get_socket_cookie_arg_policy(),
+        Some(GetSocketCookieArgPolicy::ContextOrSocket)
+    );
+    assert_eq!(
+        EbpfProgramType::Fentry.get_socket_cookie_arg_policy(),
+        Some(GetSocketCookieArgPolicy::Socket)
+    );
+    assert_eq!(
+        EbpfProgramType::SkLookup.get_socket_cookie_arg_policy(),
+        None
+    );
+}
+
+#[test]
 fn test_probe_context_helper_zero_arg_requirement_uses_program_type() {
     let xdp = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     let tc = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
