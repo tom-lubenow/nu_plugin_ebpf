@@ -119,6 +119,12 @@ impl ProbeContext {
             .or_else(|| self.probe_type.packet_context_kind())
     }
 
+    pub(crate) fn data_meta_context_kind(&self) -> Option<PacketContextKind> {
+        self.parsed_program_spec()
+            .and_then(|spec| spec.data_meta_context_kind())
+            .or_else(|| self.probe_type.data_meta_context_kind())
+    }
+
     pub(crate) fn supports_direct_packet_writes(&self) -> bool {
         self.parsed_program_spec()
             .map(|spec| spec.supports_direct_packet_writes())

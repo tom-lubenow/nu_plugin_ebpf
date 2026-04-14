@@ -736,6 +736,70 @@ fn test_lower_xdp_data_meta_byte_projection_adds_data_guarded_packet_load() {
 }
 
 #[test]
+fn test_lower_tc_data_meta_byte_projection_adds_data_guarded_packet_load() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("data_meta"), int_member(0)],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tc data_meta byte projection should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::DataMeta,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Data,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        !blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::DataEnd,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::U8,
+                    ..
+                }
+            )))
+    );
+}
+
+#[test]
 fn test_lower_xdp_data_u16be_projection_adds_guarded_packet_load_and_byteswap() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("data"), string_member("u16be"), int_member(6)],

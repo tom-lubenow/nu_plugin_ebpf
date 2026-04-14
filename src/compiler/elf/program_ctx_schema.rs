@@ -37,12 +37,24 @@ impl EbpfProgramType {
         self.info().packet_context_kind
     }
 
+    pub(crate) fn data_meta_context_kind(&self) -> Option<PacketContextKind> {
+        match self {
+            EbpfProgramType::Xdp => Some(PacketContextKind::XdpMd),
+            EbpfProgramType::Tc => Some(PacketContextKind::SkBuff),
+            _ => None,
+        }
+    }
+
     pub fn supports_packet_len_ctx_field(&self) -> bool {
         self.info().supports_packet_len_ctx_field
     }
 
     pub fn supports_packet_data_ctx_fields(&self) -> bool {
         self.info().supports_packet_data_ctx_fields
+    }
+
+    pub fn supports_data_meta_ctx_field(&self) -> bool {
+        self.data_meta_context_kind().is_some()
     }
 
     pub fn supports_direct_packet_writes(&self) -> bool {
@@ -260,6 +272,10 @@ impl ProgramSpec {
 
     pub(crate) fn packet_context_kind(&self) -> Option<PacketContextKind> {
         self.program_type().packet_context_kind()
+    }
+
+    pub(crate) fn data_meta_context_kind(&self) -> Option<PacketContextKind> {
+        self.program_type().data_meta_context_kind()
     }
 
     pub(crate) fn supports_direct_packet_writes(&self) -> bool {

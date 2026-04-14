@@ -440,6 +440,19 @@ fn test_program_type_socket_ref_layouts_follow_program_model() {
 }
 
 #[test]
+fn test_program_type_data_meta_layouts_follow_program_model() {
+    assert_eq!(
+        EbpfProgramType::Xdp.data_meta_context_kind(),
+        Some(PacketContextKind::XdpMd)
+    );
+    assert_eq!(
+        EbpfProgramType::Tc.data_meta_context_kind(),
+        Some(PacketContextKind::SkBuff)
+    );
+    assert_eq!(EbpfProgramType::CgroupSkb.data_meta_context_kind(), None);
+}
+
+#[test]
 fn test_program_type_ingress_ifindex_layouts_follow_program_model() {
     assert_eq!(
         EbpfProgramType::Xdp.ingress_ifindex_context_layout(),
@@ -2648,6 +2661,7 @@ fn test_probe_context_allows_xdp_md_scalar_fields_on_xdp() {
     let ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::DataMeta).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::IngressIfindex)
@@ -2668,6 +2682,7 @@ fn test_probe_context_allows_packet_fields_on_tc() {
     let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::PktType).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::DataMeta).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::QueueMapping)
             .is_none()
@@ -2697,6 +2712,15 @@ fn test_probe_context_allows_packet_fields_on_tc() {
         ctx.ctx_field_access_error(&CtxField::IngressIfindex)
             .is_none()
     );
+}
+
+#[test]
+fn test_probe_context_rejects_data_meta_on_cgroup_skb() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::DataMeta)
+        .expect("expected cgroup_skb data_meta access error");
+    assert!(err.contains("ctx.data_meta is only available on xdp and tc programs"));
 }
 
 #[test]

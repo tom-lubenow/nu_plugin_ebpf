@@ -701,16 +701,19 @@ impl<'a> MirToEbpfCompiler<'a> {
                     }
                 };
             }
-            CtxField::DataMeta => {
-                let PacketContextKind::XdpMd = self.packet_context_kind()? else {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "ctx.data_meta is only available on xdp programs".to_string(),
-                    ));
-                };
-                let data_meta_offset = Self::xdp_md_offsets().2;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_meta_offset));
-            }
+            CtxField::DataMeta => match self.data_meta_context_kind()? {
+                PacketContextKind::XdpMd => {
+                    let data_meta_offset = Self::xdp_md_offsets().2;
+                    self.instructions
+                        .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_meta_offset));
+                }
+                PacketContextKind::SkBuff => {
+                    let data_meta_offset = Self::sk_buff_data_meta_offset();
+                    self.instructions
+                        .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_meta_offset));
+                }
+                _ => unreachable!("data_meta context kind must be xdp or skb"),
+            },
             CtxField::DataEnd => {
                 match self.packet_context_kind()? {
                     PacketContextKind::XdpMd => {

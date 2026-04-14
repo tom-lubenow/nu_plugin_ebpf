@@ -77,8 +77,8 @@ impl EbpfProgramType {
             CtxField::Data | CtxField::DataEnd if !self.supports_packet_data_ctx_fields() => {
                 Some(packet_field_access_error(*self, field))
             }
-            CtxField::DataMeta if !matches!(self, EbpfProgramType::Xdp) => Some(format!(
-                "ctx.{} is only available on xdp programs",
+            CtxField::DataMeta if !self.supports_data_meta_ctx_field() => Some(format!(
+                "ctx.{} is only available on xdp and tc programs",
                 field.display_name()
             )),
             CtxField::IngressIfindex if !self.supports_ingress_ifindex_ctx_field() => {

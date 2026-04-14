@@ -55,6 +55,16 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 76, 80, 36, 40, 44, 68)
     }
 
+    pub(super) fn sk_buff_data_meta_offset() -> i16 {
+        // struct __sk_buff {
+        //     ...
+        //     __u32 remote_port;
+        //     __u32 local_port;
+        //     __u32 data_meta;
+        // };
+        140
+    }
+
     pub(super) fn sk_buff_packet_meta_offsets() -> (i16, i16) {
         // struct __sk_buff {
         //     __u32 len;
@@ -365,6 +375,16 @@ impl<'a> MirToEbpfCompiler<'a> {
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
                     "packet context fields require a packet-context program type".to_string(),
+                )
+            })
+    }
+
+    pub(super) fn data_meta_context_kind(&self) -> Result<PacketContextKind, CompileError> {
+        self.probe_ctx
+            .and_then(|ctx| ctx.data_meta_context_kind())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "ctx.data_meta is only available on xdp and tc programs".to_string(),
                 )
             })
     }
