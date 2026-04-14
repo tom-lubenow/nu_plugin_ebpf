@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
+use crate::compiler::instruction::{KfuncRefKind, helper_pointer_arg_ref_kind};
 use crate::compiler::{ProbeContext, ProgramTypeInfo};
 
 pub(in crate::compiler::verifier_types) fn check_helper_arg(
@@ -319,70 +320,12 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
     if matches!(helper, BpfHelper::GetSocketCookie) {
         validate_get_socket_cookie_arg_shape(args, types, state, program, probe_ctx, errors);
     }
-    if matches!(helper, BpfHelper::SockFromFile) {
+    for arg_idx in 0..args.len() {
+        let Some((predicate, expected)) = helper_expected_named_arg_shape(helper, arg_idx) else {
+            continue;
+        };
         validate_named_helper_arg_shape(
-            helper,
-            args,
-            0,
-            types,
-            state,
-            MirType::is_file_ptr,
-            "file pointer",
-            errors,
-        );
-    }
-    if matches!(helper, BpfHelper::TaskPtRegs) {
-        validate_named_helper_arg_shape(
-            helper,
-            args,
-            0,
-            types,
-            state,
-            MirType::is_task_struct_ptr,
-            "task pointer",
-            errors,
-        );
-    }
-    if matches!(helper, BpfHelper::SkStorageGet | BpfHelper::SkStorageDelete) {
-        validate_named_helper_arg_shape(
-            helper,
-            args,
-            1,
-            types,
-            state,
-            MirType::is_socket_ptr,
-            "socket pointer",
-            errors,
-        );
-    }
-    if matches!(
-        helper,
-        BpfHelper::TaskStorageGet | BpfHelper::TaskStorageDelete
-    ) {
-        validate_named_helper_arg_shape(
-            helper,
-            args,
-            1,
-            types,
-            state,
-            MirType::is_task_struct_ptr,
-            "task pointer",
-            errors,
-        );
-    }
-    if matches!(
-        helper,
-        BpfHelper::InodeStorageGet | BpfHelper::InodeStorageDelete
-    ) {
-        validate_named_helper_arg_shape(
-            helper,
-            args,
-            1,
-            types,
-            state,
-            MirType::is_inode_ptr,
-            "inode pointer",
-            errors,
+            helper, args, arg_idx, types, state, predicate, expected, errors,
         );
     }
 
@@ -665,6 +608,9 @@ fn validate_named_helper_arg_shape(
     let Some(arg) = args.get(arg_idx) else {
         return;
     };
+    if helper_pointer_arg_allows_const_zero(helper as u32, arg_idx, arg, state, None, None) {
+        return;
+    }
     if helper_arg_has_tracked_kfunc_ref(arg, state) {
         return;
     }
@@ -694,6 +640,19 @@ fn helper_arg_has_tracked_kfunc_ref(arg: &MirValue, state: &VerifierState) -> bo
             ..
         }
     )
+}
+
+fn helper_expected_named_arg_shape(
+    helper: BpfHelper,
+    arg_idx: usize,
+) -> Option<(fn(&MirType) -> bool, &'static str)> {
+    match helper_pointer_arg_ref_kind(helper, arg_idx)? {
+        KfuncRefKind::Socket => Some((MirType::is_socket_ptr, "socket pointer")),
+        KfuncRefKind::Task => Some((MirType::is_task_struct_ptr, "task pointer")),
+        KfuncRefKind::File => Some((MirType::is_file_ptr, "file pointer")),
+        KfuncRefKind::Inode => Some((MirType::is_inode_ptr, "inode pointer")),
+        _ => None,
+    }
 }
 
 fn helper_local_map_ref_arg(

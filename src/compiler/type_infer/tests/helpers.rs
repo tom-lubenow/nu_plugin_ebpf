@@ -3834,15 +3834,10 @@ fn test_infer_helper_get_listener_sock_returns_kernel_pointer() {
 
     let mut ti = TypeInference::new(None);
     let types = ti.infer(&func).unwrap();
-    match types.get(&dst) {
-        Some(MirType::Ptr { address_space, .. }) => {
-            assert_eq!(*address_space, AddressSpace::Kernel);
-        }
-        other => panic!(
-            "Expected helper get_listener_sock kernel pointer return, got {:?}",
-            other
-        ),
-    }
+    assert_eq!(
+        types.get(&dst),
+        Some(&MirType::named_kernel_struct_ptr("bpf_sock"))
+    );
 }
 
 #[test]
@@ -3884,15 +3879,10 @@ fn test_infer_helper_sk_fullsock_returns_kernel_pointer() {
 
     let mut ti = TypeInference::new(None);
     let types = ti.infer(&func).unwrap();
-    match types.get(&dst) {
-        Some(MirType::Ptr { address_space, .. }) => {
-            assert_eq!(*address_space, AddressSpace::Kernel);
-        }
-        other => panic!(
-            "Expected helper sk_fullsock kernel pointer return, got {:?}",
-            other
-        ),
-    }
+    assert_eq!(
+        types.get(&dst),
+        Some(&MirType::named_kernel_struct_ptr("bpf_sock"))
+    );
 }
 
 #[test]
@@ -3934,15 +3924,10 @@ fn test_infer_helper_tcp_sock_returns_kernel_pointer() {
 
     let mut ti = TypeInference::new(None);
     let types = ti.infer(&func).unwrap();
-    match types.get(&dst) {
-        Some(MirType::Ptr { address_space, .. }) => {
-            assert_eq!(*address_space, AddressSpace::Kernel);
-        }
-        other => panic!(
-            "Expected helper tcp_sock kernel pointer return, got {:?}",
-            other
-        ),
-    }
+    assert_eq!(
+        types.get(&dst),
+        Some(&MirType::named_kernel_struct_ptr("bpf_sock"))
+    );
 }
 
 #[test]
@@ -3984,15 +3969,10 @@ fn test_infer_helper_skc_to_tcp_sock_returns_kernel_pointer() {
 
     let mut ti = TypeInference::new(None);
     let types = ti.infer(&func).unwrap();
-    match types.get(&dst) {
-        Some(MirType::Ptr { address_space, .. }) => {
-            assert_eq!(*address_space, AddressSpace::Kernel);
-        }
-        other => panic!(
-            "Expected helper skc_to_tcp_sock kernel pointer return, got {:?}",
-            other
-        ),
-    }
+    assert_eq!(
+        types.get(&dst),
+        Some(&MirType::named_kernel_struct_ptr("bpf_sock"))
+    );
 }
 
 #[test]

@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
+use crate::compiler::instruction::{KfuncRefKind, helper_pointer_arg_ref_kind};
 use crate::kernel_btf::KernelBtf;
 
 impl<'a> TypeInference<'a> {
@@ -430,65 +431,13 @@ impl<'a> TypeInference<'a> {
         if matches!(helper, BpfHelper::GetSocketCookie) {
             self.validate_get_socket_cookie_arg_shape(args, types, value_ranges, errors);
         }
-        if matches!(helper, BpfHelper::SockFromFile) {
+        for arg_idx in 0..args.len() {
+            let Some((predicate, expected)) = helper_expected_named_arg_shape(helper, arg_idx)
+            else {
+                continue;
+            };
             self.validate_named_helper_arg_shape(
-                helper,
-                args,
-                0,
-                types,
-                MirType::is_file_ptr,
-                "file pointer",
-                errors,
-            );
-        }
-        if matches!(helper, BpfHelper::TaskPtRegs) {
-            self.validate_named_helper_arg_shape(
-                helper,
-                args,
-                0,
-                types,
-                MirType::is_task_struct_ptr,
-                "task pointer",
-                errors,
-            );
-        }
-        if matches!(helper, BpfHelper::SkStorageGet | BpfHelper::SkStorageDelete) {
-            self.validate_named_helper_arg_shape(
-                helper,
-                args,
-                1,
-                types,
-                MirType::is_socket_ptr,
-                "socket pointer",
-                errors,
-            );
-        }
-        if matches!(
-            helper,
-            BpfHelper::TaskStorageGet | BpfHelper::TaskStorageDelete
-        ) {
-            self.validate_named_helper_arg_shape(
-                helper,
-                args,
-                1,
-                types,
-                MirType::is_task_struct_ptr,
-                "task pointer",
-                errors,
-            );
-        }
-        if matches!(
-            helper,
-            BpfHelper::InodeStorageGet | BpfHelper::InodeStorageDelete
-        ) {
-            self.validate_named_helper_arg_shape(
-                helper,
-                args,
-                1,
-                types,
-                MirType::is_inode_ptr,
-                "inode pointer",
-                errors,
+                helper, args, arg_idx, types, predicate, expected, errors,
             );
         }
     }
@@ -575,6 +524,11 @@ impl<'a> TypeInference<'a> {
         let Some(arg) = args.get(arg_idx) else {
             return;
         };
+        if self.helper_pointer_arg_allows_const_zero(helper as u32, arg_idx)
+            && Self::is_const_zero(arg)
+        {
+            return;
+        }
         let matches = match arg {
             MirValue::VReg(vreg) => predicate(&self.mir_type_for_vreg(*vreg, types)),
             MirValue::Const(_) | MirValue::StackSlot(_) => false,
@@ -888,5 +842,18 @@ impl<'a> TypeInference<'a> {
             MirValue::Const(c) => Some(*c),
             _ => None,
         }
+    }
+}
+
+fn helper_expected_named_arg_shape(
+    helper: BpfHelper,
+    arg_idx: usize,
+) -> Option<(fn(&MirType) -> bool, &'static str)> {
+    match helper_pointer_arg_ref_kind(helper, arg_idx)? {
+        KfuncRefKind::Socket => Some((MirType::is_socket_ptr, "socket pointer")),
+        KfuncRefKind::Task => Some((MirType::is_task_struct_ptr, "task pointer")),
+        KfuncRefKind::File => Some((MirType::is_file_ptr, "file pointer")),
+        KfuncRefKind::Inode => Some((MirType::is_inode_ptr, "inode pointer")),
+        _ => None,
     }
 }

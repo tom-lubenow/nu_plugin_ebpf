@@ -2356,18 +2356,12 @@ fn test_verify_mir_for_probe_context_tcp_sock_accepts_cgroup_sockopt() {
     types.insert(
         sock,
         MirType::Ptr {
-            pointee: Box::new(MirType::Unknown),
+            pointee: Box::new(ProbeContext::synthetic_socket_type()),
             address_space: AddressSpace::Kernel,
         },
     );
     types.insert(sock_non_null, MirType::Bool);
-    types.insert(
-        dst,
-        MirType::Ptr {
-            pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Kernel,
-        },
-    );
+    types.insert(dst, MirType::named_kernel_struct_ptr("bpf_sock"));
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
     verify_mir_for_probe_context(&func, &types, &probe_ctx)
@@ -2460,18 +2454,12 @@ fn test_verify_mir_for_probe_context_skc_to_tcp_sock_accepts_sk_lookup() {
     types.insert(
         sock,
         MirType::Ptr {
-            pointee: Box::new(MirType::Unknown),
+            pointee: Box::new(ProbeContext::synthetic_socket_type()),
             address_space: AddressSpace::Kernel,
         },
     );
     types.insert(sock_non_null, MirType::Bool);
-    types.insert(
-        dst,
-        MirType::Ptr {
-            pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Kernel,
-        },
-    );
+    types.insert(dst, MirType::named_kernel_struct_ptr("bpf_sock"));
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
     verify_mir_for_probe_context(&func, &types, &probe_ctx)

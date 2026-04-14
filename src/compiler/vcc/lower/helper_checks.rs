@@ -1,6 +1,6 @@
 use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
-use crate::compiler::instruction::unknown_kfunc_signature_message;
+use crate::compiler::instruction::{KfuncRefKind, unknown_kfunc_signature_message};
 
 impl<'a> VccLowerer<'a> {
     pub(super) fn verify_helper_call(
@@ -954,56 +954,13 @@ impl<'a> VccLowerer<'a> {
         if matches!(helper, BpfHelper::GetSocketCookie) {
             self.verify_get_socket_cookie_arg_shape(args)?;
         }
-        if matches!(helper, BpfHelper::SockFromFile) {
-            self.verify_named_helper_arg_shape(
-                helper,
-                args,
-                0,
-                MirType::is_file_ptr,
-                "file pointer",
-            )?;
-        }
-        if matches!(helper, BpfHelper::TaskPtRegs) {
-            self.verify_named_helper_arg_shape(
-                helper,
-                args,
-                0,
-                MirType::is_task_struct_ptr,
-                "task pointer",
-            )?;
-        }
-        if matches!(helper, BpfHelper::SkStorageGet | BpfHelper::SkStorageDelete) {
-            self.verify_named_helper_arg_shape(
-                helper,
-                args,
-                1,
-                MirType::is_socket_ptr,
-                "socket pointer",
-            )?;
-        }
-        if matches!(
-            helper,
-            BpfHelper::TaskStorageGet | BpfHelper::TaskStorageDelete
-        ) {
-            self.verify_named_helper_arg_shape(
-                helper,
-                args,
-                1,
-                MirType::is_task_struct_ptr,
-                "task pointer",
-            )?;
-        }
-        if matches!(
-            helper,
-            BpfHelper::InodeStorageGet | BpfHelper::InodeStorageDelete
-        ) {
-            self.verify_named_helper_arg_shape(
-                helper,
-                args,
-                1,
-                MirType::is_inode_ptr,
-                "inode pointer",
-            )?;
+        for arg_idx in 0..args.len() {
+            let Some((predicate, expected)) =
+                Self::helper_expected_named_arg_shape(helper, arg_idx)
+            else {
+                continue;
+            };
+            self.verify_named_helper_arg_shape(helper, args, arg_idx, predicate, expected)?;
         }
 
         Ok(())
@@ -1090,6 +1047,11 @@ impl<'a> VccLowerer<'a> {
         let Some(arg) = args.get(arg_idx) else {
             return Ok(());
         };
+        if self.helper_pointer_arg_allows_const_zero(helper as u32, arg_idx)
+            && matches!(arg, MirValue::Const(0))
+        {
+            return Ok(());
+        }
         if self.helper_arg_has_tracked_kfunc_ref(arg) {
             return Ok(());
         }
@@ -1110,6 +1072,19 @@ impl<'a> VccLowerer<'a> {
     fn helper_arg_has_tracked_kfunc_ref(&self, arg: &MirValue) -> bool {
         self.value_ptr_info(arg)
             .is_some_and(|info| matches!(info.space, VccAddrSpace::Kernel) && info.kfunc_ref.is_some())
+    }
+
+    fn helper_expected_named_arg_shape(
+        helper: BpfHelper,
+        arg_idx: usize,
+    ) -> Option<(fn(&MirType) -> bool, &'static str)> {
+        match Self::helper_pointer_arg_expected_ref_kind(helper as u32, arg_idx)? {
+            KfuncRefKind::Socket => Some((MirType::is_socket_ptr, "socket pointer")),
+            KfuncRefKind::Task => Some((MirType::is_task_struct_ptr, "task pointer")),
+            KfuncRefKind::File => Some((MirType::is_file_ptr, "file pointer")),
+            KfuncRefKind::Inode => Some((MirType::is_inode_ptr, "inode pointer")),
+            _ => None,
+        }
     }
 
     fn helper_pointer_arg_allows_maybe_null(&self, helper_id: u32, arg_idx: usize) -> bool {
