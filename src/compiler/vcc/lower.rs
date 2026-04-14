@@ -10,6 +10,7 @@ struct VccLowerer<'a> {
     list_max: HashMap<StackSlotId, usize>,
     ptr_regs: HashMap<VccReg, VccPointerInfo>,
     entry_ctx_field_regs: HashMap<String, VccReg>,
+    direct_ctx_field_regs: HashMap<VccReg, CtxField>,
     next_temp: u32,
 }
 
@@ -60,6 +61,7 @@ impl<'a> VccLowerer<'a> {
             list_max,
             ptr_regs,
             entry_ctx_field_regs: HashMap::new(),
+            direct_ctx_field_regs: HashMap::new(),
             next_temp: func.vreg_count.max(func.param_count as u32),
         }
     }

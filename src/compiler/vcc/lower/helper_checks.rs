@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
+use crate::compiler::EbpfProgramType;
 use crate::compiler::instruction::{KfuncRefKind, unknown_kfunc_signature_message};
 
 impl<'a> VccLowerer<'a> {
@@ -1019,11 +1020,26 @@ impl<'a> VccLowerer<'a> {
 
     fn helper_arg_is_raw_context_pointer(&self, arg: &MirValue) -> bool {
         match arg {
-            MirValue::VReg(vreg) => {
-                self.effective_ptr_space(*vreg) == Some(VccAddrSpace::Context)
-            }
+            MirValue::VReg(vreg) => self
+                .direct_ctx_field_regs
+                .get(&VccReg(vreg.0))
+                .is_some_and(|field| self.ctx_field_is_raw_context_pointer(field)),
             MirValue::Const(_) | MirValue::StackSlot(_) => false,
         }
+    }
+
+    fn ctx_field_is_raw_context_pointer(&self, field: &CtxField) -> bool {
+        if let Some(ctx) = self.probe_ctx {
+            return ctx.ctx_field_is_raw_context_pointer(field);
+        }
+        if let Some(program) = self.program {
+            return matches!(field, CtxField::Context)
+                || matches!(
+                    (program.program_type, field),
+                    (EbpfProgramType::CgroupSock, CtxField::Socket)
+                );
+        }
+        matches!(field, CtxField::Context)
     }
 
     fn helper_arg_is_socket_cookie_socket_pointer(&self, arg: &MirValue) -> bool {

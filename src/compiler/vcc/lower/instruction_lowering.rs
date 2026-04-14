@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::mir::BlockId;
 
 impl<'a> VccLowerer<'a> {
     fn ctx_field_key(field: &CtxField) -> String {
@@ -7,6 +8,26 @@ impl<'a> VccLowerer<'a> {
             CtxField::TracepointField(name) => format!("tp:{name}"),
             _ => field.display_name(),
         }
+    }
+
+    fn direct_ctx_field_for_value(&self, value: &MirValue) -> Option<CtxField> {
+        match value {
+            MirValue::VReg(vreg) => self.direct_ctx_field_regs.get(&VccReg(vreg.0)).cloned(),
+            MirValue::Const(_) | MirValue::StackSlot(_) => None,
+        }
+    }
+
+    fn direct_ctx_field_for_phi(&self, args: &[(BlockId, VReg)]) -> Option<CtxField> {
+        let mut source = None;
+        for (_, vreg) in args {
+            let candidate = self.direct_ctx_field_regs.get(&VccReg(vreg.0)).cloned()?;
+            match &source {
+                Some(existing) if *existing != candidate => return None,
+                Some(_) => {}
+                None => source = Some(candidate),
+            }
+        }
+        source
     }
 
     pub(super) fn lower_inst(
@@ -51,6 +72,9 @@ impl<'a> VccLowerer<'a> {
                         });
                         if let Some(ptr) = self.value_ptr_info(src) {
                             self.ptr_regs.insert(dst_reg, ptr);
+                        }
+                        if let Some(field) = self.direct_ctx_field_for_value(src) {
+                            self.direct_ctx_field_regs.insert(dst_reg, field);
                         }
                     }
                 }
@@ -213,6 +237,9 @@ impl<'a> VccLowerer<'a> {
                     dst: VccReg(dst.0),
                     args: vcc_args,
                 });
+                if let Some(field) = self.direct_ctx_field_for_phi(args) {
+                    self.direct_ctx_field_regs.insert(VccReg(dst.0), field);
+                }
             }
             MirInst::LoadCtxField { dst, field, slot } => {
                 self.verify_ctx_field_load(field)?;
@@ -225,6 +252,9 @@ impl<'a> VccLowerer<'a> {
                         });
                         if let Some(ptr) = self.ptr_regs.get(&src).copied() {
                             self.ptr_regs.insert(VccReg(dst.0), ptr);
+                        }
+                        if let Some(field) = self.direct_ctx_field_regs.get(&src).cloned() {
+                            self.direct_ctx_field_regs.insert(VccReg(dst.0), field);
                         }
                         return Ok(());
                     }
@@ -340,6 +370,10 @@ impl<'a> VccLowerer<'a> {
                     self.entry_ctx_field_regs
                         .entry(Self::ctx_field_key(field))
                         .or_insert(VccReg(dst.0));
+                }
+                if slot.is_none() {
+                    self.direct_ctx_field_regs
+                        .insert(VccReg(dst.0), field.clone());
                 }
             }
             MirInst::StoreCtxField { target, val, ty } => {
