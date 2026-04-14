@@ -1264,7 +1264,7 @@ fn test_lower_xdp_eth_payload_ipv6_next_header_projection_adds_ipv6_view() {
 }
 
 #[test]
-fn test_lower_xdp_eth_ipv6_udp_payload_projection_adds_fixed_ipv6_payload_step() {
+fn test_lower_xdp_eth_ipv6_udp_payload_projection_adds_bounded_ipv6_extension_scan() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![
             string_member("data"),
@@ -1301,6 +1301,22 @@ fn test_lower_xdp_eth_ipv6_udp_payload_projection_adds_fixed_ipv6_payload_step()
                     ..
                 }
             ))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. }))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::U8,
+                    ..
+                }
+            )))
     );
     assert!(
         blocks

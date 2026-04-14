@@ -983,6 +983,65 @@ impl<'a> HirToMirLowering<'a> {
         vlan_present
     }
 
+    fn emit_packet_u8_eq_const(&mut self, src_vreg: VReg, value: u8) -> VReg {
+        let eq_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: eq_vreg,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(src_vreg),
+            rhs: MirValue::Const(i64::from(value)),
+        });
+        self.emit_normalize_boolean_vreg(eq_vreg, eq_vreg);
+        eq_vreg
+    }
+
+    fn emit_packet_ipv6_extension_header_classify(
+        &mut self,
+        next_header_vreg: VReg,
+    ) -> (VReg, VReg, VReg) {
+        let hop_by_hop = self.emit_packet_u8_eq_const(next_header_vreg, 0);
+        let routing = self.emit_packet_u8_eq_const(next_header_vreg, 43);
+        let fragment = self.emit_packet_u8_eq_const(next_header_vreg, 44);
+        let auth = self.emit_packet_u8_eq_const(next_header_vreg, 51);
+        let dst_opts = self.emit_packet_u8_eq_const(next_header_vreg, 60);
+
+        let generic_ext = self.func.alloc_vreg();
+        self.vreg_type_hints.insert(generic_ext, MirType::Bool);
+        self.emit(MirInst::BinOp {
+            dst: generic_ext,
+            op: BinOpKind::Or,
+            lhs: MirValue::VReg(hop_by_hop),
+            rhs: MirValue::VReg(routing),
+        });
+        self.emit_normalize_boolean_vreg(generic_ext, generic_ext);
+        self.emit(MirInst::BinOp {
+            dst: generic_ext,
+            op: BinOpKind::Or,
+            lhs: MirValue::VReg(generic_ext),
+            rhs: MirValue::VReg(dst_opts),
+        });
+        self.emit_normalize_boolean_vreg(generic_ext, generic_ext);
+
+        let needs_skip = self.func.alloc_vreg();
+        self.vreg_type_hints.insert(needs_skip, MirType::Bool);
+        self.emit(MirInst::BinOp {
+            dst: needs_skip,
+            op: BinOpKind::Or,
+            lhs: MirValue::VReg(generic_ext),
+            rhs: MirValue::VReg(fragment),
+        });
+        self.emit_normalize_boolean_vreg(needs_skip, needs_skip);
+        self.emit(MirInst::BinOp {
+            dst: needs_skip,
+            op: BinOpKind::Or,
+            lhs: MirValue::VReg(needs_skip),
+            rhs: MirValue::VReg(auth),
+        });
+        self.emit_normalize_boolean_vreg(needs_skip, needs_skip);
+
+        (fragment, auth, needs_skip)
+    }
+
     pub(in crate::compiler::ir_to_mir) fn emit_packet_payload_ptr_step(
         &mut self,
         base_vreg: VReg,
@@ -1148,12 +1207,201 @@ impl<'a> HirToMirLowering<'a> {
                 });
             }
             PacketPayloadStepKind::Ipv6 => {
+                let current_next_header_vreg = self.func.alloc_vreg();
+                self.vreg_type_hints
+                    .insert(current_next_header_vreg, MirType::U8);
+                self.emit_packet_scalar_load_at_offset(
+                    current_next_header_vreg,
+                    base_ptr_vreg,
+                    6,
+                    &MirType::U8,
+                    false,
+                    path_desc,
+                )?;
+
                 self.emit(MirInst::BinOp {
                     dst: payload_ptr_vreg,
                     op: BinOpKind::Add,
                     lhs: MirValue::VReg(base_ptr_vreg),
                     rhs: MirValue::Const(40),
                 });
+
+                const MAX_IPV6_EXTENSION_HEADERS: usize = 6;
+                let done_block = self.func.alloc_block();
+
+                for i in 0..MAX_IPV6_EXTENSION_HEADERS {
+                    let (fragment, auth, needs_skip) =
+                        self.emit_packet_ipv6_extension_header_classify(current_next_header_vreg);
+
+                    let skip_block = self.func.alloc_block();
+                    let next_block = if i + 1 == MAX_IPV6_EXTENSION_HEADERS {
+                        done_block
+                    } else {
+                        self.func.alloc_block()
+                    };
+                    self.terminate(MirInst::Branch {
+                        cond: needs_skip,
+                        if_true: skip_block,
+                        if_false: done_block,
+                    });
+
+                    self.current_block = skip_block;
+
+                    let next_header_after_skip = self.func.alloc_vreg();
+                    self.vreg_type_hints
+                        .insert(next_header_after_skip, MirType::U8);
+                    self.emit_packet_scalar_load_at_offset(
+                        next_header_after_skip,
+                        payload_ptr_vreg,
+                        0,
+                        &MirType::U8,
+                        false,
+                        path_desc,
+                    )?;
+
+                    let auth_block = self.func.alloc_block();
+                    let non_auth_block = self.func.alloc_block();
+                    self.terminate(MirInst::Branch {
+                        cond: auth,
+                        if_true: auth_block,
+                        if_false: non_auth_block,
+                    });
+
+                    self.current_block = auth_block;
+                    let auth_hdr_len_vreg = self.func.alloc_vreg();
+                    self.vreg_type_hints.insert(auth_hdr_len_vreg, MirType::U8);
+                    self.emit_packet_scalar_load_at_offset(
+                        auth_hdr_len_vreg,
+                        payload_ptr_vreg,
+                        1,
+                        &MirType::U8,
+                        false,
+                        path_desc,
+                    )?;
+                    let auth_step_vreg = self.func.alloc_vreg();
+                    self.vreg_type_hints.insert(auth_step_vreg, MirType::U64);
+                    self.emit(MirInst::BinOp {
+                        dst: auth_step_vreg,
+                        op: BinOpKind::Add,
+                        lhs: MirValue::VReg(auth_hdr_len_vreg),
+                        rhs: MirValue::Const(2),
+                    });
+                    self.emit(MirInst::BinOp {
+                        dst: auth_step_vreg,
+                        op: BinOpKind::Shl,
+                        lhs: MirValue::VReg(auth_step_vreg),
+                        rhs: MirValue::Const(2),
+                    });
+                    let auth_payload_ptr_vreg = self.func.alloc_vreg();
+                    self.vreg_type_hints.insert(
+                        auth_payload_ptr_vreg,
+                        MirType::Ptr {
+                            pointee: Box::new(MirType::U8),
+                            address_space: AddressSpace::Packet,
+                        },
+                    );
+                    self.emit(MirInst::BinOp {
+                        dst: auth_payload_ptr_vreg,
+                        op: BinOpKind::Add,
+                        lhs: MirValue::VReg(payload_ptr_vreg),
+                        rhs: MirValue::VReg(auth_step_vreg),
+                    });
+                    self.emit(MirInst::Copy {
+                        dst: payload_ptr_vreg,
+                        src: MirValue::VReg(auth_payload_ptr_vreg),
+                    });
+                    self.emit(MirInst::Copy {
+                        dst: current_next_header_vreg,
+                        src: MirValue::VReg(next_header_after_skip),
+                    });
+                    self.terminate(MirInst::Jump { target: next_block });
+
+                    self.current_block = non_auth_block;
+                    let fragment_block = self.func.alloc_block();
+                    let generic_block = self.func.alloc_block();
+                    self.terminate(MirInst::Branch {
+                        cond: fragment,
+                        if_true: fragment_block,
+                        if_false: generic_block,
+                    });
+
+                    self.current_block = fragment_block;
+                    let fragment_payload_ptr_vreg = self.func.alloc_vreg();
+                    self.vreg_type_hints.insert(
+                        fragment_payload_ptr_vreg,
+                        MirType::Ptr {
+                            pointee: Box::new(MirType::U8),
+                            address_space: AddressSpace::Packet,
+                        },
+                    );
+                    self.emit(MirInst::BinOp {
+                        dst: fragment_payload_ptr_vreg,
+                        op: BinOpKind::Add,
+                        lhs: MirValue::VReg(payload_ptr_vreg),
+                        rhs: MirValue::Const(8),
+                    });
+                    self.emit(MirInst::Copy {
+                        dst: payload_ptr_vreg,
+                        src: MirValue::VReg(fragment_payload_ptr_vreg),
+                    });
+                    self.emit(MirInst::Copy {
+                        dst: current_next_header_vreg,
+                        src: MirValue::VReg(next_header_after_skip),
+                    });
+                    self.terminate(MirInst::Jump { target: next_block });
+
+                    self.current_block = generic_block;
+                    let generic_hdr_len_vreg = self.func.alloc_vreg();
+                    self.vreg_type_hints
+                        .insert(generic_hdr_len_vreg, MirType::U8);
+                    self.emit_packet_scalar_load_at_offset(
+                        generic_hdr_len_vreg,
+                        payload_ptr_vreg,
+                        1,
+                        &MirType::U8,
+                        false,
+                        path_desc,
+                    )?;
+                    let generic_step_vreg = self.func.alloc_vreg();
+                    self.vreg_type_hints.insert(generic_step_vreg, MirType::U64);
+                    self.emit(MirInst::BinOp {
+                        dst: generic_step_vreg,
+                        op: BinOpKind::Add,
+                        lhs: MirValue::VReg(generic_hdr_len_vreg),
+                        rhs: MirValue::Const(1),
+                    });
+                    self.emit(MirInst::BinOp {
+                        dst: generic_step_vreg,
+                        op: BinOpKind::Shl,
+                        lhs: MirValue::VReg(generic_step_vreg),
+                        rhs: MirValue::Const(3),
+                    });
+                    let generic_payload_ptr_vreg = self.func.alloc_vreg();
+                    self.vreg_type_hints.insert(
+                        generic_payload_ptr_vreg,
+                        MirType::Ptr {
+                            pointee: Box::new(MirType::U8),
+                            address_space: AddressSpace::Packet,
+                        },
+                    );
+                    self.emit(MirInst::BinOp {
+                        dst: generic_payload_ptr_vreg,
+                        op: BinOpKind::Add,
+                        lhs: MirValue::VReg(payload_ptr_vreg),
+                        rhs: MirValue::VReg(generic_step_vreg),
+                    });
+                    self.emit(MirInst::Copy {
+                        dst: payload_ptr_vreg,
+                        src: MirValue::VReg(generic_payload_ptr_vreg),
+                    });
+                    self.emit(MirInst::Copy {
+                        dst: current_next_header_vreg,
+                        src: MirValue::VReg(next_header_after_skip),
+                    });
+                    self.terminate(MirInst::Jump { target: next_block });
+
+                    self.current_block = next_block;
+                }
             }
             PacketPayloadStepKind::Icmp | PacketPayloadStepKind::Icmpv6 => {
                 self.emit(MirInst::BinOp {

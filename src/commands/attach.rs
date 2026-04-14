@@ -181,10 +181,12 @@ Context parameter syntax (recommended):
     read-only for direct packet writes. Those views also support `payload`
     stepping: `eth.payload` skips Ethernet and up to two stacked VLAN tags
     when present, `ipv4.payload` uses the runtime IHL, `ipv6.payload`
-    skips the fixed IPv6 header, `icmp.payload` / `icmpv6.payload` skip
-    the fixed 8-byte ICMP header, and `tcp.payload` uses the runtime data
+    skips the fixed IPv6 header plus a bounded chain of common IPv6
+    extension headers (`hop-by-hop`, `routing`, `fragment`, `auth`, and
+    `destination options`), `icmp.payload` / `icmpv6.payload` skip the
+    fixed 8-byte ICMP header, and `tcp.payload` uses the runtime data
     offset. IPv4/TCP options, ICMP subtype-specific body decoding, and
-    IPv6 extension headers are still not modeled.
+    uncommon IPv6 extension headers are still not modeled.
     On skb-backed packet programs, `ctx.tstamp` is also writable through
     ordinary assignment, for example `mut ctx = $ctx; $ctx.tstamp = 123`.
     When the timestamp type must also change, tc additionally models
