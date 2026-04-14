@@ -997,6 +997,36 @@ impl EbpfProgramType {
                 "helper '{}' is only valid in tc programs",
                 helper.name()
             )),
+            BpfHelper::GetSocketUid
+                if !matches!(
+                    self,
+                    EbpfProgramType::SocketFilter
+                        | EbpfProgramType::Tc
+                        | EbpfProgramType::SkSkb
+                        | EbpfProgramType::SkSkbParser
+                ) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in socket_filter, tc, sk_skb, and sk_skb_parser programs",
+                    helper.name()
+                ))
+            }
+            BpfHelper::GetNetnsCookie
+                if !matches!(
+                    self,
+                    EbpfProgramType::SocketFilter
+                        | EbpfProgramType::Tc
+                        | EbpfProgramType::CgroupSock
+                        | EbpfProgramType::CgroupSockAddr
+                        | EbpfProgramType::SockOps
+                        | EbpfProgramType::SkMsg
+                ) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in socket_filter, tc, cgroup_sock, cgroup_sock_addr, sock_ops, and sk_msg programs",
+                    helper.name()
+                ))
+            }
             BpfHelper::MsgApplyBytes
             | BpfHelper::MsgCorkBytes
             | BpfHelper::MsgPullData

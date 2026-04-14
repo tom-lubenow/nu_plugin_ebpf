@@ -842,6 +842,20 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::CgroupSkb.helper_call_error(BpfHelper::GetSocketUid),
+        Some(
+            "helper 'bpf_get_socket_uid' is only valid in socket_filter, tc, sk_skb, and sk_skb_parser programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSockopt.helper_call_error(BpfHelper::GetNetnsCookie),
+        Some(
+            "helper 'bpf_get_netns_cookie' is only valid in socket_filter, tc, cgroup_sock, cgroup_sock_addr, sock_ops, and sk_msg programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::TcpCheckSyncookie),
         Some("helper 'bpf_tcp_check_syncookie' is only valid in xdp and tc programs".to_string())
     );
@@ -902,6 +916,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::SkSkbParser.helper_call_error(BpfHelper::SkRedirectHash),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Tc.helper_call_error(BpfHelper::GetSocketUid),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::SkMsg.helper_call_error(BpfHelper::GetNetnsCookie),
         None
     );
     assert_eq!(
