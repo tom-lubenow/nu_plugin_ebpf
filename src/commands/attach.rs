@@ -185,8 +185,10 @@ Context parameter syntax (recommended):
     extension headers (`hop-by-hop`, `routing`, `fragment`, `auth`, and
     `destination options`), `icmp.payload` / `icmpv6.payload` skip the
     fixed 8-byte ICMP header, and `tcp.payload` uses the runtime data
-    offset. IPv4/TCP options, ICMP subtype-specific body decoding, and
-    uncommon IPv6 extension headers are still not modeled.
+    offset. Nested protocol-following views like `eth.ipv4.tcp.seq` and
+    `eth.ipv6.udp.src` reuse those same runtime steps automatically.
+    IPv4/TCP options, ICMP subtype-specific body decoding, and uncommon
+    IPv6 extension headers are still not modeled.
     On skb-backed packet programs, `ctx.tstamp` is also writable through
     ordinary assignment, for example `mut ctx = $ctx; $ctx.tstamp = 123`.
     When the timestamp type must also change, tc additionally models

@@ -3694,6 +3694,37 @@ fn test_compile_xdp_eth_ipv4_tcp_payload_projection() {
 }
 
 #[test]
+fn test_compile_xdp_eth_ipv4_tcp_seq_projection() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("data"),
+            string_member("eth"),
+            string_member("ipv4"),
+            string_member("tcp"),
+            string_member("seq"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("eth ipv4 tcp seq projection should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("eth ipv4 tcp seq projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_compile_xdp_eth_payload_ipv6_next_header_projection() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![
@@ -3754,6 +3785,37 @@ fn test_compile_xdp_eth_ipv6_udp_payload_projection() {
         Some(&lowering.type_hints),
     )
     .expect("eth ipv6 udp payload projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_xdp_eth_ipv6_udp_src_projection() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("data"),
+            string_member("eth"),
+            string_member("ipv6"),
+            string_member("udp"),
+            string_member("src"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("eth ipv6 udp src projection should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("eth ipv6 udp src projection should compile");
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 

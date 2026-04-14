@@ -1385,6 +1385,116 @@ fn test_lower_xdp_eth_ipv4_icmp_payload_projection_adds_fixed_icmp_payload_step(
 }
 
 #[test]
+fn test_lower_xdp_eth_ipv4_tcp_seq_projection_reuses_dynamic_payload_steps() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("data"),
+            string_member("eth"),
+            string_member("ipv4"),
+            string_member("tcp"),
+            string_member("seq"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp eth ipv4 tcp seq projection should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. }))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::U8,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::And,
+                    rhs: MirValue::Const(0x0f),
+                    ..
+                }
+            ))
+    );
+}
+
+#[test]
+fn test_lower_xdp_eth_ipv6_udp_src_projection_reuses_bounded_ipv6_extension_scan() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("data"),
+            string_member("eth"),
+            string_member("ipv6"),
+            string_member("udp"),
+            string_member("src"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp eth ipv6 udp src projection should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Add,
+                    rhs: MirValue::Const(40),
+                    ..
+                }
+            ))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. }))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::U8,
+                    ..
+                }
+            )))
+    );
+}
+
+#[test]
 fn test_lower_xdp_eth_ipv6_icmpv6_code_projection_adds_icmpv6_view() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![

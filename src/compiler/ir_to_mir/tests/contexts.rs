@@ -2783,6 +2783,75 @@ fn test_lower_xdp_ctx_ethertype_assignment_adds_be_guarded_packet_store() {
 }
 
 #[test]
+fn test_lower_xdp_ctx_eth_ipv6_udp_dst_assignment_uses_dynamic_header_steps() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![
+                string_member("data"),
+                string_member("eth"),
+                string_member("ipv6"),
+                string_member("udp"),
+                string_member("dst"),
+            ],
+        },
+        HirLiteral::Int(53),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp ctx.data.eth.ipv6.udp.dst assignment should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Add,
+                    rhs: MirValue::Const(40),
+                    ..
+                }
+            ))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. }))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::U8,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Store {
+                    ty: MirType::U16,
+                    ..
+                }
+            )))
+    );
+}
+
+#[test]
 fn test_lower_xdp_ctx_data_meta_byte_assignment_uses_data_guard() {
     let hir = make_ctx_upsert_program(
         CellPath {

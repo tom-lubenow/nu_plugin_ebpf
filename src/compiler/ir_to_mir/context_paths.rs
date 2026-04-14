@@ -231,6 +231,30 @@ impl<'a> HirToMirLowering<'a> {
                 continue;
             }
 
+            if let Some((payload_kind, view_ty)) =
+                Self::packet_protocol_header_view_spec(target_ty, member)
+            {
+                let view_ptr_vreg = self.emit_packet_payload_ptr_step(
+                    *base_vreg,
+                    *base_offset,
+                    payload_kind,
+                    path_desc,
+                )?;
+                if is_last {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "context cell path update '.{} = ...' requires a scalar packet field, not a header view",
+                        path_desc
+                    )));
+                }
+                cursor = PacketStoreCursor::Pointer {
+                    base_vreg: view_ptr_vreg,
+                    base_offset: 0,
+                    target_ty: view_ty,
+                    direct: false,
+                };
+                continue;
+            }
+
             if let Some(view) = Self::packet_header_view_spec(target_ty, member) {
                 let view_offset = view.offset;
                 let view_ty = view.ty;

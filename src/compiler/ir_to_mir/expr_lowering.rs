@@ -1013,6 +1013,40 @@ impl<'a> HirToMirLowering<'a> {
                     continue;
                 }
 
+                if let Some((payload_kind, view_ty)) =
+                    Self::packet_protocol_header_view_spec(target_ty, member)
+                {
+                    let view_ptr_vreg = self.emit_packet_payload_ptr_step(
+                        *base_vreg,
+                        *base_offset,
+                        payload_kind,
+                        path_desc,
+                    )?;
+                    if is_last {
+                        self.vreg_type_hints.insert(
+                            dst_vreg,
+                            MirType::Ptr {
+                                pointee: Box::new(view_ty.clone()),
+                                address_space: AddressSpace::Packet,
+                            },
+                        );
+                        self.emit(MirInst::Copy {
+                            dst: dst_vreg,
+                            src: MirValue::VReg(view_ptr_vreg),
+                        });
+                        return Ok(view_ty);
+                    }
+
+                    cursor = ValueCursor::Pointer {
+                        base_vreg: view_ptr_vreg,
+                        address_space: *address_space,
+                        base_offset: 0,
+                        target_ty: view_ty,
+                        direct: false,
+                    };
+                    continue;
+                }
+
                 if let Some(TypedProjectionStep {
                     offset: view_offset,
                     ty: view_ty,

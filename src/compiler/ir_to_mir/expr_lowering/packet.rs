@@ -1,5 +1,6 @@
 use super::*;
 
+#[derive(Copy, Clone)]
 pub(in crate::compiler::ir_to_mir) enum PacketPayloadStepKind {
     Ethernet,
     Ipv4,
@@ -609,56 +610,52 @@ impl<'a> HirToMirLowering<'a> {
                 bitfield: None,
                 packet_big_endian: false,
             }),
-            (Some("__packet_eth"), _, "ipv4" | "iphdr") => Some(TypedProjectionStep {
-                offset: current_ty.size(),
-                ty: Self::packet_ipv4_header_type(),
-                bitfield: None,
-                packet_big_endian: false,
-            }),
-            (Some("__packet_eth"), _, "ipv6" | "ipv6hdr" | "ip6hdr") => Some(TypedProjectionStep {
-                offset: current_ty.size(),
-                ty: Self::packet_ipv6_header_type(),
-                bitfield: None,
-                packet_big_endian: false,
-            }),
-            (Some("__packet_ipv4"), _, "udp" | "udphdr") => Some(TypedProjectionStep {
-                offset: current_ty.size(),
-                ty: Self::packet_udp_header_type(),
-                bitfield: None,
-                packet_big_endian: false,
-            }),
-            (Some("__packet_ipv4"), _, "icmp" | "icmphdr") => Some(TypedProjectionStep {
-                offset: current_ty.size(),
-                ty: Self::packet_icmp_header_type(),
-                bitfield: None,
-                packet_big_endian: false,
-            }),
-            (Some("__packet_ipv4"), _, "tcp" | "tcphdr") => Some(TypedProjectionStep {
-                offset: current_ty.size(),
-                ty: Self::packet_tcp_header_type(),
-                bitfield: None,
-                packet_big_endian: false,
-            }),
-            (Some("__packet_ipv6"), _, "udp" | "udphdr") => Some(TypedProjectionStep {
-                offset: current_ty.size(),
-                ty: Self::packet_udp_header_type(),
-                bitfield: None,
-                packet_big_endian: false,
-            }),
-            (Some("__packet_ipv6"), _, "icmpv6" | "icmp6" | "icmpv6hdr" | "icmp6hdr") => {
-                Some(TypedProjectionStep {
-                    offset: current_ty.size(),
-                    ty: Self::packet_icmpv6_header_type(),
-                    bitfield: None,
-                    packet_big_endian: false,
-                })
+            _ => None,
+        }
+    }
+
+    pub(in crate::compiler::ir_to_mir) fn packet_protocol_header_view_spec(
+        current_ty: &MirType,
+        member: &PathMember,
+    ) -> Option<(PacketPayloadStepKind, MirType)> {
+        let MirType::Struct {
+            name: Some(name), ..
+        } = current_ty
+        else {
+            return None;
+        };
+        let PathMember::String { val, .. } = member else {
+            return None;
+        };
+
+        match (name.as_str(), val.as_str()) {
+            ("__packet_eth", "ipv4" | "iphdr") => Some((
+                PacketPayloadStepKind::Ethernet,
+                Self::packet_ipv4_header_type(),
+            )),
+            ("__packet_eth", "ipv6" | "ipv6hdr" | "ip6hdr") => Some((
+                PacketPayloadStepKind::Ethernet,
+                Self::packet_ipv6_header_type(),
+            )),
+            ("__packet_ipv4", "udp" | "udphdr") => {
+                Some((PacketPayloadStepKind::Ipv4, Self::packet_udp_header_type()))
             }
-            (Some("__packet_ipv6"), _, "tcp" | "tcphdr") => Some(TypedProjectionStep {
-                offset: current_ty.size(),
-                ty: Self::packet_tcp_header_type(),
-                bitfield: None,
-                packet_big_endian: false,
-            }),
+            ("__packet_ipv4", "icmp" | "icmphdr") => {
+                Some((PacketPayloadStepKind::Ipv4, Self::packet_icmp_header_type()))
+            }
+            ("__packet_ipv4", "tcp" | "tcphdr") => {
+                Some((PacketPayloadStepKind::Ipv4, Self::packet_tcp_header_type()))
+            }
+            ("__packet_ipv6", "udp" | "udphdr") => {
+                Some((PacketPayloadStepKind::Ipv6, Self::packet_udp_header_type()))
+            }
+            ("__packet_ipv6", "icmpv6" | "icmp6" | "icmpv6hdr" | "icmp6hdr") => Some((
+                PacketPayloadStepKind::Ipv6,
+                Self::packet_icmpv6_header_type(),
+            )),
+            ("__packet_ipv6", "tcp" | "tcphdr") => {
+                Some((PacketPayloadStepKind::Ipv6, Self::packet_tcp_header_type()))
+            }
             _ => None,
         }
     }
