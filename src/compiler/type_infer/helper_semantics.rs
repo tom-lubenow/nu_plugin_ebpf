@@ -434,6 +434,7 @@ impl<'a> TypeInference<'a> {
             self.validate_named_helper_arg_shape(
                 helper,
                 args,
+                0,
                 types,
                 MirType::is_file_ptr,
                 "file pointer",
@@ -444,9 +445,49 @@ impl<'a> TypeInference<'a> {
             self.validate_named_helper_arg_shape(
                 helper,
                 args,
+                0,
                 types,
                 MirType::is_task_struct_ptr,
                 "task pointer",
+                errors,
+            );
+        }
+        if matches!(helper, BpfHelper::SkStorageGet | BpfHelper::SkStorageDelete) {
+            self.validate_named_helper_arg_shape(
+                helper,
+                args,
+                1,
+                types,
+                MirType::is_socket_ptr,
+                "socket pointer",
+                errors,
+            );
+        }
+        if matches!(
+            helper,
+            BpfHelper::TaskStorageGet | BpfHelper::TaskStorageDelete
+        ) {
+            self.validate_named_helper_arg_shape(
+                helper,
+                args,
+                1,
+                types,
+                MirType::is_task_struct_ptr,
+                "task pointer",
+                errors,
+            );
+        }
+        if matches!(
+            helper,
+            BpfHelper::InodeStorageGet | BpfHelper::InodeStorageDelete
+        ) {
+            self.validate_named_helper_arg_shape(
+                helper,
+                args,
+                1,
+                types,
+                MirType::is_inode_ptr,
+                "inode pointer",
                 errors,
             );
         }
@@ -525,12 +566,13 @@ impl<'a> TypeInference<'a> {
         &self,
         helper: BpfHelper,
         args: &[MirValue],
+        arg_idx: usize,
         types: &HashMap<VReg, MirType>,
         predicate: fn(&MirType) -> bool,
         expected: &str,
         errors: &mut Vec<TypeError>,
     ) {
-        let Some(arg) = args.first() else {
+        let Some(arg) = args.get(arg_idx) else {
             return;
         };
         let matches = match arg {
@@ -539,8 +581,9 @@ impl<'a> TypeInference<'a> {
         };
         if !matches {
             errors.push(TypeError::new(format!(
-                "helper '{}' arg0 expects {}",
+                "helper '{}' arg{} expects {}",
                 helper.name(),
+                arg_idx,
                 expected
             )));
         }

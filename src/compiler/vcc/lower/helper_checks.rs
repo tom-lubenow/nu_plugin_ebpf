@@ -958,6 +958,7 @@ impl<'a> VccLowerer<'a> {
             self.verify_named_helper_arg_shape(
                 helper,
                 args,
+                0,
                 MirType::is_file_ptr,
                 "file pointer",
             )?;
@@ -966,8 +967,42 @@ impl<'a> VccLowerer<'a> {
             self.verify_named_helper_arg_shape(
                 helper,
                 args,
+                0,
                 MirType::is_task_struct_ptr,
                 "task pointer",
+            )?;
+        }
+        if matches!(helper, BpfHelper::SkStorageGet | BpfHelper::SkStorageDelete) {
+            self.verify_named_helper_arg_shape(
+                helper,
+                args,
+                1,
+                MirType::is_socket_ptr,
+                "socket pointer",
+            )?;
+        }
+        if matches!(
+            helper,
+            BpfHelper::TaskStorageGet | BpfHelper::TaskStorageDelete
+        ) {
+            self.verify_named_helper_arg_shape(
+                helper,
+                args,
+                1,
+                MirType::is_task_struct_ptr,
+                "task pointer",
+            )?;
+        }
+        if matches!(
+            helper,
+            BpfHelper::InodeStorageGet | BpfHelper::InodeStorageDelete
+        ) {
+            self.verify_named_helper_arg_shape(
+                helper,
+                args,
+                1,
+                MirType::is_inode_ptr,
+                "inode pointer",
             )?;
         }
 
@@ -1048,10 +1083,11 @@ impl<'a> VccLowerer<'a> {
         &self,
         helper: BpfHelper,
         args: &[MirValue],
+        arg_idx: usize,
         predicate: fn(&MirType) -> bool,
         expected: &str,
     ) -> Result<(), VccError> {
-        let Some(arg) = args.first() else {
+        let Some(arg) = args.get(arg_idx) else {
             return Ok(());
         };
         if self.helper_arg_has_tracked_kfunc_ref(arg) {
@@ -1066,7 +1102,7 @@ impl<'a> VccLowerer<'a> {
         } else {
             Err(VccError::new(
                 VccErrorKind::UnsupportedInstruction,
-                format!("helper '{}' arg0 expects {}", helper.name(), expected),
+                format!("helper '{}' arg{} expects {}", helper.name(), arg_idx, expected),
             ))
         }
     }

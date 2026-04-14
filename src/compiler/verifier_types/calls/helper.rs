@@ -323,6 +323,7 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         validate_named_helper_arg_shape(
             helper,
             args,
+            0,
             types,
             state,
             MirType::is_file_ptr,
@@ -334,10 +335,53 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         validate_named_helper_arg_shape(
             helper,
             args,
+            0,
             types,
             state,
             MirType::is_task_struct_ptr,
             "task pointer",
+            errors,
+        );
+    }
+    if matches!(helper, BpfHelper::SkStorageGet | BpfHelper::SkStorageDelete) {
+        validate_named_helper_arg_shape(
+            helper,
+            args,
+            1,
+            types,
+            state,
+            MirType::is_socket_ptr,
+            "socket pointer",
+            errors,
+        );
+    }
+    if matches!(
+        helper,
+        BpfHelper::TaskStorageGet | BpfHelper::TaskStorageDelete
+    ) {
+        validate_named_helper_arg_shape(
+            helper,
+            args,
+            1,
+            types,
+            state,
+            MirType::is_task_struct_ptr,
+            "task pointer",
+            errors,
+        );
+    }
+    if matches!(
+        helper,
+        BpfHelper::InodeStorageGet | BpfHelper::InodeStorageDelete
+    ) {
+        validate_named_helper_arg_shape(
+            helper,
+            args,
+            1,
+            types,
+            state,
+            MirType::is_inode_ptr,
+            "inode pointer",
             errors,
         );
     }
@@ -611,13 +655,14 @@ fn helper_arg_is_socket_cookie_socket_pointer(
 fn validate_named_helper_arg_shape(
     helper: BpfHelper,
     args: &[MirValue],
+    arg_idx: usize,
     types: &HashMap<VReg, MirType>,
     state: &VerifierState,
     predicate: fn(&MirType) -> bool,
     expected: &str,
     errors: &mut Vec<VerifierTypeError>,
 ) {
-    let Some(arg) = args.first() else {
+    let Some(arg) = args.get(arg_idx) else {
         return;
     };
     if helper_arg_has_tracked_kfunc_ref(arg, state) {
@@ -629,8 +674,9 @@ fn validate_named_helper_arg_shape(
     };
     if !matches {
         errors.push(VerifierTypeError::new(format!(
-            "helper '{}' arg0 expects {}",
+            "helper '{}' arg{} expects {}",
             helper.name(),
+            arg_idx,
             expected
         )));
     }

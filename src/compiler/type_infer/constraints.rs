@@ -145,32 +145,30 @@ impl<'a> TypeInference<'a> {
                             self.constrain(dst_ty, HMType::I64, "helper_call");
                         }
                         HelperRetKind::PointerMaybeNull => {
-                            let pointee = HMType::Var(self.tvar_gen.fresh());
-                            let address_space = match BpfHelper::from_u32(*helper) {
-                                Some(BpfHelper::KptrXchg) => AddressSpace::Kernel,
-                                Some(
-                                    BpfHelper::SkFullsock
-                                    | BpfHelper::TcpSock
-                                    | BpfHelper::SkcToTcp6Sock
-                                    | BpfHelper::SkcToTcpTimewaitSock
-                                    | BpfHelper::SkcToTcpRequestSock
-                                    | BpfHelper::SkcToUdp6Sock
-                                    | BpfHelper::SkcToUnixSock
-                                    | BpfHelper::SockFromFile
-                                    | BpfHelper::TaskPtRegs
-                                    | BpfHelper::SkcToTcpSock,
-                                ) => AddressSpace::Kernel,
-                                Some(BpfHelper::GetListenerSock) => AddressSpace::Kernel,
-                                Some(helper) if helper_acquire_ref_kind(helper).is_some() => {
-                                    AddressSpace::Kernel
-                                }
-                                _ => AddressSpace::Map,
-                            };
-                            let ptr_ty = HMType::Ptr {
-                                pointee: Box::new(pointee),
-                                address_space,
-                            };
-                            self.constrain(dst_ty, ptr_ty, "helper_call_ptr_ret");
+                            if let Some(helper_kind) = BpfHelper::from_u32(*helper)
+                                && let Some(precise_ty) =
+                                    TypeInference::precise_helper_return_mir_type(helper_kind)
+                            {
+                                self.constrain(
+                                    dst_ty,
+                                    HMType::from_mir_type(&precise_ty),
+                                    "helper_call_ptr_ret",
+                                );
+                            } else {
+                                let pointee = HMType::Var(self.tvar_gen.fresh());
+                                let address_space = match BpfHelper::from_u32(*helper) {
+                                    Some(BpfHelper::KptrXchg) => AddressSpace::Kernel,
+                                    Some(helper) if helper_acquire_ref_kind(helper).is_some() => {
+                                        AddressSpace::Kernel
+                                    }
+                                    _ => AddressSpace::Map,
+                                };
+                                let ptr_ty = HMType::Ptr {
+                                    pointee: Box::new(pointee),
+                                    address_space,
+                                };
+                                self.constrain(dst_ty, ptr_ty, "helper_call_ptr_ret");
+                            }
                         }
                     }
                 } else {

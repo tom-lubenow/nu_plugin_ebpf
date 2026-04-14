@@ -215,7 +215,11 @@ impl MirType {
         self.is_named_kernel_struct_ptr(&["file"])
     }
 
-    pub fn is_socket_cookie_socket_ptr(&self) -> bool {
+    pub fn is_inode_ptr(&self) -> bool {
+        self.is_named_kernel_struct_ptr(&["inode"])
+    }
+
+    pub fn is_socket_ptr(&self) -> bool {
         matches!(
             self,
             MirType::Ptr {
@@ -223,6 +227,10 @@ impl MirType {
                 pointee,
             } if pointee.is_socket_cookie_socket_pointee()
         )
+    }
+
+    pub fn is_socket_cookie_socket_ptr(&self) -> bool {
+        self.is_socket_ptr()
     }
 
     fn is_named_kernel_struct_ptr(&self, candidates: &[&str]) -> bool {

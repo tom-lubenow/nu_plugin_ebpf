@@ -2204,11 +2204,6 @@ fn test_infer_inode_storage_get_helper_in_lsm_program() {
     let inode = func.alloc_vreg();
     let dst = func.alloc_vreg();
     let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::LoadCtxField {
-        dst: inode,
-        field: CtxField::Context,
-        slot: None,
-    });
     block.instructions.push(MirInst::CallHelper {
         dst,
         helper: BpfHelper::InodeStorageGet as u32,
@@ -2222,7 +2217,8 @@ fn test_infer_inode_storage_get_helper_in_lsm_program() {
     block.terminator = MirInst::Return { val: None };
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "file_open");
-    let mut ti = TypeInference::new(Some(probe_ctx));
+    let hints = HashMap::from([(inode, MirType::named_kernel_struct_ptr("inode"))]);
+    let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
     let types = ti
         .infer(&func)
         .expect("expected bpf_inode_storage_get to infer on lsm");
@@ -3153,21 +3149,10 @@ fn test_infer_tcp_gen_syncookie_helper_in_tc_program() {
 fn test_infer_helper_sk_storage_get_returns_map_pointer() {
     let mut func = make_test_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
-    let pid = func.alloc_vreg();
     let sk = func.alloc_vreg();
     let dst = func.alloc_vreg();
 
     let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::Copy {
-        dst: pid,
-        src: MirValue::Const(7),
-    });
-    block.instructions.push(MirInst::CallKfunc {
-        dst: sk,
-        kfunc: "bpf_task_from_pid".to_string(),
-        btf_id: None,
-        args: vec![pid],
-    });
     block.instructions.push(MirInst::CallHelper {
         dst,
         helper: BpfHelper::SkStorageGet as u32,
@@ -3180,7 +3165,8 @@ fn test_infer_helper_sk_storage_get_returns_map_pointer() {
     });
     block.terminator = MirInst::Return { val: None };
 
-    let mut ti = TypeInference::new(None);
+    let hints = HashMap::from([(sk, MirType::named_kernel_struct_ptr("bpf_sock"))]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
     let types = ti.infer(&func).unwrap();
     match types.get(&dst) {
         Some(MirType::Ptr { address_space, .. }) => {
@@ -3191,6 +3177,43 @@ fn test_infer_helper_sk_storage_get_returns_map_pointer() {
             other
         ),
     }
+}
+
+#[test]
+fn test_type_error_helper_sk_storage_get_rejects_anonymous_kernel_pointer() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let sk = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(sk),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let hints = HashMap::from([(
+        sk,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    )]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected anonymous kernel pointer to fail sk_storage_get");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_sk_storage_get' arg1 expects socket pointer")
+    }));
 }
 
 #[test]
@@ -3351,6 +3374,43 @@ fn test_infer_helper_task_storage_get_returns_map_pointer() {
 }
 
 #[test]
+fn test_type_error_helper_task_storage_get_rejects_anonymous_kernel_pointer() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let task = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TaskStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(task),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let hints = HashMap::from([(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    )]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected anonymous kernel pointer to fail task_storage_get");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_task_storage_get' arg1 expects task pointer")
+    }));
+}
+
+#[test]
 fn test_type_error_helper_task_storage_get_rejects_non_stack_map_arg() {
     let mut func = make_test_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
@@ -3467,21 +3527,10 @@ fn test_type_error_helper_task_storage_delete_rejects_non_kernel_task_pointer() 
 fn test_infer_helper_inode_storage_get_returns_map_pointer() {
     let mut func = make_test_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
-    let pid = func.alloc_vreg();
     let inode = func.alloc_vreg();
     let dst = func.alloc_vreg();
 
     let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::Copy {
-        dst: pid,
-        src: MirValue::Const(7),
-    });
-    block.instructions.push(MirInst::CallKfunc {
-        dst: inode,
-        kfunc: "bpf_task_from_pid".to_string(),
-        btf_id: None,
-        args: vec![pid],
-    });
     block.instructions.push(MirInst::CallHelper {
         dst,
         helper: BpfHelper::InodeStorageGet as u32,
@@ -3494,7 +3543,8 @@ fn test_infer_helper_inode_storage_get_returns_map_pointer() {
     });
     block.terminator = MirInst::Return { val: None };
 
-    let mut ti = TypeInference::new(None);
+    let hints = HashMap::from([(inode, MirType::named_kernel_struct_ptr("inode"))]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
     let types = ti.infer(&func).unwrap();
     match types.get(&dst) {
         Some(MirType::Ptr { address_space, .. }) => {
@@ -3505,6 +3555,43 @@ fn test_infer_helper_inode_storage_get_returns_map_pointer() {
             other
         ),
     }
+}
+
+#[test]
+fn test_type_error_helper_inode_storage_get_rejects_anonymous_kernel_pointer() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let inode = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::InodeStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(inode),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let hints = HashMap::from([(
+        inode,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    )]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected anonymous kernel pointer to fail inode_storage_get");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_inode_storage_get' arg1 expects inode pointer")
+    }));
 }
 
 #[test]

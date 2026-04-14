@@ -200,6 +200,26 @@ pub struct TypeInference<'a> {
 }
 
 impl<'a> TypeInference<'a> {
+    pub(super) fn precise_helper_return_mir_type(helper: BpfHelper) -> Option<MirType> {
+        match helper {
+            BpfHelper::SkLookupTcp
+            | BpfHelper::SkLookupUdp
+            | BpfHelper::SkcLookupTcp
+            | BpfHelper::GetListenerSock
+            | BpfHelper::SkFullsock
+            | BpfHelper::TcpSock
+            | BpfHelper::SkcToTcp6Sock
+            | BpfHelper::SkcToTcpSock
+            | BpfHelper::SkcToTcpTimewaitSock
+            | BpfHelper::SkcToTcpRequestSock
+            | BpfHelper::SkcToUdp6Sock
+            | BpfHelper::SkcToUnixSock => Some(MirType::named_kernel_struct_ptr("bpf_sock")),
+            BpfHelper::SockFromFile => Some(MirType::named_kernel_struct_ptr("socket")),
+            BpfHelper::TaskPtRegs => Some(MirType::named_kernel_struct_ptr("pt_regs")),
+            _ => None,
+        }
+    }
+
     pub(super) fn precise_kfunc_return_mir_type(kfunc: &str) -> Option<MirType> {
         match kfunc {
             "bpf_task_acquire" | "bpf_task_from_pid" | "bpf_task_from_vpid" => {

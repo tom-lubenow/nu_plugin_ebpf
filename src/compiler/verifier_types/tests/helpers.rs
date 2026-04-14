@@ -3083,13 +3083,7 @@ fn test_verify_mir_for_probe_context_sk_storage_get_rejects_xdp() {
     func.block_mut(done).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
-    types.insert(
-        sk,
-        MirType::Ptr {
-            pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Kernel,
-        },
-    );
+    types.insert(sk, MirType::named_kernel_struct_ptr("bpf_sock"));
     types.insert(sk_non_null, MirType::Bool);
     types.insert(
         storage,
@@ -3153,13 +3147,7 @@ fn test_verify_mir_for_probe_context_sk_storage_get_accepts_cgroup_sock() {
     func.block_mut(done).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
-    types.insert(
-        sk,
-        MirType::Ptr {
-            pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Kernel,
-        },
-    );
+    types.insert(sk, MirType::named_kernel_struct_ptr("bpf_sock"));
     types.insert(sk_non_null, MirType::Bool);
     types.insert(
         storage,
@@ -3215,13 +3203,7 @@ fn test_verify_mir_for_probe_context_sk_storage_delete_rejects_cgroup_sock() {
     func.block_mut(done).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
-    types.insert(
-        sk,
-        MirType::Ptr {
-            pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Kernel,
-        },
-    );
+    types.insert(sk, MirType::named_kernel_struct_ptr("bpf_sock"));
     types.insert(sk_non_null, MirType::Bool);
     types.insert(ret, MirType::I64);
 
@@ -3274,13 +3256,7 @@ fn test_verify_mir_for_probe_context_sk_storage_delete_accepts_cgroup_sockopt() 
     func.block_mut(done).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
-    types.insert(
-        sk,
-        MirType::Ptr {
-            pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Kernel,
-        },
-    );
+    types.insert(sk, MirType::named_kernel_struct_ptr("bpf_sock"));
     types.insert(sk_non_null, MirType::Bool);
     types.insert(ret, MirType::I64);
 
@@ -5013,6 +4989,59 @@ fn test_helper_sk_storage_get_allows_null_init_value() {
     func.block_mut(done).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
+    types.insert(sk, MirType::named_kernel_struct_ptr("bpf_sock"));
+    types.insert(sk_non_null, MirType::Bool);
+    types.insert(
+        storage,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+
+    verify_mir(&func, &types).expect("expected sk_storage_get null init value to verify");
+}
+
+#[test]
+fn test_helper_sk_storage_get_rejects_anonymous_kernel_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let sk = func.alloc_vreg();
+    let sk_non_null = func.alloc_vreg();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let storage = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: sk_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(sk),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: sk_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: storage,
+        helper: BpfHelper::SkStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(sk),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
     types.insert(
         sk,
         MirType::Ptr {
@@ -5029,7 +5058,12 @@ fn test_helper_sk_storage_get_allows_null_init_value() {
         },
     );
 
-    verify_mir(&func, &types).expect("expected sk_storage_get null init value to verify");
+    let err = verify_mir(&func, &types)
+        .expect_err("expected anonymous kernel pointer to fail sk_storage_get");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_sk_storage_get' arg1 expects socket pointer")
+    }));
 }
 
 #[test]
@@ -5390,6 +5424,59 @@ fn test_helper_task_storage_get_allows_null_init_value() {
     func.block_mut(done).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
+    types.insert(task, MirType::named_kernel_struct_ptr("task_struct"));
+    types.insert(task_non_null, MirType::Bool);
+    types.insert(
+        storage,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+
+    verify_mir(&func, &types).expect("expected task_storage_get null init value to verify");
+}
+
+#[test]
+fn test_helper_task_storage_get_rejects_anonymous_kernel_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let task = func.alloc_vreg();
+    let task_non_null = func.alloc_vreg();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let storage = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: task_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: task_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: storage,
+        helper: BpfHelper::TaskStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(task),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
     types.insert(
         task,
         MirType::Ptr {
@@ -5406,7 +5493,12 @@ fn test_helper_task_storage_get_allows_null_init_value() {
         },
     );
 
-    verify_mir(&func, &types).expect("expected task_storage_get null init value to verify");
+    let err = verify_mir(&func, &types)
+        .expect_err("expected anonymous kernel pointer to fail task_storage_get");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_task_storage_get' arg1 expects task pointer")
+    }));
 }
 
 #[test]
@@ -5617,6 +5709,59 @@ fn test_helper_inode_storage_get_allows_null_init_value() {
     func.block_mut(done).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
+    types.insert(inode, MirType::named_kernel_struct_ptr("inode"));
+    types.insert(inode_non_null, MirType::Bool);
+    types.insert(
+        storage,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+
+    verify_mir(&func, &types).expect("expected inode_storage_get null init value to verify");
+}
+
+#[test]
+fn test_helper_inode_storage_get_rejects_anonymous_kernel_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let inode = func.alloc_vreg();
+    let inode_non_null = func.alloc_vreg();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let storage = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: inode_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(inode),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: inode_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: storage,
+        helper: BpfHelper::InodeStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(inode),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
     types.insert(
         inode,
         MirType::Ptr {
@@ -5633,7 +5778,12 @@ fn test_helper_inode_storage_get_allows_null_init_value() {
         },
     );
 
-    verify_mir(&func, &types).expect("expected inode_storage_get null init value to verify");
+    let err = verify_mir(&func, &types)
+        .expect_err("expected anonymous kernel pointer to fail inode_storage_get");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_inode_storage_get' arg1 expects inode pointer")
+    }));
 }
 
 #[test]
