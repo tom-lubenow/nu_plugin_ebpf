@@ -179,13 +179,13 @@ impl VccVerifier {
                     ));
                 }
             }
-            VccInst::AssertSockOpsPacketField { field } => {
-                if !state.proves_ctx_field_value_range(&CtxField::SockOp, |op| {
-                    ProbeContext::sock_ops_packet_field_allows_callback_op(field, op)
+            VccInst::AssertCtxFieldLoadGuard { field, guard } => {
+                if !state.proves_ctx_field_value_range(&guard.witness_field(), |value| {
+                    guard.allows_value(value)
                 }) {
                     self.errors.push(VccError::new(
                         VccErrorKind::UnsupportedInstruction,
-                        ProbeContext::sock_ops_packet_field_callback_guard_error(field),
+                        guard.error(field),
                     ));
                 }
             }

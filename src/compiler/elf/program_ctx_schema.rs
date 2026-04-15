@@ -3,7 +3,8 @@ use super::{
     ProgramContextFamily, SocketContextLayout,
 };
 use crate::compiler::ctx_field_schema::{
-    ContextFieldProjectionSpec, ContextFieldTypeSpec, program_type_ctx_field_projection_spec,
+    ContextFieldLoadGuard, ContextFieldProjectionSpec, ContextFieldTypeSpec,
+    program_type_ctx_field_load_guard, program_type_ctx_field_projection_spec,
     program_type_ctx_field_type_spec,
 };
 use crate::program_spec::ProgramSpec;
@@ -264,6 +265,10 @@ impl EbpfProgramType {
                 (EbpfProgramType::CgroupSock, CtxField::Socket)
             )
     }
+
+    pub(crate) fn ctx_field_load_guard(&self, field: &CtxField) -> Option<ContextFieldLoadGuard> {
+        program_type_ctx_field_load_guard(*self, field)
+    }
 }
 
 impl ProgramSpec {
@@ -320,5 +325,9 @@ impl ProgramSpec {
         field: &CtxField,
     ) -> Option<ContextFieldProjectionSpec> {
         program_type_ctx_field_projection_spec(self.program_type(), field)
+    }
+
+    pub(crate) fn ctx_field_load_guard(&self, field: &CtxField) -> Option<ContextFieldLoadGuard> {
+        self.program_type().ctx_field_load_guard(field)
     }
 }

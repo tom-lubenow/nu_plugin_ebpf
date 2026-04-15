@@ -3,6 +3,7 @@ use crate::compiler::BpfHelper;
 use crate::compiler::hindley_milner::HMType;
 use crate::compiler::mir::{CtxField, CtxStoreTarget, MirType, StructField};
 use crate::compiler::mir_to_ebpf::compile_mir_to_ebpf;
+use crate::compiler::{ContextFieldLoadGuard, SockOpsCallbackGuard};
 use crate::kernel_btf::KernelBtf;
 use crate::program_spec::ProgramSpec;
 use aya_obj::{
@@ -742,6 +743,26 @@ fn test_probe_context_ctx_field_type_spec_is_program_type_aware_within_skb_famil
             .is_none()
     );
     assert!(sk_skb.ctx_field_type_spec(&CtxField::Family).is_some());
+}
+
+#[test]
+fn test_probe_context_ctx_field_load_guard_is_program_type_aware() {
+    let sock_ops = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let sk_msg = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+
+    assert_eq!(
+        sock_ops.ctx_field_load_guard(&CtxField::PacketLen),
+        Some(ContextFieldLoadGuard::SockOpsCallback(
+            SockOpsCallbackGuard::PacketMetadata,
+        ))
+    );
+    assert_eq!(
+        sock_ops.ctx_field_load_guard(&CtxField::Data),
+        Some(ContextFieldLoadGuard::SockOpsCallback(
+            SockOpsCallbackGuard::PacketData,
+        ))
+    );
+    assert!(sk_msg.ctx_field_load_guard(&CtxField::PacketLen).is_none());
 }
 
 #[test]

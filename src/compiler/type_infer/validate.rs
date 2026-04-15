@@ -1,5 +1,4 @@
 use super::*;
-use crate::compiler::EbpfProgramType;
 use crate::compiler::instruction::unknown_kfunc_signature_message;
 
 impl<'a> TypeInference<'a> {
@@ -49,24 +48,18 @@ impl<'a> TypeInference<'a> {
         if let Err(err) = ctx.validate_load_ctx_field(field) {
             errors.push(TypeError::new(err.to_string()));
             return;
-        }
-        if ctx.program_type() != EbpfProgramType::SockOps
-            || !ProbeContext::sock_ops_packet_field_requires_callback_proof(field)
-        {
+        };
+        let Some(guard) = ctx.ctx_field_load_guard(field) else {
             return;
-        }
+        };
         let proven = block_ctx_field_ranges
-            .and_then(|ranges| ranges.get(&CtxField::SockOp))
+            .and_then(|ranges| ranges.get(&guard.witness_field()))
             .copied()
             .is_some_and(|range| {
-                Self::value_range_satisfies_only(range, |op| {
-                    ProbeContext::sock_ops_packet_field_allows_callback_op(field, op)
-                })
+                Self::value_range_satisfies_only(range, |value| guard.allows_value(value))
             });
         if !proven {
-            errors.push(TypeError::new(
-                ProbeContext::sock_ops_packet_field_callback_guard_error(field),
-            ));
+            errors.push(TypeError::new(guard.error(field)));
         }
     }
 

@@ -1,5 +1,4 @@
 use super::*;
-use crate::compiler::EbpfProgramType;
 use crate::compiler::mir::BlockId;
 
 impl<'a> VccLowerer<'a> {
@@ -245,13 +244,11 @@ impl<'a> VccLowerer<'a> {
             }
             MirInst::LoadCtxField { dst, field, slot } => {
                 self.verify_ctx_field_load(field)?;
-                if self
-                    .probe_ctx
-                    .is_some_and(|ctx| ctx.program_type() == EbpfProgramType::SockOps)
-                    && ProbeContext::sock_ops_packet_field_requires_callback_proof(field)
+                if let Some(guard) = self.probe_ctx.and_then(|ctx| ctx.ctx_field_load_guard(field))
                 {
-                    out.push(VccInst::AssertSockOpsPacketField {
+                    out.push(VccInst::AssertCtxFieldLoadGuard {
                         field: field.clone(),
+                        guard,
                     });
                 }
                 if slot.is_none() {

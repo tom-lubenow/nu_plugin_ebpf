@@ -6,8 +6,9 @@ use super::{
 #[cfg(test)]
 use crate::compiler::ctx_field_schema::synthetic_bpf_sock_type;
 use crate::compiler::ctx_field_schema::{
-    ContextFieldProjectionSpec, ContextFieldTypeSpec, program_type_ctx_field_projection_spec,
-    program_type_ctx_field_type_spec, static_ctx_field_projection_spec, static_ctx_field_type_spec,
+    ContextFieldLoadGuard, ContextFieldProjectionSpec, ContextFieldTypeSpec,
+    program_type_ctx_field_projection_spec, program_type_ctx_field_type_spec,
+    static_ctx_field_projection_spec, static_ctx_field_type_spec,
 };
 use crate::compiler::hindley_milner::HMType;
 use crate::compiler::instruction::BpfHelper;
@@ -19,17 +20,6 @@ use crate::kernel_btf::{
     TrampolineValueSpec, TypeInfo,
 };
 use crate::program_spec::ProgramSpec;
-
-const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
-const BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB: i64 = 5;
-const BPF_SOCK_OPS_PARSE_HDR_OPT_CB: i64 = 13;
-const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
-const BPF_SOCK_OPS_WRITE_HDR_OPT_CB: i64 = 15;
-const BPF_SOCK_OPS_TSTAMP_SCHED_CB: i64 = 16;
-const BPF_SOCK_OPS_TSTAMP_SND_SW_CB: i64 = 17;
-const BPF_SOCK_OPS_TSTAMP_SND_HW_CB: i64 = 18;
-const BPF_SOCK_OPS_TSTAMP_ACK_CB: i64 = 19;
-const BPF_SOCK_OPS_TSTAMP_SENDMSG_CB: i64 = 20;
 
 impl ProbeContext {
     pub(crate) fn resolve_ctx_field_type_spec(
@@ -136,70 +126,21 @@ impl ProbeContext {
             .or_else(|| self.probe_type.data_meta_context_kind())
     }
 
-    pub(crate) fn sock_ops_packet_field_requires_callback_proof(field: &CtxField) -> bool {
-        matches!(
-            field,
-            CtxField::Data
-                | CtxField::DataEnd
-                | CtxField::PacketLen
-                | CtxField::SockOpsSkbLen
-                | CtxField::SockOpsSkbTcpFlags
-                | CtxField::SockOpsSkbHwtstamp
-        )
-    }
-
-    pub(crate) fn sock_ops_packet_field_allows_callback_op(field: &CtxField, op: i64) -> bool {
-        match field {
-            CtxField::Data | CtxField::DataEnd => Self::sock_ops_callback_has_packet_data(op),
-            CtxField::PacketLen | CtxField::SockOpsSkbLen => {
-                Self::sock_ops_callback_has_packet_metadata(op)
-            }
-            CtxField::SockOpsSkbTcpFlags => Self::sock_ops_callback_has_tcp_flags(op),
-            CtxField::SockOpsSkbHwtstamp => Self::sock_ops_callback_has_hwtstamp(op),
-            _ => true,
-        }
-    }
-
-    pub(crate) fn sock_ops_packet_field_callback_guard_error(field: &CtxField) -> String {
-        format!(
-            "ctx.{} on sock_ops requires proving a packet-aware ctx.op callback before use",
-            field.display_name()
-        )
-    }
-
-    fn sock_ops_callback_has_packet_data(op: i64) -> bool {
-        matches!(
-            op,
-            BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB
-                | BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB
-                | BPF_SOCK_OPS_PARSE_HDR_OPT_CB
-                | BPF_SOCK_OPS_WRITE_HDR_OPT_CB
-        )
-    }
-
-    fn sock_ops_callback_has_packet_metadata(op: i64) -> bool {
-        Self::sock_ops_callback_has_packet_data(op) || Self::sock_ops_callback_has_hwtstamp(op)
-    }
-
-    fn sock_ops_callback_has_tcp_flags(op: i64) -> bool {
-        Self::sock_ops_callback_has_packet_data(op) || op == BPF_SOCK_OPS_HDR_OPT_LEN_CB
-    }
-
-    fn sock_ops_callback_has_hwtstamp(op: i64) -> bool {
-        matches!(
-            op,
-            BPF_SOCK_OPS_TSTAMP_SCHED_CB
-                | BPF_SOCK_OPS_TSTAMP_SND_SW_CB
-                | BPF_SOCK_OPS_TSTAMP_SND_HW_CB
-                | BPF_SOCK_OPS_TSTAMP_ACK_CB
-                | BPF_SOCK_OPS_TSTAMP_SENDMSG_CB
-        )
-    }
-
     pub(crate) fn supports_direct_packet_writes(&self) -> bool {
         self.parsed_program_spec()
             .map(|spec| spec.supports_direct_packet_writes())
             .unwrap_or_else(|| self.probe_type.supports_direct_packet_writes())
+    }
+
+    pub(crate) fn ctx_field_load_guard(&self, field: &CtxField) -> Option<ContextFieldLoadGuard> {
+        self.ctx_field_access_error(field)
+            .is_none()
+            .then(|| {
+                self.parsed_program_spec()
+                    .and_then(|spec| spec.ctx_field_load_guard(field))
+                    .or_else(|| self.program_type().ctx_field_load_guard(field))
+            })
+            .flatten()
     }
 
     pub(crate) fn ctx_field_is_raw_context_pointer(&self, field: &CtxField) -> bool {

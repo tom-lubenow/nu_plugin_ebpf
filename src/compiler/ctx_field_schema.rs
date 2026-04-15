@@ -9,6 +9,19 @@ pub(crate) struct ContextFieldTypeSpec {
     pub runtime_ty: MirType,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContextFieldLoadGuard {
+    SockOpsCallback(SockOpsCallbackGuard),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SockOpsCallbackGuard {
+    PacketData,
+    PacketMetadata,
+    TcpFlags,
+    Hwtstamp,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ContextFieldProjectionSpec {
     pub runtime_ty: MirType,
@@ -56,6 +69,80 @@ impl ContextFieldProjectionSpec {
             normalize_u32_words_host_order,
             validate_socket_projection: false,
         }
+    }
+}
+
+const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
+const BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB: i64 = 5;
+const BPF_SOCK_OPS_PARSE_HDR_OPT_CB: i64 = 13;
+const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
+const BPF_SOCK_OPS_WRITE_HDR_OPT_CB: i64 = 15;
+const BPF_SOCK_OPS_TSTAMP_SCHED_CB: i64 = 16;
+const BPF_SOCK_OPS_TSTAMP_SND_SW_CB: i64 = 17;
+const BPF_SOCK_OPS_TSTAMP_SND_HW_CB: i64 = 18;
+const BPF_SOCK_OPS_TSTAMP_ACK_CB: i64 = 19;
+const BPF_SOCK_OPS_TSTAMP_SENDMSG_CB: i64 = 20;
+
+impl ContextFieldLoadGuard {
+    pub(crate) fn witness_field(self) -> CtxField {
+        match self {
+            Self::SockOpsCallback(_) => CtxField::SockOp,
+        }
+    }
+
+    pub(crate) fn allows_value(self, value: i64) -> bool {
+        match self {
+            Self::SockOpsCallback(guard) => guard.allows_callback_op(value),
+        }
+    }
+
+    pub(crate) fn error(self, field: &CtxField) -> String {
+        match self {
+            Self::SockOpsCallback(_) => format!(
+                "ctx.{} on sock_ops requires proving a packet-aware ctx.op callback before use",
+                field.display_name()
+            ),
+        }
+    }
+}
+
+impl SockOpsCallbackGuard {
+    fn allows_callback_op(self, op: i64) -> bool {
+        match self {
+            Self::PacketData => Self::callback_has_packet_data(op),
+            Self::PacketMetadata => Self::callback_has_packet_metadata(op),
+            Self::TcpFlags => Self::callback_has_tcp_flags(op),
+            Self::Hwtstamp => Self::callback_has_hwtstamp(op),
+        }
+    }
+
+    fn callback_has_packet_data(op: i64) -> bool {
+        matches!(
+            op,
+            BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB
+                | BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB
+                | BPF_SOCK_OPS_PARSE_HDR_OPT_CB
+                | BPF_SOCK_OPS_WRITE_HDR_OPT_CB
+        )
+    }
+
+    fn callback_has_packet_metadata(op: i64) -> bool {
+        Self::callback_has_packet_data(op) || Self::callback_has_hwtstamp(op)
+    }
+
+    fn callback_has_tcp_flags(op: i64) -> bool {
+        Self::callback_has_packet_data(op) || op == BPF_SOCK_OPS_HDR_OPT_LEN_CB
+    }
+
+    fn callback_has_hwtstamp(op: i64) -> bool {
+        matches!(
+            op,
+            BPF_SOCK_OPS_TSTAMP_SCHED_CB
+                | BPF_SOCK_OPS_TSTAMP_SND_SW_CB
+                | BPF_SOCK_OPS_TSTAMP_SND_HW_CB
+                | BPF_SOCK_OPS_TSTAMP_ACK_CB
+                | BPF_SOCK_OPS_TSTAMP_SENDMSG_CB
+        )
     }
 }
 
@@ -320,6 +407,30 @@ pub(crate) fn program_type_ctx_field_type_spec(
         .is_none()
         .then(|| raw_ctx_field_type_spec(field))
         .flatten()
+}
+
+pub(crate) fn program_type_ctx_field_load_guard(
+    program_type: EbpfProgramType,
+    field: &CtxField,
+) -> Option<ContextFieldLoadGuard> {
+    if program_type != EbpfProgramType::SockOps {
+        return None;
+    }
+    Some(match field {
+        CtxField::Data | CtxField::DataEnd => {
+            ContextFieldLoadGuard::SockOpsCallback(SockOpsCallbackGuard::PacketData)
+        }
+        CtxField::PacketLen | CtxField::SockOpsSkbLen => {
+            ContextFieldLoadGuard::SockOpsCallback(SockOpsCallbackGuard::PacketMetadata)
+        }
+        CtxField::SockOpsSkbTcpFlags => {
+            ContextFieldLoadGuard::SockOpsCallback(SockOpsCallbackGuard::TcpFlags)
+        }
+        CtxField::SockOpsSkbHwtstamp => {
+            ContextFieldLoadGuard::SockOpsCallback(SockOpsCallbackGuard::Hwtstamp)
+        }
+        _ => return None,
+    })
 }
 
 fn raw_ctx_field_projection_spec(field: &CtxField) -> Option<ContextFieldProjectionSpec> {
