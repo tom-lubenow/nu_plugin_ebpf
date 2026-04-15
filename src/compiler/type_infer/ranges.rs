@@ -599,6 +599,200 @@ impl<'a> TypeInference<'a> {
             .collect()
     }
 
+    pub(super) fn compute_root_ctx_field_ranges_at_block_entries(
+        &self,
+        func: &MirFunction,
+        types: &HashMap<VReg, MirType>,
+        list_caps: &HashMap<VReg, usize>,
+    ) -> HashMap<BlockId, HashMap<CtxField, ValueRange>> {
+        let mut slot_caps: HashMap<StackSlotId, usize> = HashMap::new();
+        for slot in &func.stack_slots {
+            if matches!(slot.kind, StackSlotKind::ListBuffer) {
+                let elems = slot.size / 8;
+                slot_caps.insert(slot.id, elems.saturating_sub(1));
+            }
+        }
+        let total_vregs = func.vreg_count.max(func.param_count as u32);
+        let mut in_states: HashMap<BlockId, Vec<ValueRange>> = HashMap::new();
+        let mut in_source_ranges: HashMap<BlockId, HashMap<RangeSource, ValueRange>> =
+            HashMap::new();
+        let mut in_reg_sources: HashMap<BlockId, HashMap<VReg, SlotSourceState>> = HashMap::new();
+        let mut in_slot_sources: HashMap<BlockId, HashMap<StackSlotId, SlotSourceState>> =
+            HashMap::new();
+        let mut worklist = VecDeque::new();
+
+        in_states.insert(func.entry, vec![ValueRange::Unset; total_vregs as usize]);
+        in_source_ranges.insert(func.entry, HashMap::new());
+        in_reg_sources.insert(func.entry, HashMap::new());
+        in_slot_sources.insert(func.entry, HashMap::new());
+        worklist.push_back(func.entry);
+
+        while let Some(block_id) = worklist.pop_front() {
+            let Some(state_in) = in_states.get(&block_id).cloned() else {
+                continue;
+            };
+            let mut source_ranges = in_source_ranges.get(&block_id).cloned().unwrap_or_default();
+            let mut reg_sources = in_reg_sources.get(&block_id).cloned().unwrap_or_default();
+            let mut slot_sources = in_slot_sources.get(&block_id).cloned().unwrap_or_default();
+            let block = func.block(block_id);
+            let mut state = state_in;
+            let mut observed = vec![ValueRange::Unset; total_vregs as usize];
+            let mut guards: HashMap<VReg, RangeGuard> = HashMap::new();
+
+            for inst in &block.instructions {
+                self.apply_range_inst(
+                    inst,
+                    types,
+                    list_caps,
+                    &slot_caps,
+                    &mut state,
+                    &mut source_ranges,
+                    &mut reg_sources,
+                    &mut slot_sources,
+                    &mut observed,
+                    &mut guards,
+                );
+            }
+
+            match &block.terminator {
+                MirInst::Jump { target } => {
+                    self.propagate_range_state(
+                        *target,
+                        &state,
+                        &source_ranges,
+                        &reg_sources,
+                        &slot_sources,
+                        &mut in_states,
+                        &mut in_source_ranges,
+                        &mut in_reg_sources,
+                        &mut in_slot_sources,
+                        &mut worklist,
+                    );
+                }
+                MirInst::Branch {
+                    cond,
+                    if_true,
+                    if_false,
+                } => {
+                    if let Some((true_state, true_fields)) = self.refine_range_branch(
+                        &state,
+                        &source_ranges,
+                        &reg_sources,
+                        *cond,
+                        &guards,
+                        true,
+                    ) {
+                        self.propagate_range_state(
+                            *if_true,
+                            &true_state,
+                            &true_fields,
+                            &reg_sources,
+                            &slot_sources,
+                            &mut in_states,
+                            &mut in_source_ranges,
+                            &mut in_reg_sources,
+                            &mut in_slot_sources,
+                            &mut worklist,
+                        );
+                    }
+                    if let Some((false_state, false_fields)) = self.refine_range_branch(
+                        &state,
+                        &source_ranges,
+                        &reg_sources,
+                        *cond,
+                        &guards,
+                        false,
+                    ) {
+                        self.propagate_range_state(
+                            *if_false,
+                            &false_state,
+                            &false_fields,
+                            &reg_sources,
+                            &slot_sources,
+                            &mut in_states,
+                            &mut in_source_ranges,
+                            &mut in_reg_sources,
+                            &mut in_slot_sources,
+                            &mut worklist,
+                        );
+                    }
+                }
+                MirInst::LoopHeader {
+                    counter,
+                    start,
+                    limit,
+                    body,
+                    exit,
+                } => {
+                    let mut body_state = state.clone();
+                    let max = if *start < *limit {
+                        limit.saturating_sub(1)
+                    } else {
+                        *start
+                    };
+                    self.set_state_range(&mut body_state, *counter, ValueRange::known(*start, max));
+                    self.propagate_range_state(
+                        *body,
+                        &body_state,
+                        &source_ranges,
+                        &reg_sources,
+                        &slot_sources,
+                        &mut in_states,
+                        &mut in_source_ranges,
+                        &mut in_reg_sources,
+                        &mut in_slot_sources,
+                        &mut worklist,
+                    );
+                    self.propagate_range_state(
+                        *exit,
+                        &state,
+                        &source_ranges,
+                        &reg_sources,
+                        &slot_sources,
+                        &mut in_states,
+                        &mut in_source_ranges,
+                        &mut in_reg_sources,
+                        &mut in_slot_sources,
+                        &mut worklist,
+                    );
+                }
+                MirInst::LoopBack { header, .. } => {
+                    self.propagate_range_state(
+                        *header,
+                        &state,
+                        &source_ranges,
+                        &reg_sources,
+                        &slot_sources,
+                        &mut in_states,
+                        &mut in_source_ranges,
+                        &mut in_reg_sources,
+                        &mut in_slot_sources,
+                        &mut worklist,
+                    );
+                }
+                MirInst::Return { .. } | MirInst::TailCall { .. } | MirInst::Placeholder => {}
+                other => panic!("invalid terminator in range analysis: {other:?}"),
+            }
+        }
+
+        in_source_ranges
+            .into_iter()
+            .map(|(block_id, ranges)| {
+                let root_ranges = ranges
+                    .into_iter()
+                    .filter_map(|(source, range)| {
+                        if source.ops.is_empty() {
+                            Some((source.root, range))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                (block_id, root_ranges)
+            })
+            .collect()
+    }
+
     pub(super) fn compute_stack_bounds(
         &self,
         func: &MirFunction,

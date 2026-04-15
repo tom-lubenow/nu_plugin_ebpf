@@ -3,6 +3,19 @@ use crate::compiler::EbpfProgramType;
 use crate::compiler::mir::CtxStoreTarget;
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind, TypeInfo};
 
+const BPF_SOCK_OPS_RTO_CB: i64 = 8;
+const BPF_SOCK_OPS_PARSE_HDR_OPT_CB: i64 = 13;
+const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
+const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
+const BPF_SOCK_OPS_TSTAMP_SCHED_CB: i64 = 16;
+
+fn packet_u8_ptr() -> MirType {
+    MirType::Ptr {
+        pointee: Box::new(MirType::U8),
+        address_space: AddressSpace::Packet,
+    }
+}
+
 fn find_aggregate_fentry_arg_candidate() -> (String, u8, usize) {
     for (func_name, arg_idx) in [
         ("__copy_xstate_to_uabi_buf", 0usize),
@@ -1163,7 +1176,7 @@ fn test_infer_sock_ops_snd_nxt_field_as_u32() {
 }
 
 #[test]
-fn test_infer_sock_ops_skb_hwtstamp_field_as_u64() {
+fn test_infer_sock_ops_skb_hwtstamp_field_rejects_without_packet_aware_callback() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();
 
@@ -1178,9 +1191,15 @@ fn test_infer_sock_ops_skb_hwtstamp_field_as_u64() {
 
     let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
     let mut ti = TypeInference::new(Some(ctx));
-    let types = ti.infer(&func).unwrap();
+    let err = ti
+        .infer(&func)
+        .expect_err("expected unguarded sock_ops skb_hwtstamp load to be rejected");
 
-    assert_eq!(types.get(&v0), Some(&MirType::U64));
+    assert!(err.iter().any(|e| {
+        e.message.contains(
+            "ctx.skb_hwtstamp on sock_ops requires proving a packet-aware ctx.op callback before use",
+        )
+    }));
 }
 
 #[test]
@@ -1226,7 +1245,7 @@ fn test_infer_sock_ops_mss_cache_field_as_u32() {
 }
 
 #[test]
-fn test_infer_sock_ops_packet_len_field_as_u32() {
+fn test_infer_sock_ops_packet_len_field_rejects_without_packet_aware_callback() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();
 
@@ -1241,36 +1260,256 @@ fn test_infer_sock_ops_packet_len_field_as_u32() {
 
     let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
     let mut ti = TypeInference::new(Some(ctx));
-    let types = ti.infer(&func).unwrap();
+    let err = ti
+        .infer(&func)
+        .expect_err("expected unguarded sock_ops packet_len load to be rejected");
 
-    assert_eq!(types.get(&v0), Some(&MirType::U32));
+    assert!(err.iter().any(|e| {
+        e.message.contains(
+            "ctx.packet_len on sock_ops requires proving a packet-aware ctx.op callback before use",
+        )
+    }));
 }
 
 #[test]
-fn test_infer_sock_ops_data_field_as_packet_u8_pointer() {
+fn test_infer_sock_ops_packet_len_field_as_u32_when_guarded() {
     let mut func = make_test_function();
-    let v0 = func.alloc_vreg();
+    let guarded = func.alloc_block();
+    let done = func.alloc_block();
+    let op = func.alloc_vreg();
+    let matches = func.alloc_vreg();
+    let len = func.alloc_vreg();
 
     func.block_mut(BlockId(0))
         .instructions
         .push(MirInst::LoadCtxField {
-            dst: v0,
-            field: CtxField::Data,
+            dst: op,
+            field: CtxField::SockOp,
             slot: None,
         });
-    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::BinOp {
+            dst: matches,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(op),
+            rhs: MirValue::Const(BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB),
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Branch {
+        cond: matches,
+        if_true: guarded,
+        if_false: done,
+    };
+
+    func.block_mut(guarded)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: len,
+            field: CtxField::PacketLen,
+            slot: None,
+        });
+    func.block_mut(guarded).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
 
     let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
     let mut ti = TypeInference::new(Some(ctx));
     let types = ti.infer(&func).unwrap();
 
-    assert_eq!(
-        types.get(&v0),
-        Some(&MirType::Ptr {
-            pointee: Box::new(MirType::U8),
-            address_space: AddressSpace::Packet,
-        })
-    );
+    assert_eq!(types.get(&len), Some(&MirType::U32));
+}
+
+#[test]
+fn test_infer_sock_ops_data_field_rejects_for_non_packet_callback() {
+    let mut func = make_test_function();
+    let guarded = func.alloc_block();
+    let done = func.alloc_block();
+    let op = func.alloc_vreg();
+    let matches = func.alloc_vreg();
+    let data = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: op,
+            field: CtxField::SockOp,
+            slot: None,
+        });
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::BinOp {
+            dst: matches,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(op),
+            rhs: MirValue::Const(BPF_SOCK_OPS_RTO_CB),
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Branch {
+        cond: matches,
+        if_true: guarded,
+        if_false: done,
+    };
+
+    func.block_mut(guarded)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: data,
+            field: CtxField::Data,
+            slot: None,
+        });
+    func.block_mut(guarded).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let mut ti = TypeInference::new(Some(ctx));
+    let err = ti
+        .infer(&func)
+        .expect_err("expected non-packet sock_ops callback to reject ctx.data");
+
+    assert!(err.iter().any(|e| {
+        e.message.contains(
+            "ctx.data on sock_ops requires proving a packet-aware ctx.op callback before use",
+        )
+    }));
+}
+
+#[test]
+fn test_infer_sock_ops_data_field_as_packet_u8_pointer_when_guarded() {
+    let mut func = make_test_function();
+    let guarded = func.alloc_block();
+    let done = func.alloc_block();
+    let op = func.alloc_vreg();
+    let matches = func.alloc_vreg();
+    let data = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: op,
+            field: CtxField::SockOp,
+            slot: None,
+        });
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::BinOp {
+            dst: matches,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(op),
+            rhs: MirValue::Const(BPF_SOCK_OPS_PARSE_HDR_OPT_CB),
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Branch {
+        cond: matches,
+        if_true: guarded,
+        if_false: done,
+    };
+
+    func.block_mut(guarded)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: data,
+            field: CtxField::Data,
+            slot: None,
+        });
+    func.block_mut(guarded).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&data), Some(&packet_u8_ptr()));
+}
+
+#[test]
+fn test_infer_sock_ops_tcp_flags_field_as_u32_for_hdr_opt_len_callback() {
+    let mut func = make_test_function();
+    let guarded = func.alloc_block();
+    let done = func.alloc_block();
+    let op = func.alloc_vreg();
+    let matches = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: op,
+            field: CtxField::SockOp,
+            slot: None,
+        });
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::BinOp {
+            dst: matches,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(op),
+            rhs: MirValue::Const(BPF_SOCK_OPS_HDR_OPT_LEN_CB),
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Branch {
+        cond: matches,
+        if_true: guarded,
+        if_false: done,
+    };
+
+    func.block_mut(guarded)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: flags,
+            field: CtxField::SockOpsSkbTcpFlags,
+            slot: None,
+        });
+    func.block_mut(guarded).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&flags), Some(&MirType::U32));
+}
+
+#[test]
+fn test_infer_sock_ops_skb_hwtstamp_field_as_u64_when_guarded() {
+    let mut func = make_test_function();
+    let guarded = func.alloc_block();
+    let done = func.alloc_block();
+    let op = func.alloc_vreg();
+    let matches = func.alloc_vreg();
+    let hwtstamp = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: op,
+            field: CtxField::SockOp,
+            slot: None,
+        });
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::BinOp {
+            dst: matches,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(op),
+            rhs: MirValue::Const(BPF_SOCK_OPS_TSTAMP_SCHED_CB),
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Branch {
+        cond: matches,
+        if_true: guarded,
+        if_false: done,
+    };
+
+    func.block_mut(guarded)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: hwtstamp,
+            field: CtxField::SockOpsSkbHwtstamp,
+            slot: None,
+        });
+    func.block_mut(guarded).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&hwtstamp), Some(&MirType::U64));
 }
 
 #[test]

@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::EbpfProgramType;
 use crate::compiler::instruction::unknown_kfunc_signature_message;
 
 impl<'a> TypeInference<'a> {
@@ -20,6 +21,52 @@ impl<'a> TypeInference<'a> {
         };
         if let Some(message) = ctx.kfunc_call_error(kfunc) {
             errors.push(TypeError::new(message));
+        }
+    }
+
+    fn value_range_satisfies_only<F>(range: ValueRange, predicate: F) -> bool
+    where
+        F: Fn(i64) -> bool,
+    {
+        match range {
+            ValueRange::Known { min, max } => {
+                let width = max.saturating_sub(min);
+                width <= 64 && (min..=max).all(predicate)
+            }
+            ValueRange::Unset | ValueRange::Unknown => false,
+        }
+    }
+
+    fn validate_load_ctx_field_guard(
+        &self,
+        field: &CtxField,
+        block_ctx_field_ranges: Option<&HashMap<CtxField, ValueRange>>,
+        errors: &mut Vec<TypeError>,
+    ) {
+        let Some(ctx) = self.probe_ctx.as_ref() else {
+            return;
+        };
+        if let Err(err) = ctx.validate_load_ctx_field(field) {
+            errors.push(TypeError::new(err.to_string()));
+            return;
+        }
+        if ctx.program_type() != EbpfProgramType::SockOps
+            || !ProbeContext::sock_ops_packet_field_requires_callback_proof(field)
+        {
+            return;
+        }
+        let proven = block_ctx_field_ranges
+            .and_then(|ranges| ranges.get(&CtxField::SockOp))
+            .copied()
+            .is_some_and(|range| {
+                Self::value_range_satisfies_only(range, |op| {
+                    ProbeContext::sock_ops_packet_field_allows_callback_op(field, op)
+                })
+            });
+        if !proven {
+            errors.push(TypeError::new(
+                ProbeContext::sock_ops_packet_field_callback_guard_error(field),
+            ));
         }
     }
 
@@ -84,6 +131,8 @@ impl<'a> TypeInference<'a> {
         let value_ranges = self.compute_value_ranges(func, types, &list_caps);
         let direct_ctx_field_sources =
             self.compute_direct_ctx_field_sources(func, types, &list_caps);
+        let block_ctx_field_ranges =
+            self.compute_root_ctx_field_ranges_at_block_entries(func, types, &list_caps);
         let stack_bounds = self.compute_stack_bounds(func, types, &value_ranges);
         let slot_sizes: HashMap<StackSlotId, i64> = func
             .stack_slots
@@ -92,12 +141,14 @@ impl<'a> TypeInference<'a> {
             .collect();
 
         for block in &func.blocks {
+            let block_ctx_field_ranges = block_ctx_field_ranges.get(&block.id);
             for inst in &block.instructions {
                 self.validate_inst(
                     inst,
                     types,
                     &value_ranges,
                     &direct_ctx_field_sources,
+                    block_ctx_field_ranges,
                     &stack_bounds,
                     &slot_sizes,
                     errors,
@@ -108,6 +159,7 @@ impl<'a> TypeInference<'a> {
                 types,
                 &value_ranges,
                 &direct_ctx_field_sources,
+                block_ctx_field_ranges,
                 &stack_bounds,
                 &slot_sizes,
                 errors,
@@ -121,6 +173,7 @@ impl<'a> TypeInference<'a> {
         types: &HashMap<VReg, MirType>,
         value_ranges: &HashMap<VReg, ValueRange>,
         direct_ctx_field_sources: &HashMap<VReg, CtxField>,
+        block_ctx_field_ranges: Option<&HashMap<CtxField, ValueRange>>,
         stack_bounds: &HashMap<VReg, StackBounds>,
         slot_sizes: &HashMap<StackSlotId, i64>,
         errors: &mut Vec<TypeError>,
@@ -130,6 +183,9 @@ impl<'a> TypeInference<'a> {
         }
 
         match inst {
+            MirInst::LoadCtxField { field, .. } => {
+                self.validate_load_ctx_field_guard(field, block_ctx_field_ranges, errors);
+            }
             MirInst::StoreCtxField { target, val, ty } => {
                 let val_ty = self.mir_type_for_value(val, types);
                 if !matches!(
