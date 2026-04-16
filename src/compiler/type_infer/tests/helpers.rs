@@ -1718,6 +1718,29 @@ fn test_type_error_redirect_peer_helper_rejects_tc_egress() {
 }
 
 #[test]
+fn test_type_error_redirect_peer_helper_rejects_non_tc_program() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RedirectPeer as u32,
+        args: vec![MirValue::Const(1), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_redirect_peer to be rejected outside tc");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect_peer' is only valid in tc programs")
+    }));
+}
+
+#[test]
 fn test_type_error_sk_lookup_tcp_helper_rejects_invalid_program() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

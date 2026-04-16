@@ -1856,6 +1856,32 @@ fn test_verify_mir_for_probe_context_redirect_peer_rejects_tc_egress() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_redirect_peer_rejects_non_tc_program() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RedirectPeer as u32,
+            args: vec![MirValue::Const(1), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected redirect_peer non-tc program error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect_peer' is only valid in tc programs")
+    }));
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_sk_lookup_tcp_rejects_invalid_program() {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();

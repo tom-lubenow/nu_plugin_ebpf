@@ -874,6 +874,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         Some("helper 'bpf_redirect' is only valid in xdp and tc programs".to_string())
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::RedirectPeer),
+        Some("helper 'bpf_redirect_peer' is only valid in tc programs".to_string())
+    );
+    assert_eq!(
         EbpfProgramType::SkLookup.helper_call_error(BpfHelper::GetSocketCookie),
         Some(
             "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, tp_btf, socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs"
