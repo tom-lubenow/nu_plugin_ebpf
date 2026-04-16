@@ -8,6 +8,14 @@ struct HelperProgramSurfaceSpec {
     allowed_programs_label: &'static str,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct HelperZeroArgRequirementSpec {
+    helper: BpfHelper,
+    program_type: EbpfProgramType,
+    arg_idx: usize,
+    error_message: &'static str,
+}
+
 impl HelperProgramSurfaceSpec {
     fn allows(self, program_type: EbpfProgramType) -> bool {
         self.allowed_programs.contains(&program_type)
@@ -20,6 +28,17 @@ impl HelperProgramSurfaceSpec {
             self.allowed_programs_label
         )
     }
+}
+
+fn helper_ids_equal(lhs: BpfHelper, rhs: BpfHelper) -> bool {
+    lhs as u32 == rhs as u32
+}
+
+fn helper_list_contains(helpers: &[BpfHelper], helper: BpfHelper) -> bool {
+    helpers
+        .iter()
+        .copied()
+        .any(|candidate| helper_ids_equal(candidate, helper))
 }
 
 const LIRC_MODE2_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::LircMode2];
@@ -167,6 +186,25 @@ const GET_SOCKET_COOKIE_SOCKET_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Fentry,
     EbpfProgramType::Fexit,
     EbpfProgramType::TpBtf,
+];
+const TC_INGRESS_ONLY_HELPERS: &[BpfHelper] = &[BpfHelper::RedirectPeer, BpfHelper::SkAssign];
+const CGROUP_SOCK_ADDR_CONNECT_ONLY_HELPERS: &[BpfHelper] = &[BpfHelper::Bind];
+const CGROUP_SOCK_POST_BIND_ONLY_MEMBERS: &[&str] = &[
+    "src_ip4", "src_ip6", "src_port", "dst_port", "dst_ip4", "dst_ip6",
+];
+const HELPER_ZERO_ARG_REQUIREMENTS: &[HelperZeroArgRequirementSpec] = &[
+    HelperZeroArgRequirementSpec {
+        helper: BpfHelper::Redirect,
+        program_type: EbpfProgramType::Xdp,
+        arg_idx: 1,
+        error_message: "helper 'bpf_redirect' requires arg1 = 0 in xdp programs",
+    },
+    HelperZeroArgRequirementSpec {
+        helper: BpfHelper::SkAssign,
+        program_type: EbpfProgramType::Tc,
+        arg_idx: 2,
+        error_message: "helper 'bpf_sk_assign' requires arg2 = 0 in tc programs",
+    },
 ];
 
 fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurfaceSpec> {
@@ -321,39 +359,30 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
 
 impl TcTarget {
     fn helper_call_error(&self, helper: BpfHelper) -> Option<String> {
-        match helper {
-            BpfHelper::RedirectPeer if !self.is_ingress() => Some(format!(
+        (!self.is_ingress() && helper_list_contains(TC_INGRESS_ONLY_HELPERS, helper)).then(|| {
+            format!(
                 "helper '{}' is only valid in tc ingress programs",
                 helper.name()
-            )),
-            BpfHelper::SkAssign if !self.is_ingress() => Some(format!(
-                "helper '{}' is only valid in tc ingress programs",
-                helper.name()
-            )),
-            _ => None,
-        }
+            )
+        })
     }
 }
 
 impl CgroupSockAddrTarget {
     fn helper_call_error(&self, helper: BpfHelper) -> Option<String> {
-        match helper {
-            BpfHelper::Bind if !self.is_connect() => Some(format!(
-                "helper '{}' is only valid on cgroup_sock_addr connect4/connect6 hooks",
-                helper.name()
-            )),
-            _ => None,
-        }
+        (!self.is_connect() && helper_list_contains(CGROUP_SOCK_ADDR_CONNECT_ONLY_HELPERS, helper))
+            .then(|| {
+                format!(
+                    "helper '{}' is only valid on cgroup_sock_addr connect4/connect6 hooks",
+                    helper.name()
+                )
+            })
     }
 }
 
 impl CgroupSockTarget {
     fn socket_projection_access_error(&self, member_name: &str) -> Option<String> {
-        let requires_post_bind = matches!(
-            member_name,
-            "src_ip4" | "src_ip6" | "src_port" | "dst_port" | "dst_ip4" | "dst_ip6"
-        );
-        if !requires_post_bind || self.is_post_bind() {
+        if self.is_post_bind() || !CGROUP_SOCK_POST_BIND_ONLY_MEMBERS.contains(&member_name) {
             return None;
         }
         Some(format!(
@@ -373,15 +402,10 @@ impl EbpfProgramType {
         &self,
         helper: BpfHelper,
     ) -> Option<(usize, &'static str)> {
-        match (helper, self) {
-            (BpfHelper::Redirect, EbpfProgramType::Xdp) => {
-                Some((1, "helper 'bpf_redirect' requires arg1 = 0 in xdp programs"))
-            }
-            (BpfHelper::SkAssign, EbpfProgramType::Tc) => {
-                Some((2, "helper 'bpf_sk_assign' requires arg2 = 0 in tc programs"))
-            }
-            _ => None,
-        }
+        HELPER_ZERO_ARG_REQUIREMENTS
+            .iter()
+            .find(|spec| helper_ids_equal(spec.helper, helper) && spec.program_type == *self)
+            .map(|spec| (spec.arg_idx, spec.error_message))
     }
 
     pub(crate) fn get_socket_cookie_arg_policy(&self) -> Option<GetSocketCookieArgPolicy> {
