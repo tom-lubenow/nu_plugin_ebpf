@@ -334,6 +334,9 @@ impl ProgramSpec {
     }
 
     pub(crate) fn ctx_field_load_guard(&self, field: &CtxField) -> Option<ContextFieldLoadGuard> {
-        self.program_type().ctx_field_load_guard(field)
+        self.ctx_field_access_error(field)
+            .is_none()
+            .then(|| self.program_type().ctx_field_load_guard(field))
+            .flatten()
     }
 }

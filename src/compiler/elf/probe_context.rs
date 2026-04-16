@@ -133,14 +133,10 @@ impl ProbeContext {
     }
 
     pub(crate) fn ctx_field_load_guard(&self, field: &CtxField) -> Option<ContextFieldLoadGuard> {
-        self.ctx_field_access_error(field)
-            .is_none()
-            .then(|| {
-                self.parsed_program_spec()
-                    .and_then(|spec| spec.ctx_field_load_guard(field))
-                    .or_else(|| self.program_type().ctx_field_load_guard(field))
-            })
-            .flatten()
+        self.parsed_program_spec().map_or_else(
+            || self.program_type().ctx_field_load_guard(field),
+            |spec| spec.ctx_field_load_guard(field),
+        )
     }
 
     pub(crate) fn ctx_field_is_raw_context_pointer(&self, field: &CtxField) -> bool {
@@ -279,28 +275,20 @@ impl ProbeContext {
     }
 
     pub(crate) fn ctx_field_type_spec(&self, field: &CtxField) -> Option<ContextFieldTypeSpec> {
-        self.ctx_field_access_error(field)
-            .is_none()
-            .then(|| {
-                self.parsed_program_spec()
-                    .and_then(|spec| spec.ctx_field_type_spec(field))
-                    .or_else(|| program_type_ctx_field_type_spec(self.program_type(), field))
-            })
-            .flatten()
+        self.parsed_program_spec().map_or_else(
+            || program_type_ctx_field_type_spec(self.program_type(), field),
+            |spec| spec.ctx_field_type_spec(field),
+        )
     }
 
     pub(crate) fn ctx_field_projection_spec(
         &self,
         field: &CtxField,
     ) -> Option<ContextFieldProjectionSpec> {
-        self.ctx_field_access_error(field)
-            .is_none()
-            .then(|| {
-                self.parsed_program_spec()
-                    .and_then(|spec| spec.ctx_field_projection_spec(field))
-                    .or_else(|| program_type_ctx_field_projection_spec(self.program_type(), field))
-            })
-            .flatten()
+        self.parsed_program_spec().map_or_else(
+            || program_type_ctx_field_projection_spec(self.program_type(), field),
+            |spec| spec.ctx_field_projection_spec(field),
+        )
     }
 
     /// Get tracepoint category and name
@@ -802,9 +790,10 @@ impl ProbeContext {
     /// Returns a user-facing error message when a context field is not valid
     /// for this program type.
     pub fn ctx_field_access_error(&self, field: &CtxField) -> Option<String> {
-        self.parsed_program_spec()
-            .and_then(|spec| spec.ctx_field_access_error(field))
-            .or_else(|| self.program_type().base_ctx_field_access_error(field))
+        self.parsed_program_spec().map_or_else(
+            || self.program_type().base_ctx_field_access_error(field),
+            |spec| spec.ctx_field_access_error(field),
+        )
     }
 
     pub fn validate_ctx_field_access(&self, field: &CtxField) -> Result<(), CompileError> {
