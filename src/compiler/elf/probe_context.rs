@@ -753,9 +753,9 @@ impl ProbeContext {
         field_name: &str,
         index: Option<usize>,
     ) -> Result<CtxStoreTarget, String> {
-        let parsed_program_spec = self.parsed_program_spec();
-        if let Some(result) = parsed_program_spec
-            .and_then(|spec| spec.resolve_special_ctx_store_target(field_name, index))
+        if let Some(result) = self
+            .parsed_program_spec()
+            .and_then(|spec| spec.resolve_ctx_store_target(field_name, index))
         {
             return result;
         }
@@ -763,12 +763,6 @@ impl ProbeContext {
         let field = self.resolve_ctx_field_name(field_name)?;
         self.validate_ctx_field_access(&field)
             .map_err(|err| err.to_string())?;
-
-        if let Some(result) = parsed_program_spec
-            .and_then(|spec| spec.resolve_ctx_store_target_for_field(&field, index))
-        {
-            return result;
-        }
 
         Err(format!("ctx.{} is read-only", field.display_name()))
     }
@@ -780,7 +774,7 @@ impl ProbeContext {
     ) -> Result<CtxWriteTarget, String> {
         if let Some(result) = self
             .parsed_program_spec()
-            .and_then(|spec| spec.resolve_special_ctx_write_target(field_name, index))
+            .and_then(|spec| spec.resolve_ctx_write_target(field_name, index))
         {
             return result;
         }

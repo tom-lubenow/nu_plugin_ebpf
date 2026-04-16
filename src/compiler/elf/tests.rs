@@ -3558,6 +3558,18 @@ fn test_probe_context_rejects_cgroup_sockopt_get_level_store_target() {
 }
 
 #[test]
+fn test_probe_context_rejects_cgroup_sockopt_get_optname_store_target_validation() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+    let err = ctx
+        .validate_ctx_store_target(&CtxStoreTarget::SockoptOptname)
+        .expect_err("cgroup_sockopt:get optname store target should be rejected");
+    assert!(
+        err.to_string()
+            .contains("ctx.optname is only writable on cgroup_sockopt:set hooks")
+    );
+}
+
+#[test]
 fn test_probe_context_resolves_cgroup_sock_addr_ipv4_store_targets() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
     assert_eq!(
@@ -3628,6 +3640,15 @@ fn test_probe_context_resolves_cgroup_sock_addr_ipv6_and_msg_source_store_target
             .expect("cgroup_sock_addr sendmsg6 msg_src_ip6.3 target should resolve"),
         CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(3)
     );
+}
+
+#[test]
+fn test_probe_context_rejects_msg_source_store_target_validation_outside_msg_hooks() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+    let err = ctx
+        .validate_ctx_store_target(&CtxStoreTarget::CgroupSockAddrMsgSrcIp4)
+        .expect_err("cgroup_sock_addr connect4 msg_src_ip4 store target should be rejected");
+    assert!(err.to_string().contains("sendmsg*/recvmsg*"));
 }
 
 #[test]
