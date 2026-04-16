@@ -146,6 +146,94 @@ impl SockOpsCallbackGuard {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BaseContextFieldProjectionKind {
+    None,
+    Direct,
+    SocketValidated,
+    StackBacked {
+        normalize_u32_words_host_order: bool,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BaseContextFieldSchemaSpec {
+    type_spec: ContextFieldTypeSpec,
+    projection_kind: BaseContextFieldProjectionKind,
+    sock_ops_load_guard: Option<SockOpsCallbackGuard>,
+}
+
+impl BaseContextFieldSchemaSpec {
+    fn value(type_spec: ContextFieldTypeSpec) -> Self {
+        Self {
+            type_spec,
+            projection_kind: BaseContextFieldProjectionKind::None,
+            sock_ops_load_guard: None,
+        }
+    }
+
+    fn direct(type_spec: ContextFieldTypeSpec) -> Self {
+        Self {
+            type_spec,
+            projection_kind: BaseContextFieldProjectionKind::Direct,
+            sock_ops_load_guard: None,
+        }
+    }
+
+    fn socket_validated(type_spec: ContextFieldTypeSpec) -> Self {
+        Self {
+            type_spec,
+            projection_kind: BaseContextFieldProjectionKind::SocketValidated,
+            sock_ops_load_guard: None,
+        }
+    }
+
+    fn stack_backed(type_spec: ContextFieldTypeSpec, normalize_u32_words_host_order: bool) -> Self {
+        Self {
+            type_spec,
+            projection_kind: BaseContextFieldProjectionKind::StackBacked {
+                normalize_u32_words_host_order,
+            },
+            sock_ops_load_guard: None,
+        }
+    }
+
+    fn with_sock_ops_load_guard(mut self, guard: SockOpsCallbackGuard) -> Self {
+        self.sock_ops_load_guard = Some(guard);
+        self
+    }
+
+    fn projection_spec(&self) -> Option<ContextFieldProjectionSpec> {
+        match self.projection_kind {
+            BaseContextFieldProjectionKind::None => None,
+            BaseContextFieldProjectionKind::Direct => Some(ContextFieldProjectionSpec::direct(
+                self.type_spec.runtime_ty.clone(),
+            )),
+            BaseContextFieldProjectionKind::SocketValidated => Some(ContextFieldProjectionSpec {
+                runtime_ty: self.type_spec.runtime_ty.clone(),
+                stack_slot_ty: None,
+                normalize_u32_words_host_order: false,
+                validate_socket_projection: true,
+            }),
+            BaseContextFieldProjectionKind::StackBacked {
+                normalize_u32_words_host_order,
+            } => Some(ContextFieldProjectionSpec::stack_backed(
+                self.type_spec.semantic_ty.clone(),
+                normalize_u32_words_host_order,
+            )),
+        }
+    }
+
+    fn load_guard(&self, program_type: EbpfProgramType) -> Option<ContextFieldLoadGuard> {
+        (program_type == EbpfProgramType::SockOps)
+            .then(|| {
+                self.sock_ops_load_guard
+                    .map(ContextFieldLoadGuard::SockOpsCallback)
+            })
+            .flatten()
+    }
+}
+
 pub(crate) fn synthetic_bpf_sock_type() -> MirType {
     MirType::Struct {
         name: Some("bpf_sock".to_string()),
@@ -259,14 +347,13 @@ pub(crate) fn synthetic_bpf_sock_type() -> MirType {
     }
 }
 
-fn raw_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
+fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchemaSpec> {
     Some(match field {
         CtxField::Pid
         | CtxField::Tid
         | CtxField::Uid
         | CtxField::Gid
         | CtxField::Cpu
-        | CtxField::PacketLen
         | CtxField::PktType
         | CtxField::QueueMapping
         | CtxField::EthProtocol
@@ -329,12 +416,26 @@ fn raw_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
         | CtxField::SockOpsLostOut
         | CtxField::SockOpsSackedOut
         | CtxField::SockOpsSkTxhash
-        | CtxField::SockOpsSkbLen
-        | CtxField::SockOpsSkbTcpFlags
         | CtxField::SysctlWrite
         | CtxField::SysctlFilePos
-        | CtxField::SocketUid => ContextFieldTypeSpec::value(MirType::U32),
-        CtxField::TstampType => ContextFieldTypeSpec::value(MirType::U8),
+        | CtxField::SocketUid => {
+            BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::U32))
+        }
+        CtxField::PacketLen => {
+            BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::U32))
+                .with_sock_ops_load_guard(SockOpsCallbackGuard::PacketMetadata)
+        }
+        CtxField::SockOpsSkbLen => {
+            BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::U32))
+                .with_sock_ops_load_guard(SockOpsCallbackGuard::PacketMetadata)
+        }
+        CtxField::SockOpsSkbTcpFlags => {
+            BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::U32))
+                .with_sock_ops_load_guard(SockOpsCallbackGuard::TcpFlags)
+        }
+        CtxField::TstampType => {
+            BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::U8))
+        }
         CtxField::Timestamp
         | CtxField::CgroupId
         | CtxField::PerfSamplePeriod
@@ -345,53 +446,96 @@ fn raw_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
         | CtxField::Tstamp
         | CtxField::Hwtstamp
         | CtxField::SockOpsBytesReceived
-        | CtxField::SockOpsBytesAcked
-        | CtxField::SockOpsSkbHwtstamp => ContextFieldTypeSpec::value(MirType::U64),
+        | CtxField::SockOpsBytesAcked => {
+            BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::U64))
+        }
+        CtxField::SockOpsSkbHwtstamp => {
+            BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::U64))
+                .with_sock_ops_load_guard(SockOpsCallbackGuard::Hwtstamp)
+        }
         CtxField::SockoptLevel
         | CtxField::SockoptOptname
         | CtxField::SockoptOptlen
-        | CtxField::SockoptRetval => ContextFieldTypeSpec::value(MirType::I32),
-        CtxField::Context => ContextFieldTypeSpec::value(MirType::Ptr {
-            pointee: Box::new(MirType::U8),
-            address_space: AddressSpace::Kernel,
-        }),
-        CtxField::Socket => ContextFieldTypeSpec::value(MirType::Ptr {
-            pointee: Box::new(synthetic_bpf_sock_type()),
-            address_space: AddressSpace::Kernel,
-        }),
-        CtxField::SockoptOptval | CtxField::SockoptOptvalEnd => {
-            ContextFieldTypeSpec::value(MirType::Ptr {
+        | CtxField::SockoptRetval => {
+            BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::I32))
+        }
+        CtxField::Context => {
+            BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::Ptr {
                 pointee: Box::new(MirType::U8),
                 address_space: AddressSpace::Kernel,
-            })
+            }))
         }
-        CtxField::UserIp6
-        | CtxField::MsgSrcIp6
-        | CtxField::RemoteIp6
-        | CtxField::LocalIp6
-        | CtxField::SockOpsArgs => ContextFieldTypeSpec::stack_backed(MirType::Array {
-            elem: Box::new(MirType::U32),
-            len: 4,
-        }),
-        CtxField::SkbCb => ContextFieldTypeSpec::stack_backed(MirType::Array {
-            elem: Box::new(MirType::U32),
-            len: 5,
-        }),
-        CtxField::Data | CtxField::DataMeta | CtxField::DataEnd => {
+        CtxField::Socket => BaseContextFieldSchemaSpec::socket_validated(
             ContextFieldTypeSpec::value(MirType::Ptr {
+                pointee: Box::new(synthetic_bpf_sock_type()),
+                address_space: AddressSpace::Kernel,
+            }),
+        ),
+        CtxField::SockoptOptval | CtxField::SockoptOptvalEnd => {
+            BaseContextFieldSchemaSpec::direct(ContextFieldTypeSpec::value(MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            }))
+        }
+        CtxField::UserIp6 | CtxField::MsgSrcIp6 => BaseContextFieldSchemaSpec::stack_backed(
+            ContextFieldTypeSpec::stack_backed(MirType::Array {
+                elem: Box::new(MirType::U32),
+                len: 4,
+            }),
+            true,
+        ),
+        CtxField::RemoteIp6 | CtxField::LocalIp6 | CtxField::SockOpsArgs => {
+            BaseContextFieldSchemaSpec::stack_backed(
+                ContextFieldTypeSpec::stack_backed(MirType::Array {
+                    elem: Box::new(MirType::U32),
+                    len: 4,
+                }),
+                false,
+            )
+        }
+        CtxField::SkbCb => BaseContextFieldSchemaSpec::stack_backed(
+            ContextFieldTypeSpec::stack_backed(MirType::Array {
+                elem: Box::new(MirType::U32),
+                len: 5,
+            }),
+            false,
+        ),
+        CtxField::Data => {
+            BaseContextFieldSchemaSpec::direct(ContextFieldTypeSpec::value(MirType::Ptr {
                 pointee: Box::new(MirType::U8),
                 address_space: AddressSpace::Packet,
-            })
+            }))
+            .with_sock_ops_load_guard(SockOpsCallbackGuard::PacketData)
         }
-        CtxField::Comm => ContextFieldTypeSpec::stack_backed(MirType::Array {
-            elem: Box::new(MirType::U8),
-            len: 16,
-        }),
+        CtxField::DataMeta => {
+            BaseContextFieldSchemaSpec::direct(ContextFieldTypeSpec::value(MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Packet,
+            }))
+        }
+        CtxField::DataEnd => {
+            BaseContextFieldSchemaSpec::direct(ContextFieldTypeSpec::value(MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Packet,
+            }))
+            .with_sock_ops_load_guard(SockOpsCallbackGuard::PacketData)
+        }
+        CtxField::Comm => BaseContextFieldSchemaSpec::stack_backed(
+            ContextFieldTypeSpec::stack_backed(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 16,
+            }),
+            false,
+        ),
         CtxField::Arg(_) | CtxField::RetVal | CtxField::KStack | CtxField::UStack => {
             return None;
         }
         CtxField::TracepointField(_) => return None,
     })
+}
+
+fn raw_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
+    base_ctx_field_schema_spec(field).map(|spec| spec.type_spec)
 }
 
 pub(crate) fn static_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
@@ -413,49 +557,11 @@ pub(crate) fn program_type_ctx_field_load_guard(
     program_type: EbpfProgramType,
     field: &CtxField,
 ) -> Option<ContextFieldLoadGuard> {
-    if program_type != EbpfProgramType::SockOps {
-        return None;
-    }
-    Some(match field {
-        CtxField::Data | CtxField::DataEnd => {
-            ContextFieldLoadGuard::SockOpsCallback(SockOpsCallbackGuard::PacketData)
-        }
-        CtxField::PacketLen | CtxField::SockOpsSkbLen => {
-            ContextFieldLoadGuard::SockOpsCallback(SockOpsCallbackGuard::PacketMetadata)
-        }
-        CtxField::SockOpsSkbTcpFlags => {
-            ContextFieldLoadGuard::SockOpsCallback(SockOpsCallbackGuard::TcpFlags)
-        }
-        CtxField::SockOpsSkbHwtstamp => {
-            ContextFieldLoadGuard::SockOpsCallback(SockOpsCallbackGuard::Hwtstamp)
-        }
-        _ => return None,
-    })
+    base_ctx_field_schema_spec(field).and_then(|spec| spec.load_guard(program_type))
 }
 
 fn raw_ctx_field_projection_spec(field: &CtxField) -> Option<ContextFieldProjectionSpec> {
-    let type_spec = raw_ctx_field_type_spec(field)?;
-    Some(match field {
-        CtxField::Data
-        | CtxField::DataMeta
-        | CtxField::DataEnd
-        | CtxField::SockoptOptval
-        | CtxField::SockoptOptvalEnd => ContextFieldProjectionSpec::direct(type_spec.runtime_ty),
-        CtxField::Socket => ContextFieldProjectionSpec {
-            runtime_ty: type_spec.runtime_ty,
-            stack_slot_ty: None,
-            normalize_u32_words_host_order: false,
-            validate_socket_projection: true,
-        },
-        CtxField::Comm => ContextFieldProjectionSpec::stack_backed(type_spec.semantic_ty, false),
-        CtxField::UserIp6 | CtxField::MsgSrcIp6 => {
-            ContextFieldProjectionSpec::stack_backed(type_spec.semantic_ty, true)
-        }
-        CtxField::RemoteIp6 | CtxField::LocalIp6 | CtxField::SockOpsArgs | CtxField::SkbCb => {
-            ContextFieldProjectionSpec::stack_backed(type_spec.semantic_ty, false)
-        }
-        _ => return None,
-    })
+    base_ctx_field_schema_spec(field).and_then(|spec| spec.projection_spec())
 }
 
 pub(crate) fn static_ctx_field_projection_spec(
