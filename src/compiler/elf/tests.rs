@@ -678,6 +678,52 @@ fn test_probe_context_from_program_spec_uses_structured_target() {
 }
 
 #[test]
+fn test_program_spec_ctx_field_type_spec_respects_sockopt_attach_kind() {
+    let getsockopt =
+        ProgramSpec::from_program_type_target(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get")
+            .expect("cgroup_sockopt:get spec should parse");
+    let setsockopt =
+        ProgramSpec::from_program_type_target(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set")
+            .expect("cgroup_sockopt:set spec should parse");
+
+    assert!(
+        getsockopt
+            .ctx_field_type_spec(&CtxField::SockoptRetval)
+            .is_some()
+    );
+    assert!(
+        setsockopt
+            .ctx_field_type_spec(&CtxField::SockoptRetval)
+            .is_none()
+    );
+}
+
+#[test]
+fn test_program_spec_ctx_field_projection_spec_respects_sock_addr_attach_kind() {
+    let connect6 = ProgramSpec::from_program_type_target(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect6",
+    )
+    .expect("cgroup_sock_addr connect6 spec should parse");
+    let sendmsg6 = ProgramSpec::from_program_type_target(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:sendmsg6",
+    )
+    .expect("cgroup_sock_addr sendmsg6 spec should parse");
+
+    assert!(
+        connect6
+            .ctx_field_projection_spec(&CtxField::MsgSrcIp6)
+            .is_none()
+    );
+    assert!(
+        sendmsg6
+            .ctx_field_projection_spec(&CtxField::MsgSrcIp6)
+            .is_some()
+    );
+}
+
+#[test]
 fn test_probe_context_new_preserves_noncanonical_uprobe_target_string() {
     let ctx = ProbeContext::new(EbpfProgramType::Uprobe, "/usr/bin/app:main+16");
 

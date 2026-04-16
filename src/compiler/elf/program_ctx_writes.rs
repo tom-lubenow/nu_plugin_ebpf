@@ -1,6 +1,6 @@
 use super::{CtxWriteTarget, EbpfProgramType};
 use crate::compiler::mir::{CtxField, CtxStoreTarget};
-use crate::program_spec::{CgroupSockAddrTarget, CgroupSockoptTarget, ProgramSpec, SockOpsTarget};
+use crate::program_spec::{CgroupSockAddrTarget, ProgramSpec, SockOpsTarget};
 
 fn word_index(field_name: &str, index: usize) -> Result<u8, String> {
     let index = u8::try_from(index)
@@ -300,44 +300,7 @@ impl SockOpsTarget {
     }
 }
 
-impl CgroupSockoptTarget {
-    fn ctx_field_access_error(&self, field: &CtxField) -> Option<String> {
-        match field {
-            CtxField::SockoptRetval if !self.is_get() => {
-                Some("ctx.sockopt_retval is only available on cgroup_sockopt:get hooks".into())
-            }
-            _ => None,
-        }
-    }
-}
-
 impl CgroupSockAddrTarget {
-    fn ctx_field_access_error(&self, field: &CtxField) -> Option<String> {
-        match field {
-            CtxField::UserIp4 if !self.is_ipv4() => {
-                Some("ctx.user_ip4 is only available on IPv4 cgroup_sock_addr hooks (*4)".into())
-            }
-            CtxField::UserIp6 if !self.is_ipv6() => {
-                Some("ctx.user_ip6 is only available on IPv6 cgroup_sock_addr hooks (*6)".into())
-            }
-            CtxField::MsgSrcIp4 if !self.is_ipv4() => {
-                Some("ctx.msg_src_ip4 is only available on IPv4 cgroup_sock_addr hooks (*4)".into())
-            }
-            CtxField::MsgSrcIp4 if !self.has_msg_source() => Some(
-                "ctx.msg_src_ip4 is only available on cgroup_sock_addr sendmsg*/recvmsg* hooks"
-                    .into(),
-            ),
-            CtxField::MsgSrcIp6 if !self.is_ipv6() => {
-                Some("ctx.msg_src_ip6 is only available on IPv6 cgroup_sock_addr hooks (*6)".into())
-            }
-            CtxField::MsgSrcIp6 if !self.has_msg_source() => Some(
-                "ctx.msg_src_ip6 is only available on cgroup_sock_addr sendmsg*/recvmsg* hooks"
-                    .into(),
-            ),
-            _ => None,
-        }
-    }
-
     fn ctx_write_surfaces(&self) -> [ContextWriteSurfaceSpec; 5] {
         [
             ContextWriteSurfaceSpec::store_field(
@@ -398,20 +361,6 @@ fn cgroup_sockopt_ctx_write_surfaces() -> [ContextWriteSurfaceSpec; 5] {
 }
 
 impl ProgramSpec {
-    fn attach_ctx_field_access_error(&self, field: &CtxField) -> Option<String> {
-        match self {
-            ProgramSpec::CgroupSockopt { target } => target.ctx_field_access_error(field),
-            ProgramSpec::CgroupSockAddr { target } => target.ctx_field_access_error(field),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn ctx_field_access_error(&self, field: &CtxField) -> Option<String> {
-        self.program_type()
-            .base_ctx_field_access_error(field)
-            .or_else(|| self.attach_ctx_field_access_error(field))
-    }
-
     fn ctx_write_surface_for_name(&self, field_name: &str) -> Option<ContextWriteSurfaceSpec> {
         if self.program_type().supports_skb_ctx_fields() {
             if let Some(surface) =

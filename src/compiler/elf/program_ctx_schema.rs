@@ -317,14 +317,20 @@ impl ProgramSpec {
     }
 
     pub(crate) fn ctx_field_type_spec(&self, field: &CtxField) -> Option<ContextFieldTypeSpec> {
-        program_type_ctx_field_type_spec(self.program_type(), field)
+        self.ctx_field_access_error(field)
+            .is_none()
+            .then(|| program_type_ctx_field_type_spec(self.program_type(), field))
+            .flatten()
     }
 
     pub(crate) fn ctx_field_projection_spec(
         &self,
         field: &CtxField,
     ) -> Option<ContextFieldProjectionSpec> {
-        program_type_ctx_field_projection_spec(self.program_type(), field)
+        self.ctx_field_access_error(field)
+            .is_none()
+            .then(|| program_type_ctx_field_projection_spec(self.program_type(), field))
+            .flatten()
     }
 
     pub(crate) fn ctx_field_load_guard(&self, field: &CtxField) -> Option<ContextFieldLoadGuard> {
