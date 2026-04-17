@@ -848,6 +848,14 @@ pub enum CtxStoreTarget {
     SockOpsReply,
     /// `bpf_sock_ops.replylong[idx]`
     SockOpsReplyLong(u8),
+    /// `__sk_buff.mark`
+    SkbMark,
+    /// `__sk_buff.priority`
+    SkbPriority,
+    /// `__sk_buff.tc_index`
+    SkbTcIndex,
+    /// `__sk_buff.tc_classid`
+    SkbTcClassid,
     /// `__sk_buff.tstamp`
     SkbTstamp,
     /// `bpf_sysctl.file_pos`
@@ -877,6 +885,10 @@ impl CtxStoreTarget {
         match self {
             CtxStoreTarget::SockOpsReply
             | CtxStoreTarget::SockOpsReplyLong(_)
+            | CtxStoreTarget::SkbMark
+            | CtxStoreTarget::SkbPriority
+            | CtxStoreTarget::SkbTcIndex
+            | CtxStoreTarget::SkbTcClassid
             | CtxStoreTarget::SysctlFilePos => MirType::U32,
             CtxStoreTarget::SkbTstamp => MirType::U64,
             CtxStoreTarget::SockoptLevel
@@ -896,6 +908,15 @@ impl CtxStoreTarget {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
                 format!(
                     "writable sock_ops reply fields require a u32 store, got {:?}",
+                    actual
+                )
+            }
+            CtxStoreTarget::SkbMark
+            | CtxStoreTarget::SkbPriority
+            | CtxStoreTarget::SkbTcIndex
+            | CtxStoreTarget::SkbTcClassid => {
+                format!(
+                    "writable tc skb scalar fields require a u32 store, got {:?}",
                     actual
                 )
             }
@@ -933,9 +954,11 @@ impl CtxStoreTarget {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
                 "writable sock_ops reply fields are only supported on sock_ops programs"
             }
-            CtxStoreTarget::SkbTstamp => {
-                "writable skb tstamp is only supported on skb-backed packet programs"
-            }
+            CtxStoreTarget::SkbMark => "ctx.mark is only writable on tc programs",
+            CtxStoreTarget::SkbPriority => "ctx.priority is only writable on tc programs",
+            CtxStoreTarget::SkbTcIndex => "ctx.tc_index is only writable on tc programs",
+            CtxStoreTarget::SkbTcClassid => "ctx.tc_classid is only writable on tc programs",
+            CtxStoreTarget::SkbTstamp => "ctx.tstamp is only writable on tc programs",
             CtxStoreTarget::SysctlFilePos => {
                 "writable cgroup_sysctl file_pos is only supported on cgroup_sysctl programs"
             }

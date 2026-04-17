@@ -39,7 +39,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 4, 8, 12, 16, 20)
     }
 
-    pub(super) fn sk_buff_offsets() -> (i16, i16, i16, i16, i16, i16, i16) {
+    pub(crate) fn sk_buff_offsets() -> (i16, i16, i16, i16, i16, i16, i16) {
         // struct __sk_buff {
         //     __u32 len;
         //     ...
@@ -117,7 +117,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         48
     }
 
-    pub(super) fn sk_buff_extended_meta_offsets() -> (i16, i16, i16, i16, i16, i16) {
+    pub(crate) fn sk_buff_extended_meta_offsets() -> (i16, i16, i16, i16, i16, i16) {
         // struct __sk_buff {
         //     ...
         //     __u32 tc_classid;
@@ -134,7 +134,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         (72, 84, 160, 164, 176, 184)
     }
 
-    pub(super) fn sk_buff_mark_priority_offsets() -> (i16, i16) {
+    pub(crate) fn sk_buff_mark_priority_offsets() -> (i16, i16) {
         // struct __sk_buff {
         //     __u32 len;
         //     __u32 pkt_type;

@@ -34,7 +34,7 @@ enum ContextWriteAvailability {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ProgramCtxWriteSurfaceFamilyRequirement {
-    SkbContext,
+    Tc,
     CgroupSysctl,
     SockOps,
     CgroupSockopt,
@@ -235,7 +235,7 @@ impl ContextWriteSurfaceSpec {
 impl ProgramCtxWriteSurfaceFamilyRequirement {
     fn matches_spec(&self, spec: &ProgramSpec) -> bool {
         match self {
-            Self::SkbContext => spec.program_type().supports_skb_ctx_fields(),
+            Self::Tc => matches!(spec.program_type(), EbpfProgramType::Tc),
             Self::CgroupSysctl => spec.program_type().supports_cgroup_sysctl_ctx_fields(),
             Self::SockOps => spec.program_type().supports_sock_ops_ctx_fields(),
             Self::CgroupSockopt => {
@@ -254,12 +254,33 @@ impl ProgramCtxWriteSurfaceFamilyRequirement {
     }
 }
 
-const SKB_TSTAMP_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
-    &[ContextWriteSurfaceSpec::store_field(
+const TC_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
+    ContextWriteSurfaceSpec::store_field(
+        "mark",
+        CtxField::SockMark,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbMark),
+    ),
+    ContextWriteSurfaceSpec::store_field(
+        "priority",
+        CtxField::SockPriority,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbPriority),
+    ),
+    ContextWriteSurfaceSpec::store_field(
+        "tc_index",
+        CtxField::TcIndex,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbTcIndex),
+    ),
+    ContextWriteSurfaceSpec::store_field(
+        "tc_classid",
+        CtxField::TcClassid,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbTcClassid),
+    ),
+    ContextWriteSurfaceSpec::store_field(
         "tstamp",
         CtxField::Tstamp,
         ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbTstamp),
-    )];
+    ),
+];
 
 const CGROUP_SYSCTL_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
     &[ContextWriteSurfaceSpec::store_field(
@@ -332,8 +353,8 @@ const CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
 
 const PROGRAM_CTX_WRITE_SURFACE_FAMILIES: &[ProgramCtxWriteSurfaceFamilySpec] = &[
     ProgramCtxWriteSurfaceFamilySpec {
-        requirement: ProgramCtxWriteSurfaceFamilyRequirement::SkbContext,
-        surfaces: SKB_TSTAMP_CTX_WRITE_SURFACES,
+        requirement: ProgramCtxWriteSurfaceFamilyRequirement::Tc,
+        surfaces: TC_CTX_WRITE_SURFACES,
     },
     ProgramCtxWriteSurfaceFamilySpec {
         requirement: ProgramCtxWriteSurfaceFamilyRequirement::CgroupSysctl,
@@ -377,6 +398,10 @@ impl CtxStoreTarget {
     pub(crate) fn ctx_field(&self) -> Option<CtxField> {
         match self {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => None,
+            CtxStoreTarget::SkbMark => Some(CtxField::SockMark),
+            CtxStoreTarget::SkbPriority => Some(CtxField::SockPriority),
+            CtxStoreTarget::SkbTcIndex => Some(CtxField::TcIndex),
+            CtxStoreTarget::SkbTcClassid => Some(CtxField::TcClassid),
             CtxStoreTarget::SkbTstamp => Some(CtxField::Tstamp),
             CtxStoreTarget::SysctlFilePos => Some(CtxField::SysctlFilePos),
             CtxStoreTarget::SockoptLevel => Some(CtxField::SockoptLevel),
@@ -452,11 +477,17 @@ impl ProgramSpec {
     }
 
     pub(crate) fn ctx_store_target_error(&self, store_target: &CtxStoreTarget) -> Option<String> {
-        self.ctx_write_surface_for_store_target(store_target)
-            .and_then(|surface| surface.store_target_error(self))
-            .or_else(|| {
-                self.program_type()
-                    .base_ctx_store_target_error(store_target)
-            })
+        if let Some(surface) = self.ctx_write_surface_for_store_target(store_target) {
+            return surface.store_target_error(self);
+        }
+
+        if let Some(field) = store_target.ctx_field()
+            && self.ctx_field_access_error(&field).is_none()
+        {
+            return Some(store_target.missing_context_error().to_string());
+        }
+
+        self.program_type()
+            .base_ctx_store_target_error(store_target)
     }
 }

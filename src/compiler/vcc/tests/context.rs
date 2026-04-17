@@ -575,6 +575,23 @@ fn test_verify_mir_for_probe_context_accepts_skb_tstamp_store_on_tc() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_accepts_skb_mark_store_on_tc() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbMark,
+            val: MirValue::Const(123),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "tc:lo:ingress");
+    verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect("expected skb mark store to be accepted on tc");
+}
+
+#[test]
 fn test_verify_mir_accepts_guarded_sockopt_optval_byte_store() {
     let (func, types) = make_sockopt_optval_store_function(true);
     verify_mir(&func, &types).expect("expected guarded sockopt optval store to verify");
@@ -631,6 +648,48 @@ fn test_verify_mir_for_probe_context_rejects_skb_tstamp_store_on_non_skb_program
         e.message.contains(
             "ctx.tstamp is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
         )
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_rejects_skb_tstamp_store_on_socket_filter() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbTstamp,
+            val: MirValue::Const(123),
+            ty: MirType::U64,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let err = verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect_err("expected skb tstamp store to be rejected on socket_filter");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("ctx.tstamp is only writable on tc programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_rejects_skb_mark_store_on_socket_filter() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbMark,
+            val: MirValue::Const(123),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let err = verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect_err("expected skb mark store to be rejected on socket_filter");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("ctx.mark is only writable on tc programs")
     }));
 }
 

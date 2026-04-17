@@ -3033,6 +3033,20 @@ fn test_probe_context_resolves_skb_tstamp_store_target_on_tc() {
 }
 
 #[test]
+fn test_probe_context_resolves_skb_mark_store_target_on_tc() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    assert_eq!(
+        ctx.resolve_ctx_store_target("mark", None)
+            .expect("tc mark target should resolve"),
+        CtxStoreTarget::SkbMark
+    );
+    assert!(
+        ctx.validate_ctx_store_target(&CtxStoreTarget::SkbMark)
+            .is_ok()
+    );
+}
+
+#[test]
 fn test_probe_context_rejects_skb_tstamp_store_target_on_non_skb_program() {
     let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
     let err = ctx
@@ -3042,6 +3056,30 @@ fn test_probe_context_rejects_skb_tstamp_store_target_on_non_skb_program() {
         err.to_string().contains(
             "ctx.tstamp is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
         )
+    );
+}
+
+#[test]
+fn test_probe_context_rejects_skb_tstamp_store_target_on_socket_filter() {
+    let ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let err = ctx
+        .validate_ctx_store_target(&CtxStoreTarget::SkbTstamp)
+        .expect_err("skb tstamp store target should be rejected outside tc");
+    assert!(
+        err.to_string()
+            .contains("ctx.tstamp is only writable on tc programs")
+    );
+}
+
+#[test]
+fn test_probe_context_rejects_skb_mark_store_target_on_socket_filter() {
+    let ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let err = ctx
+        .validate_ctx_store_target(&CtxStoreTarget::SkbMark)
+        .expect_err("skb mark store target should be rejected outside tc");
+    assert!(
+        err.to_string()
+            .contains("ctx.mark is only writable on tc programs")
     );
 }
 
