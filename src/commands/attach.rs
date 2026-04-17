@@ -129,8 +129,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.socket_cookie } - Get the stable socket cookie on supported socket-backed contexts
     {|ctx| $ctx.socket_uid } - Get the socket owner UID on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser
     {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie on supported socket-backed contexts
-    {|ctx| $ctx.mark }    - Get the socket or skb mark on cgroup_sock, socket_filter, tc, and cgroup_skb programs
-    {|ctx| $ctx.priority } - Get the socket or skb priority on cgroup_sock, socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs
+    {|ctx| $ctx.mark }    - Get the socket or skb mark on cgroup_sock sock_create/sock_release, socket_filter, tc, and cgroup_skb programs
+    {|ctx| $ctx.priority } - Get the socket or skb priority on cgroup_sock sock_create/sock_release, socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs
     {|ctx| $ctx.family }  - Get socket family on cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
     {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
     {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
@@ -293,15 +293,19 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.family }  - Get socket family
     {|ctx| $ctx.sock_type } - Get socket type
     {|ctx| $ctx.protocol } - Get socket protocol
-    {|ctx| $ctx.bound_dev_if } - Get the bound device ifindex
-    {|ctx| $ctx.mark }    - Get the socket mark
-    {|ctx| $ctx.priority } - Get the socket priority
+    {|ctx| $ctx.bound_dev_if } - Get the bound device ifindex on `sock_create` / `sock_release`
+    {|ctx| $ctx.mark }    - Get the socket mark on `sock_create` / `sock_release`
+    {|ctx| $ctx.priority } - Get the socket priority on `sock_create` / `sock_release`
     {|ctx| $ctx.socket_cookie } - Get the stable socket cookie for the current socket context
     {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie for the current socket context
     Note: cgroup_sock closures can return `allow` or `deny` instead of
     raw `1`/`0` result codes. Initial support covers `sock_create`,
-    `sock_release`, `post_bind4`, and `post_bind6` with the scalar fields
-    above. On `cgroup_sock`, socket-address projection fields through
+    `sock_release`, `post_bind4`, and `post_bind6`. Direct
+    `ctx.bound_dev_if`, `ctx.mark`, and `ctx.priority` are only
+    available on `sock_create` / `sock_release`, and they are writable
+    there through ordinary assignment after shadowing the closure
+    parameter as mutable, for example `mut ctx = $ctx; $ctx.mark = 7`.
+    On `cgroup_sock`, socket-address projection fields through
     `ctx.sk` such as `ctx.sk.src_port` and `ctx.sk.dst_port` are only
     available on `post_bind4` and `post_bind6`.
 

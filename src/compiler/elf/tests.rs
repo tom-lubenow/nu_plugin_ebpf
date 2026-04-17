@@ -3476,6 +3476,26 @@ fn test_probe_context_allows_sock_fields_on_cgroup_sock() {
 }
 
 #[test]
+fn test_probe_context_rejects_create_release_only_direct_fields_on_cgroup_sock_post_bind() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
+
+    let bound_dev_if = ctx
+        .ctx_field_access_error(&CtxField::BoundDevIf)
+        .expect("expected cgroup_sock post_bind bound_dev_if access rejection");
+    assert!(bound_dev_if.contains("cgroup_sock sock_create/sock_release"));
+
+    let mark = ctx
+        .ctx_field_access_error(&CtxField::SockMark)
+        .expect("expected cgroup_sock post_bind mark access rejection");
+    assert!(mark.contains("cgroup_sock sock_create/sock_release"));
+
+    let priority = ctx
+        .ctx_field_access_error(&CtxField::SockPriority)
+        .expect("expected cgroup_sock post_bind priority access rejection");
+    assert!(priority.contains("cgroup_sock sock_create/sock_release"));
+}
+
+#[test]
 fn test_probe_context_models_raw_context_pointer_aliases() {
     let cgroup_sock = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
     let cgroup_sockopt = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
@@ -4237,6 +4257,67 @@ fn test_probe_context_rejects_cgroup_sockopt_get_optname_store_target_validation
     assert!(
         err.to_string()
             .contains("ctx.optname is only writable on cgroup_sockopt:set hooks")
+    );
+}
+
+#[test]
+fn test_probe_context_resolves_cgroup_sock_create_release_store_targets() {
+    let create_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+    assert_eq!(
+        create_ctx
+            .resolve_ctx_store_target("bound_dev_if", None)
+            .expect("cgroup_sock sock_create bound_dev_if target should resolve"),
+        CtxStoreTarget::CgroupSockBoundDevIf
+    );
+    assert_eq!(
+        create_ctx
+            .resolve_ctx_store_target("mark", None)
+            .expect("cgroup_sock sock_create mark target should resolve"),
+        CtxStoreTarget::CgroupSockMark
+    );
+    assert_eq!(
+        create_ctx
+            .resolve_ctx_store_target("priority", None)
+            .expect("cgroup_sock sock_create priority target should resolve"),
+        CtxStoreTarget::CgroupSockPriority
+    );
+
+    let release_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_release");
+    assert!(
+        release_ctx
+            .validate_ctx_store_target(&CtxStoreTarget::CgroupSockBoundDevIf)
+            .is_ok()
+    );
+    assert!(
+        release_ctx
+            .validate_ctx_store_target(&CtxStoreTarget::CgroupSockMark)
+            .is_ok()
+    );
+    assert!(
+        release_ctx
+            .validate_ctx_store_target(&CtxStoreTarget::CgroupSockPriority)
+            .is_ok()
+    );
+}
+
+#[test]
+fn test_probe_context_rejects_cgroup_sock_post_bind_store_targets() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
+
+    let err = ctx
+        .resolve_ctx_store_target("mark", None)
+        .expect_err("cgroup_sock post_bind mark store target should be rejected");
+    assert!(
+        err.contains("ctx.mark is only writable on cgroup_sock sock_create/sock_release hooks")
+    );
+
+    let err = ctx
+        .validate_ctx_store_target(&CtxStoreTarget::CgroupSockPriority)
+        .expect_err("cgroup_sock post_bind priority store target should be rejected");
+    assert!(
+        err.to_string().contains(
+            "ctx.priority is only writable on cgroup_sock sock_create/sock_release hooks"
+        )
     );
 }
 

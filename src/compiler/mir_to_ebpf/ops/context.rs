@@ -232,7 +232,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 8, 16, 24, 28, 32, 36)
     }
 
-    pub(super) fn bpf_sock_offsets() -> (i16, i16, i16, i16, i16, i16) {
+    pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_offsets() -> (i16, i16, i16, i16, i16, i16) {
         // struct bpf_sock {
         //     __u32 bound_dev_if;
         //     __u32 family;

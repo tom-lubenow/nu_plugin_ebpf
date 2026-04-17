@@ -3122,6 +3122,63 @@ fn test_lower_cgroup_skb_ctx_mark_assignment() {
 }
 
 #[test]
+fn test_lower_cgroup_sock_ctx_mark_assignment_on_sock_create() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("mark")],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock sock_create ctx.mark assignment should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::StoreCtxField {
+            target: CtxStoreTarget::CgroupSockMark,
+            ty: MirType::U32,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_cgroup_sock_ctx_mark_assignment_on_post_bind_is_rejected() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("mark")],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("cgroup_sock post_bind ctx.mark assignment should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("ctx.mark is only writable on cgroup_sock sock_create/sock_release hooks")
+    );
+}
+
+#[test]
 fn test_lower_tc_ctx_cb_assignment() {
     let hir = make_ctx_upsert_program(
         CellPath {

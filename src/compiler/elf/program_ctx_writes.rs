@@ -31,6 +31,7 @@ enum ContextWriteTargetSpec {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ContextWriteAvailability {
+    CgroupSockCreateReleaseOnly,
     CgroupSockoptSetOnly,
     CgroupSkbEgressOnly,
 }
@@ -41,6 +42,7 @@ enum ProgramCtxWriteSurfaceFamilyRequirement {
     Tc,
     SkSkb,
     CgroupSkb,
+    CgroupSock,
     CgroupSysctl,
     SockOps,
     CgroupSockopt,
@@ -141,6 +143,12 @@ impl ContextWriteTargetSpec {
 impl ContextWriteAvailability {
     fn error(&self, spec: &ProgramSpec, field_name: &str) -> Option<String> {
         match self {
+            Self::CgroupSockCreateReleaseOnly => match spec.attach_shape() {
+                ProgramAttachShape::CgroupSock { post_bind: true } => Some(format!(
+                    "ctx.{field_name} is only writable on cgroup_sock sock_create/sock_release hooks"
+                )),
+                _ => None,
+            },
             Self::CgroupSockoptSetOnly => match spec.attach_shape() {
                 ProgramAttachShape::CgroupSockopt { get: true } => Some(format!(
                     "ctx.{field_name} is only writable on cgroup_sockopt:set hooks"
@@ -263,6 +271,9 @@ impl ProgramCtxWriteSurfaceFamilyRequirement {
             Self::CgroupSkb => {
                 matches!(spec.attach_shape(), ProgramAttachShape::CgroupSkb { .. })
             }
+            Self::CgroupSock => {
+                matches!(spec.attach_shape(), ProgramAttachShape::CgroupSock { .. })
+            }
             Self::CgroupSysctl => spec.program_type().supports_cgroup_sysctl_ctx_fields(),
             Self::SockOps => spec.program_type().supports_sock_ops_ctx_fields(),
             Self::CgroupSockopt => {
@@ -348,6 +359,24 @@ const CGROUP_SKB_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
         ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbTstamp),
     )
     .with_availability(ContextWriteAvailability::CgroupSkbEgressOnly),
+];
+
+const CGROUP_SOCK_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
+    ContextWriteSurfaceSpec::named_store(
+        "bound_dev_if",
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::CgroupSockBoundDevIf),
+    )
+    .with_availability(ContextWriteAvailability::CgroupSockCreateReleaseOnly),
+    ContextWriteSurfaceSpec::named_store(
+        "mark",
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::CgroupSockMark),
+    )
+    .with_availability(ContextWriteAvailability::CgroupSockCreateReleaseOnly),
+    ContextWriteSurfaceSpec::named_store(
+        "priority",
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::CgroupSockPriority),
+    )
+    .with_availability(ContextWriteAvailability::CgroupSockCreateReleaseOnly),
 ];
 
 const CGROUP_SYSCTL_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
@@ -442,6 +471,10 @@ const PROGRAM_CTX_WRITE_SURFACE_FAMILIES: &[ProgramCtxWriteSurfaceFamilySpec] = 
         surfaces: CGROUP_SKB_CTX_WRITE_SURFACES,
     },
     ProgramCtxWriteSurfaceFamilySpec {
+        requirement: ProgramCtxWriteSurfaceFamilyRequirement::CgroupSock,
+        surfaces: CGROUP_SOCK_CTX_WRITE_SURFACES,
+    },
+    ProgramCtxWriteSurfaceFamilySpec {
         requirement: ProgramCtxWriteSurfaceFamilyRequirement::CgroupSysctl,
         surfaces: CGROUP_SYSCTL_CTX_WRITE_SURFACES,
     },
@@ -484,6 +517,9 @@ impl CtxStoreTarget {
         match self {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => None,
             CtxStoreTarget::SockOpsSkTxhash => Some(CtxField::SockOpsSkTxhash),
+            CtxStoreTarget::CgroupSockBoundDevIf
+            | CtxStoreTarget::CgroupSockMark
+            | CtxStoreTarget::CgroupSockPriority => None,
             CtxStoreTarget::SkbMark => Some(CtxField::SockMark),
             CtxStoreTarget::SkbPriority => Some(CtxField::SockPriority),
             CtxStoreTarget::SkbTcIndex => Some(CtxField::TcIndex),
@@ -508,6 +544,9 @@ impl CtxStoreTarget {
             CtxStoreTarget::SockOpsReply
             | CtxStoreTarget::SockOpsReplyLong(_)
             | CtxStoreTarget::SockOpsSkTxhash => Some(ProgramContextFamily::SockOps),
+            CtxStoreTarget::CgroupSockBoundDevIf
+            | CtxStoreTarget::CgroupSockMark
+            | CtxStoreTarget::CgroupSockPriority => Some(ProgramContextFamily::CgroupSock),
             _ => None,
         }
     }

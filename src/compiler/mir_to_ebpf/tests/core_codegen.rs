@@ -3160,6 +3160,84 @@ fn test_compile_sock_ops_sk_txhash_store_uses_u32_ctx_word() {
 }
 
 #[test]
+fn test_compile_cgroup_sock_direct_scalar_stores_use_bpf_sock_offsets() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let bound_dev_if = func.alloc_vreg();
+    let mark = func.alloc_vreg();
+    let priority = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(LirInst::Copy {
+        dst: bound_dev_if,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(LirInst::Copy {
+        dst: mark,
+        src: MirValue::Const(2),
+    });
+    func.block_mut(entry).instructions.push(LirInst::Copy {
+        dst: priority,
+        src: MirValue::Const(3),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::StoreCtxField {
+            target: CtxStoreTarget::CgroupSockBoundDevIf,
+            val: MirValue::VReg(bound_dev_if),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::StoreCtxField {
+            target: CtxStoreTarget::CgroupSockMark,
+            val: MirValue::VReg(mark),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::StoreCtxField {
+            target: CtxStoreTarget::CgroupSockPriority,
+            val: MirValue::VReg(priority),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::Const(1)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_STX | opcode::BPF_W | opcode::BPF_MEM
+            && insn.dst_reg == EbpfReg::R9.as_u8()
+            && insn.offset == 0
+    }));
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_STX | opcode::BPF_W | opcode::BPF_MEM
+            && insn.dst_reg == EbpfReg::R9.as_u8()
+            && insn.offset == 16
+    }));
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_STX | opcode::BPF_W | opcode::BPF_MEM
+            && insn.dst_reg == EbpfReg::R9.as_u8()
+            && insn.offset == 20
+    }));
+}
+
+#[test]
 fn test_compile_cgroup_sockopt_retval_store_uses_retval_offset() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
 

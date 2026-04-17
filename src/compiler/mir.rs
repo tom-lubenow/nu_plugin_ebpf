@@ -850,6 +850,12 @@ pub enum CtxStoreTarget {
     SockOpsReplyLong(u8),
     /// `bpf_sock_ops.sk_txhash`
     SockOpsSkTxhash,
+    /// `bpf_sock.bound_dev_if`
+    CgroupSockBoundDevIf,
+    /// `bpf_sock.mark`
+    CgroupSockMark,
+    /// `bpf_sock.priority`
+    CgroupSockPriority,
     /// `__sk_buff.mark`
     SkbMark,
     /// `__sk_buff.priority`
@@ -890,6 +896,9 @@ impl CtxStoreTarget {
             CtxStoreTarget::SockOpsReply
             | CtxStoreTarget::SockOpsReplyLong(_)
             | CtxStoreTarget::SockOpsSkTxhash
+            | CtxStoreTarget::CgroupSockBoundDevIf
+            | CtxStoreTarget::CgroupSockMark
+            | CtxStoreTarget::CgroupSockPriority
             | CtxStoreTarget::SkbMark
             | CtxStoreTarget::SkbPriority
             | CtxStoreTarget::SkbTcIndex
@@ -920,6 +929,14 @@ impl CtxStoreTarget {
             CtxStoreTarget::SockOpsSkTxhash => {
                 format!(
                     "writable sock_ops sk_txhash requires a u32 store, got {:?}",
+                    actual
+                )
+            }
+            CtxStoreTarget::CgroupSockBoundDevIf
+            | CtxStoreTarget::CgroupSockMark
+            | CtxStoreTarget::CgroupSockPriority => {
+                format!(
+                    "writable cgroup_sock scalar fields require a u32 store, got {:?}",
                     actual
                 )
             }
@@ -969,6 +986,15 @@ impl CtxStoreTarget {
             }
             CtxStoreTarget::SockOpsSkTxhash => {
                 "writable sock_ops sk_txhash is only supported on sock_ops programs"
+            }
+            CtxStoreTarget::CgroupSockBoundDevIf => {
+                "writable cgroup_sock bound_dev_if is only supported on cgroup_sock programs"
+            }
+            CtxStoreTarget::CgroupSockMark => {
+                "writable cgroup_sock mark is only supported on cgroup_sock programs"
+            }
+            CtxStoreTarget::CgroupSockPriority => {
+                "writable cgroup_sock priority is only supported on cgroup_sock programs"
             }
             CtxStoreTarget::SkbMark => "ctx.mark is only writable on tc and cgroup_skb programs",
             CtxStoreTarget::SkbPriority => {

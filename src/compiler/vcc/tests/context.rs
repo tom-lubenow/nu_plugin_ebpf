@@ -605,6 +605,23 @@ fn test_verify_mir_for_probe_context_accepts_sock_ops_sk_txhash_store() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_accepts_cgroup_sock_mark_store_on_sock_create() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::CgroupSockMark,
+            val: MirValue::Const(7),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+    verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect("expected cgroup_sock mark store to be accepted on sock_create");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_accepts_skb_tstamp_store_on_tc() {
     let (mut func, entry) = new_mir_function();
     func.block_mut(entry)
@@ -843,6 +860,27 @@ fn test_verify_mir_for_probe_context_rejects_skb_mark_store_on_socket_filter() {
     assert!(err.iter().any(|e| {
         e.message
             .contains("ctx.mark is only writable on tc and cgroup_skb programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_rejects_cgroup_sock_mark_store_on_post_bind() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::CgroupSockMark,
+            val: MirValue::Const(7),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
+    let err = verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect_err("expected cgroup_sock mark store to be rejected on post_bind4");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("ctx.mark is only writable on cgroup_sock sock_create/sock_release hooks")
     }));
 }
 

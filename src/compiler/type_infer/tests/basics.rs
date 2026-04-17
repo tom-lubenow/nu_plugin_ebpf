@@ -2817,6 +2817,23 @@ fn test_type_infer_accepts_store_skb_priority_on_sk_skb_parser() {
 }
 
 #[test]
+fn test_type_infer_accepts_store_cgroup_sock_mark_on_sock_release() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::CgroupSockMark,
+        val: MirValue::Const(7),
+        ty: MirType::U32,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_release");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    ti.infer(&func)
+        .expect("cgroup_sock mark store should type-check on sock_release");
+}
+
+#[test]
 fn test_type_error_store_skb_tstamp_rejects_non_skb_context() {
     let mut func = make_test_function();
     let block = func.block_mut(BlockId(0));
@@ -2902,6 +2919,28 @@ fn test_type_error_store_skb_mark_rejects_socket_filter_context() {
     assert!(errs.iter().any(|e| {
         e.message
             .contains("ctx.mark is only writable on tc and cgroup_skb programs")
+    }));
+}
+
+#[test]
+fn test_type_error_store_cgroup_sock_mark_rejects_post_bind_context() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::CgroupSockMark,
+        val: MirValue::Const(7),
+        ty: MirType::U32,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("cgroup_sock mark store should be rejected on post_bind4");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("ctx.mark is only writable on cgroup_sock sock_create/sock_release hooks")
     }));
 }
 

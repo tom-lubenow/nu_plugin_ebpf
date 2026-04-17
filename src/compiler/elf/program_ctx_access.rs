@@ -5,6 +5,7 @@ type BaseContextFieldAccessSurfaceSpec = (&'static [CtxField], BaseContextFieldA
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ContextFieldAccessRequirement {
+    CgroupSockCreateReleaseOnly,
     CgroupSockoptGetOnly,
     CgroupSockAddrIpv4Only,
     CgroupSockAddrIpv6Only,
@@ -17,6 +18,7 @@ enum ProgramCtxFieldAccessSurfaceFamilyRequirement {
     SocketFilter,
     CgroupSkb,
     SkSkb,
+    CgroupSock,
     CgroupSockopt,
     CgroupSockAddr,
 }
@@ -38,6 +40,12 @@ struct ProgramCtxFieldAccessSurfaceFamilySpec {
 impl ContextFieldAccessRequirement {
     fn error(self, spec: &ProgramSpec, field_name: &str) -> Option<String> {
         match self {
+            Self::CgroupSockCreateReleaseOnly => match spec.attach_shape() {
+                ProgramAttachShape::CgroupSock { post_bind: true } => Some(format!(
+                    "ctx.{field_name} is only available on cgroup_sock sock_create/sock_release hooks"
+                )),
+                _ => None,
+            },
             Self::CgroupSockoptGetOnly => match spec.attach_shape() {
                 ProgramAttachShape::CgroupSockopt { get: false } => Some(format!(
                     "ctx.{field_name} is only available on cgroup_sockopt:get hooks"
@@ -122,6 +130,9 @@ impl ProgramCtxFieldAccessSurfaceFamilyRequirement {
                 spec.program_type(),
                 EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser
             ),
+            Self::CgroupSock => {
+                matches!(spec.attach_shape(), ProgramAttachShape::CgroupSock { .. })
+            }
             Self::CgroupSockopt => {
                 matches!(
                     spec.attach_shape(),
@@ -219,6 +230,24 @@ const SK_SKB_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
     ),
 ];
 
+const CGROUP_SOCK_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::BoundDevIf,
+        "bound_dev_if",
+        ContextFieldAccessRequirement::CgroupSockCreateReleaseOnly,
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::SockMark,
+        "mark",
+        ContextFieldAccessRequirement::CgroupSockCreateReleaseOnly,
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::SockPriority,
+        "priority",
+        ContextFieldAccessRequirement::CgroupSockCreateReleaseOnly,
+    ),
+];
+
 const CGROUP_SOCKOPT_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] =
     &[ContextFieldAccessSurfaceSpec::new(
         CtxField::SockoptRetval,
@@ -263,6 +292,10 @@ const PROGRAM_CTX_FIELD_ACCESS_SURFACE_FAMILIES: &[ProgramCtxFieldAccessSurfaceF
     ProgramCtxFieldAccessSurfaceFamilySpec {
         requirement: ProgramCtxFieldAccessSurfaceFamilyRequirement::SkSkb,
         surfaces: SK_SKB_CTX_FIELD_ACCESS_SURFACES,
+    },
+    ProgramCtxFieldAccessSurfaceFamilySpec {
+        requirement: ProgramCtxFieldAccessSurfaceFamilyRequirement::CgroupSock,
+        surfaces: CGROUP_SOCK_CTX_FIELD_ACCESS_SURFACES,
     },
     ProgramCtxFieldAccessSurfaceFamilySpec {
         requirement: ProgramCtxFieldAccessSurfaceFamilyRequirement::CgroupSockopt,

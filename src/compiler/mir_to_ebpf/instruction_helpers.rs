@@ -98,6 +98,9 @@ impl<'a> MirToEbpfCompiler<'a> {
             CtxStoreTarget::SockOpsSkTxhash => {
                 (Self::bpf_sock_ops_extra_metric_offsets().10, val_reg)
             }
+            CtxStoreTarget::CgroupSockBoundDevIf => (Self::bpf_sock_offsets().0, val_reg),
+            CtxStoreTarget::CgroupSockMark => (Self::bpf_sock_offsets().4, val_reg),
+            CtxStoreTarget::CgroupSockPriority => (Self::bpf_sock_offsets().5, val_reg),
             CtxStoreTarget::SkbMark => (Self::sk_buff_mark_priority_offsets().0, val_reg),
             CtxStoreTarget::SkbPriority => (Self::sk_buff_mark_priority_offsets().1, val_reg),
             CtxStoreTarget::SkbTcIndex => (Self::sk_buff_offsets().5, val_reg),

@@ -56,9 +56,9 @@ The closure receives a context parameter with these fields:
 | `family` | Kernel socket family | cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `sock_type` | Socket type | cgroup_sock, cgroup_sock_addr |
 | `protocol` | Socket protocol | cgroup_sock, cgroup_sock_addr, sk_lookup |
-| `bound_dev_if` | Bound device ifindex | cgroup_sock |
-| `mark` | Socket or skb mark | cgroup_sock, socket_filter, tc, cgroup_skb |
-| `priority` | Socket or skb priority | cgroup_sock, socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `bound_dev_if` | Bound device ifindex | cgroup_sock (sock_create, sock_release) |
+| `mark` | Socket or skb mark | cgroup_sock (sock_create, sock_release), socket_filter, tc, cgroup_skb |
+| `priority` | Socket or skb priority | cgroup_sock (sock_create, sock_release), socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `op` | sock_ops callback opcode | sock_ops |
 | `args` | sock_ops callback argument words as four host-order `u32` values | sock_ops |
 | `is_fullsock` | Whether the context has a full socket | sock_ops |
@@ -189,9 +189,10 @@ also expose `ctx.sk` for typed `bpf_sock` projection such as
 Additional metadata is family-specific: `ctx.tc_classid`,
 `ctx.wire_len`, and `ctx.tstamp_type` are tc-only; `ctx.tstamp` and
 `ctx.hwtstamp` are available on tc and cgroup_skb; `ctx.mark` is
-available on cgroup_sock, socket_filter, tc, and cgroup_skb; and
-`ctx.priority` is available on cgroup_sock and across the skb-backed
-packet families. `cgroup_skb`, `sk_skb`, and `sk_skb_parser` also
+available on cgroup_sock `sock_create` / `sock_release`, socket_filter,
+tc, and cgroup_skb; and `ctx.priority` is available on cgroup_sock
+`sock_create` / `sock_release` and across the skb-backed packet
+families. `cgroup_skb`, `sk_skb`, and `sk_skb_parser` also
 expose direct socket-common and tuple aliases (`ctx.family`,
 `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`,
 `ctx.local_ip6`, `ctx.local_port`) from the ambient `__sk_buff`
@@ -250,7 +251,7 @@ On `sk_msg`, `sk_skb`, and `sk_skb_parser`, `redirect-socket MAP KEY --kind sock
 
 `perf_event` currently supports software `cpu-clock`, `task-clock`, `context-switches`, `cpu-migrations`, `page-faults`, `minor-faults`, and `major-faults`, plus hardware `cpu-cycles`, `instructions`, `cache-references`, `cache-misses`, `branch-instructions`, `branch-misses`, `bus-cycles`, `stalled-cycles-frontend`, `stalled-cycles-backend`, and `ref-cpu-cycles` through specs like `perf_event:software:cpu-clock` or `perf_event:hardware:cpu-cycles`. Optional selectors `cpu=N`, `pid=N`, `period=N`, and `freq=N` are supported; omitting the sample policy defaults to `period=1000000`, and omitting `cpu=` attaches on all online CPUs. `pid=N` scopes the event to a single process, and it can be combined with `cpu=N` for one-process/one-cpu sampling. The current surface uses the ordinary helper-backed fields like `ctx.pid`, `ctx.comm`, `ctx.cpu`, and `ctx.ktime`; it also reuses `ctx.arg0`-`ctx.arg5` as raw sampled pt_regs register slots, and on x86_64 builds it exposes the raw `bpf_perf_event_data` fields `ctx.sample_period` and `ctx.addr`. The `ctx.argN` values here are sampled register snapshots, not named BTF-backed function arguments.
 
-`cgroup_sock` currently supports `sock_create`, `sock_release`, `post_bind4`, and `post_bind6`. It exposes `ctx.cpu`, `ctx.ktime`, `ctx.family`, `ctx.sock_type`, `ctx.protocol`, `ctx.bound_dev_if`, `ctx.mark`, `ctx.priority`, `ctx.socket_cookie`, and `ctx.netns_cookie`, and closures can return `"allow"` / `"deny"` instead of raw `1` / `0` result codes. It also exposes a typed `ctx.sk` pointer for ordinary socket projection such as `$ctx.sk.family`, `$ctx.sk.src_port`, `$ctx.sk.dst_port`, `$ctx.sk.state`, or `$ctx.sk.mark`. On `cgroup_sock`, the socket-address projection fields such as `$ctx.sk.src_port` and `$ctx.sk.dst_port` are only available on `post_bind4` / `post_bind6`.
+`cgroup_sock` currently supports `sock_create`, `sock_release`, `post_bind4`, and `post_bind6`. It exposes `ctx.cpu`, `ctx.ktime`, `ctx.family`, `ctx.sock_type`, `ctx.protocol`, `ctx.socket_cookie`, and `ctx.netns_cookie` on every supported hook. Direct `ctx.bound_dev_if`, `ctx.mark`, and `ctx.priority` are only available on `sock_create` / `sock_release`, matching the current upstream verifier surface more closely, and ordinary assignment is supported there after shadowing the immutable closure parameter as mutable, for example `mut ctx = $ctx; $ctx.mark = 7`. It also exposes a typed `ctx.sk` pointer for ordinary socket projection such as `$ctx.sk.family`, `$ctx.sk.src_port`, `$ctx.sk.dst_port`, `$ctx.sk.state`, or `$ctx.sk.mark`. On `cgroup_sock`, the socket-address projection fields such as `$ctx.sk.src_port` and `$ctx.sk.dst_port` are only available on `post_bind4` / `post_bind6`.
 
 `cgroup_device` currently attaches to a cgroup path such as `/sys/fs/cgroup`. It exposes `ctx.cpu`, `ctx.ktime`, `ctx.access_type`, `ctx.major`, and `ctx.minor`, and closures can return `"allow"` / `"deny"` instead of raw `1` / `0` result codes. `ctx.access_type` is the raw kernel encoding `(BPF_DEVCG_ACC_* << 16) | BPF_DEVCG_DEV_*`.
 
