@@ -34,7 +34,7 @@ pub(super) fn apply_inst(
 ) {
     match inst {
         MirInst::Copy { dst, src } => {
-            apply_copy_inst(*dst, src, slot_sizes, state);
+            apply_copy_inst(*dst, src, types, slot_sizes, state);
         }
         MirInst::Load {
             dst, ptr, offset, ..

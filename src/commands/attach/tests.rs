@@ -2512,6 +2512,92 @@ fn make_seeded_map_take_count_program(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_map_take_whole_value_program(
+    map_take_decl: DeclId,
+    terminal_decl: DeclId,
+    kind: &str,
+) -> HirProgram {
+    let lookup_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String(b"recent_paths".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String(kind.as_bytes().to_vec()),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_take_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1)],
+                            named: vec![(b"kind".to_vec(), RegId::new(2))],
+                            ..Default::default()
+                        },
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: lookup_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Comparison(Comparison::NotEqual),
+                        rhs: RegId::new(3),
+                    },
+                ],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(0),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: lookup_var,
+                    },
+                    HirStmt::Call {
+                        decl_id: terminal_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(0),
+                }],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 10],
+        ast: vec![None; 10],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_identity_user_function() -> HirFunction {
     HirFunction {
         blocks: vec![HirBlock {
@@ -2715,11 +2801,11 @@ fn make_trampoline_user_function_count_program(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
-fn cached_path_struct_schema() -> HashMap<MapRef, MirType> {
+fn path_struct_schema(map_name: &str, kind: MapKind) -> HashMap<MapRef, MirType> {
     HashMap::from([(
         MapRef {
-            name: "cached_path".to_string(),
-            kind: MapKind::Hash,
+            name: map_name.to_string(),
+            kind,
         },
         MirType::Struct {
             name: Some("path".to_string()),
@@ -2755,6 +2841,14 @@ fn cached_path_struct_schema() -> HashMap<MapRef, MirType> {
             ],
         },
     )])
+}
+
+fn cached_path_struct_schema() -> HashMap<MapRef, MirType> {
+    path_struct_schema("cached_path", MapKind::Hash)
+}
+
+fn recent_paths_struct_schema(kind: MapKind) -> HashMap<MapRef, MirType> {
+    path_struct_schema("recent_paths", kind)
 }
 
 fn make_map_copy_projection_program(
@@ -4051,7 +4145,6 @@ fn test_compile_optimized_named_typed_map_get_projection() {
         &lowering.type_hints.main_stack_slots,
         &lowering.type_hints.generic_map_value_types,
     );
-
     let result = compile_mir_to_ebpf_with_hints(
         &lowering.program,
         Some(&probe_ctx),
@@ -4247,6 +4340,103 @@ fn test_compile_optimized_stack_map_pop_count_program() {
             .any(|reloc| reloc.symbol_name == map.name)
     );
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_optimized_external_queue_map_peek_whole_struct_emit() {
+    let hir = make_map_take_whole_value_program(DeclId::new(43), DeclId::new(44), "queue");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([
+        (DeclId::new(43), "map-peek".to_string()),
+        (DeclId::new(44), "emit".to_string()),
+    ]);
+    let external_schema = recent_paths_struct_schema(MapKind::Queue);
+
+    let mut lowering = lower_hir_to_mir_with_hints_and_maps(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        Some(&external_schema),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("external queue map-peek whole-struct emit should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized external queue map-peek whole-struct emit should compile");
+
+    let schema = result
+        .event_schema
+        .expect("whole-struct queue map-peek emit should preserve an event schema");
+    assert!(
+        schema
+            .fields
+            .iter()
+            .map(|field| field.name.as_str())
+            .eq(["mnt", "dentry"].into_iter()),
+        "whole-struct queue map-peek emit should preserve top-level record fields"
+    );
+}
+
+#[test]
+fn test_compile_optimized_external_stack_map_pop_whole_struct_count() {
+    let hir = make_map_take_whole_value_program(DeclId::new(43), DeclId::new(44), "stack");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([
+        (DeclId::new(43), "map-pop".to_string()),
+        (DeclId::new(44), "count".to_string()),
+    ]);
+    let external_schema = recent_paths_struct_schema(MapKind::Stack);
+
+    let mut lowering = lower_hir_to_mir_with_hints_and_maps(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        Some(&external_schema),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("external stack map-pop whole-struct count should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized external stack map-pop whole-struct count should compile");
+
+    let schema = result
+        .bytes_counter_key_schema
+        .expect("whole-struct stack map-pop count should preserve a key schema");
+    assert!(matches!(
+        schema,
+        CounterKeySchema::Record { ref fields, .. }
+            if fields.len() == 2
+                && fields[0].name == "mnt"
+                && fields[1].name == "dentry"
+    ));
 }
 
 #[test]

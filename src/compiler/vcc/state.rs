@@ -1304,73 +1304,10 @@ impl VccState {
                     },
                 }
             }
-            (VccValueType::Ptr(lp), VccValueType::Ptr(rp)) if lp.space == rp.space => {
-                let bounds = match (lp.bounds, rp.bounds) {
-                    (Some(l), Some(r)) if l.limit == r.limit => Some(VccBounds {
-                        min: l.min.min(r.min),
-                        max: l.max.max(r.max),
-                        limit: l.limit,
-                    }),
-                    (Some(l), Some(r))
-                        if lp.space == VccAddrSpace::Packet && lp.packet_root == rp.packet_root =>
-                    {
-                        Some(VccBounds {
-                            min: l.min.min(r.min),
-                            max: l.max.max(r.max),
-                            limit: l.limit.max(r.limit),
-                        })
-                    }
-                    (Some(l), Some(r))
-                        if lp.space == VccAddrSpace::Kernel
-                            && lp.context_buffer_root == rp.context_buffer_root =>
-                    {
-                        Some(VccBounds {
-                            min: l.min.min(r.min),
-                            max: l.max.max(r.max),
-                            limit: l.limit.max(r.limit),
-                        })
-                    }
-                    _ => None,
-                };
-                let ringbuf_ref = match (lp.ringbuf_ref, rp.ringbuf_ref) {
-                    (Some(a), Some(b)) if a == b => Some(a),
-                    _ => None,
-                };
-                let kfunc_ref = match (lp.kfunc_ref, rp.kfunc_ref) {
-                    (Some(a), Some(b)) if a == b => Some(a),
-                    _ => None,
-                };
-                let nullability = Self::join_nullability(lp.nullability, rp.nullability);
-                VccValueType::Ptr(VccPointerInfo {
-                    space: lp.space,
-                    nullability,
-                    bounds,
-                    packet_root: if lp.packet_root == rp.packet_root {
-                        lp.packet_root
-                    } else {
-                        None
-                    },
-                    packet_root_field: if lp.packet_root_field == rp.packet_root_field {
-                        lp.packet_root_field
-                    } else {
-                        None
-                    },
-                    packet_ctx_field: if lp.packet_ctx_field == rp.packet_ctx_field {
-                        lp.packet_ctx_field
-                    } else {
-                        None
-                    },
-                    packet_end: lp.packet_end && rp.packet_end,
-                    context_buffer_root: if lp.context_buffer_root == rp.context_buffer_root {
-                        lp.context_buffer_root
-                    } else {
-                        None
-                    },
-                    context_buffer_end: lp.context_buffer_end && rp.context_buffer_end,
-                    ringbuf_ref,
-                    kfunc_ref,
-                })
-            }
+            (VccValueType::Ptr(lp), VccValueType::Ptr(rp)) => self
+                .merge_ptr_types(lp, rp)
+                .map(VccValueType::Ptr)
+                .unwrap_or(VccValueType::Unknown),
             (left, right) if left == right => left,
             _ => VccValueType::Unknown,
         }
@@ -1381,6 +1318,112 @@ impl VccState {
             (VccNullability::NonNull, VccNullability::NonNull) => VccNullability::NonNull,
             (VccNullability::Null, VccNullability::Null) => VccNullability::Null,
             _ => VccNullability::MaybeNull,
+        }
+    }
+
+    fn merge_ptr_types(&self, lhs: VccPointerInfo, rhs: VccPointerInfo) -> Option<VccPointerInfo> {
+        if lhs.space != rhs.space {
+            if lhs.space == VccAddrSpace::Unknown && lhs.nullability == VccNullability::Null {
+                return Some(self.merge_null_wildcard_ptr(rhs, lhs));
+            }
+            if rhs.space == VccAddrSpace::Unknown && rhs.nullability == VccNullability::Null {
+                return Some(self.merge_null_wildcard_ptr(lhs, rhs));
+            }
+            return None;
+        }
+
+        let bounds = match (lhs.bounds, rhs.bounds) {
+            (Some(l), Some(r)) if l.limit == r.limit => Some(VccBounds {
+                min: l.min.min(r.min),
+                max: l.max.max(r.max),
+                limit: l.limit,
+            }),
+            (Some(l), Some(r))
+                if lhs.space == VccAddrSpace::Packet && lhs.packet_root == rhs.packet_root =>
+            {
+                Some(VccBounds {
+                    min: l.min.min(r.min),
+                    max: l.max.max(r.max),
+                    limit: l.limit.max(r.limit),
+                })
+            }
+            (Some(l), Some(r))
+                if lhs.space == VccAddrSpace::Kernel
+                    && lhs.context_buffer_root == rhs.context_buffer_root =>
+            {
+                Some(VccBounds {
+                    min: l.min.min(r.min),
+                    max: l.max.max(r.max),
+                    limit: l.limit.max(r.limit),
+                })
+            }
+            _ => None,
+        };
+        let ringbuf_ref = match (lhs.ringbuf_ref, rhs.ringbuf_ref) {
+            (Some(a), Some(b)) if a == b => Some(a),
+            _ => None,
+        };
+        let kfunc_ref = match (lhs.kfunc_ref, rhs.kfunc_ref) {
+            (Some(a), Some(b)) if a == b => Some(a),
+            _ => None,
+        };
+        let nullability = Self::join_nullability(lhs.nullability, rhs.nullability);
+        Some(VccPointerInfo {
+            space: lhs.space,
+            nullability,
+            bounds,
+            packet_root: if lhs.packet_root == rhs.packet_root {
+                lhs.packet_root
+            } else {
+                None
+            },
+            packet_root_field: if lhs.packet_root_field == rhs.packet_root_field {
+                lhs.packet_root_field
+            } else {
+                None
+            },
+            packet_ctx_field: if lhs.packet_ctx_field == rhs.packet_ctx_field {
+                lhs.packet_ctx_field
+            } else {
+                None
+            },
+            packet_end: lhs.packet_end && rhs.packet_end,
+            context_buffer_root: if lhs.context_buffer_root == rhs.context_buffer_root {
+                lhs.context_buffer_root
+            } else {
+                None
+            },
+            context_buffer_end: lhs.context_buffer_end && rhs.context_buffer_end,
+            ringbuf_ref,
+            kfunc_ref,
+        })
+    }
+
+    fn merge_null_wildcard_ptr(
+        &self,
+        concrete: VccPointerInfo,
+        null_ptr: VccPointerInfo,
+    ) -> VccPointerInfo {
+        let ringbuf_ref = match (concrete.ringbuf_ref, null_ptr.ringbuf_ref) {
+            (Some(a), Some(b)) if a == b => Some(a),
+            _ => None,
+        };
+        let kfunc_ref = match (concrete.kfunc_ref, null_ptr.kfunc_ref) {
+            (Some(a), Some(b)) if a == b => Some(a),
+            _ => None,
+        };
+        VccPointerInfo {
+            space: concrete.space,
+            nullability: Self::join_nullability(concrete.nullability, null_ptr.nullability),
+            bounds: concrete.bounds,
+            packet_root: concrete.packet_root,
+            packet_root_field: concrete.packet_root_field,
+            packet_ctx_field: concrete.packet_ctx_field,
+            packet_end: concrete.packet_end,
+            context_buffer_root: concrete.context_buffer_root,
+            context_buffer_end: concrete.context_buffer_end,
+            ringbuf_ref,
+            kfunc_ref,
         }
     }
 }

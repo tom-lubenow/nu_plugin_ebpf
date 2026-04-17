@@ -4,10 +4,15 @@ use crate::compiler::mir::UnaryOpKind;
 pub(super) fn apply_copy_inst(
     dst: VReg,
     src: &MirValue,
+    types: &HashMap<VReg, MirType>,
     slot_sizes: &HashMap<StackSlotId, i64>,
     state: &mut VerifierState,
 ) {
-    let ty = value_type(src, state, slot_sizes);
+    let ty = match src {
+        MirValue::Const(0) => typed_null_copy_type(dst, types, state)
+            .unwrap_or_else(|| value_type(src, state, slot_sizes)),
+        _ => value_type(src, state, slot_sizes),
+    };
     let range = value_range(src, state);
     let src_ctx_field = match src {
         MirValue::VReg(vreg) => state.ctx_field_source(*vreg).cloned(),
@@ -37,6 +42,32 @@ pub(super) fn apply_copy_inst(
     }
     if let Some(guard) = src_guard {
         state.set_guard(dst, guard);
+    }
+}
+
+fn typed_null_copy_type(
+    dst: VReg,
+    types: &HashMap<VReg, MirType>,
+    state: &VerifierState,
+) -> Option<VerifierType> {
+    match types.get(&dst).map(verifier_type_from_mir) {
+        Some(VerifierType::Ptr { space, .. }) => Some(VerifierType::Ptr {
+            space,
+            nullability: Nullability::Null,
+            bounds: None,
+            ringbuf_ref: None,
+            kfunc_ref: None,
+        }),
+        _ => match state.get(dst) {
+            VerifierType::Ptr { space, .. } => Some(VerifierType::Ptr {
+                space,
+                nullability: Nullability::Null,
+                bounds: None,
+                ringbuf_ref: None,
+                kfunc_ref: None,
+            }),
+            _ => None,
+        },
     }
 }
 

@@ -286,6 +286,7 @@ pub(crate) fn infer_instruction_def_type(
                     .unwrap_or_else(|| pointer_hint(AddressSpace::Stack)),
                 true,
             )),
+            MirValue::Const(0) => hints.get(dst).cloned().map(|ty| (*dst, ty, false)),
             MirValue::Const(_) => None,
         },
         MirInst::Load { dst, ty, .. } | MirInst::LoadSlot { dst, ty, .. } => {

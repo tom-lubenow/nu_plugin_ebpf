@@ -22,6 +22,14 @@ impl VccVerifier {
             }
             VccInst::Copy { dst, src } => match state.value_type(*src) {
                 Ok(ty) => {
+                    let ty = match src {
+                        VccValue::Imm(0) => state
+                            .reg_type(*dst)
+                            .ok()
+                            .and_then(typed_null_copy_type)
+                            .unwrap_or(ty),
+                        _ => ty,
+                    };
                     let (copied_refinement, src_not_equal) = match src {
                         VccValue::Reg(src_reg) => (
                             state.cond_refinement(*src_reg),
@@ -1972,5 +1980,24 @@ impl VccVerifier {
                 }
             }
         }
+    }
+}
+
+fn typed_null_copy_type(ty: VccValueType) -> Option<VccValueType> {
+    match ty {
+        VccValueType::Ptr(ptr) => Some(VccValueType::Ptr(VccPointerInfo {
+            space: ptr.space,
+            nullability: VccNullability::Null,
+            bounds: None,
+            packet_root: None,
+            packet_root_field: None,
+            packet_ctx_field: None,
+            packet_end: false,
+            context_buffer_root: None,
+            context_buffer_end: false,
+            ringbuf_ref: None,
+            kfunc_ref: None,
+        })),
+        _ => None,
     }
 }

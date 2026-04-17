@@ -134,6 +134,95 @@ fn test_unreachable_block_is_ignored() {
 }
 
 #[test]
+fn test_joined_null_wildcard_pointer_keeps_concrete_space() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let with_ptr = func.alloc_block();
+    let with_null = func.alloc_block();
+    let join = func.alloc_block();
+    let ok = func.alloc_block();
+    let bad = func.alloc_block();
+
+    let selector = func.alloc_reg();
+    let ptr = func.alloc_reg();
+    let cond = func.alloc_reg();
+    let tmp = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::Assume {
+        dst: selector,
+        ty: VccValueType::Bool,
+        ctx_field_source: None,
+    });
+    func.block_mut(entry).terminator = VccTerminator::Branch {
+        cond: VccValue::Reg(selector),
+        if_true: with_ptr,
+        if_false: with_null,
+    };
+
+    func.block_mut(with_ptr)
+        .instructions
+        .push(VccInst::StackAddr {
+            dst: tmp,
+            slot: StackSlotId(0),
+            size: 16,
+        });
+    func.block_mut(with_ptr).instructions.push(VccInst::Copy {
+        dst: ptr,
+        src: VccValue::Reg(tmp),
+    });
+    func.block_mut(with_ptr).terminator = VccTerminator::Jump { target: join };
+
+    func.block_mut(with_null).instructions.push(VccInst::Copy {
+        dst: ptr,
+        src: VccValue::Imm(0),
+    });
+    func.block_mut(with_null).terminator = VccTerminator::Jump { target: join };
+
+    func.block_mut(join).instructions.push(VccInst::BinOp {
+        dst: cond,
+        op: VccBinOp::Ne,
+        lhs: VccValue::Reg(ptr),
+        rhs: VccValue::Imm(0),
+    });
+    func.block_mut(join).terminator = VccTerminator::Branch {
+        cond: VccValue::Reg(cond),
+        if_true: ok,
+        if_false: bad,
+    };
+
+    func.block_mut(ok)
+        .instructions
+        .push(VccInst::AssertPtrAccess {
+            ptr,
+            size: VccValue::Imm(8),
+            op: "pointer access",
+        });
+    func.block_mut(ok).terminator = VccTerminator::Return { value: None };
+    func.block_mut(bad).terminator = VccTerminator::Return { value: None };
+
+    let seed = HashMap::from([(
+        ptr,
+        VccValueType::Ptr(VccPointerInfo {
+            space: VccAddrSpace::Unknown,
+            nullability: VccNullability::NonNull,
+            bounds: None,
+            packet_root: None,
+            packet_root_field: None,
+            packet_ctx_field: None,
+            packet_end: false,
+            context_buffer_root: None,
+            context_buffer_end: false,
+            ringbuf_ref: None,
+            kfunc_ref: None,
+        }),
+    )]);
+
+    VccVerifier::default()
+        .verify_function_with_seed(&func, seed)
+        .expect("null wildcard pointer join should preserve concrete pointer space");
+}
+
+#[test]
 fn test_constant_false_branch_prunes_true_path() {
     let mut func = VccFunction::new();
     let entry = func.entry;

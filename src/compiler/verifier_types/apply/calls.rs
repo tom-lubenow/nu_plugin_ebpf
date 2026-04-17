@@ -231,7 +231,7 @@ pub(super) fn apply_call_subfn_inst(
     if let Some(SubfunctionReturnSummary::ReturnsArg(idx)) = subfn_summaries.get(&subfn)
         && let Some(arg) = args.get(*idx)
     {
-        apply_copy_inst(dst, &MirValue::VReg(*arg), slot_sizes, state);
+        apply_copy_inst(dst, &MirValue::VReg(*arg), types, slot_sizes, state);
         return;
     }
 

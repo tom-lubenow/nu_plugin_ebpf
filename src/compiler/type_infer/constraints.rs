@@ -23,8 +23,17 @@ impl<'a> TypeInference<'a> {
     pub(super) fn generate_inst_constraints(&mut self, inst: &MirInst) -> Result<(), TypeError> {
         match inst {
             MirInst::Copy { dst, src } => {
-                // dst has same type as src
                 let dst_ty = self.vreg_type(*dst);
+                if matches!(src, MirValue::Const(0)) {
+                    if let Some(hints) = self.type_hints
+                        && let Some(dst_hint) = hints.get(dst)
+                    {
+                        self.constrain(dst_ty, HMType::from_mir_type(dst_hint), "copy_zero");
+                    }
+                    return Ok(());
+                }
+
+                // dst has same type as src
                 let src_ty = self.value_type(src);
                 self.constrain(dst_ty, src_ty, "copy");
             }

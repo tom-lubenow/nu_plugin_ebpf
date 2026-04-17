@@ -955,6 +955,84 @@ fn test_map_value_bounds() {
 }
 
 #[test]
+fn test_joined_typed_null_copy_preserves_pointer_nullability() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let with_ptr = func.alloc_block();
+    let with_null = func.alloc_block();
+    let join = func.alloc_block();
+    let ok = func.alloc_block();
+    let bad = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let selector = func.alloc_vreg();
+    let ptr = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let loaded = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: with_ptr,
+        if_false: with_null,
+    };
+
+    func.block_mut(with_ptr).instructions.push(MirInst::Copy {
+        dst: ptr,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(with_ptr).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(with_null).instructions.push(MirInst::Copy {
+        dst: ptr,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(with_null).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(join).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(ptr),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(join).terminator = MirInst::Branch {
+        cond,
+        if_true: ok,
+        if_false: bad,
+    };
+
+    func.block_mut(ok).instructions.push(MirInst::Load {
+        dst: loaded,
+        ptr,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    func.block_mut(ok).terminator = MirInst::Return { val: None };
+    func.block_mut(bad).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(selector, MirType::I64);
+    types.insert(
+        ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(loaded, MirType::I64);
+
+    verify_mir(&func, &types)
+        .expect("typed null-pointer branch join should remain nullable pointer");
+}
+
+#[test]
 fn test_unknown_map_uses_pointee_bounds_for_lookup_result() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
