@@ -225,11 +225,11 @@ impl<'a> HirToMirLowering<'a> {
             Some(kind) if Self::is_generic_data_map_kind(kind) => Ok(kind),
             Some(MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap) => {
                 Err(CompileError::UnsupportedInstruction(format!(
-                    "{context} --kind {kind} is reserved for bpf_redirect_map helper-call; generic map commands only support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, sockmap, sockhash"
+                    "{context} --kind {kind} is reserved for bpf_redirect_map helper-call; generic map commands only support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash; socket map kinds still require their specialized helpers"
                 )))
             }
             Some(_) | None => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must be one of: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, sockmap, sockhash"
+                "{context} --kind must name a recognized map family; generic map commands support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash; socket map kinds still use their specialized helpers"
             ))),
         }
     }
