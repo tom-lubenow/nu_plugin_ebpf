@@ -151,12 +151,14 @@ Context parameter syntax (recommended):
     for `0`, or `pass` / `keep` / `allow` to snapshot the full packet by
     returning `ctx.packet_len`. `redirect IFINDEX` is the preferred
     first-class packet redirect surface on XDP/TC, with optional
-    `--flags`; XDP still requires `FLAGS = 0`.
-    XDP also models `helper-call "bpf_xdp_adjust_head" $ctx DELTA`,
-    `helper-call "bpf_xdp_adjust_meta" $ctx DELTA`, and
-    `helper-call "bpf_xdp_adjust_tail" $ctx DELTA`. After any of those
-    helpers, reload `ctx.data`, `ctx.data_meta`, and `ctx.data_end`
-    before reading packet bytes again.
+    `--flags`; XDP still requires `FLAGS = 0`. `adjust-packet
+    --head|--meta|--tail DELTA` is the preferred first-class surface
+    for XDP packet relayout, selecting the corresponding
+    `bpf_xdp_adjust_*` helper automatically. After any of those XDP
+    adjust helpers, reload `ctx.data`, `ctx.data_meta`, and
+    `ctx.data_end` before reading packet bytes again. The raw
+    `helper-call "bpf_xdp_adjust_*" $ctx DELTA` forms remain available
+    as escape hatches.
     `tc`, `sk_skb`, and `sk_skb_parser` also model skb packet-edit
     helpers such as `bpf_skb_store_bytes`, `bpf_l3_csum_replace`,
     `bpf_l4_csum_replace`, `bpf_get_hash_recalc`, `bpf_csum_update`,

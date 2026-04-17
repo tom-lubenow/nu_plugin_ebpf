@@ -71,6 +71,9 @@ ebpf attach --dry-run 'xdp:lo' {|ctx| redirect-map demo_xsks $ctx.rx_queue_index
 # Dry-run a plain XDP ifindex redirect with the first-class packet redirect surface
 ebpf attach --dry-run 'xdp:lo' {|ctx| redirect 2 }
 
+# Dry-run an XDP metadata adjustment with the first-class packet relayout surface
+ebpf attach --dry-run 'xdp:lo' {|ctx| adjust-packet --meta -4 }
+
 # Dry-run an sk_msg socket redirect with the first-class socket redirect surface
 ebpf attach --dry-run 'sk_msg:/sys/fs/bpf/demo_sockhash' {|ctx| redirect-socket peer_sockhash $ctx.local_port --kind sockhash }
 

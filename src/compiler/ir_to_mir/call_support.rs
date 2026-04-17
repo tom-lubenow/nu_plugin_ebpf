@@ -374,6 +374,37 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
+    pub(super) fn packet_adjust_helper_from_named_flags(
+        &self,
+        context: &str,
+    ) -> Result<BpfHelper, CompileError> {
+        let mut helper = None;
+        for flag in &self.named_flags {
+            let candidate = match flag.as_str() {
+                "head" => BpfHelper::XdpAdjustHead,
+                "meta" => BpfHelper::XdpAdjustMeta,
+                "tail" => BpfHelper::XdpAdjustTail,
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{context} does not accept flag '{}'",
+                        flag
+                    )));
+                }
+            };
+            if helper.replace(candidate).is_some() {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} requires exactly one of --head, --meta, or --tail"
+                )));
+            }
+        }
+
+        helper.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{context} requires exactly one of --head, --meta, or --tail"
+            ))
+        })
+    }
+
     pub(super) fn validate_packet_redirect_flags(
         &self,
         helper: BpfHelper,

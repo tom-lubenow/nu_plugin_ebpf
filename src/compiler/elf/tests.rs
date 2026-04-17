@@ -1521,6 +1521,10 @@ fn test_program_intrinsic_command_registry() {
         Some(ProgramIntrinsic::MapPop)
     );
     assert_eq!(
+        ProgramIntrinsic::from_command_name("adjust-packet"),
+        Some(ProgramIntrinsic::AdjustPacket)
+    );
+    assert_eq!(
         ProgramIntrinsic::from_command_name("redirect"),
         Some(ProgramIntrinsic::Redirect)
     );
@@ -1543,6 +1547,10 @@ fn test_program_intrinsic_command_registry() {
     );
     assert_eq!(
         ProgramIntrinsic::HelperCall.required_capability(),
+        ProgramCapability::HelperCalls
+    );
+    assert_eq!(
+        ProgramIntrinsic::AdjustPacket.required_capability(),
         ProgramCapability::HelperCalls
     );
     assert_eq!(

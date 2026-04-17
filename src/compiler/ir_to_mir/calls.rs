@@ -235,6 +235,36 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_probe_read_string(src_dst, dst_vreg, ptr_vreg, false, aligned_len)?;
             }
 
+            "adjust-packet" => {
+                self.require_only_named_args("adjust-packet", &[])?;
+                let helper = self.packet_adjust_helper_from_named_flags("adjust-packet")?;
+                if let Some(message) = self.probe_ctx.and_then(|ctx| ctx.helper_call_error(helper))
+                {
+                    return Err(CompileError::UnsupportedInstruction(message));
+                }
+
+                let delta_vreg = self
+                    .positional_args
+                    .first()
+                    .map(|(vreg, _)| *vreg)
+                    .or(self.pipeline_input)
+                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "adjust-packet requires a delta from pipeline input or a first positional argument"
+                                .into(),
+                        )
+                    })?;
+                let ctx_vreg = self.materialize_context_pointer_arg();
+                self.emit(MirInst::CallHelper {
+                    dst: dst_vreg,
+                    helper: helper as u32,
+                    args: vec![MirValue::VReg(ctx_vreg), MirValue::VReg(delta_vreg)],
+                });
+                self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                self.reset_call_result_metadata(src_dst);
+            }
+
             "redirect" => {
                 self.require_only_named_args("redirect", &["flags"])?;
                 let helper = self.packet_redirect_helper_from_named_flags("redirect")?;

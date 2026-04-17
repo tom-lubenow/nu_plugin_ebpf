@@ -2267,6 +2267,194 @@ fn test_helper_call_redirect_map_literal_requires_explicit_kind_and_compiles() {
 }
 
 #[test]
+fn test_adjust_packet_intrinsic_lowers_to_xdp_adjust_meta_and_compiles() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(-4),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        flags: vec![b"meta".to_vec()],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let ctx_var = VarId::new(0);
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "adjust-packet".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("adjust-packet intrinsic should type-check on xdp");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("adjust-packet intrinsic should lower on xdp");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::XdpAdjustMeta as u32 && args.len() == 2
+    )));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("adjust-packet intrinsic should compile on xdp");
+}
+
+#[test]
+fn test_adjust_packet_intrinsic_rejects_conflicting_mode_flags() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(8),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        flags: vec![b"head".to_vec(), b"tail".to_vec()],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let ctx_var = VarId::new(0);
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "adjust-packet".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("adjust-packet intrinsic should type-check on xdp");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("adjust-packet should reject conflicting mode flags");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(
+                msg.contains("adjust-packet requires exactly one of --head, --meta, or --tail"),
+                "{msg}"
+            );
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
+fn test_adjust_packet_intrinsic_rejects_non_xdp_programs() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(8),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        flags: vec![b"head".to_vec()],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let ctx_var = VarId::new(0);
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "adjust-packet".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("adjust-packet intrinsic should type-check before lowering");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("adjust-packet should be rejected outside xdp");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(
+                msg.contains("helper 'bpf_xdp_adjust_head' is only valid in xdp programs"),
+                "{msg}"
+            );
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
 fn test_redirect_intrinsic_lowers_to_xdp_redirect_and_compiles() {
     let func = HirFunction {
         blocks: vec![HirBlock {
