@@ -2723,6 +2723,267 @@ fn test_adjust_packet_intrinsic_rejects_meta_on_tc_programs() {
 }
 
 #[test]
+fn test_adjust_message_intrinsic_lowers_to_msg_cork_bytes_and_compiles() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(8),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        flags: vec![b"cork".to_vec()],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let ctx_var = VarId::new(0);
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "adjust-message".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("adjust-message intrinsic should type-check on sk_msg");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("adjust-message intrinsic should lower on sk_msg");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::MsgCorkBytes as u32 && args.len() == 2
+    )));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("adjust-message intrinsic should compile on sk_msg");
+}
+
+#[test]
+fn test_adjust_message_intrinsic_lowers_to_msg_pull_data_on_sk_msg() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(8),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(2)],
+                        named: vec![(b"flags".to_vec(), RegId::new(3))],
+                        flags: vec![b"pull".to_vec()],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let ctx_var = VarId::new(0);
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "adjust-message".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("adjust-message intrinsic should type-check on sk_msg");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("adjust-message --pull should lower on sk_msg");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::MsgPullData as u32
+            && args.len() == 4
+            && matches!(args.get(3), Some(MirValue::Const(0)))
+    )));
+}
+
+#[test]
+fn test_adjust_message_intrinsic_rejects_conflicting_mode_flags() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(8),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        flags: vec![b"apply".to_vec(), b"cork".to_vec()],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let ctx_var = VarId::new(0);
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "adjust-message".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("adjust-message intrinsic should type-check on sk_msg");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("adjust-message should reject conflicting mode flags");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(
+                msg.contains(
+                    "adjust-message requires exactly one of --apply, --cork, --pull, --push, or --pop"
+                ),
+                "{msg}"
+            );
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
+fn test_adjust_message_intrinsic_rejects_non_sk_msg_programs() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(8),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        flags: vec![b"apply".to_vec()],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let ctx_var = VarId::new(0);
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "adjust-message".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("adjust-message intrinsic should type-check before lowering");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("adjust-message should be rejected outside sk_msg");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(
+                msg.contains("adjust-message --apply is only valid in sk_msg programs"),
+                "{msg}"
+            );
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
 fn test_redirect_intrinsic_lowers_to_xdp_redirect_and_compiles() {
     let func = HirFunction {
         blocks: vec![HirBlock {

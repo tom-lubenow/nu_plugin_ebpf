@@ -80,6 +80,9 @@ ebpf attach --dry-run 'tc:lo:ingress' {|ctx| adjust-packet --pull 64; 'ok' }
 # Dry-run an sk_msg socket redirect with the first-class socket redirect surface
 ebpf attach --dry-run 'sk_msg:/sys/fs/bpf/demo_sockhash' {|ctx| redirect-socket peer_sockhash $ctx.local_port --kind sockhash }
 
+# Dry-run an sk_msg pull-data reshape with the first-class message-adjust surface
+ebpf attach --dry-run 'sk_msg:/sys/fs/bpf/demo_sockhash' {|ctx| adjust-message --pull 0 8 }
+
 # Count packets at tc ingress on loopback
 let id = ebpf attach 'tc:lo:ingress' {|ctx| $ctx.packet_len | count; 'ok' }
 

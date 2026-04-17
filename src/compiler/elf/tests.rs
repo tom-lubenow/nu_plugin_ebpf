@@ -1320,6 +1320,35 @@ fn test_program_type_packet_adjust_helpers_follow_program_model() {
 }
 
 #[test]
+fn test_program_type_message_adjust_helpers_follow_program_model() {
+    assert!(matches!(
+        EbpfProgramType::SkMsg.message_adjust_helper(MessageAdjustMode::Apply),
+        Some(BpfHelper::MsgApplyBytes)
+    ));
+    assert!(matches!(
+        EbpfProgramType::SkMsg.message_adjust_helper(MessageAdjustMode::Cork),
+        Some(BpfHelper::MsgCorkBytes)
+    ));
+    assert!(matches!(
+        EbpfProgramType::SkMsg.message_adjust_helper(MessageAdjustMode::Pull),
+        Some(BpfHelper::MsgPullData)
+    ));
+    assert!(matches!(
+        EbpfProgramType::SkMsg.message_adjust_helper(MessageAdjustMode::Push),
+        Some(BpfHelper::MsgPushData)
+    ));
+    assert!(matches!(
+        EbpfProgramType::SkMsg.message_adjust_helper(MessageAdjustMode::Pop),
+        Some(BpfHelper::MsgPopData)
+    ));
+    assert!(
+        EbpfProgramType::Tc
+            .message_adjust_helper(MessageAdjustMode::Apply)
+            .is_none()
+    );
+}
+
+#[test]
 fn test_program_type_socket_redirect_helpers_follow_program_model() {
     assert!(matches!(
         EbpfProgramType::SkMsg.socket_redirect_helper(MapKind::SockMap),
@@ -1568,6 +1597,10 @@ fn test_program_intrinsic_command_registry() {
         Some(ProgramIntrinsic::AdjustPacket)
     );
     assert_eq!(
+        ProgramIntrinsic::from_command_name("adjust-message"),
+        Some(ProgramIntrinsic::AdjustMessage)
+    );
+    assert_eq!(
         ProgramIntrinsic::from_command_name("redirect"),
         Some(ProgramIntrinsic::Redirect)
     );
@@ -1594,6 +1627,10 @@ fn test_program_intrinsic_command_registry() {
     );
     assert_eq!(
         ProgramIntrinsic::AdjustPacket.required_capability(),
+        ProgramCapability::HelperCalls
+    );
+    assert_eq!(
+        ProgramIntrinsic::AdjustMessage.required_capability(),
         ProgramCapability::HelperCalls
     );
     assert_eq!(

@@ -1,4 +1,4 @@
-use super::{EbpfProgramType, GetSocketCookieArgPolicy, PacketAdjustMode};
+use super::{EbpfProgramType, GetSocketCookieArgPolicy, MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::MapKind;
 use crate::program_spec::{CgroupSockAddrTarget, CgroupSockTarget, ProgramSpec, TcTarget};
@@ -463,6 +463,20 @@ impl EbpfProgramType {
                 .contains(self)
                 .then_some(BpfHelper::SkbAdjustRoom),
         }
+    }
+
+    pub(crate) fn message_adjust_helper(&self, mode: MessageAdjustMode) -> Option<BpfHelper> {
+        if *self != EbpfProgramType::SkMsg {
+            return None;
+        }
+
+        Some(match mode {
+            MessageAdjustMode::Apply => BpfHelper::MsgApplyBytes,
+            MessageAdjustMode::Cork => BpfHelper::MsgCorkBytes,
+            MessageAdjustMode::Pull => BpfHelper::MsgPullData,
+            MessageAdjustMode::Push => BpfHelper::MsgPushData,
+            MessageAdjustMode::Pop => BpfHelper::MsgPopData,
+        })
     }
 
     pub(crate) fn packet_redirect_peer_helper(&self) -> Option<BpfHelper> {

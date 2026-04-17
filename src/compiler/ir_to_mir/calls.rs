@@ -1,6 +1,6 @@
 use super::*;
 use crate::compiler::ProgramIntrinsic;
-use crate::compiler::elf::PacketAdjustMode;
+use crate::compiler::elf::{MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::{
     BpfHelper, HelperExplicitMapKindFamily, HelperRetKind, HelperSignature, KfuncSignature,
 };
@@ -302,6 +302,74 @@ impl<'a> HirToMirLowering<'a> {
                         ]
                     }
                     _ => unreachable!("packet adjust helper selection returned unexpected helper"),
+                };
+                self.emit(MirInst::CallHelper {
+                    dst: dst_vreg,
+                    helper: helper as u32,
+                    args,
+                });
+                self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                self.reset_call_result_metadata(src_dst);
+            }
+
+            "adjust-message" => {
+                self.require_only_named_args("adjust-message", &["flags"])?;
+                let mode = self.message_adjust_mode_from_named_flags("adjust-message")?;
+                let helper =
+                    self.message_adjust_helper_for_current_program("adjust-message", mode)?;
+
+                if matches!(mode, MessageAdjustMode::Apply | MessageAdjustMode::Cork)
+                    && self.named_args.contains_key("flags")
+                {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "adjust-message --{} does not accept --flags",
+                        mode.flag_name()
+                    )));
+                }
+
+                let first_vreg = self
+                    .positional_args
+                    .first()
+                    .map(|(vreg, _)| *vreg)
+                    .or(self.pipeline_input)
+                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "adjust-message --{} requires {} from pipeline input or a first positional argument",
+                            mode.flag_name(),
+                            mode.first_value_name()
+                        ))
+                    })?;
+                let ctx_vreg = self.materialize_context_pointer_arg();
+                let args = match mode {
+                    MessageAdjustMode::Apply | MessageAdjustMode::Cork => {
+                        vec![MirValue::VReg(ctx_vreg), MirValue::VReg(first_vreg)]
+                    }
+                    MessageAdjustMode::Pull | MessageAdjustMode::Push | MessageAdjustMode::Pop => {
+                        let second_name = mode
+                            .second_value_name()
+                            .expect("pull/push/pop require a second scalar");
+                        let second_vreg = self
+                            .positional_args
+                            .get(1)
+                            .map(|(vreg, _)| *vreg)
+                            .ok_or_else(|| {
+                                CompileError::UnsupportedInstruction(format!(
+                                    "adjust-message --{} requires a {} as the second positional argument",
+                                    mode.flag_name(),
+                                    second_name
+                                ))
+                            })?;
+                        let flags = self
+                            .optional_nonnegative_named_u64_arg("adjust-message", "flags")?
+                            .unwrap_or(0);
+                        vec![
+                            MirValue::VReg(ctx_vreg),
+                            MirValue::VReg(first_vreg),
+                            MirValue::VReg(second_vreg),
+                            MirValue::Const(flags as i64),
+                        ]
+                    }
                 };
                 self.emit(MirInst::CallHelper {
                     dst: dst_vreg,

@@ -387,15 +387,15 @@ Context parameter syntax (recommended):
     or `1`. `ctx.data` / `ctx.data_end` use the same guarded packet access
     model as XDP and tc, so forms like `($ctx.data | get 0)` are valid. IPv6
     addresses are exposed as fixed arrays of four host-order u32 words, for
-    example `($ctx.remote_ip6 | get 3)`. Modeled socket-message helpers are
-    also available through the ordinary helper surface, for example
-    `helper-call "bpf_msg_apply_bytes" $ctx 8` or
-    `helper-call "bpf_msg_cork_bytes" $ctx 8`, plus range/data reshaping
-    helpers such as `helper-call "bpf_msg_pull_data" $ctx 0 8 0` and
-    `helper-call "bpf_msg_push_data" $ctx 0 8 0` or
-    `helper-call "bpf_msg_pop_data" $ctx 0 8 0`. After
-    `bpf_msg_pull_data`, reload `ctx.data` and `ctx.data_end` before
-    reading packet bytes again. Socket-pointer helpers whose program
+    example `($ctx.remote_ip6 | get 3)`. Message-byte helpers are available
+    through the first-class `adjust-message` surface:
+    `adjust-message --apply BYTES`, `adjust-message --cork BYTES`,
+    `adjust-message --pull START END [--flags FLAGS]`,
+    `adjust-message --push START LEN [--flags FLAGS]`, and
+    `adjust-message --pop START LEN [--flags FLAGS]`. The raw
+    `helper-call "bpf_msg_*"` forms remain available as escape hatches.
+    After `adjust-message --pull`, reload `ctx.data` and `ctx.data_end`
+    before reading packet bytes again. Socket-pointer helpers whose program
     surface includes `sk_msg` are also available on `ctx.sk` after a null
     check, for example
     `if $ctx.sk != 0 { helper-call "bpf_sk_fullsock" $ctx.sk }`.

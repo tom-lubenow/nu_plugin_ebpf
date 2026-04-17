@@ -932,6 +932,7 @@ pub(super) const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[
     ProgramIntrinsic::ReadStr,
     ProgramIntrinsic::ReadKernelStr,
     ProgramIntrinsic::AdjustPacket,
+    ProgramIntrinsic::AdjustMessage,
     ProgramIntrinsic::Redirect,
     ProgramIntrinsic::RedirectMap,
     ProgramIntrinsic::RedirectSocket,

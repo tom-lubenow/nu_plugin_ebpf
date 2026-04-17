@@ -83,6 +83,46 @@ impl PacketAdjustMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MessageAdjustMode {
+    Apply,
+    Cork,
+    Pull,
+    Push,
+    Pop,
+}
+
+impl MessageAdjustMode {
+    pub(crate) fn flag_name(self) -> &'static str {
+        match self {
+            Self::Apply => "apply",
+            Self::Cork => "cork",
+            Self::Pull => "pull",
+            Self::Push => "push",
+            Self::Pop => "pop",
+        }
+    }
+
+    pub(crate) fn first_value_name(self) -> &'static str {
+        match self {
+            Self::Apply | Self::Cork => "bytes",
+            Self::Pull | Self::Push | Self::Pop => "start",
+        }
+    }
+
+    pub(crate) fn second_value_name(self) -> Option<&'static str> {
+        match self {
+            Self::Apply | Self::Cork => None,
+            Self::Pull => Some("end"),
+            Self::Push | Self::Pop => Some("len"),
+        }
+    }
+
+    pub(crate) fn supported_programs_label(self) -> &'static str {
+        "sk_msg"
+    }
+}
+
 impl GetSocketCookieArgPolicy {
     pub(crate) fn error_message(self, helper: BpfHelper, program_type: EbpfProgramType) -> String {
         match self {
@@ -1029,6 +1069,7 @@ pub enum ProgramIntrinsic {
     ReadStr,
     ReadKernelStr,
     AdjustPacket,
+    AdjustMessage,
     Redirect,
     RedirectMap,
     RedirectSocket,
@@ -1060,6 +1101,7 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::ReadStr => "read-str",
             ProgramIntrinsic::ReadKernelStr => "read-kernel-str",
             ProgramIntrinsic::AdjustPacket => "adjust-packet",
+            ProgramIntrinsic::AdjustMessage => "adjust-message",
             ProgramIntrinsic::Redirect => "redirect",
             ProgramIntrinsic::RedirectMap => "redirect-map",
             ProgramIntrinsic::RedirectSocket => "redirect-socket",
@@ -1087,6 +1129,7 @@ impl ProgramIntrinsic {
             "read-str" => Some(ProgramIntrinsic::ReadStr),
             "read-kernel-str" => Some(ProgramIntrinsic::ReadKernelStr),
             "adjust-packet" => Some(ProgramIntrinsic::AdjustPacket),
+            "adjust-message" => Some(ProgramIntrinsic::AdjustMessage),
             "redirect" => Some(ProgramIntrinsic::Redirect),
             "redirect-map" => Some(ProgramIntrinsic::RedirectMap),
             "redirect-socket" => Some(ProgramIntrinsic::RedirectSocket),
@@ -1114,6 +1157,7 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::ReadStr => ProgramCapability::ReadUserString,
             ProgramIntrinsic::ReadKernelStr => ProgramCapability::ReadKernelString,
             ProgramIntrinsic::AdjustPacket
+            | ProgramIntrinsic::AdjustMessage
             | ProgramIntrinsic::Redirect
             | ProgramIntrinsic::RedirectMap
             | ProgramIntrinsic::RedirectSocket

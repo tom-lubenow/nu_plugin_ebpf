@@ -157,7 +157,7 @@ Last updated: 2026-04-16.
   - Prefer ordinary Nushell syntax, typed context projection, and leading typed `mut` bindings over bespoke helper commands when the underlying operation has an honest language form.
   - Treat `helper-call` and `kfunc-call` as explicit escape hatches for kernel ABI surface we do not yet model directly.
   - Keep compiler-internal helper/kfunc modeling even if those escape hatches shrink over time: the compiler still needs signatures, legal program families, pointer/ref semantics, and verifier-facing rules.
-  - Recent progress: packet/socket helper escape hatches keep shrinking: `adjust-packet` now covers XDP relayout plus skb relayout on `tc` / `sk_skb` / `sk_skb_parser`, packet redirection has first-class `redirect` / `redirect-map`, and socket redirection has first-class `redirect-socket`, all lowering through the same typed helper models instead of stringly `helper-call`.
+  - Recent progress: packet/socket helper escape hatches keep shrinking: `adjust-packet` now covers XDP relayout plus skb relayout on `tc` / `sk_skb` / `sk_skb_parser`, `adjust-message` now covers the common `sk_msg` `bpf_msg_*` byte-window helpers, packet redirection has first-class `redirect` / `redirect-map`, and socket redirection has first-class `redirect-socket`, all lowering through the same typed helper models instead of stringly `helper-call`.
 
 Near-term priority order:
 1. Make the program model explicitly program-type-aware (targets, section naming, helper surface, attach/load path).

@@ -1,6 +1,6 @@
 use super::*;
 use crate::compiler::ProgramIntrinsic;
-use crate::compiler::elf::PacketAdjustMode;
+use crate::compiler::elf::{MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::{
     BpfHelper, kfunc_pointer_arg_fixed_size, kfunc_pointer_arg_requires_stack_slot_base,
 };
@@ -422,6 +422,68 @@ impl<'a> HirToMirLowering<'a> {
         let helper = ctx
             .program_type()
             .packet_adjust_helper(mode)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{context} --{} is only valid in {} programs",
+                    mode.flag_name(),
+                    mode.supported_programs_label()
+                ))
+            })?;
+
+        if let Some(message) = ctx.helper_call_error(helper) {
+            return Err(CompileError::UnsupportedInstruction(message));
+        }
+
+        Ok(helper)
+    }
+
+    pub(super) fn message_adjust_mode_from_named_flags(
+        &self,
+        context: &str,
+    ) -> Result<MessageAdjustMode, CompileError> {
+        let mut mode = None;
+        for flag in &self.named_flags {
+            let candidate = match flag.as_str() {
+                "apply" => MessageAdjustMode::Apply,
+                "cork" => MessageAdjustMode::Cork,
+                "pull" => MessageAdjustMode::Pull,
+                "push" => MessageAdjustMode::Push,
+                "pop" => MessageAdjustMode::Pop,
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{context} does not accept flag '{}'",
+                        flag
+                    )));
+                }
+            };
+            if mode.replace(candidate).is_some() {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} requires exactly one of --apply, --cork, --pull, --push, or --pop"
+                )));
+            }
+        }
+
+        mode.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{context} requires exactly one of --apply, --cork, --pull, --push, or --pop"
+            ))
+        })
+    }
+
+    pub(super) fn message_adjust_helper_for_current_program(
+        &self,
+        context: &str,
+        mode: MessageAdjustMode,
+    ) -> Result<BpfHelper, CompileError> {
+        let Some(ctx) = self.probe_ctx else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} requires a known attached program context"
+            )));
+        };
+
+        let helper = ctx
+            .program_type()
+            .message_adjust_helper(mode)
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
                     "{context} --{} is only valid in {} programs",

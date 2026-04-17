@@ -94,7 +94,7 @@ ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
 
 - Prefer leading typed `mut` bindings for small private per-program state.
 - Use `global-define`, `global-get`, and `global-set` when you need an explicit shared name or a source-order-independent declaration.
-- Prefer the first-class packet/socket surface (`adjust-packet`, `redirect`, `redirect-map`, and `redirect-socket`) over raw `helper-call` forms when the operation matches.
+- Prefer the first-class packet/socket/message surface (`adjust-packet`, `adjust-message`, `redirect`, `redirect-map`, and `redirect-socket`) over raw `helper-call` forms when the operation matches.
 - Treat `helper-call` and `kfunc-call` as escape hatches. Prefer typed context fields, ordinary Nushell control flow, and the smaller first-class command surface when it covers the operation.
 - Use `--pin` when multiple probes need to share maps or timers.
 - Use `--dry-run` first when exploring new kernels or high-risk attach families.
