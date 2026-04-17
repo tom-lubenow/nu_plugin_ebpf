@@ -3644,7 +3644,61 @@ fn test_lower_leading_annotated_mut_null_string_without_exemplar_is_rejected() {
 
     assert!(
         err.to_string()
-            .contains("declared as string is not yet supported"),
+            .contains("cannot use `null` as the initializer"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.to_string().contains("global-define --type string:N"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_leading_annotated_mut_null_record_with_string_field_is_rejected_helpfully() {
+    let global_var = VarId::new(354);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: global_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Record(Box::new([
+            ("pid".to_string(), Type::Int),
+            ("comm".to_string(), Type::String),
+        ])),
+        initial_value: Value::nothing(Span::test_data()),
+    }];
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("annotated mutable null record with string field should be rejected");
+
+    assert!(
+        err.to_string().contains("nested field 'comm'"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.to_string().contains("record{...}"),
         "unexpected error: {err}"
     );
 }

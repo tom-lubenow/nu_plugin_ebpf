@@ -331,6 +331,7 @@ Near-term priority order:
   - Replace generic "unsupported" failures with actionable messages that include rewrites/workarounds.
   - Emit diagnostics at the highest possible level (HIR/MIR) before backend failure.
   - Recent progress: unknown-kfunc diagnostics now indicate when the symbol exists in kernel BTF but lacks a compiler-side typed signature.
+  - Recent progress: annotated mutable-global failures now explain when `null` cannot honestly fix string/list/binary capacity, and point users toward concrete exemplars or `global-define --type ...` instead of reporting a generic unsupported-type error.
 
 - [~] Build a compatibility test matrix.
   - Add automated tests that exercise compilation and loading across representative kernel versions/configs.

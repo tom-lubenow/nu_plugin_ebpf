@@ -1,6 +1,15 @@
 use super::*;
 use crate::compiler::hir::AnnotatedMutGlobal;
 use crate::compiler::mir::{AddressSpace, StructField};
+use nu_protocol::Type;
+
+#[derive(Debug, Clone)]
+enum NullAnnotatedGlobalUnsupportedKind {
+    String,
+    Binary,
+    NumericList,
+    Other(String),
+}
 
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn mutable_global_value_semantics(
@@ -59,6 +68,83 @@ impl<'a> HirToMirLowering<'a> {
         Some(current)
     }
 
+    fn find_null_annotated_global_unsupported_shape(
+        declared_type: &Type,
+        path: Option<String>,
+    ) -> Option<(Option<String>, NullAnnotatedGlobalUnsupportedKind)> {
+        match declared_type {
+            Type::Bool | Type::Duration | Type::Filesize | Type::Int | Type::Nothing => None,
+            Type::String | Type::Glob => Some((path, NullAnnotatedGlobalUnsupportedKind::String)),
+            Type::Binary => Some((path, NullAnnotatedGlobalUnsupportedKind::Binary)),
+            Type::List(inner) if matches!(inner.as_ref(), Type::Int | Type::Nothing) => {
+                Some((path, NullAnnotatedGlobalUnsupportedKind::NumericList))
+            }
+            Type::Record(fields) => fields.iter().find_map(|(field_name, field_type)| {
+                let field_path = path
+                    .as_ref()
+                    .map(|prefix| format!("{prefix}.{field_name}"))
+                    .unwrap_or_else(|| field_name.clone());
+                Self::find_null_annotated_global_unsupported_shape(field_type, Some(field_path))
+            }),
+            other => Some((
+                path,
+                NullAnnotatedGlobalUnsupportedKind::Other(other.to_string()),
+            )),
+        }
+    }
+
+    fn annotated_mut_global_unsupported_message(
+        var_id: VarId,
+        declared_type: &Type,
+        initial_value: &Value,
+    ) -> String {
+        if matches!(initial_value, Value::Nothing { .. }) {
+            if let Some((path, kind)) =
+                Self::find_null_annotated_global_unsupported_shape(declared_type, None)
+            {
+                let prefix = format!(
+                    "leading annotated mutable variable {} declared as {} cannot use `null` as the initializer",
+                    var_id.get(),
+                    declared_type
+                );
+                return match (path, kind) {
+                    (None, NullAnnotatedGlobalUnsupportedKind::String) => format!(
+                        "{prefix} because plain Nushell type annotations do not carry string capacity; use a concrete string initializer to establish capacity, or use `global-define --type string:N` when you need an explicit zero-initialized fixed-capacity string global"
+                    ),
+                    (Some(path), NullAnnotatedGlobalUnsupportedKind::String) => format!(
+                        "{prefix} because nested field '{path}' needs explicit string capacity; use a concrete record initializer to establish nested string capacities, or switch to a named global declared with `global-define --type 'record{{...}}'` if you need zero-initialized fixed-capacity string fields"
+                    ),
+                    (None, NullAnnotatedGlobalUnsupportedKind::Binary) => format!(
+                        "{prefix} because plain Nushell type annotations do not carry binary length; use a concrete binary initializer to establish length, or use `global-define --type bytes:N` when you need an explicit zero-initialized fixed-size byte buffer"
+                    ),
+                    (Some(path), NullAnnotatedGlobalUnsupportedKind::Binary) => format!(
+                        "{prefix} because nested field '{path}' needs explicit binary length; use a concrete record initializer to establish nested byte-buffer lengths, or switch to a named global declared with `global-define --type 'record{{...}}'` if you need zero-initialized fixed-size byte fields"
+                    ),
+                    (None, NullAnnotatedGlobalUnsupportedKind::NumericList) => format!(
+                        "{prefix} because plain Nushell list type annotations do not carry fixed numeric-list capacity; use a concrete list initializer such as `[]` to establish the exact capacity, or use `global-define --type list:i64:N` when you need an explicit zero-initialized fixed-capacity numeric list"
+                    ),
+                    (Some(path), NullAnnotatedGlobalUnsupportedKind::NumericList) => format!(
+                        "{prefix} because nested field '{path}' needs explicit numeric-list capacity; use a concrete record initializer to establish nested list capacities, or switch to a named global declared with `global-define --type 'record{{...}}'` if you need zero-initialized fixed-capacity list fields"
+                    ),
+                    (None, NullAnnotatedGlobalUnsupportedKind::Other(other)) => format!(
+                        "{prefix} because declared type {} is not yet supported as a compiler-managed mutable global without a materialized initializer",
+                        other
+                    ),
+                    (Some(path), NullAnnotatedGlobalUnsupportedKind::Other(other)) => format!(
+                        "{prefix} because nested field '{path}' declared as {} is not yet supported as a compiler-managed mutable global without a materialized initializer",
+                        other
+                    ),
+                };
+            }
+        }
+
+        format!(
+            "leading annotated mutable variable {} declared as {} is not yet supported; annotated mutable globals currently support scalar, string, binary, numeric list<int>, and record layouts composed of those supported field types",
+            var_id.get(),
+            declared_type
+        )
+    }
+
     pub(super) fn init_annotated_mut_globals(
         &mut self,
         annotated_mut_globals: &[AnnotatedMutGlobal],
@@ -69,11 +155,13 @@ impl<'a> HirToMirLowering<'a> {
                 &annotated.initial_value,
             )?
             else {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "leading annotated mutable variable {} declared as {} is not yet supported; annotated mutable globals currently support scalar, string, binary, numeric list<int>, and record layouts composed of those supported field types",
-                    annotated.var_id.get(),
-                    annotated.declared_type
-                )));
+                return Err(CompileError::UnsupportedInstruction(
+                    Self::annotated_mut_global_unsupported_message(
+                        annotated.var_id,
+                        &annotated.declared_type,
+                        &annotated.initial_value,
+                    ),
+                ));
             };
 
             let symbol = format!("__nu_local_global_{}", annotated.var_id.get());
