@@ -156,10 +156,66 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn typed_mutable_global_zero_repr(
+        declared_type: &nu_protocol::Type,
+    ) -> Result<Option<(MirType, Vec<u8>, Option<usize>, Option<usize>)>, CompileError> {
+        match declared_type {
+            nu_protocol::Type::Bool => Ok(Some((MirType::Bool, vec![0], None, None))),
+            nu_protocol::Type::Duration
+            | nu_protocol::Type::Filesize
+            | nu_protocol::Type::Int
+            | nu_protocol::Type::Nothing => Ok(Some((
+                MirType::I64,
+                0i64.to_le_bytes().to_vec(),
+                None,
+                None,
+            ))),
+            nu_protocol::Type::Record(fields) => {
+                let mut mir_fields = Vec::with_capacity(fields.len());
+                let mut data = Vec::new();
+                let mut offset = 0usize;
+
+                for (field_name, field_type) in fields.iter() {
+                    let Some((field_ty, field_data, field_list_max_len, field_string_slot_len)) =
+                        Self::typed_mutable_global_zero_repr(field_type)?
+                    else {
+                        return Ok(None);
+                    };
+                    let _ = (field_list_max_len, field_string_slot_len);
+                    mir_fields.push(StructField {
+                        name: field_name.clone(),
+                        ty: field_ty.clone(),
+                        offset,
+                        synthetic: false,
+                        bitfield: None,
+                    });
+                    offset = offset.saturating_add(field_ty.size());
+                    data.extend_from_slice(&field_data);
+                }
+
+                Ok(Some((
+                    MirType::Struct {
+                        name: None,
+                        kernel_btf_type_id: None,
+                        fields: mir_fields,
+                    },
+                    data,
+                    None,
+                    None,
+                )))
+            }
+            _ => Ok(None),
+        }
+    }
+
     pub(super) fn typed_mutable_global_repr(
         declared_type: &nu_protocol::Type,
         value: &Value,
     ) -> Result<Option<(MirType, Vec<u8>, Option<usize>, Option<usize>)>, CompileError> {
+        if matches!(value, Value::Nothing { .. }) {
+            return Self::typed_mutable_global_zero_repr(declared_type);
+        }
+
         if !value.is_subtype_of(declared_type) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "annotated mutable global initializer of type {} does not match declared type {}",
@@ -301,6 +357,10 @@ impl<'a> HirToMirLowering<'a> {
         declared_type: &nu_protocol::Type,
         value: &Value,
     ) -> Result<Option<AnnotatedValueSemantics>, CompileError> {
+        if matches!(value, Value::Nothing { .. }) {
+            return Ok(None);
+        }
+
         if !value.is_subtype_of(declared_type) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "annotated mutable global initializer of type {} does not match declared type {}",

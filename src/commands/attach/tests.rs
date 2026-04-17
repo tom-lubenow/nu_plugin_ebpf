@@ -151,6 +151,47 @@ fn test_map_leading_annotated_mut_globals_uses_leading_declaration_order() {
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_preserves_null_initializer() {
+    let source = "{|| mut state: record<pid: int ok: bool> = null; $state }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("leading annotated mut null initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].var_id, VarId::new(11));
+    assert_eq!(
+        globals[0].declared_type,
+        Type::Record(Box::new([
+            ("pid".to_string(), Type::Int),
+            ("ok".to_string(), Type::Bool),
+        ]))
+    );
+    assert!(
+        matches!(globals[0].initial_value, Value::Nothing { .. }),
+        "expected null initializer to map to Value::Nothing"
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_rejects_non_leading_annotated_mut() {
     let source = "{|| 1 | count; mut state: int = 0; $state }";
     let ir_block = IrBlock {

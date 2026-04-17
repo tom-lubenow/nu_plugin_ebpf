@@ -3425,6 +3425,66 @@ fn test_lower_leading_annotated_mut_scalar_uses_global_backing_and_skips_init_st
 }
 
 #[test]
+fn test_lower_leading_annotated_mut_scalar_null_uses_bss_global() {
+    let global_var = VarId::new(349);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: global_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Int,
+        initial_value: Value::nothing(Span::test_data()),
+    }];
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("leading annotated mutable scalar null should lower through a bss global");
+
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 0);
+    assert_eq!(result.bss_globals.len(), 1);
+    assert_eq!(result.bss_globals[0].name, "__nu_local_global_349");
+    assert_eq!(result.bss_globals[0].size, 8);
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadGlobal {
+                    symbol,
+                    ty: MirType::I64,
+                    ..
+                } if symbol == "__nu_local_global_349"
+            )),
+        "expected leading annotated mutable null scalar to load from its global backing"
+    );
+}
+
+#[test]
 fn test_lower_leading_annotated_mut_record_uses_declared_field_order() {
     let global_var = VarId::new(251);
     let func = HirFunction {
@@ -3473,6 +3533,120 @@ fn test_lower_leading_annotated_mut_record_uses_declared_field_order() {
     assert_eq!(data.len(), 9);
     assert_eq!(&data[..8], &7i64.to_le_bytes());
     assert_eq!(data[8], 0);
+}
+
+#[test]
+fn test_lower_leading_annotated_mut_record_null_uses_declared_scalar_layout() {
+    let global_var = VarId::new(351);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: global_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Record(Box::new([
+            ("pid".to_string(), Type::Int),
+            (
+                "stats".to_string(),
+                Type::Record(Box::new([
+                    ("hits".to_string(), Type::Int),
+                    ("ok".to_string(), Type::Bool),
+                ])),
+            ),
+        ])),
+        initial_value: Value::nothing(Span::test_data()),
+    }];
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("leading annotated mutable null record should lower through a bss global");
+
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 0);
+    assert_eq!(result.bss_globals.len(), 1);
+    assert_eq!(result.bss_globals[0].name, "__nu_local_global_351");
+    assert_eq!(result.bss_globals[0].size, 17);
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadGlobal {
+                    symbol,
+                    ty: MirType::Struct { .. },
+                    ..
+                } if symbol == "__nu_local_global_351"
+            )),
+        "expected leading annotated mutable null record to load from its global backing"
+    );
+}
+
+#[test]
+fn test_lower_leading_annotated_mut_null_string_without_exemplar_is_rejected() {
+    let global_var = VarId::new(353);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: global_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::String,
+        initial_value: Value::nothing(Span::test_data()),
+    }];
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("annotated mutable null string without exemplar should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("declared as string is not yet supported"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

@@ -318,6 +318,7 @@ Near-term priority order:
   - Recent progress: constant records and numeric lists now lower through compiler-generated `.rodata` symbols instead of purely stack-time materialization.
   - Recent progress: the backend/ELF layer now emits explicit `.data` and `.bss` global sections with named symbols and Aya-parseable data maps.
   - Recent progress: reassigned captured numeric scalars, strings, fixed binary values, numeric constant lists, and representable constant records now lower as compiler-managed mutable globals backed by `.data`/`.bss`.
+  - Recent progress: leading typed `mut` globals now accept `null` as a zero-init sentinel when the Nushell annotation itself fixes a truthful fixed layout (scalars and nested scalar-records), reducing the need to fall back to explicit `global-define --type` for simple structured state.
   - Recent progress: named `global-get` / `global-set` now expose compiler-managed `.data` / `.bss` globals in the closure language, with layout inferred from same-program `global-set` use and constant first writes seeding initialized data.
   - Recent progress: helper program-surface validation now constrains `bpf_sock_from_file` to tracing-style probe programs (`fentry`, `fexit`, `tp_btf`) across ELF policy, type inference, verifier_types, and VCC coverage.
   - Recent progress: helper program-surface validation now constrains `bpf_task_storage_get/delete` to tracing/tracepoint/perf-event/lsm/kprobe-family programs and `bpf_inode_storage_get/delete` to `lsm`, with matching ELF/type/verifier/VCC coverage.
