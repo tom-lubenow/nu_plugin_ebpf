@@ -615,6 +615,89 @@ pub(super) fn make_map_get_whole_value_program(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+pub(super) fn make_map_take_whole_value_program(
+    map_take_decl: DeclId,
+    terminal_decl: DeclId,
+    kind: &str,
+) -> HirProgram {
+    let lookup_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String(b"recent_paths".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String(kind.as_bytes().to_vec()),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_take_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1)],
+                            named: vec![(b"kind".to_vec(), RegId::new(2))],
+                            ..Default::default()
+                        },
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: lookup_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Comparison(Comparison::NotEqual),
+                        rhs: RegId::new(3),
+                    },
+                ],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(0),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: lookup_var,
+                    },
+                    HirStmt::Call {
+                        decl_id: terminal_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 10],
+        ast: vec![None; 10],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 pub(super) fn make_map_get_record_emit_program(
     map_get_decl: DeclId,
     emit_decl: DeclId,

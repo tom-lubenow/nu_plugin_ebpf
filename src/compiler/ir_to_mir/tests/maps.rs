@@ -10,6 +10,48 @@ use nu_protocol::ast::{CellPath, Comparison, Operator};
 use nu_protocol::{DeclId, Record, RegId, Span, Value, VarId};
 use std::collections::HashMap;
 
+fn path_struct_schema(map_name: &str, kind: MapKind) -> HashMap<MapRef, MirType> {
+    HashMap::from([(
+        MapRef {
+            name: map_name.to_string(),
+            kind,
+        },
+        MirType::Struct {
+            name: Some("path".to_string()),
+            kernel_btf_type_id: None,
+            fields: vec![
+                StructField {
+                    name: "mnt".to_string(),
+                    ty: MirType::U64,
+                    offset: 0,
+                    synthetic: false,
+                    bitfield: None,
+                },
+                StructField {
+                    name: "dentry".to_string(),
+                    ty: MirType::Ptr {
+                        pointee: Box::new(MirType::Struct {
+                            name: Some("dentry".to_string()),
+                            kernel_btf_type_id: None,
+                            fields: vec![StructField {
+                                name: "d_flags".to_string(),
+                                ty: MirType::U32,
+                                offset: 0,
+                                synthetic: false,
+                                bitfield: None,
+                            }],
+                        }),
+                        address_space: AddressSpace::Kernel,
+                    },
+                    offset: 8,
+                    synthetic: false,
+                    bitfield: None,
+                },
+            ],
+        },
+    )])
+}
+
 #[test]
 fn test_lower_map_get_preserves_prior_typed_struct_schema() {
     let hir =
@@ -779,6 +821,73 @@ fn test_lower_map_get_whole_struct_emit_uses_full_struct_size() {
             .iter()
             .flat_map(|block| block.instructions.iter())
             .any(|inst| matches!(inst, MirInst::EmitEvent { size, .. } if *size == 16))
+    );
+}
+
+#[test]
+fn test_lower_map_peek_whole_struct_emit_uses_full_struct_size() {
+    let hir = make_map_take_whole_value_program(DeclId::new(43), DeclId::new(44), "queue");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([
+        (DeclId::new(43), "map-peek".to_string()),
+        (DeclId::new(44), "emit".to_string()),
+    ]);
+    let external_schema = path_struct_schema("recent_paths", MapKind::Queue);
+
+    let result = lower_hir_to_mir_with_hints_and_maps(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        Some(&external_schema),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("whole-value queue map-peek emit should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::EmitEvent { size, .. } if *size == 16))
+    );
+}
+
+#[test]
+fn test_lower_map_pop_whole_struct_count_uses_bytes_counters() {
+    let hir = make_map_take_whole_value_program(DeclId::new(43), DeclId::new(44), "stack");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([
+        (DeclId::new(43), "map-pop".to_string()),
+        (DeclId::new(44), "count".to_string()),
+    ]);
+    let external_schema = path_struct_schema("recent_paths", MapKind::Stack);
+
+    let result = lower_hir_to_mir_with_hints_and_maps(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        Some(&external_schema),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("whole-value stack map-pop count should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::MapUpdate { map, .. } if map.name == BYTES_COUNTER_MAP_NAME
+            ))
     );
 }
 
