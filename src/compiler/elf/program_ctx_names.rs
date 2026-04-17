@@ -1,19 +1,101 @@
 use super::{CtxField, EbpfProgramType};
 use crate::program_spec::ProgramSpec;
 
+type CtxFieldNameEntry = (&'static str, CtxField);
+
+#[derive(Debug, Clone, Copy)]
+struct ProgramCtxFieldAliasSurfaceSpec {
+    allowed_programs: &'static [EbpfProgramType],
+    entries: &'static [CtxFieldNameEntry],
+}
+
+const XDP_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[("ifindex", CtxField::IngressIfindex)];
+const SKB_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[("ifindex", CtxField::Ifindex)];
+const PROGRAM_CTX_FIELD_ALIAS_SURFACES: &[ProgramCtxFieldAliasSurfaceSpec] = &[
+    ProgramCtxFieldAliasSurfaceSpec {
+        allowed_programs: &[EbpfProgramType::Xdp],
+        entries: XDP_CTX_FIELD_ALIAS_ENTRIES,
+    },
+    ProgramCtxFieldAliasSurfaceSpec {
+        allowed_programs: &[
+            EbpfProgramType::SocketFilter,
+            EbpfProgramType::Tc,
+            EbpfProgramType::CgroupSkb,
+            EbpfProgramType::SkSkb,
+            EbpfProgramType::SkSkbParser,
+        ],
+        entries: SKB_CTX_FIELD_ALIAS_ENTRIES,
+    },
+];
+const NON_TRACEPOINT_CTX_FIELD_NAME_ENTRIES: &[CtxFieldNameEntry] = &[
+    ("ifindex", CtxField::Ifindex),
+    ("access_type", CtxField::DeviceAccessType),
+    ("major", CtxField::DeviceMajor),
+    ("minor", CtxField::DeviceMinor),
+    ("op", CtxField::SockOp),
+    ("is_fullsock", CtxField::IsFullsock),
+    ("snd_cwnd", CtxField::SockOpsSndCwnd),
+    ("srtt_us", CtxField::SockOpsSrttUs),
+    ("cb_flags", CtxField::SockOpsCbFlags),
+    ("state", CtxField::SockState),
+    ("rtt_min", CtxField::SockOpsRttMin),
+    ("snd_ssthresh", CtxField::SockOpsSndSsthresh),
+    ("rcv_nxt", CtxField::SockOpsRcvNxt),
+    ("snd_nxt", CtxField::SockOpsSndNxt),
+    ("snd_una", CtxField::SockOpsSndUna),
+    ("mss_cache", CtxField::SockOpsMssCache),
+    ("ecn_flags", CtxField::SockOpsEcnFlags),
+    ("rate_delivered", CtxField::SockOpsRateDelivered),
+    ("rate_interval_us", CtxField::SockOpsRateIntervalUs),
+    ("packets_out", CtxField::SockOpsPacketsOut),
+    ("retrans_out", CtxField::SockOpsRetransOut),
+    ("total_retrans", CtxField::SockOpsTotalRetrans),
+    ("segs_in", CtxField::SockOpsSegsIn),
+    ("data_segs_in", CtxField::SockOpsDataSegsIn),
+    ("segs_out", CtxField::SockOpsSegsOut),
+    ("data_segs_out", CtxField::SockOpsDataSegsOut),
+    ("lost_out", CtxField::SockOpsLostOut),
+    ("sacked_out", CtxField::SockOpsSackedOut),
+    ("sk_txhash", CtxField::SockOpsSkTxhash),
+    ("bytes_received", CtxField::SockOpsBytesReceived),
+    ("bytes_acked", CtxField::SockOpsBytesAcked),
+    ("skb_len", CtxField::SockOpsSkbLen),
+    ("skb_tcp_flags", CtxField::SockOpsSkbTcpFlags),
+    ("skb_hwtstamp", CtxField::SockOpsSkbHwtstamp),
+];
+const TRACEPOINT_PRESERVED_CTX_FIELD_NAMES: &[&str] = &[
+    "pid",
+    "tid",
+    "tgid",
+    "uid",
+    "gid",
+    "comm",
+    "cpu",
+    "ktime",
+    "timestamp",
+    "cgroup_id",
+    "kstack",
+    "ustack",
+];
+
+fn find_ctx_field_name_entry(entries: &[CtxFieldNameEntry], field_name: &str) -> Option<CtxField> {
+    entries
+        .iter()
+        .find(|(name, _)| *name == field_name)
+        .map(|(_, field)| field.clone())
+}
+
+fn is_ctx_arg_field_name(field_name: &str) -> bool {
+    field_name
+        .strip_prefix("arg")
+        .is_some_and(|suffix| !suffix.is_empty() && suffix.chars().all(|ch| ch.is_ascii_digit()))
+}
+
 fn ctx_field_alias(program_type: EbpfProgramType, field_name: &str) -> Option<CtxField> {
-    match (program_type, field_name) {
-        (EbpfProgramType::Xdp, "ifindex") => Some(CtxField::IngressIfindex),
-        (
-            EbpfProgramType::SocketFilter
-            | EbpfProgramType::Tc
-            | EbpfProgramType::CgroupSkb
-            | EbpfProgramType::SkSkb
-            | EbpfProgramType::SkSkbParser,
-            "ifindex",
-        ) => Some(CtxField::Ifindex),
-        _ => None,
-    }
+    PROGRAM_CTX_FIELD_ALIAS_SURFACES
+        .iter()
+        .find(|surface| surface.allowed_programs.contains(&program_type))
+        .and_then(|surface| find_ctx_field_name_entry(surface.entries, field_name))
 }
 
 fn generic_ctx_field_from_name(field_name: &str) -> Result<CtxField, String> {
@@ -114,60 +196,11 @@ fn generic_ctx_field_from_name(field_name: &str) -> Result<CtxField, String> {
 }
 
 fn non_tracepoint_ctx_field_from_name(field_name: &str) -> Option<CtxField> {
-    Some(match field_name {
-        "ifindex" => CtxField::Ifindex,
-        "access_type" => CtxField::DeviceAccessType,
-        "major" => CtxField::DeviceMajor,
-        "minor" => CtxField::DeviceMinor,
-        "op" => CtxField::SockOp,
-        "is_fullsock" => CtxField::IsFullsock,
-        "snd_cwnd" => CtxField::SockOpsSndCwnd,
-        "srtt_us" => CtxField::SockOpsSrttUs,
-        "cb_flags" => CtxField::SockOpsCbFlags,
-        "state" => CtxField::SockState,
-        "rtt_min" => CtxField::SockOpsRttMin,
-        "snd_ssthresh" => CtxField::SockOpsSndSsthresh,
-        "rcv_nxt" => CtxField::SockOpsRcvNxt,
-        "snd_nxt" => CtxField::SockOpsSndNxt,
-        "snd_una" => CtxField::SockOpsSndUna,
-        "mss_cache" => CtxField::SockOpsMssCache,
-        "ecn_flags" => CtxField::SockOpsEcnFlags,
-        "rate_delivered" => CtxField::SockOpsRateDelivered,
-        "rate_interval_us" => CtxField::SockOpsRateIntervalUs,
-        "packets_out" => CtxField::SockOpsPacketsOut,
-        "retrans_out" => CtxField::SockOpsRetransOut,
-        "total_retrans" => CtxField::SockOpsTotalRetrans,
-        "segs_in" => CtxField::SockOpsSegsIn,
-        "data_segs_in" => CtxField::SockOpsDataSegsIn,
-        "segs_out" => CtxField::SockOpsSegsOut,
-        "data_segs_out" => CtxField::SockOpsDataSegsOut,
-        "lost_out" => CtxField::SockOpsLostOut,
-        "sacked_out" => CtxField::SockOpsSackedOut,
-        "sk_txhash" => CtxField::SockOpsSkTxhash,
-        "bytes_received" => CtxField::SockOpsBytesReceived,
-        "bytes_acked" => CtxField::SockOpsBytesAcked,
-        "skb_len" => CtxField::SockOpsSkbLen,
-        "skb_tcp_flags" => CtxField::SockOpsSkbTcpFlags,
-        "skb_hwtstamp" => CtxField::SockOpsSkbHwtstamp,
-        _ => return None,
-    })
+    find_ctx_field_name_entry(NON_TRACEPOINT_CTX_FIELD_NAME_ENTRIES, field_name)
 }
 
-fn tracepoint_preserves_builtin_ctx_field(field: &CtxField) -> bool {
-    matches!(
-        field,
-        CtxField::Pid
-            | CtxField::Tid
-            | CtxField::Uid
-            | CtxField::Gid
-            | CtxField::Comm
-            | CtxField::Cpu
-            | CtxField::Timestamp
-            | CtxField::CgroupId
-            | CtxField::KStack
-            | CtxField::UStack
-            | CtxField::Arg(_)
-    )
+fn tracepoint_preserves_builtin_ctx_field_name(field_name: &str) -> bool {
+    TRACEPOINT_PRESERVED_CTX_FIELD_NAMES.contains(&field_name) || is_ctx_arg_field_name(field_name)
 }
 
 impl EbpfProgramType {
@@ -200,9 +233,8 @@ impl EbpfProgramType {
         &self,
         field_name: &str,
     ) -> Result<CtxField, String> {
-        let resolved = self.resolve_ctx_field_name(field_name)?;
-        if tracepoint_preserves_builtin_ctx_field(&resolved) {
-            Ok(resolved)
+        if tracepoint_preserves_builtin_ctx_field_name(field_name) {
+            generic_ctx_field_from_name(field_name)
         } else {
             Ok(CtxField::TracepointField(field_name.to_string()))
         }

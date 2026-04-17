@@ -2596,6 +2596,22 @@ fn test_program_type_resolves_tracepoint_specific_field_names() {
 }
 
 #[test]
+fn test_program_type_resolves_tracepoint_builtin_alias_names() {
+    assert_eq!(
+        EbpfProgramType::Tracepoint
+            .resolve_ctx_field_name("tgid")
+            .expect("tracepoint tgid should preserve builtin alias"),
+        CtxField::Tid
+    );
+    assert_eq!(
+        EbpfProgramType::Tracepoint
+            .resolve_ctx_field_name("arg3")
+            .expect("tracepoint arg3 should preserve builtin arg"),
+        CtxField::Arg(3)
+    );
+}
+
+#[test]
 fn test_program_type_resolves_sock_ops_field_names() {
     assert_eq!(
         EbpfProgramType::SockOps
