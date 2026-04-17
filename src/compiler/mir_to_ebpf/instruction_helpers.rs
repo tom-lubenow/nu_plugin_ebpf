@@ -98,6 +98,13 @@ impl<'a> MirToEbpfCompiler<'a> {
             CtxStoreTarget::SkbMark => (Self::sk_buff_mark_priority_offsets().0, val_reg),
             CtxStoreTarget::SkbPriority => (Self::sk_buff_mark_priority_offsets().1, val_reg),
             CtxStoreTarget::SkbTcIndex => (Self::sk_buff_offsets().5, val_reg),
+            CtxStoreTarget::SkbCbWord(index) => (
+                Self::sk_buff_cb_offset()
+                    + i16::from(*index).checked_mul(4).ok_or_else(|| {
+                        CompileError::UnsupportedInstruction("skb cb index overflowed".into())
+                    })?,
+                val_reg,
+            ),
             CtxStoreTarget::SkbTcClassid => (Self::sk_buff_extended_meta_offsets().0, val_reg),
             CtxStoreTarget::SkbTstamp => (Self::sk_buff_tstamp_offset(), val_reg),
             CtxStoreTarget::SysctlFilePos => (Self::bpf_sysctl_offsets().1, val_reg),

@@ -2,12 +2,13 @@ use super::{CtxWriteTarget, EbpfProgramType, ProgramContextFamily};
 use crate::compiler::mir::{CtxField, CtxStoreTarget};
 use crate::program_spec::{ProgramAttachShape, ProgramSpec};
 
-fn word_index(field_name: &str, index: usize) -> Result<u8, String> {
-    let index = u8::try_from(index)
-        .map_err(|_| format!("ctx.{field_name} index must be in 0..=3, got {index}"))?;
-    if index >= 4 {
+fn bounded_index(field_name: &str, index: usize, upper_inclusive: u8) -> Result<u8, String> {
+    let index = u8::try_from(index).map_err(|_| {
+        format!("ctx.{field_name} index must be in 0..={upper_inclusive}, got {index}")
+    })?;
+    if index > upper_inclusive {
         return Err(format!(
-            "ctx.{field_name} index must be in 0..=3, got {index}"
+            "ctx.{field_name} index must be in 0..={upper_inclusive}, got {index}"
         ));
     }
     Ok(index)
@@ -17,6 +18,7 @@ fn word_index(field_name: &str, index: usize) -> Result<u8, String> {
 enum ContextStoreTargetSpec {
     Fixed(CtxStoreTarget),
     SockOpsReplyLongWord,
+    SkbCbWord,
     CgroupSockAddrUserIp6Word,
     CgroupSockAddrMsgSrcIp6Word,
 }
@@ -65,23 +67,29 @@ impl ContextStoreTargetSpec {
                 None => Ok(target.clone()),
             },
             Self::SockOpsReplyLongWord => match index {
-                Some(index) => word_index(field_name, index).map(CtxStoreTarget::SockOpsReplyLong),
+                Some(index) => {
+                    bounded_index(field_name, index, 3).map(CtxStoreTarget::SockOpsReplyLong)
+                }
+                None => Err(format!(
+                    "ctx.{field_name} assignment requires a fixed index, e.g. $ctx.{field_name}.0 = ..."
+                )),
+            },
+            Self::SkbCbWord => match index {
+                Some(index) => bounded_index(field_name, index, 4).map(CtxStoreTarget::SkbCbWord),
                 None => Err(format!(
                     "ctx.{field_name} assignment requires a fixed index, e.g. $ctx.{field_name}.0 = ..."
                 )),
             },
             Self::CgroupSockAddrUserIp6Word => match index {
-                Some(index) => {
-                    word_index(field_name, index).map(CtxStoreTarget::CgroupSockAddrUserIp6Word)
-                }
+                Some(index) => bounded_index(field_name, index, 3)
+                    .map(CtxStoreTarget::CgroupSockAddrUserIp6Word),
                 None => Err(format!(
                     "ctx.{field_name} assignment requires a fixed index, e.g. $ctx.{field_name}.0 = ..."
                 )),
             },
             Self::CgroupSockAddrMsgSrcIp6Word => match index {
-                Some(index) => {
-                    word_index(field_name, index).map(CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word)
-                }
+                Some(index) => bounded_index(field_name, index, 3)
+                    .map(CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word),
                 None => Err(format!(
                     "ctx.{field_name} assignment requires a fixed index, e.g. $ctx.{field_name}.0 = ..."
                 )),
@@ -93,6 +101,7 @@ impl ContextStoreTargetSpec {
         match (self, target) {
             (Self::Fixed(expected), actual) => expected == actual,
             (Self::SockOpsReplyLongWord, CtxStoreTarget::SockOpsReplyLong(_)) => true,
+            (Self::SkbCbWord, CtxStoreTarget::SkbCbWord(_)) => true,
             (Self::CgroupSockAddrUserIp6Word, CtxStoreTarget::CgroupSockAddrUserIp6Word(_)) => true,
             (Self::CgroupSockAddrMsgSrcIp6Word, CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(_)) => {
                 true
@@ -270,6 +279,7 @@ const TC_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
         CtxField::TcIndex,
         ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbTcIndex),
     ),
+    ContextWriteSurfaceSpec::store_field("cb", CtxField::SkbCb, ContextStoreTargetSpec::SkbCbWord),
     ContextWriteSurfaceSpec::store_field(
         "tc_classid",
         CtxField::TcClassid,
@@ -401,6 +411,7 @@ impl CtxStoreTarget {
             CtxStoreTarget::SkbMark => Some(CtxField::SockMark),
             CtxStoreTarget::SkbPriority => Some(CtxField::SockPriority),
             CtxStoreTarget::SkbTcIndex => Some(CtxField::TcIndex),
+            CtxStoreTarget::SkbCbWord(_) => Some(CtxField::SkbCb),
             CtxStoreTarget::SkbTcClassid => Some(CtxField::TcClassid),
             CtxStoreTarget::SkbTstamp => Some(CtxField::Tstamp),
             CtxStoreTarget::SysctlFilePos => Some(CtxField::SysctlFilePos),

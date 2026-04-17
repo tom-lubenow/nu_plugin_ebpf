@@ -109,7 +109,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         (16, 20, 24, 28)
     }
 
-    pub(super) fn sk_buff_cb_offset() -> i16 {
+    pub(crate) fn sk_buff_cb_offset() -> i16 {
         // struct __sk_buff {
         //     ...
         //     __u32 cb[5];

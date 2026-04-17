@@ -197,14 +197,15 @@ Context parameter syntax (recommended):
     IPv4/TCP options, ICMP subtype-specific body decoding, and uncommon
     IPv6 extension headers are still not modeled.
     On `tc`, `ctx.mark`, `ctx.priority`, `ctx.tc_index`,
-    `ctx.tc_classid`, and `ctx.tstamp` are also writable through
-    ordinary assignment after shadowing the closure parameter as mutable,
-    for example `mut ctx = $ctx; $ctx.mark = 7` or `mut ctx = $ctx;
-    $ctx.tstamp = 123`. Other skb-backed packet programs keep those
-    scalar skb metadata fields read-only. When the timestamp type must
-    also change, tc additionally models `helper-call "bpf_skb_set_tstamp"
-    $ctx TSTAMP TSTAMP_TYPE`; use `0` for `BPF_SKB_TSTAMP_UNSPEC` and
-    `1` for `BPF_SKB_TSTAMP_DELIVERY_MONO`.
+    `ctx.tc_classid`, fixed `ctx.cb.N`, and `ctx.tstamp` are also
+    writable through ordinary assignment after shadowing the closure
+    parameter as mutable, for example `mut ctx = $ctx; $ctx.mark = 7`,
+    `mut ctx = $ctx; $ctx.cb.0 = 1`, or `mut ctx = $ctx;
+    $ctx.tstamp = 123`. Other skb-backed packet programs keep those skb
+    metadata fields read-only. When the timestamp type must also change,
+    tc additionally models `helper-call "bpf_skb_set_tstamp" $ctx
+    TSTAMP TSTAMP_TYPE`; use `0` for `BPF_SKB_TSTAMP_UNSPEC` and `1`
+    for `BPF_SKB_TSTAMP_DELIVERY_MONO`.
 
   perf_event targets:
     {|ctx| $ctx.cpu }    - Get current CPU ID for the sampled event

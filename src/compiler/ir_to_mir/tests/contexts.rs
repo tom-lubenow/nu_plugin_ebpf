@@ -2970,6 +2970,37 @@ fn test_lower_tc_ctx_mark_assignment() {
 }
 
 #[test]
+fn test_lower_tc_ctx_cb_assignment() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("cb"), int_member(2)],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tc ctx.cb[2] assignment should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbCbWord(2),
+            ty: MirType::U32,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_sk_msg_ctx_data_byte_assignment_is_rejected() {
     let hir = make_ctx_upsert_program(
         CellPath {

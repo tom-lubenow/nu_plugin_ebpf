@@ -3047,6 +3047,29 @@ fn test_probe_context_resolves_skb_mark_store_target_on_tc() {
 }
 
 #[test]
+fn test_probe_context_resolves_skb_cb_store_target_on_tc() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    assert_eq!(
+        ctx.resolve_ctx_store_target("cb", Some(2))
+            .expect("tc cb target should resolve"),
+        CtxStoreTarget::SkbCbWord(2)
+    );
+    assert!(
+        ctx.validate_ctx_store_target(&CtxStoreTarget::SkbCbWord(2))
+            .is_ok()
+    );
+}
+
+#[test]
+fn test_probe_context_rejects_skb_cb_store_target_without_index_on_tc() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = ctx
+        .resolve_ctx_store_target("cb", None)
+        .expect_err("skb cb store target without index should be rejected");
+    assert!(err.contains("requires a fixed index"));
+}
+
+#[test]
 fn test_probe_context_rejects_skb_tstamp_store_target_on_non_skb_program() {
     let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
     let err = ctx
@@ -3080,6 +3103,18 @@ fn test_probe_context_rejects_skb_mark_store_target_on_socket_filter() {
     assert!(
         err.to_string()
             .contains("ctx.mark is only writable on tc programs")
+    );
+}
+
+#[test]
+fn test_probe_context_rejects_skb_cb_store_target_on_socket_filter() {
+    let ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let err = ctx
+        .validate_ctx_store_target(&CtxStoreTarget::SkbCbWord(0))
+        .expect_err("skb cb store target should be rejected on socket_filter");
+    assert!(
+        err.to_string()
+            .contains("ctx.cb is only writable on tc programs")
     );
 }
 

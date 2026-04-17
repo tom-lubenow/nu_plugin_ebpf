@@ -854,6 +854,8 @@ pub enum CtxStoreTarget {
     SkbPriority,
     /// `__sk_buff.tc_index`
     SkbTcIndex,
+    /// `__sk_buff.cb[idx]`
+    SkbCbWord(u8),
     /// `__sk_buff.tc_classid`
     SkbTcClassid,
     /// `__sk_buff.tstamp`
@@ -888,6 +890,7 @@ impl CtxStoreTarget {
             | CtxStoreTarget::SkbMark
             | CtxStoreTarget::SkbPriority
             | CtxStoreTarget::SkbTcIndex
+            | CtxStoreTarget::SkbCbWord(_)
             | CtxStoreTarget::SkbTcClassid
             | CtxStoreTarget::SysctlFilePos => MirType::U32,
             CtxStoreTarget::SkbTstamp => MirType::U64,
@@ -914,6 +917,7 @@ impl CtxStoreTarget {
             CtxStoreTarget::SkbMark
             | CtxStoreTarget::SkbPriority
             | CtxStoreTarget::SkbTcIndex
+            | CtxStoreTarget::SkbCbWord(_)
             | CtxStoreTarget::SkbTcClassid => {
                 format!(
                     "writable tc skb scalar fields require a u32 store, got {:?}",
@@ -957,6 +961,7 @@ impl CtxStoreTarget {
             CtxStoreTarget::SkbMark => "ctx.mark is only writable on tc programs",
             CtxStoreTarget::SkbPriority => "ctx.priority is only writable on tc programs",
             CtxStoreTarget::SkbTcIndex => "ctx.tc_index is only writable on tc programs",
+            CtxStoreTarget::SkbCbWord(_) => "ctx.cb is only writable on tc programs",
             CtxStoreTarget::SkbTcClassid => "ctx.tc_classid is only writable on tc programs",
             CtxStoreTarget::SkbTstamp => "ctx.tstamp is only writable on tc programs",
             CtxStoreTarget::SysctlFilePos => {
