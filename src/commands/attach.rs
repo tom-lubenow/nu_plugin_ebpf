@@ -358,6 +358,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.lost_out } - Get the current lost-out packet estimate
     {|ctx| $ctx.sacked_out } - Get the current SACKed-out packet estimate
     {|ctx| $ctx.sk_txhash } - Get the socket transmit hash
+    {|ctx| mut ctx = $ctx; $ctx.sk_txhash = 7; 1 } - Write the socket transmit hash through ordinary assignment
     {|ctx| $ctx.bytes_received } - Get the total received byte count
     {|ctx| $ctx.bytes_acked } - Get the total acknowledged byte count
     {|ctx| $ctx.skb_len } - Get the total packet length when packet metadata is available
@@ -365,9 +366,10 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.skb_hwtstamp } - Get packet hardware timestamp when packet metadata is available
     {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_ip4, src_ip6, src_port, dst_port, dst_ip4, dst_ip6, state, and rx_queue_mapping)
     Note: sock_ops uses raw integer return codes. Observation-only examples
-    should return `1`. `ctx.reply` and `ctx.replylong.<0-3>` are writable raw
-    `u32` words after shadowing the immutable closure parameter as mutable, for
-    example `mut ctx = $ctx; $ctx.reply = 1`. IPv6 addresses are
+    should return `1`. `ctx.reply`, `ctx.replylong.<0-3>`, and
+    `ctx.sk_txhash` are writable raw `u32` words after shadowing the
+    immutable closure parameter as mutable, for example `mut ctx = $ctx;
+    $ctx.reply = 1`. IPv6 addresses are
     exposed as fixed arrays of four host-order u32 words, for example
     `($ctx.remote_ip6 | get 3)`. `ctx.args` uses the same fixed-array model,
     for example `($ctx.args | get 0)`. `ctx.data` / `ctx.data_end` use the

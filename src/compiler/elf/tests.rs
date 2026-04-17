@@ -2982,6 +2982,11 @@ fn test_probe_context_resolves_sock_ops_store_targets() {
             .expect("sock_ops replylong target should resolve"),
         CtxStoreTarget::SockOpsReplyLong(2)
     );
+    assert_eq!(
+        ctx.resolve_ctx_store_target("sk_txhash", None)
+            .expect("sock_ops sk_txhash target should resolve"),
+        CtxStoreTarget::SockOpsSkTxhash
+    );
 }
 
 #[test]
@@ -2995,6 +3000,10 @@ fn test_probe_context_validates_sock_ops_store_targets() {
         ctx.validate_ctx_store_target(&CtxStoreTarget::SockOpsReplyLong(2))
             .is_ok()
     );
+    assert!(
+        ctx.validate_ctx_store_target(&CtxStoreTarget::SockOpsSkTxhash)
+            .is_ok()
+    );
 }
 
 #[test]
@@ -3006,6 +3015,14 @@ fn test_probe_context_rejects_sock_ops_store_target_on_non_sock_ops_program() {
     assert!(
         err.to_string()
             .contains("writable sock_ops reply fields are only supported on sock_ops programs")
+    );
+
+    let err = ctx
+        .validate_ctx_store_target(&CtxStoreTarget::SockOpsSkTxhash)
+        .expect_err("sock_ops sk_txhash store target should be rejected outside sock_ops");
+    assert!(
+        err.to_string()
+            .contains("ctx.sk_txhash is only available on sock_ops programs")
     );
 }
 
@@ -3021,6 +3038,12 @@ fn test_program_type_base_ctx_store_target_error_follows_context_family() {
             .base_ctx_store_target_error(&CtxStoreTarget::SockOpsReply)
             .unwrap()
             .contains("writable sock_ops reply fields are only supported on sock_ops programs")
+    );
+    assert!(
+        EbpfProgramType::SkMsg
+            .base_ctx_store_target_error(&CtxStoreTarget::SockOpsSkTxhash)
+            .unwrap()
+            .contains("writable sock_ops sk_txhash is only supported on sock_ops programs")
     );
 }
 

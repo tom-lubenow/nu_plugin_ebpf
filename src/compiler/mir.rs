@@ -848,6 +848,8 @@ pub enum CtxStoreTarget {
     SockOpsReply,
     /// `bpf_sock_ops.replylong[idx]`
     SockOpsReplyLong(u8),
+    /// `bpf_sock_ops.sk_txhash`
+    SockOpsSkTxhash,
     /// `__sk_buff.mark`
     SkbMark,
     /// `__sk_buff.priority`
@@ -887,6 +889,7 @@ impl CtxStoreTarget {
         match self {
             CtxStoreTarget::SockOpsReply
             | CtxStoreTarget::SockOpsReplyLong(_)
+            | CtxStoreTarget::SockOpsSkTxhash
             | CtxStoreTarget::SkbMark
             | CtxStoreTarget::SkbPriority
             | CtxStoreTarget::SkbTcIndex
@@ -911,6 +914,12 @@ impl CtxStoreTarget {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
                 format!(
                     "writable sock_ops reply fields require a u32 store, got {:?}",
+                    actual
+                )
+            }
+            CtxStoreTarget::SockOpsSkTxhash => {
+                format!(
+                    "writable sock_ops sk_txhash requires a u32 store, got {:?}",
                     actual
                 )
             }
@@ -957,6 +966,9 @@ impl CtxStoreTarget {
         match self {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
                 "writable sock_ops reply fields are only supported on sock_ops programs"
+            }
+            CtxStoreTarget::SockOpsSkTxhash => {
+                "writable sock_ops sk_txhash is only supported on sock_ops programs"
             }
             CtxStoreTarget::SkbMark => "ctx.mark is only writable on tc and cgroup_skb programs",
             CtxStoreTarget::SkbPriority => {

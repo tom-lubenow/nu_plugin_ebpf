@@ -595,6 +595,23 @@ fn test_verify_mir_for_probe_context_accepts_sockopt_optlen_store_on_get_hook() 
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_accepts_sock_ops_sk_txhash_store() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SockOpsSkTxhash,
+            val: MirValue::Const(7),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect("expected sock_ops sk_txhash store to be accepted");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_accepts_skb_tstamp_store_on_tc() {
     let (mut func, entry) = new_mir_function();
     func.block_mut(entry)

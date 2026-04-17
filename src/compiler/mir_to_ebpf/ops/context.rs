@@ -316,7 +316,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         (100, 104, 108, 128, 132, 136, 168, 176)
     }
 
-    pub(super) fn bpf_sock_ops_extra_metric_offsets()
+    pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_ops_extra_metric_offsets()
     -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16, i16) {
         // struct bpf_sock_ops {
         //     ...
