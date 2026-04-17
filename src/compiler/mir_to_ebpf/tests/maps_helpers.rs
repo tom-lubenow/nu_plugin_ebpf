@@ -1937,6 +1937,72 @@ fn test_compile_sockmap_helper_with_loaded_map_fd() {
 }
 
 #[test]
+fn test_compile_redirect_map_helper_with_loaded_map_fd() {
+    use crate::compiler::elf::BpfMapType;
+    use crate::compiler::mir::*;
+
+    for (map_name, map_kind, map_type) in [
+        ("demo_devmap", MapKind::DevMap, BpfMapType::DevMap as u32),
+        (
+            "demo_devmap_hash",
+            MapKind::DevMapHash,
+            BpfMapType::DevMapHash as u32,
+        ),
+        ("demo_cpumap", MapKind::CpuMap, BpfMapType::CpuMap as u32),
+        ("demo_xskmap", MapKind::XskMap, BpfMapType::XskMap as u32),
+    ] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let map = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+            dst: map,
+            map: MapRef {
+                name: map_name.to_string(),
+                kind: map_kind,
+            },
+        });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: BpfHelper::RedirectMap as u32,
+                args: vec![MirValue::VReg(map), MirValue::Const(7), MirValue::Const(0)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let program = MirProgram {
+            main: func,
+            subfunctions: vec![],
+        };
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+        let compiled = compile_mir_to_ebpf(&program, Some(&probe_ctx))
+            .expect("redirect_map helper should compile");
+
+        let map = compiled
+            .maps
+            .iter()
+            .find(|map| map.name == map_name)
+            .expect("expected redirect-map runtime artifact");
+        assert_eq!(map.def.map_type, map_type);
+        assert_eq!(map.def.key_size, 4);
+        assert_eq!(
+            map.def.value_size,
+            if map_kind == MapKind::XskMap { 4 } else { 8 }
+        );
+        assert!(
+            compiled
+                .relocations
+                .iter()
+                .any(|reloc| reloc.symbol_name == map_name),
+            "expected redirect-map relocation for {map_name}"
+        );
+    }
+}
+
+#[test]
 fn test_compile_ringbuf_query_helper_with_loaded_map_fd() {
     use crate::compiler::elf::BpfMapType;
     use crate::compiler::mir::*;

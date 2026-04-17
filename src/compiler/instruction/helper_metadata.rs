@@ -27,6 +27,7 @@ impl BpfHelper {
             43 => Some(Self::SkbChangeHead),
             44 => Some(Self::XdpAdjustHead),
             23 => Some(Self::Redirect),
+            51 => Some(Self::RedirectMap),
             152 => Some(Self::RedirectNeigh),
             155 => Some(Self::RedirectPeer),
             54 => Some(Self::XdpAdjustMeta),
@@ -244,6 +245,12 @@ impl BpfHelper {
                 min_args: 2,
                 max_args: 2,
                 arg_kinds: [S, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::RedirectMap => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::RedirectNeigh => HelperSignature {

@@ -55,6 +55,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::Redirect)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_redirect_map"),
+        Some(BpfHelper::RedirectMap)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_redirect_neigh"),
         Some(BpfHelper::RedirectNeigh)
     ));
@@ -383,6 +387,15 @@ fn test_helper_signatures_setsockopt_and_getsockopt() {
 
 #[test]
 fn test_helper_signatures_socket_map_helpers() {
+    let redirect_map_sig = HelperSignature::for_id(BpfHelper::RedirectMap as u32)
+        .expect("expected bpf_redirect_map helper signature");
+    assert_eq!(redirect_map_sig.min_args, 3);
+    assert_eq!(redirect_map_sig.max_args, 3);
+    assert_eq!(redirect_map_sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(redirect_map_sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(redirect_map_sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(redirect_map_sig.ret_kind, HelperRetKind::Scalar);
+
     let sk_redirect_map_sig = HelperSignature::for_id(BpfHelper::SkRedirectMap as u32)
         .expect("expected bpf_sk_redirect_map helper signature");
     assert_eq!(sk_redirect_map_sig.min_args, 4);
@@ -442,6 +455,18 @@ fn test_helper_signatures_socket_map_helpers() {
     assert_eq!(sk_redirect_hash_sig.arg_kind(2), HelperArgKind::Pointer);
     assert_eq!(sk_redirect_hash_sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sk_redirect_hash_sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_redirect_map_helper_uses_explicit_redirect_map_kind_family() {
+    assert_eq!(BpfHelper::RedirectMap.local_helper_map_arg_index(), Some(0));
+    assert_eq!(
+        BpfHelper::RedirectMap.helper_explicit_map_kind_family(0),
+        Some(HelperExplicitMapKindFamily::RedirectMap)
+    );
+    assert!(BpfHelper::RedirectMap.helper_requires_explicit_map_kind(0));
+    assert!(BpfHelper::RedirectMap.supports_local_helper_map_fd(0));
+    assert_eq!(BpfHelper::RedirectMap.helper_map_arg_kind(0), None);
 }
 
 #[test]

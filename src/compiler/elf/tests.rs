@@ -507,6 +507,16 @@ fn test_program_type_metadata_for_cgroup_device() {
 }
 
 #[test]
+fn test_bpf_map_type_constants_match_kernel_uapi() {
+    assert_eq!(BpfMapType::DevMap as u32, 14);
+    assert_eq!(BpfMapType::SockMap as u32, 15);
+    assert_eq!(BpfMapType::CpuMap as u32, 16);
+    assert_eq!(BpfMapType::XskMap as u32, 17);
+    assert_eq!(BpfMapType::SockHash as u32, 18);
+    assert_eq!(BpfMapType::DevMapHash as u32, 25);
+}
+
+#[test]
 fn test_program_type_metadata_for_sock_ops() {
     let info = EbpfProgramType::SockOps.info();
     assert_eq!(info.canonical_prefix, "sock_ops");
@@ -874,6 +884,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         Some("helper 'bpf_redirect' is only valid in xdp and tc programs".to_string())
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::RedirectMap),
+        Some("helper 'bpf_redirect_map' is only valid in xdp programs".to_string())
+    );
+    assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::RedirectPeer),
         Some("helper 'bpf_redirect_peer' is only valid in tc programs".to_string())
     );
@@ -1088,6 +1102,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::SkSkb.helper_call_error(BpfHelper::SkRedirectMap),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::RedirectMap),
         None
     );
     assert_eq!(

@@ -333,6 +333,14 @@ pub(crate) fn infer_instruction_def_type(
             true,
         )),
         MirInst::LoadMapFd { dst, map } => match map.kind {
+            MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap => Some((
+                *dst,
+                MirType::MapRef {
+                    key_ty: Box::new(MirType::U32),
+                    val_ty: Box::new(MirType::Unknown),
+                },
+                true,
+            )),
             MapKind::SockMap => Some((
                 *dst,
                 MirType::MapRef {

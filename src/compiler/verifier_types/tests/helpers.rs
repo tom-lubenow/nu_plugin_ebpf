@@ -1301,6 +1301,86 @@ fn test_verify_mir_for_program_socket_map_helpers_accept_supported_programs() {
 }
 
 #[test]
+fn test_verify_mir_for_program_redirect_map_helper_rejects_invalid_programs() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_redirect_map".to_string(),
+            kind: MapKind::DevMap,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RedirectMap as u32,
+            args: vec![MirValue::VReg(map), MirValue::Const(0), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        map,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::U32),
+            val_ty: Box::new(MirType::Unknown),
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Kprobe.info())
+        .expect_err("expected redirect_map helper program-surface error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect_map' is only valid in xdp programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_program_redirect_map_helper_accepts_xdp() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_redirect_map".to_string(),
+            kind: MapKind::DevMapHash,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RedirectMap as u32,
+            args: vec![MirValue::VReg(map), MirValue::Const(7), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        map,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::U32),
+            val_ty: Box::new(MirType::Unknown),
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect("expected redirect_map helper in xdp program");
+}
+
+#[test]
 fn test_verify_mir_for_program_skb_packet_edit_helpers_reject_invalid_programs() {
     for helper in [
         BpfHelper::SkbStoreBytes,

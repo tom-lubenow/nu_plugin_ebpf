@@ -255,6 +255,9 @@ impl<'a> TypeInference<'a> {
             MirInst::LoadMapFd { dst, map } => {
                 let dst_ty = self.vreg_type(*dst);
                 let (key_ty, val_ty) = match map.kind {
+                    MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap => {
+                        (HMType::U32, HMType::Unknown)
+                    }
                     MapKind::SockMap | MapKind::ProgArray | MapKind::PerfEventArray => {
                         (HMType::U32, HMType::U32)
                     }
@@ -450,6 +453,10 @@ impl<'a> TypeInference<'a> {
         };
 
         let map_ty = match helper {
+            BpfHelper::RedirectMap => HMType::MapRef {
+                key_ty: Box::new(HMType::U32),
+                val_ty: Box::new(HMType::Unknown),
+            },
             BpfHelper::SkRedirectMap | BpfHelper::SockMapUpdate | BpfHelper::MsgRedirectMap => {
                 HMType::MapRef {
                     key_ty: Box::new(HMType::U32),

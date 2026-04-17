@@ -280,6 +280,14 @@ impl BpfHelper {
             },
         ];
 
+        const REDIRECT_MAP_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper redirect_map map",
+            allowed: STACK_ONLY,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
         const SOCK_MAP_UPDATE_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -1047,6 +1055,11 @@ impl BpfHelper {
             },
             BpfHelper::SkRedirectMap => HelperSemantics {
                 ptr_arg_rules: SK_REDIRECT_MAP_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::RedirectMap => HelperSemantics {
+                ptr_arg_rules: REDIRECT_MAP_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
+use crate::compiler::MapRef;
 
 #[test]
 fn test_subfn_polymorphic_id() {
@@ -1474,6 +1475,66 @@ fn test_infer_socket_map_helpers_in_supported_programs() {
             .expect("expected socket-map helper to infer in supported program");
         assert_eq!(types.get(&dst), Some(&MirType::I64));
     }
+}
+
+#[test]
+fn test_type_error_redirect_map_helper_rejects_invalid_programs() {
+    let mut func = make_test_function();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_redirect_map".to_string(),
+            kind: MapKind::DevMap,
+        },
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RedirectMap as u32,
+        args: vec![MirValue::VReg(map), MirValue::Const(0), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected redirect_map helper to be rejected outside xdp");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect_map' is only valid in xdp programs")
+    }));
+}
+
+#[test]
+fn test_infer_redirect_map_helper_in_xdp_programs() {
+    let mut func = make_test_function();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_redirect_map".to_string(),
+            kind: MapKind::DevMapHash,
+        },
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RedirectMap as u32,
+        args: vec![MirValue::VReg(map), MirValue::Const(7), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected redirect_map helper to infer in xdp");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+    assert!(matches!(types.get(&map), Some(MirType::MapRef { .. })));
 }
 
 #[test]

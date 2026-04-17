@@ -221,6 +221,10 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
                 allowed_programs_label: "xdp",
             }
         }
+        BpfHelper::RedirectMap => HelperProgramSurfaceSpec {
+            allowed_programs: XDP_PROGRAMS,
+            allowed_programs_label: "xdp",
+        },
         BpfHelper::SkbChangeTail
         | BpfHelper::SkbStoreBytes
         | BpfHelper::L3CsumReplace

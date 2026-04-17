@@ -92,6 +92,8 @@ pub enum BpfHelper {
     XdpAdjustHead = 44,
     /// long bpf_redirect(ifindex, flags)
     Redirect = 23,
+    /// long bpf_redirect_map(map, key, flags)
+    RedirectMap = 51,
     /// long bpf_redirect_neigh(ifindex, params, plen, flags)
     RedirectNeigh = 152,
     /// long bpf_redirect_peer(ifindex, flags)
@@ -276,6 +278,7 @@ impl BpfHelper {
             BpfHelper::SkbChangeHead => "bpf_skb_change_head",
             BpfHelper::XdpAdjustHead => "bpf_xdp_adjust_head",
             BpfHelper::Redirect => "bpf_redirect",
+            BpfHelper::RedirectMap => "bpf_redirect_map",
             BpfHelper::RedirectNeigh => "bpf_redirect_neigh",
             BpfHelper::RedirectPeer => "bpf_redirect_peer",
             BpfHelper::XdpAdjustMeta => "bpf_xdp_adjust_meta",
@@ -386,6 +389,7 @@ impl BpfHelper {
             "skb_change_head" => Some(Self::SkbChangeHead),
             "xdp_adjust_head" => Some(Self::XdpAdjustHead),
             "redirect" => Some(Self::Redirect),
+            "redirect_map" => Some(Self::RedirectMap),
             "redirect_neigh" => Some(Self::RedirectNeigh),
             "redirect_peer" => Some(Self::RedirectPeer),
             "xdp_adjust_meta" => Some(Self::XdpAdjustMeta),
@@ -495,7 +499,8 @@ impl BpfHelper {
             | Self::RingbufQuery
             | Self::MapPushElem
             | Self::MapPopElem
-            | Self::MapPeekElem => Some(0),
+            | Self::MapPeekElem
+            | Self::RedirectMap => Some(0),
             Self::SkRedirectMap
             | Self::SockMapUpdate
             | Self::MsgRedirectMap
@@ -506,12 +511,24 @@ impl BpfHelper {
         }
     }
 
+    pub const fn helper_explicit_map_kind_family(
+        self,
+        arg_idx: usize,
+    ) -> Option<HelperExplicitMapKindFamily> {
+        match self.local_helper_map_arg_index() {
+            Some(idx) if idx == arg_idx => match self {
+                Self::MapPushElem | Self::MapPopElem | Self::MapPeekElem => {
+                    Some(HelperExplicitMapKindFamily::QueueStack)
+                }
+                Self::RedirectMap => Some(HelperExplicitMapKindFamily::RedirectMap),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     pub const fn helper_requires_explicit_map_kind(self, arg_idx: usize) -> bool {
-        matches!(self.local_helper_map_arg_index(), Some(idx) if idx == arg_idx)
-            && matches!(
-                self,
-                Self::MapPushElem | Self::MapPopElem | Self::MapPeekElem
-            )
+        self.helper_explicit_map_kind_family(arg_idx).is_some()
     }
 
     pub const fn invalidates_packet_pointers(self) -> bool {
@@ -540,6 +557,12 @@ impl BpfHelper {
 pub enum HelperArgKind {
     Scalar,
     Pointer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HelperExplicitMapKindFamily {
+    QueueStack,
+    RedirectMap,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

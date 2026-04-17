@@ -187,6 +187,12 @@ impl<'a> HirToMirLowering<'a> {
             "lru-per-cpu-hash" | "lru-percpu-hash" | "lru_per_cpu_hash" | "lrupercpuhash" => {
                 Some(MapKind::LruPerCpuHash)
             }
+            "devmap" | "dev-map" | "dev_map" => Some(MapKind::DevMap),
+            "devmap-hash" | "devmap_hash" | "devmaphash" | "dev-map-hash" | "dev_map_hash" => {
+                Some(MapKind::DevMapHash)
+            }
+            "cpumap" | "cpu-map" | "cpu_map" => Some(MapKind::CpuMap),
+            "xskmap" | "xsk-map" | "xsk_map" => Some(MapKind::XskMap),
             "sock-map" | "sock_map" | "sockmap" => Some(MapKind::SockMap),
             "sock-hash" | "sock_hash" | "sockhash" => Some(MapKind::SockHash),
             _ => None,
@@ -200,7 +206,7 @@ impl<'a> HirToMirLowering<'a> {
         let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
         Self::parse_generic_map_kind(&kind).ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must be one of: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, sockmap, sockhash"
+                "{context} --kind must be one of: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, devmap, devmap-hash, cpumap, xskmap, sockmap, sockhash"
             ))
         })
     }
@@ -224,6 +230,31 @@ impl<'a> HirToMirLowering<'a> {
             ))),
             None => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind must be one of: queue, stack"
+            ))),
+        }
+    }
+
+    pub(super) fn required_redirect_map_kind_arg(
+        &self,
+        context: &str,
+    ) -> Result<MapKind, CompileError> {
+        let Some((_, reg)) = self.named_args.get("kind") else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} requires --kind devmap, --kind devmap-hash, --kind cpumap, or --kind xskmap"
+            )));
+        };
+        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+        match Self::parse_generic_map_kind(&kind) {
+            Some(MapKind::DevMap) => Ok(MapKind::DevMap),
+            Some(MapKind::DevMapHash) => Ok(MapKind::DevMapHash),
+            Some(MapKind::CpuMap) => Ok(MapKind::CpuMap),
+            Some(MapKind::XskMap) => Ok(MapKind::XskMap),
+            Some(other) => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} requires --kind devmap, --kind devmap-hash, --kind cpumap, or --kind xskmap, got {:?}",
+                other
+            ))),
+            None => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind must be one of: devmap, devmap-hash, cpumap, xskmap"
             ))),
         }
     }

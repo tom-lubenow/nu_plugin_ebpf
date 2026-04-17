@@ -281,6 +281,10 @@ impl<'a> MirToEbpfCompiler<'a> {
                 | MapKind::PerfEventArray
                 | MapKind::Queue
                 | MapKind::Stack
+                | MapKind::DevMap
+                | MapKind::DevMapHash
+                | MapKind::CpuMap
+                | MapKind::XskMap
                 | MapKind::SockMap
                 | MapKind::SockHash
                 | MapKind::RingBuf
@@ -396,6 +400,10 @@ impl<'a> MirToEbpfCompiler<'a> {
                 };
                 self.register_generic_map_spec(map, 0, Some(value_size))?;
             }
+            MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap => {
+                self.register_generic_map_spec(map, 4, Some(8))?;
+            }
+            MapKind::XskMap => self.register_generic_map_spec(map, 4, Some(4))?,
             MapKind::RingBuf => self.register_generic_map_spec(map, 0, Some(0))?,
             MapKind::StackTrace => self.register_generic_map_spec(map, 4, Some(127 * 8))?,
             MapKind::PerfEventArray | MapKind::ProgArray => {
@@ -563,6 +571,10 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapKind::Stack => BpfMapDef::stack(spec.value_size, max_entries),
             MapKind::RingBuf => BpfMapDef::ring_buffer(256 * 1024),
             MapKind::StackTrace => BpfMapDef::stack_trace_map(),
+            MapKind::DevMap => BpfMapDef::dev_map(max_entries),
+            MapKind::DevMapHash => BpfMapDef::dev_map_hash(spec.key_size, max_entries),
+            MapKind::CpuMap => BpfMapDef::cpu_map(max_entries),
+            MapKind::XskMap => BpfMapDef::xsk_map(max_entries),
             MapKind::SockMap => BpfMapDef::sock_map(max_entries),
             MapKind::SockHash => BpfMapDef::sock_hash(spec.key_size, max_entries),
             MapKind::ProgArray => BpfMapDef::prog_array(1024),

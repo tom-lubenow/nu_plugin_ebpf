@@ -128,7 +128,7 @@ mod linux_tests {
         let result = parse_program_spec("xdp:lo");
 
         match result {
-            Ok(ProgramSpec::Xdp { interface }) => assert_eq!(interface, "lo"),
+            Ok(ProgramSpec::Xdp { target }) => assert_eq!(target.interface, "lo"),
             other => panic!("Unexpected result: {:?}", other),
         }
     }

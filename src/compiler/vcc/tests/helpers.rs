@@ -1742,6 +1742,84 @@ fn test_verify_mir_helper_socket_map_helpers_accept_supported_contexts() {
 }
 
 #[test]
+fn test_verify_mir_helper_redirect_map_rejects_invalid_programs() {
+    let (mut func, entry) = new_mir_function();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_redirect_map".to_string(),
+            kind: MapKind::DevMap,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RedirectMap as u32,
+            args: vec![MirValue::VReg(map), MirValue::Const(0), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        map,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::U32),
+            val_ty: Box::new(MirType::Unknown),
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected redirect_map helper program-surface error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect_map' is only valid in xdp programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_helper_redirect_map_accepts_xdp() {
+    let (mut func, entry) = new_mir_function();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_redirect_map".to_string(),
+            kind: MapKind::DevMapHash,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RedirectMap as u32,
+            args: vec![MirValue::VReg(map), MirValue::Const(7), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        map,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::U32),
+            val_ty: Box::new(MirType::Unknown),
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected redirect_map helper to verify in xdp");
+}
+
+#[test]
 fn test_verify_mir_helper_redirect_neigh_requires_zero_flags() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();

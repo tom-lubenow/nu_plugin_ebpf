@@ -1,6 +1,8 @@
 use super::*;
 use crate::compiler::ProgramIntrinsic;
-use crate::compiler::instruction::{BpfHelper, HelperRetKind, HelperSignature, KfuncSignature};
+use crate::compiler::instruction::{
+    BpfHelper, HelperExplicitMapKindFamily, HelperRetKind, HelperSignature, KfuncSignature,
+};
 use crate::compiler::mir::{
     AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, STRING_COUNTER_MAP_NAME,
 };
@@ -1438,14 +1440,22 @@ impl<'a> HirToMirLowering<'a> {
         };
         let map_kind = if let Some(kind) = helper.helper_map_arg_kind(arg_idx) {
             kind
-        } else if helper.helper_requires_explicit_map_kind(arg_idx) {
-            self.required_queue_stack_map_kind_arg("helper-call")?
         } else {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "internal error: helper '{}' arg{} is not a map operand",
-                helper.name(),
-                arg_idx
-            )));
+            match helper.helper_explicit_map_kind_family(arg_idx) {
+                Some(HelperExplicitMapKindFamily::QueueStack) => {
+                    self.required_queue_stack_map_kind_arg("helper-call")?
+                }
+                Some(HelperExplicitMapKindFamily::RedirectMap) => {
+                    self.required_redirect_map_kind_arg("helper-call")?
+                }
+                None => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "internal error: helper '{}' arg{} is not a map operand",
+                        helper.name(),
+                        arg_idx
+                    )));
+                }
+            }
         };
         let map_vreg = self.func.alloc_vreg();
         self.emit(MirInst::LoadMapFd {
@@ -1461,6 +1471,17 @@ impl<'a> HirToMirLowering<'a> {
                 MirType::MapRef {
                     key_ty: Box::new(MirType::U32),
                     val_ty: Box::new(MirType::U32),
+                },
+            );
+        } else if matches!(
+            map_kind,
+            MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap
+        ) {
+            self.vreg_type_hints.insert(
+                map_vreg,
+                MirType::MapRef {
+                    key_ty: Box::new(MirType::U32),
+                    val_ty: Box::new(MirType::Unknown),
                 },
             );
         } else if matches!(map_kind, MapKind::Queue | MapKind::Stack) {

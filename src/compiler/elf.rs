@@ -83,14 +83,18 @@ pub enum BpfMapType {
     PerfEventArray = 4,
     PerCpuHash = 5,
     PerCpuArray = 6,
+    StackTrace = 7,
     LruHash = 9,
     LruPerCpuHash = 10,
     LpmTrie = 11,
-    SockMap = 14,
+    DevMap = 14,
+    SockMap = 15,
+    CpuMap = 16,
+    XskMap = 17,
     SockHash = 18,
     Queue = 22,
     Stack = 23,
-    StackTrace = 7,
+    DevMapHash = 25,
     RingBuf = 27,
 }
 
@@ -219,6 +223,54 @@ impl BpfMapDef {
         Self {
             map_type: BpfMapType::SockHash as u32,
             key_size,
+            value_size: 4,
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a generic devmap definition.
+    pub fn dev_map(max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::DevMap as u32,
+            key_size: 4,
+            value_size: 8,
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a generic devmap hash definition.
+    pub fn dev_map_hash(key_size: u32, max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::DevMapHash as u32,
+            key_size,
+            value_size: 8,
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a generic cpumap definition.
+    pub fn cpu_map(max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::CpuMap as u32,
+            key_size: 4,
+            value_size: 8,
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a generic xskmap definition.
+    pub fn xsk_map(max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::XskMap as u32,
+            key_size: 4,
             value_size: 4,
             max_entries,
             map_flags: 0,
