@@ -1,6 +1,6 @@
 use super::{CtxWriteTarget, EbpfProgramType};
 use crate::compiler::mir::{CtxField, CtxStoreTarget};
-use crate::program_spec::{CgroupSockAddrTarget, ProgramSpec, SockOpsTarget};
+use crate::program_spec::ProgramSpec;
 
 fn word_index(field_name: &str, index: usize) -> Result<u8, String> {
     let index = u8::try_from(index)
@@ -32,12 +32,27 @@ enum ContextWriteAvailability {
     CgroupSockoptSetOnly,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProgramCtxWriteSurfaceFamilyRequirement {
+    SkbContext,
+    CgroupSysctl,
+    SockOps,
+    CgroupSockopt,
+    CgroupSockAddr,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ContextWriteSurfaceSpec {
     field_name: &'static str,
     field: Option<CtxField>,
     target: ContextWriteTargetSpec,
     availability: Option<ContextWriteAvailability>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ProgramCtxWriteSurfaceFamilySpec {
+    requirement: ProgramCtxWriteSurfaceFamilyRequirement,
+    surfaces: &'static [ContextWriteSurfaceSpec],
 }
 
 impl ContextStoreTargetSpec {
@@ -124,7 +139,7 @@ impl ContextWriteAvailability {
 }
 
 impl ContextWriteSurfaceSpec {
-    fn store_field(
+    const fn store_field(
         field_name: &'static str,
         field: CtxField,
         target: ContextStoreTargetSpec,
@@ -137,7 +152,7 @@ impl ContextWriteSurfaceSpec {
         }
     }
 
-    fn named_store(field_name: &'static str, target: ContextStoreTargetSpec) -> Self {
+    const fn named_store(field_name: &'static str, target: ContextStoreTargetSpec) -> Self {
         Self {
             field_name,
             field: None,
@@ -146,7 +161,7 @@ impl ContextWriteSurfaceSpec {
         }
     }
 
-    fn special_write(field_name: &'static str, target: ContextWriteTargetSpec) -> Self {
+    const fn special_write(field_name: &'static str, target: ContextWriteTargetSpec) -> Self {
         Self {
             field_name,
             field: None,
@@ -155,7 +170,7 @@ impl ContextWriteSurfaceSpec {
         }
     }
 
-    fn with_availability(mut self, availability: ContextWriteAvailability) -> Self {
+    const fn with_availability(mut self, availability: ContextWriteAvailability) -> Self {
         self.availability = Some(availability);
         self
     }
@@ -217,38 +232,135 @@ impl ContextWriteSurfaceSpec {
     }
 }
 
-fn find_ctx_write_surface<const N: usize>(
-    field_name: &str,
-    surfaces: [ContextWriteSurfaceSpec; N],
-) -> Option<ContextWriteSurfaceSpec> {
-    surfaces
-        .into_iter()
-        .find(|surface| surface.matches_field_name(field_name))
+impl ProgramCtxWriteSurfaceFamilyRequirement {
+    fn matches_spec(&self, spec: &ProgramSpec) -> bool {
+        match self {
+            Self::SkbContext => spec.program_type().supports_skb_ctx_fields(),
+            Self::CgroupSysctl => matches!(spec, ProgramSpec::CgroupSysctl { .. }),
+            Self::SockOps => matches!(spec, ProgramSpec::SockOps { .. }),
+            Self::CgroupSockopt => matches!(spec, ProgramSpec::CgroupSockopt { .. }),
+            Self::CgroupSockAddr => matches!(spec, ProgramSpec::CgroupSockAddr { .. }),
+        }
+    }
 }
 
-fn find_ctx_store_surface<const N: usize>(
-    target: &CtxStoreTarget,
-    surfaces: [ContextWriteSurfaceSpec; N],
-) -> Option<ContextWriteSurfaceSpec> {
-    surfaces
-        .into_iter()
-        .find(|surface| surface.matches_store_target(target))
-}
-
-fn skb_tstamp_ctx_write_surface() -> ContextWriteSurfaceSpec {
-    ContextWriteSurfaceSpec::store_field(
+const SKB_TSTAMP_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
+    &[ContextWriteSurfaceSpec::store_field(
         "tstamp",
         CtxField::Tstamp,
         ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbTstamp),
-    )
-}
+    )];
 
-fn cgroup_sysctl_file_pos_ctx_write_surface() -> ContextWriteSurfaceSpec {
-    ContextWriteSurfaceSpec::store_field(
+const CGROUP_SYSCTL_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
+    &[ContextWriteSurfaceSpec::store_field(
         "file_pos",
         CtxField::SysctlFilePos,
         ContextStoreTargetSpec::Fixed(CtxStoreTarget::SysctlFilePos),
+    )];
+
+const SOCK_OPS_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
+    ContextWriteSurfaceSpec::named_store(
+        "reply",
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SockOpsReply),
+    ),
+    ContextWriteSurfaceSpec::named_store("replylong", ContextStoreTargetSpec::SockOpsReplyLongWord),
+];
+
+const CGROUP_SOCKOPT_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
+    ContextWriteSurfaceSpec::store_field(
+        "level",
+        CtxField::SockoptLevel,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SockoptLevel),
     )
+    .with_availability(ContextWriteAvailability::CgroupSockoptSetOnly),
+    ContextWriteSurfaceSpec::store_field(
+        "optname",
+        CtxField::SockoptOptname,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SockoptOptname),
+    )
+    .with_availability(ContextWriteAvailability::CgroupSockoptSetOnly),
+    ContextWriteSurfaceSpec::store_field(
+        "optlen",
+        CtxField::SockoptOptlen,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SockoptOptlen),
+    ),
+    ContextWriteSurfaceSpec::store_field(
+        "sockopt_retval",
+        CtxField::SockoptRetval,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SockoptRetval),
+    ),
+    ContextWriteSurfaceSpec::special_write("optval", ContextWriteTargetSpec::SockoptOptvalByte),
+];
+
+const CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
+    ContextWriteSurfaceSpec::store_field(
+        "user_ip4",
+        CtxField::UserIp4,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::CgroupSockAddrUserIp4),
+    ),
+    ContextWriteSurfaceSpec::store_field(
+        "user_ip6",
+        CtxField::UserIp6,
+        ContextStoreTargetSpec::CgroupSockAddrUserIp6Word,
+    ),
+    ContextWriteSurfaceSpec::store_field(
+        "user_port",
+        CtxField::UserPort,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::CgroupSockAddrUserPort),
+    ),
+    ContextWriteSurfaceSpec::store_field(
+        "msg_src_ip4",
+        CtxField::MsgSrcIp4,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::CgroupSockAddrMsgSrcIp4),
+    ),
+    ContextWriteSurfaceSpec::store_field(
+        "msg_src_ip6",
+        CtxField::MsgSrcIp6,
+        ContextStoreTargetSpec::CgroupSockAddrMsgSrcIp6Word,
+    ),
+];
+
+const PROGRAM_CTX_WRITE_SURFACE_FAMILIES: &[ProgramCtxWriteSurfaceFamilySpec] = &[
+    ProgramCtxWriteSurfaceFamilySpec {
+        requirement: ProgramCtxWriteSurfaceFamilyRequirement::SkbContext,
+        surfaces: SKB_TSTAMP_CTX_WRITE_SURFACES,
+    },
+    ProgramCtxWriteSurfaceFamilySpec {
+        requirement: ProgramCtxWriteSurfaceFamilyRequirement::CgroupSysctl,
+        surfaces: CGROUP_SYSCTL_CTX_WRITE_SURFACES,
+    },
+    ProgramCtxWriteSurfaceFamilySpec {
+        requirement: ProgramCtxWriteSurfaceFamilyRequirement::SockOps,
+        surfaces: SOCK_OPS_CTX_WRITE_SURFACES,
+    },
+    ProgramCtxWriteSurfaceFamilySpec {
+        requirement: ProgramCtxWriteSurfaceFamilyRequirement::CgroupSockopt,
+        surfaces: CGROUP_SOCKOPT_CTX_WRITE_SURFACES,
+    },
+    ProgramCtxWriteSurfaceFamilySpec {
+        requirement: ProgramCtxWriteSurfaceFamilyRequirement::CgroupSockAddr,
+        surfaces: CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES,
+    },
+];
+
+fn find_ctx_write_surface(
+    field_name: &str,
+    surfaces: &[ContextWriteSurfaceSpec],
+) -> Option<ContextWriteSurfaceSpec> {
+    surfaces
+        .iter()
+        .find(|surface| surface.matches_field_name(field_name))
+        .cloned()
+}
+
+fn find_ctx_store_surface(
+    target: &CtxStoreTarget,
+    surfaces: &[ContextWriteSurfaceSpec],
+) -> Option<ContextWriteSurfaceSpec> {
+    surfaces
+        .iter()
+        .find(|surface| surface.matches_store_target(target))
+        .cloned()
 }
 
 impl CtxStoreTarget {
@@ -285,134 +397,22 @@ impl EbpfProgramType {
     }
 }
 
-impl SockOpsTarget {
-    fn ctx_write_surfaces(&self) -> [ContextWriteSurfaceSpec; 2] {
-        [
-            ContextWriteSurfaceSpec::named_store(
-                "reply",
-                ContextStoreTargetSpec::Fixed(CtxStoreTarget::SockOpsReply),
-            ),
-            ContextWriteSurfaceSpec::named_store(
-                "replylong",
-                ContextStoreTargetSpec::SockOpsReplyLongWord,
-            ),
-        ]
-    }
-}
-
-impl CgroupSockAddrTarget {
-    fn ctx_write_surfaces(&self) -> [ContextWriteSurfaceSpec; 5] {
-        [
-            ContextWriteSurfaceSpec::store_field(
-                "user_ip4",
-                CtxField::UserIp4,
-                ContextStoreTargetSpec::Fixed(CtxStoreTarget::CgroupSockAddrUserIp4),
-            ),
-            ContextWriteSurfaceSpec::store_field(
-                "user_ip6",
-                CtxField::UserIp6,
-                ContextStoreTargetSpec::CgroupSockAddrUserIp6Word,
-            ),
-            ContextWriteSurfaceSpec::store_field(
-                "user_port",
-                CtxField::UserPort,
-                ContextStoreTargetSpec::Fixed(CtxStoreTarget::CgroupSockAddrUserPort),
-            ),
-            ContextWriteSurfaceSpec::store_field(
-                "msg_src_ip4",
-                CtxField::MsgSrcIp4,
-                ContextStoreTargetSpec::Fixed(CtxStoreTarget::CgroupSockAddrMsgSrcIp4),
-            ),
-            ContextWriteSurfaceSpec::store_field(
-                "msg_src_ip6",
-                CtxField::MsgSrcIp6,
-                ContextStoreTargetSpec::CgroupSockAddrMsgSrcIp6Word,
-            ),
-        ]
-    }
-}
-
-fn cgroup_sockopt_ctx_write_surfaces() -> [ContextWriteSurfaceSpec; 5] {
-    [
-        ContextWriteSurfaceSpec::store_field(
-            "level",
-            CtxField::SockoptLevel,
-            ContextStoreTargetSpec::Fixed(CtxStoreTarget::SockoptLevel),
-        )
-        .with_availability(ContextWriteAvailability::CgroupSockoptSetOnly),
-        ContextWriteSurfaceSpec::store_field(
-            "optname",
-            CtxField::SockoptOptname,
-            ContextStoreTargetSpec::Fixed(CtxStoreTarget::SockoptOptname),
-        )
-        .with_availability(ContextWriteAvailability::CgroupSockoptSetOnly),
-        ContextWriteSurfaceSpec::store_field(
-            "optlen",
-            CtxField::SockoptOptlen,
-            ContextStoreTargetSpec::Fixed(CtxStoreTarget::SockoptOptlen),
-        ),
-        ContextWriteSurfaceSpec::store_field(
-            "sockopt_retval",
-            CtxField::SockoptRetval,
-            ContextStoreTargetSpec::Fixed(CtxStoreTarget::SockoptRetval),
-        ),
-        ContextWriteSurfaceSpec::special_write("optval", ContextWriteTargetSpec::SockoptOptvalByte),
-    ]
-}
-
 impl ProgramSpec {
     fn ctx_write_surface_for_name(&self, field_name: &str) -> Option<ContextWriteSurfaceSpec> {
-        if self.program_type().supports_skb_ctx_fields() {
-            if let Some(surface) =
-                find_ctx_write_surface(field_name, [skb_tstamp_ctx_write_surface()])
-            {
-                return Some(surface);
-            }
-        }
-
-        match self {
-            ProgramSpec::CgroupSysctl { .. } => {
-                find_ctx_write_surface(field_name, [cgroup_sysctl_file_pos_ctx_write_surface()])
-            }
-            ProgramSpec::SockOps { target } => {
-                find_ctx_write_surface(field_name, target.ctx_write_surfaces())
-            }
-            ProgramSpec::CgroupSockopt { .. } => {
-                find_ctx_write_surface(field_name, cgroup_sockopt_ctx_write_surfaces())
-            }
-            ProgramSpec::CgroupSockAddr { target } => {
-                find_ctx_write_surface(field_name, target.ctx_write_surfaces())
-            }
-            _ => None,
-        }
+        PROGRAM_CTX_WRITE_SURFACE_FAMILIES
+            .iter()
+            .filter(|family| family.requirement.matches_spec(self))
+            .find_map(|family| find_ctx_write_surface(field_name, family.surfaces))
     }
 
     fn ctx_write_surface_for_store_target(
         &self,
         target: &CtxStoreTarget,
     ) -> Option<ContextWriteSurfaceSpec> {
-        if self.program_type().supports_skb_ctx_fields() {
-            if let Some(surface) = find_ctx_store_surface(target, [skb_tstamp_ctx_write_surface()])
-            {
-                return Some(surface);
-            }
-        }
-
-        match self {
-            ProgramSpec::CgroupSysctl { .. } => {
-                find_ctx_store_surface(target, [cgroup_sysctl_file_pos_ctx_write_surface()])
-            }
-            ProgramSpec::SockOps { target: sock_ops } => {
-                find_ctx_store_surface(target, sock_ops.ctx_write_surfaces())
-            }
-            ProgramSpec::CgroupSockopt { .. } => {
-                find_ctx_store_surface(target, cgroup_sockopt_ctx_write_surfaces())
-            }
-            ProgramSpec::CgroupSockAddr { target: sock_addr } => {
-                find_ctx_store_surface(target, sock_addr.ctx_write_surfaces())
-            }
-            _ => None,
-        }
+        PROGRAM_CTX_WRITE_SURFACE_FAMILIES
+            .iter()
+            .filter(|family| family.requirement.matches_spec(self))
+            .find_map(|family| find_ctx_store_surface(target, family.surfaces))
     }
 
     pub(crate) fn resolve_ctx_store_target(
