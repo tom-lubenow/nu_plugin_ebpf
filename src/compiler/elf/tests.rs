@@ -2814,6 +2814,23 @@ fn test_program_type_resolves_sock_ops_field_names() {
 }
 
 #[test]
+fn test_program_spec_tracepoint_ctx_name_resolution_uses_program_model() {
+    let spec = ProgramSpec::parse("tracepoint:syscalls/sys_enter_openat")
+        .expect("tracepoint program spec should parse");
+
+    assert_eq!(
+        spec.resolve_ctx_field_name("op")
+            .expect("tracepoint op should stay tracepoint-scoped"),
+        CtxField::TracepointField("op".to_string())
+    );
+    assert_eq!(
+        spec.resolve_ctx_field_name("arg3")
+            .expect("tracepoint arg3 should preserve builtin arg"),
+        CtxField::Arg(3)
+    );
+}
+
+#[test]
 fn test_probe_context_prefers_tracepoint_fields_over_reserved_sock_ops_names() {
     let ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "syscalls/sys_enter_openat");
 

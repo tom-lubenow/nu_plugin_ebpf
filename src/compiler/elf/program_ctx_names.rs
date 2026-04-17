@@ -9,8 +9,16 @@ struct ProgramCtxFieldAliasSurfaceSpec {
     entries: &'static [CtxFieldNameEntry],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CtxFieldNameResolutionMode {
+    Default,
+    TracepointPreserveBuiltins,
+}
+
 const XDP_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[("ifindex", CtxField::IngressIfindex)];
 const SKB_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[("ifindex", CtxField::Ifindex)];
+const TRACEPOINT_CTX_FIELD_NAME_RESOLUTION_PROGRAMS: &[EbpfProgramType] =
+    &[EbpfProgramType::Tracepoint];
 const PROGRAM_CTX_FIELD_ALIAS_SURFACES: &[ProgramCtxFieldAliasSurfaceSpec] = &[
     ProgramCtxFieldAliasSurfaceSpec {
         allowed_programs: &[EbpfProgramType::Xdp],
@@ -27,6 +35,13 @@ const PROGRAM_CTX_FIELD_ALIAS_SURFACES: &[ProgramCtxFieldAliasSurfaceSpec] = &[
         entries: SKB_CTX_FIELD_ALIAS_ENTRIES,
     },
 ];
+const PROGRAM_CTX_FIELD_NAME_RESOLUTION_SURFACES: &[(
+    &[EbpfProgramType],
+    CtxFieldNameResolutionMode,
+)] = &[(
+    TRACEPOINT_CTX_FIELD_NAME_RESOLUTION_PROGRAMS,
+    CtxFieldNameResolutionMode::TracepointPreserveBuiltins,
+)];
 const NON_TRACEPOINT_CTX_FIELD_NAME_ENTRIES: &[CtxFieldNameEntry] = &[
     ("ifindex", CtxField::Ifindex),
     ("access_type", CtxField::DeviceAccessType),
@@ -96,6 +111,13 @@ fn ctx_field_alias(program_type: EbpfProgramType, field_name: &str) -> Option<Ct
         .iter()
         .find(|surface| surface.allowed_programs.contains(&program_type))
         .and_then(|surface| find_ctx_field_name_entry(surface.entries, field_name))
+}
+
+fn ctx_field_name_resolution_mode(program_type: EbpfProgramType) -> CtxFieldNameResolutionMode {
+    PROGRAM_CTX_FIELD_NAME_RESOLUTION_SURFACES
+        .iter()
+        .find(|(allowed_programs, _)| allowed_programs.contains(&program_type))
+        .map_or(CtxFieldNameResolutionMode::Default, |(_, mode)| *mode)
 }
 
 fn generic_ctx_field_from_name(field_name: &str) -> Result<CtxField, String> {
@@ -210,15 +232,18 @@ impl EbpfProgramType {
             return Ok(field);
         }
 
-        if matches!(self, EbpfProgramType::Tracepoint) {
-            return generic_ctx_field_from_name(field_name);
-        }
+        match ctx_field_name_resolution_mode(*self) {
+            CtxFieldNameResolutionMode::Default => {
+                if let Some(field) = non_tracepoint_ctx_field_from_name(field_name) {
+                    return Ok(field);
+                }
 
-        if let Some(field) = non_tracepoint_ctx_field_from_name(field_name) {
-            return Ok(field);
+                generic_ctx_field_from_name(field_name)
+            }
+            CtxFieldNameResolutionMode::TracepointPreserveBuiltins => {
+                self.resolve_tracepoint_ctx_field_name(field_name)
+            }
         }
-
-        generic_ctx_field_from_name(field_name)
     }
 
     pub(crate) fn resolve_untyped_ctx_field_name(field_name: &str) -> Result<CtxField, String> {
@@ -243,11 +268,6 @@ impl EbpfProgramType {
 
 impl ProgramSpec {
     pub(crate) fn resolve_ctx_field_name(&self, field_name: &str) -> Result<CtxField, String> {
-        match self {
-            ProgramSpec::Tracepoint { .. } => self
-                .program_type()
-                .resolve_tracepoint_ctx_field_name(field_name),
-            _ => self.program_type().resolve_ctx_field_name(field_name),
-        }
+        self.program_type().resolve_ctx_field_name(field_name)
     }
 }
