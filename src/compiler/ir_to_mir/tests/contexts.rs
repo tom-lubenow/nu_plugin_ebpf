@@ -3027,6 +3027,37 @@ fn test_lower_tc_ctx_mark_assignment() {
 }
 
 #[test]
+fn test_lower_cgroup_skb_ctx_mark_assignment() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("mark")],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_skb ctx.mark assignment should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbMark,
+            ty: MirType::U32,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_tc_ctx_cb_assignment() {
     let hir = make_ctx_upsert_program(
         CellPath {
@@ -3051,6 +3082,68 @@ fn test_lower_tc_ctx_cb_assignment() {
         inst,
         MirInst::StoreCtxField {
             target: CtxStoreTarget::SkbCbWord(2),
+            ty: MirType::U32,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_socket_filter_ctx_cb_assignment() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("cb"), int_member(2)],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("socket_filter ctx.cb[2] assignment should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbCbWord(2),
+            ty: MirType::U32,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_sk_skb_ctx_tc_index_assignment() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("tc_index")],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_skb ctx.tc_index assignment should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbTcIndex,
             ty: MirType::U32,
             ..
         }

@@ -196,17 +196,22 @@ Context parameter syntax (recommended):
     `eth.ipv6.udp.src` reuse those same runtime steps automatically.
     IPv4/TCP options, ICMP subtype-specific body decoding, and uncommon
     IPv6 extension headers are still not modeled.
-    On `tc`, `ctx.mark`, `ctx.priority`, `ctx.tc_index`,
-    `ctx.tc_classid`, fixed `ctx.cb.N`, and `ctx.tstamp` are also
-    writable through ordinary assignment after shadowing the closure
-    parameter as mutable, for example `mut ctx = $ctx; $ctx.mark = 7`,
-    `mut ctx = $ctx; $ctx.cb.0 = 1`, or `mut ctx = $ctx;
-    $ctx.tstamp = 123`. On `cgroup_skb:...:egress`, `ctx.tstamp` is
-    also writable the same way. Other skb-backed packet programs,
-    including `cgroup_skb:...:ingress`, keep those skb metadata fields
-    read-only. When the timestamp type must also change, tc
-    additionally models `helper-call "bpf_skb_set_tstamp" $ctx TSTAMP
-    TSTAMP_TYPE`; use `0` for `BPF_SKB_TSTAMP_UNSPEC` and `1` for
+    Writable skb metadata is attach-sensitive. On `socket_filter`,
+    fixed `ctx.cb.N` is writable. On `tc`, `ctx.mark`,
+    `ctx.priority`, `ctx.tc_index`, `ctx.tc_classid`, fixed
+    `ctx.cb.N`, and `ctx.tstamp` are writable. On `cgroup_skb`,
+    `ctx.mark`, `ctx.priority`, and fixed `ctx.cb.N` are writable on
+    both directions, and `ctx.tstamp` is additionally writable on
+    `:egress`. On `sk_skb` and `sk_skb_parser`, `ctx.priority` and
+    `ctx.tc_index` are writable. These all use ordinary assignment
+    after shadowing the closure parameter as mutable, for example
+    `mut ctx = $ctx; $ctx.mark = 7`, `mut ctx = $ctx; $ctx.cb.0 = 1`,
+    `mut ctx = $ctx; $ctx.priority = 3`, `mut ctx = $ctx;
+    $ctx.tc_index = 5`, or `mut ctx = $ctx; $ctx.tstamp = 123`.
+    Other skb-backed metadata fields remain read-only on the remaining
+    hooks. When the timestamp type must also change, tc additionally
+    models `helper-call "bpf_skb_set_tstamp" $ctx TSTAMP TSTAMP_TYPE`;
+    use `0` for `BPF_SKB_TSTAMP_UNSPEC` and `1` for
     `BPF_SKB_TSTAMP_DELIVERY_MONO`.
 
   perf_event targets:

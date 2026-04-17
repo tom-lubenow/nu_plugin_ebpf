@@ -616,6 +616,23 @@ fn test_verify_mir_for_probe_context_accepts_skb_mark_store_on_tc() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_accepts_skb_mark_store_on_cgroup_skb() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbMark,
+            val: MirValue::Const(123),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+    verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect("expected skb mark store to be accepted on cgroup_skb");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_accepts_skb_cb_store_on_tc() {
     let (mut func, entry) = new_mir_function();
     func.block_mut(entry)
@@ -630,6 +647,40 @@ fn test_verify_mir_for_probe_context_accepts_skb_cb_store_on_tc() {
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "tc:lo:ingress");
     verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
         .expect("expected skb cb store to be accepted on tc");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_accepts_skb_cb_store_on_socket_filter() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbCbWord(0),
+            val: MirValue::Const(123),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect("expected skb cb store to be accepted on socket_filter");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_accepts_skb_priority_store_on_sk_skb_parser() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbPriority,
+            val: MirValue::Const(123),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap");
+    verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect("expected skb priority store to be accepted on sk_skb_parser");
 }
 
 #[test]
@@ -751,17 +802,17 @@ fn test_verify_mir_for_probe_context_rejects_skb_mark_store_on_socket_filter() {
         .expect_err("expected skb mark store to be rejected on socket_filter");
     assert!(err.iter().any(|e| {
         e.message
-            .contains("ctx.mark is only writable on tc programs")
+            .contains("ctx.mark is only writable on tc and cgroup_skb programs")
     }));
 }
 
 #[test]
-fn test_verify_mir_for_probe_context_rejects_skb_cb_store_on_socket_filter() {
+fn test_verify_mir_for_probe_context_rejects_skb_tc_index_store_on_socket_filter() {
     let (mut func, entry) = new_mir_function();
     func.block_mut(entry)
         .instructions
         .push(MirInst::StoreCtxField {
-            target: CtxStoreTarget::SkbCbWord(0),
+            target: CtxStoreTarget::SkbTcIndex,
             val: MirValue::Const(123),
             ty: MirType::U32,
         });
@@ -769,11 +820,11 @@ fn test_verify_mir_for_probe_context_rejects_skb_cb_store_on_socket_filter() {
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
     let err = verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
-        .expect_err("expected skb cb store to be rejected on socket_filter");
-    assert!(
-        err.iter()
-            .any(|e| { e.message.contains("ctx.cb is only writable on tc programs") })
-    );
+        .expect_err("expected skb tc_index store to be rejected on socket_filter");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("ctx.tc_index is only writable on tc, sk_skb, and sk_skb_parser programs")
+    }));
 }
 
 #[test]

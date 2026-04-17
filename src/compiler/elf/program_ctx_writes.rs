@@ -37,7 +37,9 @@ enum ContextWriteAvailability {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ProgramCtxWriteSurfaceFamilyRequirement {
+    SocketFilter,
     Tc,
+    SkSkb,
     CgroupSkb,
     CgroupSysctl,
     SockOps,
@@ -252,7 +254,12 @@ impl ContextWriteSurfaceSpec {
 impl ProgramCtxWriteSurfaceFamilyRequirement {
     fn matches_spec(&self, spec: &ProgramSpec) -> bool {
         match self {
+            Self::SocketFilter => matches!(spec.program_type(), EbpfProgramType::SocketFilter),
             Self::Tc => matches!(spec.program_type(), EbpfProgramType::Tc),
+            Self::SkSkb => matches!(
+                spec.program_type(),
+                EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser
+            ),
             Self::CgroupSkb => {
                 matches!(spec.attach_shape(), ProgramAttachShape::CgroupSkb { .. })
             }
@@ -273,6 +280,13 @@ impl ProgramCtxWriteSurfaceFamilyRequirement {
         }
     }
 }
+
+const SOCKET_FILTER_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
+    &[ContextWriteSurfaceSpec::store_field(
+        "cb",
+        CtxField::SkbCb,
+        ContextStoreTargetSpec::SkbCbWord,
+    )];
 
 const TC_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
     ContextWriteSurfaceSpec::store_field(
@@ -303,13 +317,38 @@ const TC_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
     ),
 ];
 
-const CGROUP_SKB_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
-    &[ContextWriteSurfaceSpec::store_field(
+const SK_SKB_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
+    ContextWriteSurfaceSpec::store_field(
+        "priority",
+        CtxField::SockPriority,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbPriority),
+    ),
+    ContextWriteSurfaceSpec::store_field(
+        "tc_index",
+        CtxField::TcIndex,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbTcIndex),
+    ),
+];
+
+const CGROUP_SKB_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
+    ContextWriteSurfaceSpec::store_field(
+        "mark",
+        CtxField::SockMark,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbMark),
+    ),
+    ContextWriteSurfaceSpec::store_field(
+        "priority",
+        CtxField::SockPriority,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbPriority),
+    ),
+    ContextWriteSurfaceSpec::store_field("cb", CtxField::SkbCb, ContextStoreTargetSpec::SkbCbWord),
+    ContextWriteSurfaceSpec::store_field(
         "tstamp",
         CtxField::Tstamp,
         ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbTstamp),
     )
-    .with_availability(ContextWriteAvailability::CgroupSkbEgressOnly)];
+    .with_availability(ContextWriteAvailability::CgroupSkbEgressOnly),
+];
 
 const CGROUP_SYSCTL_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
     &[ContextWriteSurfaceSpec::store_field(
@@ -382,8 +421,16 @@ const CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
 
 const PROGRAM_CTX_WRITE_SURFACE_FAMILIES: &[ProgramCtxWriteSurfaceFamilySpec] = &[
     ProgramCtxWriteSurfaceFamilySpec {
+        requirement: ProgramCtxWriteSurfaceFamilyRequirement::SocketFilter,
+        surfaces: SOCKET_FILTER_CTX_WRITE_SURFACES,
+    },
+    ProgramCtxWriteSurfaceFamilySpec {
         requirement: ProgramCtxWriteSurfaceFamilyRequirement::Tc,
         surfaces: TC_CTX_WRITE_SURFACES,
+    },
+    ProgramCtxWriteSurfaceFamilySpec {
+        requirement: ProgramCtxWriteSurfaceFamilyRequirement::SkSkb,
+        surfaces: SK_SKB_CTX_WRITE_SURFACES,
     },
     ProgramCtxWriteSurfaceFamilySpec {
         requirement: ProgramCtxWriteSurfaceFamilyRequirement::CgroupSkb,

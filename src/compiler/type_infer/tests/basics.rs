@@ -2602,6 +2602,23 @@ fn test_type_infer_accepts_store_skb_mark_on_tc() {
 }
 
 #[test]
+fn test_type_infer_accepts_store_skb_mark_on_cgroup_skb() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::SkbMark,
+        val: MirValue::Const(7),
+        ty: MirType::U32,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    ti.infer(&func)
+        .expect("skb mark store should type-check on cgroup_skb");
+}
+
+#[test]
 fn test_type_infer_accepts_store_skb_cb_on_tc() {
     let mut func = make_test_function();
     let block = func.block_mut(BlockId(0));
@@ -2616,6 +2633,40 @@ fn test_type_infer_accepts_store_skb_cb_on_tc() {
     let mut ti = TypeInference::new(Some(probe_ctx));
     ti.infer(&func)
         .expect("skb cb store should type-check on tc");
+}
+
+#[test]
+fn test_type_infer_accepts_store_skb_cb_on_socket_filter() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::SkbCbWord(0),
+        val: MirValue::Const(7),
+        ty: MirType::U32,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    ti.infer(&func)
+        .expect("skb cb store should type-check on socket_filter");
+}
+
+#[test]
+fn test_type_infer_accepts_store_skb_priority_on_sk_skb_parser() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::SkbPriority,
+        val: MirValue::Const(7),
+        ty: MirType::U32,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    ti.infer(&func)
+        .expect("skb priority store should type-check on sk_skb_parser");
 }
 
 #[test]
@@ -2703,16 +2754,16 @@ fn test_type_error_store_skb_mark_rejects_socket_filter_context() {
         .expect_err("skb mark store should be rejected on socket_filter");
     assert!(errs.iter().any(|e| {
         e.message
-            .contains("ctx.mark is only writable on tc programs")
+            .contains("ctx.mark is only writable on tc and cgroup_skb programs")
     }));
 }
 
 #[test]
-fn test_type_error_store_skb_cb_rejects_socket_filter_context() {
+fn test_type_error_store_skb_tc_index_rejects_socket_filter_context() {
     let mut func = make_test_function();
     let block = func.block_mut(BlockId(0));
     block.instructions.push(MirInst::StoreCtxField {
-        target: CtxStoreTarget::SkbCbWord(0),
+        target: CtxStoreTarget::SkbTcIndex,
         val: MirValue::Const(7),
         ty: MirType::U32,
     });
@@ -2722,11 +2773,11 @@ fn test_type_error_store_skb_cb_rejects_socket_filter_context() {
     let mut ti = TypeInference::new(Some(probe_ctx));
     let errs = ti
         .infer(&func)
-        .expect_err("skb cb store should be rejected on socket_filter");
-    assert!(
-        errs.iter()
-            .any(|e| { e.message.contains("ctx.cb is only writable on tc programs") })
-    );
+        .expect_err("skb tc_index store should be rejected on socket_filter");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("ctx.tc_index is only writable on tc, sk_skb, and sk_skb_parser programs")
+    }));
 }
 
 #[test]

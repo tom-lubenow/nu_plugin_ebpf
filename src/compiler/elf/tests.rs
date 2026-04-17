@@ -3061,6 +3061,20 @@ fn test_probe_context_resolves_skb_mark_store_target_on_tc() {
 }
 
 #[test]
+fn test_probe_context_resolves_skb_mark_store_target_on_cgroup_skb() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+    assert_eq!(
+        ctx.resolve_ctx_store_target("mark", None)
+            .expect("cgroup_skb mark target should resolve"),
+        CtxStoreTarget::SkbMark
+    );
+    assert!(
+        ctx.validate_ctx_store_target(&CtxStoreTarget::SkbMark)
+            .is_ok()
+    );
+}
+
+#[test]
 fn test_probe_context_resolves_skb_cb_store_target_on_tc() {
     let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     assert_eq!(
@@ -3070,6 +3084,49 @@ fn test_probe_context_resolves_skb_cb_store_target_on_tc() {
     );
     assert!(
         ctx.validate_ctx_store_target(&CtxStoreTarget::SkbCbWord(2))
+            .is_ok()
+    );
+}
+
+#[test]
+fn test_probe_context_resolves_skb_cb_store_target_on_socket_filter() {
+    let ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    assert_eq!(
+        ctx.resolve_ctx_store_target("cb", Some(2))
+            .expect("socket_filter cb target should resolve"),
+        CtxStoreTarget::SkbCbWord(2)
+    );
+    assert!(
+        ctx.validate_ctx_store_target(&CtxStoreTarget::SkbCbWord(2))
+            .is_ok()
+    );
+}
+
+#[test]
+fn test_probe_context_resolves_skb_priority_and_tc_index_store_targets_on_sk_skb_programs() {
+    let sk_skb = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+    assert_eq!(
+        sk_skb
+            .resolve_ctx_store_target("tc_index", None)
+            .expect("sk_skb tc_index target should resolve"),
+        CtxStoreTarget::SkbTcIndex
+    );
+    assert!(
+        sk_skb
+            .validate_ctx_store_target(&CtxStoreTarget::SkbTcIndex)
+            .is_ok()
+    );
+
+    let sk_skb_parser = ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap");
+    assert_eq!(
+        sk_skb_parser
+            .resolve_ctx_store_target("priority", None)
+            .expect("sk_skb_parser priority target should resolve"),
+        CtxStoreTarget::SkbPriority
+    );
+    assert!(
+        sk_skb_parser
+            .validate_ctx_store_target(&CtxStoreTarget::SkbPriority)
             .is_ok()
     );
 }
@@ -3132,20 +3189,17 @@ fn test_probe_context_rejects_skb_mark_store_target_on_socket_filter() {
         .expect_err("skb mark store target should be rejected outside tc");
     assert!(
         err.to_string()
-            .contains("ctx.mark is only writable on tc programs")
+            .contains("ctx.mark is only writable on tc and cgroup_skb programs")
     );
 }
 
 #[test]
-fn test_probe_context_rejects_skb_cb_store_target_on_socket_filter() {
+fn test_probe_context_rejects_skb_cb_store_target_without_index_on_socket_filter() {
     let ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
     let err = ctx
-        .validate_ctx_store_target(&CtxStoreTarget::SkbCbWord(0))
-        .expect_err("skb cb store target should be rejected on socket_filter");
-    assert!(
-        err.to_string()
-            .contains("ctx.cb is only writable on tc programs")
-    );
+        .resolve_ctx_store_target("cb", None)
+        .expect_err("skb cb store target without index should be rejected");
+    assert!(err.contains("requires a fixed index"));
 }
 
 #[test]

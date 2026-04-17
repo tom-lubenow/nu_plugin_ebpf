@@ -920,7 +920,7 @@ impl CtxStoreTarget {
             | CtxStoreTarget::SkbCbWord(_)
             | CtxStoreTarget::SkbTcClassid => {
                 format!(
-                    "writable tc skb scalar fields require a u32 store, got {:?}",
+                    "writable skb metadata fields require a u32 store, got {:?}",
                     actual
                 )
             }
@@ -958,10 +958,16 @@ impl CtxStoreTarget {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
                 "writable sock_ops reply fields are only supported on sock_ops programs"
             }
-            CtxStoreTarget::SkbMark => "ctx.mark is only writable on tc programs",
-            CtxStoreTarget::SkbPriority => "ctx.priority is only writable on tc programs",
-            CtxStoreTarget::SkbTcIndex => "ctx.tc_index is only writable on tc programs",
-            CtxStoreTarget::SkbCbWord(_) => "ctx.cb is only writable on tc programs",
+            CtxStoreTarget::SkbMark => "ctx.mark is only writable on tc and cgroup_skb programs",
+            CtxStoreTarget::SkbPriority => {
+                "ctx.priority is only writable on tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
+            }
+            CtxStoreTarget::SkbTcIndex => {
+                "ctx.tc_index is only writable on tc, sk_skb, and sk_skb_parser programs"
+            }
+            CtxStoreTarget::SkbCbWord(_) => {
+                "ctx.cb is only writable on socket_filter, tc, and cgroup_skb programs"
+            }
             CtxStoreTarget::SkbTcClassid => "ctx.tc_classid is only writable on tc programs",
             CtxStoreTarget::SkbTstamp => {
                 "ctx.tstamp is only writable on tc and cgroup_skb:egress programs"
