@@ -1,5 +1,7 @@
 use super::{CtxField, EbpfProgramType};
-use crate::program_spec::{ProgramAttachAddressFamily, ProgramAttachShape, ProgramSpec};
+use crate::program_spec::{
+    ProgramAttachAddressFamily, ProgramAttachShape, ProgramAttachSockAddrHook, ProgramSpec,
+};
 
 type BaseContextFieldAccessSurfaceSpec = (&'static [CtxField], BaseContextFieldAccessRequirement);
 
@@ -12,7 +14,7 @@ enum ContextFieldAccessRequirement {
     CgroupSockoptGetOnly,
     CgroupSockAddrIpv4Only,
     CgroupSockAddrIpv6Only,
-    CgroupSockAddrMsgSourceOnly,
+    CgroupSockAddrSendmsgOnly,
     AllowedProgramsLabel(&'static str),
 }
 
@@ -103,11 +105,13 @@ impl ContextFieldAccessRequirement {
                 )),
                 _ => None,
             },
-            Self::CgroupSockAddrMsgSourceOnly => match spec.attach_shape() {
+            Self::CgroupSockAddrSendmsgOnly => match spec.attach_shape() {
                 ProgramAttachShape::CgroupSockAddr {
-                    msg_source: false, ..
-                } => Some(format!(
-                    "ctx.{field_name} is only available on cgroup_sock_addr sendmsg*/recvmsg* hooks"
+                    hook: ProgramAttachSockAddrHook::SendMsg,
+                    ..
+                } => None,
+                ProgramAttachShape::CgroupSockAddr { .. } => Some(format!(
+                    "ctx.{field_name} is only available on cgroup_sock_addr sendmsg4/sendmsg6 hooks"
                 )),
                 _ => None,
             },
@@ -319,13 +323,13 @@ const CGROUP_SOCK_ADDR_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpe
         "msg_src_ip4",
         ContextFieldAccessRequirement::CgroupSockAddrIpv4Only,
     )
-    .with_secondary_requirement(ContextFieldAccessRequirement::CgroupSockAddrMsgSourceOnly),
+    .with_secondary_requirement(ContextFieldAccessRequirement::CgroupSockAddrSendmsgOnly),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::MsgSrcIp6,
         "msg_src_ip6",
         ContextFieldAccessRequirement::CgroupSockAddrIpv6Only,
     )
-    .with_secondary_requirement(ContextFieldAccessRequirement::CgroupSockAddrMsgSourceOnly),
+    .with_secondary_requirement(ContextFieldAccessRequirement::CgroupSockAddrSendmsgOnly),
 ];
 
 const PROGRAM_CTX_FIELD_ACCESS_SURFACE_FAMILIES: &[ProgramCtxFieldAccessSurfaceFamilySpec] = &[

@@ -559,8 +559,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.sock_type } - Get socket type
     {|ctx| $ctx.protocol } - Get socket protocol
     {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_ip4, src_ip6, src_port, dst_port, dst_ip4, dst_ip6, state, and rx_queue_mapping)
-    {|ctx| $ctx.msg_src_ip4 } - Get the IPv4 source address in host byte order on sendmsg4/recvmsg4
-    {|ctx| $ctx.msg_src_ip6 } - Get the IPv6 source address as four host-order u32 words on sendmsg6/recvmsg6
+    {|ctx| $ctx.msg_src_ip4 } - Get the IPv4 source address in host byte order on sendmsg4
+    {|ctx| $ctx.msg_src_ip6 } - Get the IPv6 source address as four host-order u32 words on sendmsg6
     Note: cgroup_sock_addr closures can return `allow` or `deny` instead of
     raw `1`/`0` result codes. This initial slice still exposes IPv6
     addresses as fixed arrays of four u32 words rather than a higher-level

@@ -1049,7 +1049,7 @@ fn test_verify_mir_for_probe_context_rejects_cgroup_sock_addr_msg_src_ip4_store_
         .expect_err("expected msg_src_ip4 store to be rejected on non-msg hook");
     assert!(err.iter().any(|e| {
         e.message.contains(
-            "ctx.msg_src_ip4 is only available on cgroup_sock_addr sendmsg*/recvmsg* hooks",
+            "ctx.msg_src_ip4 is only available on cgroup_sock_addr sendmsg4/sendmsg6 hooks",
         )
     }));
 }

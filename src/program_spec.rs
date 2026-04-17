@@ -696,21 +696,35 @@ impl CgroupSockAddrTarget {
         )
     }
 
-    pub fn has_msg_source(&self) -> bool {
-        matches!(
-            self.attach_type,
-            CgroupSockAddrAttachType::UDPSendMsg4
-                | CgroupSockAddrAttachType::UDPSendMsg6
-                | CgroupSockAddrAttachType::UDPRecvMsg4
-                | CgroupSockAddrAttachType::UDPRecvMsg6
-        )
+    pub(crate) fn hook_kind(&self) -> ProgramAttachSockAddrHook {
+        match self.attach_type {
+            CgroupSockAddrAttachType::Bind4 | CgroupSockAddrAttachType::Bind6 => {
+                ProgramAttachSockAddrHook::Bind
+            }
+            CgroupSockAddrAttachType::Connect4 | CgroupSockAddrAttachType::Connect6 => {
+                ProgramAttachSockAddrHook::Connect
+            }
+            CgroupSockAddrAttachType::GetPeerName4 | CgroupSockAddrAttachType::GetPeerName6 => {
+                ProgramAttachSockAddrHook::GetPeerName
+            }
+            CgroupSockAddrAttachType::GetSockName4 | CgroupSockAddrAttachType::GetSockName6 => {
+                ProgramAttachSockAddrHook::GetSockName
+            }
+            CgroupSockAddrAttachType::UDPSendMsg4 | CgroupSockAddrAttachType::UDPSendMsg6 => {
+                ProgramAttachSockAddrHook::SendMsg
+            }
+            CgroupSockAddrAttachType::UDPRecvMsg4 | CgroupSockAddrAttachType::UDPRecvMsg6 => {
+                ProgramAttachSockAddrHook::RecvMsg
+            }
+        }
+    }
+
+    pub fn supports_msg_source(&self) -> bool {
+        matches!(self.hook_kind(), ProgramAttachSockAddrHook::SendMsg)
     }
 
     pub fn is_connect(&self) -> bool {
-        matches!(
-            self.attach_type,
-            CgroupSockAddrAttachType::Connect4 | CgroupSockAddrAttachType::Connect6
-        )
+        matches!(self.hook_kind(), ProgramAttachSockAddrHook::Connect)
     }
 }
 
@@ -1178,6 +1192,16 @@ pub(crate) enum ProgramAttachAddressFamily {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProgramAttachSockAddrHook {
+    Bind,
+    Connect,
+    GetPeerName,
+    GetSockName,
+    SendMsg,
+    RecvMsg,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProgramAttachShape {
     Generic,
     Tc {
@@ -1195,8 +1219,7 @@ pub(crate) enum ProgramAttachShape {
     },
     CgroupSockAddr {
         family: ProgramAttachAddressFamily,
-        msg_source: bool,
-        connect: bool,
+        hook: ProgramAttachSockAddrHook,
     },
 }
 
@@ -1438,8 +1461,7 @@ impl ProgramSpec {
                 } else {
                     ProgramAttachAddressFamily::Ipv6
                 },
-                msg_source: target.has_msg_source(),
-                connect: target.is_connect(),
+                hook: target.hook_kind(),
             },
             _ => ProgramAttachShape::Generic,
         }
@@ -1467,15 +1489,25 @@ mod tests {
             .expect("connect4 target should parse");
         assert!(connect4.is_ipv4());
         assert!(!connect4.is_ipv6());
-        assert!(!connect4.has_msg_source());
+        assert!(!connect4.supports_msg_source());
         assert!(connect4.is_connect());
+        assert_eq!(connect4.hook_kind(), ProgramAttachSockAddrHook::Connect);
 
         let sendmsg6 = CgroupSockAddrTarget::parse("/sys/fs/cgroup:sendmsg6")
             .expect("sendmsg6 target should parse");
         assert!(!sendmsg6.is_ipv4());
         assert!(sendmsg6.is_ipv6());
-        assert!(sendmsg6.has_msg_source());
+        assert!(sendmsg6.supports_msg_source());
         assert!(!sendmsg6.is_connect());
+        assert_eq!(sendmsg6.hook_kind(), ProgramAttachSockAddrHook::SendMsg);
+
+        let recvmsg4 = CgroupSockAddrTarget::parse("/sys/fs/cgroup:recvmsg4")
+            .expect("recvmsg4 target should parse");
+        assert!(recvmsg4.is_ipv4());
+        assert!(!recvmsg4.is_ipv6());
+        assert!(!recvmsg4.supports_msg_source());
+        assert!(!recvmsg4.is_connect());
+        assert_eq!(recvmsg4.hook_kind(), ProgramAttachSockAddrHook::RecvMsg);
     }
 
     #[test]
@@ -1534,8 +1566,7 @@ mod tests {
             sendmsg6.attach_shape(),
             ProgramAttachShape::CgroupSockAddr {
                 family: ProgramAttachAddressFamily::Ipv6,
-                msg_source: true,
-                connect: false,
+                hook: ProgramAttachSockAddrHook::SendMsg,
             }
         );
     }

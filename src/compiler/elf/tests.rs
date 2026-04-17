@@ -4145,7 +4145,16 @@ fn test_probe_context_rejects_msg_source_field_on_non_msg_hook() {
     let err = ctx
         .ctx_field_access_error(&CtxField::MsgSrcIp4)
         .expect("expected non-msg-hook rejection for ctx.msg_src_ip4");
-    assert!(err.contains("sendmsg*/recvmsg*"));
+    assert!(err.contains("sendmsg4/sendmsg6"));
+}
+
+#[test]
+fn test_probe_context_rejects_msg_source_field_on_recvmsg_hook() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:recvmsg4");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::MsgSrcIp4)
+        .expect("expected recvmsg-hook rejection for ctx.msg_src_ip4");
+    assert!(err.contains("sendmsg4/sendmsg6"));
 }
 
 #[test]
@@ -4163,7 +4172,7 @@ fn test_probe_context_rejects_msg_source_ipv6_field_on_non_msg_hook() {
     let err = ctx
         .ctx_field_access_error(&CtxField::MsgSrcIp6)
         .expect("expected non-msg-hook rejection for ctx.msg_src_ip6");
-    assert!(err.contains("sendmsg*/recvmsg*"));
+    assert!(err.contains("sendmsg4/sendmsg6"));
 }
 
 #[test]
@@ -4488,7 +4497,16 @@ fn test_probe_context_rejects_msg_source_store_target_validation_outside_msg_hoo
     let err = ctx
         .validate_ctx_store_target(&CtxStoreTarget::CgroupSockAddrMsgSrcIp4)
         .expect_err("cgroup_sock_addr connect4 msg_src_ip4 store target should be rejected");
-    assert!(err.to_string().contains("sendmsg*/recvmsg*"));
+    assert!(err.to_string().contains("sendmsg4/sendmsg6"));
+}
+
+#[test]
+fn test_probe_context_rejects_msg_source_store_target_validation_on_recvmsg_hooks() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:recvmsg4");
+    let err = ctx
+        .validate_ctx_store_target(&CtxStoreTarget::CgroupSockAddrMsgSrcIp4)
+        .expect_err("cgroup_sock_addr recvmsg4 msg_src_ip4 store target should be rejected");
+    assert!(err.to_string().contains("sendmsg4/sendmsg6"));
 }
 
 #[test]

@@ -1,7 +1,9 @@
 use super::{EbpfProgramType, GetSocketCookieArgPolicy, MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::MapKind;
-use crate::program_spec::{ProgramAttachAddressFamily, ProgramAttachShape, ProgramSpec};
+use crate::program_spec::{
+    ProgramAttachAddressFamily, ProgramAttachShape, ProgramAttachSockAddrHook, ProgramSpec,
+};
 
 #[derive(Debug, Clone, Copy)]
 struct HelperProgramSurfaceSpec {
@@ -487,13 +489,17 @@ impl ProgramSpec {
                     helper.name()
                 ))
             }
-            ProgramAttachShape::CgroupSockAddr { connect: false, .. }
-                if helper_list_contains(CGROUP_SOCK_ADDR_CONNECT_ONLY_HELPERS, helper) =>
-            {
-                Some(format!(
-                    "helper '{}' is only valid on cgroup_sock_addr connect4/connect6 hooks",
-                    helper.name()
-                ))
+            ProgramAttachShape::CgroupSockAddr {
+                hook: hook_kind, ..
+            } if helper_list_contains(CGROUP_SOCK_ADDR_CONNECT_ONLY_HELPERS, helper) => {
+                if !matches!(hook_kind, ProgramAttachSockAddrHook::Connect) {
+                    Some(format!(
+                        "helper '{}' is only valid on cgroup_sock_addr connect4/connect6 hooks",
+                        helper.name()
+                    ))
+                } else {
+                    None
+                }
             }
             _ => None,
         }

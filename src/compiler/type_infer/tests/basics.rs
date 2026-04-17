@@ -3246,7 +3246,7 @@ fn test_type_error_store_cgroup_sock_addr_msg_src_ip4_rejects_non_msg_hook() {
         .expect_err("msg_src_ip4 store should be rejected on non-msg cgroup_sock_addr hook");
     assert!(errs.iter().any(|e| {
         e.message.contains(
-            "ctx.msg_src_ip4 is only available on cgroup_sock_addr sendmsg*/recvmsg* hooks",
+            "ctx.msg_src_ip4 is only available on cgroup_sock_addr sendmsg4/sendmsg6 hooks",
         )
     }));
 }
