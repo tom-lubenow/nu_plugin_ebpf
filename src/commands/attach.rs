@@ -312,9 +312,12 @@ Context parameter syntax (recommended):
     are available on every cgroup_sock hook; `ctx.local_ip4` is only
     available on `post_bind4`, `ctx.local_ip6` on `post_bind6`, and
     `ctx.local_port` on both post-bind hooks.
-    On `cgroup_sock`, socket-address projection fields through
-    `ctx.sk` such as `ctx.sk.src_port` and `ctx.sk.dst_port` are only
-    available on `post_bind4` and `post_bind6`.
+    On `cgroup_sock`, source-side socket projection fields through
+    `ctx.sk` follow the same attach-sensitive policy as the direct
+    locals: `ctx.sk.src_ip4` is only available on `post_bind4`,
+    `ctx.sk.src_ip6` on `post_bind6`, and `ctx.sk.src_port` on both
+    post-bind hooks. Destination-side projection fields such as
+    `ctx.sk.dst_port` remain available on every cgroup_sock hook.
 
   cgroup_device fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

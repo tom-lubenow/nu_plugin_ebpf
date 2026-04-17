@@ -1605,13 +1605,32 @@ fn test_probe_context_kfunc_call_error_uses_sched_ext_callback_policy() {
 
 #[test]
 fn test_probe_context_socket_projection_error_uses_typed_attach_kind() {
-    let post_bind = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
+    let post_bind4 = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
+    let post_bind6 = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind6");
     let sock_create = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
 
     assert!(
-        post_bind
+        post_bind4
             .socket_projection_access_error("src_port")
             .is_none()
+    );
+    assert!(
+        post_bind4
+            .socket_projection_access_error("src_ip4")
+            .is_none()
+    );
+    assert_eq!(
+        post_bind4.socket_projection_access_error("src_ip6"),
+        Some("ctx.sk.src_ip6 is only available on cgroup_sock post_bind6 hooks".to_string())
+    );
+    assert!(
+        post_bind6
+            .socket_projection_access_error("src_ip6")
+            .is_none()
+    );
+    assert_eq!(
+        post_bind6.socket_projection_access_error("src_ip4"),
+        Some("ctx.sk.src_ip4 is only available on cgroup_sock post_bind4 hooks".to_string())
     );
     assert_eq!(
         sock_create.socket_projection_access_error("src_port"),
@@ -1620,6 +1639,7 @@ fn test_probe_context_socket_projection_error_uses_typed_attach_kind() {
                 .to_string()
         )
     );
+    assert_eq!(sock_create.socket_projection_access_error("dst_port"), None);
 }
 
 #[test]

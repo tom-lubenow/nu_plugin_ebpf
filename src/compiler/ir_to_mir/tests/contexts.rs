@@ -774,6 +774,56 @@ fn test_lower_cgroup_sock_create_ctx_socket_src_port_rejected() {
 }
 
 #[test]
+fn test_lower_cgroup_sock_create_ctx_socket_dst_port_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("sk"), string_member("dst_port")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock sock_create ctx.sk.dst_port should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Socket,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_cgroup_sock_post_bind4_ctx_socket_src_ip6_rejected() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("sk"), string_member("src_ip6"), int_member(0)],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("cgroup_sock post_bind4 ctx.sk.src_ip6 should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("ctx.sk.src_ip6 is only available on cgroup_sock post_bind6 hooks")
+    );
+}
+
+#[test]
 fn test_lower_cgroup_sock_create_ctx_local_port_rejected() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("local_port")],
