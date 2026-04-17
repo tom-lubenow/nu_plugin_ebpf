@@ -837,6 +837,25 @@ fn test_program_type_ctx_field_load_guard_follows_context_family() {
 }
 
 #[test]
+fn test_program_type_perf_event_ctx_field_support_follows_context_family() {
+    assert!(EbpfProgramType::PerfEvent.uses_perf_event_context());
+    assert!(!EbpfProgramType::Xdp.uses_perf_event_context());
+    assert_eq!(
+        EbpfProgramType::PerfEvent.supports_perf_event_ctx_fields(),
+        cfg!(target_arch = "x86_64")
+    );
+    assert!(!EbpfProgramType::Xdp.supports_perf_event_ctx_fields());
+}
+
+#[test]
+fn test_program_type_raw_context_pointer_aliases_follow_context_family() {
+    assert!(EbpfProgramType::CgroupSock.ctx_field_is_raw_context_pointer(&CtxField::Context));
+    assert!(EbpfProgramType::CgroupSock.ctx_field_is_raw_context_pointer(&CtxField::Socket));
+    assert!(!EbpfProgramType::CgroupSockopt.ctx_field_is_raw_context_pointer(&CtxField::Socket));
+    assert!(!EbpfProgramType::SockOps.ctx_field_is_raw_context_pointer(&CtxField::Socket));
+}
+
+#[test]
 fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
     let ingress = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let egress = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");

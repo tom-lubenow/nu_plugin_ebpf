@@ -463,9 +463,7 @@ impl BaseContextFieldAccessRequirement {
             Self::TaskFields => program_type.supports_task_ctx_fields(),
             Self::CpuField => program_type.supports_cpu_ctx_field(),
             Self::TimestampField => program_type.supports_timestamp_ctx_field(),
-            Self::PerfEventField => {
-                matches!(program_type, EbpfProgramType::PerfEvent) && cfg!(target_arch = "x86_64")
-            }
+            Self::PerfEventField => program_type.supports_perf_event_ctx_fields(),
             Self::PacketLenField => program_type.supports_packet_len_ctx_field(),
             Self::SkbFields => program_type.supports_skb_ctx_fields(),
             Self::PacketDataFields => program_type.supports_packet_data_ctx_fields(),
@@ -508,7 +506,7 @@ impl BaseContextFieldAccessRequirement {
                     program_type.canonical_prefix()
                 )
             }
-            Self::PerfEventField if !matches!(program_type, EbpfProgramType::PerfEvent) => {
+            Self::PerfEventField if !program_type.uses_perf_event_context() => {
                 format!(
                     "ctx.{} is only available on perf_event programs",
                     field.display_name()

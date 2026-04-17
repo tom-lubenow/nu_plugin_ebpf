@@ -3,6 +3,7 @@ use super::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProgramContextFamily {
     Probe,
+    PerfEvent,
     Xdp,
     SkBuffPacket,
     SkLookup,
@@ -424,7 +425,7 @@ pub(super) const PERF_EVENT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     spec_aliases: PERF_EVENT_SPEC_ALIASES,
     section_prefix: "perf_event",
     section_uses_target: false,
-    context_family: ProgramContextFamily::Probe,
+    context_family: ProgramContextFamily::PerfEvent,
     attach_kind: ProgramAttachKind::PerfEvent,
     target_kind: ProgramTargetKind::PerfEventTarget,
     kernel_target_validation: None,

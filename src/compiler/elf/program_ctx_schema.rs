@@ -138,6 +138,17 @@ fn context_family_ctx_field_load_guard(
     }
 }
 
+fn context_family_ctx_field_is_raw_context_pointer(
+    context_family: ProgramContextFamily,
+    field: &CtxField,
+) -> bool {
+    matches!(field, CtxField::Context)
+        || matches!(
+            (context_family, field),
+            (ProgramContextFamily::CgroupSock, CtxField::Socket)
+        )
+}
+
 impl EbpfProgramType {
     pub fn supports_tracepoint_fields(&self) -> bool {
         self.info().supports_tracepoint_fields
@@ -255,6 +266,14 @@ impl EbpfProgramType {
         self.sock_mark_priority_context_layout().is_some()
     }
 
+    pub fn uses_perf_event_context(&self) -> bool {
+        matches!(self.context_family(), ProgramContextFamily::PerfEvent)
+    }
+
+    pub fn supports_perf_event_ctx_fields(&self) -> bool {
+        self.uses_perf_event_context() && cfg!(target_arch = "x86_64")
+    }
+
     pub fn supports_socket_cookie_ctx_field(&self) -> bool {
         supports_program_type_surface(*self, SOCKET_COOKIE_PROGRAMS)
     }
@@ -300,11 +319,7 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn ctx_field_is_raw_context_pointer(&self, field: &CtxField) -> bool {
-        matches!(field, CtxField::Context)
-            || matches!(
-                (self, field),
-                (EbpfProgramType::CgroupSock, CtxField::Socket)
-            )
+        context_family_ctx_field_is_raw_context_pointer(self.context_family(), field)
     }
 
     pub(crate) fn ctx_field_load_guard(&self, field: &CtxField) -> Option<ContextFieldLoadGuard> {

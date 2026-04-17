@@ -236,8 +236,8 @@ impl ProgramCtxWriteSurfaceFamilyRequirement {
     fn matches_spec(&self, spec: &ProgramSpec) -> bool {
         match self {
             Self::SkbContext => spec.program_type().supports_skb_ctx_fields(),
-            Self::CgroupSysctl => matches!(spec, ProgramSpec::CgroupSysctl { .. }),
-            Self::SockOps => matches!(spec, ProgramSpec::SockOps { .. }),
+            Self::CgroupSysctl => spec.program_type().supports_cgroup_sysctl_ctx_fields(),
+            Self::SockOps => spec.program_type().supports_sock_ops_ctx_fields(),
             Self::CgroupSockopt => {
                 matches!(
                     spec.attach_shape(),
