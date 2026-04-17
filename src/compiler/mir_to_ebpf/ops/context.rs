@@ -232,7 +232,8 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 8, 16, 24, 28, 32, 36)
     }
 
-    pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_offsets() -> (i16, i16, i16, i16, i16, i16) {
+    pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_offsets()
+    -> (i16, i16, i16, i16, i16, i16, i16, i16) {
         // struct bpf_sock {
         //     __u32 bound_dev_if;
         //     __u32 family;
@@ -240,8 +241,11 @@ impl<'a> MirToEbpfCompiler<'a> {
         //     __u32 protocol;
         //     __u32 mark;
         //     __u32 priority;
+        //     ...
+        //     __u32 state;
+        //     __s32 rx_queue_mapping;
         // };
-        (0, 4, 8, 12, 16, 20)
+        (0, 4, 8, 12, 16, 20, 72, 76)
     }
 
     pub(super) fn bpf_sk_lookup_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16) {

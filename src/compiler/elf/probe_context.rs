@@ -164,6 +164,12 @@ impl ProbeContext {
             .or_else(|| self.probe_type.sock_type_context_layout())
     }
 
+    pub(crate) fn sock_state_context_layout(&self) -> Option<SocketContextLayout> {
+        self.parsed_program_spec()
+            .and_then(|spec| spec.sock_state_context_layout())
+            .or_else(|| self.probe_type.sock_state_context_layout())
+    }
+
     pub(crate) fn protocol_context_layout(&self) -> Option<SocketContextLayout> {
         self.parsed_program_spec()
             .and_then(|spec| spec.protocol_context_layout())

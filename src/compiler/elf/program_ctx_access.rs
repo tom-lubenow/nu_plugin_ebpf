@@ -355,7 +355,6 @@ const SOCK_OPS_CTX_FIELDS: &[CtxField] = &[
     CtxField::SockOpsSndCwnd,
     CtxField::SockOpsSrttUs,
     CtxField::SockOpsCbFlags,
-    CtxField::SockState,
     CtxField::SockOpsRttMin,
     CtxField::SockOpsSndSsthresh,
     CtxField::SockOpsRcvNxt,
@@ -480,6 +479,10 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
         BaseContextFieldAccessRequirement::SockOpsFields,
     ),
     (
+        &[CtxField::SockState],
+        BaseContextFieldAccessRequirement::SockStateField,
+    ),
+    (
         CGROUP_SOCK_ADDR_CTX_FIELDS,
         BaseContextFieldAccessRequirement::CgroupSockAddrFields,
     ),
@@ -580,6 +583,7 @@ enum BaseContextFieldAccessRequirement {
     NetnsCookieField,
     DeviceFields,
     SockOpsFields,
+    SockStateField,
     CgroupSockAddrFields,
     SocketCommonFields,
     SockTypeField,
@@ -618,6 +622,7 @@ impl BaseContextFieldAccessRequirement {
             Self::NetnsCookieField => program_type.supports_netns_cookie_ctx_field(),
             Self::DeviceFields => program_type.supports_device_ctx_fields(),
             Self::SockOpsFields => program_type.supports_sock_ops_ctx_fields(),
+            Self::SockStateField => program_type.supports_sock_state_ctx_field(),
             Self::CgroupSockAddrFields => program_type.supports_cgroup_sock_addr_ctx_fields(),
             Self::SocketCommonFields => program_type.supports_socket_common_ctx_fields(),
             Self::SockTypeField => program_type.supports_sock_type_ctx_field(),
@@ -696,6 +701,10 @@ impl BaseContextFieldAccessRequirement {
             ),
             Self::SockOpsFields => format!(
                 "ctx.{} is only available on sock_ops programs",
+                field.display_name()
+            ),
+            Self::SockStateField => format!(
+                "ctx.{} is only available on cgroup_sock and sock_ops programs",
                 field.display_name()
             ),
             Self::CgroupSockAddrFields => format!(

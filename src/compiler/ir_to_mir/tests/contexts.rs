@@ -373,6 +373,33 @@ fn test_lower_cgroup_sock_ctx_socket_family_field() {
 }
 
 #[test]
+fn test_lower_cgroup_sock_ctx_state_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("state")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock ctx.state should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::SockState,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_tc_ctx_socket_family_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("sk"), string_member("family")],

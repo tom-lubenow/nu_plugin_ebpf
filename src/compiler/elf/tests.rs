@@ -3473,6 +3473,7 @@ fn test_probe_context_allows_sock_fields_on_cgroup_sock() {
         ctx.ctx_field_access_error(&CtxField::SockPriority)
             .is_none()
     );
+    assert!(ctx.ctx_field_access_error(&CtxField::SockState).is_none());
 }
 
 #[test]

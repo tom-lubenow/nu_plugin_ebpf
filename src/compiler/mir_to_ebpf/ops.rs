@@ -1245,7 +1245,27 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::SockState => {
-                let offset = Self::bpf_sock_ops_offsets().10;
+                let offset = match self
+                    .probe_ctx
+                    .as_ref()
+                    .and_then(|ctx| ctx.sock_state_context_layout())
+                {
+                    Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().10,
+                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().6,
+                    Some(
+                        SocketContextLayout::SockAddr
+                        | SocketContextLayout::CgroupSockopt
+                        | SocketContextLayout::SkLookup
+                        | SocketContextLayout::SkMsg
+                        | SocketContextLayout::SkBuff,
+                    )
+                    | None => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.state is only available on cgroup_sock and sock_ops programs"
+                                .to_string(),
+                        ));
+                    }
+                };
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }

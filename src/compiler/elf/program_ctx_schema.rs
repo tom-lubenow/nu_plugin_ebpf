@@ -112,6 +112,10 @@ const SOCK_MARK_PRIORITY_CONTEXT_LAYOUT_SURFACES: &[ProgramTypeLayoutSurfaceSpec
     (CGROUP_SOCK_PROGRAMS, SocketContextLayout::CgroupSock),
     (SK_BUFF_PROGRAMS, SocketContextLayout::SkBuff),
 ];
+const SOCK_STATE_CONTEXT_LAYOUT_SURFACES: &[ProgramTypeLayoutSurfaceSpec<SocketContextLayout>] = &[
+    (CGROUP_SOCK_PROGRAMS, SocketContextLayout::CgroupSock),
+    (SOCK_OPS_PROGRAMS, SocketContextLayout::SockOps),
+];
 
 fn find_program_type_layout_surface<T: Clone>(
     program_type: EbpfProgramType,
@@ -230,6 +234,10 @@ impl EbpfProgramType {
         find_program_type_layout_surface(*self, SOCK_MARK_PRIORITY_CONTEXT_LAYOUT_SURFACES)
     }
 
+    pub(crate) fn sock_state_context_layout(&self) -> Option<SocketContextLayout> {
+        find_program_type_layout_surface(*self, SOCK_STATE_CONTEXT_LAYOUT_SURFACES)
+    }
+
     pub fn supports_ingress_ifindex_ctx_field(&self) -> bool {
         self.info().supports_ingress_ifindex_ctx_field
     }
@@ -268,6 +276,10 @@ impl EbpfProgramType {
 
     pub fn supports_sock_mark_priority_ctx_fields(&self) -> bool {
         self.sock_mark_priority_context_layout().is_some()
+    }
+
+    pub fn supports_sock_state_ctx_field(&self) -> bool {
+        self.sock_state_context_layout().is_some()
     }
 
     pub fn uses_perf_event_context(&self) -> bool {
@@ -374,6 +386,10 @@ impl ProgramSpec {
 
     pub(crate) fn sock_mark_priority_context_layout(&self) -> Option<SocketContextLayout> {
         self.program_type().sock_mark_priority_context_layout()
+    }
+
+    pub(crate) fn sock_state_context_layout(&self) -> Option<SocketContextLayout> {
+        self.program_type().sock_state_context_layout()
     }
 
     pub(crate) fn ctx_field_type_spec(&self, field: &CtxField) -> Option<ContextFieldTypeSpec> {
