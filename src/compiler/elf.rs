@@ -907,6 +907,18 @@ impl EbpfProgramType {
         )
     }
 
+    pub fn btf_callable_surface(&self) -> Option<ProgramBtfCallableSurface> {
+        match self {
+            EbpfProgramType::Fentry | EbpfProgramType::Fexit => {
+                Some(ProgramBtfCallableSurface::FunctionTrampoline)
+            }
+            EbpfProgramType::TpBtf => Some(ProgramBtfCallableSurface::TpBtf),
+            EbpfProgramType::Lsm => Some(ProgramBtfCallableSurface::LsmHook),
+            EbpfProgramType::StructOps => Some(ProgramBtfCallableSurface::StructOpsCallback),
+            _ => None,
+        }
+    }
+
     pub fn uses_raw_tracepoint_args(&self) -> bool {
         matches!(self.arg_access(), ProgramValueAccess::RawTracepoint)
     }
@@ -1002,6 +1014,14 @@ pub enum ProgramTargetKind {
     CgroupPathSockoptAttachType,
     CgroupPathSockAddrAttachType,
     LircDevicePath,
+    StructOpsCallback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ProgramBtfCallableSurface {
+    FunctionTrampoline,
+    TpBtf,
+    LsmHook,
     StructOpsCallback,
 }
 

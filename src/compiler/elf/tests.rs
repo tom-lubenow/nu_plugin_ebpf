@@ -856,6 +856,27 @@ fn test_program_type_raw_context_pointer_aliases_follow_context_family() {
 }
 
 #[test]
+fn test_program_type_btf_callable_surface_follows_program_model() {
+    assert_eq!(
+        EbpfProgramType::Fentry.btf_callable_surface(),
+        Some(ProgramBtfCallableSurface::FunctionTrampoline)
+    );
+    assert_eq!(
+        EbpfProgramType::TpBtf.btf_callable_surface(),
+        Some(ProgramBtfCallableSurface::TpBtf)
+    );
+    assert_eq!(
+        EbpfProgramType::Lsm.btf_callable_surface(),
+        Some(ProgramBtfCallableSurface::LsmHook)
+    );
+    assert_eq!(
+        EbpfProgramType::StructOps.btf_callable_surface(),
+        Some(ProgramBtfCallableSurface::StructOpsCallback)
+    );
+    assert_eq!(EbpfProgramType::Kprobe.btf_callable_surface(), None);
+}
+
+#[test]
 fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
     let ingress = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let egress = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");

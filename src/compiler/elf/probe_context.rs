@@ -1,7 +1,7 @@
 use super::{
     CompileError, CtxField, CtxWriteTarget, EbpfProgramType, GetSocketCookieArgPolicy,
-    IngressIfindexContextLayout, PacketContextKind, ProbeContext, ProgramTargetKind,
-    ProgramTypeInfo, ProgramValueAccess, SocketContextLayout,
+    IngressIfindexContextLayout, PacketContextKind, ProbeContext, ProgramBtfCallableSurface,
+    ProgramTargetKind, ProgramTypeInfo, ProgramValueAccess, SocketContextLayout,
 };
 #[cfg(test)]
 use crate::compiler::ctx_field_schema::synthetic_bpf_sock_type;
@@ -302,16 +302,16 @@ impl ProbeContext {
     }
 
     pub(crate) fn btf_context_label(&self) -> String {
-        match self.program_type() {
-            EbpfProgramType::StructOps => format!(
+        match self.program_type().btf_callable_surface() {
+            Some(ProgramBtfCallableSurface::StructOpsCallback) => format!(
                 "struct_ops {}.{}",
                 self.struct_ops_value_type_name
                     .as_deref()
                     .unwrap_or("<unknown>"),
                 self.target
             ),
-            EbpfProgramType::TpBtf => format!("tp_btf:{}", self.target),
-            EbpfProgramType::Lsm => format!("lsm:{}", self.target),
+            Some(ProgramBtfCallableSurface::TpBtf) => format!("tp_btf:{}", self.target),
+            Some(ProgramBtfCallableSurface::LsmHook) => format!("lsm:{}", self.target),
             _ => format!("{}:{}", self.program_type().section_prefix(), self.target),
         }
     }
@@ -345,8 +345,8 @@ impl ProbeContext {
         }
 
         let btf = KernelBtf::get();
-        match self.program_type() {
-            EbpfProgramType::StructOps => {
+        match self.program_type().btf_callable_surface() {
+            Some(ProgramBtfCallableSurface::StructOpsCallback) => {
                 let value_type_name = self.require_struct_ops_value_type_name()?;
                 btf.struct_ops_callback_arg_index_by_name(value_type_name, &self.target, arg_name)
                     .map_err(|e| {
@@ -356,7 +356,7 @@ impl ProbeContext {
                         )
                     })
             }
-            EbpfProgramType::TpBtf => btf
+            Some(ProgramBtfCallableSurface::TpBtf) => btf
                 .tp_btf_arg_index_by_name(&self.target, arg_name)
                 .map_err(|e| {
                     format!(
@@ -364,7 +364,7 @@ impl ProbeContext {
                         arg_name, self.target, e
                     )
                 }),
-            EbpfProgramType::Lsm => btf
+            Some(ProgramBtfCallableSurface::LsmHook) => btf
                 .lsm_hook_arg_index_by_name(&self.target, arg_name)
                 .map_err(|e| {
                     format!(
@@ -372,7 +372,7 @@ impl ProbeContext {
                         arg_name, self.target, e
                     )
                 }),
-            _ => btf
+            Some(ProgramBtfCallableSurface::FunctionTrampoline) => btf
                 .function_trampoline_arg_index_by_name(&self.target, arg_name)
                 .map_err(|e| {
                     format!(
@@ -383,6 +383,7 @@ impl ProbeContext {
                         e
                     )
                 }),
+            None => Ok(None),
         }
     }
 
@@ -395,8 +396,8 @@ impl ProbeContext {
         }
 
         let btf = KernelBtf::get();
-        match self.program_type() {
-            EbpfProgramType::StructOps => {
+        match self.program_type().btf_callable_surface() {
+            Some(ProgramBtfCallableSurface::StructOpsCallback) => {
                 let value_type_name = self.require_struct_ops_value_type_name()?;
                 btf.struct_ops_callback_arg(value_type_name, &self.target, arg_idx)
                     .map_err(|e| {
@@ -406,19 +407,23 @@ impl ProbeContext {
                         )
                     })
             }
-            EbpfProgramType::TpBtf => btf.tp_btf_arg(&self.target, arg_idx).map_err(|e| {
-                format!(
-                    "failed to resolve ctx.arg{} for tp_btf:{}: {}",
-                    arg_idx, self.target, e
-                )
-            }),
-            EbpfProgramType::Lsm => btf.lsm_hook_arg(&self.target, arg_idx).map_err(|e| {
-                format!(
-                    "failed to resolve ctx.arg{} for lsm:{}: {}",
-                    arg_idx, self.target, e
-                )
-            }),
-            _ => btf
+            Some(ProgramBtfCallableSurface::TpBtf) => {
+                btf.tp_btf_arg(&self.target, arg_idx).map_err(|e| {
+                    format!(
+                        "failed to resolve ctx.arg{} for tp_btf:{}: {}",
+                        arg_idx, self.target, e
+                    )
+                })
+            }
+            Some(ProgramBtfCallableSurface::LsmHook) => {
+                btf.lsm_hook_arg(&self.target, arg_idx).map_err(|e| {
+                    format!(
+                        "failed to resolve ctx.arg{} for lsm:{}: {}",
+                        arg_idx, self.target, e
+                    )
+                })
+            }
+            Some(ProgramBtfCallableSurface::FunctionTrampoline) => btf
                 .function_trampoline_arg(&self.target, arg_idx)
                 .map_err(|e| {
                     format!(
@@ -429,6 +434,7 @@ impl ProbeContext {
                         e
                     )
                 }),
+            None => Ok(None),
         }
     }
 
@@ -438,8 +444,8 @@ impl ProbeContext {
         }
 
         let btf = KernelBtf::get();
-        match self.program_type() {
-            EbpfProgramType::StructOps => {
+        match self.program_type().btf_callable_surface() {
+            Some(ProgramBtfCallableSurface::StructOpsCallback) => {
                 let value_type_name = self.require_struct_ops_value_type_name()?;
                 btf.struct_ops_callback_arg_type_info(value_type_name, &self.target, arg_idx)
                     .map_err(|e| {
@@ -449,25 +455,23 @@ impl ProbeContext {
                         )
                     })
             }
-            EbpfProgramType::TpBtf => {
-                btf.tp_btf_arg_type_info(&self.target, arg_idx)
-                    .map_err(|e| {
-                        format!(
-                            "failed to resolve ctx.arg{} type for tp_btf:{}: {}",
-                            arg_idx, self.target, e
-                        )
-                    })
-            }
-            EbpfProgramType::Lsm => {
-                btf.lsm_hook_arg_type_info(&self.target, arg_idx)
-                    .map_err(|e| {
-                        format!(
-                            "failed to resolve ctx.arg{} type for lsm:{}: {}",
-                            arg_idx, self.target, e
-                        )
-                    })
-            }
-            _ => btf
+            Some(ProgramBtfCallableSurface::TpBtf) => btf
+                .tp_btf_arg_type_info(&self.target, arg_idx)
+                .map_err(|e| {
+                    format!(
+                        "failed to resolve ctx.arg{} type for tp_btf:{}: {}",
+                        arg_idx, self.target, e
+                    )
+                }),
+            Some(ProgramBtfCallableSurface::LsmHook) => btf
+                .lsm_hook_arg_type_info(&self.target, arg_idx)
+                .map_err(|e| {
+                    format!(
+                        "failed to resolve ctx.arg{} type for lsm:{}: {}",
+                        arg_idx, self.target, e
+                    )
+                }),
+            Some(ProgramBtfCallableSurface::FunctionTrampoline) => btf
                 .function_trampoline_arg_type_info(&self.target, arg_idx)
                 .map_err(|e| {
                     format!(
@@ -478,6 +482,7 @@ impl ProbeContext {
                         e
                     )
                 }),
+            None => Ok(None),
         }
     }
 
@@ -492,8 +497,8 @@ impl ProbeContext {
         }
 
         let btf = KernelBtf::get();
-        match self.program_type() {
-            EbpfProgramType::StructOps => {
+        match self.program_type().btf_callable_surface() {
+            Some(ProgramBtfCallableSurface::StructOpsCallback) => {
                 let value_type_name = self.require_struct_ops_value_type_name()?;
                 btf.struct_ops_callback_arg_field(
                     value_type_name,
@@ -508,7 +513,7 @@ impl ProbeContext {
                     )
                 })
             }
-            EbpfProgramType::TpBtf => btf
+            Some(ProgramBtfCallableSurface::TpBtf) => btf
                 .tp_btf_arg_field(&self.target, arg_idx, field_path)
                 .map_err(|e| {
                     format!(
@@ -516,7 +521,7 @@ impl ProbeContext {
                         arg_idx, path_desc, self.target, e
                     )
                 }),
-            EbpfProgramType::Lsm => btf
+            Some(ProgramBtfCallableSurface::LsmHook) => btf
                 .lsm_hook_arg_field(&self.target, arg_idx, field_path)
                 .map_err(|e| {
                     format!(
@@ -524,7 +529,7 @@ impl ProbeContext {
                         arg_idx, path_desc, self.target, e
                     )
                 }),
-            _ => btf
+            Some(ProgramBtfCallableSurface::FunctionTrampoline) => btf
                 .function_trampoline_arg_field(&self.target, arg_idx, field_path)
                 .map_err(|e| {
                     format!(
@@ -536,6 +541,7 @@ impl ProbeContext {
                         e
                     )
                 }),
+            None => Ok(None),
         }
     }
 
@@ -667,7 +673,10 @@ impl ProbeContext {
     }
 
     pub(crate) fn main_function_expected_return_type(&self) -> Result<Option<HMType>, String> {
-        if self.program_type() != EbpfProgramType::StructOps {
+        if !matches!(
+            self.program_type().btf_callable_surface(),
+            Some(ProgramBtfCallableSurface::StructOpsCallback)
+        ) {
             return Ok(Some(HMType::I64));
         }
 
@@ -891,13 +900,9 @@ impl ProbeContext {
     }
 
     fn sched_ext_callback(&self) -> Option<&str> {
-        if self.program_type() != EbpfProgramType::StructOps {
-            return None;
-        }
-        if self.struct_ops_value_type_name.as_deref() != Some("sched_ext_ops") {
-            return None;
-        }
-        Some(self.target.as_str())
+        self.struct_ops_value_type_name()
+            .filter(|value_type_name| *value_type_name == "sched_ext_ops")
+            .map(|_| self.target.as_str())
     }
 
     fn sched_ext_callback_is_sleepable(callback: &str) -> bool {
