@@ -68,11 +68,17 @@ let id = ebpf attach 'xdp:lo' {|ctx| $ctx.packet_len | count; 'pass' }
 # Dry-run an XDP redirect-map program shape with an explicit redirect-map family
 ebpf attach --dry-run 'xdp:lo' {|ctx| redirect-map demo_xsks $ctx.rx_queue_index --kind xskmap }
 
+# Dry-run a plain XDP ifindex redirect with the first-class packet redirect surface
+ebpf attach --dry-run 'xdp:lo' {|ctx| redirect 2 }
+
 # Dry-run an sk_msg socket redirect with the first-class socket redirect surface
 ebpf attach --dry-run 'sk_msg:/sys/fs/bpf/demo_sockhash' {|ctx| redirect-socket peer_sockhash $ctx.local_port --kind sockhash }
 
 # Count packets at tc ingress on loopback
 let id = ebpf attach 'tc:lo:ingress' {|ctx| $ctx.packet_len | count; 'ok' }
+
+# Redirect tc ingress traffic to a peer device with the first-class packet redirect surface
+let id = ebpf attach 'tc:lo:ingress' {|ctx| redirect --peer 2 }
 
 # Count packets on cgroup egress traffic
 let id = ebpf attach 'cgroup_skb:/sys/fs/cgroup:egress' {|ctx| $ctx.packet_len | count; 'allow' }

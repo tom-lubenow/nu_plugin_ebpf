@@ -2267,6 +2267,372 @@ fn test_helper_call_redirect_map_literal_requires_explicit_kind_and_compiles() {
 }
 
 #[test]
+fn test_redirect_intrinsic_lowers_to_xdp_redirect_and_compiles() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "redirect".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("redirect intrinsic should type-check");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("redirect intrinsic should lower on xdp");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::Redirect as u32 && args.len() == 2
+    )));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("redirect intrinsic should compile on xdp");
+}
+
+#[test]
+fn test_redirect_intrinsic_lowers_to_redirect_peer_on_tc_ingress() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(9),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        flags: vec![b"peer".to_vec()],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "redirect".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("redirect intrinsic should type-check");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("redirect intrinsic should lower to redirect_peer on tc ingress");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::RedirectPeer as u32 && args.len() == 2
+    )));
+}
+
+#[test]
+fn test_redirect_intrinsic_lowers_to_redirect_neigh_on_tc() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(11),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        flags: vec![b"neigh".to_vec()],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "redirect".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("redirect intrinsic should type-check");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("redirect intrinsic should lower to redirect_neigh on tc");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::RedirectNeigh as u32
+            && args.len() == 4
+            && matches!(args.get(1), Some(MirValue::Const(0)))
+            && matches!(args.get(2), Some(MirValue::Const(0)))
+    )));
+}
+
+#[test]
+fn test_redirect_intrinsic_rejects_nonzero_flags_on_xdp() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"flags".to_vec(), RegId::new(2))],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "redirect".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("redirect intrinsic should type-check");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("redirect should reject non-zero flags on xdp");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(
+                msg.contains("helper 'bpf_redirect' requires arg1 = 0 in xdp programs"),
+                "{msg}"
+            );
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
+fn test_redirect_intrinsic_rejects_conflicting_mode_flags() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        flags: vec![b"peer".to_vec(), b"neigh".to_vec()],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "redirect".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("redirect intrinsic should type-check");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("redirect should reject conflicting mode flags");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(
+                msg.contains("redirect accepts at most one of --peer or --neigh"),
+                "{msg}"
+            );
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
+fn test_redirect_intrinsic_rejects_non_packet_programs() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "redirect".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("redirect intrinsic should type-check");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("redirect should be rejected outside xdp/tc");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(
+                msg.contains("helper 'bpf_redirect' is only valid in xdp and tc programs"),
+                "{msg}"
+            );
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
 fn test_redirect_map_intrinsic_requires_explicit_kind_and_compiles() {
     let func = HirFunction {
         blocks: vec![HirBlock {

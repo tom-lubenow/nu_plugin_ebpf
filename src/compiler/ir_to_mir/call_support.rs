@@ -305,6 +305,93 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn optional_nonnegative_named_u64_arg(
+        &self,
+        context: &str,
+        name: &str,
+    ) -> Result<Option<u64>, CompileError> {
+        self.named_args
+            .get(name)
+            .map(|(_, reg)| {
+                let raw = self
+                    .get_metadata(*reg)
+                    .and_then(|m| m.literal_int)
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "{context} --{name} must be a compile-time integer literal"
+                        ))
+                    })?;
+                u64::try_from(raw).map_err(|_| {
+                    CompileError::UnsupportedInstruction(format!("{context} --{name} must be >= 0"))
+                })
+            })
+            .transpose()
+    }
+
+    pub(super) fn packet_redirect_helper_from_named_flags(
+        &self,
+        context: &str,
+    ) -> Result<BpfHelper, CompileError> {
+        let mut peer = false;
+        let mut neigh = false;
+        for flag in &self.named_flags {
+            match flag.as_str() {
+                "peer" => peer = true,
+                "neigh" => neigh = true,
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{context} does not accept flag '{}'",
+                        flag
+                    )));
+                }
+            }
+        }
+        if peer && neigh {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} accepts at most one of --peer or --neigh"
+            )));
+        }
+        Ok(if peer {
+            BpfHelper::RedirectPeer
+        } else if neigh {
+            BpfHelper::RedirectNeigh
+        } else {
+            BpfHelper::Redirect
+        })
+    }
+
+    pub(super) fn validate_packet_redirect_flags(
+        &self,
+        helper: BpfHelper,
+        flags: u64,
+    ) -> Result<(), CompileError> {
+        if flags == 0 {
+            return Ok(());
+        }
+
+        if let Some((arg_idx, message)) = self
+            .probe_ctx
+            .and_then(|ctx| ctx.helper_zero_arg_requirement(helper))
+        {
+            if matches!(helper, BpfHelper::Redirect) && arg_idx == 1 {
+                return Err(CompileError::UnsupportedInstruction(message.to_string()));
+            }
+        }
+
+        if let Some((arg_idx, message)) = helper.zero_scalar_arg_requirement() {
+            let flags_arg_idx = match helper {
+                BpfHelper::RedirectPeer => Some(1),
+                BpfHelper::RedirectNeigh => Some(3),
+                _ => None,
+            };
+            if Some(arg_idx) == flags_arg_idx {
+                return Err(CompileError::UnsupportedInstruction(message.to_string()));
+            }
+        }
+
+        Ok(())
+    }
+
     pub(super) fn socket_redirect_helper_for_current_program(
         &self,
         context: &str,

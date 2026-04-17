@@ -149,8 +149,9 @@ Context parameter syntax (recommended):
     `shot`, `pipe`, and `redirect`. cgroup_skb closures can return
     `allow` or `deny`. socket_filter closures can return `drop` / `deny`
     for `0`, or `pass` / `keep` / `allow` to snapshot the full packet by
-    returning `ctx.packet_len`. `helper-call "bpf_redirect" IFINDEX FLAGS`
-    is also type-checked on XDP/TC paths; XDP requires `FLAGS = 0`.
+    returning `ctx.packet_len`. `redirect IFINDEX` is the preferred
+    first-class packet redirect surface on XDP/TC, with optional
+    `--flags`; XDP still requires `FLAGS = 0`.
     XDP also models `helper-call "bpf_xdp_adjust_head" $ctx DELTA`,
     `helper-call "bpf_xdp_adjust_meta" $ctx DELTA`, and
     `helper-call "bpf_xdp_adjust_tail" $ctx DELTA`. After any of those
@@ -164,25 +165,27 @@ Context parameter syntax (recommended):
     and `ctx.data_end` after `bpf_skb_pull_data`, `bpf_skb_change_head`,
     `bpf_skb_change_tail`, or `bpf_skb_adjust_room` before reading
     packet bytes again.
-    `helper-call "bpf_redirect_peer" IFINDEX FLAGS` is modeled on
-    `tc:...:ingress` and also requires `FLAGS = 0`.
-    `helper-call "bpf_redirect_neigh" IFINDEX 0 0 0` is modeled on tc
-    paths for the default neighbor-resolution form. Raw numeric return
-    codes still work. Packet reads currently support scalar byte access
-    through `get`/indexing, direct `u16be`/`u32be` cell-path scalar loads,
-    and typed header views `eth`, `ipv4`, `ipv6`, `icmp`, `icmpv6`, `udp`,
-    and `tcp`. On `xdp`, `tc`, `sk_skb`, and `sk_skb_parser`, those same
-    scalar/header paths are also writable after shadowing the closure
-    parameter as mutable, for example `mut ctx = $ctx; $ctx.data.0 = 0xff`,
-    `mut ctx = $ctx; $ctx.data.u16be.6 = 0x86dd`, or
-    `mut ctx = $ctx; $ctx.data.eth.ethertype = 0x86dd`. These lower to
-    guarded packet stores and automatically normalize big-endian packet
-    scalars back to network byte order. Other packet families remain
-    read-only for direct packet writes. Those views also support `payload`
-    stepping: `eth.payload` skips Ethernet and up to two stacked VLAN tags
-    when present, `ipv4.payload` uses the runtime IHL, `ipv6.payload`
-    skips the fixed IPv6 header plus a bounded chain of common IPv6
-    extension headers (`hop-by-hop`, `routing`, `fragment`, `auth`, and
+    `redirect --peer IFINDEX` is modeled on `tc:...:ingress` and also
+    requires `FLAGS = 0`. `redirect --neigh IFINDEX` is modeled on tc
+    paths for the default neighbor-resolution form, lowering to
+    `bpf_redirect_neigh(IFINDEX, 0, 0, FLAGS)`; `FLAGS` must also stay
+    `0`. The raw `helper-call "bpf_redirect*"` forms remain available as
+    escape hatches. Raw numeric return codes still work. Packet reads
+    currently support scalar byte access through `get`/indexing, direct
+    `u16be`/`u32be` cell-path scalar loads, and typed header views `eth`,
+    `ipv4`, `ipv6`, `icmp`, `icmpv6`, `udp`, and `tcp`. On `xdp`, `tc`,
+    `sk_skb`, and `sk_skb_parser`, those same scalar/header paths are
+    also writable after shadowing the closure parameter as mutable, for
+    example `mut ctx = $ctx; $ctx.data.0 = 0xff`, `mut ctx = $ctx;
+    $ctx.data.u16be.6 = 0x86dd`, or `mut ctx = $ctx;
+    $ctx.data.eth.ethertype = 0x86dd`. These lower to guarded packet
+    stores and automatically normalize big-endian packet scalars back to
+    network byte order. Other packet families remain read-only for direct
+    packet writes. Those views also support `payload` stepping:
+    `eth.payload` skips Ethernet and up to two stacked VLAN tags when
+    present, `ipv4.payload` uses the runtime IHL, `ipv6.payload` skips
+    the fixed IPv6 header plus a bounded chain of common IPv6 extension
+    headers (`hop-by-hop`, `routing`, `fragment`, `auth`, and
     `destination options`), `icmp.payload` / `icmpv6.payload` skip the
     fixed 8-byte ICMP header, and `tcp.payload` uses the runtime data
     offset. Nested protocol-following views like `eth.ipv4.tcp.seq` and

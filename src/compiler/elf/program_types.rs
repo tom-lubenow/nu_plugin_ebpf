@@ -931,6 +931,7 @@ pub(super) const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[
     ProgramIntrinsic::StopTimer,
     ProgramIntrinsic::ReadStr,
     ProgramIntrinsic::ReadKernelStr,
+    ProgramIntrinsic::Redirect,
     ProgramIntrinsic::RedirectMap,
     ProgramIntrinsic::RedirectSocket,
     ProgramIntrinsic::HelperCall,

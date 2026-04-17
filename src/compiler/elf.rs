@@ -991,6 +991,7 @@ pub enum ProgramIntrinsic {
     StopTimer,
     ReadStr,
     ReadKernelStr,
+    Redirect,
     RedirectMap,
     RedirectSocket,
     HelperCall,
@@ -1020,6 +1021,7 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::StopTimer => "stop-timer",
             ProgramIntrinsic::ReadStr => "read-str",
             ProgramIntrinsic::ReadKernelStr => "read-kernel-str",
+            ProgramIntrinsic::Redirect => "redirect",
             ProgramIntrinsic::RedirectMap => "redirect-map",
             ProgramIntrinsic::RedirectSocket => "redirect-socket",
             ProgramIntrinsic::HelperCall => "helper-call",
@@ -1045,6 +1047,7 @@ impl ProgramIntrinsic {
             "stop-timer" => Some(ProgramIntrinsic::StopTimer),
             "read-str" => Some(ProgramIntrinsic::ReadStr),
             "read-kernel-str" => Some(ProgramIntrinsic::ReadKernelStr),
+            "redirect" => Some(ProgramIntrinsic::Redirect),
             "redirect-map" => Some(ProgramIntrinsic::RedirectMap),
             "redirect-socket" => Some(ProgramIntrinsic::RedirectSocket),
             "helper-call" => Some(ProgramIntrinsic::HelperCall),
@@ -1070,7 +1073,8 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::StartTimer | ProgramIntrinsic::StopTimer => ProgramCapability::Timers,
             ProgramIntrinsic::ReadStr => ProgramCapability::ReadUserString,
             ProgramIntrinsic::ReadKernelStr => ProgramCapability::ReadKernelString,
-            ProgramIntrinsic::RedirectMap
+            ProgramIntrinsic::Redirect
+            | ProgramIntrinsic::RedirectMap
             | ProgramIntrinsic::RedirectSocket
             | ProgramIntrinsic::HelperCall => ProgramCapability::HelperCalls,
             ProgramIntrinsic::KfuncCall => ProgramCapability::KfuncCalls,

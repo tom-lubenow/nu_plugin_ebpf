@@ -235,6 +235,54 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_probe_read_string(src_dst, dst_vreg, ptr_vreg, false, aligned_len)?;
             }
 
+            "redirect" => {
+                self.require_only_named_args("redirect", &["flags"])?;
+                let helper = self.packet_redirect_helper_from_named_flags("redirect")?;
+                if let Some(message) = self.probe_ctx.and_then(|ctx| ctx.helper_call_error(helper))
+                {
+                    return Err(CompileError::UnsupportedInstruction(message));
+                }
+
+                let ifindex_vreg = self
+                    .positional_args
+                    .first()
+                    .map(|(vreg, _)| *vreg)
+                    .or(self.pipeline_input)
+                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "redirect requires an ifindex from pipeline input or a first positional argument"
+                                .into(),
+                        )
+                    })?;
+                let flags = self
+                    .optional_nonnegative_named_u64_arg("redirect", "flags")?
+                    .unwrap_or(0);
+                self.validate_packet_redirect_flags(helper, flags)?;
+
+                let args = match helper {
+                    BpfHelper::Redirect | BpfHelper::RedirectPeer => {
+                        vec![MirValue::VReg(ifindex_vreg), MirValue::Const(flags as i64)]
+                    }
+                    BpfHelper::RedirectNeigh => vec![
+                        MirValue::VReg(ifindex_vreg),
+                        MirValue::Const(0),
+                        MirValue::Const(0),
+                        MirValue::Const(flags as i64),
+                    ],
+                    _ => unreachable!(
+                        "packet redirect helper selection returned non-redirect helper"
+                    ),
+                };
+                self.emit(MirInst::CallHelper {
+                    dst: dst_vreg,
+                    helper: helper as u32,
+                    args,
+                });
+                self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                self.reset_call_result_metadata(src_dst);
+            }
+
             "redirect-map" => {
                 if !self.named_flags.is_empty() {
                     return Err(CompileError::UnsupportedInstruction(
@@ -270,24 +318,9 @@ impl<'a> HirToMirLowering<'a> {
                                 .into(),
                         )
                     })?;
-                let flags = if let Some((_, reg)) = self.named_args.get("flags") {
-                    let raw = self
-                        .get_metadata(*reg)
-                        .and_then(|m| m.literal_int)
-                        .ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(
-                                "redirect-map --flags must be a compile-time integer literal"
-                                    .into(),
-                            )
-                        })?;
-                    u64::try_from(raw).map_err(|_| {
-                        CompileError::UnsupportedInstruction(
-                            "redirect-map --flags must be >= 0".into(),
-                        )
-                    })?
-                } else {
-                    0
-                };
+                let flags = self
+                    .optional_nonnegative_named_u64_arg("redirect-map", "flags")?
+                    .unwrap_or(0);
 
                 let map_vreg = self.emit_typed_map_fd_load(map_name, map_kind);
                 self.emit(MirInst::CallHelper {
@@ -334,24 +367,9 @@ impl<'a> HirToMirLowering<'a> {
                                 .into(),
                         )
                     })?;
-                let flags = if let Some((_, reg)) = self.named_args.get("flags") {
-                    let raw = self
-                        .get_metadata(*reg)
-                        .and_then(|m| m.literal_int)
-                        .ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(
-                                "redirect-socket --flags must be a compile-time integer literal"
-                                    .into(),
-                            )
-                        })?;
-                    u64::try_from(raw).map_err(|_| {
-                        CompileError::UnsupportedInstruction(
-                            "redirect-socket --flags must be >= 0".into(),
-                        )
-                    })?
-                } else {
-                    0
-                };
+                let flags = self
+                    .optional_nonnegative_named_u64_arg("redirect-socket", "flags")?
+                    .unwrap_or(0);
 
                 let ctx_vreg = self.materialize_context_pointer_arg();
                 let map_vreg = self.emit_typed_map_fd_load(map_name, map_kind);
