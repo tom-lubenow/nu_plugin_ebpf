@@ -2924,6 +2924,21 @@ fn test_probe_context_rejects_sock_ops_store_target_on_non_sock_ops_program() {
 }
 
 #[test]
+fn test_program_type_base_ctx_store_target_error_follows_context_family() {
+    assert!(
+        EbpfProgramType::SockOps
+            .base_ctx_store_target_error(&CtxStoreTarget::SockOpsReply)
+            .is_none()
+    );
+    assert!(
+        EbpfProgramType::SkMsg
+            .base_ctx_store_target_error(&CtxStoreTarget::SockOpsReply)
+            .unwrap()
+            .contains("writable sock_ops reply fields are only supported on sock_ops programs")
+    );
+}
+
+#[test]
 fn test_probe_context_rejects_sock_ops_replylong_store_without_fixed_index() {
     let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
     let err = ctx

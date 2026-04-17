@@ -1,4 +1,4 @@
-use super::{CtxWriteTarget, EbpfProgramType};
+use super::{CtxWriteTarget, EbpfProgramType, ProgramContextFamily};
 use crate::compiler::mir::{CtxField, CtxStoreTarget};
 use crate::program_spec::ProgramSpec;
 
@@ -380,20 +380,28 @@ impl CtxStoreTarget {
             CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(_) => Some(CtxField::MsgSrcIp6),
         }
     }
+
+    fn required_context_family(&self) -> Option<ProgramContextFamily> {
+        match self {
+            CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
+                Some(ProgramContextFamily::SockOps)
+            }
+            _ => None,
+        }
+    }
 }
 
 impl EbpfProgramType {
     pub(crate) fn base_ctx_store_target_error(&self, target: &CtxStoreTarget) -> Option<String> {
-        match target {
-            CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_)
-                if *self != EbpfProgramType::SockOps =>
-            {
-                Some(target.missing_context_error().to_string())
-            }
-            _ => target
-                .ctx_field()
-                .and_then(|field| self.base_ctx_field_access_error(&field)),
-        }
+        target
+            .required_context_family()
+            .filter(|required_family| self.context_family() != *required_family)
+            .map(|_| target.missing_context_error().to_string())
+            .or_else(|| {
+                target
+                    .ctx_field()
+                    .and_then(|field| self.base_ctx_field_access_error(&field))
+            })
     }
 }
 
