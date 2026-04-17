@@ -926,8 +926,9 @@ fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
         egress.helper_call_error(BpfHelper::SkAssign),
         Some("helper 'bpf_sk_assign' is only valid in tc ingress programs".to_string())
     );
-    assert!(bind.helper_call_error(BpfHelper::GetSockOpt).is_none());
     assert!(connect.helper_call_error(BpfHelper::Bind).is_none());
+    assert!(connect.helper_call_error(BpfHelper::GetSockOpt).is_none());
+    assert!(connect.helper_call_error(BpfHelper::SetSockOpt).is_none());
     assert!(
         sockopt_get
             .helper_call_error(BpfHelper::GetSockOpt)
@@ -944,6 +945,20 @@ fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
         bind.helper_call_error(BpfHelper::Bind),
         Some(
             "helper 'bpf_bind' is only valid on cgroup_sock_addr connect4/connect6 hooks"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        bind.helper_call_error(BpfHelper::GetSockOpt),
+        Some(
+            "helper 'bpf_getsockopt' is only valid on cgroup_sock_addr connect4/connect6 hooks"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        bind.helper_call_error(BpfHelper::SetSockOpt),
+        Some(
+            "helper 'bpf_setsockopt' is only valid on cgroup_sock_addr connect4/connect6 hooks"
                 .to_string()
         )
     );

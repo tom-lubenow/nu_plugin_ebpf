@@ -191,7 +191,11 @@ const GET_SOCKET_COOKIE_SOCKET_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::TpBtf,
 ];
 const TC_INGRESS_ONLY_HELPERS: &[BpfHelper] = &[BpfHelper::RedirectPeer, BpfHelper::SkAssign];
-const CGROUP_SOCK_ADDR_CONNECT_ONLY_HELPERS: &[BpfHelper] = &[BpfHelper::Bind];
+const CGROUP_SOCK_ADDR_CONNECT_ONLY_HELPERS: &[BpfHelper] = &[
+    BpfHelper::Bind,
+    BpfHelper::GetSockOpt,
+    BpfHelper::SetSockOpt,
+];
 const CGROUP_SOCK_POST_BIND_ONLY_MEMBERS: &[&str] = &["src_port"];
 const CGROUP_SOCK_POST_BIND4_ONLY_MEMBERS: &[&str] = &["src_ip4"];
 const CGROUP_SOCK_POST_BIND6_ONLY_MEMBERS: &[&str] = &["src_ip6"];
