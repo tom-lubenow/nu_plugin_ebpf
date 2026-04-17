@@ -992,6 +992,7 @@ pub enum ProgramIntrinsic {
     ReadStr,
     ReadKernelStr,
     RedirectMap,
+    RedirectSocket,
     HelperCall,
     KfuncCall,
     GlobalDefine,
@@ -1020,6 +1021,7 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::ReadStr => "read-str",
             ProgramIntrinsic::ReadKernelStr => "read-kernel-str",
             ProgramIntrinsic::RedirectMap => "redirect-map",
+            ProgramIntrinsic::RedirectSocket => "redirect-socket",
             ProgramIntrinsic::HelperCall => "helper-call",
             ProgramIntrinsic::KfuncCall => "kfunc-call",
             ProgramIntrinsic::GlobalDefine => "global-define",
@@ -1044,6 +1046,7 @@ impl ProgramIntrinsic {
             "read-str" => Some(ProgramIntrinsic::ReadStr),
             "read-kernel-str" => Some(ProgramIntrinsic::ReadKernelStr),
             "redirect-map" => Some(ProgramIntrinsic::RedirectMap),
+            "redirect-socket" => Some(ProgramIntrinsic::RedirectSocket),
             "helper-call" => Some(ProgramIntrinsic::HelperCall),
             "kfunc-call" => Some(ProgramIntrinsic::KfuncCall),
             "global-define" => Some(ProgramIntrinsic::GlobalDefine),
@@ -1067,9 +1070,9 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::StartTimer | ProgramIntrinsic::StopTimer => ProgramCapability::Timers,
             ProgramIntrinsic::ReadStr => ProgramCapability::ReadUserString,
             ProgramIntrinsic::ReadKernelStr => ProgramCapability::ReadKernelString,
-            ProgramIntrinsic::RedirectMap | ProgramIntrinsic::HelperCall => {
-                ProgramCapability::HelperCalls
-            }
+            ProgramIntrinsic::RedirectMap
+            | ProgramIntrinsic::RedirectSocket
+            | ProgramIntrinsic::HelperCall => ProgramCapability::HelperCalls,
             ProgramIntrinsic::KfuncCall => ProgramCapability::KfuncCalls,
             ProgramIntrinsic::GlobalDefine
             | ProgramIntrinsic::GlobalGet

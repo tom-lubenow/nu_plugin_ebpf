@@ -303,6 +303,72 @@ impl<'a> HirToMirLowering<'a> {
                 self.reset_call_result_metadata(src_dst);
             }
 
+            "redirect-socket" => {
+                if !self.named_flags.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "redirect-socket does not accept flags".into(),
+                    ));
+                }
+                self.require_only_named_args("redirect-socket", &["kind", "flags"])?;
+
+                let (_, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "redirect-socket requires a literal map name as the first positional argument"
+                            .into(),
+                    )
+                })?;
+                let map_name = self.literal_string_arg(map_reg, "redirect-socket")?;
+                self.validate_generic_map_name(&map_name, "redirect-socket")?;
+                let map_kind = self.required_socket_map_kind_arg("redirect-socket")?;
+                let helper =
+                    self.socket_redirect_helper_for_current_program("redirect-socket", map_kind)?;
+                let key_vreg = self
+                    .positional_args
+                    .get(1)
+                    .map(|(vreg, _)| *vreg)
+                    .or(self.pipeline_input)
+                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "redirect-socket requires a key from pipeline input or a second positional argument"
+                                .into(),
+                        )
+                    })?;
+                let flags = if let Some((_, reg)) = self.named_args.get("flags") {
+                    let raw = self
+                        .get_metadata(*reg)
+                        .and_then(|m| m.literal_int)
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "redirect-socket --flags must be a compile-time integer literal"
+                                    .into(),
+                            )
+                        })?;
+                    u64::try_from(raw).map_err(|_| {
+                        CompileError::UnsupportedInstruction(
+                            "redirect-socket --flags must be >= 0".into(),
+                        )
+                    })?
+                } else {
+                    0
+                };
+
+                let ctx_vreg = self.materialize_context_pointer_arg();
+                let map_vreg = self.emit_typed_map_fd_load(map_name, map_kind);
+                self.emit(MirInst::CallHelper {
+                    dst: dst_vreg,
+                    helper: helper as u32,
+                    args: vec![
+                        MirValue::VReg(ctx_vreg),
+                        MirValue::VReg(map_vreg),
+                        MirValue::VReg(key_vreg),
+                        MirValue::Const(flags as i64),
+                    ],
+                });
+                self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                self.reset_call_result_metadata(src_dst);
+            }
+
             "kfunc-call" => {
                 if !self.named_flags.is_empty() {
                     return Err(CompileError::UnsupportedInstruction(

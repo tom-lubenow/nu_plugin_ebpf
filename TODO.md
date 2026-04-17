@@ -1,7 +1,7 @@
 # TODO
 
 Status legend: `[x]` done, `[~]` in progress, `[ ]` todo.
-Last updated: 2026-04-13.
+Last updated: 2026-04-16.
 
 ## Current compiler gaps
 
@@ -157,7 +157,7 @@ Last updated: 2026-04-13.
   - Prefer ordinary Nushell syntax, typed context projection, and leading typed `mut` bindings over bespoke helper commands when the underlying operation has an honest language form.
   - Treat `helper-call` and `kfunc-call` as explicit escape hatches for kernel ABI surface we do not yet model directly.
   - Keep compiler-internal helper/kfunc modeling even if those escape hatches shrink over time: the compiler still needs signatures, legal program families, pointer/ref semantics, and verifier-facing rules.
-  - Recent progress: XDP map redirection now has a first-class `redirect-map` command that lowers through the same typed `bpf_redirect_map` model, reducing one common packet-path case that previously required stringly `helper-call`.
+  - Recent progress: packet/socket redirection now has first-class `redirect-map` (XDP) and `redirect-socket` (`sk_msg` / `sk_skb` / `sk_skb_parser`) commands that lower through the same typed helper models, shrinking two common redirect cases that previously required stringly `helper-call`.
 
 Near-term priority order:
 1. Make the program model explicitly program-type-aware (targets, section naming, helper surface, attach/load path).

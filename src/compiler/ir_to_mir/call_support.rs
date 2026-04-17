@@ -1,9 +1,9 @@
 use super::*;
-use crate::compiler::ProgramIntrinsic;
 use crate::compiler::instruction::{
     BpfHelper, kfunc_pointer_arg_fixed_size, kfunc_pointer_arg_requires_stack_slot_base,
 };
 use crate::compiler::mir::AddressSpace;
+use crate::compiler::{EbpfProgramType, ProgramIntrinsic};
 
 #[derive(Debug, Clone)]
 pub(super) struct ScalarKfuncOutArgWriteback {
@@ -280,6 +280,63 @@ impl<'a> HirToMirLowering<'a> {
                 "{context} --kind must be one of: devmap, devmap-hash, cpumap, xskmap"
             ))),
         }
+    }
+
+    pub(super) fn required_socket_map_kind_arg(
+        &self,
+        context: &str,
+    ) -> Result<MapKind, CompileError> {
+        let Some((_, reg)) = self.named_args.get("kind") else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} requires --kind sockmap or --kind sockhash"
+            )));
+        };
+        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+        match Self::parse_generic_map_kind(&kind) {
+            Some(MapKind::SockMap) => Ok(MapKind::SockMap),
+            Some(MapKind::SockHash) => Ok(MapKind::SockHash),
+            Some(other) => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} requires --kind sockmap or --kind sockhash, got {:?}",
+                other
+            ))),
+            None => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind must be one of: sockmap, sockhash"
+            ))),
+        }
+    }
+
+    pub(super) fn socket_redirect_helper_for_current_program(
+        &self,
+        context: &str,
+        map_kind: MapKind,
+    ) -> Result<BpfHelper, CompileError> {
+        let Some(ctx) = self.probe_ctx else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} requires a known attached program context"
+            )));
+        };
+
+        let helper = match (ctx.program_type(), map_kind) {
+            (EbpfProgramType::SkMsg, MapKind::SockMap) => BpfHelper::MsgRedirectMap,
+            (EbpfProgramType::SkMsg, MapKind::SockHash) => BpfHelper::MsgRedirectHash,
+            (EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser, MapKind::SockMap) => {
+                BpfHelper::SkRedirectMap
+            }
+            (EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser, MapKind::SockHash) => {
+                BpfHelper::SkRedirectHash
+            }
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} is only valid in sk_msg, sk_skb, and sk_skb_parser programs"
+                )));
+            }
+        };
+
+        if let Some(message) = ctx.helper_call_error(helper) {
+            return Err(CompileError::UnsupportedInstruction(message));
+        }
+
+        Ok(helper)
     }
 
     pub(super) fn validate_generic_map_name(

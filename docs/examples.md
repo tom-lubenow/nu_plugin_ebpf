@@ -68,6 +68,9 @@ let id = ebpf attach 'xdp:lo' {|ctx| $ctx.packet_len | count; 'pass' }
 # Dry-run an XDP redirect-map program shape with an explicit redirect-map family
 ebpf attach --dry-run 'xdp:lo' {|ctx| redirect-map demo_xsks $ctx.rx_queue_index --kind xskmap }
 
+# Dry-run an sk_msg socket redirect with the first-class socket redirect surface
+ebpf attach --dry-run 'sk_msg:/sys/fs/bpf/demo_sockhash' {|ctx| redirect-socket peer_sockhash $ctx.local_port --kind sockhash }
+
 # Count packets at tc ingress on loopback
 let id = ebpf attach 'tc:lo:ingress' {|ctx| $ctx.packet_len | count; 'ok' }
 
@@ -118,6 +121,9 @@ let id = ebpf attach 'sk_msg:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.sk.src_port |
 
 # Count local ports on a pinned sockmap or sockhash sk_skb stream-verdict hook
 let id = ebpf attach 'sk_skb:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.local_port | count; 'pass' }
+
+# Redirect sk_skb traffic through a named sockmap with the first-class socket redirect surface
+let id = ebpf attach 'sk_skb:/sys/fs/bpf/demo_sockmap' {|ctx| redirect-socket peer_sockmap $ctx.local_port --kind sockmap }
 
 # Count local ports on a pinned sockmap or sockhash sk_skb stream-parser hook
 let id = ebpf attach 'sk_skb_parser:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.local_port | count; 0 }
