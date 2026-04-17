@@ -46,6 +46,43 @@ pub(crate) enum GetSocketCookieArgPolicy {
     Socket,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PacketAdjustMode {
+    Head,
+    Meta,
+    Tail,
+    Pull,
+    Room,
+}
+
+impl PacketAdjustMode {
+    pub(crate) fn flag_name(self) -> &'static str {
+        match self {
+            Self::Head => "head",
+            Self::Meta => "meta",
+            Self::Tail => "tail",
+            Self::Pull => "pull",
+            Self::Room => "room",
+        }
+    }
+
+    pub(crate) fn value_name(self) -> &'static str {
+        match self {
+            Self::Head | Self::Meta | Self::Tail => "delta",
+            Self::Pull => "len",
+            Self::Room => "len-diff",
+        }
+    }
+
+    pub(crate) fn supported_programs_label(self) -> &'static str {
+        match self {
+            Self::Head | Self::Tail => "xdp, tc, sk_skb, and sk_skb_parser",
+            Self::Meta => "xdp",
+            Self::Pull | Self::Room => "tc, sk_skb, and sk_skb_parser",
+        }
+    }
+}
+
 impl GetSocketCookieArgPolicy {
     pub(crate) fn error_message(self, helper: BpfHelper, program_type: EbpfProgramType) -> String {
         match self {

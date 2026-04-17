@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::ProgramIntrinsic;
+use crate::compiler::elf::PacketAdjustMode;
 use crate::compiler::instruction::{
     BpfHelper, HelperExplicitMapKindFamily, HelperRetKind, HelperSignature, KfuncSignature,
 };
@@ -236,30 +237,76 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "adjust-packet" => {
-                self.require_only_named_args("adjust-packet", &[])?;
-                let helper = self.packet_adjust_helper_from_named_flags("adjust-packet")?;
-                if let Some(message) = self.probe_ctx.and_then(|ctx| ctx.helper_call_error(helper))
-                {
-                    return Err(CompileError::UnsupportedInstruction(message));
+                self.require_only_named_args("adjust-packet", &["mode", "flags"])?;
+                let mode = self.packet_adjust_mode_from_named_flags("adjust-packet")?;
+                let helper =
+                    self.packet_adjust_helper_for_current_program("adjust-packet", mode)?;
+
+                if mode != PacketAdjustMode::Room {
+                    if self.named_args.contains_key("mode") {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "adjust-packet --{} does not accept --mode",
+                            mode.flag_name()
+                        )));
+                    }
+                    if self.named_args.contains_key("flags") {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "adjust-packet --{} does not accept --flags",
+                            mode.flag_name()
+                        )));
+                    }
                 }
 
-                let delta_vreg = self
+                let value_vreg = self
                     .positional_args
                     .first()
                     .map(|(vreg, _)| *vreg)
                     .or(self.pipeline_input)
                     .or_else(|| src_dst_had_value.then_some(dst_vreg))
                     .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "adjust-packet requires a delta from pipeline input or a first positional argument"
-                                .into(),
-                        )
+                        CompileError::UnsupportedInstruction(format!(
+                            "adjust-packet --{} requires a {} from pipeline input or a first positional argument",
+                            mode.flag_name(),
+                            mode.value_name()
+                        ))
                     })?;
                 let ctx_vreg = self.materialize_context_pointer_arg();
+                let args = match helper {
+                    BpfHelper::XdpAdjustHead
+                    | BpfHelper::XdpAdjustMeta
+                    | BpfHelper::XdpAdjustTail
+                    | BpfHelper::SkbPullData => {
+                        vec![MirValue::VReg(ctx_vreg), MirValue::VReg(value_vreg)]
+                    }
+                    BpfHelper::SkbChangeHead | BpfHelper::SkbChangeTail => vec![
+                        MirValue::VReg(ctx_vreg),
+                        MirValue::VReg(value_vreg),
+                        MirValue::Const(0),
+                    ],
+                    BpfHelper::SkbAdjustRoom => {
+                        let mode_value = self
+                            .optional_nonnegative_named_u64_arg("adjust-packet --room", "mode")?
+                            .ok_or_else(|| {
+                                CompileError::UnsupportedInstruction(
+                                    "adjust-packet --room requires --mode".into(),
+                                )
+                            })?;
+                        let flags = self
+                            .optional_nonnegative_named_u64_arg("adjust-packet --room", "flags")?
+                            .unwrap_or(0);
+                        vec![
+                            MirValue::VReg(ctx_vreg),
+                            MirValue::VReg(value_vreg),
+                            MirValue::Const(mode_value as i64),
+                            MirValue::Const(flags as i64),
+                        ]
+                    }
+                    _ => unreachable!("packet adjust helper selection returned unexpected helper"),
+                };
                 self.emit(MirInst::CallHelper {
                     dst: dst_vreg,
                     helper: helper as u32,
-                    args: vec![MirValue::VReg(ctx_vreg), MirValue::VReg(delta_vreg)],
+                    args,
                 });
                 self.vreg_type_hints.insert(dst_vreg, MirType::I64);
                 self.reset_call_result_metadata(src_dst);

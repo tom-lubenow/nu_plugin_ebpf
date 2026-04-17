@@ -1277,6 +1277,49 @@ fn test_program_type_packet_redirect_helpers_follow_program_model() {
 }
 
 #[test]
+fn test_program_type_packet_adjust_helpers_follow_program_model() {
+    assert!(matches!(
+        EbpfProgramType::Xdp.packet_adjust_helper(PacketAdjustMode::Head),
+        Some(BpfHelper::XdpAdjustHead)
+    ));
+    assert!(matches!(
+        EbpfProgramType::Xdp.packet_adjust_helper(PacketAdjustMode::Meta),
+        Some(BpfHelper::XdpAdjustMeta)
+    ));
+    assert!(matches!(
+        EbpfProgramType::Tc.packet_adjust_helper(PacketAdjustMode::Head),
+        Some(BpfHelper::SkbChangeHead)
+    ));
+    assert!(matches!(
+        EbpfProgramType::Tc.packet_adjust_helper(PacketAdjustMode::Tail),
+        Some(BpfHelper::SkbChangeTail)
+    ));
+    assert!(matches!(
+        EbpfProgramType::SkSkb.packet_adjust_helper(PacketAdjustMode::Pull),
+        Some(BpfHelper::SkbPullData)
+    ));
+    assert!(matches!(
+        EbpfProgramType::SkSkbParser.packet_adjust_helper(PacketAdjustMode::Room),
+        Some(BpfHelper::SkbAdjustRoom)
+    ));
+    assert!(
+        EbpfProgramType::Tc
+            .packet_adjust_helper(PacketAdjustMode::Meta)
+            .is_none()
+    );
+    assert!(
+        EbpfProgramType::Xdp
+            .packet_adjust_helper(PacketAdjustMode::Pull)
+            .is_none()
+    );
+    assert!(
+        EbpfProgramType::Fentry
+            .packet_adjust_helper(PacketAdjustMode::Head)
+            .is_none()
+    );
+}
+
+#[test]
 fn test_program_type_socket_redirect_helpers_follow_program_model() {
     assert!(matches!(
         EbpfProgramType::SkMsg.socket_redirect_helper(MapKind::SockMap),

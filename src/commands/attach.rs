@@ -152,21 +152,23 @@ Context parameter syntax (recommended):
     returning `ctx.packet_len`. `redirect IFINDEX` is the preferred
     first-class packet redirect surface on XDP/TC, with optional
     `--flags`; XDP still requires `FLAGS = 0`. `adjust-packet
-    --head|--meta|--tail DELTA` is the preferred first-class surface
-    for XDP packet relayout, selecting the corresponding
-    `bpf_xdp_adjust_*` helper automatically. After any of those XDP
-    adjust helpers, reload `ctx.data`, `ctx.data_meta`, and
-    `ctx.data_end` before reading packet bytes again. The raw
-    `helper-call "bpf_xdp_adjust_*" $ctx DELTA` forms remain available
-    as escape hatches.
-    `tc`, `sk_skb`, and `sk_skb_parser` also model skb packet-edit
-    helpers such as `bpf_skb_store_bytes`, `bpf_l3_csum_replace`,
-    `bpf_l4_csum_replace`, `bpf_get_hash_recalc`, `bpf_csum_update`,
-    `bpf_set_hash_invalid`, `bpf_skb_pull_data`, `bpf_skb_change_head`,
-    `bpf_skb_change_tail`, and `bpf_skb_adjust_room`. Reload `ctx.data`
-    and `ctx.data_end` after `bpf_skb_pull_data`, `bpf_skb_change_head`,
-    `bpf_skb_change_tail`, or `bpf_skb_adjust_room` before reading
-    packet bytes again.
+    --head|--meta|--tail DELTA` is the preferred first-class XDP packet
+    relayout surface, selecting the corresponding `bpf_xdp_adjust_*`
+    helper automatically. On `tc`, `sk_skb`, and `sk_skb_parser`,
+    `adjust-packet --head|--tail DELTA`, `adjust-packet --pull LEN`,
+    and `adjust-packet --room LEN_DIFF --mode MODE [--flags FLAGS]`
+    are the preferred first-class skb relayout surfaces, selecting
+    `bpf_skb_change_{head,tail}`, `bpf_skb_pull_data`, and
+    `bpf_skb_adjust_room` automatically. After XDP adjust helpers,
+    reload `ctx.data`, `ctx.data_meta`, and `ctx.data_end` before
+    reading packet bytes again; after skb relayout helpers, reload
+    `ctx.data` and `ctx.data_end`. The raw `helper-call
+    "bpf_xdp_adjust_*"` and `helper-call "bpf_skb_*"` forms remain
+    available as escape hatches. `tc`, `sk_skb`, and `sk_skb_parser`
+    also model skb packet-edit helpers such as `bpf_skb_store_bytes`,
+    `bpf_l3_csum_replace`, `bpf_l4_csum_replace`,
+    `bpf_get_hash_recalc`, `bpf_csum_update`, and
+    `bpf_set_hash_invalid`.
     `redirect --peer IFINDEX` is modeled on `tc:...:ingress` and also
     requires `FLAGS = 0`. `redirect --neigh IFINDEX` is modeled on tc
     paths for the default neighbor-resolution form, lowering to

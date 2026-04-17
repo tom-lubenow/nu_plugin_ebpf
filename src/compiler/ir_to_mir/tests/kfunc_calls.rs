@@ -2387,7 +2387,9 @@ fn test_adjust_packet_intrinsic_rejects_conflicting_mode_flags() {
     match err {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(
-                msg.contains("adjust-packet requires exactly one of --head, --meta, or --tail"),
+                msg.contains(
+                    "adjust-packet requires exactly one of --head, --meta, --tail, --pull, or --room"
+                ),
                 "{msg}"
             );
         }
@@ -2396,7 +2398,7 @@ fn test_adjust_packet_intrinsic_rejects_conflicting_mode_flags() {
 }
 
 #[test]
-fn test_adjust_packet_intrinsic_rejects_non_xdp_programs() {
+fn test_adjust_packet_intrinsic_lowers_to_skb_change_head_on_tc_and_compiles() {
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -2431,6 +2433,272 @@ fn test_adjust_packet_intrinsic_rejects_non_xdp_programs() {
     decl_names.insert(DeclId::new(42), "adjust-packet".to_string());
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("adjust-packet intrinsic should type-check on tc");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("adjust-packet --head should lower to skb_change_head on tc");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::SkbChangeHead as u32
+            && args.len() == 3
+            && matches!(args.get(2), Some(MirValue::Const(0)))
+    )));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("adjust-packet --head should compile on tc");
+}
+
+#[test]
+fn test_adjust_packet_intrinsic_lowers_to_skb_pull_data_on_sk_skb() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(64),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        flags: vec![b"pull".to_vec()],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let ctx_var = VarId::new(0);
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "adjust-packet".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("adjust-packet intrinsic should type-check on sk_skb");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("adjust-packet --pull should lower on sk_skb");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::SkbPullData as u32 && args.len() == 2
+    )));
+}
+
+#[test]
+fn test_adjust_packet_intrinsic_lowers_to_skb_adjust_room_on_tc() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(32),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(2),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![
+                            (b"mode".to_vec(), RegId::new(2)),
+                            (b"flags".to_vec(), RegId::new(3)),
+                        ],
+                        flags: vec![b"room".to_vec()],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let ctx_var = VarId::new(0);
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "adjust-packet".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("adjust-packet intrinsic should type-check on tc");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("adjust-packet --room should lower on tc");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::SkbAdjustRoom as u32
+            && args.len() == 4
+            && matches!(args.get(2), Some(MirValue::Const(1)))
+            && matches!(args.get(3), Some(MirValue::Const(2)))
+    )));
+}
+
+#[test]
+fn test_adjust_packet_intrinsic_rejects_room_without_mode() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(8),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        flags: vec![b"room".to_vec()],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let ctx_var = VarId::new(0);
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "adjust-packet".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("adjust-packet intrinsic should type-check on tc");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("adjust-packet --room should require --mode");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(
+                msg.contains("adjust-packet --room requires --mode"),
+                "{msg}"
+            );
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
+fn test_adjust_packet_intrinsic_rejects_meta_on_tc_programs() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(8),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        flags: vec![b"meta".to_vec()],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let ctx_var = VarId::new(0);
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "adjust-packet".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
         .expect("adjust-packet intrinsic should type-check before lowering");
 
     let err = lower_hir_to_mir_with_hints(
@@ -2441,12 +2709,12 @@ fn test_adjust_packet_intrinsic_rejects_non_xdp_programs() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("adjust-packet should be rejected outside xdp");
+    .expect_err("adjust-packet --meta should be rejected on tc");
 
     match err {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(
-                msg.contains("helper 'bpf_xdp_adjust_head' is only valid in xdp programs"),
+                msg.contains("adjust-packet --meta is only valid in xdp programs"),
                 "{msg}"
             );
         }

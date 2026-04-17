@@ -1,4 +1,4 @@
-use super::{EbpfProgramType, GetSocketCookieArgPolicy};
+use super::{EbpfProgramType, GetSocketCookieArgPolicy, PacketAdjustMode};
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::MapKind;
 use crate::program_spec::{CgroupSockAddrTarget, CgroupSockTarget, ProgramSpec, TcTarget};
@@ -430,6 +430,38 @@ impl EbpfProgramType {
             Some(BpfHelper::Redirect)
         } else {
             None
+        }
+    }
+
+    pub(crate) fn packet_adjust_helper(&self, mode: PacketAdjustMode) -> Option<BpfHelper> {
+        match mode {
+            PacketAdjustMode::Head => {
+                if XDP_PROGRAMS.contains(self) {
+                    Some(BpfHelper::XdpAdjustHead)
+                } else if TC_SK_SKB_PROGRAMS.contains(self) {
+                    Some(BpfHelper::SkbChangeHead)
+                } else {
+                    None
+                }
+            }
+            PacketAdjustMode::Meta => XDP_PROGRAMS
+                .contains(self)
+                .then_some(BpfHelper::XdpAdjustMeta),
+            PacketAdjustMode::Tail => {
+                if XDP_PROGRAMS.contains(self) {
+                    Some(BpfHelper::XdpAdjustTail)
+                } else if TC_SK_SKB_PROGRAMS.contains(self) {
+                    Some(BpfHelper::SkbChangeTail)
+                } else {
+                    None
+                }
+            }
+            PacketAdjustMode::Pull => TC_SK_SKB_PROGRAMS
+                .contains(self)
+                .then_some(BpfHelper::SkbPullData),
+            PacketAdjustMode::Room => TC_SK_SKB_PROGRAMS
+                .contains(self)
+                .then_some(BpfHelper::SkbAdjustRoom),
         }
     }
 

@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::ProgramIntrinsic;
+use crate::compiler::elf::PacketAdjustMode;
 use crate::compiler::instruction::{
     BpfHelper, kfunc_pointer_arg_fixed_size, kfunc_pointer_arg_requires_stack_slot_base,
 };
@@ -374,16 +375,18 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
-    pub(super) fn packet_adjust_helper_from_named_flags(
+    pub(super) fn packet_adjust_mode_from_named_flags(
         &self,
         context: &str,
-    ) -> Result<BpfHelper, CompileError> {
-        let mut helper = None;
+    ) -> Result<PacketAdjustMode, CompileError> {
+        let mut mode = None;
         for flag in &self.named_flags {
             let candidate = match flag.as_str() {
-                "head" => BpfHelper::XdpAdjustHead,
-                "meta" => BpfHelper::XdpAdjustMeta,
-                "tail" => BpfHelper::XdpAdjustTail,
+                "head" => PacketAdjustMode::Head,
+                "meta" => PacketAdjustMode::Meta,
+                "tail" => PacketAdjustMode::Tail,
+                "pull" => PacketAdjustMode::Pull,
+                "room" => PacketAdjustMode::Room,
                 _ => {
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "{context} does not accept flag '{}'",
@@ -391,18 +394,47 @@ impl<'a> HirToMirLowering<'a> {
                     )));
                 }
             };
-            if helper.replace(candidate).is_some() {
+            if mode.replace(candidate).is_some() {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "{context} requires exactly one of --head, --meta, or --tail"
+                    "{context} requires exactly one of --head, --meta, --tail, --pull, or --room"
                 )));
             }
         }
 
-        helper.ok_or_else(|| {
+        mode.ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
-                "{context} requires exactly one of --head, --meta, or --tail"
+                "{context} requires exactly one of --head, --meta, --tail, --pull, or --room"
             ))
         })
+    }
+
+    pub(super) fn packet_adjust_helper_for_current_program(
+        &self,
+        context: &str,
+        mode: PacketAdjustMode,
+    ) -> Result<BpfHelper, CompileError> {
+        let Some(ctx) = self.probe_ctx else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} requires a known attached program context"
+            )));
+        };
+
+        let helper = ctx
+            .program_type()
+            .packet_adjust_helper(mode)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{context} --{} is only valid in {} programs",
+                    mode.flag_name(),
+                    mode.supported_programs_label()
+                ))
+            })?;
+
+        if let Some(message) = ctx.helper_call_error(helper) {
+            return Err(CompileError::UnsupportedInstruction(message));
+        }
+
+        Ok(helper)
     }
 
     pub(super) fn validate_packet_redirect_flags(
