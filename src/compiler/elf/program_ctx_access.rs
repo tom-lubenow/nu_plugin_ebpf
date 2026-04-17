@@ -1,5 +1,5 @@
 use super::{CtxField, EbpfProgramType};
-use crate::program_spec::ProgramSpec;
+use crate::program_spec::{ProgramAttachAddressFamily, ProgramAttachShape, ProgramSpec};
 
 type BaseContextFieldAccessSurfaceSpec = (&'static [CtxField], BaseContextFieldAccessRequirement);
 
@@ -34,30 +34,36 @@ struct ProgramCtxFieldAccessSurfaceFamilySpec {
 impl ContextFieldAccessRequirement {
     fn error(self, spec: &ProgramSpec, field_name: &str) -> Option<String> {
         match self {
-            Self::CgroupSockoptGetOnly => match spec {
-                ProgramSpec::CgroupSockopt { target } if !target.is_get() => Some(format!(
+            Self::CgroupSockoptGetOnly => match spec.attach_shape() {
+                ProgramAttachShape::CgroupSockopt { get: false } => Some(format!(
                     "ctx.{field_name} is only available on cgroup_sockopt:get hooks"
                 )),
                 _ => None,
             },
-            Self::CgroupSockAddrIpv4Only => match spec {
-                ProgramSpec::CgroupSockAddr { target } if !target.is_ipv4() => Some(format!(
+            Self::CgroupSockAddrIpv4Only => match spec.attach_shape() {
+                ProgramAttachShape::CgroupSockAddr {
+                    family: ProgramAttachAddressFamily::Ipv6,
+                    ..
+                } => Some(format!(
                     "ctx.{field_name} is only available on IPv4 cgroup_sock_addr hooks (*4)"
                 )),
                 _ => None,
             },
-            Self::CgroupSockAddrIpv6Only => match spec {
-                ProgramSpec::CgroupSockAddr { target } if !target.is_ipv6() => Some(format!(
+            Self::CgroupSockAddrIpv6Only => match spec.attach_shape() {
+                ProgramAttachShape::CgroupSockAddr {
+                    family: ProgramAttachAddressFamily::Ipv4,
+                    ..
+                } => Some(format!(
                     "ctx.{field_name} is only available on IPv6 cgroup_sock_addr hooks (*6)"
                 )),
                 _ => None,
             },
-            Self::CgroupSockAddrMsgSourceOnly => match spec {
-                ProgramSpec::CgroupSockAddr { target } if !target.has_msg_source() => {
-                    Some(format!(
-                        "ctx.{field_name} is only available on cgroup_sock_addr sendmsg*/recvmsg* hooks"
-                    ))
-                }
+            Self::CgroupSockAddrMsgSourceOnly => match spec.attach_shape() {
+                ProgramAttachShape::CgroupSockAddr {
+                    msg_source: false, ..
+                } => Some(format!(
+                    "ctx.{field_name} is only available on cgroup_sock_addr sendmsg*/recvmsg* hooks"
+                )),
                 _ => None,
             },
         }
@@ -103,8 +109,18 @@ impl ContextFieldAccessSurfaceSpec {
 impl ProgramCtxFieldAccessSurfaceFamilyRequirement {
     fn matches_spec(self, spec: &ProgramSpec) -> bool {
         match self {
-            Self::CgroupSockopt => matches!(spec, ProgramSpec::CgroupSockopt { .. }),
-            Self::CgroupSockAddr => matches!(spec, ProgramSpec::CgroupSockAddr { .. }),
+            Self::CgroupSockopt => {
+                matches!(
+                    spec.attach_shape(),
+                    ProgramAttachShape::CgroupSockopt { .. }
+                )
+            }
+            Self::CgroupSockAddr => {
+                matches!(
+                    spec.attach_shape(),
+                    ProgramAttachShape::CgroupSockAddr { .. }
+                )
+            }
         }
     }
 }

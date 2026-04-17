@@ -1167,6 +1167,31 @@ pub enum ProgramSpec {
     StructOps { value_type_name: String },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProgramAttachAddressFamily {
+    Ipv4,
+    Ipv6,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProgramAttachShape {
+    Generic,
+    Tc {
+        ingress: bool,
+    },
+    CgroupSock {
+        post_bind: bool,
+    },
+    CgroupSockopt {
+        get: bool,
+    },
+    CgroupSockAddr {
+        family: ProgramAttachAddressFamily,
+        msg_source: bool,
+        connect: bool,
+    },
+}
+
 impl ProgramSpec {
     pub fn parse(spec: &str) -> Result<Self, ProgramSpecParseError> {
         let Some((prefix, target)) = spec.split_once(':') else {
@@ -1365,6 +1390,30 @@ impl ProgramSpec {
             }
         }
     }
+
+    pub(crate) fn attach_shape(&self) -> ProgramAttachShape {
+        match self {
+            ProgramSpec::Tc { target } => ProgramAttachShape::Tc {
+                ingress: target.is_ingress(),
+            },
+            ProgramSpec::CgroupSock { target } => ProgramAttachShape::CgroupSock {
+                post_bind: target.is_post_bind(),
+            },
+            ProgramSpec::CgroupSockopt { target } => ProgramAttachShape::CgroupSockopt {
+                get: target.is_get(),
+            },
+            ProgramSpec::CgroupSockAddr { target } => ProgramAttachShape::CgroupSockAddr {
+                family: if target.is_ipv4() {
+                    ProgramAttachAddressFamily::Ipv4
+                } else {
+                    ProgramAttachAddressFamily::Ipv6
+                },
+                msg_source: target.has_msg_source(),
+                connect: target.is_connect(),
+            },
+            _ => ProgramAttachShape::Generic,
+        }
+    }
 }
 
 impl fmt::Display for ProgramSpec {
@@ -1408,6 +1457,45 @@ mod tests {
 
         assert!(get.is_get());
         assert!(!set.is_get());
+    }
+
+    #[test]
+    fn test_program_spec_attach_shape_tracks_typed_targets() {
+        let tc = ProgramSpec::from_program_type_target(EbpfProgramType::Tc, "lo:ingress")
+            .expect("tc target should parse");
+        let sock_post_bind = ProgramSpec::from_program_type_target(
+            EbpfProgramType::CgroupSock,
+            "/sys/fs/cgroup:post_bind6",
+        )
+        .expect("cgroup_sock post_bind target should parse");
+        let sockopt_get = ProgramSpec::from_program_type_target(
+            EbpfProgramType::CgroupSockopt,
+            "/sys/fs/cgroup:get",
+        )
+        .expect("cgroup_sockopt get target should parse");
+        let sendmsg6 = ProgramSpec::from_program_type_target(
+            EbpfProgramType::CgroupSockAddr,
+            "/sys/fs/cgroup:sendmsg6",
+        )
+        .expect("cgroup_sock_addr sendmsg6 target should parse");
+
+        assert_eq!(tc.attach_shape(), ProgramAttachShape::Tc { ingress: true });
+        assert_eq!(
+            sock_post_bind.attach_shape(),
+            ProgramAttachShape::CgroupSock { post_bind: true }
+        );
+        assert_eq!(
+            sockopt_get.attach_shape(),
+            ProgramAttachShape::CgroupSockopt { get: true }
+        );
+        assert_eq!(
+            sendmsg6.attach_shape(),
+            ProgramAttachShape::CgroupSockAddr {
+                family: ProgramAttachAddressFamily::Ipv6,
+                msg_source: true,
+                connect: false,
+            }
+        );
     }
 
     #[test]

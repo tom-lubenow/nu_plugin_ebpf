@@ -1,6 +1,6 @@
 use super::{CtxWriteTarget, EbpfProgramType, ProgramContextFamily};
 use crate::compiler::mir::{CtxField, CtxStoreTarget};
-use crate::program_spec::ProgramSpec;
+use crate::program_spec::{ProgramAttachShape, ProgramSpec};
 
 fn word_index(field_name: &str, index: usize) -> Result<u8, String> {
     let index = u8::try_from(index)
@@ -128,8 +128,8 @@ impl ContextWriteTargetSpec {
 impl ContextWriteAvailability {
     fn error(&self, spec: &ProgramSpec, field_name: &str) -> Option<String> {
         match self {
-            Self::CgroupSockoptSetOnly => match spec {
-                ProgramSpec::CgroupSockopt { target } if target.is_get() => Some(format!(
+            Self::CgroupSockoptSetOnly => match spec.attach_shape() {
+                ProgramAttachShape::CgroupSockopt { get: true } => Some(format!(
                     "ctx.{field_name} is only writable on cgroup_sockopt:set hooks"
                 )),
                 _ => None,
@@ -238,8 +238,18 @@ impl ProgramCtxWriteSurfaceFamilyRequirement {
             Self::SkbContext => spec.program_type().supports_skb_ctx_fields(),
             Self::CgroupSysctl => matches!(spec, ProgramSpec::CgroupSysctl { .. }),
             Self::SockOps => matches!(spec, ProgramSpec::SockOps { .. }),
-            Self::CgroupSockopt => matches!(spec, ProgramSpec::CgroupSockopt { .. }),
-            Self::CgroupSockAddr => matches!(spec, ProgramSpec::CgroupSockAddr { .. }),
+            Self::CgroupSockopt => {
+                matches!(
+                    spec.attach_shape(),
+                    ProgramAttachShape::CgroupSockopt { .. }
+                )
+            }
+            Self::CgroupSockAddr => {
+                matches!(
+                    spec.attach_shape(),
+                    ProgramAttachShape::CgroupSockAddr { .. }
+                )
+            }
         }
     }
 }

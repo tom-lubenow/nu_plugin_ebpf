@@ -1,7 +1,7 @@
 use super::{EbpfProgramType, GetSocketCookieArgPolicy, MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::MapKind;
-use crate::program_spec::{CgroupSockAddrTarget, CgroupSockTarget, ProgramSpec, TcTarget};
+use crate::program_spec::{ProgramAttachShape, ProgramSpec};
 
 #[derive(Debug, Clone, Copy)]
 struct HelperProgramSurfaceSpec {
@@ -362,40 +362,6 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
     })
 }
 
-impl TcTarget {
-    fn helper_call_error(&self, helper: BpfHelper) -> Option<String> {
-        (!self.is_ingress() && helper_list_contains(TC_INGRESS_ONLY_HELPERS, helper)).then(|| {
-            format!(
-                "helper '{}' is only valid in tc ingress programs",
-                helper.name()
-            )
-        })
-    }
-}
-
-impl CgroupSockAddrTarget {
-    fn helper_call_error(&self, helper: BpfHelper) -> Option<String> {
-        (!self.is_connect() && helper_list_contains(CGROUP_SOCK_ADDR_CONNECT_ONLY_HELPERS, helper))
-            .then(|| {
-                format!(
-                    "helper '{}' is only valid on cgroup_sock_addr connect4/connect6 hooks",
-                    helper.name()
-                )
-            })
-    }
-}
-
-impl CgroupSockTarget {
-    fn socket_projection_access_error(&self, member_name: &str) -> Option<String> {
-        if self.is_post_bind() || !CGROUP_SOCK_POST_BIND_ONLY_MEMBERS.contains(&member_name) {
-            return None;
-        }
-        Some(format!(
-            "ctx.sk.{member_name} is only available on cgroup_sock post_bind4/post_bind6 hooks"
-        ))
-    }
-}
-
 impl EbpfProgramType {
     pub(crate) fn helper_call_error(&self, helper: BpfHelper) -> Option<String> {
         helper_program_surface_spec(helper)
@@ -512,9 +478,23 @@ impl EbpfProgramType {
 
 impl ProgramSpec {
     fn attach_helper_call_error(&self, helper: BpfHelper) -> Option<String> {
-        match self {
-            ProgramSpec::Tc { target } => target.helper_call_error(helper),
-            ProgramSpec::CgroupSockAddr { target } => target.helper_call_error(helper),
+        match self.attach_shape() {
+            ProgramAttachShape::Tc { ingress: false }
+                if helper_list_contains(TC_INGRESS_ONLY_HELPERS, helper) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in tc ingress programs",
+                    helper.name()
+                ))
+            }
+            ProgramAttachShape::CgroupSockAddr { connect: false, .. }
+                if helper_list_contains(CGROUP_SOCK_ADDR_CONNECT_ONLY_HELPERS, helper) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid on cgroup_sock_addr connect4/connect6 hooks",
+                    helper.name()
+                ))
+            }
             _ => None,
         }
     }
@@ -526,9 +506,13 @@ impl ProgramSpec {
     }
 
     pub(crate) fn socket_projection_access_error(&self, member_name: &str) -> Option<String> {
-        match self {
-            ProgramSpec::CgroupSock { target } => {
-                target.socket_projection_access_error(member_name)
+        match self.attach_shape() {
+            ProgramAttachShape::CgroupSock { post_bind: false }
+                if CGROUP_SOCK_POST_BIND_ONLY_MEMBERS.contains(&member_name) =>
+            {
+                Some(format!(
+                    "ctx.sk.{member_name} is only available on cgroup_sock post_bind4/post_bind6 hooks"
+                ))
             }
             _ => None,
         }
