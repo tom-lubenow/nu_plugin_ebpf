@@ -228,6 +228,8 @@ pub struct MirToEbpfCompiler<'a> {
     tail_call_maps: BTreeSet<String>,
     /// Generic maps inferred from map operations
     generic_map_specs: BTreeMap<String, MapLayoutSpec>,
+    /// Generic map value layouts recovered during HIR/MIR lowering
+    generic_map_value_types: HashMap<MapRef, MirType>,
     /// MIR vreg types for the current function being compiled
     current_types: HashMap<VReg, MirType>,
     /// MIR vreg types for all functions in this program
@@ -257,6 +259,15 @@ impl<'a> MirToEbpfCompiler<'a> {
         probe_ctx: Option<&'a ProbeContext>,
         program_types: ProgramVregTypes,
     ) -> Self {
+        Self::new_with_types_and_maps(lir, probe_ctx, program_types, HashMap::new())
+    }
+
+    fn new_with_types_and_maps(
+        lir: &'a LirProgram,
+        probe_ctx: Option<&'a ProbeContext>,
+        program_types: ProgramVregTypes,
+        generic_map_value_types: HashMap<MapRef, MirType>,
+    ) -> Self {
         Self {
             lir,
             probe_ctx,
@@ -281,6 +292,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             needs_ustack_map: false,
             tail_call_maps: BTreeSet::new(),
             generic_map_specs: BTreeMap::new(),
+            generic_map_value_types,
             current_types: HashMap::new(),
             program_types,
             event_schema: None,
@@ -513,10 +525,19 @@ pub fn compile_mir_to_ebpf_with_hints_and_globals(
     if let Some(hints) = normalized_type_hints.as_mut() {
         recover_optimized_mir_type_hints(&program, probe_ctx, hints);
     }
+    let generic_map_value_types = normalized_type_hints
+        .as_ref()
+        .map(|hints| hints.generic_map_value_types.clone())
+        .unwrap_or_default();
     let program_types = verify_mir_program(&program, probe_ctx, normalized_type_hints.as_ref())?;
     let lir_program = lower_mir_to_lir_checked(&program)?;
 
-    let compiler = MirToEbpfCompiler::new_with_types(&lir_program, probe_ctx, program_types);
+    let compiler = MirToEbpfCompiler::new_with_types_and_maps(
+        &lir_program,
+        probe_ctx,
+        program_types,
+        generic_map_value_types,
+    );
     let mut result = compiler.compile()?;
     result.readonly_globals = readonly_globals;
     result.data_globals = data_globals;

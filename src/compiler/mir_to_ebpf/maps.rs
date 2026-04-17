@@ -394,10 +394,21 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.register_generic_map_spec(map, key_size, Some(4))?;
             }
             MapKind::Queue | MapKind::Stack => {
-                let value_size = match self.current_types.get(&dst) {
-                    Some(MirType::MapRef { val_ty, .. }) => val_ty.size().max(1),
-                    _ => 8,
-                };
+                let value_size = self
+                    .generic_map_specs
+                    .get(&map.name)
+                    .filter(|spec| spec.kind == map.kind)
+                    .map(|spec| spec.value_size as usize)
+                    .or_else(|| {
+                        self.generic_map_value_types
+                            .get(map)
+                            .map(|ty| ty.size().max(1))
+                    })
+                    .or_else(|| match self.current_types.get(&dst) {
+                        Some(MirType::MapRef { val_ty, .. }) => Some(val_ty.size().max(1)),
+                        _ => None,
+                    })
+                    .unwrap_or(8);
                 self.register_generic_map_spec(map, 0, Some(value_size))?;
             }
             MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap => {

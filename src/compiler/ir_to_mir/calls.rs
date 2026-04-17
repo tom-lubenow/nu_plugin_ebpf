@@ -1688,10 +1688,19 @@ impl<'a> HirToMirLowering<'a> {
         });
 
         self.current_block = success_block;
-        self.emit(MirInst::Copy {
-            dst: dst_vreg,
-            src: MirValue::StackSlot(out_slot),
-        });
+        if matches!(stored_ty, MirType::Array { .. } | MirType::Struct { .. }) {
+            self.emit(MirInst::Copy {
+                dst: dst_vreg,
+                src: MirValue::StackSlot(out_slot),
+            });
+        } else {
+            self.emit(MirInst::LoadSlot {
+                dst: dst_vreg,
+                slot: out_slot,
+                offset: 0,
+                ty: stored_ty.clone(),
+            });
+        }
         self.terminate(MirInst::Jump {
             target: continue_block,
         });
@@ -1706,14 +1715,16 @@ impl<'a> HirToMirLowering<'a> {
         });
 
         self.current_block = continue_block;
-        self.vreg_type_hints.insert(dst_vreg, out_ptr_ty.clone());
         self.reset_call_result_metadata(src_dst);
         if matches!(stored_ty, MirType::Array { .. } | MirType::Struct { .. }) {
+            self.vreg_type_hints.insert(dst_vreg, out_ptr_ty.clone());
             let meta = self.get_or_create_metadata(src_dst);
             meta.field_type = Some(out_ptr_ty);
             if let Some(semantics) = stored_semantics {
                 meta.annotated_semantics = Some(semantics);
             }
+        } else {
+            self.vreg_type_hints.insert(dst_vreg, stored_ty);
         }
 
         Ok(())

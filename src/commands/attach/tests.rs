@@ -2379,6 +2379,139 @@ fn make_map_get_record_emit_program(map_get_decl: DeclId, emit_decl: DeclId) -> 
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_map_push_program(map_push_decl: DeclId, flags: i64, kind: &str) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("pid")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(b"recent_pids".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(kind.as_bytes().to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(flags),
+                },
+                HirStmt::Call {
+                    decl_id: map_push_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        named: vec![
+                            (b"kind".to_vec(), RegId::new(3)),
+                            (b"flags".to_vec(), RegId::new(4)),
+                        ],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 8],
+        ast: vec![None; 8],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_seeded_map_take_count_program(
+    map_push_decl: DeclId,
+    map_take_decl: DeclId,
+    count_decl: DeclId,
+    kind: &str,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("pid")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(b"recent_pids".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(kind.as_bytes().to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: map_push_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        named: vec![
+                            (b"kind".to_vec(), RegId::new(3)),
+                            (b"flags".to_vec(), RegId::new(4)),
+                        ],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: map_take_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        named: vec![(b"kind".to_vec(), RegId::new(3))],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: count_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 10],
+        ast: vec![None; 10],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_identity_user_function() -> HirFunction {
     HirFunction {
         blocks: vec![HirBlock {
@@ -3931,6 +4064,189 @@ fn test_compile_optimized_named_typed_map_get_projection() {
         result.maps.iter().any(|map| map.name == "cached_path"),
         "expected generic map definition for cached_path"
     );
+}
+
+#[test]
+fn test_compile_optimized_queue_map_push_program() {
+    let hir = make_map_push_program(DeclId::new(42), 1, "queue");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-push".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("queue map-push should lower through attach flow");
+
+    assert!(
+        lowering
+            .type_hints
+            .generic_map_value_types
+            .contains_key(&MapRef {
+                name: "recent_pids".to_string(),
+                kind: MapKind::Queue,
+            })
+    );
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized queue map-push should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "recent_pids")
+        .expect("expected queue runtime map artifact");
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == map.name)
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_optimized_queue_map_peek_count_program() {
+    let hir = make_seeded_map_take_count_program(
+        DeclId::new(42),
+        DeclId::new(43),
+        DeclId::new(44),
+        "queue",
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([
+        (DeclId::new(42), "map-push".to_string()),
+        (DeclId::new(43), "map-peek".to_string()),
+        (DeclId::new(44), "count".to_string()),
+    ]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("queue map-peek count should lower through attach flow");
+
+    assert!(
+        lowering
+            .type_hints
+            .generic_map_value_types
+            .contains_key(&MapRef {
+                name: "recent_pids".to_string(),
+                kind: MapKind::Queue,
+            })
+    );
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized queue map-peek count should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "recent_pids")
+        .expect("expected queue runtime map artifact");
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == map.name)
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_optimized_stack_map_pop_count_program() {
+    let hir = make_seeded_map_take_count_program(
+        DeclId::new(42),
+        DeclId::new(43),
+        DeclId::new(44),
+        "stack",
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([
+        (DeclId::new(42), "map-push".to_string()),
+        (DeclId::new(43), "map-pop".to_string()),
+        (DeclId::new(44), "count".to_string()),
+    ]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("stack map-pop count should lower through attach flow");
+
+    assert!(
+        lowering
+            .type_hints
+            .generic_map_value_types
+            .contains_key(&MapRef {
+                name: "recent_pids".to_string(),
+                kind: MapKind::Stack,
+            })
+    );
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized stack map-pop count should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "recent_pids")
+        .expect("expected stack runtime map artifact");
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == map.name)
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
 #[test]
