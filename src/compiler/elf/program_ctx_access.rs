@@ -9,10 +9,14 @@ enum ContextFieldAccessRequirement {
     CgroupSockAddrIpv4Only,
     CgroupSockAddrIpv6Only,
     CgroupSockAddrMsgSourceOnly,
+    AllowedProgramsLabel(&'static str),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ProgramCtxFieldAccessSurfaceFamilyRequirement {
+    SocketFilter,
+    CgroupSkb,
+    SkSkb,
     CgroupSockopt,
     CgroupSockAddr,
 }
@@ -66,6 +70,9 @@ impl ContextFieldAccessRequirement {
                 )),
                 _ => None,
             },
+            Self::AllowedProgramsLabel(label) => {
+                Some(format!("ctx.{field_name} is only available on {label}"))
+            }
         }
     }
 }
@@ -109,6 +116,12 @@ impl ContextFieldAccessSurfaceSpec {
 impl ProgramCtxFieldAccessSurfaceFamilyRequirement {
     fn matches_spec(self, spec: &ProgramSpec) -> bool {
         match self {
+            Self::SocketFilter => matches!(spec.program_type(), EbpfProgramType::SocketFilter),
+            Self::CgroupSkb => matches!(spec.program_type(), EbpfProgramType::CgroupSkb),
+            Self::SkSkb => matches!(
+                spec.program_type(),
+                EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser
+            ),
             Self::CgroupSockopt => {
                 matches!(
                     spec.attach_shape(),
@@ -124,6 +137,87 @@ impl ProgramCtxFieldAccessSurfaceFamilyRequirement {
         }
     }
 }
+
+const SOCKET_FILTER_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::TcClassid,
+        "tc_classid",
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc programs"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::WireLen,
+        "wire_len",
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc programs"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::Tstamp,
+        "tstamp",
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc and cgroup_skb programs"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::TstampType,
+        "tstamp_type",
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc programs"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::Hwtstamp,
+        "hwtstamp",
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc and cgroup_skb programs"),
+    ),
+];
+
+const CGROUP_SKB_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::TcClassid,
+        "tc_classid",
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc programs"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::WireLen,
+        "wire_len",
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc programs"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::TstampType,
+        "tstamp_type",
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc programs"),
+    ),
+];
+
+const SK_SKB_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::TcClassid,
+        "tc_classid",
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc programs"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::WireLen,
+        "wire_len",
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc programs"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::Tstamp,
+        "tstamp",
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc and cgroup_skb programs"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::TstampType,
+        "tstamp_type",
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc programs"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::Hwtstamp,
+        "hwtstamp",
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc and cgroup_skb programs"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::SockMark,
+        "mark",
+        ContextFieldAccessRequirement::AllowedProgramsLabel(
+            "cgroup_sock, socket_filter, tc, and cgroup_skb programs",
+        ),
+    ),
+];
 
 const CGROUP_SOCKOPT_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] =
     &[ContextFieldAccessSurfaceSpec::new(
@@ -158,6 +252,18 @@ const CGROUP_SOCK_ADDR_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpe
 ];
 
 const PROGRAM_CTX_FIELD_ACCESS_SURFACE_FAMILIES: &[ProgramCtxFieldAccessSurfaceFamilySpec] = &[
+    ProgramCtxFieldAccessSurfaceFamilySpec {
+        requirement: ProgramCtxFieldAccessSurfaceFamilyRequirement::SocketFilter,
+        surfaces: SOCKET_FILTER_CTX_FIELD_ACCESS_SURFACES,
+    },
+    ProgramCtxFieldAccessSurfaceFamilySpec {
+        requirement: ProgramCtxFieldAccessSurfaceFamilyRequirement::CgroupSkb,
+        surfaces: CGROUP_SKB_CTX_FIELD_ACCESS_SURFACES,
+    },
+    ProgramCtxFieldAccessSurfaceFamilySpec {
+        requirement: ProgramCtxFieldAccessSurfaceFamilyRequirement::SkSkb,
+        surfaces: SK_SKB_CTX_FIELD_ACCESS_SURFACES,
+    },
     ProgramCtxFieldAccessSurfaceFamilySpec {
         requirement: ProgramCtxFieldAccessSurfaceFamilyRequirement::CgroupSockopt,
         surfaces: CGROUP_SOCKOPT_CTX_FIELD_ACCESS_SURFACES,

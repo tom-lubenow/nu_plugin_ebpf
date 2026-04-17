@@ -562,10 +562,10 @@ impl ProgramSpec {
             return surface.store_target_error(self);
         }
 
-        if let Some(field) = store_target.ctx_field()
-            && self.ctx_field_access_error(&field).is_none()
-        {
-            return Some(store_target.missing_context_error().to_string());
+        if let Some(field) = store_target.ctx_field() {
+            return self
+                .ctx_field_access_error(&field)
+                .or_else(|| Some(store_target.missing_context_error().to_string()));
         }
 
         self.program_type()

@@ -1563,8 +1563,8 @@ fn test_compile_sk_skb_queue_mapping_load_uses_real_skb_queue_mapping_offset() {
 }
 
 #[test]
-fn test_compile_sk_skb_tstamp_load_uses_real_skb_tstamp_offset() {
-    let ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+fn test_compile_tc_tstamp_load_uses_real_skb_tstamp_offset() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
 
     let mut func = LirFunction::new();
     let entry = func.alloc_block();
@@ -1603,8 +1603,8 @@ fn test_compile_sk_skb_tstamp_load_uses_real_skb_tstamp_offset() {
 }
 
 #[test]
-fn test_compile_sk_skb_tstamp_type_load_uses_real_skb_tstamp_type_offset() {
-    let ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+fn test_compile_tc_tstamp_type_load_uses_real_skb_tstamp_type_offset() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
 
     let mut func = LirFunction::new();
     let entry = func.alloc_block();
@@ -1643,8 +1643,8 @@ fn test_compile_sk_skb_tstamp_type_load_uses_real_skb_tstamp_type_offset() {
 }
 
 #[test]
-fn test_compile_sk_skb_hwtstamp_load_uses_real_skb_hwtstamp_offset() {
-    let ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+fn test_compile_tc_hwtstamp_load_uses_real_skb_hwtstamp_offset() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
 
     let mut func = LirFunction::new();
     let entry = func.alloc_block();

@@ -26,17 +26,17 @@ The closure receives a context parameter with these fields:
 | `vlan_tci` | skb VLAN TCI | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `vlan_proto` | skb VLAN ethertype in host byte order | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `cb` | skb control-block words as five host-order `u32` values | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `tc_classid` | skb tc_classid | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `tc_classid` | skb tc_classid | tc |
 | `napi_id` | skb napi_id | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `wire_len` | skb wire_len | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `wire_len` | skb wire_len | tc |
 | `gso_segs` | skb GSO segment count | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `gso_size` | skb GSO segment size | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `tstamp` | skb timestamp | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `tstamp_type` | skb timestamp type (`0 = UNSPEC`, `1 = DELIVERY_MONO`) | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `hwtstamp` | skb hardware timestamp | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `data` | Packet data pointer | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `tstamp` | skb timestamp | tc, cgroup_skb |
+| `tstamp_type` | skb timestamp type (`0 = UNSPEC`, `1 = DELIVERY_MONO`) | tc |
+| `hwtstamp` | skb hardware timestamp | tc, cgroup_skb |
+| `data` | Packet data pointer | xdp, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `data_meta` | Packet metadata pointer | xdp, tc |
-| `data_end` | Packet end pointer | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `data_end` | Packet end pointer | xdp, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `ingress_ifindex` | Ingress interface index | xdp, socket_filter, tc, cgroup_skb, sk_lookup, sk_skb, sk_skb_parser |
 | `access_type` | Encoded cgroup device access type | cgroup_device |
 | `major` | Requested device major number | cgroup_device |
@@ -57,7 +57,7 @@ The closure receives a context parameter with these fields:
 | `sock_type` | Socket type | cgroup_sock, cgroup_sock_addr |
 | `protocol` | Socket protocol | cgroup_sock, cgroup_sock_addr, sk_lookup |
 | `bound_dev_if` | Bound device ifindex | cgroup_sock |
-| `mark` | Socket or skb mark | cgroup_sock, socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `mark` | Socket or skb mark | cgroup_sock, socket_filter, tc, cgroup_skb |
 | `priority` | Socket or skb priority | cgroup_sock, socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `op` | sock_ops callback opcode | sock_ops |
 | `args` | sock_ops callback argument words as four host-order `u32` values | sock_ops |
@@ -113,14 +113,17 @@ Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/fo
 
 ## Program-Family Notes
 
-`xdp`, `socket_filter`, `tc`, and `cgroup_skb` all expose `ctx.cpu`,
-`ctx.ktime`, `ctx.packet_len`, `ctx.ingress_ifindex`, `ctx.ifindex`,
-and raw packet pointers `ctx.data` and `ctx.data_end`. Scalar packet
-byte reads work through normal Nushell indexing such as `($ctx.data |
-get 0)`, and fixed-width big-endian scalars can be read directly
-through cell paths such as `$ctx.data.u16be.6` or
-`$ctx.data.u32be.0`. These lower to data_end-guarded packet loads. On
-`xdp`, `tc`, `sk_skb`, and `sk_skb_parser`, the same scalar/header
+`xdp`, `tc`, and `cgroup_skb` expose `ctx.cpu`, `ctx.ktime`,
+`ctx.packet_len`, `ctx.ingress_ifindex`, `ctx.ifindex`, and raw
+packet pointers `ctx.data` / `ctx.data_end`. `sk_msg`, `sk_skb`, and
+`sk_skb_parser` also expose `ctx.data` / `ctx.data_end` on their
+message or skb contexts. `socket_filter` keeps `ctx.cpu`,
+`ctx.ktime`, `ctx.packet_len`, `ctx.ingress_ifindex`, and `ctx.ifindex`,
+but it does not expose raw packet pointers. Scalar packet byte reads
+work through normal Nushell indexing such as `($ctx.data | get 0)`,
+and fixed-width big-endian scalars can be read directly through cell
+paths such as `$ctx.data.u16be.6` or `$ctx.data.u32be.0`. These lower
+to data_end-guarded packet loads. On `xdp`, `tc`, `sk_skb`, and `sk_skb_parser`, the same scalar/header
 packet paths are also writable through ordinary cell-path updates
 after shadowing the immutable closure parameter as mutable, for
 example `mut ctx = $ctx; $ctx.data.0 = 0xff`, `mut ctx = $ctx;
@@ -179,14 +182,18 @@ through the ordinary helper surface, including `bpf_skb_store_bytes`,
 (`socket_filter`, `tc`, `cgroup_skb`, `sk_skb`, and `sk_skb_parser`)
 also expose `ctx.sk` for typed `bpf_sock` projection such as
 `$ctx.sk.family`, `$ctx.sk.src_port`, `$ctx.sk.dst_port`, or
-`$ctx.sk.mark`, plus `ctx.pkt_type`, `ctx.queue_mapping`,
-`ctx.eth_protocol`, `ctx.vlan_present`, `ctx.vlan_tci`,
-`ctx.vlan_proto`, `ctx.cb`, `ctx.tc_classid`, `ctx.napi_id`,
-`ctx.wire_len`, `ctx.gso_segs`, `ctx.gso_size`, `ctx.tstamp`,
-`ctx.tstamp_type`, `ctx.hwtstamp`, `ctx.tc_index`, `ctx.hash`,
-`ctx.mark`, and `ctx.priority`. `ctx.eth_protocol` and
-`ctx.vlan_proto` are normalized to host byte order, and `ctx.cb`
-follows the same fixed-array model as `ctx.args`. Writable skb
+`$ctx.sk.mark`, plus common skb metadata `ctx.pkt_type`,
+`ctx.queue_mapping`, `ctx.eth_protocol`, `ctx.vlan_present`,
+`ctx.vlan_tci`, `ctx.vlan_proto`, `ctx.cb`, `ctx.napi_id`,
+`ctx.gso_segs`, `ctx.gso_size`, `ctx.tc_index`, and `ctx.hash`.
+Additional metadata is family-specific: `ctx.tc_classid`,
+`ctx.wire_len`, and `ctx.tstamp_type` are tc-only; `ctx.tstamp` and
+`ctx.hwtstamp` are available on tc and cgroup_skb; `ctx.mark` is
+available on cgroup_sock, socket_filter, tc, and cgroup_skb; and
+`ctx.priority` is available on cgroup_sock and across the skb-backed
+packet families. `ctx.eth_protocol` and `ctx.vlan_proto` are
+normalized to host byte order, and `ctx.cb` follows the same
+fixed-array model as `ctx.args`. Writable skb
 metadata is attach-sensitive. On `socket_filter`, fixed `ctx.cb.N`
 is writable. On `tc`, `ctx.mark`, `ctx.priority`, `ctx.tc_index`,
 `ctx.tc_classid`, fixed `ctx.cb.N`, and `ctx.tstamp` are writable.
@@ -251,9 +258,9 @@ On `sk_msg`, `sk_skb`, and `sk_skb_parser`, `redirect-socket MAP KEY --kind sock
 
 `sk_msg` currently attaches to a pinned sockmap or sockhash path such as `/sys/fs/bpf/demo_sockmap`. It exposes `ctx.cpu`, `ctx.ktime`, `ctx.packet_len`, `ctx.data`, `ctx.data_end`, `ctx.family`, `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`, `ctx.local_ip6`, and `ctx.local_port`, plus a typed `ctx.sk` pointer for socket projection such as `$ctx.sk.family`, `$ctx.sk.src_port`, `$ctx.sk.dst_port`, or `$ctx.sk.priority`. `ctx.data` / `ctx.data_end` use the same guarded packet access model as XDP and tc, so ordinary byte/scalar reads like `($ctx.data | get 0)` work. The IPv4 address and remote port fields are normalized to host byte order, and the IPv6 fields are exposed as fixed arrays of four host-order `u32` words so ordinary Nushell indexing works, for example `($ctx.remote_ip6 | get 3)`. This initial slice is read-only and uses raw integer verdict codes; `sk_msg` closures can return `"pass"` / `"drop"` instead of raw `1` / `0`, and `"allow"` / `"deny"` aliases also work. `adjust-message --apply BYTES`, `adjust-message --cork BYTES`, `adjust-message --pull START END [--flags N]`, `adjust-message --push START LEN [--flags N]`, and `adjust-message --pop START LEN [--flags N]` are the preferred first-class message-byte surfaces here because they select the corresponding `bpf_msg_*` helper automatically from the current program type. `redirect-socket MAP KEY --kind sockmap|sockhash` is the preferred first-class redirect surface here because it selects `bpf_msg_redirect_map` or `bpf_msg_redirect_hash` automatically from the current program type. `adjust-message --pull` can invalidate previously loaded `ctx.data` / `ctx.data_end` pointers, so reload them after the helper before reading packet bytes again. Socket-pointer helpers whose program surface includes `sk_msg` also work on the typed `ctx.sk` value after a null check, for example `if $ctx.sk != 0 { helper-call "bpf_sk_fullsock" $ctx.sk }`.
 
-`sk_skb` currently emits `sk_skb/stream_verdict` programs attached to a pinned sockmap or sockhash path such as `/sys/fs/bpf/demo_sockmap`. It exposes `ctx.cpu`, `ctx.ktime`, `ctx.packet_len`, `ctx.data`, `ctx.pkt_type`, `ctx.queue_mapping`, `ctx.eth_protocol`, `ctx.vlan_present`, `ctx.vlan_tci`, `ctx.vlan_proto`, `ctx.cb`, `ctx.tc_classid`, `ctx.napi_id`, `ctx.wire_len`, `ctx.gso_segs`, `ctx.gso_size`, `ctx.tstamp`, `ctx.tstamp_type`, `ctx.hwtstamp`, `ctx.data_end`, `ctx.ingress_ifindex`, `ctx.ifindex`, `ctx.tc_index`, `ctx.hash`, `ctx.mark`, `ctx.priority`, `ctx.family`, `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`, `ctx.local_ip6`, and `ctx.local_port` through the existing skb-backed packet model, so ordinary guarded packet reads like `($ctx.data | get 0)` work. The IPv4 address and remote port fields are normalized to host byte order, and the IPv6 fields are exposed as fixed arrays of four host-order `u32` words so ordinary Nushell indexing works, for example `($ctx.remote_ip6 | get 3)`. This initial slice uses verdict-style return codes with `pass` / `drop` aliases. `adjust-packet --head|--tail DELTA`, `adjust-packet --pull LEN`, and `adjust-packet --room LEN_DIFF --mode MODE [--flags N]` are the preferred first-class skb relayout surfaces here because they select `bpf_skb_change_{head,tail}`, `bpf_skb_pull_data`, and `bpf_skb_adjust_room` automatically from the current program type. Modeled skb packet-edit helpers are also available through the ordinary helper surface, including `bpf_skb_store_bytes`, `bpf_l3_csum_replace`, `bpf_l4_csum_replace`, `bpf_get_hash_recalc`, `bpf_csum_update`, and `bpf_set_hash_invalid`. `redirect-socket MAP KEY --kind sockmap|sockhash` is the preferred first-class redirect surface here because it selects `bpf_sk_redirect_map` or `bpf_sk_redirect_hash` automatically from the current program type. Reload `ctx.data` and `ctx.data_end` after `adjust-packet --head`, `adjust-packet --tail`, `adjust-packet --pull`, or `adjust-packet --room` before reading packet bytes again.
+`sk_skb` currently emits `sk_skb/stream_verdict` programs attached to a pinned sockmap or sockhash path such as `/sys/fs/bpf/demo_sockmap`. It exposes `ctx.cpu`, `ctx.ktime`, `ctx.packet_len`, `ctx.data`, `ctx.data_end`, `ctx.pkt_type`, `ctx.queue_mapping`, `ctx.eth_protocol`, `ctx.vlan_present`, `ctx.vlan_tci`, `ctx.vlan_proto`, `ctx.cb`, `ctx.napi_id`, `ctx.gso_segs`, `ctx.gso_size`, `ctx.ingress_ifindex`, `ctx.ifindex`, `ctx.tc_index`, `ctx.hash`, `ctx.priority`, `ctx.family`, `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`, `ctx.local_ip6`, and `ctx.local_port` through the existing skb-backed packet model, so ordinary guarded packet reads like `($ctx.data | get 0)` work. The IPv4 address and remote port fields are normalized to host byte order, and the IPv6 fields are exposed as fixed arrays of four host-order `u32` words so ordinary Nushell indexing works, for example `($ctx.remote_ip6 | get 3)`. This initial slice uses verdict-style return codes with `pass` / `drop` aliases. `adjust-packet --head|--tail DELTA`, `adjust-packet --pull LEN`, and `adjust-packet --room LEN_DIFF --mode MODE [--flags N]` are the preferred first-class skb relayout surfaces here because they select `bpf_skb_change_{head,tail}`, `bpf_skb_pull_data`, and `bpf_skb_adjust_room` automatically from the current program type. Modeled skb packet-edit helpers are also available through the ordinary helper surface, including `bpf_skb_store_bytes`, `bpf_l3_csum_replace`, `bpf_l4_csum_replace`, `bpf_get_hash_recalc`, `bpf_csum_update`, and `bpf_set_hash_invalid`. `redirect-socket MAP KEY --kind sockmap|sockhash` is the preferred first-class redirect surface here because it selects `bpf_sk_redirect_map` or `bpf_sk_redirect_hash` automatically from the current program type. Reload `ctx.data` and `ctx.data_end` after `adjust-packet --head`, `adjust-packet --tail`, `adjust-packet --pull`, or `adjust-packet --room` before reading packet bytes again.
 
-`sk_skb_parser` currently emits `sk_skb/stream_parser` programs attached to a pinned sockmap or sockhash path such as `/sys/fs/bpf/demo_sockmap`. It uses the same skb-backed packet context as `sk_skb`, including `ctx.family`, `ctx.pkt_type`, `ctx.queue_mapping`, `ctx.eth_protocol`, `ctx.vlan_present`, `ctx.vlan_tci`, `ctx.vlan_proto`, `ctx.cb`, `ctx.tc_classid`, `ctx.napi_id`, `ctx.wire_len`, `ctx.gso_segs`, `ctx.gso_size`, `ctx.tstamp`, `ctx.tstamp_type`, `ctx.hwtstamp`, `ctx.ifindex`, `ctx.tc_index`, `ctx.hash`, `ctx.mark`, `ctx.priority`, `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`, `ctx.local_ip6`, and `ctx.local_port`, with the same host-order normalization rules for IPv4 addresses, remote ports, and IPv6 word arrays. Its return contract is a raw integer parser result rather than a verdict alias surface, so ordinary examples should return `0` or another integer length. `adjust-packet --head|--tail DELTA`, `adjust-packet --pull LEN`, and `adjust-packet --room LEN_DIFF --mode MODE [--flags N]` are the preferred first-class skb relayout surfaces here because they select `bpf_skb_change_{head,tail}`, `bpf_skb_pull_data`, and `bpf_skb_adjust_room` automatically from the current program type. Modeled skb packet-edit helpers are also available through the ordinary helper surface, including `bpf_skb_store_bytes`, `bpf_l3_csum_replace`, `bpf_l4_csum_replace`, `bpf_get_hash_recalc`, `bpf_csum_update`, and `bpf_set_hash_invalid`. `redirect-socket MAP KEY --kind sockmap|sockhash` is the preferred first-class redirect surface here because it selects `bpf_sk_redirect_map` or `bpf_sk_redirect_hash` automatically from the current program type. Reload `ctx.data` and `ctx.data_end` after `adjust-packet --head`, `adjust-packet --tail`, `adjust-packet --pull`, or `adjust-packet --room` before reading packet bytes again.
+`sk_skb_parser` currently emits `sk_skb/stream_parser` programs attached to a pinned sockmap or sockhash path such as `/sys/fs/bpf/demo_sockmap`. It uses the same skb-backed packet context as `sk_skb`, including `ctx.family`, `ctx.pkt_type`, `ctx.queue_mapping`, `ctx.eth_protocol`, `ctx.vlan_present`, `ctx.vlan_tci`, `ctx.vlan_proto`, `ctx.cb`, `ctx.napi_id`, `ctx.gso_segs`, `ctx.gso_size`, `ctx.ifindex`, `ctx.tc_index`, `ctx.hash`, `ctx.priority`, `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`, `ctx.local_ip6`, and `ctx.local_port`, with the same host-order normalization rules for IPv4 addresses, remote ports, and IPv6 word arrays. Its return contract is a raw integer parser result rather than a verdict alias surface, so ordinary examples should return `0` or another integer length. `adjust-packet --head|--tail DELTA`, `adjust-packet --pull LEN`, and `adjust-packet --room LEN_DIFF --mode MODE [--flags N]` are the preferred first-class skb relayout surfaces here because they select `bpf_skb_change_{head,tail}`, `bpf_skb_pull_data`, and `bpf_skb_adjust_room` automatically from the current program type. Modeled skb packet-edit helpers are also available through the ordinary helper surface, including `bpf_skb_store_bytes`, `bpf_l3_csum_replace`, `bpf_l4_csum_replace`, `bpf_get_hash_recalc`, `bpf_csum_update`, and `bpf_set_hash_invalid`. `redirect-socket MAP KEY --kind sockmap|sockhash` is the preferred first-class redirect surface here because it selects `bpf_sk_redirect_map` or `bpf_sk_redirect_hash` automatically from the current program type. Reload `ctx.data` and `ctx.data_end` after `adjust-packet --head`, `adjust-packet --tail`, `adjust-packet --pull`, or `adjust-packet --room` before reading packet bytes again.
 
 `kprobe` and `uprobe` expose `ctx.arg0`-`ctx.arg5` through `pt_regs`. `raw_tracepoint` exposes raw positional `ctx.argN` slots. `fentry`, `fexit`, `tp_btf`, `lsm`, and `struct_ops` callbacks resolve arguments from kernel BTF; those kernel-BTF-backed contexts also expose named aliases through `ctx.arg.<name>` when names are available, and `fexit` additionally exposes `ctx.retval`. Scalar and pointer trampoline values work directly. By-value trampoline args and pointer-backed trampoline args/returns can project scalar/pointer fields such as `ctx.arg0.some_field`; pointer-backed projections are lowered through null-guarded `bpf_probe_read_{kernel,user}` and can cross intermediate and repeated pointer hops such as `ctx.arg0.foo.bar` or `ctx.arg0.fdt.fd.f_inode.i_ino`. Fixed-size arrays can also be indexed with numeric path segments like `ctx.arg0.comm.0`, and pointer-backed sequences can now also be indexed with constant numeric segments such as `ctx.arg0.fdt.fd.0.f_inode.i_ino` or `let fd = $ctx.arg0.fdt.fd; $fd.0.f_inode.i_ino`. The same typed pointer traversal also works through numeric `get`, for example `let idx = 0; let fd = ($ctx.arg0.fdt.fd | get $idx); $fd.f_inode.i_ino`. Stack-backed fixed arrays support the same runtime indexing, for example `let idx = ($ctx.pid mod 2); ($ctx.arg0.comm | get $idx)`. Bounded ascending `for` loops over static integer ranges also lower to verifier-safe loops, so `for i in 0..0 { ... get $i ... }` now works, and bounded arithmetic on those indices such as `let j = (($i + 1) mod 2)` is preserved too. The same range tracking now works for typed unsigned runtime fields such as `let idx = ($ctx.arg0.fdt.max_fds mod 2)`; descending ranges are still rejected. Branch-sensitive narrowing also works for both bound and repeated direct paths, for example `let max = $ctx.arg0.fdt.max_fds; if $max > 0 { let idx = ($max - 1); ... }` or `if $ctx.arg0.fdt.max_fds > 0 { let idx = ($ctx.arg0.fdt.max_fds - 1); ... }`. Typed BTF bitfields can also be projected through the same paths, including after numeric `get`, for example `let idx = ($ctx.pid mod 2); let clamp = ($ctx.arg0.uclamp_req | get $idx); $clamp.value`. Terminal array leaves and unsupported aggregate leaves are exposed as stack-backed byte buffers, while representable terminal struct leaves keep their field layouts, including BTF bitfield members, for `count` / `ebpf counters`, and single-value `emit` can stream those struct leaves as records. Nested array/record fields inside emitted values also decode recursively when the compiler can preserve their layouts. `emit` still preserves unsupported aggregate layouts as binary payloads, and `count` supports them as byte-buffer keys. `ebpf counters` decodes those keys using any schema the compiler still has: arrays and typed structs can surface as strings, lists, or records, while opaque aggregate layouts still display as `binary`. Plain trampoline `ctx.argN` / `ctx.retval` loads also preserve their typed pointer or aggregate layouts across bindings, so `let files = $ctx.arg0; $files.fdt.fd.f_inode.i_ino`, `ctx.arg0.fdt.fd.0.f_inode.i_ino`, `let fd = $ctx.arg0.fdt.fd; $fd.0.f_inode.i_ino`, `let idx = 0; let fd = ($ctx.arg0.fdt.fd | get $idx); $fd.f_inode.i_ino`, and `let inode = $ctx.arg0.f_inode; $inode.i_sb.s_flags` continue to type-check and lower as expected. Named parameter access works through the same typed lowering path, for example `ctx.arg.prev_cpu`, `ctx.arg.p.pid`, `ctx.arg.file.f_flags`, or `ctx.arg.file.f_inode.i_ino`. 16-byte byte-array/string keys such as `ctx.arg0.comm` continue to display as strings. Aggregate `fexit` returns still depend on kernel trampoline support; some kernels reject struct returns entirely.
 

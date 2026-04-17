@@ -112,16 +112,16 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.vlan_tci } - Get the skb VLAN TCI on skb-backed packet programs
     {|ctx| $ctx.vlan_proto } - Get the skb VLAN ethertype in host byte order on skb-backed packet programs
     {|ctx| $ctx.cb } - Get the skb cb words as a fixed array on skb-backed packet programs
-    {|ctx| $ctx.tc_classid } - Get the skb tc_classid on skb-backed packet programs
+    {|ctx| $ctx.tc_classid } - Get the skb tc_classid on tc programs
     {|ctx| $ctx.napi_id } - Get the skb napi_id on skb-backed packet programs
-    {|ctx| $ctx.wire_len } - Get the skb wire_len on skb-backed packet programs
+    {|ctx| $ctx.wire_len } - Get the skb wire_len on tc programs
     {|ctx| $ctx.gso_segs } - Get the skb gso_segs on skb-backed packet programs
     {|ctx| $ctx.gso_size } - Get the skb gso_size on skb-backed packet programs
-    {|ctx| $ctx.tstamp } - Get the skb timestamp on skb-backed packet programs
-    {|ctx| $ctx.tstamp_type } - Get the skb timestamp type on skb-backed packet programs
-    {|ctx| $ctx.hwtstamp } - Get the skb hardware timestamp on skb-backed packet programs
-    {|ctx| $ctx.data }    - Get packet data pointer
-    {|ctx| $ctx.data_end } - Get packet end pointer
+    {|ctx| $ctx.tstamp } - Get the skb timestamp on tc and cgroup_skb programs
+    {|ctx| $ctx.tstamp_type } - Get the skb timestamp type on tc programs
+    {|ctx| $ctx.hwtstamp } - Get the skb hardware timestamp on tc and cgroup_skb programs
+    {|ctx| $ctx.data }    - Get packet data pointer on xdp, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks
+    {|ctx| $ctx.data_end } - Get packet end pointer on xdp, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks
     {|ctx| $ctx.ingress_ifindex } - Get ingress interface index
     {|ctx| $ctx.ifindex } - Get the XDP ingress ifindex or skb ifindex, depending on program type
     {|ctx| $ctx.tc_index } - Get the skb tc_index on skb-backed packet programs
@@ -129,8 +129,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.socket_cookie } - Get the stable socket cookie on supported socket-backed contexts
     {|ctx| $ctx.socket_uid } - Get the socket owner UID on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser
     {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie on supported socket-backed contexts
-    {|ctx| $ctx.mark }    - Get the skb mark on skb-backed packet programs
-    {|ctx| $ctx.priority } - Get the skb priority on skb-backed packet programs
+    {|ctx| $ctx.mark }    - Get the socket or skb mark on cgroup_sock, socket_filter, tc, and cgroup_skb programs
+    {|ctx| $ctx.priority } - Get the socket or skb priority on cgroup_sock, socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs
     {|ctx| ($ctx.data | get 0) } - Read the first packet byte with an auto-generated data_end guard
     {|ctx| $ctx.data.u16be.6 } - Read a big-endian 16-bit packet scalar (here: bytes 12..13)
     {|ctx| $ctx.data.eth.ethertype } - Read the Ethernet ethertype through a typed packet header view
@@ -237,14 +237,15 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.packet_len } - Get packet length from `skb->len`
-    {|ctx| $ctx.data }    - Get packet data pointer
-    {|ctx| $ctx.data_end } - Get packet end pointer
     {|ctx| $ctx.ingress_ifindex } - Get the skb ifindex
     Note: the initial socket_filter surface uses targets like
     `socket_filter:udp4:127.0.0.1:31337`, `socket_filter:udp6:[::1]:31337`,
     `socket_filter:tcp4:127.0.0.1:31337`, or `socket_filter:tcp6:[::1]:31337`,
     which create and hold open a bound socket while the program is attached.
-    Return values are snapshot lengths: `0` drops the packet,
+    `socket_filter` keeps the scalar skb metadata surface but does not expose
+    raw packet pointers like `ctx.data` / `ctx.data_end`; use `tc`, `xdp`,
+    `cgroup_skb`, `sk_msg`, or `sk_skb*` when direct packet-byte access is
+    required. Return values are snapshot lengths: `0` drops the packet,
     positive values keep it, and aliases like `pass` / `keep` expand to
     `ctx.packet_len`.
 
@@ -422,21 +423,15 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.vlan_tci } - Get the skb VLAN TCI
     {|ctx| $ctx.vlan_proto } - Get the skb VLAN ethertype in host byte order
     {|ctx| $ctx.cb } - Get the skb cb words as a fixed array
-    {|ctx| $ctx.tc_classid } - Get the skb tc_classid
     {|ctx| $ctx.napi_id } - Get the skb napi_id
-    {|ctx| $ctx.wire_len } - Get the skb wire_len
     {|ctx| $ctx.gso_segs } - Get the skb gso_segs
     {|ctx| $ctx.gso_size } - Get the skb gso_size
-    {|ctx| $ctx.tstamp } - Get the skb timestamp
-    {|ctx| $ctx.tstamp_type } - Get the skb timestamp type
-    {|ctx| $ctx.hwtstamp } - Get the skb hardware timestamp
     {|ctx| $ctx.data }    - Get the packet data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet access
     {|ctx| $ctx.ingress_ifindex } - Get the ingress interface index
     {|ctx| $ctx.ifindex } - Get the skb ifindex
     {|ctx| $ctx.tc_index } - Get the skb tc_index
     {|ctx| $ctx.hash }    - Get the skb hash
-    {|ctx| $ctx.mark }    - Get the skb mark
     {|ctx| $ctx.priority } - Get the skb priority
     {|ctx| $ctx.family }  - Get socket family
     {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order
@@ -472,21 +467,15 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.vlan_tci } - Get the skb VLAN TCI
     {|ctx| $ctx.vlan_proto } - Get the skb VLAN ethertype in host byte order
     {|ctx| $ctx.cb } - Get the skb cb words as a fixed array
-    {|ctx| $ctx.tc_classid } - Get the skb tc_classid
     {|ctx| $ctx.napi_id } - Get the skb napi_id
-    {|ctx| $ctx.wire_len } - Get the skb wire_len
     {|ctx| $ctx.gso_segs } - Get the skb gso_segs
     {|ctx| $ctx.gso_size } - Get the skb gso_size
-    {|ctx| $ctx.tstamp } - Get the skb timestamp
-    {|ctx| $ctx.tstamp_type } - Get the skb timestamp type
-    {|ctx| $ctx.hwtstamp } - Get the skb hardware timestamp
     {|ctx| $ctx.data }    - Get the packet data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet access
     {|ctx| $ctx.ingress_ifindex } - Get the ingress interface index
     {|ctx| $ctx.ifindex } - Get the skb ifindex
     {|ctx| $ctx.tc_index } - Get the skb tc_index
     {|ctx| $ctx.hash }    - Get the skb hash
-    {|ctx| $ctx.mark }    - Get the skb mark
     {|ctx| $ctx.priority } - Get the skb priority
     {|ctx| $ctx.family }  - Get socket family
     {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order

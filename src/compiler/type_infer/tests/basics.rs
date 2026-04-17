@@ -2022,7 +2022,70 @@ fn test_infer_socket_filter_pkt_type_field_as_u32() {
 }
 
 #[test]
-fn test_infer_socket_filter_tstamp_field_as_u64() {
+fn test_infer_cgroup_skb_tstamp_field_as_u64() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::Tstamp,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::U64));
+}
+
+#[test]
+fn test_infer_tc_tstamp_type_field_as_u8() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::TstampType,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::U8));
+}
+
+#[test]
+fn test_infer_cgroup_skb_hwtstamp_field_as_u64() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::Hwtstamp,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::U64));
+}
+
+#[test]
+fn test_infer_socket_filter_tstamp_field_rejects() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();
 
@@ -2037,13 +2100,18 @@ fn test_infer_socket_filter_tstamp_field_as_u64() {
 
     let ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
     let mut ti = TypeInference::new(Some(ctx));
-    let types = ti.infer(&func).unwrap();
+    let err = ti
+        .infer(&func)
+        .expect_err("expected socket_filter tstamp field to be rejected");
 
-    assert_eq!(types.get(&v0), Some(&MirType::U64));
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("ctx.tstamp is only available on tc and cgroup_skb programs")
+    }));
 }
 
 #[test]
-fn test_infer_socket_filter_tstamp_type_field_as_u8() {
+fn test_infer_socket_filter_tstamp_type_field_rejects() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();
 
@@ -2058,13 +2126,18 @@ fn test_infer_socket_filter_tstamp_type_field_as_u8() {
 
     let ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
     let mut ti = TypeInference::new(Some(ctx));
-    let types = ti.infer(&func).unwrap();
+    let err = ti
+        .infer(&func)
+        .expect_err("expected socket_filter tstamp_type field to be rejected");
 
-    assert_eq!(types.get(&v0), Some(&MirType::U8));
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("ctx.tstamp_type is only available on tc programs")
+    }));
 }
 
 #[test]
-fn test_infer_socket_filter_hwtstamp_field_as_u64() {
+fn test_infer_socket_filter_hwtstamp_field_rejects() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();
 
@@ -2079,9 +2152,41 @@ fn test_infer_socket_filter_hwtstamp_field_as_u64() {
 
     let ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
     let mut ti = TypeInference::new(Some(ctx));
-    let types = ti.infer(&func).unwrap();
+    let err = ti
+        .infer(&func)
+        .expect_err("expected socket_filter hwtstamp field to be rejected");
 
-    assert_eq!(types.get(&v0), Some(&MirType::U64));
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("ctx.hwtstamp is only available on tc and cgroup_skb programs")
+    }));
+}
+
+#[test]
+fn test_infer_sk_skb_mark_field_rejects() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::SockMark,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+    let mut ti = TypeInference::new(Some(ctx));
+    let err = ti
+        .infer(&func)
+        .expect_err("expected sk_skb mark field to be rejected");
+
+    assert!(err.iter().any(|e| {
+        e.message.contains(
+            "ctx.mark is only available on cgroup_sock, socket_filter, tc, and cgroup_skb programs",
+        )
+    }));
 }
 
 #[test]
@@ -2710,7 +2815,7 @@ fn test_type_error_store_skb_tstamp_rejects_socket_filter_context() {
         .expect_err("skb tstamp store should be rejected on socket_filter");
     assert!(errs.iter().any(|e| {
         e.message
-            .contains("ctx.tstamp is only writable on tc and cgroup_skb:egress programs")
+            .contains("ctx.tstamp is only available on tc and cgroup_skb programs")
     }));
 }
 
