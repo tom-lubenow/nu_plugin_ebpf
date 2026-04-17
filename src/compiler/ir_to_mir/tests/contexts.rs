@@ -2939,6 +2939,63 @@ fn test_lower_tc_ctx_tstamp_assignment() {
 }
 
 #[test]
+fn test_lower_cgroup_skb_egress_ctx_tstamp_assignment() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("tstamp")],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_skb egress ctx.tstamp assignment should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbTstamp,
+            ty: MirType::U64,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_cgroup_skb_ingress_ctx_tstamp_assignment_is_rejected() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("tstamp")],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("cgroup_skb ingress ctx.tstamp assignment should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("ctx.tstamp is only writable on tc and cgroup_skb:egress programs")
+    );
+}
+
+#[test]
 fn test_lower_tc_ctx_mark_assignment() {
     let hir = make_ctx_upsert_program(
         CellPath {

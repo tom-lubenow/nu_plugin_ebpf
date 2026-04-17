@@ -582,6 +582,23 @@ fn test_verify_mir_for_probe_context_accepts_skb_tstamp_store_on_tc() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_accepts_skb_tstamp_store_on_cgroup_skb_egress() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbTstamp,
+            val: MirValue::Const(123),
+            ty: MirType::U64,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress");
+    verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect("expected skb tstamp store to be accepted on cgroup_skb egress");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_accepts_skb_mark_store_on_tc() {
     let (mut func, entry) = new_mir_function();
     func.block_mut(entry)
@@ -692,7 +709,28 @@ fn test_verify_mir_for_probe_context_rejects_skb_tstamp_store_on_socket_filter()
         .expect_err("expected skb tstamp store to be rejected on socket_filter");
     assert!(err.iter().any(|e| {
         e.message
-            .contains("ctx.tstamp is only writable on tc programs")
+            .contains("ctx.tstamp is only writable on tc and cgroup_skb:egress programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_rejects_skb_tstamp_store_on_cgroup_skb_ingress() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbTstamp,
+            val: MirValue::Const(123),
+            ty: MirType::U64,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+    let err = verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect_err("expected skb tstamp store to be rejected on cgroup_skb ingress");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("ctx.tstamp is only writable on tc and cgroup_skb:egress programs")
     }));
 }
 

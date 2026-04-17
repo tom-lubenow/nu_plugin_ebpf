@@ -32,11 +32,13 @@ enum ContextWriteTargetSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ContextWriteAvailability {
     CgroupSockoptSetOnly,
+    CgroupSkbEgressOnly,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ProgramCtxWriteSurfaceFamilyRequirement {
     Tc,
+    CgroupSkb,
     CgroupSysctl,
     SockOps,
     CgroupSockopt,
@@ -143,6 +145,12 @@ impl ContextWriteAvailability {
                 )),
                 _ => None,
             },
+            Self::CgroupSkbEgressOnly => match spec.attach_shape() {
+                ProgramAttachShape::CgroupSkb { ingress: true } => Some(format!(
+                    "ctx.{field_name} is only writable on tc and cgroup_skb:egress programs"
+                )),
+                _ => None,
+            },
         }
     }
 }
@@ -245,6 +253,9 @@ impl ProgramCtxWriteSurfaceFamilyRequirement {
     fn matches_spec(&self, spec: &ProgramSpec) -> bool {
         match self {
             Self::Tc => matches!(spec.program_type(), EbpfProgramType::Tc),
+            Self::CgroupSkb => {
+                matches!(spec.attach_shape(), ProgramAttachShape::CgroupSkb { .. })
+            }
             Self::CgroupSysctl => spec.program_type().supports_cgroup_sysctl_ctx_fields(),
             Self::SockOps => spec.program_type().supports_sock_ops_ctx_fields(),
             Self::CgroupSockopt => {
@@ -291,6 +302,14 @@ const TC_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
         ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbTstamp),
     ),
 ];
+
+const CGROUP_SKB_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
+    &[ContextWriteSurfaceSpec::store_field(
+        "tstamp",
+        CtxField::Tstamp,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbTstamp),
+    )
+    .with_availability(ContextWriteAvailability::CgroupSkbEgressOnly)];
 
 const CGROUP_SYSCTL_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
     &[ContextWriteSurfaceSpec::store_field(
@@ -365,6 +384,10 @@ const PROGRAM_CTX_WRITE_SURFACE_FAMILIES: &[ProgramCtxWriteSurfaceFamilySpec] = 
     ProgramCtxWriteSurfaceFamilySpec {
         requirement: ProgramCtxWriteSurfaceFamilyRequirement::Tc,
         surfaces: TC_CTX_WRITE_SURFACES,
+    },
+    ProgramCtxWriteSurfaceFamilySpec {
+        requirement: ProgramCtxWriteSurfaceFamilyRequirement::CgroupSkb,
+        surfaces: CGROUP_SKB_CTX_WRITE_SURFACES,
     },
     ProgramCtxWriteSurfaceFamilySpec {
         requirement: ProgramCtxWriteSurfaceFamilyRequirement::CgroupSysctl,

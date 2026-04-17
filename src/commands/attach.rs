@@ -201,11 +201,13 @@ Context parameter syntax (recommended):
     writable through ordinary assignment after shadowing the closure
     parameter as mutable, for example `mut ctx = $ctx; $ctx.mark = 7`,
     `mut ctx = $ctx; $ctx.cb.0 = 1`, or `mut ctx = $ctx;
-    $ctx.tstamp = 123`. Other skb-backed packet programs keep those skb
-    metadata fields read-only. When the timestamp type must also change,
-    tc additionally models `helper-call "bpf_skb_set_tstamp" $ctx
-    TSTAMP TSTAMP_TYPE`; use `0` for `BPF_SKB_TSTAMP_UNSPEC` and `1`
-    for `BPF_SKB_TSTAMP_DELIVERY_MONO`.
+    $ctx.tstamp = 123`. On `cgroup_skb:...:egress`, `ctx.tstamp` is
+    also writable the same way. Other skb-backed packet programs,
+    including `cgroup_skb:...:ingress`, keep those skb metadata fields
+    read-only. When the timestamp type must also change, tc
+    additionally models `helper-call "bpf_skb_set_tstamp" $ctx TSTAMP
+    TSTAMP_TYPE`; use `0` for `BPF_SKB_TSTAMP_UNSPEC` and `1` for
+    `BPF_SKB_TSTAMP_DELIVERY_MONO`.
 
   perf_event targets:
     {|ctx| $ctx.cpu }    - Get current CPU ID for the sampled event

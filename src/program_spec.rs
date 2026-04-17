@@ -250,6 +250,10 @@ impl CgroupSkbTarget {
         }
     }
 
+    pub fn is_ingress(&self) -> bool {
+        matches!(self.attach_type, CgroupSkbAttachType::Ingress)
+    }
+
     pub fn target_string(&self) -> String {
         format!("{}:{}", self.cgroup_path, self.attach_type_name())
     }
@@ -1179,6 +1183,9 @@ pub(crate) enum ProgramAttachShape {
     Tc {
         ingress: bool,
     },
+    CgroupSkb {
+        ingress: bool,
+    },
     CgroupSock {
         post_bind: bool,
     },
@@ -1410,6 +1417,9 @@ impl ProgramSpec {
             ProgramSpec::Tc { target } => ProgramAttachShape::Tc {
                 ingress: target.is_ingress(),
             },
+            ProgramSpec::CgroupSkb { target } => ProgramAttachShape::CgroupSkb {
+                ingress: target.is_ingress(),
+            },
             ProgramSpec::CgroupSock { target } => ProgramAttachShape::CgroupSock {
                 post_bind: target.is_post_bind(),
             },
@@ -1477,6 +1487,11 @@ mod tests {
     fn test_program_spec_attach_shape_tracks_typed_targets() {
         let tc = ProgramSpec::from_program_type_target(EbpfProgramType::Tc, "lo:ingress")
             .expect("tc target should parse");
+        let cgroup_skb = ProgramSpec::from_program_type_target(
+            EbpfProgramType::CgroupSkb,
+            "/sys/fs/cgroup:egress",
+        )
+        .expect("cgroup_skb egress target should parse");
         let sock_post_bind = ProgramSpec::from_program_type_target(
             EbpfProgramType::CgroupSock,
             "/sys/fs/cgroup:post_bind6",
@@ -1494,6 +1509,10 @@ mod tests {
         .expect("cgroup_sock_addr sendmsg6 target should parse");
 
         assert_eq!(tc.attach_shape(), ProgramAttachShape::Tc { ingress: true });
+        assert_eq!(
+            cgroup_skb.attach_shape(),
+            ProgramAttachShape::CgroupSkb { ingress: false }
+        );
         assert_eq!(
             sock_post_bind.attach_shape(),
             ProgramAttachShape::CgroupSock { post_bind: true }

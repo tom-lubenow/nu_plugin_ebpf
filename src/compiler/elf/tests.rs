@@ -3033,6 +3033,20 @@ fn test_probe_context_resolves_skb_tstamp_store_target_on_tc() {
 }
 
 #[test]
+fn test_probe_context_resolves_skb_tstamp_store_target_on_cgroup_skb_egress() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress");
+    assert_eq!(
+        ctx.resolve_ctx_store_target("tstamp", None)
+            .expect("cgroup_skb egress tstamp target should resolve"),
+        CtxStoreTarget::SkbTstamp
+    );
+    assert!(
+        ctx.validate_ctx_store_target(&CtxStoreTarget::SkbTstamp)
+            .is_ok()
+    );
+}
+
+#[test]
 fn test_probe_context_resolves_skb_mark_store_target_on_tc() {
     let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     assert_eq!(
@@ -3090,7 +3104,23 @@ fn test_probe_context_rejects_skb_tstamp_store_target_on_socket_filter() {
         .expect_err("skb tstamp store target should be rejected outside tc");
     assert!(
         err.to_string()
-            .contains("ctx.tstamp is only writable on tc programs")
+            .contains("ctx.tstamp is only writable on tc and cgroup_skb:egress programs")
+    );
+}
+
+#[test]
+fn test_probe_context_rejects_skb_tstamp_store_target_on_cgroup_skb_ingress() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+    let err = ctx
+        .resolve_ctx_store_target("tstamp", None)
+        .expect_err("skb tstamp store target should be rejected on cgroup_skb ingress");
+    assert!(err.contains("ctx.tstamp is only writable on tc and cgroup_skb:egress programs"));
+    let err = ctx
+        .validate_ctx_store_target(&CtxStoreTarget::SkbTstamp)
+        .expect_err("skb tstamp store target should be rejected on cgroup_skb ingress");
+    assert!(
+        err.to_string()
+            .contains("ctx.tstamp is only writable on tc and cgroup_skb:egress programs")
     );
 }
 

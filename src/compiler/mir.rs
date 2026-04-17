@@ -963,7 +963,9 @@ impl CtxStoreTarget {
             CtxStoreTarget::SkbTcIndex => "ctx.tc_index is only writable on tc programs",
             CtxStoreTarget::SkbCbWord(_) => "ctx.cb is only writable on tc programs",
             CtxStoreTarget::SkbTcClassid => "ctx.tc_classid is only writable on tc programs",
-            CtxStoreTarget::SkbTstamp => "ctx.tstamp is only writable on tc programs",
+            CtxStoreTarget::SkbTstamp => {
+                "ctx.tstamp is only writable on tc and cgroup_skb:egress programs"
+            }
             CtxStoreTarget::SysctlFilePos => {
                 "writable cgroup_sysctl file_pos is only supported on cgroup_sysctl programs"
             }

@@ -2568,6 +2568,23 @@ fn test_type_infer_accepts_store_skb_tstamp_on_tc() {
 }
 
 #[test]
+fn test_type_infer_accepts_store_skb_tstamp_on_cgroup_skb_egress() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::SkbTstamp,
+        val: MirValue::Const(7),
+        ty: MirType::U64,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    ti.infer(&func)
+        .expect("skb tstamp store should type-check on cgroup_skb egress");
+}
+
+#[test]
 fn test_type_infer_accepts_store_skb_mark_on_tc() {
     let mut func = make_test_function();
     let block = func.block_mut(BlockId(0));
@@ -2642,7 +2659,29 @@ fn test_type_error_store_skb_tstamp_rejects_socket_filter_context() {
         .expect_err("skb tstamp store should be rejected on socket_filter");
     assert!(errs.iter().any(|e| {
         e.message
-            .contains("ctx.tstamp is only writable on tc programs")
+            .contains("ctx.tstamp is only writable on tc and cgroup_skb:egress programs")
+    }));
+}
+
+#[test]
+fn test_type_error_store_skb_tstamp_rejects_cgroup_skb_ingress_context() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::SkbTstamp,
+        val: MirValue::Const(7),
+        ty: MirType::U64,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("skb tstamp store should be rejected on cgroup_skb ingress");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("ctx.tstamp is only writable on tc and cgroup_skb:egress programs")
     }));
 }
 
