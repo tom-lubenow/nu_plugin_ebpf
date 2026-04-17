@@ -547,7 +547,7 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
         BaseContextFieldAccessRequirement::ProtocolField,
     ),
     (
-        &[CtxField::BoundDevIf],
+        &[CtxField::BoundDevIf, CtxField::SockRxQueueMapping],
         BaseContextFieldAccessRequirement::CgroupSockFields,
     ),
     (

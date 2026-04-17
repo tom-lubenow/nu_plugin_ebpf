@@ -295,6 +295,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.protocol } - Get socket protocol
     {|ctx| $ctx.remote_port } - Get the remote port in host byte order
     {|ctx| $ctx.local_port } - Get the local port in host byte order on `post_bind4` / `post_bind6`
+    {|ctx| $ctx.rx_queue_mapping } - Get the socket receive-queue mapping (`-1` if unset)
     {|ctx| $ctx.bound_dev_if } - Get the bound device ifindex on `sock_create` / `sock_release`
     {|ctx| $ctx.mark }    - Get the socket mark on `sock_create` / `sock_release`
     {|ctx| $ctx.priority } - Get the socket priority on `sock_create` / `sock_release`

@@ -687,6 +687,33 @@ fn test_lower_cgroup_sock_ctx_remote_port_field() {
 }
 
 #[test]
+fn test_lower_cgroup_sock_ctx_rx_queue_mapping_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("rx_queue_mapping")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock ctx.rx_queue_mapping should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::SockRxQueueMapping,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_cgroup_sock_post_bind_ctx_local_port_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("local_port")],

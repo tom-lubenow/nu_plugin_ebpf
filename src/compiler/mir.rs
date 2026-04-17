@@ -637,6 +637,8 @@ pub enum CtxField {
     SockOpsCbFlags,
     /// bpf_sock_ops::state
     SockState,
+    /// bpf_sock::rx_queue_mapping
+    SockRxQueueMapping,
     /// bpf_sock_ops::rtt_min
     SockOpsRttMin,
     /// bpf_sock_ops::snd_ssthresh
@@ -788,6 +790,7 @@ impl CtxField {
             CtxField::SockOpsSrttUs => "srtt_us".to_string(),
             CtxField::SockOpsCbFlags => "cb_flags".to_string(),
             CtxField::SockState => "state".to_string(),
+            CtxField::SockRxQueueMapping => "rx_queue_mapping".to_string(),
             CtxField::SockOpsRttMin => "rtt_min".to_string(),
             CtxField::SockOpsSndSsthresh => "snd_ssthresh".to_string(),
             CtxField::SockOpsRcvNxt => "rcv_nxt".to_string(),

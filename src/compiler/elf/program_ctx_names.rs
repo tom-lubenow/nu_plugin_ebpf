@@ -53,6 +53,7 @@ const NON_TRACEPOINT_CTX_FIELD_NAME_ENTRIES: &[CtxFieldNameEntry] = &[
     ("srtt_us", CtxField::SockOpsSrttUs),
     ("cb_flags", CtxField::SockOpsCbFlags),
     ("state", CtxField::SockState),
+    ("rx_queue_mapping", CtxField::SockRxQueueMapping),
     ("rtt_min", CtxField::SockOpsRttMin),
     ("snd_ssthresh", CtxField::SockOpsSndSsthresh),
     ("rcv_nxt", CtxField::SockOpsRcvNxt),

@@ -511,6 +511,27 @@ fn test_verify_mir_for_probe_context_accepts_cgroup_sock_direct_tuple_fields() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_accepts_cgroup_sock_rx_queue_mapping_field() {
+    let (mut func, entry) = new_mir_function();
+    let rx_queue_mapping = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: rx_queue_mapping,
+            field: CtxField::SockRxQueueMapping,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(rx_queue_mapping, MirType::I32);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected cgroup_sock ctx.rx_queue_mapping to verify");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_accepts_sock_ops_tcp_flags_on_hdr_opt_len() {
     let (mut func, entry) = new_mir_function();
     let guarded = func.alloc_block();

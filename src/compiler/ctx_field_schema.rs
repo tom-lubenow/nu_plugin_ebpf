@@ -448,6 +448,9 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
             BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::U64))
                 .with_sock_ops_load_guard(SockOpsCallbackGuard::Hwtstamp)
         }
+        CtxField::SockRxQueueMapping => {
+            BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::I32))
+        }
         CtxField::SockoptLevel
         | CtxField::SockoptOptname
         | CtxField::SockoptOptlen

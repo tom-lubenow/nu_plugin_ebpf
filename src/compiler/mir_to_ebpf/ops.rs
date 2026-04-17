@@ -1251,6 +1251,31 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
+            CtxField::SockRxQueueMapping => {
+                let offset = match self
+                    .probe_ctx
+                    .as_ref()
+                    .and_then(|ctx| ctx.socket_family_context_layout())
+                {
+                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().13,
+                    Some(
+                        SocketContextLayout::SockAddr
+                        | SocketContextLayout::SkLookup
+                        | SocketContextLayout::SkMsg
+                        | SocketContextLayout::SkBuff
+                        | SocketContextLayout::SockOps
+                        | SocketContextLayout::CgroupSockopt,
+                    )
+                    | None => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.rx_queue_mapping is only available on cgroup_sock programs"
+                                .to_string(),
+                        ));
+                    }
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
             CtxField::SockOpsRttMin => {
                 let offset = Self::bpf_sock_ops_tcp_field_offsets().2;
                 self.instructions
