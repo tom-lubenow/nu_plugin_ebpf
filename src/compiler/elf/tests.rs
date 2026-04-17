@@ -822,6 +822,21 @@ fn test_probe_context_ctx_field_load_guard_is_program_type_aware() {
 }
 
 #[test]
+fn test_program_type_ctx_field_load_guard_follows_context_family() {
+    assert_eq!(
+        EbpfProgramType::SockOps.ctx_field_load_guard(&CtxField::PacketLen),
+        Some(ContextFieldLoadGuard::SockOpsCallback(
+            SockOpsCallbackGuard::PacketMetadata,
+        ))
+    );
+    assert!(
+        EbpfProgramType::SkMsg
+            .ctx_field_load_guard(&CtxField::PacketLen)
+            .is_none()
+    );
+}
+
+#[test]
 fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
     let ingress = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let egress = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");

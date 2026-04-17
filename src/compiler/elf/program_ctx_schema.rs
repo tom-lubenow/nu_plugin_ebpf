@@ -4,7 +4,7 @@ use super::{
 };
 use crate::compiler::ctx_field_schema::{
     ContextFieldLoadGuard, ContextFieldProjectionSpec, ContextFieldTypeSpec,
-    program_type_ctx_field_load_guard, program_type_ctx_field_projection_spec,
+    ctx_field_sock_ops_load_guard, program_type_ctx_field_projection_spec,
     program_type_ctx_field_type_spec,
 };
 use crate::program_spec::ProgramSpec;
@@ -124,6 +124,18 @@ fn supports_program_type_surface(
     allowed_programs: &[EbpfProgramType],
 ) -> bool {
     allowed_programs.contains(&program_type)
+}
+
+fn context_family_ctx_field_load_guard(
+    context_family: ProgramContextFamily,
+    field: &CtxField,
+) -> Option<ContextFieldLoadGuard> {
+    match context_family {
+        ProgramContextFamily::SockOps => {
+            ctx_field_sock_ops_load_guard(field).map(ContextFieldLoadGuard::SockOpsCallback)
+        }
+        _ => None,
+    }
 }
 
 impl EbpfProgramType {
@@ -296,7 +308,7 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn ctx_field_load_guard(&self, field: &CtxField) -> Option<ContextFieldLoadGuard> {
-        program_type_ctx_field_load_guard(*self, field)
+        context_family_ctx_field_load_guard(self.context_family(), field)
     }
 }
 

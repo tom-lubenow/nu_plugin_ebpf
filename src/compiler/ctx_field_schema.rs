@@ -224,13 +224,8 @@ impl BaseContextFieldSchemaSpec {
         }
     }
 
-    fn load_guard(&self, program_type: EbpfProgramType) -> Option<ContextFieldLoadGuard> {
-        (program_type == EbpfProgramType::SockOps)
-            .then(|| {
-                self.sock_ops_load_guard
-                    .map(ContextFieldLoadGuard::SockOpsCallback)
-            })
-            .flatten()
+    fn sock_ops_load_guard(&self) -> Option<SockOpsCallbackGuard> {
+        self.sock_ops_load_guard
     }
 }
 
@@ -553,11 +548,8 @@ pub(crate) fn program_type_ctx_field_type_spec(
         .flatten()
 }
 
-pub(crate) fn program_type_ctx_field_load_guard(
-    program_type: EbpfProgramType,
-    field: &CtxField,
-) -> Option<ContextFieldLoadGuard> {
-    base_ctx_field_schema_spec(field).and_then(|spec| spec.load_guard(program_type))
+pub(crate) fn ctx_field_sock_ops_load_guard(field: &CtxField) -> Option<SockOpsCallbackGuard> {
+    base_ctx_field_schema_spec(field).and_then(|spec| spec.sock_ops_load_guard())
 }
 
 fn raw_ctx_field_projection_spec(field: &CtxField) -> Option<ContextFieldProjectionSpec> {
