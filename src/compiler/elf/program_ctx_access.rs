@@ -1,6 +1,8 @@
 use super::{CtxField, EbpfProgramType};
 use crate::program_spec::ProgramSpec;
 
+type BaseContextFieldAccessSurfaceSpec = (&'static [CtxField], BaseContextFieldAccessRequirement);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ContextFieldAccessRequirement {
     CgroupSockoptGetOnly,
@@ -9,12 +11,24 @@ enum ContextFieldAccessRequirement {
     CgroupSockAddrMsgSourceOnly,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProgramCtxFieldAccessSurfaceFamilyRequirement {
+    CgroupSockopt,
+    CgroupSockAddr,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ContextFieldAccessSurfaceSpec {
     field: CtxField,
     field_name: &'static str,
     primary_requirement: ContextFieldAccessRequirement,
     secondary_requirement: Option<ContextFieldAccessRequirement>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ProgramCtxFieldAccessSurfaceFamilySpec {
+    requirement: ProgramCtxFieldAccessSurfaceFamilyRequirement,
+    surfaces: &'static [ContextFieldAccessSurfaceSpec],
 }
 
 impl ContextFieldAccessRequirement {
@@ -51,7 +65,7 @@ impl ContextFieldAccessRequirement {
 }
 
 impl ContextFieldAccessSurfaceSpec {
-    fn new(
+    const fn new(
         field: CtxField,
         field_name: &'static str,
         primary_requirement: ContextFieldAccessRequirement,
@@ -64,7 +78,10 @@ impl ContextFieldAccessSurfaceSpec {
         }
     }
 
-    fn with_secondary_requirement(mut self, requirement: ContextFieldAccessRequirement) -> Self {
+    const fn with_secondary_requirement(
+        mut self,
+        requirement: ContextFieldAccessRequirement,
+    ) -> Self {
         self.secondary_requirement = Some(requirement);
         self
     }
@@ -83,48 +100,293 @@ impl ContextFieldAccessSurfaceSpec {
     }
 }
 
-fn find_ctx_field_access_surface<const N: usize>(
-    field: &CtxField,
-    surfaces: [ContextFieldAccessSurfaceSpec; N],
-) -> Option<ContextFieldAccessSurfaceSpec> {
-    surfaces
-        .into_iter()
-        .find(|surface| surface.matches_field(field))
+impl ProgramCtxFieldAccessSurfaceFamilyRequirement {
+    fn matches_spec(self, spec: &ProgramSpec) -> bool {
+        match self {
+            Self::CgroupSockopt => matches!(spec, ProgramSpec::CgroupSockopt { .. }),
+            Self::CgroupSockAddr => matches!(spec, ProgramSpec::CgroupSockAddr { .. }),
+        }
+    }
 }
 
-fn cgroup_sockopt_ctx_field_access_surfaces() -> [ContextFieldAccessSurfaceSpec; 1] {
-    [ContextFieldAccessSurfaceSpec::new(
+const CGROUP_SOCKOPT_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] =
+    &[ContextFieldAccessSurfaceSpec::new(
         CtxField::SockoptRetval,
         "sockopt_retval",
         ContextFieldAccessRequirement::CgroupSockoptGetOnly,
-    )]
+    )];
+
+const CGROUP_SOCK_ADDR_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::UserIp4,
+        "user_ip4",
+        ContextFieldAccessRequirement::CgroupSockAddrIpv4Only,
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::UserIp6,
+        "user_ip6",
+        ContextFieldAccessRequirement::CgroupSockAddrIpv6Only,
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::MsgSrcIp4,
+        "msg_src_ip4",
+        ContextFieldAccessRequirement::CgroupSockAddrIpv4Only,
+    )
+    .with_secondary_requirement(ContextFieldAccessRequirement::CgroupSockAddrMsgSourceOnly),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::MsgSrcIp6,
+        "msg_src_ip6",
+        ContextFieldAccessRequirement::CgroupSockAddrIpv6Only,
+    )
+    .with_secondary_requirement(ContextFieldAccessRequirement::CgroupSockAddrMsgSourceOnly),
+];
+
+const PROGRAM_CTX_FIELD_ACCESS_SURFACE_FAMILIES: &[ProgramCtxFieldAccessSurfaceFamilySpec] = &[
+    ProgramCtxFieldAccessSurfaceFamilySpec {
+        requirement: ProgramCtxFieldAccessSurfaceFamilyRequirement::CgroupSockopt,
+        surfaces: CGROUP_SOCKOPT_CTX_FIELD_ACCESS_SURFACES,
+    },
+    ProgramCtxFieldAccessSurfaceFamilySpec {
+        requirement: ProgramCtxFieldAccessSurfaceFamilyRequirement::CgroupSockAddr,
+        surfaces: CGROUP_SOCK_ADDR_CTX_FIELD_ACCESS_SURFACES,
+    },
+];
+
+const TASK_CTX_FIELDS: &[CtxField] = &[
+    CtxField::Pid,
+    CtxField::Tid,
+    CtxField::Uid,
+    CtxField::Gid,
+    CtxField::Comm,
+];
+const PERF_EVENT_CTX_FIELDS: &[CtxField] = &[CtxField::PerfSamplePeriod, CtxField::PerfAddr];
+const SKB_CTX_FIELDS: &[CtxField] = &[
+    CtxField::PktType,
+    CtxField::QueueMapping,
+    CtxField::EthProtocol,
+    CtxField::VlanPresent,
+    CtxField::VlanTci,
+    CtxField::VlanProto,
+    CtxField::SkbCb,
+    CtxField::TcClassid,
+    CtxField::NapiId,
+    CtxField::WireLen,
+    CtxField::GsoSegs,
+    CtxField::GsoSize,
+    CtxField::Tstamp,
+    CtxField::TstampType,
+    CtxField::Hwtstamp,
+    CtxField::Ifindex,
+    CtxField::TcIndex,
+    CtxField::SkbHash,
+];
+const SOCKET_TUPLE_CTX_FIELDS: &[CtxField] = &[
+    CtxField::RemoteIp4,
+    CtxField::RemoteIp6,
+    CtxField::RemotePort,
+    CtxField::LocalIp4,
+    CtxField::LocalIp6,
+    CtxField::LocalPort,
+];
+const DEVICE_CTX_FIELDS: &[CtxField] = &[
+    CtxField::DeviceAccessType,
+    CtxField::DeviceMajor,
+    CtxField::DeviceMinor,
+];
+const SOCK_OPS_CTX_FIELDS: &[CtxField] = &[
+    CtxField::SockOp,
+    CtxField::SockOpsArgs,
+    CtxField::IsFullsock,
+    CtxField::SockOpsSndCwnd,
+    CtxField::SockOpsSrttUs,
+    CtxField::SockOpsCbFlags,
+    CtxField::SockState,
+    CtxField::SockOpsRttMin,
+    CtxField::SockOpsSndSsthresh,
+    CtxField::SockOpsRcvNxt,
+    CtxField::SockOpsSndNxt,
+    CtxField::SockOpsSndUna,
+    CtxField::SockOpsMssCache,
+    CtxField::SockOpsEcnFlags,
+    CtxField::SockOpsRateDelivered,
+    CtxField::SockOpsRateIntervalUs,
+    CtxField::SockOpsPacketsOut,
+    CtxField::SockOpsRetransOut,
+    CtxField::SockOpsTotalRetrans,
+    CtxField::SockOpsSegsIn,
+    CtxField::SockOpsDataSegsIn,
+    CtxField::SockOpsSegsOut,
+    CtxField::SockOpsDataSegsOut,
+    CtxField::SockOpsLostOut,
+    CtxField::SockOpsSackedOut,
+    CtxField::SockOpsSkTxhash,
+    CtxField::SockOpsBytesReceived,
+    CtxField::SockOpsBytesAcked,
+    CtxField::SockOpsSkbLen,
+    CtxField::SockOpsSkbTcpFlags,
+    CtxField::SockOpsSkbHwtstamp,
+];
+const CGROUP_SOCK_ADDR_CTX_FIELDS: &[CtxField] = &[
+    CtxField::UserFamily,
+    CtxField::UserIp4,
+    CtxField::UserIp6,
+    CtxField::UserPort,
+    CtxField::MsgSrcIp4,
+    CtxField::MsgSrcIp6,
+];
+const SOCK_MARK_PRIORITY_CTX_FIELDS: &[CtxField] = &[CtxField::SockMark, CtxField::SockPriority];
+const CGROUP_SYSCTL_CTX_FIELDS: &[CtxField] = &[CtxField::SysctlWrite, CtxField::SysctlFilePos];
+const CGROUP_SOCKOPT_CTX_FIELDS: &[CtxField] = &[
+    CtxField::SockoptLevel,
+    CtxField::SockoptOptname,
+    CtxField::SockoptOptlen,
+    CtxField::SockoptOptval,
+    CtxField::SockoptOptvalEnd,
+];
+const LIRC_CTX_FIELDS: &[CtxField] = &[
+    CtxField::LircSample,
+    CtxField::LircValue,
+    CtxField::LircMode,
+];
+const STACK_CTX_FIELDS: &[CtxField] = &[CtxField::KStack, CtxField::UStack];
+
+const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] = &[
+    (
+        TASK_CTX_FIELDS,
+        BaseContextFieldAccessRequirement::TaskFields,
+    ),
+    (
+        &[CtxField::Cpu],
+        BaseContextFieldAccessRequirement::CpuField,
+    ),
+    (
+        &[CtxField::Timestamp],
+        BaseContextFieldAccessRequirement::TimestampField,
+    ),
+    (
+        PERF_EVENT_CTX_FIELDS,
+        BaseContextFieldAccessRequirement::PerfEventField,
+    ),
+    (
+        &[CtxField::PacketLen],
+        BaseContextFieldAccessRequirement::PacketLenField,
+    ),
+    (SKB_CTX_FIELDS, BaseContextFieldAccessRequirement::SkbFields),
+    (
+        &[CtxField::Data, CtxField::DataEnd],
+        BaseContextFieldAccessRequirement::PacketDataFields,
+    ),
+    (
+        &[CtxField::DataMeta],
+        BaseContextFieldAccessRequirement::DataMetaField,
+    ),
+    (
+        &[CtxField::IngressIfindex],
+        BaseContextFieldAccessRequirement::IngressIfindexField,
+    ),
+    (
+        &[CtxField::RxQueueIndex],
+        BaseContextFieldAccessRequirement::RxQueueIndexField,
+    ),
+    (
+        &[CtxField::EgressIfindex],
+        BaseContextFieldAccessRequirement::EgressIfindexField,
+    ),
+    (
+        SOCKET_TUPLE_CTX_FIELDS,
+        BaseContextFieldAccessRequirement::SocketTupleFields,
+    ),
+    (
+        &[CtxField::Socket],
+        BaseContextFieldAccessRequirement::SocketRefField,
+    ),
+    (
+        &[CtxField::LookupCookie],
+        BaseContextFieldAccessRequirement::LookupCookieField,
+    ),
+    (
+        &[CtxField::SocketCookie],
+        BaseContextFieldAccessRequirement::SocketCookieField,
+    ),
+    (
+        &[CtxField::SocketUid],
+        BaseContextFieldAccessRequirement::SocketUidField,
+    ),
+    (
+        &[CtxField::NetnsCookie],
+        BaseContextFieldAccessRequirement::NetnsCookieField,
+    ),
+    (
+        DEVICE_CTX_FIELDS,
+        BaseContextFieldAccessRequirement::DeviceFields,
+    ),
+    (
+        SOCK_OPS_CTX_FIELDS,
+        BaseContextFieldAccessRequirement::SockOpsFields,
+    ),
+    (
+        CGROUP_SOCK_ADDR_CTX_FIELDS,
+        BaseContextFieldAccessRequirement::CgroupSockAddrFields,
+    ),
+    (
+        &[CtxField::Family],
+        BaseContextFieldAccessRequirement::SocketCommonFields,
+    ),
+    (
+        &[CtxField::SockType],
+        BaseContextFieldAccessRequirement::SockTypeField,
+    ),
+    (
+        &[CtxField::Protocol],
+        BaseContextFieldAccessRequirement::ProtocolField,
+    ),
+    (
+        &[CtxField::BoundDevIf],
+        BaseContextFieldAccessRequirement::CgroupSockFields,
+    ),
+    (
+        SOCK_MARK_PRIORITY_CTX_FIELDS,
+        BaseContextFieldAccessRequirement::SockMarkPriorityFields,
+    ),
+    (
+        CGROUP_SYSCTL_CTX_FIELDS,
+        BaseContextFieldAccessRequirement::CgroupSysctlFields,
+    ),
+    (
+        CGROUP_SOCKOPT_CTX_FIELDS,
+        BaseContextFieldAccessRequirement::CgroupSockoptFields,
+    ),
+    (
+        &[CtxField::SockoptRetval],
+        BaseContextFieldAccessRequirement::CgroupSockoptRetvalField,
+    ),
+    (
+        LIRC_CTX_FIELDS,
+        BaseContextFieldAccessRequirement::LircFields,
+    ),
+    (
+        STACK_CTX_FIELDS,
+        BaseContextFieldAccessRequirement::StackFields,
+    ),
+];
+
+fn find_ctx_field_access_surface(
+    field: &CtxField,
+    surfaces: &[ContextFieldAccessSurfaceSpec],
+) -> Option<ContextFieldAccessSurfaceSpec> {
+    surfaces
+        .iter()
+        .find(|surface| surface.matches_field(field))
+        .cloned()
 }
 
-fn cgroup_sock_addr_ctx_field_access_surfaces() -> [ContextFieldAccessSurfaceSpec; 4] {
-    [
-        ContextFieldAccessSurfaceSpec::new(
-            CtxField::UserIp4,
-            "user_ip4",
-            ContextFieldAccessRequirement::CgroupSockAddrIpv4Only,
-        ),
-        ContextFieldAccessSurfaceSpec::new(
-            CtxField::UserIp6,
-            "user_ip6",
-            ContextFieldAccessRequirement::CgroupSockAddrIpv6Only,
-        ),
-        ContextFieldAccessSurfaceSpec::new(
-            CtxField::MsgSrcIp4,
-            "msg_src_ip4",
-            ContextFieldAccessRequirement::CgroupSockAddrIpv4Only,
-        )
-        .with_secondary_requirement(ContextFieldAccessRequirement::CgroupSockAddrMsgSourceOnly),
-        ContextFieldAccessSurfaceSpec::new(
-            CtxField::MsgSrcIp6,
-            "msg_src_ip6",
-            ContextFieldAccessRequirement::CgroupSockAddrIpv6Only,
-        )
-        .with_secondary_requirement(ContextFieldAccessRequirement::CgroupSockAddrMsgSourceOnly),
-    ]
+fn find_base_ctx_field_access_requirement(
+    field: &CtxField,
+) -> Option<BaseContextFieldAccessRequirement> {
+    BASE_CONTEXT_FIELD_ACCESS_SURFACES
+        .iter()
+        .find(|(fields, _)| fields.contains(field))
+        .map(|(_, requirement)| *requirement)
 }
 
 fn packet_field_access_error(program_type: EbpfProgramType, field: &CtxField) -> String {
@@ -338,113 +600,10 @@ fn base_ctx_field_access_requirement(
     field: &CtxField,
 ) -> Option<BaseContextFieldAccessRequirement> {
     Some(match field {
-        CtxField::Pid | CtxField::Tid | CtxField::Uid | CtxField::Gid | CtxField::Comm => {
-            BaseContextFieldAccessRequirement::TaskFields
-        }
-        CtxField::Cpu => BaseContextFieldAccessRequirement::CpuField,
-        CtxField::Timestamp => BaseContextFieldAccessRequirement::TimestampField,
-        CtxField::PerfSamplePeriod | CtxField::PerfAddr => {
-            BaseContextFieldAccessRequirement::PerfEventField
-        }
-        CtxField::PacketLen => BaseContextFieldAccessRequirement::PacketLenField,
-        CtxField::PktType
-        | CtxField::QueueMapping
-        | CtxField::EthProtocol
-        | CtxField::VlanPresent
-        | CtxField::VlanTci
-        | CtxField::VlanProto
-        | CtxField::SkbCb
-        | CtxField::TcClassid
-        | CtxField::NapiId
-        | CtxField::WireLen
-        | CtxField::GsoSegs
-        | CtxField::GsoSize
-        | CtxField::Tstamp
-        | CtxField::TstampType
-        | CtxField::Hwtstamp
-        | CtxField::Ifindex
-        | CtxField::TcIndex
-        | CtxField::SkbHash => BaseContextFieldAccessRequirement::SkbFields,
-        CtxField::Data | CtxField::DataEnd => BaseContextFieldAccessRequirement::PacketDataFields,
-        CtxField::DataMeta => BaseContextFieldAccessRequirement::DataMetaField,
-        CtxField::IngressIfindex => BaseContextFieldAccessRequirement::IngressIfindexField,
-        CtxField::RxQueueIndex => BaseContextFieldAccessRequirement::RxQueueIndexField,
-        CtxField::EgressIfindex => BaseContextFieldAccessRequirement::EgressIfindexField,
-        CtxField::RemoteIp4
-        | CtxField::RemoteIp6
-        | CtxField::RemotePort
-        | CtxField::LocalIp4
-        | CtxField::LocalIp6
-        | CtxField::LocalPort => BaseContextFieldAccessRequirement::SocketTupleFields,
-        CtxField::Socket => BaseContextFieldAccessRequirement::SocketRefField,
-        CtxField::LookupCookie => BaseContextFieldAccessRequirement::LookupCookieField,
-        CtxField::SocketCookie => BaseContextFieldAccessRequirement::SocketCookieField,
-        CtxField::SocketUid => BaseContextFieldAccessRequirement::SocketUidField,
-        CtxField::NetnsCookie => BaseContextFieldAccessRequirement::NetnsCookieField,
-        CtxField::DeviceAccessType | CtxField::DeviceMajor | CtxField::DeviceMinor => {
-            BaseContextFieldAccessRequirement::DeviceFields
-        }
-        CtxField::SockOp
-        | CtxField::SockOpsArgs
-        | CtxField::IsFullsock
-        | CtxField::SockOpsSndCwnd
-        | CtxField::SockOpsSrttUs
-        | CtxField::SockOpsCbFlags
-        | CtxField::SockState
-        | CtxField::SockOpsRttMin
-        | CtxField::SockOpsSndSsthresh
-        | CtxField::SockOpsRcvNxt
-        | CtxField::SockOpsSndNxt
-        | CtxField::SockOpsSndUna
-        | CtxField::SockOpsMssCache
-        | CtxField::SockOpsEcnFlags
-        | CtxField::SockOpsRateDelivered
-        | CtxField::SockOpsRateIntervalUs
-        | CtxField::SockOpsPacketsOut
-        | CtxField::SockOpsRetransOut
-        | CtxField::SockOpsTotalRetrans
-        | CtxField::SockOpsSegsIn
-        | CtxField::SockOpsDataSegsIn
-        | CtxField::SockOpsSegsOut
-        | CtxField::SockOpsDataSegsOut
-        | CtxField::SockOpsLostOut
-        | CtxField::SockOpsSackedOut
-        | CtxField::SockOpsSkTxhash
-        | CtxField::SockOpsBytesReceived
-        | CtxField::SockOpsBytesAcked
-        | CtxField::SockOpsSkbLen
-        | CtxField::SockOpsSkbTcpFlags
-        | CtxField::SockOpsSkbHwtstamp => BaseContextFieldAccessRequirement::SockOpsFields,
-        CtxField::UserFamily
-        | CtxField::UserIp4
-        | CtxField::UserIp6
-        | CtxField::UserPort
-        | CtxField::MsgSrcIp4
-        | CtxField::MsgSrcIp6 => BaseContextFieldAccessRequirement::CgroupSockAddrFields,
-        CtxField::Family => BaseContextFieldAccessRequirement::SocketCommonFields,
-        CtxField::SockType => BaseContextFieldAccessRequirement::SockTypeField,
-        CtxField::Protocol => BaseContextFieldAccessRequirement::ProtocolField,
-        CtxField::BoundDevIf => BaseContextFieldAccessRequirement::CgroupSockFields,
-        CtxField::SockMark | CtxField::SockPriority => {
-            BaseContextFieldAccessRequirement::SockMarkPriorityFields
-        }
-        CtxField::SysctlWrite | CtxField::SysctlFilePos => {
-            BaseContextFieldAccessRequirement::CgroupSysctlFields
-        }
-        CtxField::SockoptLevel
-        | CtxField::SockoptOptname
-        | CtxField::SockoptOptlen
-        | CtxField::SockoptOptval
-        | CtxField::SockoptOptvalEnd => BaseContextFieldAccessRequirement::CgroupSockoptFields,
-        CtxField::SockoptRetval => BaseContextFieldAccessRequirement::CgroupSockoptRetvalField,
-        CtxField::LircSample | CtxField::LircValue | CtxField::LircMode => {
-            BaseContextFieldAccessRequirement::LircFields
-        }
         CtxField::Arg(_) => BaseContextFieldAccessRequirement::ArgFields,
         CtxField::RetVal => BaseContextFieldAccessRequirement::RetvalField,
-        CtxField::KStack | CtxField::UStack => BaseContextFieldAccessRequirement::StackFields,
         CtxField::TracepointField(_) => BaseContextFieldAccessRequirement::TracepointFields,
-        _ => return None,
+        _ => return find_base_ctx_field_access_requirement(field),
     })
 }
 
@@ -457,15 +616,10 @@ impl EbpfProgramType {
 
 impl ProgramSpec {
     fn ctx_field_access_surface(&self, field: &CtxField) -> Option<ContextFieldAccessSurfaceSpec> {
-        match self {
-            ProgramSpec::CgroupSockopt { .. } => {
-                find_ctx_field_access_surface(field, cgroup_sockopt_ctx_field_access_surfaces())
-            }
-            ProgramSpec::CgroupSockAddr { .. } => {
-                find_ctx_field_access_surface(field, cgroup_sock_addr_ctx_field_access_surfaces())
-            }
-            _ => None,
-        }
+        PROGRAM_CTX_FIELD_ACCESS_SURFACE_FAMILIES
+            .iter()
+            .filter(|family| family.requirement.matches_spec(self))
+            .find_map(|family| find_ctx_field_access_surface(field, family.surfaces))
     }
 
     fn attach_ctx_field_access_error(&self, field: &CtxField) -> Option<String> {
