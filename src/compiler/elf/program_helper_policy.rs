@@ -466,11 +466,7 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn message_adjust_helper(&self, mode: MessageAdjustMode) -> Option<BpfHelper> {
-        if *self != EbpfProgramType::SkMsg {
-            return None;
-        }
-
-        Some(match mode {
+        SK_MSG_PROGRAMS.contains(self).then_some(match mode {
             MessageAdjustMode::Apply => BpfHelper::MsgApplyBytes,
             MessageAdjustMode::Cork => BpfHelper::MsgCorkBytes,
             MessageAdjustMode::Pull => BpfHelper::MsgPullData,
@@ -496,16 +492,20 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn socket_redirect_helper(&self, map_kind: MapKind) -> Option<BpfHelper> {
-        match (*self, map_kind) {
-            (EbpfProgramType::SkMsg, MapKind::SockMap) => Some(BpfHelper::MsgRedirectMap),
-            (EbpfProgramType::SkMsg, MapKind::SockHash) => Some(BpfHelper::MsgRedirectHash),
-            (EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser, MapKind::SockMap) => {
-                Some(BpfHelper::SkRedirectMap)
+        if SK_MSG_PROGRAMS.contains(self) {
+            match map_kind {
+                MapKind::SockMap => Some(BpfHelper::MsgRedirectMap),
+                MapKind::SockHash => Some(BpfHelper::MsgRedirectHash),
+                _ => None,
             }
-            (EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser, MapKind::SockHash) => {
-                Some(BpfHelper::SkRedirectHash)
+        } else if SK_SKB_PROGRAMS.contains(self) {
+            match map_kind {
+                MapKind::SockMap => Some(BpfHelper::SkRedirectMap),
+                MapKind::SockHash => Some(BpfHelper::SkRedirectHash),
+                _ => None,
             }
-            _ => None,
+        } else {
+            None
         }
     }
 }
