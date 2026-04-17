@@ -1253,6 +1253,34 @@ fn test_lower_map_put_rejects_queue_kind() {
 }
 
 #[test]
+fn test_lower_map_put_rejects_redirect_only_devmap_kind() {
+    let hir = make_map_put_program(DeclId::new(42), 0, "devmap");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-put".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("devmap map-put should be rejected during lowering");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(
+                msg.contains("map-put --kind devmap is reserved for bpf_redirect_map"),
+                "{msg}"
+            );
+            assert!(msg.contains("generic map commands only support"), "{msg}");
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
 fn test_lower_map_get_rejects_sockmap_kind() {
     let mut hir = make_map_get_projection_program(DeclId::new(42), DeclId::new(43));
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
@@ -1287,6 +1315,48 @@ fn test_lower_map_get_rejects_sockmap_kind() {
             assert!(msg.contains("map-get is not supported for socket map kind"));
             assert!(msg.contains("SockMap"));
             assert!(msg.contains("use specialized socket-map helpers instead"));
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
+fn test_lower_map_get_rejects_redirect_only_cpumap_kind() {
+    let mut hir = make_map_get_projection_program(DeclId::new(42), DeclId::new(43));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([
+        (DeclId::new(42), "map-get".to_string()),
+        (DeclId::new(43), "count".to_string()),
+    ]);
+
+    for stmt in &mut hir.main.blocks[0].stmts {
+        if let HirStmt::LoadLiteral {
+            dst,
+            lit: HirLiteral::String(kind),
+        } = stmt
+            && *dst == RegId::new(3)
+        {
+            *kind = b"cpumap".to_vec();
+        }
+    }
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("cpumap map-get should be rejected during lowering");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(
+                msg.contains("map-get --kind cpumap is reserved for bpf_redirect_map"),
+                "{msg}"
+            );
+            assert!(msg.contains("generic map commands only support"), "{msg}");
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }
@@ -1338,6 +1408,34 @@ fn test_lower_map_delete_rejects_queue_kind() {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(msg.contains("map delete is not supported for map kind"));
             assert!(msg.contains("Queue"));
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
+fn test_lower_map_delete_rejects_redirect_only_xskmap_kind() {
+    let hir = make_map_delete_program(DeclId::new(42), "xskmap");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-delete".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("xskmap map-delete should be rejected during lowering");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(
+                msg.contains("map-delete --kind xskmap is reserved for bpf_redirect_map"),
+                "{msg}"
+            );
+            assert!(msg.contains("generic map commands only support"), "{msg}");
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }

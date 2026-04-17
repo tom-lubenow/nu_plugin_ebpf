@@ -199,16 +199,39 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn is_generic_data_map_kind(kind: MapKind) -> bool {
+        matches!(
+            kind,
+            MapKind::Hash
+                | MapKind::Array
+                | MapKind::Queue
+                | MapKind::Stack
+                | MapKind::LpmTrie
+                | MapKind::LruHash
+                | MapKind::PerCpuHash
+                | MapKind::PerCpuArray
+                | MapKind::LruPerCpuHash
+                | MapKind::SockMap
+                | MapKind::SockHash
+        )
+    }
+
     pub(super) fn generic_map_kind_arg(&self, context: &str) -> Result<MapKind, CompileError> {
         let Some((_, reg)) = self.named_args.get("kind") else {
             return Ok(MapKind::Hash);
         };
         let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
-        Self::parse_generic_map_kind(&kind).ok_or_else(|| {
-            CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must be one of: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, devmap, devmap-hash, cpumap, xskmap, sockmap, sockhash"
-            ))
-        })
+        match Self::parse_generic_map_kind(&kind) {
+            Some(kind) if Self::is_generic_data_map_kind(kind) => Ok(kind),
+            Some(MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap) => {
+                Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} --kind {kind} is reserved for bpf_redirect_map helper-call; generic map commands only support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, sockmap, sockhash"
+                )))
+            }
+            Some(_) | None => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind must be one of: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, sockmap, sockhash"
+            ))),
+        }
     }
 
     pub(super) fn required_queue_stack_map_kind_arg(
