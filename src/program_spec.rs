@@ -1372,6 +1372,20 @@ impl ProgramSpec {
         }
     }
 
+    pub(crate) fn tracepoint_parts(&self) -> Option<(&str, &str)> {
+        match self {
+            ProgramSpec::Tracepoint { category, name } => Some((category, name)),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn struct_ops_value_type_name(&self) -> Option<&str> {
+        match self {
+            ProgramSpec::StructOps { value_type_name } => Some(value_type_name),
+            _ => None,
+        }
+    }
+
     pub fn section_name(&self) -> String {
         match self {
             ProgramSpec::CgroupSkb { target } => target.section_name(),
@@ -1495,6 +1509,25 @@ mod tests {
                 msg_source: true,
                 connect: false,
             }
+        );
+    }
+
+    #[test]
+    fn test_program_spec_modeled_metadata_accessors() {
+        let tracepoint = ProgramSpec::parse("tracepoint:syscalls/sys_enter_openat")
+            .expect("tracepoint spec should parse");
+        let struct_ops =
+            ProgramSpec::parse("struct_ops:sched_ext_ops").expect("struct_ops spec should parse");
+
+        assert_eq!(
+            tracepoint.tracepoint_parts(),
+            Some(("syscalls", "sys_enter_openat"))
+        );
+        assert_eq!(tracepoint.struct_ops_value_type_name(), None);
+        assert_eq!(struct_ops.tracepoint_parts(), None);
+        assert_eq!(
+            struct_ops.struct_ops_value_type_name(),
+            Some("sched_ext_ops")
         );
     }
 

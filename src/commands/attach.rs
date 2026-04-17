@@ -957,7 +957,7 @@ fn run_attach(
     engine: &EngineInterface,
     call: &EvaluatedCall,
 ) -> Result<PipelineData, LabeledError> {
-    use crate::loader::{LoadError, ProgramSpec, get_state, parse_program_spec};
+    use crate::loader::{LoadError, get_state, parse_program_spec};
 
     let probe_spec: String = call.req(0)?;
     let body: Value = call.req(1)?;
@@ -1014,60 +1014,58 @@ fn run_attach(
             .with_help("Use format like 'kprobe:sys_clone' or 'tracepoint:syscalls/sys_enter_read'"),
     })?;
 
-    let object = match &program_spec {
-        ProgramSpec::StructOps { value_type_name } => {
-            if stream {
-                return Err(LabeledError::new("Streaming is not supported for struct_ops objects")
-                    .with_label(
-                        "struct_ops objects currently register callbacks but cannot stream events",
-                        call.head,
-                    ));
-            }
-            if pin_group.is_some() {
-                return Err(LabeledError::new(
-                    "Pinned map sharing is not supported for struct_ops",
-                )
-                .with_label("struct_ops objects currently cannot use --pin", call.head));
-            }
-            validate_struct_ops_attach_safety(
-                value_type_name,
-                dry_run,
-                allow_unsafe_struct_ops,
-                call.head,
-            )?;
-            let record = body.into_record().map_err(|e| {
-                LabeledError::new("Invalid struct_ops body")
-                    .with_label(e.to_string(), call.head)
-                    .with_help(
-                        "Use a record whose callback fields are closures, for example { select_cpu: {|ctx| 0 } }",
-                    )
-            })?;
-            compile_struct_ops_object(engine, value_type_name, &record, call.head)?
-        }
-        _ => {
-            let closure = value_to_spanned_closure(body, call.head)?;
-            let probe_context = ProbeContext::from_program_spec(program_spec);
-            let prog_type = probe_context.program_type();
-            let target = probe_context.target().to_string();
-            let compiled = compile_closure_with_context(
-                engine,
-                &closure,
-                &probe_context,
-                pin_group.as_deref(),
-                call.head,
-            )?;
-            let mut program = compiled.compile_result.into_program(
-                prog_type,
-                &target,
-                "nushell_ebpf",
-                compiled.generic_map_value_types,
-                compiled.generic_map_value_semantics,
+    let object = if let Some(value_type_name) = program_spec.struct_ops_value_type_name() {
+        if stream {
+            return Err(
+                LabeledError::new("Streaming is not supported for struct_ops objects").with_label(
+                    "struct_ops objects currently register callbacks but cannot stream events",
+                    call.head,
+                ),
             );
-            if pin_group.is_some() {
-                program = program.with_pinning();
-            }
-            EbpfObject::single_program(program)
         }
+        if pin_group.is_some() {
+            return Err(
+                LabeledError::new("Pinned map sharing is not supported for struct_ops")
+                    .with_label("struct_ops objects currently cannot use --pin", call.head),
+            );
+        }
+        validate_struct_ops_attach_safety(
+            value_type_name,
+            dry_run,
+            allow_unsafe_struct_ops,
+            call.head,
+        )?;
+        let record = body.into_record().map_err(|e| {
+            LabeledError::new("Invalid struct_ops body")
+                .with_label(e.to_string(), call.head)
+                .with_help(
+                    "Use a record whose callback fields are closures, for example { select_cpu: {|ctx| 0 } }",
+                )
+        })?;
+        compile_struct_ops_object(engine, value_type_name, &record, call.head)?
+    } else {
+        let closure = value_to_spanned_closure(body, call.head)?;
+        let probe_context = ProbeContext::from_program_spec(program_spec);
+        let prog_type = probe_context.program_type();
+        let target = probe_context.target().to_string();
+        let compiled = compile_closure_with_context(
+            engine,
+            &closure,
+            &probe_context,
+            pin_group.as_deref(),
+            call.head,
+        )?;
+        let mut program = compiled.compile_result.into_program(
+            prog_type,
+            &target,
+            "nushell_ebpf",
+            compiled.generic_map_value_types,
+            compiled.generic_map_value_semantics,
+        );
+        if pin_group.is_some() {
+            program = program.with_pinning();
+        }
+        EbpfObject::single_program(program)
     };
 
     let state = get_state();

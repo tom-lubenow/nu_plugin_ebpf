@@ -199,10 +199,8 @@ impl ProbeContext {
 
     fn from_program_spec_parts(program_spec: ProgramSpec, target: String) -> Self {
         let probe_type = program_spec.program_type();
-        let struct_ops_value_type_name = match &program_spec {
-            ProgramSpec::StructOps { value_type_name } => Some(value_type_name.clone()),
-            _ => None,
-        };
+        let struct_ops_value_type_name =
+            program_spec.struct_ops_value_type_name().map(str::to_owned);
         Self {
             probe_type,
             target,
@@ -295,10 +293,9 @@ impl ProbeContext {
     ///
     /// For tracepoint "syscalls/sys_enter_openat", returns Some(("syscalls", "sys_enter_openat"))
     pub fn tracepoint_parts(&self) -> Option<(String, String)> {
-        match self.parsed_program_spec()? {
-            ProgramSpec::Tracepoint { category, name } => Some((category.clone(), name.clone())),
-            _ => None,
-        }
+        self.parsed_program_spec()?
+            .tracepoint_parts()
+            .map(|(category, name)| (category.to_string(), name.to_string()))
     }
 
     pub(crate) fn btf_context_label(&self) -> String {
