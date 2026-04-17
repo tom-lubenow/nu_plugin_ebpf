@@ -95,6 +95,7 @@ ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
 - Prefer leading typed `mut` bindings for small private per-program state.
 - For scalar or scalar-record layouts whose size is fixed by the annotation alone, `mut state: ... = null` now zero-initializes that global without dropping to `global-define`.
 - Use `global-define`, `global-get`, and `global-set` when you need an explicit shared name or a source-order-independent declaration.
+  `global-define --type ...` now also accepts a compile-time constant initializer, so explicit capacities and explicit initial contents can be combined in one declaration.
 - Prefer the first-class packet/socket/message surface (`adjust-packet`, `adjust-message`, `redirect`, `redirect-map`, and `redirect-socket`) over raw `helper-call` forms when the operation matches.
 - Treat `helper-call` and `kfunc-call` as escape hatches. Prefer typed context fields, ordinary Nushell control flow, and the smaller first-class command surface when it covers the operation.
 - Use `--pin` when multiple probes need to share maps or timers.

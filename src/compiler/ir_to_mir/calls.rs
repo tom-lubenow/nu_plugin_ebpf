@@ -1020,11 +1020,6 @@ impl<'a> HirToMirLowering<'a> {
                             "global-define --type already implies zero initialization; do not combine it with --zero".into(),
                         ));
                     }
-                    if self.pipeline_input.is_some() || src_dst_had_value {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "global-define --type does not accept pipeline input; it declares layout directly".into(),
-                        ));
-                    }
                     let (type_vreg, type_reg) =
                         self.named_args.get("type").copied().ok_or_else(|| {
                             CompileError::UnsupportedInstruction(
@@ -1033,7 +1028,26 @@ impl<'a> HirToMirLowering<'a> {
                         })?;
                     let _ = type_vreg;
                     let type_spec = self.literal_string_arg(type_reg, "global-define --type")?;
-                    self.define_named_program_global_from_type_spec(&global_name, &type_spec)?;
+                    let constant_value = self
+                        .pipeline_input_reg
+                        .or_else(|| src_dst_had_value.then_some(src_dst))
+                        .and_then(|reg| {
+                            self.get_metadata(reg)
+                                .and_then(|meta| meta.constant_value.clone())
+                        });
+                    if let Some(value) = constant_value.as_ref() {
+                        self.define_named_program_global_from_type_spec_and_value(
+                            &global_name,
+                            &type_spec,
+                            value,
+                        )?;
+                    } else if self.pipeline_input.is_some() || src_dst_had_value {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "global-define --type with pipeline input requires a compile-time constant value".into(),
+                        ));
+                    } else {
+                        self.define_named_program_global_from_type_spec(&global_name, &type_spec)?;
+                    }
 
                     self.emit(MirInst::Copy {
                         dst: dst_vreg,

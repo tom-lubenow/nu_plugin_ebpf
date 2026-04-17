@@ -73,7 +73,23 @@ struct NamedGlobalPredeclaration {
 #[derive(Debug, Clone)]
 enum NamedGlobalPredeclarationKind {
     Value { value: Value, initialize: bool },
+    TypedValue { type_spec: String, value: Value },
     TypeSpec(String),
+}
+
+impl NamedGlobalPredeclarationKind {
+    fn priority(&self) -> u8 {
+        match self {
+            Self::Value {
+                initialize: false, ..
+            } => 1,
+            Self::TypeSpec(_) => 2,
+            Self::Value {
+                initialize: true, ..
+            } => 3,
+            Self::TypedValue { .. } => 4,
+        }
+    }
 }
 
 fn collect_named_global_predeclarations_for_function(
@@ -134,14 +150,19 @@ fn collect_named_global_predeclarations_for_function(
                                     && let Some(name) =
                                         reg_constants.get(name_reg).and_then(constant_string_value)
                                 {
+                                    let constant_value = reg_constants.get(src_dst).cloned();
                                     let candidate = if let Some(type_spec) = type_spec {
                                         NamedGlobalPredeclaration {
-                                            kind: NamedGlobalPredeclarationKind::TypeSpec(
-                                                type_spec,
-                                            ),
+                                            kind: if let Some(value) = constant_value {
+                                                NamedGlobalPredeclarationKind::TypedValue {
+                                                    type_spec,
+                                                    value,
+                                                }
+                                            } else {
+                                                NamedGlobalPredeclarationKind::TypeSpec(type_spec)
+                                            },
                                         }
-                                    } else if let Some(value) = reg_constants.get(src_dst).cloned()
-                                    {
+                                    } else if let Some(value) = constant_value {
                                         NamedGlobalPredeclaration {
                                             kind: NamedGlobalPredeclarationKind::Value {
                                                 value,
@@ -154,25 +175,8 @@ fn collect_named_global_predeclarations_for_function(
                                     candidates
                                         .entry(name)
                                         .and_modify(|existing: &mut NamedGlobalPredeclaration| {
-                                            if matches!(
-                                                (&existing.kind, &candidate.kind),
-                                                (
-                                                    NamedGlobalPredeclarationKind::Value {
-                                                        initialize: false,
-                                                        ..
-                                                    },
-                                                    NamedGlobalPredeclarationKind::Value {
-                                                        initialize: true,
-                                                        ..
-                                                    }
-                                                ) | (
-                                                    NamedGlobalPredeclarationKind::TypeSpec(_),
-                                                    NamedGlobalPredeclarationKind::Value {
-                                                        initialize: true,
-                                                        ..
-                                                    }
-                                                )
-                                            ) {
+                                            if candidate.kind.priority() > existing.kind.priority()
+                                            {
                                                 *existing = candidate.clone();
                                             }
                                         })
@@ -280,25 +284,7 @@ fn collect_named_global_predeclarations(
         merged
             .entry(name)
             .and_modify(|existing| {
-                if matches!(
-                    (&existing.kind, &value.kind),
-                    (
-                        NamedGlobalPredeclarationKind::Value {
-                            initialize: false,
-                            ..
-                        },
-                        NamedGlobalPredeclarationKind::Value {
-                            initialize: true,
-                            ..
-                        }
-                    ) | (
-                        NamedGlobalPredeclarationKind::TypeSpec(_),
-                        NamedGlobalPredeclarationKind::Value {
-                            initialize: true,
-                            ..
-                        }
-                    )
-                ) {
+                if value.kind.priority() > existing.kind.priority() {
                     *existing = value.clone();
                 }
             })
@@ -310,25 +296,7 @@ fn collect_named_global_predeclarations(
             merged
                 .entry(name)
                 .and_modify(|existing| {
-                    if matches!(
-                        (&existing.kind, &value.kind),
-                        (
-                            NamedGlobalPredeclarationKind::Value {
-                                initialize: false,
-                                ..
-                            },
-                            NamedGlobalPredeclarationKind::Value {
-                                initialize: true,
-                                ..
-                            }
-                        ) | (
-                            NamedGlobalPredeclarationKind::TypeSpec(_),
-                            NamedGlobalPredeclarationKind::Value {
-                                initialize: true,
-                                ..
-                            }
-                        )
-                    ) {
+                    if value.kind.priority() > existing.kind.priority() {
                         *existing = value.clone();
                     }
                 })
@@ -340,25 +308,7 @@ fn collect_named_global_predeclarations(
             merged
                 .entry(name)
                 .and_modify(|existing| {
-                    if matches!(
-                        (&existing.kind, &value.kind),
-                        (
-                            NamedGlobalPredeclarationKind::Value {
-                                initialize: false,
-                                ..
-                            },
-                            NamedGlobalPredeclarationKind::Value {
-                                initialize: true,
-                                ..
-                            }
-                        ) | (
-                            NamedGlobalPredeclarationKind::TypeSpec(_),
-                            NamedGlobalPredeclarationKind::Value {
-                                initialize: true,
-                                ..
-                            }
-                        )
-                    ) {
+                    if value.kind.priority() > existing.kind.priority() {
                         *existing = value.clone();
                     }
                 })
@@ -401,6 +351,11 @@ pub fn lower_hir_to_mir_with_hints_maps_and_semantics(
         match predecl.kind {
             NamedGlobalPredeclarationKind::Value { value, initialize } => {
                 lowering.predeclare_named_program_global_from_value(&name, &value, initialize)?;
+            }
+            NamedGlobalPredeclarationKind::TypedValue { type_spec, value } => {
+                lowering.define_named_program_global_from_type_spec_and_value(
+                    &name, &type_spec, &value,
+                )?;
             }
             NamedGlobalPredeclarationKind::TypeSpec(type_spec) => {
                 lowering.define_named_program_global_from_type_spec(&name, &type_spec)?;
