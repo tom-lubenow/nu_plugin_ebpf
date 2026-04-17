@@ -1,7 +1,7 @@
 use super::*;
 use crate::compiler::BpfHelper;
 use crate::compiler::hindley_milner::HMType;
-use crate::compiler::mir::{CtxField, CtxStoreTarget, MirType, StructField};
+use crate::compiler::mir::{CtxField, CtxStoreTarget, MapKind, MirType, StructField};
 use crate::compiler::mir_to_ebpf::compile_mir_to_ebpf;
 use crate::compiler::{ContextFieldLoadGuard, SockOpsCallbackGuard};
 use crate::kernel_btf::KernelBtf;
@@ -1251,6 +1251,53 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::StructOps.helper_call_error(BpfHelper::SkStorageDelete),
         None
+    );
+}
+
+#[test]
+fn test_program_type_packet_redirect_helpers_follow_program_model() {
+    assert!(matches!(
+        EbpfProgramType::Xdp.packet_redirect_helper(),
+        Some(BpfHelper::Redirect)
+    ));
+    assert!(matches!(
+        EbpfProgramType::Tc.packet_redirect_helper(),
+        Some(BpfHelper::Redirect)
+    ));
+    assert!(matches!(
+        EbpfProgramType::Tc.packet_redirect_peer_helper(),
+        Some(BpfHelper::RedirectPeer)
+    ));
+    assert!(matches!(
+        EbpfProgramType::Tc.packet_redirect_neigh_helper(),
+        Some(BpfHelper::RedirectNeigh)
+    ));
+    assert!(EbpfProgramType::Xdp.packet_redirect_peer_helper().is_none());
+    assert!(EbpfProgramType::Fentry.packet_redirect_helper().is_none());
+}
+
+#[test]
+fn test_program_type_socket_redirect_helpers_follow_program_model() {
+    assert!(matches!(
+        EbpfProgramType::SkMsg.socket_redirect_helper(MapKind::SockMap),
+        Some(BpfHelper::MsgRedirectMap)
+    ));
+    assert!(matches!(
+        EbpfProgramType::SkMsg.socket_redirect_helper(MapKind::SockHash),
+        Some(BpfHelper::MsgRedirectHash)
+    ));
+    assert!(matches!(
+        EbpfProgramType::SkSkb.socket_redirect_helper(MapKind::SockMap),
+        Some(BpfHelper::SkRedirectMap)
+    ));
+    assert!(matches!(
+        EbpfProgramType::SkSkbParser.socket_redirect_helper(MapKind::SockHash),
+        Some(BpfHelper::SkRedirectHash)
+    ));
+    assert!(
+        EbpfProgramType::Xdp
+            .socket_redirect_helper(MapKind::SockMap)
+            .is_none()
     );
 }
 

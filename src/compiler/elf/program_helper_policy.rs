@@ -1,5 +1,6 @@
 use super::{EbpfProgramType, GetSocketCookieArgPolicy};
 use crate::compiler::instruction::BpfHelper;
+use crate::compiler::mir::MapKind;
 use crate::program_spec::{CgroupSockAddrTarget, CgroupSockTarget, ProgramSpec, TcTarget};
 
 #[derive(Debug, Clone, Copy)]
@@ -421,6 +422,44 @@ impl EbpfProgramType {
             Some(GetSocketCookieArgPolicy::Socket)
         } else {
             None
+        }
+    }
+
+    pub(crate) fn packet_redirect_helper(&self) -> Option<BpfHelper> {
+        if XDP_TC_PROGRAMS.contains(self) {
+            Some(BpfHelper::Redirect)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn packet_redirect_peer_helper(&self) -> Option<BpfHelper> {
+        if TC_PROGRAMS.contains(self) {
+            Some(BpfHelper::RedirectPeer)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn packet_redirect_neigh_helper(&self) -> Option<BpfHelper> {
+        if TC_PROGRAMS.contains(self) {
+            Some(BpfHelper::RedirectNeigh)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn socket_redirect_helper(&self, map_kind: MapKind) -> Option<BpfHelper> {
+        match (*self, map_kind) {
+            (EbpfProgramType::SkMsg, MapKind::SockMap) => Some(BpfHelper::MsgRedirectMap),
+            (EbpfProgramType::SkMsg, MapKind::SockHash) => Some(BpfHelper::MsgRedirectHash),
+            (EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser, MapKind::SockMap) => {
+                Some(BpfHelper::SkRedirectMap)
+            }
+            (EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser, MapKind::SockHash) => {
+                Some(BpfHelper::SkRedirectHash)
+            }
+            _ => None,
         }
     }
 }
