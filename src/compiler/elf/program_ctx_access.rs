@@ -6,6 +6,9 @@ type BaseContextFieldAccessSurfaceSpec = (&'static [CtxField], BaseContextFieldA
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ContextFieldAccessRequirement {
     CgroupSockCreateReleaseOnly,
+    CgroupSockPostBindOnly,
+    CgroupSockPostBindIpv4Only,
+    CgroupSockPostBindIpv6Only,
     CgroupSockoptGetOnly,
     CgroupSockAddrIpv4Only,
     CgroupSockAddrIpv6Only,
@@ -41,8 +44,38 @@ impl ContextFieldAccessRequirement {
     fn error(self, spec: &ProgramSpec, field_name: &str) -> Option<String> {
         match self {
             Self::CgroupSockCreateReleaseOnly => match spec.attach_shape() {
-                ProgramAttachShape::CgroupSock { post_bind: true } => Some(format!(
+                ProgramAttachShape::CgroupSock {
+                    post_bind: true, ..
+                } => Some(format!(
                     "ctx.{field_name} is only available on cgroup_sock sock_create/sock_release hooks"
+                )),
+                _ => None,
+            },
+            Self::CgroupSockPostBindOnly => match spec.attach_shape() {
+                ProgramAttachShape::CgroupSock {
+                    post_bind: false, ..
+                } => Some(format!(
+                    "ctx.{field_name} is only available on cgroup_sock post_bind4/post_bind6 hooks"
+                )),
+                _ => None,
+            },
+            Self::CgroupSockPostBindIpv4Only => match spec.attach_shape() {
+                ProgramAttachShape::CgroupSock {
+                    post_bind: true,
+                    family: Some(ProgramAttachAddressFamily::Ipv4),
+                } => None,
+                ProgramAttachShape::CgroupSock { .. } => Some(format!(
+                    "ctx.{field_name} is only available on cgroup_sock post_bind4 hooks"
+                )),
+                _ => None,
+            },
+            Self::CgroupSockPostBindIpv6Only => match spec.attach_shape() {
+                ProgramAttachShape::CgroupSock {
+                    post_bind: true,
+                    family: Some(ProgramAttachAddressFamily::Ipv6),
+                } => None,
+                ProgramAttachShape::CgroupSock { .. } => Some(format!(
+                    "ctx.{field_name} is only available on cgroup_sock post_bind6 hooks"
                 )),
                 _ => None,
             },
@@ -245,6 +278,21 @@ const CGROUP_SOCK_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = 
         CtxField::SockPriority,
         "priority",
         ContextFieldAccessRequirement::CgroupSockCreateReleaseOnly,
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::LocalIp4,
+        "local_ip4",
+        ContextFieldAccessRequirement::CgroupSockPostBindIpv4Only,
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::LocalIp6,
+        "local_ip6",
+        ContextFieldAccessRequirement::CgroupSockPostBindIpv6Only,
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::LocalPort,
+        "local_port",
+        ContextFieldAccessRequirement::CgroupSockPostBindOnly,
     ),
 ];
 

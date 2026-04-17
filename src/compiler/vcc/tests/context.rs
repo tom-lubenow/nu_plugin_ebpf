@@ -474,6 +474,36 @@ fn test_verify_mir_for_probe_context_accepts_cgroup_sock_state_field() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_accepts_cgroup_sock_direct_tuple_fields() {
+    let (mut func, entry) = new_mir_function();
+    let remote_port = func.alloc_vreg();
+    let local_port = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: remote_port,
+            field: CtxField::RemotePort,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: local_port,
+            field: CtxField::LocalPort,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(remote_port, MirType::U32);
+    types.insert(local_port, MirType::U32);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected cgroup_sock direct tuple fields to verify");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_accepts_sock_ops_tcp_flags_on_hdr_opt_len() {
     let (mut func, entry) = new_mir_function();
     let guarded = func.alloc_block();

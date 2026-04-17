@@ -144,7 +144,9 @@ impl ContextWriteAvailability {
     fn error(&self, spec: &ProgramSpec, field_name: &str) -> Option<String> {
         match self {
             Self::CgroupSockCreateReleaseOnly => match spec.attach_shape() {
-                ProgramAttachShape::CgroupSock { post_bind: true } => Some(format!(
+                ProgramAttachShape::CgroupSock {
+                    post_bind: true, ..
+                } => Some(format!(
                     "ctx.{field_name} is only writable on cgroup_sock sock_create/sock_release hooks"
                 )),
                 _ => None,

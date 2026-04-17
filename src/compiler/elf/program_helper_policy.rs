@@ -507,13 +507,11 @@ impl ProgramSpec {
 
     pub(crate) fn socket_projection_access_error(&self, member_name: &str) -> Option<String> {
         match self.attach_shape() {
-            ProgramAttachShape::CgroupSock { post_bind: false }
-                if CGROUP_SOCK_POST_BIND_ONLY_MEMBERS.contains(&member_name) =>
-            {
-                Some(format!(
-                    "ctx.sk.{member_name} is only available on cgroup_sock post_bind4/post_bind6 hooks"
-                ))
-            }
+            ProgramAttachShape::CgroupSock {
+                post_bind: false, ..
+            } if CGROUP_SOCK_POST_BIND_ONLY_MEMBERS.contains(&member_name) => Some(format!(
+                "ctx.sk.{member_name} is only available on cgroup_sock post_bind4/post_bind6 hooks"
+            )),
             _ => None,
         }
     }

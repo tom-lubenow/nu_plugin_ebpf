@@ -660,6 +660,60 @@ fn test_lower_cgroup_sock_post_bind_ctx_socket_src_port_field() {
 }
 
 #[test]
+fn test_lower_cgroup_sock_ctx_remote_port_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("remote_port")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock ctx.remote_port should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::RemotePort,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_cgroup_sock_post_bind_ctx_local_port_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("local_port")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock post_bind4 ctx.local_port should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::LocalPort,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_ctx_pid_type_hint_is_u32() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("pid")],
@@ -716,6 +770,30 @@ fn test_lower_cgroup_sock_create_ctx_socket_src_port_rejected() {
             "ctx.sk.src_port is only available on cgroup_sock post_bind4/post_bind6 hooks"
         ),
         "unexpected error: {msg}"
+    );
+}
+
+#[test]
+fn test_lower_cgroup_sock_create_ctx_local_port_rejected() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("local_port")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("cgroup_sock sock_create ctx.local_port should be rejected");
+
+    assert!(
+        err.to_string().contains(
+            "ctx.local_port is only available on cgroup_sock post_bind4/post_bind6 hooks"
+        )
     );
 }
 

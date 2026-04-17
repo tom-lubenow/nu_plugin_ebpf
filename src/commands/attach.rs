@@ -293,6 +293,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.family }  - Get socket family
     {|ctx| $ctx.sock_type } - Get socket type
     {|ctx| $ctx.protocol } - Get socket protocol
+    {|ctx| $ctx.remote_port } - Get the remote port in host byte order
+    {|ctx| $ctx.local_port } - Get the local port in host byte order on `post_bind4` / `post_bind6`
     {|ctx| $ctx.bound_dev_if } - Get the bound device ifindex on `sock_create` / `sock_release`
     {|ctx| $ctx.mark }    - Get the socket mark on `sock_create` / `sock_release`
     {|ctx| $ctx.priority } - Get the socket priority on `sock_create` / `sock_release`
@@ -306,6 +308,10 @@ Context parameter syntax (recommended):
     available on `sock_create` / `sock_release`, and they are writable
     there through ordinary assignment after shadowing the closure
     parameter as mutable, for example `mut ctx = $ctx; $ctx.mark = 7`.
+    Direct `ctx.remote_ip4`, `ctx.remote_ip6`, and `ctx.remote_port`
+    are available on every cgroup_sock hook; `ctx.local_ip4` is only
+    available on `post_bind4`, `ctx.local_ip6` on `post_bind6`, and
+    `ctx.local_port` on both post-bind hooks.
     On `cgroup_sock`, socket-address projection fields through
     `ctx.sk` such as `ctx.sk.src_port` and `ctx.sk.dst_port` are only
     available on `post_bind4` and `post_bind6`.

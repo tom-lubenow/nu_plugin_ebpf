@@ -392,7 +392,7 @@ fn test_program_type_socket_layouts_follow_program_model() {
     );
     assert_eq!(
         EbpfProgramType::CgroupSock.socket_tuple_context_layout(),
-        None
+        Some(SocketContextLayout::CgroupSock)
     );
 
     assert_eq!(
@@ -3467,6 +3467,9 @@ fn test_probe_context_allows_sock_fields_on_cgroup_sock() {
     assert!(ctx.ctx_field_access_error(&CtxField::Family).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::SockType).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Protocol).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::RemoteIp4).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::RemoteIp6).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::RemotePort).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::BoundDevIf).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::SockMark).is_none());
     assert!(
@@ -3494,6 +3497,66 @@ fn test_probe_context_rejects_create_release_only_direct_fields_on_cgroup_sock_p
         .ctx_field_access_error(&CtxField::SockPriority)
         .expect("expected cgroup_sock post_bind priority access rejection");
     assert!(priority.contains("cgroup_sock sock_create/sock_release"));
+}
+
+#[test]
+fn test_probe_context_rejects_post_bind_only_direct_local_fields_on_cgroup_sock_create() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+
+    let local_ip4 = ctx
+        .ctx_field_access_error(&CtxField::LocalIp4)
+        .expect("expected cgroup_sock sock_create local_ip4 access rejection");
+    assert!(local_ip4.contains("cgroup_sock post_bind4"));
+
+    let local_ip6 = ctx
+        .ctx_field_access_error(&CtxField::LocalIp6)
+        .expect("expected cgroup_sock sock_create local_ip6 access rejection");
+    assert!(local_ip6.contains("cgroup_sock post_bind6"));
+
+    let local_port = ctx
+        .ctx_field_access_error(&CtxField::LocalPort)
+        .expect("expected cgroup_sock sock_create local_port access rejection");
+    assert!(local_port.contains("cgroup_sock post_bind4/post_bind6"));
+}
+
+#[test]
+fn test_probe_context_allows_family_specific_direct_local_fields_on_cgroup_sock_post_bind() {
+    let post_bind4 = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
+    let post_bind6 = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind6");
+
+    assert!(
+        post_bind4
+            .ctx_field_access_error(&CtxField::LocalIp4)
+            .is_none()
+    );
+    assert!(
+        post_bind4
+            .ctx_field_access_error(&CtxField::LocalPort)
+            .is_none()
+    );
+    assert!(
+        post_bind4
+            .ctx_field_access_error(&CtxField::LocalIp6)
+            .expect("expected cgroup_sock post_bind4 local_ip6 rejection")
+            .contains("cgroup_sock post_bind6")
+    );
+
+    assert!(
+        post_bind6
+            .ctx_field_access_error(&CtxField::LocalIp6)
+            .is_none()
+    );
+    assert!(
+        post_bind6
+            .ctx_field_access_error(&CtxField::LocalPort)
+            .is_none()
+    );
+    assert!(
+        post_bind6
+            .ctx_field_access_error(&CtxField::LocalIp4)
+            .expect("expected cgroup_sock post_bind6 local_ip4 rejection")
+            .contains("cgroup_sock post_bind4")
+    );
 }
 
 #[test]

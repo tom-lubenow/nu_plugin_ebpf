@@ -76,6 +76,7 @@ const SOCKET_FAMILY_CONTEXT_LAYOUT_SURFACES: &[ProgramTypeLayoutSurfaceSpec<
 ];
 const SOCKET_TUPLE_CONTEXT_LAYOUT_SURFACES: &[ProgramTypeLayoutSurfaceSpec<SocketContextLayout>] =
     &[
+        (CGROUP_SOCK_PROGRAMS, SocketContextLayout::CgroupSock),
         (SK_LOOKUP_PROGRAMS, SocketContextLayout::SkLookup),
         (SK_MSG_PROGRAMS, SocketContextLayout::SkMsg),
         (SK_BUFF_SOCKET_COMMON_PROGRAMS, SocketContextLayout::SkBuff),

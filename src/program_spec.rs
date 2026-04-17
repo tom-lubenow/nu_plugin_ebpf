@@ -1188,6 +1188,7 @@ pub(crate) enum ProgramAttachShape {
     },
     CgroupSock {
         post_bind: bool,
+        family: Option<ProgramAttachAddressFamily>,
     },
     CgroupSockopt {
         get: bool,
@@ -1422,6 +1423,11 @@ impl ProgramSpec {
             },
             ProgramSpec::CgroupSock { target } => ProgramAttachShape::CgroupSock {
                 post_bind: target.is_post_bind(),
+                family: match target.attach_type {
+                    CgroupSockAttachType::PostBind4 => Some(ProgramAttachAddressFamily::Ipv4),
+                    CgroupSockAttachType::PostBind6 => Some(ProgramAttachAddressFamily::Ipv6),
+                    CgroupSockAttachType::SockCreate | CgroupSockAttachType::SockRelease => None,
+                },
             },
             ProgramSpec::CgroupSockopt { target } => ProgramAttachShape::CgroupSockopt {
                 get: target.is_get(),
@@ -1515,7 +1521,10 @@ mod tests {
         );
         assert_eq!(
             sock_post_bind.attach_shape(),
-            ProgramAttachShape::CgroupSock { post_bind: true }
+            ProgramAttachShape::CgroupSock {
+                post_bind: true,
+                family: Some(ProgramAttachAddressFamily::Ipv6),
+            }
         );
         assert_eq!(
             sockopt_get.attach_shape(),
