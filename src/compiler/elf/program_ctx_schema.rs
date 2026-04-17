@@ -20,7 +20,11 @@ const SK_BUFF_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkSkbParser,
 ];
-const SK_SKB_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SkSkb, EbpfProgramType::SkSkbParser];
+const SK_BUFF_SOCKET_COMMON_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::CgroupSkb,
+    EbpfProgramType::SkSkb,
+    EbpfProgramType::SkSkbParser,
+];
 const CGROUP_SOCK_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::CgroupSock];
 const CGROUP_SOCK_ADDR_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::CgroupSockAddr];
 const CGROUP_SOCKOPT_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::CgroupSockopt];
@@ -67,14 +71,14 @@ const SOCKET_FAMILY_CONTEXT_LAYOUT_SURFACES: &[ProgramTypeLayoutSurfaceSpec<
     (CGROUP_SOCK_ADDR_PROGRAMS, SocketContextLayout::SockAddr),
     (SK_LOOKUP_PROGRAMS, SocketContextLayout::SkLookup),
     (SK_MSG_PROGRAMS, SocketContextLayout::SkMsg),
-    (SK_SKB_PROGRAMS, SocketContextLayout::SkBuff),
+    (SK_BUFF_SOCKET_COMMON_PROGRAMS, SocketContextLayout::SkBuff),
     (SOCK_OPS_PROGRAMS, SocketContextLayout::SockOps),
 ];
 const SOCKET_TUPLE_CONTEXT_LAYOUT_SURFACES: &[ProgramTypeLayoutSurfaceSpec<SocketContextLayout>] =
     &[
         (SK_LOOKUP_PROGRAMS, SocketContextLayout::SkLookup),
         (SK_MSG_PROGRAMS, SocketContextLayout::SkMsg),
-        (SK_SKB_PROGRAMS, SocketContextLayout::SkBuff),
+        (SK_BUFF_SOCKET_COMMON_PROGRAMS, SocketContextLayout::SkBuff),
         (SOCK_OPS_PROGRAMS, SocketContextLayout::SockOps),
     ];
 const SOCK_TYPE_CONTEXT_LAYOUT_SURFACES: &[ProgramTypeLayoutSurfaceSpec<SocketContextLayout>] = &[

@@ -873,7 +873,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                     Some(SocketContextLayout::SockAddr) => Self::bpf_sock_addr_offsets().4,
                     Some(SocketContextLayout::CgroupSockopt) | None => {
                         return Err(CompileError::UnsupportedInstruction(
-                            "ctx.family is only available on cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
+                            "ctx.family is only available on cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
                         ));
                     }
                 };
@@ -1043,7 +1043,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                     )
                     | None => {
                         return Err(CompileError::UnsupportedInstruction(
-                            "ctx.remote_ip4 is only available on sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
+                            "ctx.remote_ip4 is only available on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
                         ));
                     }
                 };
@@ -1068,7 +1068,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                     )
                     | None => {
                         return Err(CompileError::UnsupportedInstruction(
-                            "ctx.remote_ip6 is only available on sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
+                            "ctx.remote_ip6 is only available on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
                         ));
                     }
                 };
@@ -1091,7 +1091,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                     )
                     | None => {
                         return Err(CompileError::UnsupportedInstruction(
-                            "ctx.remote_port is only available on sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
+                            "ctx.remote_port is only available on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
                         ));
                     }
                 };
@@ -1125,7 +1125,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                     )
                     | None => {
                         return Err(CompileError::UnsupportedInstruction(
-                            "ctx.local_ip4 is only available on sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
+                            "ctx.local_ip4 is only available on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
                         ));
                     }
                 };
@@ -1150,7 +1150,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                     )
                     | None => {
                         return Err(CompileError::UnsupportedInstruction(
-                            "ctx.local_ip6 is only available on sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
+                            "ctx.local_ip6 is only available on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
                         ));
                     }
                 };
@@ -1173,7 +1173,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                     )
                     | None => {
                         return Err(CompileError::UnsupportedInstruction(
-                            "ctx.local_port is only available on sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
+                            "ctx.local_port is only available on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
                         ));
                     }
                 };

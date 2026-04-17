@@ -423,6 +423,36 @@ fn test_verify_mir_for_probe_context_accepts_sock_ops_data_load_for_parse_hdr_op
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_accepts_cgroup_skb_direct_socket_fields() {
+    let (mut func, entry) = new_mir_function();
+    let family = func.alloc_vreg();
+    let remote_port = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: family,
+            field: CtxField::Family,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: remote_port,
+            field: CtxField::RemotePort,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(family, MirType::U32);
+    types.insert(remote_port, MirType::U32);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected cgroup_skb direct socket fields to verify");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_accepts_sock_ops_tcp_flags_on_hdr_opt_len() {
     let (mut func, entry) = new_mir_function();
     let guarded = func.alloc_block();

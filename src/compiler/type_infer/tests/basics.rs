@@ -890,6 +890,27 @@ fn test_infer_cgroup_sock_family_field_as_u32() {
 }
 
 #[test]
+fn test_infer_cgroup_skb_family_field_as_u32() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::Family,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::U32));
+}
+
+#[test]
 fn test_infer_cgroup_sock_socket_field_as_kernel_pointer() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();
@@ -1006,6 +1027,27 @@ fn test_infer_sk_lookup_local_port_field_as_u32() {
     func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
 
     let ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    let mut ti = TypeInference::new(Some(ctx));
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::U32));
+}
+
+#[test]
+fn test_infer_cgroup_skb_local_port_field_as_u32() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::LocalPort,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress");
     let mut ti = TypeInference::new(Some(ctx));
     let types = ti.infer(&func).unwrap();
 

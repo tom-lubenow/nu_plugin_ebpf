@@ -396,6 +396,15 @@ fn test_program_type_socket_layouts_follow_program_model() {
     );
 
     assert_eq!(
+        EbpfProgramType::CgroupSkb.socket_family_context_layout(),
+        Some(SocketContextLayout::SkBuff)
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSkb.socket_tuple_context_layout(),
+        Some(SocketContextLayout::SkBuff)
+    );
+
+    assert_eq!(
         EbpfProgramType::SkSkbParser.socket_family_context_layout(),
         Some(SocketContextLayout::SkBuff)
     );
@@ -408,6 +417,11 @@ fn test_program_type_socket_layouts_follow_program_model() {
         None
     );
     assert_eq!(EbpfProgramType::SkSkbParser.protocol_context_layout(), None);
+    assert_eq!(
+        EbpfProgramType::SocketFilter.socket_family_context_layout(),
+        None
+    );
+    assert_eq!(EbpfProgramType::Tc.socket_tuple_context_layout(), None);
 }
 
 #[test]
@@ -791,12 +805,27 @@ fn test_probe_context_ctx_field_projection_spec_respects_context_legality() {
 #[test]
 fn test_probe_context_ctx_field_type_spec_is_program_type_aware_within_skb_family() {
     let socket_filter = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let tc = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let cgroup_skb = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
     let sk_skb = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
 
     assert!(
         socket_filter
             .ctx_field_type_spec(&CtxField::Family)
             .is_none()
+    );
+    assert!(
+        socket_filter
+            .ctx_field_type_spec(&CtxField::RemotePort)
+            .is_none()
+    );
+    assert!(tc.ctx_field_type_spec(&CtxField::Family).is_none());
+    assert!(tc.ctx_field_type_spec(&CtxField::RemotePort).is_none());
+    assert!(cgroup_skb.ctx_field_type_spec(&CtxField::Family).is_some());
+    assert!(
+        cgroup_skb
+            .ctx_field_type_spec(&CtxField::RemotePort)
+            .is_some()
     );
     assert!(sk_skb.ctx_field_type_spec(&CtxField::Family).is_some());
 }
@@ -3361,6 +3390,50 @@ fn test_probe_context_allows_packet_fields_on_cgroup_skb() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::IngressIfindex)
             .is_none()
+    );
+    assert!(ctx.ctx_field_access_error(&CtxField::Family).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::RemoteIp4).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::RemoteIp6).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::RemotePort).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::LocalIp4).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::LocalIp6).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::LocalPort).is_none());
+}
+
+#[test]
+fn test_probe_context_rejects_direct_socket_fields_on_socket_filter_and_tc() {
+    let socket_filter = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let tc = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    assert!(
+        socket_filter
+            .ctx_field_access_error(&CtxField::Family)
+            .expect("expected socket_filter family access error")
+            .contains(
+                "ctx.family is only available on cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+            )
+    );
+    assert!(
+        socket_filter
+            .ctx_field_access_error(&CtxField::RemotePort)
+            .expect("expected socket_filter remote_port access error")
+            .contains(
+                "ctx.remote_port is only available on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+            )
+    );
+    assert!(
+        tc.ctx_field_access_error(&CtxField::Family)
+            .expect("expected tc family access error")
+            .contains(
+                "ctx.family is only available on cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+            )
+    );
+    assert!(
+        tc.ctx_field_access_error(&CtxField::RemotePort)
+            .expect("expected tc remote_port access error")
+            .contains(
+                "ctx.remote_port is only available on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+            )
     );
 }
 

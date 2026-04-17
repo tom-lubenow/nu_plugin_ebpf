@@ -131,6 +131,13 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie on supported socket-backed contexts
     {|ctx| $ctx.mark }    - Get the socket or skb mark on cgroup_sock, socket_filter, tc, and cgroup_skb programs
     {|ctx| $ctx.priority } - Get the socket or skb priority on cgroup_sock, socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs
+    {|ctx| $ctx.family }  - Get socket family on cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
+    {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
+    {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
+    {|ctx| $ctx.remote_port } - Get the remote port in host byte order on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
+    {|ctx| $ctx.local_ip4 } - Get the local IPv4 address in host byte order on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
+    {|ctx| $ctx.local_ip6 } - Get the local IPv6 address as four host-order u32 words on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
+    {|ctx| $ctx.local_port } - Get the local port in host byte order on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
     {|ctx| ($ctx.data | get 0) } - Read the first packet byte with an auto-generated data_end guard
     {|ctx| $ctx.data.u16be.6 } - Read a big-endian 16-bit packet scalar (here: bytes 12..13)
     {|ctx| $ctx.data.eth.ethertype } - Read the Ethernet ethertype through a typed packet header view

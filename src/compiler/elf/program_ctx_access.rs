@@ -635,7 +635,7 @@ impl BaseContextFieldAccessRequirement {
                 format!("ctx.{} is only available on xdp and tc programs", field.display_name())
             }
             Self::SocketTupleFields => format!(
-                "ctx.{} is only available on sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs",
+                "ctx.{} is only available on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs",
                 field.display_name()
             ),
             Self::SocketRefField => format!(
@@ -670,7 +670,7 @@ impl BaseContextFieldAccessRequirement {
                 field.display_name()
             ),
             Self::SocketCommonFields => format!(
-                "ctx.{} is only available on cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs",
+                "ctx.{} is only available on cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs",
                 field.display_name()
             ),
             Self::SockTypeField | Self::ProtocolField => format!(

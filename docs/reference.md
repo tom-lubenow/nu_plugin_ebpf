@@ -53,7 +53,7 @@ The closure receives a context parameter with these fields:
 | `user_ip4` | IPv4 destination/source address in host byte order | cgroup_sock_addr (*4 hooks) |
 | `user_ip6` | IPv6 address as four host-order `u32` words | cgroup_sock_addr (*6 hooks) |
 | `user_port` | Requested port in host byte order | cgroup_sock_addr |
-| `family` | Kernel socket family | cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `family` | Kernel socket family | cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `sock_type` | Socket type | cgroup_sock, cgroup_sock_addr |
 | `protocol` | Socket protocol | cgroup_sock, cgroup_sock_addr, sk_lookup |
 | `bound_dev_if` | Bound device ifindex | cgroup_sock |
@@ -92,12 +92,12 @@ The closure receives a context parameter with these fields:
 | `skb_hwtstamp` | Packet hardware timestamp when packet metadata is available | sock_ops |
 | `msg_src_ip4` | IPv4 source address in host byte order | cgroup_sock_addr (sendmsg4, recvmsg4) |
 | `msg_src_ip6` | IPv6 source address as four host-order `u32` words | cgroup_sock_addr (sendmsg6, recvmsg6) |
-| `remote_ip4` | Remote IPv4 address in host byte order | sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
-| `remote_ip6` | Remote IPv6 address as four host-order `u32` words | sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
-| `remote_port` | Remote port in host byte order | sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
-| `local_ip4` | Local IPv4 address in host byte order | sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
-| `local_ip6` | Local IPv6 address as four host-order `u32` words | sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
-| `local_port` | Local port in host byte order | sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `remote_ip4` | Remote IPv4 address in host byte order | cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `remote_ip6` | Remote IPv6 address as four host-order `u32` words | cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `remote_port` | Remote port in host byte order | cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `local_ip4` | Local IPv4 address in host byte order | cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `local_ip6` | Local IPv6 address as four host-order `u32` words | cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `local_port` | Local port in host byte order | cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `sk` | Typed `bpf_sock *` pointer for socket projection such as `$ctx.sk.family` or `$ctx.sk.bound_dev_if`; currently exposes `bound_dev_if`, `family`, `type`, `protocol`, `mark`, `priority`, `src_ip4`, `src_ip6`, `src_port`, `dst_port` (raw network byte order), `dst_ip4`, `dst_ip6`, `state`, and `rx_queue_mapping` | socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `cookie` | Socket lookup cookie | sk_lookup |
 | `level` | Socket-option level | cgroup_sockopt |
@@ -191,7 +191,13 @@ Additional metadata is family-specific: `ctx.tc_classid`,
 `ctx.hwtstamp` are available on tc and cgroup_skb; `ctx.mark` is
 available on cgroup_sock, socket_filter, tc, and cgroup_skb; and
 `ctx.priority` is available on cgroup_sock and across the skb-backed
-packet families. `ctx.eth_protocol` and `ctx.vlan_proto` are
+packet families. `cgroup_skb`, `sk_skb`, and `sk_skb_parser` also
+expose direct socket-common and tuple aliases (`ctx.family`,
+`ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`,
+`ctx.local_ip6`, `ctx.local_port`) from the ambient `__sk_buff`
+context; the IPv4 address and remote-port fields are normalized to
+host byte order, and the IPv6 fields stay fixed arrays of four
+host-order `u32` words. `ctx.eth_protocol` and `ctx.vlan_proto` are
 normalized to host byte order, and `ctx.cb` follows the same
 fixed-array model as `ctx.args`. Writable skb
 metadata is attach-sensitive. On `socket_filter`, fixed `ctx.cb.N`
