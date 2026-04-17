@@ -235,6 +235,74 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_probe_read_string(src_dst, dst_vreg, ptr_vreg, false, aligned_len)?;
             }
 
+            "redirect-map" => {
+                if !self.named_flags.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "redirect-map does not accept flags".into(),
+                    ));
+                }
+                self.require_only_named_args("redirect-map", &["kind", "flags"])?;
+                if let Some(message) = self
+                    .probe_ctx
+                    .and_then(|ctx| ctx.helper_call_error(BpfHelper::RedirectMap))
+                {
+                    return Err(CompileError::UnsupportedInstruction(message));
+                }
+
+                let (_, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "redirect-map requires a literal map name as the first positional argument"
+                            .into(),
+                    )
+                })?;
+                let map_name = self.literal_string_arg(map_reg, "redirect-map")?;
+                self.validate_generic_map_name(&map_name, "redirect-map")?;
+                let map_kind = self.required_redirect_map_kind_arg("redirect-map")?;
+                let key_vreg = self
+                    .positional_args
+                    .get(1)
+                    .map(|(vreg, _)| *vreg)
+                    .or(self.pipeline_input)
+                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "redirect-map requires a key from pipeline input or a second positional argument"
+                                .into(),
+                        )
+                    })?;
+                let flags = if let Some((_, reg)) = self.named_args.get("flags") {
+                    let raw = self
+                        .get_metadata(*reg)
+                        .and_then(|m| m.literal_int)
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "redirect-map --flags must be a compile-time integer literal"
+                                    .into(),
+                            )
+                        })?;
+                    u64::try_from(raw).map_err(|_| {
+                        CompileError::UnsupportedInstruction(
+                            "redirect-map --flags must be >= 0".into(),
+                        )
+                    })?
+                } else {
+                    0
+                };
+
+                let map_vreg = self.emit_typed_map_fd_load(map_name, map_kind);
+                self.emit(MirInst::CallHelper {
+                    dst: dst_vreg,
+                    helper: BpfHelper::RedirectMap as u32,
+                    args: vec![
+                        MirValue::VReg(map_vreg),
+                        MirValue::VReg(key_vreg),
+                        MirValue::Const(flags as i64),
+                    ],
+                });
+                self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                self.reset_call_result_metadata(src_dst);
+            }
+
             "kfunc-call" => {
                 if !self.named_flags.is_empty() {
                     return Err(CompileError::UnsupportedInstruction(
@@ -1457,6 +1525,11 @@ impl<'a> HirToMirLowering<'a> {
                 }
             }
         };
+        let map_vreg = self.emit_typed_map_fd_load(map_name, map_kind);
+        Ok(MirValue::VReg(map_vreg))
+    }
+
+    fn emit_typed_map_fd_load(&mut self, map_name: String, map_kind: MapKind) -> VReg {
         let map_vreg = self.func.alloc_vreg();
         self.emit(MirInst::LoadMapFd {
             dst: map_vreg,
@@ -1493,6 +1566,6 @@ impl<'a> HirToMirLowering<'a> {
                 },
             );
         }
-        Ok(MirValue::VReg(map_vreg))
+        map_vreg
     }
 }

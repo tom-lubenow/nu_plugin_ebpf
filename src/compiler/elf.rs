@@ -991,6 +991,7 @@ pub enum ProgramIntrinsic {
     StopTimer,
     ReadStr,
     ReadKernelStr,
+    RedirectMap,
     HelperCall,
     KfuncCall,
     GlobalDefine,
@@ -1018,6 +1019,7 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::StopTimer => "stop-timer",
             ProgramIntrinsic::ReadStr => "read-str",
             ProgramIntrinsic::ReadKernelStr => "read-kernel-str",
+            ProgramIntrinsic::RedirectMap => "redirect-map",
             ProgramIntrinsic::HelperCall => "helper-call",
             ProgramIntrinsic::KfuncCall => "kfunc-call",
             ProgramIntrinsic::GlobalDefine => "global-define",
@@ -1041,6 +1043,7 @@ impl ProgramIntrinsic {
             "stop-timer" => Some(ProgramIntrinsic::StopTimer),
             "read-str" => Some(ProgramIntrinsic::ReadStr),
             "read-kernel-str" => Some(ProgramIntrinsic::ReadKernelStr),
+            "redirect-map" => Some(ProgramIntrinsic::RedirectMap),
             "helper-call" => Some(ProgramIntrinsic::HelperCall),
             "kfunc-call" => Some(ProgramIntrinsic::KfuncCall),
             "global-define" => Some(ProgramIntrinsic::GlobalDefine),
@@ -1064,7 +1067,9 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::StartTimer | ProgramIntrinsic::StopTimer => ProgramCapability::Timers,
             ProgramIntrinsic::ReadStr => ProgramCapability::ReadUserString,
             ProgramIntrinsic::ReadKernelStr => ProgramCapability::ReadKernelString,
-            ProgramIntrinsic::HelperCall => ProgramCapability::HelperCalls,
+            ProgramIntrinsic::RedirectMap | ProgramIntrinsic::HelperCall => {
+                ProgramCapability::HelperCalls
+            }
             ProgramIntrinsic::KfuncCall => ProgramCapability::KfuncCalls,
             ProgramIntrinsic::GlobalDefine
             | ProgramIntrinsic::GlobalGet

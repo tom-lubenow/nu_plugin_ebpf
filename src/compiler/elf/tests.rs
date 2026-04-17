@@ -1474,6 +1474,10 @@ fn test_program_intrinsic_command_registry() {
         Some(ProgramIntrinsic::MapPop)
     );
     assert_eq!(
+        ProgramIntrinsic::from_command_name("redirect-map"),
+        Some(ProgramIntrinsic::RedirectMap)
+    );
+    assert_eq!(
         ProgramIntrinsic::from_command_name("global-set"),
         Some(ProgramIntrinsic::GlobalSet)
     );
@@ -1484,6 +1488,10 @@ fn test_program_intrinsic_command_registry() {
     );
     assert_eq!(
         ProgramIntrinsic::HelperCall.required_capability(),
+        ProgramCapability::HelperCalls
+    );
+    assert_eq!(
+        ProgramIntrinsic::RedirectMap.required_capability(),
         ProgramCapability::HelperCalls
     );
     assert_eq!(
