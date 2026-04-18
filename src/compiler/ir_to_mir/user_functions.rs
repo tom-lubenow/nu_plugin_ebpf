@@ -516,6 +516,20 @@ impl<'a> HirToMirLowering<'a> {
             }
             args
         };
+        let call_args: Vec<UserFunctionCallArg> = call_args
+            .into_iter()
+            .map(|arg| {
+                let vreg = if let Some(source_reg) = arg.source_reg {
+                    self.materialized_metadata_aggregate_vreg(source_reg, arg.vreg)?
+                } else {
+                    arg.vreg
+                };
+                Ok(UserFunctionCallArg {
+                    vreg,
+                    source_reg: arg.source_reg,
+                })
+            })
+            .collect::<Result<_, CompileError>>()?;
 
         if let Some(value) = Self::eval_constant_user_function_return(hir) {
             self.lower_constant_value(src_dst, &value)?;
@@ -534,11 +548,13 @@ impl<'a> HirToMirLowering<'a> {
                 let metadata = arg
                     .source_reg
                     .and_then(|reg| self.get_metadata(reg).cloned());
-                let type_hint = self
-                    .vreg_type_hints
-                    .get(&arg.vreg)
-                    .cloned()
-                    .or_else(|| metadata.as_ref().and_then(|meta| meta.field_type.clone()));
+                let type_hint = self.vreg_type_hints.get(&arg.vreg).cloned().or_else(|| {
+                    metadata.as_ref().and_then(|meta| {
+                        meta.field_type
+                            .clone()
+                            .or_else(|| Self::metadata_record_layout(meta))
+                    })
+                });
                 SubfunctionArgSeed {
                     type_hint,
                     metadata,

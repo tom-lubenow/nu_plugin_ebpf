@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::hir::{AnnotatedMutGlobal, HirBlock};
+use crate::compiler::ir_to_mir::tests::helpers::string_member;
 use crate::compiler::{
     compile_mir_to_ebpf_with_hints_and_globals, passes::optimize_with_ssa_hints,
 };
@@ -252,6 +253,182 @@ fn test_user_function_named_flag_signature() {
 
     assert_eq!(result.program.subfunctions.len(), 1);
     assert_eq!(result.program.subfunctions[0].param_count, 1);
+}
+
+#[test]
+fn test_user_function_metadata_only_record_args_respecialize_by_layout() {
+    use nu_protocol::{DeclId, RegId, VarId};
+
+    let param_var = VarId::new(10);
+    let user_func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: param_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(nu_protocol::ast::CellPath {
+                        members: vec![string_member("msg")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let main_func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Record { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("msg".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("hi".into()),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(0),
+                    key: RegId::new(1),
+                    val: RegId::new(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String("pid".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(0),
+                    key: RegId::new(3),
+                    val: RegId::new(4),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(1),
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Record { capacity: 1 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::String("msg".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(8),
+                    lit: HirLiteral::String("bye".into()),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(6),
+                    key: RegId::new(7),
+                    val: RegId::new(8),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(9),
+                    lit: HirLiteral::Record { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(10),
+                    lit: HirLiteral::String("inner".into()),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(9),
+                    key: RegId::new(10),
+                    val: RegId::new(6),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(11),
+                    lit: HirLiteral::String("cpu".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(12),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(9),
+                    key: RegId::new(11),
+                    val: RegId::new(12),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(1),
+                    src_dst: RegId::new(13),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(9)],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return {
+                src: RegId::new(13),
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 14,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(main_func, HashMap::new(), vec![], None);
+
+    let mut user_functions = HashMap::new();
+    user_functions.insert(DeclId::new(1), user_func);
+
+    let mut signatures = HashMap::new();
+    signatures.insert(
+        DeclId::new(1),
+        UserFunctionSig {
+            params: vec![UserParam {
+                name: Some("state".into()),
+                kind: UserParamKind::Positional,
+                optional: false,
+            }],
+        },
+    );
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &HashMap::new(),
+        None,
+        &user_functions,
+        &signatures,
+    )
+    .expect_err(
+        "distinct metadata-only record layouts should trigger a fresh subfunction specialization",
+    );
+
+    assert!(
+        err.to_string()
+            .contains("typed field path 'msg' has no field 'msg'"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
