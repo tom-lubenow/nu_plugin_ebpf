@@ -9373,6 +9373,97 @@ fn test_verify_mir_helper_sysctl_get_current_value_accepts_cgroup_sysctl_context
 }
 
 #[test]
+fn test_verify_mir_helper_sysctl_get_name_rejects_unknown_flags_bits() {
+    let (mut func, entry) = new_mir_function();
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SysctlGetName as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(16),
+                MirValue::Const(2),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected sysctl get_name flags error");
+    assert!(err.iter().any(|e| {
+        e.message.contains(
+            "helper 'bpf_sysctl_get_name' requires arg3 to use only BPF_F_SYSCTL_BASE_NAME bits",
+        )
+    }));
+}
+
+#[test]
+fn test_verify_mir_helper_sysctl_get_name_accepts_base_name_flag() {
+    let (mut func, entry) = new_mir_function();
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SysctlGetName as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(16),
+                MirValue::Const(1),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected sysctl get_name helper to verify with base-name flag");
+}
+
+#[test]
 fn test_verify_mir_helper_sysctl_write_helpers_reject_read_context() {
     for helper in [BpfHelper::SysctlGetNewValue, BpfHelper::SysctlSetNewValue] {
         let (mut func, entry) = new_mir_function();

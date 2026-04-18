@@ -3063,6 +3063,74 @@ fn test_infer_helper_sysctl_get_current_value_in_cgroup_sysctl_program() {
 }
 
 #[test]
+fn test_type_error_helper_sysctl_get_name_rejects_unknown_flags_bits() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SysctlGetName as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(16),
+            MirValue::Const(2),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected sysctl get_name flags error");
+    assert!(errs.iter().any(|e| {
+        e.message.contains(
+            "helper 'bpf_sysctl_get_name' requires arg3 to use only BPF_F_SYSCTL_BASE_NAME bits",
+        )
+    }));
+}
+
+#[test]
+fn test_infer_helper_sysctl_get_name_accepts_base_name_flag() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SysctlGetName as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(16),
+            MirValue::Const(1),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected sysctl get_name helper to infer with base-name flag");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
 fn test_type_error_sysctl_write_helpers_reject_read_context() {
     for helper in [BpfHelper::SysctlGetNewValue, BpfHelper::SysctlSetNewValue] {
         let mut func = make_test_function();

@@ -286,7 +286,8 @@ Context parameter syntax (recommended):
     Note: cgroup_sysctl closures can return `allow` or `deny` instead of
     raw `1`/`0` result codes. `bpf_sysctl_get_new_value` and
     `bpf_sysctl_set_new_value` are only valid when you have already
-    proven `ctx.write == 1`.
+    proven `ctx.write == 1`. `bpf_sysctl_get_name` only accepts
+    `0` and `BPF_F_SYSCTL_BASE_NAME` in its flags argument.
 
   cgroup_sock fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

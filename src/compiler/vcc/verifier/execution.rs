@@ -138,6 +138,47 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::AssertConstMaskSubset {
+                value,
+                allowed_mask,
+                message,
+            } => {
+                let ty = match state.value_type(*value) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                if ty.class() != VccTypeClass::Scalar && ty.class() != VccTypeClass::Bool {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::TypeMismatch {
+                            expected: VccTypeClass::Scalar,
+                            actual: ty.class(),
+                        },
+                        "expected scalar value",
+                    ));
+                    return;
+                }
+                let Some(range) = state.value_range(*value, ty) else {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message.clone(),
+                    ));
+                    return;
+                };
+                let width = range.max.saturating_sub(range.min);
+                if range.min > range.max
+                    || width > 64
+                    || !(range.min..=range.max)
+                        .all(|candidate| candidate >= 0 && (candidate & !allowed_mask) == 0)
+                {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message.clone(),
+                    ));
+                }
+            }
             VccInst::AssertConstEqIfConstEq {
                 value,
                 expected,

@@ -92,6 +92,23 @@ pub(in crate::compiler::verifier_types) fn helper_positive_size_upper_bound(
     }
 }
 
+fn scalar_value_range_satisfies_only<F>(
+    value: &MirValue,
+    state: &VerifierState,
+    predicate: F,
+) -> bool
+where
+    F: Fn(i64) -> bool,
+{
+    match value_range(value, state) {
+        ValueRange::Known { min, max } if min <= max => {
+            let width = max.saturating_sub(min);
+            width <= 64 && (min..=max).all(predicate)
+        }
+        _ => false,
+    }
+}
+
 pub(in crate::compiler::verifier_types) fn check_helper_ptr_arg_value(
     helper_id: u32,
     arg_idx: usize,
@@ -313,6 +330,19 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         helper.zero_scalar_arg_requirement_when_arg_zero()
         && arg_is_known_zero(trigger_arg_idx)
         && !arg_is_known_zero(arg_idx)
+    {
+        errors.push(VerifierTypeError::new(message));
+    }
+
+    if let Some((arg_idx, allowed_mask, message)) = helper.scalar_arg_allowed_mask_requirement()
+        && let Some(value) = args.get(arg_idx)
+        && matches!(
+            value_type(value, state, slot_sizes),
+            VerifierType::Scalar | VerifierType::Bool
+        )
+        && !scalar_value_range_satisfies_only(value, state, |candidate| {
+            candidate >= 0 && (candidate & !allowed_mask) == 0
+        })
     {
         errors.push(VerifierTypeError::new(message));
     }

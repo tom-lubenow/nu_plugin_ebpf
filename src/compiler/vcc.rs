@@ -246,6 +246,11 @@ pub enum VccInst {
         expected: i64,
         message: String,
     },
+    AssertConstMaskSubset {
+        value: VccValue,
+        allowed_mask: i64,
+        message: String,
+    },
     AssertConstEqIfConstEq {
         value: VccValue,
         expected: i64,

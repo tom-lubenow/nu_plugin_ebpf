@@ -545,6 +545,17 @@ impl BpfHelper {
         }
     }
 
+    pub const fn scalar_arg_allowed_mask_requirement(self) -> Option<(usize, i64, &'static str)> {
+        match self {
+            BpfHelper::SysctlGetName => Some((
+                3,
+                1,
+                "helper 'bpf_sysctl_get_name' requires arg3 to use only BPF_F_SYSCTL_BASE_NAME bits",
+            )),
+            _ => None,
+        }
+    }
+
     pub const fn zero_scalar_arg_requirement_when_arg_zero(
         self,
     ) -> Option<(usize, usize, &'static str)> {

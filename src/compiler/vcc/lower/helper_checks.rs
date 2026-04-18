@@ -491,6 +491,45 @@ impl<'a> VccLowerer<'a> {
         }
     }
 
+    fn verify_helper_scalar_mask_subset(
+        &mut self,
+        helper_id: u32,
+        arg_idx: usize,
+        arg: &MirValue,
+        allowed_mask: i64,
+        message: &str,
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        match arg {
+            MirValue::Const(actual) => {
+                if *actual >= 0 && (*actual & !allowed_mask) == 0 {
+                    Ok(())
+                } else {
+                    Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message.to_string(),
+                    ))
+                }
+            }
+            MirValue::VReg(vreg) => {
+                self.assert_scalar_reg(*vreg, out);
+                out.push(VccInst::AssertConstMaskSubset {
+                    value: VccValue::Reg(VccReg(vreg.0)),
+                    allowed_mask,
+                    message: message.to_string(),
+                });
+                Ok(())
+            }
+            MirValue::StackSlot(_) => Err(VccError::new(
+                VccErrorKind::TypeMismatch {
+                    expected: VccTypeClass::Scalar,
+                    actual: VccTypeClass::Ptr,
+                },
+                format!("helper {} arg{} expects scalar value", helper_id, arg_idx),
+            )),
+        }
+    }
+
     pub(super) fn verify_helper_arg_value(
         &mut self,
         helper_id: u32,
@@ -961,6 +1000,20 @@ impl<'a> VccLowerer<'a> {
                 arg,
                 trigger,
                 0,
+                message,
+                out,
+            )?;
+        }
+
+        if let Some((arg_idx, allowed_mask, message)) =
+            helper.scalar_arg_allowed_mask_requirement()
+            && let Some(arg) = args.get(arg_idx)
+        {
+            self.verify_helper_scalar_mask_subset(
+                helper_id,
+                arg_idx,
+                arg,
+                allowed_mask,
                 message,
                 out,
             )?;
