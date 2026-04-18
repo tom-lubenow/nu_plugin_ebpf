@@ -507,7 +507,7 @@ impl<'a> HirToMirLowering<'a> {
         Ok(Some((record_ptr, materialized_meta)))
     }
 
-    fn materialized_record_field_value_vreg(
+    pub(super) fn materialized_record_field_value_vreg(
         &mut self,
         record_field: &RecordField,
     ) -> Result<VReg, CompileError> {

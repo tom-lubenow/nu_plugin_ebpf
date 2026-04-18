@@ -55,12 +55,20 @@ impl<'a> HirToMirLowering<'a> {
                     // Emit a structured record
                     let fields: Vec<RecordFieldDef> = record_fields
                         .iter()
-                        .map(|f| RecordFieldDef {
-                            name: f.name.clone(),
-                            value: f.value_vreg,
-                            ty: f.ty.clone(),
+                        .map(|f| {
+                            let value =
+                                if matches!(f.ty, MirType::Array { .. } | MirType::Struct { .. }) {
+                                    self.materialized_record_field_value_vreg(f)?
+                                } else {
+                                    f.value_vreg
+                                };
+                            Ok(RecordFieldDef {
+                                name: f.name.clone(),
+                                value,
+                                ty: f.ty.clone(),
+                            })
                         })
-                        .collect();
+                        .collect::<Result<Vec<_>, CompileError>>()?;
                     self.emit(MirInst::EmitRecord { fields });
                 } else {
                     let field_type = self
@@ -96,15 +104,23 @@ impl<'a> HirToMirLowering<'a> {
 
             "count" => {
                 self.needs_counter_map = true;
-                let key_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                let key_reg = self.pipeline_input_reg.unwrap_or(src_dst);
+                let mut key_vreg = self.pipeline_input.unwrap_or(dst_vreg);
                 let key_type = self
-                    .pipeline_input_reg
-                    .and_then(|reg| self.get_metadata(reg))
-                    .and_then(|m| m.field_type.clone())
-                    .or_else(|| {
-                        self.get_metadata(src_dst)
-                            .and_then(|m| m.field_type.clone())
-                    });
+                    .get_metadata(key_reg)
+                    .and_then(|m| {
+                        m.field_type
+                            .clone()
+                            .or_else(|| Self::metadata_record_layout(m))
+                    })
+                    .or_else(|| self.vreg_type_hints.get(&key_vreg).cloned())
+                    .map(|ty| self.stored_generic_map_value_type(&ty));
+
+                if let Some(key_type) = key_type.as_ref()
+                    && Self::aggregate_call_value_type(key_type).is_some()
+                {
+                    key_vreg = self.materialized_metadata_aggregate_vreg(key_reg, key_vreg)?;
+                }
 
                 // Check for --per-cpu flag
                 let per_cpu = self.named_flags.contains(&"per-cpu".to_string());

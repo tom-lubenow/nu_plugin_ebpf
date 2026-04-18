@@ -1,12 +1,13 @@
 use super::helpers::*;
 use super::*;
 use crate::compiler::EbpfProgramType;
+use crate::compiler::compile_mir_to_ebpf_with_hints;
 use crate::compiler::hir::{
     AnnotatedMutGlobal, HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt,
     HirTerminator,
 };
 use crate::compiler::instruction::BpfHelper;
-use crate::compiler::mir::{AddressSpace, COUNTER_MAP_NAME};
+use crate::compiler::mir::{AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME};
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 use nu_protocol::ast::CellPath;
 use nu_protocol::{DeclId, Record, RegId, Span, Type, Value, VarId};
@@ -30,6 +31,85 @@ fn find_tracepoint_pointer_field_candidate() -> Option<(String, String)> {
         }
     }
     None
+}
+
+fn make_nested_metadata_record_call_program(decl_id: DeclId) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Record { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("msg".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("hi".into()),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(0),
+                    key: RegId::new(1),
+                    val: RegId::new(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String("pid".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(0),
+                    key: RegId::new(3),
+                    val: RegId::new(4),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Record { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::String("inner".into()),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(5),
+                    key: RegId::new(6),
+                    val: RegId::new(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::String("cpu".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(8),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(5),
+                    key: RegId::new(7),
+                    val: RegId::new(8),
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 9,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
 #[test]
@@ -2956,6 +3036,108 @@ fn test_lower_fentry_struct_leaf_count_uses_bytes_counter_map() {
         })
         .expect("expected map update");
     assert_eq!(map_name, "bytes_counters");
+}
+
+#[test]
+fn test_lower_nested_metadata_record_emit_materializes_nested_field_storage() {
+    let emit_decl = DeclId::new(42);
+    let hir = make_nested_metadata_record_call_program(emit_decl);
+    let decl_names = HashMap::from([(emit_decl, "emit".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("nested metadata-only record emit should lower");
+
+    let inner_field = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::EmitRecord { fields } => {
+                fields.iter().find(|field| field.name == "inner").cloned()
+            }
+            _ => None,
+        })
+        .expect("expected nested record field in emit");
+
+    assert!(
+        matches!(
+            result.type_hints.main.get(&inner_field.value),
+            Some(MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Stack,
+            }) if matches!(
+                pointee.as_ref(),
+                MirType::Struct { fields, .. }
+                    if fields.len() == 2
+                        && fields[0].name == "msg"
+                        && fields[1].name == "pid"
+            )
+        ),
+        "expected nested emit field to use a stack-backed materialized record pointer"
+    );
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("nested metadata-only record emit should compile");
+}
+
+#[test]
+fn test_lower_nested_metadata_record_count_uses_bytes_counter_map() {
+    let count_decl = DeclId::new(42);
+    let hir = make_nested_metadata_record_call_program(count_decl);
+    let decl_names = HashMap::from([(count_decl, "count".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("nested metadata-only record count should lower");
+
+    let (map_name, key_vreg) = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::MapUpdate { map, key, .. } => Some((map.name.clone(), *key)),
+            _ => None,
+        })
+        .expect("expected map update");
+    assert_eq!(map_name, BYTES_COUNTER_MAP_NAME);
+    assert_ne!(map_name, COUNTER_MAP_NAME);
+
+    assert!(
+        matches!(
+            result.type_hints.main.get(&key_vreg),
+            Some(MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Stack,
+            }) if matches!(
+                pointee.as_ref(),
+                MirType::Struct { fields, .. }
+                    if fields.len() == 2
+                        && fields[0].name == "inner"
+                        && fields[1].name == "cpu"
+            )
+        ),
+        "expected count key to materialize the metadata-only record into a stack-backed aggregate"
+    );
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("nested metadata-only record count should compile");
 }
 
 #[test]
