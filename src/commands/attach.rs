@@ -284,7 +284,9 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.write }   - Get whether the sysctl knob is being written (`1`) or read (`0`)
     {|ctx| $ctx.file_pos } - Get the current sysctl file position
     Note: cgroup_sysctl closures can return `allow` or `deny` instead of
-    raw `1`/`0` result codes.
+    raw `1`/`0` result codes. `bpf_sysctl_get_new_value` and
+    `bpf_sysctl_set_new_value` are only valid when you have already
+    proven `ctx.write == 1`.
 
   cgroup_sock fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

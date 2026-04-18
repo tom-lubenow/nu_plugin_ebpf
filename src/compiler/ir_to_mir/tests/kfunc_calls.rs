@@ -815,7 +815,7 @@ fn test_helper_call_exact_attach_ir_with_sysctl_buffer_typechecks_and_lowers() {
     use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
     use std::sync::Arc;
 
-    let helper_name = b"bpf_sysctl_set_new_value";
+    let helper_name = b"bpf_sysctl_get_current_value";
     let value = b"1";
     let result_name = b"pass";
     let mut data = Vec::new();
@@ -914,7 +914,7 @@ fn test_helper_call_exact_attach_ir_with_sysctl_buffer_typechecks_and_lowers() {
         })
         .expect("expected lowered sysctl helper call");
 
-    assert_eq!(*call.0, BpfHelper::SysctlSetNewValue as u32);
+    assert_eq!(*call.0, BpfHelper::SysctlGetCurrentValue as u32);
     assert_eq!(call.1.len(), 3);
 
     optimize_with_ssa_hints(

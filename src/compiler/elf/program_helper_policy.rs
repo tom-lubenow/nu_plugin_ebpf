@@ -377,22 +377,27 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn helper_call_guard(&self, helper: BpfHelper) -> Option<HelperCallGuard> {
-        if *self != EbpfProgramType::SockOps {
-            return None;
+        match self {
+            EbpfProgramType::SockOps => Some(match helper {
+                BpfHelper::SockOpsCbFlagsSet | BpfHelper::LoadHdrOpt => {
+                    HelperCallGuard::SockOpsCallback(SockOpsCallbackGuard::LockedTcpCallbacks)
+                }
+                BpfHelper::StoreHdrOpt => {
+                    HelperCallGuard::SockOpsCallback(SockOpsCallbackGuard::WriteHdrOpt)
+                }
+                BpfHelper::ReserveHdrOpt => {
+                    HelperCallGuard::SockOpsCallback(SockOpsCallbackGuard::HdrOptLen)
+                }
+                _ => return None,
+            }),
+            EbpfProgramType::CgroupSysctl => Some(match helper {
+                BpfHelper::SysctlGetNewValue | BpfHelper::SysctlSetNewValue => {
+                    HelperCallGuard::SysctlWrite
+                }
+                _ => return None,
+            }),
+            _ => None,
         }
-
-        Some(match helper {
-            BpfHelper::SockOpsCbFlagsSet | BpfHelper::LoadHdrOpt => {
-                HelperCallGuard::SockOpsCallback(SockOpsCallbackGuard::LockedTcpCallbacks)
-            }
-            BpfHelper::StoreHdrOpt => {
-                HelperCallGuard::SockOpsCallback(SockOpsCallbackGuard::WriteHdrOpt)
-            }
-            BpfHelper::ReserveHdrOpt => {
-                HelperCallGuard::SockOpsCallback(SockOpsCallbackGuard::HdrOptLen)
-            }
-            _ => return None,
-        })
     }
 
     pub(crate) fn helper_zero_arg_requirement(

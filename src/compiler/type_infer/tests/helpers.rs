@@ -3063,6 +3063,137 @@ fn test_infer_helper_sysctl_get_current_value_in_cgroup_sysctl_program() {
 }
 
 #[test]
+fn test_type_error_sysctl_write_helpers_reject_read_context() {
+    for helper in [BpfHelper::SysctlGetNewValue, BpfHelper::SysctlSetNewValue] {
+        let mut func = make_test_function();
+        let guarded = func.alloc_block();
+        let done = func.alloc_block();
+        let write = func.alloc_vreg();
+        let is_read = func.alloc_vreg();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(BlockId(0))
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: write,
+                field: CtxField::SysctlWrite,
+                slot: None,
+            });
+        func.block_mut(BlockId(0))
+            .instructions
+            .push(MirInst::BinOp {
+                dst: is_read,
+                op: BinOpKind::Eq,
+                lhs: MirValue::VReg(write),
+                rhs: MirValue::Const(0),
+            });
+        func.block_mut(BlockId(0)).terminator = MirInst::Branch {
+            cond: is_read,
+            if_true: guarded,
+            if_false: done,
+        };
+
+        func.block_mut(guarded)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(guarded)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args: vec![
+                    MirValue::VReg(ctx),
+                    MirValue::StackSlot(buf_slot),
+                    MirValue::Const(16),
+                ],
+            });
+        func.block_mut(guarded).terminator = MirInst::Jump { target: done };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected sysctl write-mode helper guard error");
+        assert!(errs.iter().any(|e| {
+            e.message.contains(&format!(
+                "helper '{}' on cgroup_sysctl requires proving ctx.write == 1 before use",
+                helper.name()
+            ))
+        }));
+    }
+}
+
+#[test]
+fn test_infer_sysctl_write_helpers_accept_write_context() {
+    for helper in [BpfHelper::SysctlGetNewValue, BpfHelper::SysctlSetNewValue] {
+        let mut func = make_test_function();
+        let guarded = func.alloc_block();
+        let done = func.alloc_block();
+        let write = func.alloc_vreg();
+        let is_write = func.alloc_vreg();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(BlockId(0))
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: write,
+                field: CtxField::SysctlWrite,
+                slot: None,
+            });
+        func.block_mut(BlockId(0))
+            .instructions
+            .push(MirInst::BinOp {
+                dst: is_write,
+                op: BinOpKind::Eq,
+                lhs: MirValue::VReg(write),
+                rhs: MirValue::Const(1),
+            });
+        func.block_mut(BlockId(0)).terminator = MirInst::Branch {
+            cond: is_write,
+            if_true: guarded,
+            if_false: done,
+        };
+
+        func.block_mut(guarded)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(guarded)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args: vec![
+                    MirValue::VReg(ctx),
+                    MirValue::StackSlot(buf_slot),
+                    MirValue::Const(16),
+                ],
+            });
+        func.block_mut(guarded).terminator = MirInst::Jump { target: done };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .expect("expected guarded sysctl write-mode helper to infer");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
 fn test_type_error_helper_sysctl_get_current_value_rejects_small_stack_slot() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

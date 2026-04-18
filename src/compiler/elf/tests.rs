@@ -891,9 +891,22 @@ fn test_program_type_helper_call_guard_models_sock_ops_callback_surface() {
             SockOpsCallbackGuard::HdrOptLen,
         ))
     );
+    assert_eq!(
+        EbpfProgramType::CgroupSysctl.helper_call_guard(BpfHelper::SysctlGetNewValue),
+        Some(HelperCallGuard::SysctlWrite)
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSysctl.helper_call_guard(BpfHelper::SysctlSetNewValue),
+        Some(HelperCallGuard::SysctlWrite)
+    );
     assert!(
         EbpfProgramType::Tc
             .helper_call_guard(BpfHelper::StoreHdrOpt)
+            .is_none()
+    );
+    assert!(
+        EbpfProgramType::CgroupSysctl
+            .helper_call_guard(BpfHelper::SysctlGetCurrentValue)
             .is_none()
     );
 }

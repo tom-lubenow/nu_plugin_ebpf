@@ -17,6 +17,7 @@ pub enum ContextFieldLoadGuard {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HelperCallGuard {
     SockOpsCallback(SockOpsCallbackGuard),
+    SysctlWrite,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,12 +119,14 @@ impl HelperCallGuard {
     pub(crate) fn witness_field(self) -> CtxField {
         match self {
             Self::SockOpsCallback(_) => CtxField::SockOp,
+            Self::SysctlWrite => CtxField::SysctlWrite,
         }
     }
 
     pub(crate) fn allows_value(self, value: i64) -> bool {
         match self {
             Self::SockOpsCallback(guard) => guard.allows_callback_op(value),
+            Self::SysctlWrite => value == 1,
         }
     }
 
@@ -143,6 +146,10 @@ impl HelperCallGuard {
             ),
             Self::SockOpsCallback(_) => format!(
                 "helper '{}' on sock_ops requires proving a supported ctx.op callback before use",
+                helper.name()
+            ),
+            Self::SysctlWrite => format!(
+                "helper '{}' on cgroup_sysctl requires proving ctx.write == 1 before use",
                 helper.name()
             ),
         }
