@@ -378,12 +378,9 @@ impl<'a> HirToMirLowering<'a> {
         );
     }
 
-    pub(super) fn materialize_metadata_record_value(
-        &mut self,
-        meta: &RegMetadata,
-    ) -> Result<Option<(VReg, RegMetadata)>, CompileError> {
+    pub(super) fn metadata_record_layout(meta: &RegMetadata) -> Option<MirType> {
         if meta.record_fields.is_empty() {
-            return Ok(None);
+            return None;
         }
 
         let field_layouts: Vec<_> = meta
@@ -391,7 +388,34 @@ impl<'a> HirToMirLowering<'a> {
             .iter()
             .map(|field| (field.name.clone(), field.ty.clone()))
             .collect();
-        let record_ty = Self::record_type_from_fields(&field_layouts);
+        Some(Self::record_type_from_fields(&field_layouts))
+    }
+
+    pub(super) fn metadata_record_semantics(meta: &RegMetadata) -> Option<AnnotatedValueSemantics> {
+        if meta.record_fields.is_empty() {
+            return None;
+        }
+
+        let field_semantics: Vec<_> = meta
+            .record_fields
+            .iter()
+            .filter_map(|field| {
+                field
+                    .semantics
+                    .clone()
+                    .map(|semantics| (field.name.clone(), semantics))
+            })
+            .collect();
+        (!field_semantics.is_empty()).then_some(AnnotatedValueSemantics::Record(field_semantics))
+    }
+
+    pub(super) fn materialize_metadata_record_value(
+        &mut self,
+        meta: &RegMetadata,
+    ) -> Result<Option<(VReg, RegMetadata)>, CompileError> {
+        let Some(record_ty) = Self::metadata_record_layout(meta) else {
+            return Ok(None);
+        };
         let size = record_ty.size();
         if size == 0 {
             return Err(CompileError::UnsupportedInstruction(
@@ -473,20 +497,9 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
-        let record_semantics: Vec<_> = meta
-            .record_fields
-            .iter()
-            .filter_map(|field| {
-                field
-                    .semantics
-                    .clone()
-                    .map(|semantics| (field.name.clone(), semantics))
-            })
-            .collect();
         let materialized_meta = RegMetadata {
             field_type: Some(record_ty),
-            annotated_semantics: (!record_semantics.is_empty())
-                .then_some(AnnotatedValueSemantics::Record(record_semantics)),
+            annotated_semantics: Self::metadata_record_semantics(meta),
             ..Default::default()
         };
         Ok(Some((record_ptr, materialized_meta)))

@@ -611,6 +611,10 @@ impl<'a> HirToMirLowering<'a> {
             }));
         }
 
+        if let Some(record_semantics) = Self::metadata_record_semantics(meta) {
+            return Ok(Some(record_semantics));
+        }
+
         Ok(None)
     }
 
@@ -686,6 +690,16 @@ impl<'a> HirToMirLowering<'a> {
                         string_content_cap: None,
                     });
                 }
+            }
+
+            if let Some(record_ty) = Self::metadata_record_layout(meta) {
+                return Ok(MutableCaptureGlobal {
+                    symbol,
+                    ty: record_ty,
+                    list_max_len: None,
+                    string_slot_len: None,
+                    string_content_cap: None,
+                });
             }
         }
 
@@ -1246,7 +1260,22 @@ impl<'a> HirToMirLowering<'a> {
         } else {
             match &global.ty {
                 MirType::Array { .. } | MirType::Struct { .. } => {
-                    let Some(src_runtime_ty) = self.vreg_type_hints.get(&src_vreg).cloned() else {
+                    let aggregate_src_vreg = if let Some(src_meta) = self.get_metadata(src).cloned()
+                    {
+                        if let Some((materialized_vreg, _materialized_meta)) =
+                            self.materialize_metadata_record_value(&src_meta)?
+                        {
+                            materialized_vreg
+                        } else {
+                            src_vreg
+                        }
+                    } else {
+                        src_vreg
+                    };
+
+                    let Some(src_runtime_ty) =
+                        self.vreg_type_hints.get(&aggregate_src_vreg).cloned()
+                    else {
                         return Err(CompileError::UnsupportedInstruction(format!(
                             "storing into {} requires a materialized aggregate pointer value",
                             context
@@ -1273,7 +1302,7 @@ impl<'a> HirToMirLowering<'a> {
                         )));
                     }
 
-                    self.emit_ptr_copy(global_ptr, src_vreg, global.ty.size())?;
+                    self.emit_ptr_copy(global_ptr, aggregate_src_vreg, global.ty.size())?;
                 }
                 _ => {
                     self.emit(MirInst::Store {
