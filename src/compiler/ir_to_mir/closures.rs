@@ -40,7 +40,11 @@ impl<'a> HirToMirLowering<'a> {
         // so `{ path: $entry } | emit` serializes nested data instead of a raw pointer.
         let mut field_type = val_meta
             .as_ref()
-            .and_then(|m| m.field_type.clone())
+            .and_then(|m| {
+                m.field_type
+                    .clone()
+                    .or_else(|| Self::metadata_record_layout(m))
+            })
             .or_else(|| self.vreg_type_hints.get(&val_vreg).cloned())
             .map(|ty| self.stored_generic_map_value_type(&ty))
             .unwrap_or(MirType::I64);
@@ -125,6 +129,7 @@ impl<'a> HirToMirLowering<'a> {
         let field = RecordField {
             name: field_name,
             value_vreg: preserved_vreg,
+            source_reg: Some(val),
             stack_offset: None,
             ty: field_type,
             semantics: field_semantics,

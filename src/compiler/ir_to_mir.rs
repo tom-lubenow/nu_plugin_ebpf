@@ -133,6 +133,7 @@ pub enum BpfCommand {
 struct RecordField {
     name: String,
     value_vreg: VReg,
+    source_reg: Option<RegId>,
     /// Stack offset where this field's value is stored (for safety)
     #[allow(dead_code)] // Reserved for future stack safety checks
     stack_offset: Option<i16>,

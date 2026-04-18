@@ -96,7 +96,7 @@ ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
 - For scalar or scalar-record layouts whose size is fixed by the annotation alone, `mut state: ... = null` now zero-initializes that global without dropping to `global-define`.
 - Typed record `mut` initializers may also omit scalar or nested scalar-record fields that should start zeroed, as long as the annotation alone still fixes their honest layout.
 - Use `global-define`, `global-get`, and `global-set` when you need an explicit shared name or a source-order-independent declaration.
-  `global-define --type ...` now also accepts a compile-time constant initializer, typed record initializers may omit fields that should start zeroed, and a first `global-set` can now infer record layout and field semantics from a metadata-built record value when its fields already have honest fixed layouts.
+  `global-define --type ...` now also accepts a compile-time constant initializer, typed record initializers may omit fields that should start zeroed, and a first `global-set` can now infer record layout and field semantics from metadata-built record values, including nested record builders, when their fields already have honest fixed layouts.
 - Prefer the first-class packet/socket/message surface (`adjust-packet`, `adjust-message`, `redirect`, `redirect-map`, and `redirect-socket`) over raw `helper-call` forms when the operation matches.
 - Treat `helper-call` and `kfunc-call` as escape hatches. Prefer typed context fields, ordinary Nushell control flow, and the smaller first-class command surface when it covers the operation.
 - Use `--pin` when multiple probes need to share maps or timers.

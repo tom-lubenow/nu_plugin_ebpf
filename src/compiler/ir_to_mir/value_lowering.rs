@@ -472,6 +472,7 @@ impl<'a> HirToMirLowering<'a> {
             record_fields.push(RecordField {
                 name: field.name,
                 value_vreg: field_vreg,
+                source_reg: None,
                 stack_offset: None,
                 ty: field_ty,
                 semantics: field_semantics,

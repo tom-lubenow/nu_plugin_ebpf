@@ -4073,3 +4073,148 @@ fn test_lower_global_set_from_metadata_only_record_builder_infers_layout_and_pre
         "expected global-get on metadata-inferred record string field to materialize a stack string slot"
     );
 }
+
+#[test]
+fn test_lower_global_set_from_nested_metadata_record_builder_preserves_nested_string_semantics() {
+    let global_get_decl = DeclId::new(218);
+    let global_set_decl = DeclId::new(219);
+    let decl_names = HashMap::from([
+        (global_get_decl, "global-get".to_string()),
+        (global_set_decl, "global-set".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("state".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Record { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("msg".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String("hi".into()),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(1),
+                    key: RegId::new(2),
+                    val: RegId::new(3),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String("pid".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(1),
+                    key: RegId::new(4),
+                    val: RegId::new(5),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Record { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::String("inner".into()),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(6),
+                    key: RegId::new(7),
+                    val: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(8),
+                    lit: HirLiteral::String("cpu".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(9),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(6),
+                    key: RegId::new(8),
+                    val: RegId::new(9),
+                },
+                HirStmt::Call {
+                    decl_id: global_set_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(10),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(11),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("inner"), string_member("msg")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(10),
+                    path: RegId::new(11),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(12),
+                    lit: HirLiteral::String("!".into()),
+                },
+                HirStmt::StringAppend {
+                    src_dst: RegId::new(10),
+                    val: RegId::new(12),
+                },
+            ],
+            terminator: HirTerminator::Return {
+                src: RegId::new(10),
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 13,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect(
+        "nested metadata-only record builders should establish named global layout and semantics",
+    );
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StringAppend { .. })),
+        "expected nested metadata-inferred record string field to materialize a stack string slot"
+    );
+}

@@ -450,9 +450,11 @@ impl<'a> HirToMirLowering<'a> {
         for (record_field, layout_field) in meta.record_fields.iter().zip(fields.iter()) {
             match &record_field.ty {
                 MirType::Array { .. } | MirType::Struct { .. } => {
+                    let aggregate_field_vreg =
+                        self.materialized_record_field_value_vreg(record_field)?;
                     let field_runtime_ty = self
                         .vreg_type_hints
-                        .get(&record_field.value_vreg)
+                        .get(&aggregate_field_vreg)
                         .cloned()
                         .ok_or_else(|| {
                             CompileError::UnsupportedInstruction(format!(
@@ -481,7 +483,7 @@ impl<'a> HirToMirLowering<'a> {
                     self.emit_ptr_copy_with_offsets(
                         record_ptr,
                         layout_field.offset,
-                        record_field.value_vreg,
+                        aggregate_field_vreg,
                         0,
                         record_field.ty.size(),
                     )?;
@@ -503,6 +505,52 @@ impl<'a> HirToMirLowering<'a> {
             ..Default::default()
         };
         Ok(Some((record_ptr, materialized_meta)))
+    }
+
+    fn materialized_record_field_value_vreg(
+        &mut self,
+        record_field: &RecordField,
+    ) -> Result<VReg, CompileError> {
+        let err = || {
+            CompileError::UnsupportedInstruction(format!(
+                "record field '{}' requires a materialized aggregate pointer value",
+                record_field.name
+            ))
+        };
+
+        let aggregate_vreg = if self.vreg_type_hints.contains_key(&record_field.value_vreg) {
+            record_field.value_vreg
+        } else if let Some(source_reg) = record_field.source_reg {
+            let source_meta = self.get_metadata(source_reg).cloned().ok_or_else(err)?;
+            self.materialize_metadata_record_value(&source_meta)?
+                .map(|(materialized_vreg, _materialized_meta)| materialized_vreg)
+                .ok_or_else(err)?
+        } else {
+            return Err(err());
+        };
+
+        let field_runtime_ty = self
+            .vreg_type_hints
+            .get(&aggregate_vreg)
+            .cloned()
+            .ok_or_else(err)?;
+        let MirType::Ptr {
+            pointee,
+            address_space:
+                crate::compiler::mir::AddressSpace::Stack | crate::compiler::mir::AddressSpace::Map,
+        } = field_runtime_ty
+        else {
+            return Err(err());
+        };
+
+        if pointee.as_ref() != &record_field.ty {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "record field '{}' cannot store type {:?} into field of type {:?}",
+                record_field.name, pointee, record_field.ty
+            )));
+        }
+
+        Ok(aggregate_vreg)
     }
 
     pub(super) fn stored_generic_map_value_type(&self, ty: &MirType) -> MirType {
