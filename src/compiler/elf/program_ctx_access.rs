@@ -14,6 +14,8 @@ enum ContextFieldAccessRequirement {
     CgroupSockoptGetOnly,
     CgroupSockAddrIpv4Only,
     CgroupSockAddrIpv6Only,
+    CgroupSockAddrRemoteTupleOnly,
+    CgroupSockAddrLocalTupleOnly,
     CgroupSockAddrSendmsgOnly,
     AllowedProgramsLabel(&'static str),
 }
@@ -102,6 +104,27 @@ impl ContextFieldAccessRequirement {
                     ..
                 } => Some(format!(
                     "ctx.{field_name} is only available on IPv6 cgroup_sock_addr hooks (*6)"
+                )),
+                _ => None,
+            },
+            Self::CgroupSockAddrRemoteTupleOnly => match spec.attach_shape() {
+                ProgramAttachShape::CgroupSockAddr {
+                    hook:
+                        ProgramAttachSockAddrHook::Connect | ProgramAttachSockAddrHook::GetPeerName,
+                    ..
+                } => None,
+                ProgramAttachShape::CgroupSockAddr { .. } => Some(format!(
+                    "ctx.{field_name} is only available on cgroup_sock_addr connect4/connect6 and getpeername4/getpeername6 hooks"
+                )),
+                _ => None,
+            },
+            Self::CgroupSockAddrLocalTupleOnly => match spec.attach_shape() {
+                ProgramAttachShape::CgroupSockAddr {
+                    hook: ProgramAttachSockAddrHook::Bind | ProgramAttachSockAddrHook::GetSockName,
+                    ..
+                } => None,
+                ProgramAttachShape::CgroupSockAddr { .. } => Some(format!(
+                    "ctx.{field_name} is only available on cgroup_sock_addr bind4/bind6 and getsockname4/getsockname6 hooks"
                 )),
                 _ => None,
             },
@@ -330,6 +353,40 @@ const CGROUP_SOCK_ADDR_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpe
         ContextFieldAccessRequirement::CgroupSockAddrIpv6Only,
     )
     .with_secondary_requirement(ContextFieldAccessRequirement::CgroupSockAddrSendmsgOnly),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::RemoteIp4,
+        "remote_ip4",
+        ContextFieldAccessRequirement::CgroupSockAddrRemoteTupleOnly,
+    )
+    .with_secondary_requirement(ContextFieldAccessRequirement::CgroupSockAddrIpv4Only),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::RemoteIp6,
+        "remote_ip6",
+        ContextFieldAccessRequirement::CgroupSockAddrRemoteTupleOnly,
+    )
+    .with_secondary_requirement(ContextFieldAccessRequirement::CgroupSockAddrIpv6Only),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::RemotePort,
+        "remote_port",
+        ContextFieldAccessRequirement::CgroupSockAddrRemoteTupleOnly,
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::LocalIp4,
+        "local_ip4",
+        ContextFieldAccessRequirement::CgroupSockAddrLocalTupleOnly,
+    )
+    .with_secondary_requirement(ContextFieldAccessRequirement::CgroupSockAddrIpv4Only),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::LocalIp6,
+        "local_ip6",
+        ContextFieldAccessRequirement::CgroupSockAddrLocalTupleOnly,
+    )
+    .with_secondary_requirement(ContextFieldAccessRequirement::CgroupSockAddrIpv6Only),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::LocalPort,
+        "local_port",
+        ContextFieldAccessRequirement::CgroupSockAddrLocalTupleOnly,
+    ),
 ];
 
 const PROGRAM_CTX_FIELD_ACCESS_SURFACE_FAMILIES: &[ProgramCtxFieldAccessSurfaceFamilySpec] = &[
@@ -834,6 +891,46 @@ impl ProgramSpec {
             .iter()
             .filter(|family| family.requirement.matches_spec(self))
             .find_map(|family| find_ctx_field_access_surface(field, family.surfaces))
+    }
+
+    pub(crate) fn cgroup_sock_addr_tuple_alias_field(&self, field: &CtxField) -> Option<CtxField> {
+        let ProgramAttachShape::CgroupSockAddr { family, hook } = self.attach_shape() else {
+            return None;
+        };
+
+        match (field, hook, family) {
+            (
+                CtxField::RemoteIp4,
+                ProgramAttachSockAddrHook::Connect | ProgramAttachSockAddrHook::GetPeerName,
+                ProgramAttachAddressFamily::Ipv4,
+            ) => Some(CtxField::UserIp4),
+            (
+                CtxField::RemoteIp6,
+                ProgramAttachSockAddrHook::Connect | ProgramAttachSockAddrHook::GetPeerName,
+                ProgramAttachAddressFamily::Ipv6,
+            ) => Some(CtxField::UserIp6),
+            (
+                CtxField::RemotePort,
+                ProgramAttachSockAddrHook::Connect | ProgramAttachSockAddrHook::GetPeerName,
+                _,
+            ) => Some(CtxField::UserPort),
+            (
+                CtxField::LocalIp4,
+                ProgramAttachSockAddrHook::Bind | ProgramAttachSockAddrHook::GetSockName,
+                ProgramAttachAddressFamily::Ipv4,
+            ) => Some(CtxField::UserIp4),
+            (
+                CtxField::LocalIp6,
+                ProgramAttachSockAddrHook::Bind | ProgramAttachSockAddrHook::GetSockName,
+                ProgramAttachAddressFamily::Ipv6,
+            ) => Some(CtxField::UserIp6),
+            (
+                CtxField::LocalPort,
+                ProgramAttachSockAddrHook::Bind | ProgramAttachSockAddrHook::GetSockName,
+                _,
+            ) => Some(CtxField::UserPort),
+            _ => None,
+        }
     }
 
     fn attach_ctx_field_access_error(&self, field: &CtxField) -> Option<String> {

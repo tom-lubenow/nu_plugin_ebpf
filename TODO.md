@@ -1,7 +1,7 @@
 # TODO
 
 Status legend: `[x]` done, `[~]` in progress, `[ ]` todo.
-Last updated: 2026-04-16.
+Last updated: 2026-04-18.
 
 ## Current compiler gaps
 
@@ -192,6 +192,7 @@ Near-term priority order:
   - Recent progress: modeled direct `cgroup_sock` metadata now also includes `ctx.rx_queue_mapping`, matching the existing typed `ctx.sk.rx_queue_mapping` field and upstream `bpf_sock` verifier surface on every supported cgroup_sock hook.
   - Recent progress: the `cgroup_sock` raw `ctx.sk` alias now routes through modeled `ProgramSpec` / `ProbeContext` context-pointer policy instead of verifier/VCC-local `program_type == CgroupSock` checks, and its source-side tuple members now follow the same attach/family gate (`src_ip4` on `post_bind4`, `src_ip6` on `post_bind6`, `src_port` on both) without incorrectly hiding destination-side members on create/release hooks.
   - Recent progress: `cgroup_sock_addr` attach metadata now records the concrete hook kind (`bind`, `connect`, `getpeername`, `getsockname`, `sendmsg`, `recvmsg`) instead of only coarse booleans, `ctx.msg_src_ip4` / `ctx.msg_src_ip6` now correctly follow sendmsg-only kernel semantics rather than incorrectly accepting recvmsg hooks, and modeled `bpf_getsockopt` / `bpf_setsockopt` legality on that context now also follows the current connect-only upstream contract.
+  - Recent progress: the same modeled `cgroup_sock_addr` surface now also normalizes the unambiguous hook kinds onto the ordinary tuple aliases, exposing `ctx.remote_ip*` / `ctx.remote_port` on `connect*` and `getpeername*`, plus `ctx.local_ip*` / `ctx.local_port` on `bind*` and `getsockname*`, while still leaving `sendmsg*`/`recvmsg*` on the explicit `user_*` / `msg_src_*` surface until their remaining semantics are modeled more completely.
   - Recent progress: remaining context-family quirks now also route through modeled selectors: `perf_event`-only ctx fields use a dedicated context family gate, raw-context-pointer aliases are keyed by context family instead of exact program-type matches, and writable `ctx.*` surface selection for `sock_ops` / `cgroup_sysctl` no longer pattern-matches `ProgramSpec` variants directly.
   - Recent progress: BTF-backed callable metadata now routes through explicit `EbpfProgramType` callable-surface modeling, so `ProbeContext` no longer open-codes `fentry`/`fexit` vs `tp_btf` vs `lsm` vs `struct_ops` when resolving `ctx.arg*` names/types/specs/field projections or deciding when the main callback return type should come from kernel BTF.
   - Recent progress: the last caller-side `ProgramSpec` metadata destructuring is now exposed through modeled accessors (`tracepoint_parts`, `struct_ops_value_type_name`) so attach paths and `ProbeContext` reuse typed program metadata directly instead of re-matching those variants.

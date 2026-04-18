@@ -453,6 +453,36 @@ const CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
         CtxField::MsgSrcIp6,
         ContextStoreTargetSpec::CgroupSockAddrMsgSrcIp6Word,
     ),
+    ContextWriteSurfaceSpec::store_field(
+        "remote_ip4",
+        CtxField::RemoteIp4,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::CgroupSockAddrUserIp4),
+    ),
+    ContextWriteSurfaceSpec::store_field(
+        "remote_ip6",
+        CtxField::RemoteIp6,
+        ContextStoreTargetSpec::CgroupSockAddrUserIp6Word,
+    ),
+    ContextWriteSurfaceSpec::store_field(
+        "remote_port",
+        CtxField::RemotePort,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::CgroupSockAddrUserPort),
+    ),
+    ContextWriteSurfaceSpec::store_field(
+        "local_ip4",
+        CtxField::LocalIp4,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::CgroupSockAddrUserIp4),
+    ),
+    ContextWriteSurfaceSpec::store_field(
+        "local_ip6",
+        CtxField::LocalIp6,
+        ContextStoreTargetSpec::CgroupSockAddrUserIp6Word,
+    ),
+    ContextWriteSurfaceSpec::store_field(
+        "local_port",
+        CtxField::LocalPort,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::CgroupSockAddrUserPort),
+    ),
 ];
 
 const PROGRAM_CTX_WRITE_SURFACE_FAMILIES: &[ProgramCtxWriteSurfaceFamilySpec] = &[

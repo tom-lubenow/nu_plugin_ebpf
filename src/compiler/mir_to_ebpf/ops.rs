@@ -6,6 +6,13 @@ use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec, TypeInfo};
 mod context;
 
 impl<'a> MirToEbpfCompiler<'a> {
+    fn cgroup_sock_addr_tuple_alias_field(&self, field: &CtxField) -> Option<CtxField> {
+        self.probe_ctx
+            .as_ref()?
+            .parsed_program_spec()?
+            .cgroup_sock_addr_tuple_alias_field(field)
+    }
+
     /// Emit binary operation with register operand
     pub(super) fn emit_binop_reg(
         &mut self,
@@ -1037,8 +1044,16 @@ impl<'a> MirToEbpfCompiler<'a> {
                     Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().3,
                     Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().1,
                     Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().3,
-                    Some(SocketContextLayout::SockAddr | SocketContextLayout::CgroupSockopt)
-                    | None => {
+                    Some(SocketContextLayout::SockAddr) => {
+                        let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
+                        else {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "ctx.remote_ip4 is only available on cgroup_sock_addr connect4/connect6 and getpeername4/getpeername6 hooks".to_string(),
+                            ));
+                        };
+                        return self.compile_load_ctx_field(dst, &alias_field, slot);
+                    }
+                    Some(SocketContextLayout::CgroupSockopt) | None => {
                         return Err(CompileError::UnsupportedInstruction(
                             "ctx.remote_ip4 is only available on cgroup_sock, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
                         ));
@@ -1059,8 +1074,16 @@ impl<'a> MirToEbpfCompiler<'a> {
                     Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().5,
                     Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().3,
                     Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().4,
-                    Some(SocketContextLayout::SockAddr | SocketContextLayout::CgroupSockopt)
-                    | None => {
+                    Some(SocketContextLayout::SockAddr) => {
+                        let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
+                        else {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "ctx.remote_ip6 is only available on cgroup_sock_addr connect4/connect6 and getpeername4/getpeername6 hooks".to_string(),
+                            ));
+                        };
+                        return self.compile_load_ctx_field(dst, &alias_field, slot);
+                    }
+                    Some(SocketContextLayout::CgroupSockopt) | None => {
                         return Err(CompileError::UnsupportedInstruction(
                             "ctx.remote_ip6 is only available on cgroup_sock, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
                         ));
@@ -1079,8 +1102,16 @@ impl<'a> MirToEbpfCompiler<'a> {
                     Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().7,
                     Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().5,
                     Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().5,
-                    Some(SocketContextLayout::SockAddr | SocketContextLayout::CgroupSockopt)
-                    | None => {
+                    Some(SocketContextLayout::SockAddr) => {
+                        let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
+                        else {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "ctx.remote_port is only available on cgroup_sock_addr connect4/connect6 and getpeername4/getpeername6 hooks".to_string(),
+                            ));
+                        };
+                        return self.compile_load_ctx_field(dst, &alias_field, slot);
+                    }
+                    Some(SocketContextLayout::CgroupSockopt) | None => {
                         return Err(CompileError::UnsupportedInstruction(
                             "ctx.remote_port is only available on cgroup_sock, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
                         ));
@@ -1110,8 +1141,16 @@ impl<'a> MirToEbpfCompiler<'a> {
                     Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().4,
                     Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().2,
                     Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().6,
-                    Some(SocketContextLayout::SockAddr | SocketContextLayout::CgroupSockopt)
-                    | None => {
+                    Some(SocketContextLayout::SockAddr) => {
+                        let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
+                        else {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "ctx.local_ip4 is only available on cgroup_sock_addr bind4/bind6 and getsockname4/getsockname6 hooks".to_string(),
+                            ));
+                        };
+                        return self.compile_load_ctx_field(dst, &alias_field, slot);
+                    }
+                    Some(SocketContextLayout::CgroupSockopt) | None => {
                         return Err(CompileError::UnsupportedInstruction(
                             "ctx.local_ip4 is only available on cgroup_sock post_bind4, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
                         ));
@@ -1132,8 +1171,16 @@ impl<'a> MirToEbpfCompiler<'a> {
                     Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().6,
                     Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().4,
                     Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().7,
-                    Some(SocketContextLayout::SockAddr | SocketContextLayout::CgroupSockopt)
-                    | None => {
+                    Some(SocketContextLayout::SockAddr) => {
+                        let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
+                        else {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "ctx.local_ip6 is only available on cgroup_sock_addr bind4/bind6 and getsockname4/getsockname6 hooks".to_string(),
+                            ));
+                        };
+                        return self.compile_load_ctx_field(dst, &alias_field, slot);
+                    }
+                    Some(SocketContextLayout::CgroupSockopt) | None => {
                         return Err(CompileError::UnsupportedInstruction(
                             "ctx.local_ip6 is only available on cgroup_sock post_bind6, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
                         ));
@@ -1152,8 +1199,16 @@ impl<'a> MirToEbpfCompiler<'a> {
                     Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().8,
                     Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().6,
                     Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().8,
-                    Some(SocketContextLayout::SockAddr | SocketContextLayout::CgroupSockopt)
-                    | None => {
+                    Some(SocketContextLayout::SockAddr) => {
+                        let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
+                        else {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "ctx.local_port is only available on cgroup_sock_addr bind4/bind6 and getsockname4/getsockname6 hooks".to_string(),
+                            ));
+                        };
+                        return self.compile_load_ctx_field(dst, &alias_field, slot);
+                    }
+                    Some(SocketContextLayout::CgroupSockopt) | None => {
                         return Err(CompileError::UnsupportedInstruction(
                             "ctx.local_port is only available on cgroup_sock post_bind4/post_bind6 hooks and socket tuple programs".to_string(),
                         ));
