@@ -855,11 +855,16 @@ impl<'a> HirToMirLowering<'a> {
                 let value_reg = self
                     .pipeline_input_reg
                     .or_else(|| src_dst_had_value.then_some(src_dst));
+                let stored_value_vreg = if let Some(value_reg) = value_reg {
+                    self.materialized_metadata_aggregate_vreg(value_reg, value_vreg)?
+                } else {
+                    value_vreg
+                };
 
                 self.emit(MirInst::MapUpdate {
                     map: map_ref.clone(),
                     key: key_vreg,
-                    val: value_vreg,
+                    val: stored_value_vreg,
                     flags,
                 });
                 self.record_named_map_value_schema_from_reg(&map_ref, value_reg, "map-put")?;
@@ -918,11 +923,16 @@ impl<'a> HirToMirLowering<'a> {
                 let value_reg = self
                     .pipeline_input_reg
                     .or_else(|| src_dst_had_value.then_some(src_dst));
+                let stored_value_vreg = if let Some(value_reg) = value_reg {
+                    self.materialized_metadata_aggregate_vreg(value_reg, value_vreg)?
+                } else {
+                    value_vreg
+                };
                 self.record_named_map_value_schema_from_reg(&map_ref, value_reg, "map-push")?;
 
                 self.emit(MirInst::MapPush {
                     map: map_ref,
-                    val: value_vreg,
+                    val: stored_value_vreg,
                     flags,
                 });
                 self.emit(MirInst::Copy {
@@ -1558,7 +1568,11 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         let value_ty = value_reg
             .and_then(|reg| self.get_metadata(reg))
-            .and_then(|m| m.field_type.clone());
+            .and_then(|m| {
+                m.field_type
+                    .clone()
+                    .or_else(|| Self::metadata_record_layout(m))
+            });
         let value_constant = value_reg
             .and_then(|reg| self.get_metadata(reg))
             .and_then(|m| m.constant_value.clone());

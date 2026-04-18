@@ -1260,18 +1260,8 @@ impl<'a> HirToMirLowering<'a> {
         } else {
             match &global.ty {
                 MirType::Array { .. } | MirType::Struct { .. } => {
-                    let aggregate_src_vreg = if let Some(src_meta) = self.get_metadata(src).cloned()
-                    {
-                        if let Some((materialized_vreg, _materialized_meta)) =
-                            self.materialize_metadata_record_value(&src_meta)?
-                        {
-                            materialized_vreg
-                        } else {
-                            src_vreg
-                        }
-                    } else {
-                        src_vreg
-                    };
+                    let aggregate_src_vreg =
+                        self.materialized_metadata_aggregate_vreg(src, src_vreg)?;
 
                     let Some(src_runtime_ty) =
                         self.vreg_type_hints.get(&aggregate_src_vreg).cloned()

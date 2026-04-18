@@ -553,6 +553,21 @@ impl<'a> HirToMirLowering<'a> {
         Ok(aggregate_vreg)
     }
 
+    pub(super) fn materialized_metadata_aggregate_vreg(
+        &mut self,
+        src_reg: RegId,
+        src_vreg: VReg,
+    ) -> Result<VReg, CompileError> {
+        if let Some(src_meta) = self.get_metadata(src_reg).cloned()
+            && let Some((materialized_vreg, _materialized_meta)) =
+                self.materialize_metadata_record_value(&src_meta)?
+        {
+            return Ok(materialized_vreg);
+        }
+
+        Ok(src_vreg)
+    }
+
     pub(super) fn stored_generic_map_value_type(&self, ty: &MirType) -> MirType {
         match ty {
             MirType::Ptr {
