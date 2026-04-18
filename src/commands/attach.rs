@@ -287,10 +287,10 @@ Context parameter syntax (recommended):
     Note: cgroup_sysctl closures can return `allow` or `deny` instead of
     raw `1`/`0` result codes. `ctx.file_pos` is writable after shadowing the
     immutable closure parameter as mutable, while `ctx.write` remains read-only.
-    `bpf_sysctl_get_new_value` and
-    `bpf_sysctl_set_new_value` are only valid when you have already
-    proven `ctx.write == 1`. `bpf_sysctl_get_name` only accepts
-    `0` and `BPF_F_SYSCTL_BASE_NAME` in its flags argument.
+    The kernel's sysctl helpers still keep their ordinary runtime semantics:
+    `bpf_sysctl_get_new_value` and `bpf_sysctl_set_new_value` return `-EINVAL`
+    on read contexts, and `bpf_sysctl_get_name` uses
+    `BPF_F_SYSCTL_BASE_NAME` for base-name-only mode.
 
   cgroup_sock fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
@@ -402,15 +402,11 @@ Context parameter syntax (recommended):
     surface here, including `bpf_getsockopt`, `bpf_setsockopt`,
     `bpf_sock_ops_cb_flags_set`, and the TCP header-option helpers
     `bpf_load_hdr_opt`, `bpf_store_hdr_opt`, and `bpf_reserve_hdr_opt`.
-    The compiler now also models the core sock_ops callback-op policy for
-    those helpers: `bpf_sock_ops_cb_flags_set` and `bpf_load_hdr_opt`
-    require a proven locked sock_ops callback (`ctx.op <=
-    BPF_SOCK_OPS_WRITE_HDR_OPT_CB`), `bpf_store_hdr_opt` requires
-    `ctx.op == BPF_SOCK_OPS_WRITE_HDR_OPT_CB`, and `bpf_reserve_hdr_opt`
-    requires `ctx.op == BPF_SOCK_OPS_HDR_OPT_LEN_CB`. Packet-data and
-    packet-metadata fields likewise require a proven packet-aware `ctx.op`
-    branch before use. The finer flag-sensitive `bpf_load_hdr_opt`
-    subcases still remain kernel-enforced.
+    Those helpers still follow the kernel's ordinary callback-sensitive
+    runtime rules, so unsupported `ctx.op` combinations can return `-EPERM`.
+    Packet-data and packet-metadata fields likewise require a proven
+    packet-aware `ctx.op` branch before use. The finer flag-sensitive
+    `bpf_load_hdr_opt` subcases still remain kernel-enforced.
 
   sk_msg fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

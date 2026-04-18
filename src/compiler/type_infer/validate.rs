@@ -5,7 +5,7 @@ impl<'a> TypeInference<'a> {
     fn validate_helper_program_context(
         &self,
         helper_id: u32,
-        block_ctx_field_ranges: Option<&HashMap<CtxField, ValueRange>>,
+        _block_ctx_field_ranges: Option<&HashMap<CtxField, ValueRange>>,
         errors: &mut Vec<TypeError>,
     ) {
         let Some(helper) = BpfHelper::from_u32(helper_id) else {
@@ -17,18 +17,6 @@ impl<'a> TypeInference<'a> {
         if let Some(message) = ctx.helper_call_error(helper) {
             errors.push(TypeError::new(message));
             return;
-        }
-        let Some(guard) = ctx.helper_call_guard(helper) else {
-            return;
-        };
-        let proven = block_ctx_field_ranges
-            .and_then(|ranges| ranges.get(&guard.witness_field()))
-            .copied()
-            .is_some_and(|range| {
-                Self::value_range_satisfies_only(range, |value| guard.allows_value(value))
-            });
-        if !proven {
-            errors.push(TypeError::new(guard.error(helper)));
         }
     }
 

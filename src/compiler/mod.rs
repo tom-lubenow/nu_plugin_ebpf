@@ -44,7 +44,7 @@ pub use crate::program_spec::{
     PerfEventSamplePolicy, PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, TcTarget,
     UprobeTarget,
 };
-pub use ctx_field_schema::{ContextFieldLoadGuard, HelperCallGuard, SockOpsCallbackGuard};
+pub use ctx_field_schema::{ContextFieldLoadGuard, SockOpsCallbackGuard};
 pub use elf::{
     BpfFieldType, BpfMapDef, BssGlobal, CompiledStructOpsCallback, CounterKeySchema,
     CounterKeySchemaField, DataGlobal, EbpfMap, EbpfObject, EbpfObjectKind, EbpfProgram,

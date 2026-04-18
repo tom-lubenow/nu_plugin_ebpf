@@ -3,11 +3,6 @@ use crate::compiler::mir::StructField;
 use crate::compiler::subfn_summaries::SubfunctionReturnSummary;
 use crate::compiler::{EbpfProgramType, MapRef, ProbeContext, ProgramCapability, ProgramTypeInfo};
 
-const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
-const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
-const BPF_SOCK_OPS_WRITE_HDR_OPT_CB: i64 = 15;
-const BPF_SOCK_OPS_TSTAMP_SCHED_CB: i64 = 16;
-
 #[test]
 fn test_helper_pointer_arg_required() {
     let mut func = MirFunction::new();
@@ -1318,37 +1313,17 @@ fn test_verify_mir_for_program_socket_map_helpers_accept_supported_programs() {
 }
 
 #[test]
-fn test_verify_mir_for_probe_context_sock_ops_helper_callback_guards_reject_unsupported_callbacks()
-{
-    for (helper, callback_op, expected) in [
-        (
-            BpfHelper::SockOpsCbFlagsSet,
-            BPF_SOCK_OPS_TSTAMP_SCHED_CB,
-            "helper 'bpf_sock_ops_cb_flags_set' on sock_ops requires proving ctx.op <= BPF_SOCK_OPS_WRITE_HDR_OPT_CB before use",
-        ),
-        (
-            BpfHelper::LoadHdrOpt,
-            BPF_SOCK_OPS_TSTAMP_SCHED_CB,
-            "helper 'bpf_load_hdr_opt' on sock_ops requires proving ctx.op <= BPF_SOCK_OPS_WRITE_HDR_OPT_CB before use",
-        ),
-        (
-            BpfHelper::StoreHdrOpt,
-            BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB,
-            "helper 'bpf_store_hdr_opt' on sock_ops requires proving ctx.op == BPF_SOCK_OPS_WRITE_HDR_OPT_CB before use",
-        ),
-        (
-            BpfHelper::ReserveHdrOpt,
-            BPF_SOCK_OPS_WRITE_HDR_OPT_CB,
-            "helper 'bpf_reserve_hdr_opt' on sock_ops requires proving ctx.op == BPF_SOCK_OPS_HDR_OPT_LEN_CB before use",
-        ),
+fn test_verify_mir_for_probe_context_sock_ops_callback_sensitive_helpers_without_static_callback_proof()
+ {
+    for helper in [
+        BpfHelper::SockOpsCbFlagsSet,
+        BpfHelper::LoadHdrOpt,
+        BpfHelper::StoreHdrOpt,
+        BpfHelper::ReserveHdrOpt,
     ] {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();
         func.entry = entry;
-        let guarded = func.alloc_block();
-        let done = func.alloc_block();
-        let op = func.alloc_vreg();
-        let matches = func.alloc_vreg();
         let ctx = func.alloc_vreg();
         let dst = func.alloc_vreg();
         let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
@@ -1369,132 +1344,20 @@ fn test_verify_mir_for_probe_context_sock_ops_helper_callback_guards_reject_unsu
         func.block_mut(entry)
             .instructions
             .push(MirInst::LoadCtxField {
-                dst: op,
-                field: CtxField::SockOp,
-                slot: None,
-            });
-        func.block_mut(entry).instructions.push(MirInst::BinOp {
-            dst: matches,
-            op: BinOpKind::Eq,
-            lhs: MirValue::VReg(op),
-            rhs: MirValue::Const(callback_op),
-        });
-        func.block_mut(entry).terminator = MirInst::Branch {
-            cond: matches,
-            if_true: guarded,
-            if_false: done,
-        };
-
-        func.block_mut(guarded)
-            .instructions
-            .push(MirInst::LoadCtxField {
                 dst: ctx,
                 field: CtxField::Context,
                 slot: None,
             });
-        func.block_mut(guarded)
-            .instructions
-            .push(MirInst::CallHelper {
-                dst,
-                helper: helper as u32,
-                args,
-            });
-        func.block_mut(guarded).terminator = MirInst::Jump { target: done };
-        func.block_mut(done).terminator = MirInst::Return { val: None };
-
-        let mut types = HashMap::new();
-        types.insert(op, MirType::I32);
-        types.insert(matches, MirType::Bool);
-        types.insert(
-            ctx,
-            MirType::Ptr {
-                pointee: Box::new(MirType::U8),
-                address_space: AddressSpace::Kernel,
-            },
-        );
-        types.insert(dst, MirType::I64);
-
-        let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
-        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
-            .expect_err("expected sock_ops helper callback guard to reject helper");
-        assert!(err.iter().any(|e| e.message.contains(expected)));
-    }
-}
-
-#[test]
-fn test_verify_mir_for_probe_context_sock_ops_helper_callback_guards_accept_supported_callbacks() {
-    for (helper, callback_op) in [
-        (
-            BpfHelper::SockOpsCbFlagsSet,
-            BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB,
-        ),
-        (BpfHelper::LoadHdrOpt, BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB),
-        (BpfHelper::StoreHdrOpt, BPF_SOCK_OPS_WRITE_HDR_OPT_CB),
-        (BpfHelper::ReserveHdrOpt, BPF_SOCK_OPS_HDR_OPT_LEN_CB),
-    ] {
-        let mut func = MirFunction::new();
-        let entry = func.alloc_block();
-        func.entry = entry;
-        let guarded = func.alloc_block();
-        let done = func.alloc_block();
-        let op = func.alloc_vreg();
-        let matches = func.alloc_vreg();
-        let ctx = func.alloc_vreg();
-        let dst = func.alloc_vreg();
-        let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-        let args = match helper {
-            BpfHelper::SockOpsCbFlagsSet => vec![MirValue::VReg(ctx), MirValue::Const(0)],
-            BpfHelper::LoadHdrOpt | BpfHelper::StoreHdrOpt => vec![
-                MirValue::VReg(ctx),
-                MirValue::StackSlot(buf_slot),
-                MirValue::Const(16),
-                MirValue::Const(0),
-            ],
-            BpfHelper::ReserveHdrOpt => {
-                vec![MirValue::VReg(ctx), MirValue::Const(16), MirValue::Const(0)]
-            }
-            _ => unreachable!(),
-        };
-
         func.block_mut(entry)
             .instructions
-            .push(MirInst::LoadCtxField {
-                dst: op,
-                field: CtxField::SockOp,
-                slot: None,
-            });
-        func.block_mut(entry).instructions.push(MirInst::BinOp {
-            dst: matches,
-            op: BinOpKind::Eq,
-            lhs: MirValue::VReg(op),
-            rhs: MirValue::Const(callback_op),
-        });
-        func.block_mut(entry).terminator = MirInst::Branch {
-            cond: matches,
-            if_true: guarded,
-            if_false: done,
-        };
-
-        func.block_mut(guarded)
-            .instructions
-            .push(MirInst::LoadCtxField {
-                dst: ctx,
-                field: CtxField::Context,
-                slot: None,
-            });
-        func.block_mut(guarded)
-            .instructions
             .push(MirInst::CallHelper {
                 dst,
                 helper: helper as u32,
                 args,
             });
-        func.block_mut(guarded).terminator = MirInst::Jump { target: done };
-        func.block_mut(done).terminator = MirInst::Return { val: None };
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
 
         let mut types = HashMap::new();
-        types.insert(op, MirType::I32);
-        types.insert(matches, MirType::Bool);
         types.insert(
             ctx,
             MirType::Ptr {
@@ -1506,7 +1369,7 @@ fn test_verify_mir_for_probe_context_sock_ops_helper_callback_guards_accept_supp
 
         let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
         verify_mir_for_probe_context(&func, &types, &probe_ctx)
-            .expect("expected supported sock_ops helper callback to verify");
+            .expect("expected sock_ops callback-sensitive helper to verify");
     }
 }
 
@@ -7254,251 +7117,6 @@ fn test_verify_mir_helper_sysctl_get_current_value_accepts_cgroup_sysctl_context
     let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
     verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect("expected sysctl get_current_value helper to verify on cgroup_sysctl");
-}
-
-#[test]
-fn test_verify_mir_helper_sysctl_get_name_rejects_unknown_flags_bits() {
-    let mut func = MirFunction::new();
-    let entry = func.alloc_block();
-    func.entry = entry;
-
-    let ctx = func.alloc_vreg();
-    let dst = func.alloc_vreg();
-    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-    func.block_mut(entry)
-        .instructions
-        .push(MirInst::LoadCtxField {
-            dst: ctx,
-            field: CtxField::Context,
-            slot: None,
-        });
-    func.block_mut(entry)
-        .instructions
-        .push(MirInst::CallHelper {
-            dst,
-            helper: BpfHelper::SysctlGetName as u32,
-            args: vec![
-                MirValue::VReg(ctx),
-                MirValue::StackSlot(buf_slot),
-                MirValue::Const(16),
-                MirValue::Const(2),
-            ],
-        });
-    func.block_mut(entry).terminator = MirInst::Return { val: None };
-
-    let mut types = HashMap::new();
-    types.insert(
-        ctx,
-        MirType::Ptr {
-            pointee: Box::new(MirType::U8),
-            address_space: AddressSpace::Kernel,
-        },
-    );
-    types.insert(dst, MirType::I64);
-
-    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
-    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
-        .expect_err("expected sysctl get_name flags error");
-    assert!(err.iter().any(|e| {
-        e.message.contains(
-            "helper 'bpf_sysctl_get_name' requires arg3 to use only BPF_F_SYSCTL_BASE_NAME bits",
-        )
-    }));
-}
-
-#[test]
-fn test_verify_mir_helper_sysctl_get_name_accepts_base_name_flag() {
-    let mut func = MirFunction::new();
-    let entry = func.alloc_block();
-    func.entry = entry;
-
-    let ctx = func.alloc_vreg();
-    let dst = func.alloc_vreg();
-    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-    func.block_mut(entry)
-        .instructions
-        .push(MirInst::LoadCtxField {
-            dst: ctx,
-            field: CtxField::Context,
-            slot: None,
-        });
-    func.block_mut(entry)
-        .instructions
-        .push(MirInst::CallHelper {
-            dst,
-            helper: BpfHelper::SysctlGetName as u32,
-            args: vec![
-                MirValue::VReg(ctx),
-                MirValue::StackSlot(buf_slot),
-                MirValue::Const(16),
-                MirValue::Const(1),
-            ],
-        });
-    func.block_mut(entry).terminator = MirInst::Return { val: None };
-
-    let mut types = HashMap::new();
-    types.insert(
-        ctx,
-        MirType::Ptr {
-            pointee: Box::new(MirType::U8),
-            address_space: AddressSpace::Kernel,
-        },
-    );
-    types.insert(dst, MirType::I64);
-
-    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
-    verify_mir_for_probe_context(&func, &types, &probe_ctx)
-        .expect("expected sysctl get_name helper to verify with base-name flag");
-}
-
-#[test]
-fn test_verify_mir_for_probe_context_sysctl_write_helpers_reject_read_context() {
-    for helper in [BpfHelper::SysctlGetNewValue, BpfHelper::SysctlSetNewValue] {
-        let mut func = MirFunction::new();
-        let entry = func.alloc_block();
-        func.entry = entry;
-        let guarded = func.alloc_block();
-        let done = func.alloc_block();
-        let write = func.alloc_vreg();
-        let is_read = func.alloc_vreg();
-        let ctx = func.alloc_vreg();
-        let dst = func.alloc_vreg();
-        let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-
-        func.block_mut(entry)
-            .instructions
-            .push(MirInst::LoadCtxField {
-                dst: write,
-                field: CtxField::SysctlWrite,
-                slot: None,
-            });
-        func.block_mut(entry).instructions.push(MirInst::BinOp {
-            dst: is_read,
-            op: BinOpKind::Eq,
-            lhs: MirValue::VReg(write),
-            rhs: MirValue::Const(0),
-        });
-        func.block_mut(entry).terminator = MirInst::Branch {
-            cond: is_read,
-            if_true: guarded,
-            if_false: done,
-        };
-
-        func.block_mut(guarded)
-            .instructions
-            .push(MirInst::LoadCtxField {
-                dst: ctx,
-                field: CtxField::Context,
-                slot: None,
-            });
-        func.block_mut(guarded)
-            .instructions
-            .push(MirInst::CallHelper {
-                dst,
-                helper: helper as u32,
-                args: vec![
-                    MirValue::VReg(ctx),
-                    MirValue::StackSlot(buf_slot),
-                    MirValue::Const(16),
-                ],
-            });
-        func.block_mut(guarded).terminator = MirInst::Jump { target: done };
-        func.block_mut(done).terminator = MirInst::Return { val: None };
-
-        let mut types = HashMap::new();
-        types.insert(write, MirType::U32);
-        types.insert(is_read, MirType::Bool);
-        types.insert(
-            ctx,
-            MirType::Ptr {
-                pointee: Box::new(MirType::U8),
-                address_space: AddressSpace::Kernel,
-            },
-        );
-        types.insert(dst, MirType::I64);
-
-        let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
-        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
-            .expect_err("expected sysctl write-mode helper guard error");
-        assert!(err.iter().any(|e| {
-            e.message.contains(&format!(
-                "helper '{}' on cgroup_sysctl requires proving ctx.write == 1 before use",
-                helper.name()
-            ))
-        }));
-    }
-}
-
-#[test]
-fn test_verify_mir_for_probe_context_sysctl_write_helpers_accept_write_context() {
-    for helper in [BpfHelper::SysctlGetNewValue, BpfHelper::SysctlSetNewValue] {
-        let mut func = MirFunction::new();
-        let entry = func.alloc_block();
-        func.entry = entry;
-        let guarded = func.alloc_block();
-        let done = func.alloc_block();
-        let write = func.alloc_vreg();
-        let is_write = func.alloc_vreg();
-        let ctx = func.alloc_vreg();
-        let dst = func.alloc_vreg();
-        let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-
-        func.block_mut(entry)
-            .instructions
-            .push(MirInst::LoadCtxField {
-                dst: write,
-                field: CtxField::SysctlWrite,
-                slot: None,
-            });
-        func.block_mut(entry).instructions.push(MirInst::BinOp {
-            dst: is_write,
-            op: BinOpKind::Eq,
-            lhs: MirValue::VReg(write),
-            rhs: MirValue::Const(1),
-        });
-        func.block_mut(entry).terminator = MirInst::Branch {
-            cond: is_write,
-            if_true: guarded,
-            if_false: done,
-        };
-
-        func.block_mut(guarded)
-            .instructions
-            .push(MirInst::LoadCtxField {
-                dst: ctx,
-                field: CtxField::Context,
-                slot: None,
-            });
-        func.block_mut(guarded)
-            .instructions
-            .push(MirInst::CallHelper {
-                dst,
-                helper: helper as u32,
-                args: vec![
-                    MirValue::VReg(ctx),
-                    MirValue::StackSlot(buf_slot),
-                    MirValue::Const(16),
-                ],
-            });
-        func.block_mut(guarded).terminator = MirInst::Jump { target: done };
-        func.block_mut(done).terminator = MirInst::Return { val: None };
-
-        let mut types = HashMap::new();
-        types.insert(write, MirType::U32);
-        types.insert(is_write, MirType::Bool);
-        types.insert(
-            ctx,
-            MirType::Ptr {
-                pointee: Box::new(MirType::U8),
-                address_space: AddressSpace::Kernel,
-            },
-        );
-        types.insert(dst, MirType::I64);
-
-        let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
-        verify_mir_for_probe_context(&func, &types, &probe_ctx)
-            .expect("expected guarded sysctl write-mode helper to verify");
-    }
 }
 
 #[test]

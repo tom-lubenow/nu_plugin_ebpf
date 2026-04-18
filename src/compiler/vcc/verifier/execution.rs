@@ -138,47 +138,6 @@ impl VccVerifier {
                     ));
                 }
             }
-            VccInst::AssertConstMaskSubset {
-                value,
-                allowed_mask,
-                message,
-            } => {
-                let ty = match state.value_type(*value) {
-                    Ok(ty) => ty,
-                    Err(err) => {
-                        self.errors.push(err);
-                        return;
-                    }
-                };
-                if ty.class() != VccTypeClass::Scalar && ty.class() != VccTypeClass::Bool {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::TypeMismatch {
-                            expected: VccTypeClass::Scalar,
-                            actual: ty.class(),
-                        },
-                        "expected scalar value",
-                    ));
-                    return;
-                }
-                let Some(range) = state.value_range(*value, ty) else {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::UnsupportedInstruction,
-                        message.clone(),
-                    ));
-                    return;
-                };
-                let width = range.max.saturating_sub(range.min);
-                if range.min > range.max
-                    || width > 64
-                    || !(range.min..=range.max)
-                        .all(|candidate| candidate >= 0 && (candidate & !allowed_mask) == 0)
-                {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::UnsupportedInstruction,
-                        message.clone(),
-                    ));
-                }
-            }
             VccInst::AssertConstEqIfConstEq {
                 value,
                 expected,
@@ -235,18 +194,6 @@ impl VccVerifier {
                     self.errors.push(VccError::new(
                         VccErrorKind::UnsupportedInstruction,
                         guard.error(field),
-                    ));
-                }
-            }
-            VccInst::AssertHelperCallGuard { helper, guard } => {
-                if !state.proves_ctx_field_value_range(&guard.witness_field(), |value| {
-                    guard.allows_value(value)
-                }) {
-                    let helper = BpfHelper::from_u32(*helper)
-                        .expect("VCC helper guard must reference a known helper");
-                    self.errors.push(VccError::new(
-                        VccErrorKind::UnsupportedInstruction,
-                        guard.error(helper),
                     ));
                 }
             }

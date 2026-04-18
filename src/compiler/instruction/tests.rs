@@ -746,14 +746,6 @@ fn test_helpers_with_reserved_zero_flags() {
             "helper 'bpf_skb_set_tstamp' requires arg1 = 0 when arg2 is 0"
         ))
     );
-    assert_eq!(
-        BpfHelper::SysctlGetName.scalar_arg_allowed_mask_requirement(),
-        Some((
-            3,
-            1,
-            "helper 'bpf_sysctl_get_name' requires arg3 to use only BPF_F_SYSCTL_BASE_NAME bits"
-        ))
-    );
 }
 
 #[test]

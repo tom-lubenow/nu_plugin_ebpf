@@ -5,7 +5,6 @@ use crate::compiler::MapRef;
 const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
 const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
 const BPF_SOCK_OPS_WRITE_HDR_OPT_CB: i64 = 15;
-const BPF_SOCK_OPS_TSTAMP_SCHED_CB: i64 = 16;
 
 #[test]
 fn test_subfn_polymorphic_id() {
@@ -1384,34 +1383,14 @@ fn test_infer_sock_ops_cb_flags_set_in_sock_ops_context_when_guarded() {
 }
 
 #[test]
-fn test_type_error_sock_ops_helper_callback_guards_reject_unsupported_callbacks() {
-    for (helper, callback_op, expected) in [
-        (
-            BpfHelper::SockOpsCbFlagsSet,
-            BPF_SOCK_OPS_TSTAMP_SCHED_CB,
-            "helper 'bpf_sock_ops_cb_flags_set' on sock_ops requires proving ctx.op <= BPF_SOCK_OPS_WRITE_HDR_OPT_CB before use",
-        ),
-        (
-            BpfHelper::LoadHdrOpt,
-            BPF_SOCK_OPS_TSTAMP_SCHED_CB,
-            "helper 'bpf_load_hdr_opt' on sock_ops requires proving ctx.op <= BPF_SOCK_OPS_WRITE_HDR_OPT_CB before use",
-        ),
-        (
-            BpfHelper::StoreHdrOpt,
-            BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB,
-            "helper 'bpf_store_hdr_opt' on sock_ops requires proving ctx.op == BPF_SOCK_OPS_WRITE_HDR_OPT_CB before use",
-        ),
-        (
-            BpfHelper::ReserveHdrOpt,
-            BPF_SOCK_OPS_WRITE_HDR_OPT_CB,
-            "helper 'bpf_reserve_hdr_opt' on sock_ops requires proving ctx.op == BPF_SOCK_OPS_HDR_OPT_LEN_CB before use",
-        ),
+fn test_infer_sock_ops_callback_sensitive_helpers_without_static_callback_proof() {
+    for helper in [
+        BpfHelper::SockOpsCbFlagsSet,
+        BpfHelper::LoadHdrOpt,
+        BpfHelper::StoreHdrOpt,
+        BpfHelper::ReserveHdrOpt,
     ] {
         let mut func = make_test_function();
-        let guarded = func.alloc_block();
-        let done = func.alloc_block();
-        let op = func.alloc_vreg();
-        let matches = func.alloc_vreg();
         let ctx = func.alloc_vreg();
         let dst = func.alloc_vreg();
         let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
@@ -1432,122 +1411,18 @@ fn test_type_error_sock_ops_helper_callback_guards_reject_unsupported_callbacks(
         func.block_mut(BlockId(0))
             .instructions
             .push(MirInst::LoadCtxField {
-                dst: op,
-                field: CtxField::SockOp,
-                slot: None,
-            });
-        func.block_mut(BlockId(0))
-            .instructions
-            .push(MirInst::BinOp {
-                dst: matches,
-                op: BinOpKind::Eq,
-                lhs: MirValue::VReg(op),
-                rhs: MirValue::Const(callback_op),
-            });
-        func.block_mut(BlockId(0)).terminator = MirInst::Branch {
-            cond: matches,
-            if_true: guarded,
-            if_false: done,
-        };
-
-        func.block_mut(guarded)
-            .instructions
-            .push(MirInst::LoadCtxField {
                 dst: ctx,
                 field: CtxField::Context,
                 slot: None,
             });
-        func.block_mut(guarded)
+        func.block_mut(BlockId(0))
             .instructions
             .push(MirInst::CallHelper {
                 dst,
                 helper: helper as u32,
                 args,
             });
-        func.block_mut(guarded).terminator = MirInst::Jump { target: done };
-        func.block_mut(done).terminator = MirInst::Return { val: None };
-
-        let mut ti = TypeInference::new(Some(ProbeContext::new(
-            EbpfProgramType::SockOps,
-            "/sys/fs/cgroup",
-        )));
-        let errs = ti
-            .infer(&func)
-            .expect_err("expected sock_ops helper callback guard to reject helper");
-        assert!(errs.iter().any(|e| e.message.contains(expected)));
-    }
-}
-
-#[test]
-fn test_infer_sock_ops_helper_callback_guards_accept_supported_callbacks() {
-    for (helper, callback_op) in [
-        (
-            BpfHelper::SockOpsCbFlagsSet,
-            BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB,
-        ),
-        (BpfHelper::LoadHdrOpt, BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB),
-        (BpfHelper::StoreHdrOpt, BPF_SOCK_OPS_WRITE_HDR_OPT_CB),
-        (BpfHelper::ReserveHdrOpt, BPF_SOCK_OPS_HDR_OPT_LEN_CB),
-    ] {
-        let mut func = make_test_function();
-        let guarded = func.alloc_block();
-        let done = func.alloc_block();
-        let op = func.alloc_vreg();
-        let matches = func.alloc_vreg();
-        let ctx = func.alloc_vreg();
-        let dst = func.alloc_vreg();
-        let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-        let args = match helper {
-            BpfHelper::SockOpsCbFlagsSet => vec![MirValue::VReg(ctx), MirValue::Const(0)],
-            BpfHelper::LoadHdrOpt | BpfHelper::StoreHdrOpt => vec![
-                MirValue::VReg(ctx),
-                MirValue::StackSlot(buf_slot),
-                MirValue::Const(16),
-                MirValue::Const(0),
-            ],
-            BpfHelper::ReserveHdrOpt => {
-                vec![MirValue::VReg(ctx), MirValue::Const(16), MirValue::Const(0)]
-            }
-            _ => unreachable!(),
-        };
-
-        func.block_mut(BlockId(0))
-            .instructions
-            .push(MirInst::LoadCtxField {
-                dst: op,
-                field: CtxField::SockOp,
-                slot: None,
-            });
-        func.block_mut(BlockId(0))
-            .instructions
-            .push(MirInst::BinOp {
-                dst: matches,
-                op: BinOpKind::Eq,
-                lhs: MirValue::VReg(op),
-                rhs: MirValue::Const(callback_op),
-            });
-        func.block_mut(BlockId(0)).terminator = MirInst::Branch {
-            cond: matches,
-            if_true: guarded,
-            if_false: done,
-        };
-
-        func.block_mut(guarded)
-            .instructions
-            .push(MirInst::LoadCtxField {
-                dst: ctx,
-                field: CtxField::Context,
-                slot: None,
-            });
-        func.block_mut(guarded)
-            .instructions
-            .push(MirInst::CallHelper {
-                dst,
-                helper: helper as u32,
-                args,
-            });
-        func.block_mut(guarded).terminator = MirInst::Jump { target: done };
-        func.block_mut(done).terminator = MirInst::Return { val: None };
+        func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
 
         let mut ti = TypeInference::new(Some(ProbeContext::new(
             EbpfProgramType::SockOps,
@@ -1555,7 +1430,7 @@ fn test_infer_sock_ops_helper_callback_guards_accept_supported_callbacks() {
         )));
         let types = ti
             .infer(&func)
-            .expect("expected supported sock_ops helper callback to infer");
+            .expect("expected sock_ops callback-sensitive helper to infer");
         assert_eq!(types.get(&dst), Some(&MirType::I64));
     }
 }
@@ -3060,205 +2935,6 @@ fn test_infer_helper_sysctl_get_current_value_in_cgroup_sysctl_program() {
         .infer(&func)
         .expect("expected sysctl get_current_value helper to infer");
     assert_eq!(types.get(&dst), Some(&MirType::I64));
-}
-
-#[test]
-fn test_type_error_helper_sysctl_get_name_rejects_unknown_flags_bits() {
-    let mut func = make_test_function();
-    let ctx = func.alloc_vreg();
-    let dst = func.alloc_vreg();
-    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-    let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::LoadCtxField {
-        dst: ctx,
-        field: CtxField::Context,
-        slot: None,
-    });
-    block.instructions.push(MirInst::CallHelper {
-        dst,
-        helper: BpfHelper::SysctlGetName as u32,
-        args: vec![
-            MirValue::VReg(ctx),
-            MirValue::StackSlot(buf_slot),
-            MirValue::Const(16),
-            MirValue::Const(2),
-        ],
-    });
-    block.terminator = MirInst::Return { val: None };
-
-    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
-    let mut ti = TypeInference::new(Some(probe_ctx));
-    let errs = ti
-        .infer(&func)
-        .expect_err("expected sysctl get_name flags error");
-    assert!(errs.iter().any(|e| {
-        e.message.contains(
-            "helper 'bpf_sysctl_get_name' requires arg3 to use only BPF_F_SYSCTL_BASE_NAME bits",
-        )
-    }));
-}
-
-#[test]
-fn test_infer_helper_sysctl_get_name_accepts_base_name_flag() {
-    let mut func = make_test_function();
-    let ctx = func.alloc_vreg();
-    let dst = func.alloc_vreg();
-    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-    let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::LoadCtxField {
-        dst: ctx,
-        field: CtxField::Context,
-        slot: None,
-    });
-    block.instructions.push(MirInst::CallHelper {
-        dst,
-        helper: BpfHelper::SysctlGetName as u32,
-        args: vec![
-            MirValue::VReg(ctx),
-            MirValue::StackSlot(buf_slot),
-            MirValue::Const(16),
-            MirValue::Const(1),
-        ],
-    });
-    block.terminator = MirInst::Return { val: None };
-
-    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
-    let mut ti = TypeInference::new(Some(probe_ctx));
-    let types = ti
-        .infer(&func)
-        .expect("expected sysctl get_name helper to infer with base-name flag");
-    assert_eq!(types.get(&dst), Some(&MirType::I64));
-}
-
-#[test]
-fn test_type_error_sysctl_write_helpers_reject_read_context() {
-    for helper in [BpfHelper::SysctlGetNewValue, BpfHelper::SysctlSetNewValue] {
-        let mut func = make_test_function();
-        let guarded = func.alloc_block();
-        let done = func.alloc_block();
-        let write = func.alloc_vreg();
-        let is_read = func.alloc_vreg();
-        let ctx = func.alloc_vreg();
-        let dst = func.alloc_vreg();
-        let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-
-        func.block_mut(BlockId(0))
-            .instructions
-            .push(MirInst::LoadCtxField {
-                dst: write,
-                field: CtxField::SysctlWrite,
-                slot: None,
-            });
-        func.block_mut(BlockId(0))
-            .instructions
-            .push(MirInst::BinOp {
-                dst: is_read,
-                op: BinOpKind::Eq,
-                lhs: MirValue::VReg(write),
-                rhs: MirValue::Const(0),
-            });
-        func.block_mut(BlockId(0)).terminator = MirInst::Branch {
-            cond: is_read,
-            if_true: guarded,
-            if_false: done,
-        };
-
-        func.block_mut(guarded)
-            .instructions
-            .push(MirInst::LoadCtxField {
-                dst: ctx,
-                field: CtxField::Context,
-                slot: None,
-            });
-        func.block_mut(guarded)
-            .instructions
-            .push(MirInst::CallHelper {
-                dst,
-                helper: helper as u32,
-                args: vec![
-                    MirValue::VReg(ctx),
-                    MirValue::StackSlot(buf_slot),
-                    MirValue::Const(16),
-                ],
-            });
-        func.block_mut(guarded).terminator = MirInst::Jump { target: done };
-        func.block_mut(done).terminator = MirInst::Return { val: None };
-
-        let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
-        let mut ti = TypeInference::new(Some(probe_ctx));
-        let errs = ti
-            .infer(&func)
-            .expect_err("expected sysctl write-mode helper guard error");
-        assert!(errs.iter().any(|e| {
-            e.message.contains(&format!(
-                "helper '{}' on cgroup_sysctl requires proving ctx.write == 1 before use",
-                helper.name()
-            ))
-        }));
-    }
-}
-
-#[test]
-fn test_infer_sysctl_write_helpers_accept_write_context() {
-    for helper in [BpfHelper::SysctlGetNewValue, BpfHelper::SysctlSetNewValue] {
-        let mut func = make_test_function();
-        let guarded = func.alloc_block();
-        let done = func.alloc_block();
-        let write = func.alloc_vreg();
-        let is_write = func.alloc_vreg();
-        let ctx = func.alloc_vreg();
-        let dst = func.alloc_vreg();
-        let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-
-        func.block_mut(BlockId(0))
-            .instructions
-            .push(MirInst::LoadCtxField {
-                dst: write,
-                field: CtxField::SysctlWrite,
-                slot: None,
-            });
-        func.block_mut(BlockId(0))
-            .instructions
-            .push(MirInst::BinOp {
-                dst: is_write,
-                op: BinOpKind::Eq,
-                lhs: MirValue::VReg(write),
-                rhs: MirValue::Const(1),
-            });
-        func.block_mut(BlockId(0)).terminator = MirInst::Branch {
-            cond: is_write,
-            if_true: guarded,
-            if_false: done,
-        };
-
-        func.block_mut(guarded)
-            .instructions
-            .push(MirInst::LoadCtxField {
-                dst: ctx,
-                field: CtxField::Context,
-                slot: None,
-            });
-        func.block_mut(guarded)
-            .instructions
-            .push(MirInst::CallHelper {
-                dst,
-                helper: helper as u32,
-                args: vec![
-                    MirValue::VReg(ctx),
-                    MirValue::StackSlot(buf_slot),
-                    MirValue::Const(16),
-                ],
-            });
-        func.block_mut(guarded).terminator = MirInst::Jump { target: done };
-        func.block_mut(done).terminator = MirInst::Return { val: None };
-
-        let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
-        let mut ti = TypeInference::new(Some(probe_ctx));
-        let types = ti
-            .infer(&func)
-            .expect("expected guarded sysctl write-mode helper to infer");
-        assert_eq!(types.get(&dst), Some(&MirType::I64));
-    }
 }
 
 #[test]

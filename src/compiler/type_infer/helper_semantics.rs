@@ -236,31 +236,6 @@ impl<'a> TypeInference<'a> {
         }
     }
 
-    fn scalar_value_range_satisfies_only<F>(
-        &self,
-        value: &MirValue,
-        types: &HashMap<VReg, MirType>,
-        value_ranges: &HashMap<VReg, ValueRange>,
-        predicate: F,
-    ) -> bool
-    where
-        F: Fn(i64) -> bool,
-    {
-        match value {
-            MirValue::Const(value) => predicate(*value),
-            MirValue::VReg(vreg) if Self::mir_is_numeric(&self.mir_type_for_vreg(*vreg, types)) => {
-                match self.value_range_for(value, value_ranges) {
-                    ValueRange::Known { min, max } if min <= max => {
-                        let width = max.saturating_sub(min);
-                        width <= 64 && (min..=max).all(predicate)
-                    }
-                    _ => false,
-                }
-            }
-            MirValue::VReg(_) | MirValue::StackSlot(_) => false,
-        }
-    }
-
     fn sched_ext_kick_flag_bits() -> (i64, i64, i64) {
         let mut idle = None;
         let mut preempt = None;
@@ -450,21 +425,6 @@ impl<'a> TypeInference<'a> {
             helper.zero_scalar_arg_requirement_when_arg_zero()
             && arg_is_known_zero(trigger_arg_idx)
             && !arg_is_known_zero(arg_idx)
-        {
-            errors.push(TypeError::new(message));
-        }
-
-        if let Some((arg_idx, allowed_mask, message)) = helper.scalar_arg_allowed_mask_requirement()
-            && let Some(value) = args.get(arg_idx)
-            && (matches!(value, MirValue::Const(_))
-                || matches!(
-                    value,
-                    MirValue::VReg(vreg)
-                        if Self::mir_is_numeric(&self.mir_type_for_vreg(*vreg, types))
-                ))
-            && !self.scalar_value_range_satisfies_only(value, types, value_ranges, |candidate| {
-                candidate >= 0 && (candidate & !allowed_mask) == 0
-            })
         {
             errors.push(TypeError::new(message));
         }

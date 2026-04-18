@@ -891,13 +891,6 @@ impl ProbeContext {
             .or_else(|| self.program_type().helper_call_error(helper))
     }
 
-    pub(crate) fn helper_call_guard(
-        &self,
-        helper: BpfHelper,
-    ) -> Option<crate::compiler::HelperCallGuard> {
-        self.program_type().helper_call_guard(helper)
-    }
-
     pub(crate) fn helper_zero_arg_requirement(
         &self,
         helper: BpfHelper,
