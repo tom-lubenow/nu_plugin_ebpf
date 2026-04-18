@@ -283,8 +283,11 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.write }   - Get whether the sysctl knob is being written (`1`) or read (`0`)
     {|ctx| $ctx.file_pos } - Get the current sysctl file position
+    {|ctx| mut ctx = $ctx; $ctx.file_pos = 0; 'allow' } - Override the sysctl file position through ordinary assignment
     Note: cgroup_sysctl closures can return `allow` or `deny` instead of
-    raw `1`/`0` result codes. `bpf_sysctl_get_new_value` and
+    raw `1`/`0` result codes. `ctx.file_pos` is writable after shadowing the
+    immutable closure parameter as mutable, while `ctx.write` remains read-only.
+    `bpf_sysctl_get_new_value` and
     `bpf_sysctl_set_new_value` are only valid when you have already
     proven `ctx.write == 1`. `bpf_sysctl_get_name` only accepts
     `0` and `BPF_F_SYSCTL_BASE_NAME` in its flags argument.
@@ -542,6 +545,10 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.optval_end } - Get the end pointer for the sockopt buffer
     {|ctx| $ctx.sockopt_retval } - Get the getsockopt return value on `cgroup_sockopt:get`
     {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie for the current socket context
+    {|ctx| mut ctx = $ctx; $ctx.level = 1; 'allow' } - Override the socket-option level on `cgroup_sockopt:set`
+    {|ctx| mut ctx = $ctx; $ctx.optname = 2; 'allow' } - Override the socket-option name on `cgroup_sockopt:set`
+    {|ctx| mut ctx = $ctx; $ctx.optlen = 8; 'allow' } - Override the socket-option length through ordinary assignment
+    {|ctx| mut ctx = $ctx; $ctx.optval.0 = 1; 'allow' } - Rewrite a byte in the sockopt buffer through a fixed cell path
     Note: cgroup_sockopt closures can return `allow` or `deny` instead of
     raw `1`/`0` result codes. `optval` / `optval_end` are surfaced as kernel
     pointers, so existing pointer reads like `($ctx.optval | get 0)` or
@@ -551,7 +558,9 @@ Context parameter syntax (recommended):
     ordinary helper surface here, including `bpf_getsockopt` and
     `bpf_setsockopt` on the current sockopt context. On `cgroup_sockopt:get`,
     writable return overrides use ordinary assignment through a mutable local
-    alias such as `mut ctx = $ctx; $ctx.sockopt_retval = 0`.
+    alias such as `mut ctx = $ctx; $ctx.sockopt_retval = 0`; `ctx.level` and
+    `ctx.optname` are writable on `cgroup_sockopt:set`, while `ctx.optlen`
+    and fixed-index `ctx.optval.N` byte rewrites work on either hook.
 
   cgroup_sock_addr fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
