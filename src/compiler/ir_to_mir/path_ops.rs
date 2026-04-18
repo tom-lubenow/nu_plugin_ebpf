@@ -707,8 +707,8 @@ impl<'a> HirToMirLowering<'a> {
 
         let path_desc = Self::typed_value_path_desc(&path.members);
 
-        let base_vreg = self.get_vreg(src_dst);
-        let base_runtime_ty = self
+        let mut base_vreg = self.get_vreg(src_dst);
+        let mut base_runtime_ty = self
             .typed_value_runtime_type(src_dst, base_vreg)
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
@@ -716,6 +716,19 @@ impl<'a> HirToMirLowering<'a> {
                     path_desc
                 ))
             })?;
+        if !matches!(base_runtime_ty, MirType::Ptr { .. })
+            && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+        {
+            base_vreg = self.materialized_metadata_aggregate_vreg(src_dst, base_vreg)?;
+            base_runtime_ty = self
+                .typed_value_runtime_type(src_dst, base_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "cell path update '.{} = ...' requires type information for the base value",
+                        path_desc
+                    ))
+                })?;
+        }
         let MirType::Ptr {
             pointee,
             address_space: AddressSpace::Stack | AddressSpace::Map,

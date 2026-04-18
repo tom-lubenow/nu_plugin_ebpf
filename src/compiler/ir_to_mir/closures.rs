@@ -136,7 +136,11 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         let meta = self.get_or_create_metadata(src_dst);
+        meta.is_context = false;
         meta.record_fields.push(field);
+        meta.field_type = Self::metadata_record_layout(meta);
+        meta.annotated_semantics = Self::metadata_record_semantics(meta);
+        meta.source_var = None;
 
         Ok(())
     }
