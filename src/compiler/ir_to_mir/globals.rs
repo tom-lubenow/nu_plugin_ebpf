@@ -532,20 +532,18 @@ impl ParsedNamedGlobalType {
 
                 let mut data = Vec::with_capacity(self.ty.size());
                 for (field_name, field_ty) in fields {
-                    let field_value = val.get(field_name).ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(format!(
-                            "global type spec '{}' initializer{} is missing field '{}'",
-                            spec, path_suffix, field_name
-                        ))
-                    })?;
-                    let nested_path = path
-                        .map(|prefix| format!("{prefix}.{field_name}"))
-                        .unwrap_or_else(|| field_name.clone());
-                    data.extend_from_slice(&field_ty.initializer_bytes_with_path(
-                        field_value,
-                        spec,
-                        Some(&nested_path),
-                    )?);
+                    if let Some(field_value) = val.get(field_name) {
+                        let nested_path = path
+                            .map(|prefix| format!("{prefix}.{field_name}"))
+                            .unwrap_or_else(|| field_name.clone());
+                        data.extend_from_slice(&field_ty.initializer_bytes_with_path(
+                            field_value,
+                            spec,
+                            Some(&nested_path),
+                        )?);
+                    } else {
+                        data.extend(std::iter::repeat_n(0u8, field_ty.ty.size()));
+                    }
                 }
 
                 if let Some((extra_name, _)) = val

@@ -1837,6 +1837,85 @@ fn test_lower_global_define_type_record_with_list_initializer_uses_named_data_gl
 }
 
 #[test]
+fn test_lower_global_define_type_record_partial_initializer_zero_fills_missing_fields() {
+    let define_decl = DeclId::new(1074);
+    let get_decl = DeclId::new(1075);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (get_decl, "global-get".to_string()),
+    ]);
+
+    let mut state = Record::with_capacity(1);
+    state.push("pid", Value::int(7, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::record(state, Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("seen_state".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("record{pid:i64,samples:list:i64:2}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"type".to_vec(), RegId::new(2))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("global-define --type record{...} should zero-fill omitted fields");
+
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&7i64.to_le_bytes());
+    expected.extend_from_slice(&0u64.to_le_bytes());
+    expected.extend_from_slice(&0i64.to_le_bytes());
+    expected.extend_from_slice(&0i64.to_le_bytes());
+
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+    assert_eq!(result.data_globals[0].name, "__nu_global_seen_state");
+    assert_eq!(result.data_globals[0].data, expected);
+}
+
+#[test]
 fn test_lower_global_define_type_string_rejects_initializer_exceeding_capacity() {
     let define_decl = DeclId::new(1074);
     let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
