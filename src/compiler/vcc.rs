@@ -13,7 +13,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::compiler::cfg::CFG;
-use crate::compiler::ctx_field_schema::ContextFieldLoadGuard;
+use crate::compiler::ctx_field_schema::{ContextFieldLoadGuard, HelperCallGuard};
 use crate::compiler::instruction::{
     BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncIterFamily,
     KfuncIterLifecycleOp, KfuncRefKind, KfuncRetKind, KfuncSignature, KfuncUnknownDynptrArg,
@@ -256,6 +256,10 @@ pub enum VccInst {
     AssertCtxFieldLoadGuard {
         field: CtxField,
         guard: ContextFieldLoadGuard,
+    },
+    AssertHelperCallGuard {
+        helper: u32,
+        guard: HelperCallGuard,
     },
     AssertKnownConst {
         value: VccValue,

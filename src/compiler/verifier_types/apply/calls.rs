@@ -30,6 +30,24 @@ pub(super) fn apply_call_helper_inst(
         return;
     }
 
+    if let Some(helper_kind) = BpfHelper::from_u32(helper)
+        && let Some(guard) = probe_ctx
+            .and_then(|ctx| ctx.helper_call_guard(helper_kind))
+            .or_else(|| {
+                program.and_then(|program| program.program_type.helper_call_guard(helper_kind))
+            })
+        && !state
+            .proves_ctx_field_value_range(&guard.witness_field(), |value| guard.allows_value(value))
+    {
+        errors.push(VerifierTypeError::new(guard.error(helper_kind)));
+        let ty = types
+            .get(&dst)
+            .map(verifier_type_from_mir)
+            .unwrap_or(VerifierType::Scalar);
+        state.set_with_range(dst, ty, ValueRange::Unknown);
+        return;
+    }
+
     if let Some(sig) = HelperSignature::for_id(helper) {
         if args.len() < sig.min_args || args.len() > sig.max_args {
             errors.push(VerifierTypeError::new(format!(

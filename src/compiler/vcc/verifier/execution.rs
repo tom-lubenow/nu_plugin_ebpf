@@ -197,6 +197,18 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::AssertHelperCallGuard { helper, guard } => {
+                if !state.proves_ctx_field_value_range(&guard.witness_field(), |value| {
+                    guard.allows_value(value)
+                }) {
+                    let helper = BpfHelper::from_u32(*helper)
+                        .expect("VCC helper guard must reference a known helper");
+                    self.errors.push(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        guard.error(helper),
+                    ));
+                }
+            }
             VccInst::AssertKnownConst { value, message } => {
                 let ty = match state.value_type(*value) {
                     Ok(ty) => ty,

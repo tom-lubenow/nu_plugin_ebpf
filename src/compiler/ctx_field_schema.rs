@@ -1,5 +1,5 @@
 use crate::compiler::{
-    EbpfProgramType,
+    BpfHelper, EbpfProgramType,
     mir::{AddressSpace, CtxField, MirType, StructField},
 };
 
@@ -15,11 +15,19 @@ pub enum ContextFieldLoadGuard {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HelperCallGuard {
+    SockOpsCallback(SockOpsCallbackGuard),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SockOpsCallbackGuard {
     PacketData,
     PacketMetadata,
     TcpFlags,
     Hwtstamp,
+    LockedTcpCallbacks,
+    HdrOptLen,
+    WriteHdrOpt,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,6 +114,41 @@ impl ContextFieldLoadGuard {
     }
 }
 
+impl HelperCallGuard {
+    pub(crate) fn witness_field(self) -> CtxField {
+        match self {
+            Self::SockOpsCallback(_) => CtxField::SockOp,
+        }
+    }
+
+    pub(crate) fn allows_value(self, value: i64) -> bool {
+        match self {
+            Self::SockOpsCallback(guard) => guard.allows_callback_op(value),
+        }
+    }
+
+    pub(crate) fn error(self, helper: BpfHelper) -> String {
+        match self {
+            Self::SockOpsCallback(SockOpsCallbackGuard::LockedTcpCallbacks) => format!(
+                "helper '{}' on sock_ops requires proving ctx.op <= BPF_SOCK_OPS_WRITE_HDR_OPT_CB before use",
+                helper.name()
+            ),
+            Self::SockOpsCallback(SockOpsCallbackGuard::HdrOptLen) => format!(
+                "helper '{}' on sock_ops requires proving ctx.op == BPF_SOCK_OPS_HDR_OPT_LEN_CB before use",
+                helper.name()
+            ),
+            Self::SockOpsCallback(SockOpsCallbackGuard::WriteHdrOpt) => format!(
+                "helper '{}' on sock_ops requires proving ctx.op == BPF_SOCK_OPS_WRITE_HDR_OPT_CB before use",
+                helper.name()
+            ),
+            Self::SockOpsCallback(_) => format!(
+                "helper '{}' on sock_ops requires proving a supported ctx.op callback before use",
+                helper.name()
+            ),
+        }
+    }
+}
+
 impl SockOpsCallbackGuard {
     fn allows_callback_op(self, op: i64) -> bool {
         match self {
@@ -113,7 +156,14 @@ impl SockOpsCallbackGuard {
             Self::PacketMetadata => Self::callback_has_packet_metadata(op),
             Self::TcpFlags => Self::callback_has_tcp_flags(op),
             Self::Hwtstamp => Self::callback_has_hwtstamp(op),
+            Self::LockedTcpCallbacks => Self::callback_is_locked_tcp(op),
+            Self::HdrOptLen => op == BPF_SOCK_OPS_HDR_OPT_LEN_CB,
+            Self::WriteHdrOpt => op == BPF_SOCK_OPS_WRITE_HDR_OPT_CB,
         }
+    }
+
+    fn callback_is_locked_tcp(op: i64) -> bool {
+        (1..=BPF_SOCK_OPS_WRITE_HDR_OPT_CB).contains(&op)
     }
 
     fn callback_has_packet_data(op: i64) -> bool {

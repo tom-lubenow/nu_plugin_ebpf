@@ -21,6 +21,21 @@ impl<'a> VccLowerer<'a> {
             ));
         }
 
+        if let Some(helper) = BpfHelper::from_u32(helper_id)
+            && let Some(guard) = self
+                .probe_ctx
+                .and_then(|ctx| ctx.helper_call_guard(helper))
+                .or_else(|| {
+                    self.program
+                        .and_then(|program| program.program_type.helper_call_guard(helper))
+                })
+        {
+            out.push(VccInst::AssertHelperCallGuard {
+                helper: helper_id,
+                guard,
+            });
+        }
+
         if let Some(sig) = HelperSignature::for_id(helper_id) {
             if args.len() < sig.min_args || args.len() > sig.max_args {
                 return Err(VccError::new(

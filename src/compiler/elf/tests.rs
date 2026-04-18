@@ -3,7 +3,7 @@ use crate::compiler::BpfHelper;
 use crate::compiler::hindley_milner::HMType;
 use crate::compiler::mir::{CtxField, CtxStoreTarget, MapKind, MirType, StructField};
 use crate::compiler::mir_to_ebpf::compile_mir_to_ebpf;
-use crate::compiler::{ContextFieldLoadGuard, SockOpsCallbackGuard};
+use crate::compiler::{ContextFieldLoadGuard, HelperCallGuard, SockOpsCallbackGuard};
 use crate::kernel_btf::KernelBtf;
 use crate::program_spec::ProgramSpec;
 use aya_obj::{
@@ -861,6 +861,39 @@ fn test_program_type_ctx_field_load_guard_follows_context_family() {
     assert!(
         EbpfProgramType::SkMsg
             .ctx_field_load_guard(&CtxField::PacketLen)
+            .is_none()
+    );
+}
+
+#[test]
+fn test_program_type_helper_call_guard_models_sock_ops_callback_surface() {
+    assert_eq!(
+        EbpfProgramType::SockOps.helper_call_guard(BpfHelper::SockOpsCbFlagsSet),
+        Some(HelperCallGuard::SockOpsCallback(
+            SockOpsCallbackGuard::LockedTcpCallbacks,
+        ))
+    );
+    assert_eq!(
+        EbpfProgramType::SockOps.helper_call_guard(BpfHelper::LoadHdrOpt),
+        Some(HelperCallGuard::SockOpsCallback(
+            SockOpsCallbackGuard::LockedTcpCallbacks,
+        ))
+    );
+    assert_eq!(
+        EbpfProgramType::SockOps.helper_call_guard(BpfHelper::StoreHdrOpt),
+        Some(HelperCallGuard::SockOpsCallback(
+            SockOpsCallbackGuard::WriteHdrOpt,
+        ))
+    );
+    assert_eq!(
+        EbpfProgramType::SockOps.helper_call_guard(BpfHelper::ReserveHdrOpt),
+        Some(HelperCallGuard::SockOpsCallback(
+            SockOpsCallbackGuard::HdrOptLen,
+        ))
+    );
+    assert!(
+        EbpfProgramType::Tc
+            .helper_call_guard(BpfHelper::StoreHdrOpt)
             .is_none()
     );
 }

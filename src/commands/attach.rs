@@ -396,11 +396,15 @@ Context parameter syntax (recommended):
     surface here, including `bpf_getsockopt`, `bpf_setsockopt`,
     `bpf_sock_ops_cb_flags_set`, and the TCP header-option helpers
     `bpf_load_hdr_opt`, `bpf_store_hdr_opt`, and `bpf_reserve_hdr_opt`.
-    The compiler currently models the sock_ops program surface plus
-    pointer/size and zero-flag constraints for those header-option helpers.
-    Packet-data and packet-metadata fields now require a proven packet-aware
-    `ctx.op` branch before use; remaining helper-specific callback-op
-    restrictions still remain kernel-enforced.
+    The compiler now also models the core sock_ops callback-op policy for
+    those helpers: `bpf_sock_ops_cb_flags_set` and `bpf_load_hdr_opt`
+    require a proven locked sock_ops callback (`ctx.op <=
+    BPF_SOCK_OPS_WRITE_HDR_OPT_CB`), `bpf_store_hdr_opt` requires
+    `ctx.op == BPF_SOCK_OPS_WRITE_HDR_OPT_CB`, and `bpf_reserve_hdr_opt`
+    requires `ctx.op == BPF_SOCK_OPS_HDR_OPT_LEN_CB`. Packet-data and
+    packet-metadata fields likewise require a proven packet-aware `ctx.op`
+    branch before use. The finer flag-sensitive `bpf_load_hdr_opt`
+    subcases still remain kernel-enforced.
 
   sk_msg fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

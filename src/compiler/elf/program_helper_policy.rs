@@ -1,4 +1,5 @@
 use super::{EbpfProgramType, GetSocketCookieArgPolicy, MessageAdjustMode, PacketAdjustMode};
+use crate::compiler::ctx_field_schema::{HelperCallGuard, SockOpsCallbackGuard};
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::MapKind;
 use crate::program_spec::{
@@ -373,6 +374,25 @@ impl EbpfProgramType {
         helper_program_surface_spec(helper)
             .filter(|spec| !spec.allows(*self))
             .map(|spec| spec.error(helper))
+    }
+
+    pub(crate) fn helper_call_guard(&self, helper: BpfHelper) -> Option<HelperCallGuard> {
+        if *self != EbpfProgramType::SockOps {
+            return None;
+        }
+
+        Some(match helper {
+            BpfHelper::SockOpsCbFlagsSet | BpfHelper::LoadHdrOpt => {
+                HelperCallGuard::SockOpsCallback(SockOpsCallbackGuard::LockedTcpCallbacks)
+            }
+            BpfHelper::StoreHdrOpt => {
+                HelperCallGuard::SockOpsCallback(SockOpsCallbackGuard::WriteHdrOpt)
+            }
+            BpfHelper::ReserveHdrOpt => {
+                HelperCallGuard::SockOpsCallback(SockOpsCallbackGuard::HdrOptLen)
+            }
+            _ => return None,
+        })
     }
 
     pub(crate) fn helper_zero_arg_requirement(
