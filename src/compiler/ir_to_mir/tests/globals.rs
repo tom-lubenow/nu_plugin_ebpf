@@ -3643,6 +3643,179 @@ fn test_lower_local_record_field_update_materializes_stack_backing() {
 }
 
 #[test]
+fn test_lower_local_nested_record_field_update_accepts_metadata_only_record_rhs() {
+    let state_var = VarId::new(213);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Record { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("msg".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("hi".into()),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(0),
+                    key: RegId::new(1),
+                    val: RegId::new(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String("pid".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(0),
+                    key: RegId::new(3),
+                    val: RegId::new(4),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Record { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::String("inner".into()),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(5),
+                    key: RegId::new(6),
+                    val: RegId::new(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::String("cpu".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(8),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(5),
+                    key: RegId::new(7),
+                    val: RegId::new(8),
+                },
+                HirStmt::StoreVariable {
+                    var_id: state_var,
+                    src: RegId::new(5),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(9),
+                    var_id: state_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(10),
+                    lit: HirLiteral::Record { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(11),
+                    lit: HirLiteral::String("msg".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(12),
+                    lit: HirLiteral::String("bye".into()),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(10),
+                    key: RegId::new(11),
+                    val: RegId::new(12),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(13),
+                    lit: HirLiteral::String("pid".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(14),
+                    lit: HirLiteral::Int(9),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(10),
+                    key: RegId::new(13),
+                    val: RegId::new(14),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(15),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("inner")],
+                    })),
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(9),
+                    path: RegId::new(15),
+                    new_value: RegId::new(10),
+                },
+                HirStmt::StoreVariable {
+                    var_id: state_var,
+                    src: RegId::new(9),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(16),
+                    var_id: state_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(17),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("inner"), string_member("msg")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(16),
+                    path: RegId::new(17),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(18),
+                    lit: HirLiteral::String("!".into()),
+                },
+                HirStmt::StringAppend {
+                    src_dst: RegId::new(16),
+                    val: RegId::new(18),
+                },
+            ],
+            terminator: HirTerminator::Return {
+                src: RegId::new(16),
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 19,
+        file_count: 0,
+    };
+
+    let result = lower_hir_to_mir_with_hints(
+        &HirProgram::new(func, HashMap::new(), vec![], None),
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("local nested record field update should accept a metadata-only record rhs");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StringAppend { .. })),
+        "expected updated nested record string field to preserve string semantics"
+    );
+}
+
+#[test]
 fn test_lower_local_record_string_field_preserves_semantics() {
     let state_var = VarId::new(212);
     let func = HirFunction {

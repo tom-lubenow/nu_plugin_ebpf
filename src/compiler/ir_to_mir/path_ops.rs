@@ -729,14 +729,7 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let new_value_vreg = self.get_vreg(new_value);
-        let new_value_runtime_ty = self
-            .typed_value_runtime_type(new_value, new_value_vreg)
-            .ok_or_else(|| {
-                CompileError::UnsupportedInstruction(format!(
-                    "cell path update '.{} = ...' requires type information for the new value",
-                    path_desc
-                ))
-            })?;
+        let new_value_runtime_ty = self.typed_value_runtime_type(new_value, new_value_vreg);
 
         match &projection.ty {
             MirType::Array { .. } | MirType::Struct { .. } => {
@@ -823,10 +816,24 @@ impl<'a> HirToMirLowering<'a> {
                     return Ok(());
                 }
 
+                let aggregate_new_value_vreg =
+                    self.materialized_metadata_aggregate_vreg(new_value, new_value_vreg)?;
+                let aggregate_new_value_runtime_ty = self
+                    .vreg_type_hints
+                    .get(&aggregate_new_value_vreg)
+                    .cloned()
+                    .or_else(|| new_value_runtime_ty.clone())
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "cell path update '.{} = ...' requires type information for the new value",
+                            path_desc
+                        ))
+                    })?;
+
                 let MirType::Ptr {
                     pointee: new_value_pointee,
                     address_space: AddressSpace::Stack | AddressSpace::Map,
-                } = new_value_runtime_ty
+                } = aggregate_new_value_runtime_ty
                 else {
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "cell path update '.{} = ...' requires a materialized aggregate pointer value for field {:?}",
@@ -844,12 +851,18 @@ impl<'a> HirToMirLowering<'a> {
                 self.emit_ptr_copy_with_offsets(
                     base_vreg,
                     projection.offset,
-                    new_value_vreg,
+                    aggregate_new_value_vreg,
                     0,
                     projection.ty.size(),
                 )?;
             }
             _ => {
+                let new_value_runtime_ty = new_value_runtime_ty.ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "cell path update '.{} = ...' requires type information for the new value",
+                        path_desc
+                    ))
+                })?;
                 let Some(stored_vreg) = self.coerce_scalar_assignment_value(
                     new_value_vreg,
                     &new_value_runtime_ty,
