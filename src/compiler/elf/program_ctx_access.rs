@@ -15,6 +15,7 @@ enum ContextFieldAccessRequirement {
     CgroupSockAddrIpv4Only,
     CgroupSockAddrIpv6Only,
     CgroupSockAddrRemoteTupleOnly,
+    CgroupSockAddrLocalIpAliasOnly,
     CgroupSockAddrLocalTupleOnly,
     CgroupSockAddrSendmsgOnly,
     AllowedProgramsLabel(&'static str),
@@ -110,11 +111,27 @@ impl ContextFieldAccessRequirement {
             Self::CgroupSockAddrRemoteTupleOnly => match spec.attach_shape() {
                 ProgramAttachShape::CgroupSockAddr {
                     hook:
-                        ProgramAttachSockAddrHook::Connect | ProgramAttachSockAddrHook::GetPeerName,
+                        ProgramAttachSockAddrHook::Connect
+                        | ProgramAttachSockAddrHook::GetPeerName
+                        | ProgramAttachSockAddrHook::SendMsg
+                        | ProgramAttachSockAddrHook::RecvMsg,
                     ..
                 } => None,
                 ProgramAttachShape::CgroupSockAddr { .. } => Some(format!(
-                    "ctx.{field_name} is only available on cgroup_sock_addr connect4/connect6 and getpeername4/getpeername6 hooks"
+                    "ctx.{field_name} is only available on cgroup_sock_addr connect4/connect6, getpeername4/getpeername6, sendmsg4/sendmsg6, and recvmsg4/recvmsg6 hooks"
+                )),
+                _ => None,
+            },
+            Self::CgroupSockAddrLocalIpAliasOnly => match spec.attach_shape() {
+                ProgramAttachShape::CgroupSockAddr {
+                    hook:
+                        ProgramAttachSockAddrHook::Bind
+                        | ProgramAttachSockAddrHook::GetSockName
+                        | ProgramAttachSockAddrHook::SendMsg,
+                    ..
+                } => None,
+                ProgramAttachShape::CgroupSockAddr { .. } => Some(format!(
+                    "ctx.{field_name} is only available on cgroup_sock_addr bind4/bind6, getsockname4/getsockname6, and sendmsg4/sendmsg6 hooks"
                 )),
                 _ => None,
             },
@@ -373,13 +390,13 @@ const CGROUP_SOCK_ADDR_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpe
     ContextFieldAccessSurfaceSpec::new(
         CtxField::LocalIp4,
         "local_ip4",
-        ContextFieldAccessRequirement::CgroupSockAddrLocalTupleOnly,
+        ContextFieldAccessRequirement::CgroupSockAddrLocalIpAliasOnly,
     )
     .with_secondary_requirement(ContextFieldAccessRequirement::CgroupSockAddrIpv4Only),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::LocalIp6,
         "local_ip6",
-        ContextFieldAccessRequirement::CgroupSockAddrLocalTupleOnly,
+        ContextFieldAccessRequirement::CgroupSockAddrLocalIpAliasOnly,
     )
     .with_secondary_requirement(ContextFieldAccessRequirement::CgroupSockAddrIpv6Only),
     ContextFieldAccessSurfaceSpec::new(
@@ -901,17 +918,26 @@ impl ProgramSpec {
         match (field, hook, family) {
             (
                 CtxField::RemoteIp4,
-                ProgramAttachSockAddrHook::Connect | ProgramAttachSockAddrHook::GetPeerName,
+                ProgramAttachSockAddrHook::Connect
+                | ProgramAttachSockAddrHook::GetPeerName
+                | ProgramAttachSockAddrHook::SendMsg
+                | ProgramAttachSockAddrHook::RecvMsg,
                 ProgramAttachAddressFamily::Ipv4,
             ) => Some(CtxField::UserIp4),
             (
                 CtxField::RemoteIp6,
-                ProgramAttachSockAddrHook::Connect | ProgramAttachSockAddrHook::GetPeerName,
+                ProgramAttachSockAddrHook::Connect
+                | ProgramAttachSockAddrHook::GetPeerName
+                | ProgramAttachSockAddrHook::SendMsg
+                | ProgramAttachSockAddrHook::RecvMsg,
                 ProgramAttachAddressFamily::Ipv6,
             ) => Some(CtxField::UserIp6),
             (
                 CtxField::RemotePort,
-                ProgramAttachSockAddrHook::Connect | ProgramAttachSockAddrHook::GetPeerName,
+                ProgramAttachSockAddrHook::Connect
+                | ProgramAttachSockAddrHook::GetPeerName
+                | ProgramAttachSockAddrHook::SendMsg
+                | ProgramAttachSockAddrHook::RecvMsg,
                 _,
             ) => Some(CtxField::UserPort),
             (
@@ -920,10 +946,20 @@ impl ProgramSpec {
                 ProgramAttachAddressFamily::Ipv4,
             ) => Some(CtxField::UserIp4),
             (
+                CtxField::LocalIp4,
+                ProgramAttachSockAddrHook::SendMsg,
+                ProgramAttachAddressFamily::Ipv4,
+            ) => Some(CtxField::MsgSrcIp4),
+            (
                 CtxField::LocalIp6,
                 ProgramAttachSockAddrHook::Bind | ProgramAttachSockAddrHook::GetSockName,
                 ProgramAttachAddressFamily::Ipv6,
             ) => Some(CtxField::UserIp6),
+            (
+                CtxField::LocalIp6,
+                ProgramAttachSockAddrHook::SendMsg,
+                ProgramAttachAddressFamily::Ipv6,
+            ) => Some(CtxField::MsgSrcIp6),
             (
                 CtxField::LocalPort,
                 ProgramAttachSockAddrHook::Bind | ProgramAttachSockAddrHook::GetSockName,

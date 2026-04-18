@@ -132,11 +132,11 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.mark }    - Get the socket or skb mark on cgroup_sock sock_create/sock_release, socket_filter, tc, and cgroup_skb programs
     {|ctx| $ctx.priority } - Get the socket or skb priority on cgroup_sock sock_create/sock_release, socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs
     {|ctx| $ctx.family }  - Get socket family on cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
-    {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order on cgroup_sock, cgroup_sock_addr connect4/getpeername4, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
-    {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words on cgroup_sock, cgroup_sock_addr connect6/getpeername6, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
-    {|ctx| $ctx.remote_port } - Get the remote port in host byte order on cgroup_sock, cgroup_sock_addr connect*/getpeername*, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
-    {|ctx| $ctx.local_ip4 } - Get the local IPv4 address in host byte order on cgroup_sock post_bind4, cgroup_sock_addr bind4/getsockname4, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
-    {|ctx| $ctx.local_ip6 } - Get the local IPv6 address as four host-order u32 words on cgroup_sock post_bind6, cgroup_sock_addr bind6/getsockname6, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
+    {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order on cgroup_sock, cgroup_sock_addr connect4/getpeername4/sendmsg4/recvmsg4, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
+    {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words on cgroup_sock, cgroup_sock_addr connect6/getpeername6/sendmsg6/recvmsg6, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
+    {|ctx| $ctx.remote_port } - Get the remote port in host byte order on cgroup_sock, cgroup_sock_addr connect*/getpeername*/sendmsg*/recvmsg*, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
+    {|ctx| $ctx.local_ip4 } - Get the local IPv4 address in host byte order on cgroup_sock post_bind4, cgroup_sock_addr bind4/getsockname4/sendmsg4, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
+    {|ctx| $ctx.local_ip6 } - Get the local IPv6 address as four host-order u32 words on cgroup_sock post_bind6, cgroup_sock_addr bind6/getsockname6/sendmsg6, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
     {|ctx| $ctx.local_port } - Get the local port in host byte order on cgroup_sock post_bind4/post_bind6, cgroup_sock_addr bind*/getsockname*, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
     {|ctx| ($ctx.data | get 0) } - Read the first packet byte with an auto-generated data_end guard
     {|ctx| $ctx.data.u16be.6 } - Read a big-endian 16-bit packet scalar (here: bytes 12..13)
@@ -558,11 +558,11 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.family }  - Get kernel socket family
     {|ctx| $ctx.sock_type } - Get socket type
     {|ctx| $ctx.protocol } - Get socket protocol
-    {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order on connect4/getpeername4
-    {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words on connect6/getpeername6
-    {|ctx| $ctx.remote_port } - Get the remote port in host byte order on connect*/getpeername*
-    {|ctx| $ctx.local_ip4 } - Get the local IPv4 address in host byte order on bind4/getsockname4
-    {|ctx| $ctx.local_ip6 } - Get the local IPv6 address as four host-order u32 words on bind6/getsockname6
+    {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order on connect4/getpeername4/sendmsg4/recvmsg4
+    {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words on connect6/getpeername6/sendmsg6/recvmsg6
+    {|ctx| $ctx.remote_port } - Get the remote port in host byte order on connect*/getpeername*/sendmsg*/recvmsg*
+    {|ctx| $ctx.local_ip4 } - Get the local IPv4 address in host byte order on bind4/getsockname4/sendmsg4
+    {|ctx| $ctx.local_ip6 } - Get the local IPv6 address as four host-order u32 words on bind6/getsockname6/sendmsg6
     {|ctx| $ctx.local_port } - Get the local port in host byte order on bind*/getsockname*
     {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_ip4, src_ip6, src_port, dst_port, dst_ip4, dst_ip6, state, and rx_queue_mapping)
     {|ctx| $ctx.msg_src_ip4 } - Get the IPv4 source address in host byte order on sendmsg4

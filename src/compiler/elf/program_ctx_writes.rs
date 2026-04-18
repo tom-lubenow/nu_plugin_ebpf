@@ -1,6 +1,8 @@
 use super::{CtxWriteTarget, EbpfProgramType, ProgramContextFamily};
 use crate::compiler::mir::{CtxField, CtxStoreTarget};
-use crate::program_spec::{ProgramAttachShape, ProgramSpec};
+use crate::program_spec::{
+    ProgramAttachAddressFamily, ProgramAttachShape, ProgramAttachSockAddrHook, ProgramSpec,
+};
 
 fn bounded_index(field_name: &str, index: usize, upper_inclusive: u8) -> Result<u8, String> {
     let index = u8::try_from(index).map_err(|_| {
@@ -21,6 +23,8 @@ enum ContextStoreTargetSpec {
     SkbCbWord,
     CgroupSockAddrUserIp6Word,
     CgroupSockAddrMsgSrcIp6Word,
+    CgroupSockAddrLocalIp4Alias,
+    CgroupSockAddrLocalIp6WordAlias,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,7 +68,12 @@ struct ProgramCtxWriteSurfaceFamilySpec {
 }
 
 impl ContextStoreTargetSpec {
-    fn resolve(&self, field_name: &str, index: Option<usize>) -> Result<CtxStoreTarget, String> {
+    fn resolve(
+        &self,
+        spec: &ProgramSpec,
+        field_name: &str,
+        index: Option<usize>,
+    ) -> Result<CtxStoreTarget, String> {
         match self {
             Self::Fixed(target) => match index {
                 Some(_) => Err(format!(
@@ -100,6 +109,43 @@ impl ContextStoreTargetSpec {
                     "ctx.{field_name} assignment requires a fixed index, e.g. $ctx.{field_name}.0 = ..."
                 )),
             },
+            Self::CgroupSockAddrLocalIp4Alias => match index {
+                Some(_) => Err(format!(
+                    "ctx.{field_name} does not support indexed assignment"
+                )),
+                None => match spec.attach_shape() {
+                    ProgramAttachShape::CgroupSockAddr {
+                        hook: ProgramAttachSockAddrHook::SendMsg,
+                        family: ProgramAttachAddressFamily::Ipv4,
+                    } => Ok(CtxStoreTarget::CgroupSockAddrMsgSrcIp4),
+                    ProgramAttachShape::CgroupSockAddr {
+                        hook:
+                            ProgramAttachSockAddrHook::Bind | ProgramAttachSockAddrHook::GetSockName,
+                        family: ProgramAttachAddressFamily::Ipv4,
+                    } => Ok(CtxStoreTarget::CgroupSockAddrUserIp4),
+                    _ => Err(format!("ctx.{field_name} is not available on this hook")),
+                },
+            },
+            Self::CgroupSockAddrLocalIp6WordAlias => match index {
+                Some(index) => {
+                    let index = bounded_index(field_name, index, 3)?;
+                    match spec.attach_shape() {
+                        ProgramAttachShape::CgroupSockAddr {
+                            hook: ProgramAttachSockAddrHook::SendMsg,
+                            family: ProgramAttachAddressFamily::Ipv6,
+                        } => Ok(CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(index)),
+                        ProgramAttachShape::CgroupSockAddr {
+                            hook:
+                                ProgramAttachSockAddrHook::Bind | ProgramAttachSockAddrHook::GetSockName,
+                            family: ProgramAttachAddressFamily::Ipv6,
+                        } => Ok(CtxStoreTarget::CgroupSockAddrUserIp6Word(index)),
+                        _ => Err(format!("ctx.{field_name} is not available on this hook")),
+                    }
+                }
+                None => Err(format!(
+                    "ctx.{field_name} assignment requires a fixed index, e.g. $ctx.{field_name}.0 = ..."
+                )),
+            },
         }
     }
 
@@ -112,16 +158,23 @@ impl ContextStoreTargetSpec {
             (Self::CgroupSockAddrMsgSrcIp6Word, CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(_)) => {
                 true
             }
+            (Self::CgroupSockAddrLocalIp4Alias, _) => false,
+            (Self::CgroupSockAddrLocalIp6WordAlias, _) => false,
             _ => false,
         }
     }
 }
 
 impl ContextWriteTargetSpec {
-    fn resolve(&self, field_name: &str, index: Option<usize>) -> Result<CtxWriteTarget, String> {
+    fn resolve(
+        &self,
+        spec: &ProgramSpec,
+        field_name: &str,
+        index: Option<usize>,
+    ) -> Result<CtxWriteTarget, String> {
         match self {
             Self::Store(target) => target
-                .resolve(field_name, index)
+                .resolve(spec, field_name, index)
                 .map(CtxWriteTarget::StoreField),
             Self::SockoptOptvalByte => match index {
                 Some(index) => Ok(CtxWriteTarget::SockoptOptvalByte(index)),
@@ -223,7 +276,7 @@ impl ContextWriteSurfaceSpec {
             }
         }
 
-        let write_target = self.target.resolve(self.field_name, index)?;
+        let write_target = self.target.resolve(spec, self.field_name, index)?;
         if let Some(err) = self
             .availability
             .and_then(|availability| availability.error(spec, self.field_name))
@@ -471,12 +524,12 @@ const CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
     ContextWriteSurfaceSpec::store_field(
         "local_ip4",
         CtxField::LocalIp4,
-        ContextStoreTargetSpec::Fixed(CtxStoreTarget::CgroupSockAddrUserIp4),
+        ContextStoreTargetSpec::CgroupSockAddrLocalIp4Alias,
     ),
     ContextWriteSurfaceSpec::store_field(
         "local_ip6",
         CtxField::LocalIp6,
-        ContextStoreTargetSpec::CgroupSockAddrUserIp6Word,
+        ContextStoreTargetSpec::CgroupSockAddrLocalIp6WordAlias,
     ),
     ContextWriteSurfaceSpec::store_field(
         "local_port",

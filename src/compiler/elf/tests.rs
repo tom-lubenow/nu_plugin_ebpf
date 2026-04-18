@@ -3642,27 +3642,37 @@ fn test_probe_context_rejects_wrong_tuple_side_on_sock_addr_hooks() {
         connect
             .ctx_field_access_error(&CtxField::LocalIp4)
             .expect("expected connect4 local tuple access error")
-            .contains("bind4/bind6 and getsockname4/getsockname6")
+            .contains("bind4/bind6, getsockname4/getsockname6, and sendmsg4/sendmsg6")
     );
     assert!(
         bind.ctx_field_access_error(&CtxField::RemoteIp4)
             .expect("expected bind4 remote tuple access error")
-            .contains("connect4/connect6 and getpeername4/getpeername6")
+            .contains("connect4/connect6, getpeername4/getpeername6, sendmsg4/sendmsg6, and recvmsg4/recvmsg6")
     );
 }
 
 #[test]
-fn test_probe_context_rejects_tuple_aliases_on_sendmsg_sock_addr_hooks() {
+fn test_probe_context_allows_tuple_aliases_on_sendmsg_sock_addr_hooks() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:sendmsg4");
+    assert!(ctx.ctx_field_access_error(&CtxField::RemoteIp4).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::RemotePort).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::LocalIp4).is_none());
     assert!(
-        ctx.ctx_field_access_error(&CtxField::RemoteIp4)
-            .expect("expected sendmsg4 remote tuple access error")
-            .contains("connect4/connect6 and getpeername4/getpeername6")
+        ctx.ctx_field_access_error(&CtxField::LocalPort)
+            .expect("expected sendmsg4 local_port access error")
+            .contains("bind4/bind6 and getsockname4/getsockname6")
     );
+}
+
+#[test]
+fn test_probe_context_allows_remote_tuple_aliases_on_recvmsg_sock_addr_hooks() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:recvmsg4");
+    assert!(ctx.ctx_field_access_error(&CtxField::RemoteIp4).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::RemotePort).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::LocalIp4)
-            .expect("expected sendmsg4 local tuple access error")
-            .contains("bind4/bind6 and getsockname4/getsockname6")
+            .expect("expected recvmsg4 local_ip4 access error")
+            .contains("bind4/bind6, getsockname4/getsockname6, and sendmsg4/sendmsg6")
     );
 }
 
@@ -4554,6 +4564,18 @@ fn test_probe_context_resolves_cgroup_sock_addr_ipv6_and_msg_source_store_target
             .expect("cgroup_sock_addr sendmsg4 msg_src_ip4 target should resolve"),
         CtxStoreTarget::CgroupSockAddrMsgSrcIp4
     );
+    assert_eq!(
+        sendmsg4
+            .resolve_ctx_store_target("remote_ip4", None)
+            .expect("cgroup_sock_addr sendmsg4 remote_ip4 target should resolve"),
+        CtxStoreTarget::CgroupSockAddrUserIp4
+    );
+    assert_eq!(
+        sendmsg4
+            .resolve_ctx_store_target("local_ip4", None)
+            .expect("cgroup_sock_addr sendmsg4 local_ip4 target should resolve"),
+        CtxStoreTarget::CgroupSockAddrMsgSrcIp4
+    );
 
     let sendmsg6 = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:sendmsg6");
     assert_eq!(
@@ -4561,6 +4583,20 @@ fn test_probe_context_resolves_cgroup_sock_addr_ipv6_and_msg_source_store_target
             .resolve_ctx_store_target("msg_src_ip6", Some(3))
             .expect("cgroup_sock_addr sendmsg6 msg_src_ip6.3 target should resolve"),
         CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(3)
+    );
+    assert_eq!(
+        sendmsg6
+            .resolve_ctx_store_target("local_ip6", Some(3))
+            .expect("cgroup_sock_addr sendmsg6 local_ip6.3 target should resolve"),
+        CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(3)
+    );
+
+    let recvmsg4 = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:recvmsg4");
+    assert_eq!(
+        recvmsg4
+            .resolve_ctx_store_target("remote_ip4", None)
+            .expect("cgroup_sock_addr recvmsg4 remote_ip4 target should resolve"),
+        CtxStoreTarget::CgroupSockAddrUserIp4
     );
 
     let bind6 = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:bind6");
@@ -4584,7 +4620,7 @@ fn test_probe_context_rejects_unavailable_tuple_alias_store_target_on_sock_addr_
     let err = ctx
         .resolve_ctx_store_target("local_ip4", None)
         .expect_err("cgroup_sock_addr connect4 local_ip4 store target should be rejected");
-    assert!(err.contains("bind4/bind6 and getsockname4/getsockname6"));
+    assert!(err.contains("bind4/bind6, getsockname4/getsockname6, and sendmsg4/sendmsg6"));
 }
 
 #[test]
