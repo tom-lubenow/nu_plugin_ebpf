@@ -94,6 +94,7 @@ ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
 
 - Prefer leading typed `mut` bindings for small private per-program state.
 - For scalar or scalar-record layouts whose size is fixed by the annotation alone, `mut state: ... = null` now zero-initializes that global without dropping to `global-define`.
+- Typed record `mut` initializers may also omit scalar or nested scalar-record fields that should start zeroed, as long as the annotation alone still fixes their honest layout.
 - Use `global-define`, `global-get`, and `global-set` when you need an explicit shared name or a source-order-independent declaration.
   `global-define --type ...` now also accepts a compile-time constant initializer, and typed record initializers may omit fields that should start zeroed.
 - Prefer the first-class packet/socket/message surface (`adjust-packet`, `adjust-message`, `redirect`, `redirect-map`, and `redirect-socket`) over raw `helper-call` forms when the operation matches.

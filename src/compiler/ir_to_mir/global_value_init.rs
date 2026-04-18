@@ -216,7 +216,12 @@ impl<'a> HirToMirLowering<'a> {
             return Self::typed_mutable_global_zero_repr(declared_type);
         }
 
-        if !value.is_subtype_of(declared_type) {
+        let allow_partial_record_initializer = matches!(
+            (declared_type, value),
+            (nu_protocol::Type::Record(_), Value::Record { .. })
+        );
+
+        if !allow_partial_record_initializer && !value.is_subtype_of(declared_type) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "annotated mutable global initializer of type {} does not match declared type {}",
                 value.get_type(),
@@ -307,23 +312,39 @@ impl<'a> HirToMirLowering<'a> {
                     return Ok(None);
                 };
 
+                if let Some((extra_name, _)) = val
+                    .iter()
+                    .find(|(name, _)| !fields.iter().any(|(field_name, _)| field_name == *name))
+                {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "annotated mutable global initializer contains unexpected record field '{}'",
+                        extra_name
+                    )));
+                }
+
                 let mut mir_fields = Vec::with_capacity(fields.len());
                 let mut data = Vec::new();
                 let mut offset = 0usize;
 
                 for (field_name, field_type) in fields.iter() {
-                    let field_value = val.get(field_name).ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(format!(
-                            "annotated mutable global initializer is missing record field '{}'",
-                            field_name
-                        ))
-                    })?;
-                    let Some((field_ty, field_data, field_list_max_len, field_string_slot_len)) =
+                    let field_repr = if let Some(field_value) = val.get(field_name) {
                         Self::typed_mutable_global_repr(field_type, field_value)?
+                    } else {
+                        Self::typed_mutable_global_zero_repr(field_type)?
+                    };
+                    let Some((field_ty, field_data, field_list_max_len, field_string_slot_len)) =
+                        field_repr
                     else {
+                        if val.get(field_name).is_some() {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "record field '{}' of declared type {} is not yet supported in annotated mutable globals",
+                                field_name, field_type
+                            )));
+                        }
+
                         return Err(CompileError::UnsupportedInstruction(format!(
-                            "record field '{}' of declared type {} is not yet supported in annotated mutable globals",
-                            field_name, field_type
+                            "annotated mutable global initializer omitted record field '{}' of declared type {}; plain Nushell type annotations do not carry enough information to zero-initialize that field, so provide a concrete value for '{}', or switch to `global-define --type 'record{{...}}'` if you need an explicit fixed-capacity zero-initialized global",
+                            field_name, field_type, field_name
                         )));
                     };
                     let _ = (field_list_max_len, field_string_slot_len);
@@ -361,7 +382,12 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(None);
         }
 
-        if !value.is_subtype_of(declared_type) {
+        let allow_partial_record_initializer = matches!(
+            (declared_type, value),
+            (nu_protocol::Type::Record(_), Value::Record { .. })
+        );
+
+        if !allow_partial_record_initializer && !value.is_subtype_of(declared_type) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "annotated mutable global initializer of type {} does not match declared type {}",
                 value.get_type(),
@@ -397,13 +423,26 @@ impl<'a> HirToMirLowering<'a> {
                     return Ok(None);
                 };
 
+                if let Some((extra_name, _)) = val
+                    .iter()
+                    .find(|(name, _)| !fields.iter().any(|(field_name, _)| field_name == *name))
+                {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "annotated mutable global initializer contains unexpected record field '{}'",
+                        extra_name
+                    )));
+                }
+
                 let mut field_semantics = Vec::new();
                 for (field_name, field_type) in fields.iter() {
                     let Some(field_value) = val.get(field_name) else {
-                        return Err(CompileError::UnsupportedInstruction(format!(
-                            "annotated mutable global initializer is missing record field '{}'",
-                            field_name
-                        )));
+                        if Self::typed_mutable_global_zero_repr(field_type)?.is_none() {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "annotated mutable global initializer omitted record field '{}' of declared type {}; plain Nushell type annotations do not carry enough information to zero-initialize that field, so provide a concrete value for '{}', or switch to `global-define --type 'record{{...}}'` if you need an explicit fixed-capacity zero-initialized global",
+                                field_name, field_type, field_name
+                            )));
+                        }
+                        continue;
                     };
                     if let Some(field_semantics_value) =
                         Self::annotated_mutable_global_semantics(field_type, field_value)?

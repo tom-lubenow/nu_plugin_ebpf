@@ -3536,6 +3536,62 @@ fn test_lower_leading_annotated_mut_record_uses_declared_field_order() {
 }
 
 #[test]
+fn test_lower_leading_annotated_mut_record_partial_initializer_zero_fills_missing_fields() {
+    let global_var = VarId::new(355);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: global_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let mut initial = Record::new();
+    initial.push("pid", Value::int(7, Span::test_data()));
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Record(Box::new([
+            ("pid".to_string(), Type::Int),
+            (
+                "stats".to_string(),
+                Type::Record(Box::new([
+                    ("hits".to_string(), Type::Int),
+                    ("ok".to_string(), Type::Bool),
+                ])),
+            ),
+        ])),
+        initial_value: Value::record(initial, Span::test_data()),
+    }];
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("partial annotated mutable record initializer should zero-fill fixed-layout fields");
+
+    assert_eq!(result.data_globals.len(), 1);
+    let data = &result.data_globals[0].data;
+    assert_eq!(data.len(), 17);
+    assert_eq!(&data[..8], &7i64.to_le_bytes());
+    assert!(data[8..].iter().all(|byte| *byte == 0));
+}
+
+#[test]
 fn test_lower_leading_annotated_mut_record_null_uses_declared_scalar_layout() {
     let global_var = VarId::new(351);
     let func = HirFunction {
@@ -3602,6 +3658,107 @@ fn test_lower_leading_annotated_mut_record_null_uses_declared_scalar_layout() {
                 } if symbol == "__nu_local_global_351"
             )),
         "expected leading annotated mutable null record to load from its global backing"
+    );
+}
+
+#[test]
+fn test_lower_leading_annotated_mut_record_partial_initializer_rejects_unknown_field() {
+    let global_var = VarId::new(356);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: global_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let mut initial = Record::new();
+    initial.push("pid", Value::int(7, Span::test_data()));
+    initial.push("ok", Value::bool(true, Span::test_data()));
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Record(Box::new([("pid".to_string(), Type::Int)])),
+        initial_value: Value::record(initial, Span::test_data()),
+    }];
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("extra record fields should be rejected for annotated mutable globals");
+
+    assert!(
+        err.to_string().contains("unexpected record field 'ok'"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_leading_annotated_mut_record_partial_initializer_rejects_missing_string_capacity() {
+    let global_var = VarId::new(357);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: global_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let mut initial = Record::new();
+    initial.push("pid", Value::int(7, Span::test_data()));
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Record(Box::new([
+            ("pid".to_string(), Type::Int),
+            ("comm".to_string(), Type::String),
+        ])),
+        initial_value: Value::record(initial, Span::test_data()),
+    }];
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("missing string field without explicit capacity should be rejected");
+
+    assert!(
+        err.to_string().contains("omitted record field 'comm'"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.to_string()
+            .contains("global-define --type 'record{...}'"),
+        "unexpected error: {err}"
     );
 }
 
