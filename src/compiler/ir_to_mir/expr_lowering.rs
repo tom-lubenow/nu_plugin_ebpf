@@ -154,7 +154,13 @@ impl<'a> HirToMirLowering<'a> {
             .get(&vreg)
             .cloned()
             .or_else(|| self.current_type_hints.get(&reg.get()).cloned())
-            .or_else(|| self.get_metadata(reg).and_then(|m| m.field_type.clone()))
+            .or_else(|| {
+                self.get_metadata(reg).and_then(|m| {
+                    m.field_type
+                        .clone()
+                        .or_else(|| Self::metadata_record_layout(m))
+                })
+            })
     }
 
     fn mir_type_is_signed(ty: &MirType) -> bool {

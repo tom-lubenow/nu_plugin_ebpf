@@ -1432,7 +1432,7 @@ impl<'a> HirToMirLowering<'a> {
                     ));
                 }
 
-                let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                let mut input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
                 let input_reg = self
                     .pipeline_input_reg
                     .or(src_dst_had_value.then_some(src_dst));
@@ -1491,7 +1491,7 @@ impl<'a> HirToMirLowering<'a> {
                             "get requires a list value or typed kernel/user pointer input".into(),
                         )
                     })?;
-                    let base_runtime_ty = self
+                    let mut base_runtime_ty = self
                         .typed_value_runtime_type(input_reg, input_vreg)
                         .ok_or_else(|| {
                             CompileError::UnsupportedInstruction(
@@ -1499,6 +1499,20 @@ impl<'a> HirToMirLowering<'a> {
                                     .into(),
                             )
                         })?;
+                    if !matches!(base_runtime_ty, MirType::Ptr { .. })
+                        && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+                    {
+                        input_vreg =
+                            self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+                        base_runtime_ty = self
+                            .typed_value_runtime_type(input_reg, input_vreg)
+                            .ok_or_else(|| {
+                                CompileError::UnsupportedInstruction(
+                                    "get requires a list value or typed kernel/user pointer input"
+                                        .into(),
+                                )
+                            })?;
+                    }
 
                     match &base_runtime_ty {
                         MirType::Ptr { .. } => {

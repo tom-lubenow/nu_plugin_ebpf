@@ -279,18 +279,32 @@ impl<'a> HirToMirLowering<'a> {
 
         if !self.is_context_reg(src_dst) {
             let path_desc = Self::typed_value_path_desc(&path.members);
-            let base_runtime_ty = self
-                .typed_value_runtime_type(src_dst, dst_vreg)
+            let mut source_vreg = dst_vreg;
+            let mut base_runtime_ty = self
+                .typed_value_runtime_type(src_dst, source_vreg)
                 .ok_or_else(|| {
                     CompileError::UnsupportedInstruction(format!(
                         "typed field path '{}' requires type information for the base value",
                         path_desc
                     ))
                 })?;
+            if !matches!(base_runtime_ty, MirType::Ptr { .. })
+                && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+            {
+                source_vreg = self.materialized_metadata_aggregate_vreg(src_dst, source_vreg)?;
+                base_runtime_ty = self
+                    .typed_value_runtime_type(src_dst, source_vreg)
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "typed field path '{}' requires type information for the base value",
+                            path_desc
+                        ))
+                    })?;
+            }
             let base_vreg = self.func.alloc_vreg();
             self.emit(MirInst::Copy {
                 dst: base_vreg,
-                src: MirValue::VReg(dst_vreg),
+                src: MirValue::VReg(source_vreg),
             });
             let projected_semantics = self
                 .get_metadata(src_dst)
@@ -301,13 +315,13 @@ impl<'a> HirToMirLowering<'a> {
             self.vreg_type_hints.insert(
                 base_vreg,
                 self.vreg_type_hints
-                    .get(&dst_vreg)
+                    .get(&source_vreg)
                     .cloned()
                     .unwrap_or_else(|| base_runtime_ty.clone()),
             );
             let projected_ty = self.lower_typed_value_projection(
                 src_dst,
-                dst_vreg,
+                source_vreg,
                 base_vreg,
                 &base_runtime_ty,
                 &path.members,
