@@ -1465,7 +1465,7 @@ fn test_validate_required_struct_ops_value_fields_allows_builtin_idle_per_node_w
 }
 
 #[test]
-fn test_validate_sched_ext_callback_kfunc_requirements_rejects_builtin_idle_kfuncs_when_update_idle_disables_builtin_idle()
+fn test_validate_struct_ops_callback_kfunc_requirements_rejects_builtin_idle_kfuncs_when_update_idle_disables_builtin_idle()
  {
     let mut body = Record::new();
     body.push("name", Value::string("nu.demo_1", Span::test_data()));
@@ -1480,7 +1480,8 @@ fn test_validate_sched_ext_callback_kfunc_requirements_rejects_builtin_idle_kfun
         "scx_bpf_pick_idle_cpu_node",
     ] {
         let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &[kfunc]);
-        let err = super::validate_sched_ext_callback_kfunc_requirements(
+        let err = super::validate_struct_ops_callback_kfunc_requirements(
+            "sched_ext_ops",
             &body,
             &callback_kfuncs,
             Span::test_data(),
@@ -1497,7 +1498,7 @@ fn test_validate_sched_ext_callback_kfunc_requirements_rejects_builtin_idle_kfun
 }
 
 #[test]
-fn test_validate_sched_ext_callback_kfunc_requirements_allows_builtin_idle_kfuncs_with_keep_builtin_idle()
+fn test_validate_struct_ops_callback_kfunc_requirements_allows_builtin_idle_kfuncs_with_keep_builtin_idle()
  {
     let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
         return;
@@ -1522,7 +1523,8 @@ fn test_validate_sched_ext_callback_kfunc_requirements_allows_builtin_idle_kfunc
         "scx_bpf_pick_idle_cpu",
     ] {
         let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &[kfunc]);
-        super::validate_sched_ext_callback_kfunc_requirements(
+        super::validate_struct_ops_callback_kfunc_requirements(
+            "sched_ext_ops",
             &body,
             &callback_kfuncs,
             Span::test_data(),
@@ -1532,7 +1534,7 @@ fn test_validate_sched_ext_callback_kfunc_requirements_allows_builtin_idle_kfunc
 }
 
 #[test]
-fn test_validate_sched_ext_callback_kfunc_requirements_rejects_pick_idle_cpu_node_without_per_node_flag()
+fn test_validate_struct_ops_callback_kfunc_requirements_rejects_pick_idle_cpu_node_without_per_node_flag()
  {
     let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
         return;
@@ -1549,7 +1551,8 @@ fn test_validate_sched_ext_callback_kfunc_requirements_rejects_pick_idle_cpu_nod
     );
 
     let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &["scx_bpf_pick_idle_cpu_node"]);
-    let err = super::validate_sched_ext_callback_kfunc_requirements(
+    let err = super::validate_struct_ops_callback_kfunc_requirements(
+        "sched_ext_ops",
         &body,
         &callback_kfuncs,
         Span::test_data(),
@@ -1563,7 +1566,7 @@ fn test_validate_sched_ext_callback_kfunc_requirements_rejects_pick_idle_cpu_nod
 }
 
 #[test]
-fn test_validate_sched_ext_callback_kfunc_requirements_rejects_pick_idle_cpu_with_per_node_flag() {
+fn test_validate_struct_ops_callback_kfunc_requirements_rejects_pick_idle_cpu_with_per_node_flag() {
     let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
         return;
     };
@@ -1583,7 +1586,8 @@ fn test_validate_sched_ext_callback_kfunc_requirements_rejects_pick_idle_cpu_wit
     );
 
     let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &["scx_bpf_pick_idle_cpu"]);
-    let err = super::validate_sched_ext_callback_kfunc_requirements(
+    let err = super::validate_struct_ops_callback_kfunc_requirements(
+        "sched_ext_ops",
         &body,
         &callback_kfuncs,
         Span::test_data(),
@@ -1597,7 +1601,7 @@ fn test_validate_sched_ext_callback_kfunc_requirements_rejects_pick_idle_cpu_wit
 }
 
 #[test]
-fn test_validate_sched_ext_callback_kfunc_requirements_rejects_pick_any_cpu_with_per_node_flag() {
+fn test_validate_struct_ops_callback_kfunc_requirements_rejects_pick_any_cpu_with_per_node_flag() {
     let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
         return;
     };
@@ -1617,7 +1621,8 @@ fn test_validate_sched_ext_callback_kfunc_requirements_rejects_pick_any_cpu_with
     );
 
     let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &["scx_bpf_pick_any_cpu"]);
-    let err = super::validate_sched_ext_callback_kfunc_requirements(
+    let err = super::validate_struct_ops_callback_kfunc_requirements(
+        "sched_ext_ops",
         &body,
         &callback_kfuncs,
         Span::test_data(),
@@ -1631,7 +1636,7 @@ fn test_validate_sched_ext_callback_kfunc_requirements_rejects_pick_any_cpu_with
 }
 
 #[test]
-fn test_validate_sched_ext_callback_kfunc_requirements_allows_pick_idle_cpu_node_with_per_node_flag()
+fn test_validate_struct_ops_callback_kfunc_requirements_allows_pick_idle_cpu_node_with_per_node_flag()
  {
     let Some(keep_builtin_idle) = sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE") else {
         return;
@@ -1652,12 +1657,30 @@ fn test_validate_sched_ext_callback_kfunc_requirements_allows_pick_idle_cpu_node
     );
 
     let callback_kfuncs = sched_ext_callback_kfuncs("select_cpu", &["scx_bpf_pick_idle_cpu_node"]);
-    super::validate_sched_ext_callback_kfunc_requirements(
+    super::validate_struct_ops_callback_kfunc_requirements(
+        "sched_ext_ops",
         &body,
         &callback_kfuncs,
         Span::test_data(),
     )
     .expect("pick_idle_cpu_node should be allowed when per-node builtin idle masks are enabled");
+}
+
+#[test]
+fn test_validate_struct_ops_callback_kfunc_requirements_is_noop_for_non_sched_ext_families() {
+    let mut body = Record::new();
+    body.push("name", Value::string("reno", Span::test_data()));
+    let callback_kfuncs = sched_ext_callback_kfuncs("cong_control", &["scx_bpf_pick_idle_cpu"]);
+
+    super::validate_struct_ops_callback_kfunc_requirements(
+        "tcp_congestion_ops",
+        &body,
+        &callback_kfuncs,
+        Span::test_data(),
+    )
+    .expect(
+        "non-sched_ext struct_ops families should ignore sched_ext-specific callback-kfunc policy",
+    );
 }
 
 #[test]

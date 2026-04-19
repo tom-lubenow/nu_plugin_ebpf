@@ -99,13 +99,52 @@ pub(super) enum StructOpsTopLevelFieldKind {
     Value,
 }
 
-fn struct_ops_live_attach_risk(value_type_name: &str) -> Option<&'static str> {
-    match value_type_name {
-        "sched_ext_ops" => Some(
-            "live sched_ext registration can disrupt host scheduling; prefer --dry-run on the host and use a VM or disposable environment for real loads",
-        ),
-        _ => None,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StructOpsFamily {
+    Generic,
+    SchedExt,
+    TcpCongestion,
+}
+
+impl StructOpsFamily {
+    fn from_value_type_name(value_type_name: &str) -> Self {
+        match value_type_name {
+            "sched_ext_ops" => Self::SchedExt,
+            "tcp_congestion_ops" => Self::TcpCongestion,
+            _ => Self::Generic,
+        }
     }
+
+    fn live_attach_risk(self) -> Option<&'static str> {
+        match self {
+            Self::SchedExt => Some(
+                "live sched_ext registration can disrupt host scheduling; prefer --dry-run on the host and use a VM or disposable environment for real loads",
+            ),
+            Self::Generic | Self::TcpCongestion => None,
+        }
+    }
+
+    fn required_callbacks(self) -> &'static [&'static str] {
+        match self {
+            Self::TcpCongestion => &["ssthresh", "cong_avoid", "undo_cwnd"],
+            Self::Generic | Self::SchedExt => &[],
+        }
+    }
+
+    fn missing_callbacks_help(self) -> &'static str {
+        match self {
+            Self::TcpCongestion => {
+                "tcp_congestion_ops requires closure members for ssthresh, cong_avoid, and undo_cwnd, for example { ssthresh: {|ctx| 2 }, undo_cwnd: {|ctx| 2 }, cong_avoid: {|ctx| 0 } }"
+            }
+            Self::Generic | Self::SchedExt => {
+                "Provide closures for the required struct_ops callback members"
+            }
+        }
+    }
+}
+
+fn struct_ops_live_attach_risk(value_type_name: &str) -> Option<&'static str> {
+    StructOpsFamily::from_value_type_name(value_type_name).live_attach_risk()
 }
 
 pub(super) fn validate_struct_ops_attach_safety(
@@ -199,19 +238,14 @@ pub(super) fn validate_struct_ops_top_level_field_kind(
     }
 }
 
-fn required_struct_ops_callbacks(value_type_name: &str) -> &'static [&'static str] {
-    match value_type_name {
-        "tcp_congestion_ops" => &["ssthresh", "cong_avoid", "undo_cwnd"],
-        _ => &[],
-    }
-}
-
 pub(super) fn validate_required_struct_ops_callbacks(
     value_type_name: &str,
     callback_fields: &HashSet<String>,
     span: Span,
 ) -> Result<(), LabeledError> {
-    let missing: Vec<&'static str> = required_struct_ops_callbacks(value_type_name)
+    let family = StructOpsFamily::from_value_type_name(value_type_name);
+    let missing: Vec<&'static str> = family
+        .required_callbacks()
         .iter()
         .copied()
         .filter(|field_name| !callback_fields.contains(*field_name))
@@ -220,12 +254,6 @@ pub(super) fn validate_required_struct_ops_callbacks(
         return Ok(());
     }
 
-    let help = match value_type_name {
-        "tcp_congestion_ops" => {
-            "tcp_congestion_ops requires closure members for ssthresh, cong_avoid, and undo_cwnd, for example { ssthresh: {|ctx| 2 }, undo_cwnd: {|ctx| 2 }, cong_avoid: {|ctx| 0 } }"
-        }
-        _ => "Provide closures for the required struct_ops callback members",
-    };
     Err(LabeledError::new("Invalid struct_ops object")
         .with_label(
             format!(
@@ -235,7 +263,7 @@ pub(super) fn validate_required_struct_ops_callbacks(
             ),
             span,
         )
-        .with_help(help))
+        .with_help(family.missing_callbacks_help()))
 }
 
 pub(super) fn resolve_struct_ops_char_array_field_capacity(
@@ -475,8 +503,8 @@ pub(super) fn validate_required_struct_ops_value_fields(
     body: &Record,
     span: Span,
 ) -> Result<(), LabeledError> {
-    match value_type_name {
-        "tcp_congestion_ops" => {
+    match StructOpsFamily::from_value_type_name(value_type_name) {
+        StructOpsFamily::TcpCongestion => {
             let Some(name_value) = body.get("name") else {
                 return Err(LabeledError::new("Invalid struct_ops object")
                     .with_label(
@@ -535,7 +563,7 @@ pub(super) fn validate_required_struct_ops_value_fields(
 
             Ok(())
         }
-        "sched_ext_ops" => {
+        StructOpsFamily::SchedExt => {
             let Some(name_value) = body.get("name") else {
                 return Err(LabeledError::new("Invalid struct_ops object")
                     .with_label(
@@ -787,11 +815,11 @@ pub(super) fn validate_required_struct_ops_value_fields(
 
             Ok(())
         }
-        _ => Ok(()),
+        StructOpsFamily::Generic => Ok(()),
     }
 }
 
-pub(super) fn validate_sched_ext_callback_kfunc_requirements(
+fn validate_sched_ext_callback_kfunc_requirements(
     body: &Record,
     callback_kfuncs: &HashMap<String, HashSet<String>>,
     span: Span,
@@ -873,6 +901,20 @@ pub(super) fn validate_sched_ext_callback_kfunc_requirements(
     }
 
     Ok(())
+}
+
+pub(super) fn validate_struct_ops_callback_kfunc_requirements(
+    value_type_name: &str,
+    body: &Record,
+    callback_kfuncs: &HashMap<String, HashSet<String>>,
+    span: Span,
+) -> Result<(), LabeledError> {
+    match StructOpsFamily::from_value_type_name(value_type_name) {
+        StructOpsFamily::SchedExt => {
+            validate_sched_ext_callback_kfunc_requirements(body, callback_kfuncs, span)
+        }
+        StructOpsFamily::Generic | StructOpsFamily::TcpCongestion => Ok(()),
+    }
 }
 
 pub(super) fn sanitize_struct_ops_component(component: &str) -> String {

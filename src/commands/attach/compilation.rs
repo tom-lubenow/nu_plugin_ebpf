@@ -16,7 +16,7 @@ use nu_protocol::{
 use super::struct_ops::{
     StructOpsTopLevelFieldKind, apply_struct_ops_value_field, default_struct_ops_object_name,
     sanitize_struct_ops_component, validate_required_struct_ops_callbacks,
-    validate_required_struct_ops_value_fields, validate_sched_ext_callback_kfunc_requirements,
+    validate_required_struct_ops_value_fields, validate_struct_ops_callback_kfunc_requirements,
     validate_struct_ops_top_level_field_kind,
 };
 use crate::compiler::mir::{MirFunction, MirInst, MirProgram};
@@ -1195,9 +1195,12 @@ pub(super) fn compile_struct_ops_object(
         }
     }
 
-    if value_type_name == "sched_ext_ops" {
-        validate_sched_ext_callback_kfunc_requirements(body, &callback_kfuncs, call_head)?;
-    }
+    validate_struct_ops_callback_kfunc_requirements(
+        value_type_name,
+        body,
+        &callback_kfuncs,
+        call_head,
+    )?;
 
     validate_required_struct_ops_callbacks(value_type_name, &callback_fields, call_head)?;
 

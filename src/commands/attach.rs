@@ -31,7 +31,7 @@ use self::struct_ops::validate_struct_ops_attach_safety;
 use self::struct_ops::{
     StructOpsTopLevelFieldKind, apply_struct_ops_value_field, default_struct_ops_object_name,
     validate_required_struct_ops_callbacks, validate_required_struct_ops_value_fields,
-    validate_sched_ext_callback_kfunc_requirements, validate_struct_ops_top_level_field_kind,
+    validate_struct_ops_callback_kfunc_requirements, validate_struct_ops_top_level_field_kind,
 };
 
 #[derive(Clone)]
