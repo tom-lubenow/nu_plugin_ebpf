@@ -1,10 +1,231 @@
 use super::user_functions::UserFunctionCallArg;
 use super::*;
+
+#[derive(Debug, Clone, Copy)]
+struct SharedInlinedStringReturn {
+    slot: StackSlotId,
+    len_vreg: VReg,
+    slot_len: usize,
+    content_cap: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SharedInlinedListReturn {
+    slot: StackSlotId,
+    max_len: usize,
+}
+
 impl<'a> HirToMirLowering<'a> {
     fn captured_value(&self, var_id: nu_protocol::VarId) -> Option<&Value> {
         self.captures
             .iter()
             .find_map(|(captured_var_id, value)| (*captured_var_id == var_id).then_some(value))
+    }
+
+    fn normalize_inlined_string_return(
+        &mut self,
+        dst_vreg: VReg,
+        meta: &RegMetadata,
+        shared_return: &mut Option<SharedInlinedStringReturn>,
+    ) -> Result<(VReg, RegMetadata), CompileError> {
+        let src_slot = meta.string_slot.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "inlined string return requires a tracked string slot".into(),
+            )
+        })?;
+        let src_len_vreg = meta.string_len_vreg.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "inlined string return requires a tracked string length".into(),
+            )
+        })?;
+        let src_slot_len = self.stack_slot_size(src_slot).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "string slot not found during inlined return normalization".into(),
+            )
+        })?;
+        let src_content_cap = meta
+            .string_len_bound
+            .unwrap_or(src_slot_len.saturating_sub(1));
+
+        let shared = if let Some(shared) = shared_return {
+            if src_slot_len > shared.slot_len || src_content_cap > shared.content_cap {
+                return Err(CompileError::UnsupportedInstruction(
+                    "multiblock inlined string returns currently require compatible capacities"
+                        .into(),
+                ));
+            }
+            *shared
+        } else {
+            let slot = self
+                .func
+                .alloc_stack_slot(src_slot_len, 8, StackSlotKind::StringBuffer);
+            self.record_stack_slot_type(
+                slot,
+                MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: src_slot_len,
+                },
+            );
+            let len_vreg = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(len_vreg, MirType::U64);
+            let shared = SharedInlinedStringReturn {
+                slot,
+                len_vreg,
+                slot_len: src_slot_len,
+                content_cap: src_content_cap,
+            };
+            *shared_return = Some(shared);
+            shared
+        };
+
+        self.emit(MirInst::Copy {
+            dst: dst_vreg,
+            src: MirValue::StackSlot(shared.slot),
+        });
+        self.vreg_type_hints.insert(
+            dst_vreg,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: shared.slot_len,
+                }),
+                address_space: crate::compiler::mir::AddressSpace::Stack,
+            },
+        );
+        self.emit(MirInst::Copy {
+            dst: shared.len_vreg,
+            src: MirValue::VReg(src_len_vreg),
+        });
+
+        let src_ptr = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: src_ptr,
+            src: MirValue::StackSlot(src_slot),
+        });
+        self.vreg_type_hints.insert(
+            src_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: src_slot_len,
+                }),
+                address_space: crate::compiler::mir::AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_to_slot_copy(shared.slot, 0, src_ptr, 0, src_slot_len)?;
+        if src_slot_len < shared.slot_len {
+            let shared_ptr = self.func.alloc_vreg();
+            self.emit(MirInst::Copy {
+                dst: shared_ptr,
+                src: MirValue::StackSlot(shared.slot),
+            });
+            self.vreg_type_hints.insert(
+                shared_ptr,
+                MirType::Ptr {
+                    pointee: Box::new(MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len: shared.slot_len,
+                    }),
+                    address_space: crate::compiler::mir::AddressSpace::Stack,
+                },
+            );
+            self.emit_ptr_zero(shared_ptr, src_slot_len, shared.slot_len - src_slot_len)?;
+        }
+
+        Ok((
+            dst_vreg,
+            RegMetadata {
+                string_slot: Some(shared.slot),
+                string_len_vreg: Some(shared.len_vreg),
+                string_len_bound: Some(shared.content_cap),
+                field_type: Some(MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: shared.slot_len,
+                }),
+                annotated_semantics: meta.annotated_semantics.clone(),
+                ..Default::default()
+            },
+        ))
+    }
+
+    fn normalize_inlined_list_return(
+        &mut self,
+        dst_vreg: VReg,
+        meta: &RegMetadata,
+        shared_return: &mut Option<SharedInlinedListReturn>,
+    ) -> Result<(VReg, RegMetadata), CompileError> {
+        let (src_slot, src_max_len) = meta.list_buffer.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "inlined list return requires a tracked list buffer".into(),
+            )
+        })?;
+        let src_buffer_size = 8 + (src_max_len * 8);
+
+        let shared = if let Some(shared) = shared_return {
+            if src_max_len > shared.max_len {
+                return Err(CompileError::UnsupportedInstruction(
+                    "multiblock inlined list returns currently require compatible capacities"
+                        .into(),
+                ));
+            }
+            *shared
+        } else {
+            let slot = self
+                .func
+                .alloc_stack_slot(src_buffer_size, 8, StackSlotKind::ListBuffer);
+            self.record_list_buffer_slot_type(slot, src_max_len);
+            let shared = SharedInlinedListReturn {
+                slot,
+                max_len: src_max_len,
+            };
+            *shared_return = Some(shared);
+            shared
+        };
+
+        let src_ptr = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: src_ptr,
+            src: MirValue::StackSlot(src_slot),
+        });
+        self.vreg_type_hints.insert(
+            src_ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Array {
+                    elem: Box::new(MirType::I64),
+                    len: src_max_len.saturating_add(1),
+                }),
+                address_space: crate::compiler::mir::AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_to_slot_copy(shared.slot, 0, src_ptr, 0, src_buffer_size)?;
+
+        self.emit(MirInst::Copy {
+            dst: dst_vreg,
+            src: MirValue::StackSlot(shared.slot),
+        });
+        self.vreg_type_hints.insert(
+            dst_vreg,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Array {
+                    elem: Box::new(MirType::I64),
+                    len: shared.max_len.saturating_add(1),
+                }),
+                address_space: crate::compiler::mir::AddressSpace::Stack,
+            },
+        );
+
+        Ok((
+            dst_vreg,
+            RegMetadata {
+                list_buffer: Some((shared.slot, shared.max_len)),
+                field_type: Some(MirType::Array {
+                    elem: Box::new(MirType::I64),
+                    len: shared.max_len.saturating_add(1),
+                }),
+                annotated_semantics: meta.annotated_semantics.clone(),
+                ..Default::default()
+            },
+        ))
     }
 
     fn lower_inlined_user_function_return(
@@ -13,6 +234,8 @@ impl<'a> HirToMirLowering<'a> {
         dst_vreg: VReg,
         continuation_block: BlockId,
         materialize_record_return: bool,
+        shared_string_return: &mut Option<SharedInlinedStringReturn>,
+        shared_list_return: &mut Option<SharedInlinedListReturn>,
     ) -> Result<(Option<RegMetadata>, Option<MirType>), CompileError> {
         let mut result_vreg = self.reg_map.get(&src.get()).copied();
         let mut result_meta = self.get_metadata(src).cloned();
@@ -24,14 +247,25 @@ impl<'a> HirToMirLowering<'a> {
             meta.source_var = None;
         }
 
-        if materialize_record_return
-            && let Some(meta) = result_meta.as_ref()
-            && !meta.record_fields.is_empty()
-            && let Some((materialized_vreg, materialized_meta)) =
-                self.materialize_metadata_record_value(meta)?
-        {
-            result_vreg = Some(materialized_vreg);
-            result_meta = Some(materialized_meta);
+        if let Some(meta) = result_meta.as_ref() {
+            if meta.string_slot.is_some() {
+                let (normalized_vreg, normalized_meta) =
+                    self.normalize_inlined_string_return(dst_vreg, meta, shared_string_return)?;
+                result_vreg = Some(normalized_vreg);
+                result_meta = Some(normalized_meta);
+            } else if meta.list_buffer.is_some() {
+                let (normalized_vreg, normalized_meta) =
+                    self.normalize_inlined_list_return(dst_vreg, meta, shared_list_return)?;
+                result_vreg = Some(normalized_vreg);
+                result_meta = Some(normalized_meta);
+            } else if materialize_record_return
+                && !meta.record_fields.is_empty()
+                && let Some((materialized_vreg, materialized_meta)) =
+                    self.materialize_metadata_record_value(meta)?
+            {
+                result_vreg = Some(materialized_vreg);
+                result_meta = Some(materialized_meta);
+            }
         }
 
         let result_type_hint = result_vreg
@@ -194,7 +428,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let mut result_meta = None;
         let mut result_type_hint = None;
-        let mut return_count = 0usize;
+        let mut saw_multiple_returns = false;
 
         if hir.blocks.len() == 1
             && let [block] = hir.blocks.as_slice()
@@ -227,11 +461,13 @@ impl<'a> HirToMirLowering<'a> {
                     src: MirValue::VReg(result_vreg),
                 });
             }
-            return_count = 1;
         } else {
             let continuation_block = self.func.alloc_block();
             let entry_block = self.current_block;
             let materialize_record_return = true;
+            let mut shared_string_return = None;
+            let mut shared_list_return = None;
+            let mut saw_return = false;
 
             self.hir_block_map = HashMap::new();
             self.loop_contexts = Vec::new();
@@ -270,9 +506,13 @@ impl<'a> HirToMirLowering<'a> {
                         dst_vreg,
                         continuation_block,
                         materialize_record_return,
+                        &mut shared_string_return,
+                        &mut shared_list_return,
                     )?;
-                    return_count += 1;
-                    if return_count == 1 {
+                    if saw_return {
+                        saw_multiple_returns = true;
+                    } else {
+                        saw_return = true;
                         result_meta = inline_meta;
                         result_type_hint = inline_type_hint;
                     }
@@ -295,9 +535,13 @@ impl<'a> HirToMirLowering<'a> {
                                 dst_vreg,
                                 continuation_block,
                                 materialize_record_return,
+                                &mut shared_string_return,
+                                &mut shared_list_return,
                             )?;
-                        return_count += 1;
-                        if return_count == 1 {
+                        if saw_return {
+                            saw_multiple_returns = true;
+                        } else {
+                            saw_return = true;
                             result_meta = inline_meta;
                             result_type_hint = inline_type_hint;
                         }
@@ -318,9 +562,13 @@ impl<'a> HirToMirLowering<'a> {
                                 dst_vreg,
                                 continuation_block,
                                 materialize_record_return,
+                                &mut shared_string_return,
+                                &mut shared_list_return,
                             )?;
-                        return_count += 1;
-                        if return_count == 1 {
+                        if saw_return {
+                            saw_multiple_returns = true;
+                        } else {
+                            saw_return = true;
                             result_meta = inline_meta;
                             result_type_hint = inline_type_hint;
                         }
@@ -348,9 +596,13 @@ impl<'a> HirToMirLowering<'a> {
                                 dst_vreg,
                                 continuation_block,
                                 materialize_record_return,
+                                &mut shared_string_return,
+                                &mut shared_list_return,
                             )?;
-                        return_count += 1;
-                        if return_count == 1 {
+                        if saw_return {
+                            saw_multiple_returns = true;
+                        } else {
+                            saw_return = true;
                             result_meta = inline_meta;
                             result_type_hint = inline_type_hint;
                         }
@@ -372,7 +624,10 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             self.current_block = continuation_block;
-            if return_count > 1 {
+            if saw_multiple_returns
+                && shared_string_return.is_none()
+                && shared_list_return.is_none()
+            {
                 result_meta = None;
                 result_type_hint = None;
             }
@@ -392,13 +647,11 @@ impl<'a> HirToMirLowering<'a> {
 
         self.reg_map.insert(src_dst.get(), dst_vreg);
         self.reg_metadata.remove(&src_dst.get());
-        if return_count <= 1 {
-            if let Some(meta) = result_meta {
-                self.reg_metadata.insert(src_dst.get(), meta);
-            }
-            if let Some(ty) = result_type_hint {
-                self.vreg_type_hints.insert(dst_vreg, ty);
-            }
+        if let Some(ty) = result_type_hint {
+            self.vreg_type_hints.insert(dst_vreg, ty);
+        }
+        if let Some(meta) = result_meta {
+            self.reg_metadata.insert(src_dst.get(), meta);
         } else if let CurrentReturnSeedState::Known(Some(seed)) = inline_return_seed_state {
             if let Some(type_hint) = seed.type_hint.clone() {
                 self.vreg_type_hints.insert(dst_vreg, type_hint);

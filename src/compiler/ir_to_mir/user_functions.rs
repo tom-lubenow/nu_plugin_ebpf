@@ -449,41 +449,22 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     fn should_inline_user_function_for_abi(hir: &HirFunction) -> bool {
-        let has_direct_single_block_return = hir.blocks.len() == 1
-            && matches!(hir.blocks[0].terminator, HirTerminator::Return { .. });
-
-        let has_record_builder = hir.blocks.iter().any(|block| {
+        let has_aggregate_builder = hir.blocks.iter().any(|block| {
             block.stmts.iter().any(|stmt| {
                 matches!(
                     stmt,
                     HirStmt::RecordInsert { .. }
                         | HirStmt::UpsertCellPath { .. }
+                        | HirStmt::StringAppend { .. }
+                        | HirStmt::ListPush { .. }
                         | HirStmt::LoadLiteral {
-                            lit: HirLiteral::Record { .. },
+                            lit: HirLiteral::Record { .. } | HirLiteral::List { .. },
                             ..
                         }
                 )
             })
         });
-        if has_record_builder {
-            return true;
-        }
-
-        if !has_direct_single_block_return {
-            return false;
-        }
-
-        hir.blocks[0].stmts.iter().any(|stmt| {
-            matches!(
-                stmt,
-                HirStmt::StringAppend { .. }
-                    | HirStmt::ListPush { .. }
-                    | HirStmt::LoadLiteral {
-                        lit: HirLiteral::List { .. },
-                        ..
-                    }
-            )
-        })
+        has_aggregate_builder
     }
 
     pub(super) fn subfunction_params(&mut self, decl_id: DeclId, func: &HirFunction) -> Vec<VarId> {
