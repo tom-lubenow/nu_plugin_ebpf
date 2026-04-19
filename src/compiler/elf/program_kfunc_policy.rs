@@ -1,4 +1,4 @@
-use crate::program_spec::{ProgramSpec, struct_ops_callback_is_sleepable};
+use crate::program_spec::{ProgramAttachShape, ProgramSpec};
 
 const SCHED_EXT_DISPATCH_ONLY_KFUNCS: &[&str] = &[
     "scx_bpf_dispatch_nr_slots",
@@ -47,21 +47,17 @@ fn sched_ext_kfunc_allowed_callbacks(kfunc: &str) -> Option<&'static [&'static s
 
 impl ProgramSpec {
     pub(crate) fn kfunc_call_error(&self, kfunc: &str) -> Option<String> {
-        let ProgramSpec::StructOpsCallback {
-            value_type_name,
-            callback_name,
-        } = self
-        else {
+        let ProgramAttachShape::StructOpsCallback { sleepable } = self.attach_shape() else {
             return None;
         };
+        let value_type_name = self.struct_ops_value_type_name()?;
+        let callback_name = self.struct_ops_callback_name()?;
 
         if value_type_name != "sched_ext_ops" {
             return None;
         }
 
-        if kfunc == "scx_bpf_create_dsq"
-            && !struct_ops_callback_is_sleepable(value_type_name, callback_name)
-        {
+        if kfunc == "scx_bpf_create_dsq" && !sleepable {
             return Some(format!(
                 "kfunc '{}' is only valid in sleepable sched_ext_ops callbacks, not sched_ext_ops.{}",
                 kfunc, callback_name
@@ -69,7 +65,7 @@ impl ProgramSpec {
         }
 
         let allowed_callbacks = sched_ext_kfunc_allowed_callbacks(kfunc)?;
-        if allowed_callbacks.contains(&callback_name.as_str()) {
+        if allowed_callbacks.contains(&callback_name) {
             return None;
         }
 

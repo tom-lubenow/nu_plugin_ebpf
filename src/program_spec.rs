@@ -1299,6 +1299,9 @@ pub(crate) enum ProgramAttachShape {
         family: ProgramAttachAddressFamily,
         hook: ProgramAttachSockAddrHook,
     },
+    StructOpsCallback {
+        sleepable: bool,
+    },
 }
 
 impl ProgramSpec {
@@ -1501,6 +1504,13 @@ impl ProgramSpec {
         }
     }
 
+    pub(crate) fn struct_ops_callback_name(&self) -> Option<&str> {
+        match self {
+            ProgramSpec::StructOpsCallback { callback_name, .. } => Some(callback_name),
+            _ => None,
+        }
+    }
+
     pub fn section_name(&self) -> String {
         match self {
             ProgramSpec::CgroupSkb { target } => target.section_name(),
@@ -1546,6 +1556,12 @@ impl ProgramSpec {
                     ProgramAttachAddressFamily::Ipv6
                 },
                 hook: target.hook_kind(),
+            },
+            ProgramSpec::StructOpsCallback {
+                value_type_name,
+                callback_name,
+            } => ProgramAttachShape::StructOpsCallback {
+                sleepable: struct_ops_callback_is_sleepable(value_type_name, callback_name),
             },
             _ => ProgramAttachShape::Generic,
         }
@@ -1629,6 +1645,14 @@ mod tests {
             "/sys/fs/cgroup:sendmsg6",
         )
         .expect("cgroup_sock_addr sendmsg6 target should parse");
+        let sched_ext_select_cpu = ProgramSpec::StructOpsCallback {
+            value_type_name: "sched_ext_ops".to_string(),
+            callback_name: "select_cpu".to_string(),
+        };
+        let sched_ext_init = ProgramSpec::StructOpsCallback {
+            value_type_name: "sched_ext_ops".to_string(),
+            callback_name: "init".to_string(),
+        };
 
         assert_eq!(tc.attach_shape(), ProgramAttachShape::Tc { ingress: true });
         assert_eq!(
@@ -1652,6 +1676,14 @@ mod tests {
                 family: ProgramAttachAddressFamily::Ipv6,
                 hook: ProgramAttachSockAddrHook::SendMsg,
             }
+        );
+        assert_eq!(
+            sched_ext_select_cpu.attach_shape(),
+            ProgramAttachShape::StructOpsCallback { sleepable: false }
+        );
+        assert_eq!(
+            sched_ext_init.attach_shape(),
+            ProgramAttachShape::StructOpsCallback { sleepable: true }
         );
     }
 
