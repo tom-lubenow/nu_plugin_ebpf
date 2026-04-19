@@ -354,6 +354,14 @@ fn test_program_type_return_action_aliases_cover_const_families() {
         EbpfProgramType::CgroupSock.return_action_alias("reject"),
         Some(ProgramReturnAlias::Const(0))
     );
+    assert_eq!(
+        EbpfProgramType::SkMsg.return_action_alias("allow"),
+        Some(ProgramReturnAlias::Const(1))
+    );
+    assert_eq!(
+        EbpfProgramType::SkSkbParser.return_action_alias("allow"),
+        None
+    );
     assert_eq!(EbpfProgramType::Kprobe.return_action_alias("pass"), None);
 }
 

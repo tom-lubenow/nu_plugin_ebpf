@@ -1,30 +1,10 @@
 use super::{EbpfProgramType, ProgramReturnAlias};
 
-type ReturnActionAliasSurfaceSpec = (
-    &'static [EbpfProgramType],
-    &'static [ReturnActionAliasEntry],
-);
-
 #[derive(Debug, Clone, Copy)]
 struct ReturnActionAliasEntry {
     alias: &'static str,
     value: ProgramReturnAlias,
 }
-
-const XDP_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Xdp];
-const SOCKET_FILTER_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SocketFilter];
-const TC_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Tc];
-const ALLOW_DENY_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::CgroupSkb,
-    EbpfProgramType::CgroupDevice,
-    EbpfProgramType::CgroupSock,
-    EbpfProgramType::CgroupSysctl,
-    EbpfProgramType::CgroupSockopt,
-    EbpfProgramType::CgroupSockAddr,
-    EbpfProgramType::SkLookup,
-    EbpfProgramType::SkSkb,
-    EbpfProgramType::SkMsg,
-];
 
 const XDP_RETURN_ALIAS_ENTRIES: &[ReturnActionAliasEntry] = &[
     ReturnActionAliasEntry {
@@ -162,29 +142,28 @@ const ALLOW_DENY_RETURN_ALIAS_ENTRIES: &[ReturnActionAliasEntry] = &[
     },
 ];
 
-const RETURN_ACTION_ALIAS_SURFACES: &[ReturnActionAliasSurfaceSpec] = &[
-    (XDP_PROGRAMS, XDP_RETURN_ALIAS_ENTRIES),
-    (SOCKET_FILTER_PROGRAMS, SOCKET_FILTER_RETURN_ALIAS_ENTRIES),
-    (TC_PROGRAMS, TC_RETURN_ALIAS_ENTRIES),
-    (
-        ALLOW_DENY_RETURN_ALIAS_PROGRAMS,
-        ALLOW_DENY_RETURN_ALIAS_ENTRIES,
-    ),
-];
-
-fn return_action_alias_entries(
-    program_type: EbpfProgramType,
-) -> Option<&'static [ReturnActionAliasEntry]> {
-    RETURN_ACTION_ALIAS_SURFACES
-        .iter()
-        .find(|(allowed_programs, _)| allowed_programs.contains(&program_type))
-        .map(|(_, entries)| *entries)
-}
-
 impl EbpfProgramType {
+    fn return_action_alias_entries(&self) -> Option<&'static [ReturnActionAliasEntry]> {
+        match self {
+            EbpfProgramType::Xdp => Some(XDP_RETURN_ALIAS_ENTRIES),
+            EbpfProgramType::SocketFilter => Some(SOCKET_FILTER_RETURN_ALIAS_ENTRIES),
+            EbpfProgramType::Tc => Some(TC_RETURN_ALIAS_ENTRIES),
+            EbpfProgramType::CgroupSkb
+            | EbpfProgramType::CgroupDevice
+            | EbpfProgramType::CgroupSock
+            | EbpfProgramType::CgroupSysctl
+            | EbpfProgramType::CgroupSockopt
+            | EbpfProgramType::CgroupSockAddr
+            | EbpfProgramType::SkLookup
+            | EbpfProgramType::SkSkb
+            | EbpfProgramType::SkMsg => Some(ALLOW_DENY_RETURN_ALIAS_ENTRIES),
+            _ => None,
+        }
+    }
+
     pub(crate) fn return_action_alias(&self, alias: &str) -> Option<ProgramReturnAlias> {
         let alias = alias.to_ascii_lowercase();
-        return_action_alias_entries(*self)?
+        self.return_action_alias_entries()?
             .iter()
             .find(|entry| entry.alias == alias)
             .map(|entry| entry.value)
