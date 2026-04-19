@@ -13,8 +13,19 @@ pub(super) struct UserFunctionCallArg {
 
 #[derive(Debug, Clone)]
 enum AggregateReturnCallSetup {
-    Record { slot: StackSlotId, ty: MirType },
-    List { slot: StackSlotId, max_len: usize },
+    Record {
+        slot: StackSlotId,
+        ty: MirType,
+    },
+    List {
+        slot: StackSlotId,
+        max_len: usize,
+    },
+    String {
+        call_slot: StackSlotId,
+        slot_len: usize,
+        len_vreg: VReg,
+    },
 }
 
 impl<'a> HirToMirLowering<'a> {
@@ -58,6 +69,7 @@ impl<'a> HirToMirLowering<'a> {
         fn clear_tracked_reg(
             literal_strings: &mut HashMap<RegId, String>,
             string_slots: &mut HashSet<RegId>,
+            string_bounds: &mut HashMap<RegId, usize>,
             reg_types: &mut HashMap<RegId, MirType>,
             list_caps: &mut HashMap<RegId, usize>,
             record_fields: &mut HashMap<RegId, Vec<(String, MirType)>>,
@@ -65,6 +77,7 @@ impl<'a> HirToMirLowering<'a> {
         ) {
             literal_strings.remove(&reg);
             string_slots.remove(&reg);
+            string_bounds.remove(&reg);
             reg_types.remove(&reg);
             list_caps.remove(&reg);
             record_fields.remove(&reg);
@@ -76,6 +89,7 @@ impl<'a> HirToMirLowering<'a> {
         let mut list_caps: HashMap<RegId, usize> = HashMap::new();
         let mut record_fields: HashMap<RegId, Vec<(String, MirType)>> = HashMap::new();
         let mut string_slots: HashSet<RegId> = HashSet::new();
+        let mut string_bounds: HashMap<RegId, usize> = HashMap::new();
 
         for stmt in &block.stmts {
             match stmt {
@@ -83,6 +97,7 @@ impl<'a> HirToMirLowering<'a> {
                     clear_tracked_reg(
                         &mut literal_strings,
                         &mut string_slots,
+                        &mut string_bounds,
                         &mut reg_types,
                         &mut list_caps,
                         &mut record_fields,
@@ -100,6 +115,8 @@ impl<'a> HirToMirLowering<'a> {
                                 literal_strings.insert(*dst, string.to_string());
                             }
                             string_slots.insert(*dst);
+                            string_bounds
+                                .insert(*dst, bytes.len().min(MAX_STRING_SIZE.saturating_sub(1)));
                         }
                         HirLiteral::Filepath { val, .. }
                         | HirLiteral::Directory { val, .. }
@@ -108,6 +125,8 @@ impl<'a> HirToMirLowering<'a> {
                                 literal_strings.insert(*dst, string.to_string());
                             }
                             string_slots.insert(*dst);
+                            string_bounds
+                                .insert(*dst, val.len().min(MAX_STRING_SIZE.saturating_sub(1)));
                         }
                         HirLiteral::Record { .. } => {
                             record_fields.insert(*dst, Vec::new());
@@ -123,6 +142,7 @@ impl<'a> HirToMirLowering<'a> {
                         clear_tracked_reg(
                             &mut literal_strings,
                             &mut string_slots,
+                            &mut string_bounds,
                             &mut reg_types,
                             &mut list_caps,
                             &mut record_fields,
@@ -130,6 +150,8 @@ impl<'a> HirToMirLowering<'a> {
                         );
                         literal_strings.insert(*dst, val.clone());
                         string_slots.insert(*dst);
+                        string_bounds
+                            .insert(*dst, val.len().min(MAX_STRING_SIZE.saturating_sub(1)));
                         reg_types.insert(
                             *dst,
                             MirType::Array {
@@ -144,6 +166,7 @@ impl<'a> HirToMirLowering<'a> {
                         clear_tracked_reg(
                             &mut literal_strings,
                             &mut string_slots,
+                            &mut string_bounds,
                             &mut reg_types,
                             &mut list_caps,
                             &mut record_fields,
@@ -155,6 +178,7 @@ impl<'a> HirToMirLowering<'a> {
                         clear_tracked_reg(
                             &mut literal_strings,
                             &mut string_slots,
+                            &mut string_bounds,
                             &mut reg_types,
                             &mut list_caps,
                             &mut record_fields,
@@ -166,6 +190,7 @@ impl<'a> HirToMirLowering<'a> {
                         clear_tracked_reg(
                             &mut literal_strings,
                             &mut string_slots,
+                            &mut string_bounds,
                             &mut reg_types,
                             &mut list_caps,
                             &mut record_fields,
@@ -177,6 +202,7 @@ impl<'a> HirToMirLowering<'a> {
                     clear_tracked_reg(
                         &mut literal_strings,
                         &mut string_slots,
+                        &mut string_bounds,
                         &mut reg_types,
                         &mut list_caps,
                         &mut record_fields,
@@ -187,6 +213,9 @@ impl<'a> HirToMirLowering<'a> {
                     }
                     if string_slots.contains(&src) {
                         string_slots.insert(*dst);
+                    }
+                    if let Some(bound) = string_bounds.get(&src).copied() {
+                        string_bounds.insert(*dst, bound);
                     }
                     if let Some(ty) = hint_map
                         .and_then(|hints| hints.get(&dst.get()).cloned())
@@ -205,6 +234,7 @@ impl<'a> HirToMirLowering<'a> {
                     clear_tracked_reg(
                         &mut literal_strings,
                         &mut string_slots,
+                        &mut string_bounds,
                         &mut reg_types,
                         &mut list_caps,
                         &mut record_fields,
@@ -259,6 +289,39 @@ impl<'a> HirToMirLowering<'a> {
                         );
                     }
                 }
+                HirStmt::StringAppend { src_dst, val } => {
+                    let Some(current_bound) = string_bounds.get(&src_dst).copied() else {
+                        continue;
+                    };
+                    let append_bound = string_bounds
+                        .get(&val)
+                        .copied()
+                        .or_else(|| {
+                            literal_strings
+                                .get(&val)
+                                .map(|string| string.len().min(MAX_STRING_SIZE.saturating_sub(1)))
+                        })
+                        .unwrap_or(MAX_INT_STRING_LEN);
+                    let new_bound = current_bound.saturating_add(append_bound);
+                    if new_bound.saturating_add(1) > MAX_STRING_SIZE {
+                        string_bounds.remove(&src_dst);
+                        string_slots.remove(&src_dst);
+                        reg_types.remove(&src_dst);
+                        continue;
+                    }
+                    let new_slot_len = align_to_eight(new_bound.saturating_add(1))
+                        .min(MAX_STRING_SIZE)
+                        .max(16);
+                    string_bounds.insert(*src_dst, new_bound);
+                    string_slots.insert(*src_dst);
+                    reg_types.insert(
+                        *src_dst,
+                        MirType::Array {
+                            elem: Box::new(MirType::U8),
+                            len: new_slot_len,
+                        },
+                    );
+                }
                 _ => {}
             }
         }
@@ -273,6 +336,15 @@ impl<'a> HirToMirLowering<'a> {
                     .get(&return_src)
                     .copied()
                     .map(|max_len| SubfunctionAggregateReturnAbi::List { max_len })
+            })
+            .or_else(|| {
+                string_bounds.get(&return_src).copied().map(|bound| {
+                    SubfunctionAggregateReturnAbi::String {
+                        slot_len: align_to_eight(bound.saturating_add(1))
+                            .min(MAX_STRING_SIZE)
+                            .max(16),
+                    }
+                })
             })
     }
 
@@ -748,6 +820,14 @@ impl<'a> HirToMirLowering<'a> {
         decl_id: DeclId,
         hir: &HirFunction,
     ) -> Option<SubfunctionAggregateReturnAbi> {
+        let return_srcs: Vec<RegId> = hir
+            .blocks
+            .iter()
+            .filter_map(|block| match &block.terminator {
+                HirTerminator::Return { src } => Some(*src),
+                _ => None,
+            })
+            .collect();
         let simple_list_builder = hir.blocks.iter().all(|block| {
             block.stmts.iter().all(|stmt| {
                 matches!(
@@ -758,6 +838,22 @@ impl<'a> HirToMirLowering<'a> {
                         | HirStmt::Move { .. }
                         | HirStmt::Clone { .. }
                         | HirStmt::ListPush { .. }
+                        | HirStmt::Drain { .. }
+                        | HirStmt::Drop { .. }
+                        | HirStmt::DrainIfEnd { .. }
+                )
+            })
+        });
+        let simple_string_builder = hir.blocks.iter().all(|block| {
+            block.stmts.iter().all(|stmt| {
+                matches!(
+                    stmt,
+                    HirStmt::LoadLiteral { .. }
+                        | HirStmt::LoadValue { .. }
+                        | HirStmt::LoadVariable { .. }
+                        | HirStmt::Move { .. }
+                        | HirStmt::Clone { .. }
+                        | HirStmt::StringAppend { .. }
                         | HirStmt::Drain { .. }
                         | HirStmt::Drop { .. }
                         | HirStmt::DrainIfEnd { .. }
@@ -782,15 +878,13 @@ impl<'a> HirToMirLowering<'a> {
         });
 
         if simple_list_builder && let Some(hints) = self.decl_type_hints.get(&decl_id) {
-            let return_tys: Vec<MirType> = hir
-                .blocks
+            let return_tys: Vec<MirType> = return_srcs
                 .iter()
-                .filter_map(|block| match &block.terminator {
-                    HirTerminator::Return { src } => hints.get(&src.get()).cloned(),
-                    _ => None,
-                })
+                .filter_map(|src| hints.get(&src.get()).cloned())
                 .collect();
-            if let Some(first_return_ty) = return_tys.first().cloned() {
+            if return_tys.len() == return_srcs.len()
+                && let Some(first_return_ty) = return_tys.first().cloned()
+            {
                 if return_tys.iter().all(|ty| ty == &first_return_ty) {
                     let has_list_builder = hir.blocks.iter().any(|block| {
                         block.stmts.iter().any(|stmt| {
@@ -815,24 +909,26 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
-        let inferred_abis: Vec<SubfunctionAggregateReturnAbi> = hir
+        let inferred_abis: Vec<Option<SubfunctionAggregateReturnAbi>> = hir
             .blocks
             .iter()
             .filter_map(|block| match &block.terminator {
                 HirTerminator::Return { src } => {
-                    self.infer_block_aggregate_return_abi(decl_id, block, *src)
+                    Some(self.infer_block_aggregate_return_abi(decl_id, block, *src))
                 }
                 _ => None,
             })
             .collect();
-        let first_abi = inferred_abis.first()?.clone();
+        let first_abi = inferred_abis.first()?.clone()?;
         inferred_abis
             .iter()
-            .all(|abi| abi == &first_abi)
+            .all(|abi| abi.as_ref() == Some(&first_abi))
             .then_some(first_abi)
             .and_then(|abi| match abi {
                 SubfunctionAggregateReturnAbi::List { .. } if simple_list_builder => Some(abi),
                 SubfunctionAggregateReturnAbi::List { .. } => None,
+                SubfunctionAggregateReturnAbi::String { .. } if simple_string_builder => Some(abi),
+                SubfunctionAggregateReturnAbi::String { .. } => None,
                 SubfunctionAggregateReturnAbi::Record { .. } if simple_record_builder => Some(abi),
                 SubfunctionAggregateReturnAbi::Record { .. } => None,
             })
@@ -896,6 +992,41 @@ impl<'a> HirToMirLowering<'a> {
                 AggregateReturnCallSetup::List {
                     slot,
                     max_len: *max_len,
+                }
+            }
+            SubfunctionAggregateReturnAbi::String { slot_len } => {
+                let slot = self
+                    .func
+                    .alloc_stack_slot(*slot_len, 8, StackSlotKind::StringBuffer);
+                self.record_stack_slot_type(
+                    slot,
+                    MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len: *slot_len,
+                    },
+                );
+                let ptr_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::Copy {
+                    dst: ptr_vreg,
+                    src: MirValue::StackSlot(slot),
+                });
+                let ptr_ty = MirType::Ptr {
+                    pointee: Box::new(MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len: *slot_len,
+                    }),
+                    address_space: crate::compiler::mir::AddressSpace::Stack,
+                };
+                self.vreg_type_hints.insert(ptr_vreg, ptr_ty.clone());
+                arg_seeds.push(SubfunctionArgSeed {
+                    type_hint: Some(ptr_ty),
+                    metadata: None,
+                });
+                args.push(ptr_vreg);
+                AggregateReturnCallSetup::String {
+                    call_slot: slot,
+                    slot_len: *slot_len,
+                    len_vreg: self.func.alloc_vreg(),
                 }
             }
         }
@@ -1050,10 +1181,10 @@ impl<'a> HirToMirLowering<'a> {
         } else {
             None
         };
-        let call_dst = if aggregate_return_setup.is_some() {
-            self.func.alloc_vreg()
-        } else {
-            dst_vreg
+        let call_dst = match &aggregate_return_setup {
+            Some(AggregateReturnCallSetup::String { len_vreg, .. }) => *len_vreg,
+            Some(_) => self.func.alloc_vreg(),
+            None => dst_vreg,
         };
         self.emit(MirInst::CallSubfn {
             dst: call_dst,
@@ -1108,6 +1239,67 @@ impl<'a> HirToMirLowering<'a> {
                         .or(Some(MirType::Array {
                             elem: Box::new(MirType::I64),
                             len: max_len.saturating_add(1),
+                        }));
+                    meta.annotated_semantics =
+                        return_seed.and_then(|seed| seed.annotated_semantics);
+                    meta.source_var = None;
+                }
+                AggregateReturnCallSetup::String {
+                    call_slot,
+                    slot_len,
+                    len_vreg,
+                } => {
+                    self.vreg_type_hints.insert(len_vreg, MirType::U64);
+                    let result_slot =
+                        self.func
+                            .alloc_stack_slot(slot_len, 8, StackSlotKind::StringBuffer);
+                    self.record_stack_slot_type(
+                        result_slot,
+                        MirType::Array {
+                            elem: Box::new(MirType::U8),
+                            len: slot_len,
+                        },
+                    );
+                    let call_ptr = self.func.alloc_vreg();
+                    self.emit(MirInst::Copy {
+                        dst: call_ptr,
+                        src: MirValue::StackSlot(call_slot),
+                    });
+                    self.vreg_type_hints.insert(
+                        call_ptr,
+                        MirType::Ptr {
+                            pointee: Box::new(MirType::Array {
+                                elem: Box::new(MirType::U8),
+                                len: slot_len,
+                            }),
+                            address_space: crate::compiler::mir::AddressSpace::Stack,
+                        },
+                    );
+                    self.emit_ptr_to_slot_copy(result_slot, 0, call_ptr, 0, slot_len)?;
+                    self.emit(MirInst::Copy {
+                        dst: dst_vreg,
+                        src: MirValue::StackSlot(result_slot),
+                    });
+                    self.vreg_type_hints.insert(
+                        dst_vreg,
+                        MirType::Ptr {
+                            pointee: Box::new(MirType::Array {
+                                elem: Box::new(MirType::U8),
+                                len: slot_len,
+                            }),
+                            address_space: crate::compiler::mir::AddressSpace::Stack,
+                        },
+                    );
+                    let meta = self.get_or_create_metadata(src_dst);
+                    meta.string_slot = Some(result_slot);
+                    meta.string_len_vreg = Some(len_vreg);
+                    meta.string_len_bound = Some(slot_len.saturating_sub(1));
+                    meta.field_type = return_seed
+                        .as_ref()
+                        .and_then(|seed| seed.field_type.clone())
+                        .or(Some(MirType::Array {
+                            elem: Box::new(MirType::U8),
+                            len: slot_len,
                         }));
                     meta.annotated_semantics =
                         return_seed.and_then(|seed| seed.annotated_semantics);

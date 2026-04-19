@@ -104,7 +104,7 @@ impl<'a> HirToMirLowering<'a> {
         src_vreg: VReg,
         src_runtime_ty: Option<MirType>,
         active_return: &ActiveSubfunctionAggregateReturn,
-    ) -> Result<(), CompileError> {
+    ) -> Result<MirValue, CompileError> {
         match active_return {
             ActiveSubfunctionAggregateReturn::Record { ptr_vreg, ty } => {
                 let mut source_ptr = src_vreg;
@@ -144,6 +144,7 @@ impl<'a> HirToMirLowering<'a> {
                 }
 
                 self.emit_ptr_copy(*ptr_vreg, source_ptr, ty.size())?;
+                Ok(MirValue::Const(0))
             }
             ActiveSubfunctionAggregateReturn::List { ptr_vreg, max_len } => {
                 let (source_ptr, source_max_len) = if let Some((slot, source_max_len)) =
@@ -204,10 +205,59 @@ impl<'a> HirToMirLowering<'a> {
                 if source_max_len < *max_len {
                     self.emit_ptr_zero(*ptr_vreg, source_size, (*max_len - source_max_len) * 8)?;
                 }
+                Ok(MirValue::Const(0))
+            }
+            ActiveSubfunctionAggregateReturn::String { ptr_vreg, slot_len } => {
+                let Some(meta) = self.get_metadata(reg).cloned() else {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "string-returning subfunction requires tracked string metadata".into(),
+                    ));
+                };
+                let Some(source_slot) = meta.string_slot else {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "string-returning subfunction requires a tracked string slot".into(),
+                    ));
+                };
+                let Some(source_len_vreg) = meta.string_len_vreg else {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "string-returning subfunction requires a tracked string length".into(),
+                    ));
+                };
+                let source_slot_len = self.stack_slot_size(source_slot).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "string slot not found during aggregate return lowering".into(),
+                    )
+                })?;
+                if source_slot_len > *slot_len {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "string-returning subfunction cannot write string capacity {} into aggregate return slot {}",
+                        source_slot_len.saturating_sub(1),
+                        slot_len.saturating_sub(1)
+                    )));
+                }
+
+                let source_ptr = self.func.alloc_vreg();
+                self.emit(MirInst::Copy {
+                    dst: source_ptr,
+                    src: MirValue::StackSlot(source_slot),
+                });
+                self.vreg_type_hints.insert(
+                    source_ptr,
+                    MirType::Ptr {
+                        pointee: Box::new(MirType::Array {
+                            elem: Box::new(MirType::U8),
+                            len: source_slot_len,
+                        }),
+                        address_space: crate::compiler::mir::AddressSpace::Stack,
+                    },
+                );
+                self.emit_ptr_copy_with_offsets(*ptr_vreg, 0, source_ptr, 0, source_slot_len)?;
+                if source_slot_len < *slot_len {
+                    self.emit_ptr_zero(*ptr_vreg, source_slot_len, *slot_len - source_slot_len)?;
+                }
+                Ok(MirValue::VReg(source_len_vreg))
             }
         }
-
-        Ok(())
     }
 
     fn returned_value_for_reg(
@@ -242,13 +292,13 @@ impl<'a> HirToMirLowering<'a> {
         let seed = self.return_seed_for_reg(reg, src_runtime_ty.clone());
 
         if let Some(active_return) = self.current_subfunction_aggregate_return.clone() {
-            self.lower_active_subfunction_aggregate_return(
+            let scalar_return = self.lower_active_subfunction_aggregate_return(
                 reg,
                 src_vreg,
                 src_runtime_ty,
                 &active_return,
             )?;
-            return Ok((MirValue::Const(0), seed));
+            return Ok((scalar_return, seed));
         }
 
         if self.func.name.is_some()

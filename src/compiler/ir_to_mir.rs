@@ -230,12 +230,14 @@ struct SubfunctionReturnSeed {
 enum SubfunctionAggregateReturnAbi {
     Record { ty: MirType },
     List { max_len: usize },
+    String { slot_len: usize },
 }
 
 #[derive(Debug, Clone)]
 enum ActiveSubfunctionAggregateReturn {
     Record { ptr_vreg: VReg, ty: MirType },
     List { ptr_vreg: VReg, max_len: usize },
+    String { ptr_vreg: VReg, slot_len: usize },
 }
 
 #[derive(Debug, Clone, Default)]

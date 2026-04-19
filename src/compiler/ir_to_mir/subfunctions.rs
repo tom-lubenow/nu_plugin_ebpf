@@ -199,6 +199,22 @@ impl<'a> HirToMirLowering<'a> {
                         max_len,
                     }
                 }
+                SubfunctionAggregateReturnAbi::String { slot_len } => {
+                    self.vreg_type_hints.insert(
+                        vreg,
+                        MirType::Ptr {
+                            pointee: Box::new(MirType::Array {
+                                elem: Box::new(MirType::U8),
+                                len: slot_len,
+                            }),
+                            address_space: crate::compiler::mir::AddressSpace::Stack,
+                        },
+                    );
+                    ActiveSubfunctionAggregateReturn::String {
+                        ptr_vreg: vreg,
+                        slot_len,
+                    }
+                }
             });
         }
 
