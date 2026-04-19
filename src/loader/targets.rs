@@ -1,11 +1,7 @@
 use super::LoadError;
-use crate::compiler::{EbpfProgramType, KernelTargetValidationKind, ProgramTargetKind};
+use crate::compiler::{EbpfProgramType, KernelTargetValidationKind};
 use crate::kernel_btf::{FunctionCheckResult, KernelBtf};
-use crate::program_spec::{
-    CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockTarget, CgroupSockoptTarget, LircMode2Target,
-    PerfEventTarget, ProgramSpec, ProgramSpecParseError, SkLookupTarget, SocketFilterTarget,
-    TcTarget, UprobeTarget,
-};
+use crate::program_spec::{ProgramSpec, ProgramSpecParseError};
 use aya::util::online_cpus;
 use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
@@ -103,47 +99,19 @@ fn validate_network_interface_target(target: &str) -> Result<(), LoadError> {
     }
 }
 
-fn validate_tc_target(target: &str) -> Result<(), LoadError> {
-    let parsed = TcTarget::parse(target).map_err(parse_error)?;
-    validate_network_interface_target(&parsed.interface)
-}
-
-fn validate_cgroup_skb_target(target: &str) -> Result<(), LoadError> {
-    let parsed = CgroupSkbTarget::parse(target).map_err(parse_error)?;
-    let cgroup_path = Path::new(&parsed.cgroup_path);
-
+fn validate_cgroup_directory_target(target_kind: &str, cgroup_path: &str) -> Result<(), LoadError> {
+    let cgroup_path = Path::new(cgroup_path);
     if !cgroup_path.exists() {
         return Err(LoadError::Load(format!(
             "Unknown cgroup path: {}",
-            parsed.cgroup_path
+            cgroup_path.display()
         )));
     }
 
     if !cgroup_path.is_dir() {
         return Err(LoadError::Load(format!(
-            "cgroup_skb target must be a directory: {}",
-            parsed.cgroup_path
-        )));
-    }
-
-    Ok(())
-}
-
-fn validate_cgroup_sock_target(target: &str) -> Result<(), LoadError> {
-    let parsed = CgroupSockTarget::parse(target).map_err(parse_error)?;
-    let cgroup_path = Path::new(&parsed.cgroup_path);
-
-    if !cgroup_path.exists() {
-        return Err(LoadError::Load(format!(
-            "Unknown cgroup path: {}",
-            parsed.cgroup_path
-        )));
-    }
-
-    if !cgroup_path.is_dir() {
-        return Err(LoadError::Load(format!(
-            "cgroup_sock target must be a directory: {}",
-            parsed.cgroup_path
+            "{target_kind} target must be a directory: {}",
+            cgroup_path.display()
         )));
     }
 
@@ -151,198 +119,105 @@ fn validate_cgroup_sock_target(target: &str) -> Result<(), LoadError> {
 }
 
 fn validate_cgroup_path_target(target: &str) -> Result<(), LoadError> {
-    let cgroup_path = Path::new(target);
-
-    if !cgroup_path.exists() {
-        return Err(LoadError::Load(format!("Unknown cgroup path: {}", target)));
-    }
-
-    if !cgroup_path.is_dir() {
-        return Err(LoadError::Load(format!(
-            "cgroup target must be a directory: {}",
-            target
-        )));
-    }
-
-    Ok(())
+    validate_cgroup_directory_target("cgroup", target)
 }
 
-fn validate_cgroup_sockopt_target(target: &str) -> Result<(), LoadError> {
-    let parsed = CgroupSockoptTarget::parse(target).map_err(parse_error)?;
-    let cgroup_path = Path::new(&parsed.cgroup_path);
-
-    if !cgroup_path.exists() {
-        return Err(LoadError::Load(format!(
-            "Unknown cgroup path: {}",
-            parsed.cgroup_path
-        )));
-    }
-
-    if !cgroup_path.is_dir() {
-        return Err(LoadError::Load(format!(
-            "cgroup_sockopt target must be a directory: {}",
-            parsed.cgroup_path
-        )));
-    }
-
-    Ok(())
-}
-
-fn validate_cgroup_sock_addr_target(target: &str) -> Result<(), LoadError> {
-    let parsed = CgroupSockAddrTarget::parse(target).map_err(parse_error)?;
-    let cgroup_path = Path::new(&parsed.cgroup_path);
-
-    if !cgroup_path.exists() {
-        return Err(LoadError::Load(format!(
-            "Unknown cgroup path: {}",
-            parsed.cgroup_path
-        )));
-    }
-
-    if !cgroup_path.is_dir() {
-        return Err(LoadError::Load(format!(
-            "cgroup_sock_addr target must be a directory: {}",
-            parsed.cgroup_path
-        )));
-    }
-
-    Ok(())
-}
-
-fn validate_sk_lookup_target(target: &str) -> Result<(), LoadError> {
-    let parsed = SkLookupTarget::parse(target).map_err(parse_error)?;
-    let netns_path = Path::new(&parsed.netns_path);
-
-    if !netns_path.exists() {
-        return Err(LoadError::Load(format!(
-            "Unknown network namespace path: {}",
-            parsed.netns_path
-        )));
-    }
-
-    if netns_path.is_dir() {
-        return Err(LoadError::Load(format!(
-            "sk_lookup target must be a network namespace file, not a directory: {}",
-            parsed.netns_path
-        )));
-    }
-
-    Ok(())
-}
-
-fn validate_pinned_sockmap_target(target: &str) -> Result<(), LoadError> {
-    let map_path = Path::new(target);
+fn validate_regular_path_target(
+    missing_path_label: &str,
+    not_directory_message: &str,
+    target_path: &str,
+) -> Result<(), LoadError> {
+    let map_path = Path::new(target_path);
 
     if !map_path.exists() {
         return Err(LoadError::Load(format!(
-            "Unknown pinned sockmap path: {}",
-            target
+            "Unknown {missing_path_label}: {target_path}"
         )));
     }
 
     if map_path.is_dir() {
         return Err(LoadError::Load(format!(
-            "target must be a pinned sockmap or sockhash file, not a directory: {}",
-            target
+            "{not_directory_message}: {target_path}"
         )));
     }
 
     Ok(())
 }
 
-fn validate_socket_filter_target(target: &str) -> Result<(), LoadError> {
-    SocketFilterTarget::parse(target).map_err(parse_error)?;
-    Ok(())
-}
-
-fn validate_lirc_mode2_target(target: &str) -> Result<(), LoadError> {
-    let parsed = LircMode2Target::parse(target).map_err(parse_error)?;
-    let device_path = Path::new(&parsed.device_path);
-
-    if !device_path.exists() {
-        return Err(LoadError::Load(format!(
-            "Unknown lirc device path: {}",
-            parsed.device_path
-        )));
-    }
-
-    if device_path.is_dir() {
-        return Err(LoadError::Load(format!(
-            "lirc_mode2 target must be a device file, not a directory: {}",
-            parsed.device_path
-        )));
-    }
+fn validate_lirc_mode2_device(device_path: &str) -> Result<(), LoadError> {
+    validate_regular_path_target(
+        "lirc device path",
+        "lirc_mode2 target must be a device file, not a directory",
+        device_path,
+    )?;
 
     let metadata = std::fs::metadata(device_path).map_err(|e| {
         LoadError::Load(format!(
             "Failed to inspect lirc_mode2 target {}: {}",
-            parsed.device_path, e
+            device_path, e
         ))
     })?;
     if !metadata.file_type().is_char_device() {
         return Err(LoadError::Load(format!(
             "lirc_mode2 target must be a character device: {}",
-            parsed.device_path
+            device_path
         )));
     }
 
     Ok(())
 }
 
-fn validate_target_for_program_type(
-    prog_type: EbpfProgramType,
-    target: &str,
-) -> Result<(), LoadError> {
-    match prog_type.target_kind() {
-        ProgramTargetKind::KernelFunction => {
+fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
+    match spec {
+        ProgramSpec::Kprobe { function }
+        | ProgramSpec::Kretprobe { function }
+        | ProgramSpec::Fentry { function }
+        | ProgramSpec::Fexit { function } => {
+            let prog_type = spec.program_type();
             let validation = prog_type.kernel_target_validation().ok_or_else(|| {
                 LoadError::Load(format!(
                     "Program type '{}' is missing kernel target validation metadata",
                     prog_type.canonical_prefix()
                 ))
             })?;
-            validate_kprobe_target(target)?;
+            validate_kprobe_target(function)?;
             if !matches!(validation, KernelTargetValidationKind::SymbolOnly) {
-                validate_trampoline_target(validation, prog_type.canonical_prefix(), target)?;
+                validate_trampoline_target(validation, prog_type.canonical_prefix(), function)?;
             }
             Ok(())
         }
-        ProgramTargetKind::LsmHook => {
-            if target.is_empty() {
+        ProgramSpec::Lsm { hook } => {
+            if hook.is_empty() {
                 return Err(LoadError::Load(
                     "LSM hook target cannot be empty".to_string(),
                 ));
             }
             KernelBtf::get()
-                .validate_lsm_hook_target(target)
+                .validate_lsm_hook_target(hook)
                 .map_err(|e| LoadError::UnsupportedTrampolineTarget {
-                    probe_type: prog_type.canonical_prefix().to_string(),
-                    target: target.to_string(),
+                    probe_type: spec.program_type().canonical_prefix().to_string(),
+                    target: hook.clone(),
                     reason: e.to_string(),
                 })
         }
-        ProgramTargetKind::BtfTracepoint => {
-            if target.is_empty() {
+        ProgramSpec::TpBtf { name } => {
+            if name.is_empty() {
                 return Err(LoadError::Load("tp_btf target cannot be empty".to_string()));
             }
-            KernelBtf::get()
-                .validate_tp_btf_target(target)
-                .map_err(|e| LoadError::UnsupportedTrampolineTarget {
-                    probe_type: prog_type.canonical_prefix().to_string(),
-                    target: target.to_string(),
+            KernelBtf::get().validate_tp_btf_target(name).map_err(|e| {
+                LoadError::UnsupportedTrampolineTarget {
+                    probe_type: spec.program_type().canonical_prefix().to_string(),
+                    target: name.clone(),
                     reason: e.to_string(),
-                })
+                }
+            })
         }
-        ProgramTargetKind::Tracepoint => validate_tracepoint_target(target),
-        ProgramTargetKind::RawTracepoint => Ok(()),
-        ProgramTargetKind::UserFunction => {
-            UprobeTarget::parse(target).map_err(parse_error)?;
-            Ok(())
-        }
-        ProgramTargetKind::NetworkInterface => validate_network_interface_target(target),
-        ProgramTargetKind::PerfEventTarget => {
-            let parsed = PerfEventTarget::parse(target).map_err(parse_error)?;
-            if let Some(cpu) = parsed.cpu {
+        ProgramSpec::Tracepoint { .. } => validate_tracepoint_target(&spec.target_string()),
+        ProgramSpec::RawTracepoint { .. } => Ok(()),
+        ProgramSpec::Uprobe { .. } | ProgramSpec::Uretprobe { .. } => Ok(()),
+        ProgramSpec::Xdp { target } => validate_network_interface_target(&target.interface),
+        ProgramSpec::PerfEvent { target } => {
+            if let Some(cpu) = target.cpu {
                 let online = online_cpus().map_err(|(_, e)| {
                     LoadError::Load(format!("Failed to enumerate online CPUs: {e}"))
                 })?;
@@ -354,17 +229,48 @@ fn validate_target_for_program_type(
             }
             Ok(())
         }
-        ProgramTargetKind::SocketFilterTarget => validate_socket_filter_target(target),
-        ProgramTargetKind::NetworkNamespacePath => validate_sk_lookup_target(target),
-        ProgramTargetKind::PinnedSockMapPath => validate_pinned_sockmap_target(target),
-        ProgramTargetKind::TrafficControlInterface => validate_tc_target(target),
-        ProgramTargetKind::CgroupPathAttachType => validate_cgroup_skb_target(target),
-        ProgramTargetKind::CgroupPathSockAttachType => validate_cgroup_sock_target(target),
-        ProgramTargetKind::CgroupPath => validate_cgroup_path_target(target),
-        ProgramTargetKind::CgroupPathSockoptAttachType => validate_cgroup_sockopt_target(target),
-        ProgramTargetKind::CgroupPathSockAddrAttachType => validate_cgroup_sock_addr_target(target),
-        ProgramTargetKind::LircDevicePath => validate_lirc_mode2_target(target),
-        ProgramTargetKind::StructOpsCallback => validate_struct_ops_value_type(target),
+        ProgramSpec::SocketFilter { .. } => Ok(()),
+        ProgramSpec::SkLookup { target } => validate_regular_path_target(
+            "network namespace path",
+            "sk_lookup target must be a network namespace file, not a directory",
+            &target.netns_path,
+        ),
+        ProgramSpec::SkMsg { .. } | ProgramSpec::SkSkb { .. } | ProgramSpec::SkSkbParser { .. } => {
+            let map_path = spec.pinned_map_path().unwrap_or_else(|| {
+                unreachable!("socket map program specs must carry a pinned map path")
+            });
+            validate_regular_path_target(
+                "pinned sockmap path",
+                "target must be a pinned sockmap or sockhash file, not a directory",
+                map_path,
+            )
+        }
+        ProgramSpec::CgroupDevice { .. }
+        | ProgramSpec::SockOps { .. }
+        | ProgramSpec::CgroupSysctl { .. } => {
+            let cgroup_path = spec
+                .cgroup_path()
+                .unwrap_or_else(|| unreachable!("cgroup program specs must carry a cgroup path"));
+            validate_cgroup_path_target(cgroup_path)
+        }
+        ProgramSpec::Tc { target } => validate_network_interface_target(&target.interface),
+        ProgramSpec::CgroupSkb { target } => {
+            validate_cgroup_directory_target("cgroup_skb", &target.cgroup_path)
+        }
+        ProgramSpec::CgroupSock { target } => {
+            validate_cgroup_directory_target("cgroup_sock", &target.cgroup_path)
+        }
+        ProgramSpec::CgroupSockopt { target } => {
+            validate_cgroup_directory_target("cgroup_sockopt", &target.cgroup_path)
+        }
+        ProgramSpec::CgroupSockAddr { target } => {
+            validate_cgroup_directory_target("cgroup_sock_addr", &target.cgroup_path)
+        }
+        ProgramSpec::LircMode2 { target } => validate_lirc_mode2_device(&target.device_path),
+        ProgramSpec::StructOps { value_type_name }
+        | ProgramSpec::StructOpsCallback {
+            value_type_name, ..
+        } => validate_struct_ops_value_type(value_type_name),
     }
 }
 
@@ -433,8 +339,10 @@ pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
         )));
     };
 
-    validate_target_for_program_type(prog_type, target)?;
-    ProgramSpec::from_program_type_target(prog_type, target).map_err(parse_error)
+    let program_spec =
+        ProgramSpec::from_program_type_target(prog_type, target).map_err(parse_error)?;
+    validate_program_spec(&program_spec)?;
+    Ok(program_spec)
 }
 
 pub fn parse_probe_spec(spec: &str) -> Result<(EbpfProgramType, String), LoadError> {
