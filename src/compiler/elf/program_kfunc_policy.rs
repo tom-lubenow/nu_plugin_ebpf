@@ -1,4 +1,4 @@
-use crate::program_spec::{ProgramAttachShape, ProgramSpec};
+use crate::program_spec::{ProgramAttachShape, ProgramSpec, StructOpsFamily};
 
 const SCHED_EXT_DISPATCH_ONLY_KFUNCS: &[&str] = &[
     "scx_bpf_dispatch_nr_slots",
@@ -47,15 +47,14 @@ fn sched_ext_kfunc_allowed_callbacks(kfunc: &str) -> Option<&'static [&'static s
 
 impl ProgramSpec {
     pub(crate) fn kfunc_call_error(&self, kfunc: &str) -> Option<String> {
-        let ProgramAttachShape::StructOpsCallback { sleepable } = self.attach_shape() else {
+        let ProgramAttachShape::StructOpsCallback {
+            family: StructOpsFamily::SchedExt,
+            sleepable,
+        } = self.attach_shape()
+        else {
             return None;
         };
-        let value_type_name = self.struct_ops_value_type_name()?;
         let callback_name = self.struct_ops_callback_name()?;
-
-        if value_type_name != "sched_ext_ops" {
-            return None;
-        }
 
         if kfunc == "scx_bpf_create_dsq" && !sleepable {
             return Some(format!(
@@ -110,6 +109,20 @@ mod tests {
                 "kfunc 'scx_bpf_dispatch_nr_slots' is only valid in sched_ext_ops.dispatch, not sched_ext_ops.select_cpu"
                     .to_string()
             )
+        );
+    }
+
+    #[test]
+    fn test_struct_ops_callback_program_spec_kfunc_policy_ignores_non_sched_ext_families() {
+        let tcp_congestion = ProgramSpec::StructOpsCallback {
+            value_type_name: "tcp_congestion_ops".to_string(),
+            callback_name: "cong_avoid".to_string(),
+        };
+
+        assert_eq!(tcp_congestion.kfunc_call_error("scx_bpf_create_dsq"), None);
+        assert_eq!(
+            tcp_congestion.kfunc_call_error("scx_bpf_dispatch_nr_slots"),
+            None
         );
     }
 }

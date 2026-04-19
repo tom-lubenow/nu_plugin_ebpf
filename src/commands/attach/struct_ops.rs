@@ -1,4 +1,5 @@
 use super::*;
+use crate::program_spec::StructOpsFamily;
 
 pub(super) fn struct_ops_value_field_from_value(
     field_name: &str,
@@ -99,22 +100,7 @@ pub(super) enum StructOpsTopLevelFieldKind {
     Value,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum StructOpsFamily {
-    Generic,
-    SchedExt,
-    TcpCongestion,
-}
-
 impl StructOpsFamily {
-    fn from_value_type_name(value_type_name: &str) -> Self {
-        match value_type_name {
-            "sched_ext_ops" => Self::SchedExt,
-            "tcp_congestion_ops" => Self::TcpCongestion,
-            _ => Self::Generic,
-        }
-    }
-
     fn live_attach_risk(self) -> Option<&'static str> {
         match self {
             Self::SchedExt => Some(

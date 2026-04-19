@@ -119,23 +119,44 @@ fn parse_offset(s: &str) -> Result<u64, ProgramSpecParseError> {
     }
 }
 
-pub(crate) fn struct_ops_callback_is_sleepable(value_type_name: &str, callback_name: &str) -> bool {
-    match value_type_name {
-        // sched_ext documents these callbacks as sleepable and they must be
-        // emitted under `struct_ops.s/...` rather than plain `struct_ops/...`.
-        "sched_ext_ops" => matches!(
-            callback_name,
-            "init_task"
-                | "cgroup_init"
-                | "cgroup_exit"
-                | "cgroup_prep_move"
-                | "cpu_online"
-                | "cpu_offline"
-                | "init"
-                | "exit"
-        ),
-        _ => false,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StructOpsFamily {
+    Generic,
+    SchedExt,
+    TcpCongestion,
+}
+
+impl StructOpsFamily {
+    pub(crate) fn from_value_type_name(value_type_name: &str) -> Self {
+        match value_type_name {
+            "sched_ext_ops" => Self::SchedExt,
+            "tcp_congestion_ops" => Self::TcpCongestion,
+            _ => Self::Generic,
+        }
     }
+
+    pub(crate) fn callback_is_sleepable(self, callback_name: &str) -> bool {
+        match self {
+            // sched_ext documents these callbacks as sleepable and they must be
+            // emitted under `struct_ops.s/...` rather than plain `struct_ops/...`.
+            Self::SchedExt => matches!(
+                callback_name,
+                "init_task"
+                    | "cgroup_init"
+                    | "cgroup_exit"
+                    | "cgroup_prep_move"
+                    | "cpu_online"
+                    | "cpu_offline"
+                    | "init"
+                    | "exit"
+            ),
+            Self::Generic | Self::TcpCongestion => false,
+        }
+    }
+}
+
+pub(crate) fn struct_ops_callback_is_sleepable(value_type_name: &str, callback_name: &str) -> bool {
+    StructOpsFamily::from_value_type_name(value_type_name).callback_is_sleepable(callback_name)
 }
 
 /// Parsed xdp target information.
@@ -1300,6 +1321,7 @@ pub(crate) enum ProgramAttachShape {
         hook: ProgramAttachSockAddrHook,
     },
     StructOpsCallback {
+        family: StructOpsFamily,
         sleepable: bool,
     },
 }
@@ -1511,6 +1533,11 @@ impl ProgramSpec {
         }
     }
 
+    pub(crate) fn struct_ops_family(&self) -> Option<StructOpsFamily> {
+        self.struct_ops_value_type_name()
+            .map(StructOpsFamily::from_value_type_name)
+    }
+
     pub fn section_name(&self) -> String {
         match self {
             ProgramSpec::CgroupSkb { target } => target.section_name(),
@@ -1561,6 +1588,7 @@ impl ProgramSpec {
                 value_type_name,
                 callback_name,
             } => ProgramAttachShape::StructOpsCallback {
+                family: StructOpsFamily::from_value_type_name(value_type_name),
                 sleepable: struct_ops_callback_is_sleepable(value_type_name, callback_name),
             },
             _ => ProgramAttachShape::Generic,
@@ -1679,11 +1707,17 @@ mod tests {
         );
         assert_eq!(
             sched_ext_select_cpu.attach_shape(),
-            ProgramAttachShape::StructOpsCallback { sleepable: false }
+            ProgramAttachShape::StructOpsCallback {
+                family: StructOpsFamily::SchedExt,
+                sleepable: false,
+            }
         );
         assert_eq!(
             sched_ext_init.attach_shape(),
-            ProgramAttachShape::StructOpsCallback { sleepable: true }
+            ProgramAttachShape::StructOpsCallback {
+                family: StructOpsFamily::SchedExt,
+                sleepable: true,
+            }
         );
     }
 
@@ -1708,14 +1742,29 @@ mod tests {
             struct_ops.struct_ops_value_type_name(),
             Some("sched_ext_ops")
         );
+        assert_eq!(
+            struct_ops.struct_ops_family(),
+            Some(StructOpsFamily::SchedExt)
+        );
         assert_eq!(callback.tracepoint_parts(), None);
         assert_eq!(callback.struct_ops_value_type_name(), Some("sched_ext_ops"));
+        assert_eq!(
+            callback.struct_ops_family(),
+            Some(StructOpsFamily::SchedExt)
+        );
         assert_eq!(callback.target_string(), "select_cpu");
         assert!(struct_ops_callback_is_sleepable("sched_ext_ops", "init"));
         assert!(!struct_ops_callback_is_sleepable(
             "sched_ext_ops",
             "dispatch"
         ));
+        assert_eq!(tracepoint.struct_ops_family(), None);
+        assert_eq!(
+            ProgramSpec::parse("struct_ops:tcp_congestion_ops")
+                .expect("tcp_congestion_ops spec should parse")
+                .struct_ops_family(),
+            Some(StructOpsFamily::TcpCongestion)
+        );
     }
 
     #[test]
