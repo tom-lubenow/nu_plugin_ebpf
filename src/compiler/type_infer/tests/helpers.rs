@@ -1661,6 +1661,85 @@ fn test_infer_redirect_map_helper_in_xdp_programs() {
 }
 
 #[test]
+fn test_type_error_perf_event_output_helper_rejects_lsm_program() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let data_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_perf_events".to_string(),
+            kind: MapKind::PerfEventArray,
+        },
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::PerfEventOutput as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::VReg(map),
+            MirValue::Const(0),
+            MirValue::StackSlot(data_slot),
+            MirValue::Const(8),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "file_open");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_perf_event_output to be rejected on lsm");
+    assert!(errs.iter().any(|e| e.message.contains(
+        "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
+    )));
+}
+
+#[test]
+fn test_type_error_get_stackid_helper_rejects_xdp_program() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_stacks".to_string(),
+            kind: MapKind::StackTrace,
+        },
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetStackId as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::VReg(map), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_stackid to be rejected on xdp");
+    assert!(errs.iter().any(|e| e.message.contains(
+        "helper 'bpf_get_stackid' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf programs"
+    )));
+}
+
+#[test]
 fn test_type_error_store_hdr_opt_helper_requires_zero_flags() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

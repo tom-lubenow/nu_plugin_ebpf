@@ -1049,6 +1049,20 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         Some("helper 'bpf_redirect_peer' is only valid in tc programs".to_string())
     );
     assert_eq!(
+        EbpfProgramType::Lsm.helper_call_error(BpfHelper::PerfEventOutput),
+        Some(
+            "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetStackId),
+        Some(
+            "helper 'bpf_get_stackid' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::SkLookup.helper_call_error(BpfHelper::GetSocketCookie),
         Some(
             "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, tp_btf, socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs"
@@ -1266,7 +1280,15 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         None
     );
     assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::PerfEventOutput),
+        None
+    );
+    assert_eq!(
         EbpfProgramType::SkSkbParser.helper_call_error(BpfHelper::SkRedirectHash),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::PerfEvent.helper_call_error(BpfHelper::GetStackId),
         None
     );
     assert_eq!(

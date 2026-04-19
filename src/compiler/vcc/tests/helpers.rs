@@ -1628,6 +1628,109 @@ fn test_verify_mir_for_program_redirect_map_helper_accepts_xdp() {
 }
 
 #[test]
+fn test_verify_mir_for_program_perf_event_output_helper_rejects_lsm() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    func.param_count = 1;
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let data_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_perf_events".to_string(),
+            kind: MapKind::PerfEventArray,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::PerfEventOutput as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::VReg(map),
+                MirValue::Const(0),
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(8),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        map,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::U32),
+            val_ty: Box::new(MirType::U32),
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Lsm.info())
+        .expect_err("expected perf_event_output helper program-surface error");
+    assert!(err.iter().any(|e| e.message.contains(
+        "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
+    )));
+}
+
+#[test]
+fn test_verify_mir_for_program_get_stackid_helper_rejects_xdp() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    func.param_count = 1;
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_stacks".to_string(),
+            kind: MapKind::StackTrace,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetStackId as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::VReg(map), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        map,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::U32),
+            val_ty: Box::new(MirType::Unknown),
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected get_stackid helper program-surface error");
+    assert!(err.iter().any(|e| e.message.contains(
+        "helper 'bpf_get_stackid' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf programs"
+    )));
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_skb_packet_edit_helpers_reject_invalid_programs() {
     for helper in [
         BpfHelper::SkbStoreBytes,

@@ -25,6 +25,8 @@ enum HelperProgramSurfaceFamily {
     TcSkSkb,
     XdpTc,
     Tc,
+    PerfEventOutput,
+    GetStackId,
     SocketCookie,
     SocketUid,
     NetnsCookie,
@@ -59,6 +61,46 @@ impl HelperProgramSurfaceFamily {
             ),
             Self::XdpTc => matches!(program_type, EbpfProgramType::Xdp | EbpfProgramType::Tc),
             Self::Tc => matches!(program_type, EbpfProgramType::Tc),
+            Self::PerfEventOutput => matches!(
+                program_type,
+                EbpfProgramType::CgroupDevice
+                    | EbpfProgramType::CgroupSkb
+                    | EbpfProgramType::CgroupSock
+                    | EbpfProgramType::CgroupSockopt
+                    | EbpfProgramType::CgroupSockAddr
+                    | EbpfProgramType::CgroupSysctl
+                    | EbpfProgramType::Kprobe
+                    | EbpfProgramType::Kretprobe
+                    | EbpfProgramType::Uprobe
+                    | EbpfProgramType::Uretprobe
+                    | EbpfProgramType::PerfEvent
+                    | EbpfProgramType::RawTracepoint
+                    | EbpfProgramType::Tracepoint
+                    | EbpfProgramType::Fentry
+                    | EbpfProgramType::Fexit
+                    | EbpfProgramType::TpBtf
+                    | EbpfProgramType::SocketFilter
+                    | EbpfProgramType::Tc
+                    | EbpfProgramType::SkLookup
+                    | EbpfProgramType::SkMsg
+                    | EbpfProgramType::SkSkb
+                    | EbpfProgramType::SkSkbParser
+                    | EbpfProgramType::SockOps
+                    | EbpfProgramType::Xdp
+            ),
+            Self::GetStackId => matches!(
+                program_type,
+                EbpfProgramType::Kprobe
+                    | EbpfProgramType::Kretprobe
+                    | EbpfProgramType::Uprobe
+                    | EbpfProgramType::Uretprobe
+                    | EbpfProgramType::PerfEvent
+                    | EbpfProgramType::RawTracepoint
+                    | EbpfProgramType::Tracepoint
+                    | EbpfProgramType::Fentry
+                    | EbpfProgramType::Fexit
+                    | EbpfProgramType::TpBtf
+            ),
             Self::SocketCookie => matches!(
                 program_type,
                 EbpfProgramType::Fentry
@@ -212,6 +254,12 @@ impl HelperProgramSurfaceFamily {
             Self::TcSkSkb => "tc, sk_skb, and sk_skb_parser",
             Self::XdpTc => "xdp and tc",
             Self::Tc => "tc",
+            Self::PerfEventOutput => {
+                "cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp"
+            }
+            Self::GetStackId => {
+                "kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf"
+            }
             Self::SocketCookie => {
                 "fentry, fexit, tp_btf, socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser"
             }
@@ -333,6 +381,12 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
                 family: HelperProgramSurfaceFamily::Tc,
             }
         }
+        BpfHelper::PerfEventOutput => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::PerfEventOutput,
+        },
+        BpfHelper::GetStackId => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::GetStackId,
+        },
         BpfHelper::GetSocketCookie => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::SocketCookie,
         },
