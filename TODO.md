@@ -1,7 +1,7 @@
 # TODO
 
 Status legend: `[x]` done, `[~]` in progress, `[ ]` todo.
-Last updated: 2026-04-18.
+Last updated: 2026-04-19.
 
 ## Current compiler gaps
 
@@ -189,6 +189,7 @@ Near-term priority order:
   - Recent progress: repeated program-family routing for context layouts and socket-related support surfaces (`data_meta`, socket family/tuple/ref layouts, ingress ifindex, mark/priority, socket cookie/uid, netns cookie) now routes through explicit program-surface tables instead of duplicated per-method matches.
   - Recent progress: modeled read-side `ctx.*` access policy now also routes fixed base-field requirements and attach-sensitive `cgroup_sockopt` / `cgroup_sock_addr` restrictions through explicit field/access-surface tables instead of large open-coded field and `ProgramSpec` matches.
   - Recent progress: attach-sensitive read-side `ctx.*` policy for `cgroup_sockopt` / `cgroup_sock_addr` now routes through a modeled access surface in `ProgramSpec`, and direct program-schema type/projection queries now honor that same legality instead of only the broader program family.
+  - Recent progress: the remaining name/layout/access/write selector indirection is now much thinner too: context builtin alias selection, return-action aliases, packet/socket layout routing, and attach-aware read/write surface selection now resolve through direct `EbpfProgramType` / `ProgramSpec` selectors instead of extra synthetic family tables layered on top of the actual declarative surfaces.
   - Recent progress: modeled `cgroup_sock` attach-sensitive direct-field policy now follows upstream more closely too, restricting direct `ctx.bound_dev_if` / `ctx.mark` / `ctx.priority` reads to `sock_create` / `sock_release` and adding corresponding ordinary writable assignments through the shared write-surface path.
   - Recent progress: the same modeled `cgroup_sock` surface now also exposes direct socket-tuple aliases through the existing `ctx.remote_*` / `ctx.local_*` field family, with post-bind family gating for `ctx.local_ip4` / `ctx.local_ip6` / `ctx.local_port` instead of inventing new cgroup_sock-only names.
   - Recent progress: modeled direct `cgroup_sock` metadata now also includes `ctx.rx_queue_mapping`, matching the existing typed `ctx.sk.rx_queue_mapping` field and upstream `bpf_sock` verifier surface on every supported cgroup_sock hook.
