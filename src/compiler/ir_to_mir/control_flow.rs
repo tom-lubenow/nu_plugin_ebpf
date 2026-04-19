@@ -2,7 +2,7 @@ use super::*;
 use crate::compiler::elf::ProgramReturnAlias;
 
 impl<'a> HirToMirLowering<'a> {
-    fn cleanup_return_src(hir: &HirFunction, target: HirBlockId) -> Option<RegId> {
+    pub(super) fn cleanup_return_src(hir: &HirFunction, target: HirBlockId) -> Option<RegId> {
         fn cleanup_only_for_src(stmts: &[HirStmt], src: RegId) -> bool {
             stmts.iter().all(|stmt| {
                 matches!(
@@ -55,7 +55,7 @@ impl<'a> HirToMirLowering<'a> {
         program_type.return_action_alias(&alias)
     }
 
-    fn note_return_seed(&mut self, seed: Option<SubfunctionReturnSeed>) {
+    pub(super) fn note_return_seed(&mut self, seed: Option<SubfunctionReturnSeed>) {
         self.current_return_seed_state = match &self.current_return_seed_state {
             CurrentReturnSeedState::Unset => CurrentReturnSeedState::Known(seed),
             CurrentReturnSeedState::Known(existing) if *existing == seed => {

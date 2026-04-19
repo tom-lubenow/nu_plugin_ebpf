@@ -1480,6 +1480,226 @@ fn test_user_function_returned_metadata_only_record_preserves_string_semantics()
 }
 
 #[test]
+fn test_multiblock_user_function_returned_metadata_only_record_preserves_string_semantics() {
+    use nu_protocol::{DeclId, RegId, VarId};
+
+    let param_var = VarId::new(81);
+    let user_func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(3),
+                        var_id: param_var,
+                    },
+                    HirStmt::Drain { src: RegId::new(3) },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Bool(true),
+                    },
+                ],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(4),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Record { capacity: 2 },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String("msg".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String("hi".into()),
+                    },
+                    HirStmt::RecordInsert {
+                        src_dst: RegId::new(0),
+                        key: RegId::new(1),
+                        val: RegId::new(2),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String("pid".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(7),
+                    },
+                    HirStmt::RecordInsert {
+                        src_dst: RegId::new(0),
+                        key: RegId::new(1),
+                        val: RegId::new(2),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Record { capacity: 2 },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String("msg".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String("bye".into()),
+                    },
+                    HirStmt::RecordInsert {
+                        src_dst: RegId::new(0),
+                        key: RegId::new(1),
+                        val: RegId::new(2),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String("pid".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(9),
+                    },
+                    HirStmt::RecordInsert {
+                        src_dst: RegId::new(0),
+                        key: RegId::new(1),
+                        val: RegId::new(2),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+
+    let main_func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(1),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("msg")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("!".into()),
+                },
+                HirStmt::StringAppend {
+                    src_dst: RegId::new(0),
+                    val: RegId::new(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(0),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(main_func, HashMap::new(), vec![], None);
+
+    let mut user_functions = HashMap::new();
+    user_functions.insert(DeclId::new(1), user_func);
+
+    let mut signatures = HashMap::new();
+    signatures.insert(
+        DeclId::new(1),
+        UserFunctionSig {
+            params: vec![UserParam {
+                name: Some("seed".into()),
+                kind: UserParamKind::Positional,
+                optional: false,
+            }],
+        },
+    );
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &HashMap::new(),
+        None,
+        &user_functions,
+        &signatures,
+    )
+    .expect("multiblock metadata-only record return should lower");
+
+    assert!(
+        result.program.subfunctions.is_empty(),
+        "record-returning multiblock user function should inline instead of lowering as a subfunction"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StringAppend { .. })),
+        "expected caller to keep returned record string field semantics after multiblock inline"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(inst, MirInst::CallSubfn { .. })),
+        "record-returning multiblock user function should not emit a BPF subfunction call"
+    );
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        None,
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("multiblock metadata-only record return should compile after caller projection");
+}
+
+#[test]
 fn test_view_ir_style_user_function_returned_annotated_record_can_flow_through_local() {
     use nu_protocol::ast::{CellPath, Math, Operator, PathMember};
     use nu_protocol::casing::Casing;

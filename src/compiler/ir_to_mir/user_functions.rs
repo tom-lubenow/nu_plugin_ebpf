@@ -449,23 +449,37 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     fn should_inline_user_function_for_abi(hir: &HirFunction) -> bool {
-        if hir.blocks.len() != 1 {
-            return false;
+        let has_direct_single_block_return = hir.blocks.len() == 1
+            && matches!(hir.blocks[0].terminator, HirTerminator::Return { .. });
+
+        let has_record_builder = hir.blocks.iter().any(|block| {
+            block.stmts.iter().any(|stmt| {
+                matches!(
+                    stmt,
+                    HirStmt::RecordInsert { .. }
+                        | HirStmt::UpsertCellPath { .. }
+                        | HirStmt::LoadLiteral {
+                            lit: HirLiteral::Record { .. },
+                            ..
+                        }
+                )
+            })
+        });
+        if has_record_builder {
+            return true;
         }
 
-        let HirTerminator::Return { .. } = hir.blocks[0].terminator else {
+        if !has_direct_single_block_return {
             return false;
-        };
+        }
 
         hir.blocks[0].stmts.iter().any(|stmt| {
             matches!(
                 stmt,
                 HirStmt::StringAppend { .. }
                     | HirStmt::ListPush { .. }
-                    | HirStmt::RecordInsert { .. }
-                    | HirStmt::UpsertCellPath { .. }
                     | HirStmt::LoadLiteral {
-                        lit: HirLiteral::Record { .. } | HirLiteral::List { .. },
+                        lit: HirLiteral::List { .. },
                         ..
                     }
             )

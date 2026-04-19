@@ -7,6 +7,80 @@ impl<'a> HirToMirLowering<'a> {
             .find_map(|(captured_var_id, value)| (*captured_var_id == var_id).then_some(value))
     }
 
+    fn lower_inlined_user_function_return(
+        &mut self,
+        src: RegId,
+        dst_vreg: VReg,
+        continuation_block: BlockId,
+        materialize_record_return: bool,
+    ) -> Result<(Option<RegMetadata>, Option<MirType>), CompileError> {
+        let mut result_vreg = self.reg_map.get(&src.get()).copied();
+        let mut result_meta = self.get_metadata(src).cloned();
+        if let Some(meta) = result_meta.as_mut()
+            && let Some(source_var) = meta.source_var
+            && !self.annotated_mut_globals.contains_key(&source_var)
+            && !self.mutable_capture_globals.contains_key(&source_var)
+        {
+            meta.source_var = None;
+        }
+
+        if materialize_record_return
+            && let Some(meta) = result_meta.as_ref()
+            && !meta.record_fields.is_empty()
+            && let Some((materialized_vreg, materialized_meta)) =
+                self.materialize_metadata_record_value(meta)?
+        {
+            result_vreg = Some(materialized_vreg);
+            result_meta = Some(materialized_meta);
+        }
+
+        let result_type_hint = result_vreg
+            .and_then(|vreg| self.vreg_type_hints.get(&vreg).cloned())
+            .or_else(|| {
+                result_meta
+                    .as_ref()
+                    .and_then(|meta| meta.field_type.clone())
+            });
+
+        if let Some(result_vreg) = result_vreg {
+            self.emit(MirInst::Copy {
+                dst: dst_vreg,
+                src: MirValue::VReg(result_vreg),
+            });
+        }
+
+        let seed = result_meta
+            .as_ref()
+            .map(|meta| SubfunctionReturnSeed {
+                type_hint: result_type_hint.clone(),
+                field_type: meta
+                    .field_type
+                    .clone()
+                    .or_else(|| Self::metadata_record_layout(meta))
+                    .or_else(|| {
+                        result_type_hint
+                            .as_ref()
+                            .map(|ty| self.stored_generic_map_value_type(ty))
+                    }),
+                annotated_semantics: meta
+                    .annotated_semantics
+                    .clone()
+                    .or_else(|| Self::metadata_record_semantics(meta)),
+            })
+            .or_else(|| {
+                result_type_hint.clone().map(|ty| SubfunctionReturnSeed {
+                    type_hint: Some(ty.clone()),
+                    field_type: Some(self.stored_generic_map_value_type(&ty)),
+                    annotated_semantics: None,
+                })
+            });
+        self.note_return_seed(seed);
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+        Ok((result_meta, result_type_hint))
+    }
+
     #[allow(dead_code)]
     pub(super) fn inline_user_function(
         &mut self,
@@ -21,17 +95,6 @@ impl<'a> HirToMirLowering<'a> {
                 decl_id.get()
             ))
         })?;
-        if hir.blocks.len() != 1 {
-            return Err(CompileError::UnsupportedInstruction(
-                "inlined user functions currently require a single basic block".into(),
-            ));
-        }
-        let block = &hir.blocks[0];
-        let HirTerminator::Return { src } = block.terminator else {
-            return Err(CompileError::UnsupportedInstruction(
-                "inlined user functions currently require a direct return".into(),
-            ));
-        };
 
         let sig = self.decl_signatures.get(&decl_id);
         let param_vars = self.subfunction_params(decl_id, hir);
@@ -58,6 +121,13 @@ impl<'a> HirToMirLowering<'a> {
                 .get(&decl_id)
                 .cloned()
                 .unwrap_or_default(),
+        );
+        let old_hir_block_map = std::mem::take(&mut self.hir_block_map);
+        let old_loop_contexts = std::mem::take(&mut self.loop_contexts);
+        let old_loop_body_inits = std::mem::take(&mut self.loop_body_inits);
+        let old_return_seed_state = std::mem::replace(
+            &mut self.current_return_seed_state,
+            CurrentReturnSeedState::Unset,
         );
 
         let mut next_arg = 0usize;
@@ -122,32 +192,190 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
-        for stmt in &block.stmts {
-            self.lower_stmt(stmt)?;
-        }
+        let mut result_meta = None;
+        let mut result_type_hint = None;
+        let mut return_count = 0usize;
 
-        let result_vreg = self.reg_map.get(&src.get()).copied();
-        let mut result_meta = self.get_metadata(src).cloned();
-        if let Some(meta) = result_meta.as_mut()
-            && let Some(source_var) = meta.source_var
-            && !self.annotated_mut_globals.contains_key(&source_var)
-            && !self.mutable_capture_globals.contains_key(&source_var)
+        if hir.blocks.len() == 1
+            && let [block] = hir.blocks.as_slice()
+            && let HirTerminator::Return { src } = block.terminator
         {
-            meta.source_var = None;
-        }
-        let result_type_hint = result_vreg
-            .and_then(|vreg| self.vreg_type_hints.get(&vreg).cloned())
-            .or_else(|| {
-                result_meta
-                    .as_ref()
-                    .and_then(|meta| meta.field_type.clone())
-            });
+            for stmt in &block.stmts {
+                self.lower_stmt(stmt)?;
+            }
 
-        if let Some(result_vreg) = result_vreg {
-            self.emit(MirInst::Copy {
-                dst: dst_vreg,
-                src: MirValue::VReg(result_vreg),
-            });
+            let result_vreg = self.reg_map.get(&src.get()).copied();
+            result_meta = self.get_metadata(src).cloned();
+            if let Some(meta) = result_meta.as_mut()
+                && let Some(source_var) = meta.source_var
+                && !self.annotated_mut_globals.contains_key(&source_var)
+                && !self.mutable_capture_globals.contains_key(&source_var)
+            {
+                meta.source_var = None;
+            }
+            result_type_hint = result_vreg
+                .and_then(|vreg| self.vreg_type_hints.get(&vreg).cloned())
+                .or_else(|| {
+                    result_meta
+                        .as_ref()
+                        .and_then(|meta| meta.field_type.clone())
+                });
+
+            if let Some(result_vreg) = result_vreg {
+                self.emit(MirInst::Copy {
+                    dst: dst_vreg,
+                    src: MirValue::VReg(result_vreg),
+                });
+            }
+            return_count = 1;
+        } else {
+            let continuation_block = self.func.alloc_block();
+            let entry_block = self.current_block;
+            let materialize_record_return = true;
+
+            self.hir_block_map = HashMap::new();
+            self.loop_contexts = Vec::new();
+            self.loop_body_inits = HashMap::new();
+
+            for block in &hir.blocks {
+                let mir_block = if block.id == hir.entry {
+                    entry_block
+                } else {
+                    self.func.alloc_block()
+                };
+                self.hir_block_map.insert(block.id, mir_block);
+            }
+
+            for block in &hir.blocks {
+                self.current_block = *self.hir_block_map.get(&block.id).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction("HIR block mapping missing".into())
+                })?;
+
+                if let Some(inits) = self.loop_body_inits.remove(&self.current_block) {
+                    for (dst, src) in inits {
+                        self.emit(MirInst::Copy { dst, src });
+                    }
+                }
+
+                for stmt in &block.stmts {
+                    self.lower_stmt(stmt)?;
+                }
+
+                if let HirTerminator::Goto { target } | HirTerminator::Jump { target } =
+                    &block.terminator
+                    && let Some(src) = Self::cleanup_return_src(hir, *target)
+                {
+                    let (inline_meta, inline_type_hint) = self.lower_inlined_user_function_return(
+                        src,
+                        dst_vreg,
+                        continuation_block,
+                        materialize_record_return,
+                    )?;
+                    return_count += 1;
+                    if return_count == 1 {
+                        result_meta = inline_meta;
+                        result_type_hint = inline_type_hint;
+                    }
+                    continue;
+                }
+
+                if let HirTerminator::BranchIf {
+                    cond,
+                    if_true,
+                    if_false,
+                } = &block.terminator
+                {
+                    let if_true = if let Some(src) = Self::cleanup_return_src(hir, *if_true) {
+                        let return_block = self.func.alloc_block();
+                        let old_block = self.current_block;
+                        self.current_block = return_block;
+                        let (inline_meta, inline_type_hint) = self
+                            .lower_inlined_user_function_return(
+                                src,
+                                dst_vreg,
+                                continuation_block,
+                                materialize_record_return,
+                            )?;
+                        return_count += 1;
+                        if return_count == 1 {
+                            result_meta = inline_meta;
+                            result_type_hint = inline_type_hint;
+                        }
+                        self.current_block = old_block;
+                        return_block
+                    } else {
+                        *self.hir_block_map.get(if_true).ok_or_else(|| {
+                            CompileError::UnsupportedInstruction("Invalid branch target".into())
+                        })?
+                    };
+                    let if_false = if let Some(src) = Self::cleanup_return_src(hir, *if_false) {
+                        let return_block = self.func.alloc_block();
+                        let old_block = self.current_block;
+                        self.current_block = return_block;
+                        let (inline_meta, inline_type_hint) = self
+                            .lower_inlined_user_function_return(
+                                src,
+                                dst_vreg,
+                                continuation_block,
+                                materialize_record_return,
+                            )?;
+                        return_count += 1;
+                        if return_count == 1 {
+                            result_meta = inline_meta;
+                            result_type_hint = inline_type_hint;
+                        }
+                        self.current_block = old_block;
+                        return_block
+                    } else {
+                        *self.hir_block_map.get(if_false).ok_or_else(|| {
+                            CompileError::UnsupportedInstruction("Invalid branch target".into())
+                        })?
+                    };
+                    let cond_vreg = self.get_vreg(*cond);
+                    self.terminate(MirInst::Branch {
+                        cond: cond_vreg,
+                        if_true,
+                        if_false,
+                    });
+                    continue;
+                }
+
+                match &block.terminator {
+                    HirTerminator::Return { src } => {
+                        let (inline_meta, inline_type_hint) = self
+                            .lower_inlined_user_function_return(
+                                *src,
+                                dst_vreg,
+                                continuation_block,
+                                materialize_record_return,
+                            )?;
+                        return_count += 1;
+                        if return_count == 1 {
+                            result_meta = inline_meta;
+                            result_type_hint = inline_type_hint;
+                        }
+                    }
+                    HirTerminator::ReturnEarly { .. } => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "Return early is not supported in eBPF".into(),
+                        ));
+                    }
+                    HirTerminator::Unreachable => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "Encountered unreachable block".into(),
+                        ));
+                    }
+                    term => {
+                        self.lower_terminator(term)?;
+                    }
+                }
+            }
+
+            self.current_block = continuation_block;
+            if return_count > 1 {
+                result_meta = None;
+                result_type_hint = None;
+            }
         }
 
         self.reg_map = old_reg_map;
@@ -155,14 +383,30 @@ impl<'a> HirToMirLowering<'a> {
         self.var_mappings = old_var_mappings;
         self.var_metadata = old_var_metadata;
         self.current_type_hints = old_type_hints;
+        self.hir_block_map = old_hir_block_map;
+        self.loop_contexts = old_loop_contexts;
+        self.loop_body_inits = old_loop_body_inits;
+
+        let inline_return_seed_state =
+            std::mem::replace(&mut self.current_return_seed_state, old_return_seed_state);
 
         self.reg_map.insert(src_dst.get(), dst_vreg);
         self.reg_metadata.remove(&src_dst.get());
-        if let Some(meta) = result_meta {
-            self.reg_metadata.insert(src_dst.get(), meta);
-        }
-        if let Some(ty) = result_type_hint {
-            self.vreg_type_hints.insert(dst_vreg, ty);
+        if return_count <= 1 {
+            if let Some(meta) = result_meta {
+                self.reg_metadata.insert(src_dst.get(), meta);
+            }
+            if let Some(ty) = result_type_hint {
+                self.vreg_type_hints.insert(dst_vreg, ty);
+            }
+        } else if let CurrentReturnSeedState::Known(Some(seed)) = inline_return_seed_state {
+            if let Some(type_hint) = seed.type_hint.clone() {
+                self.vreg_type_hints.insert(dst_vreg, type_hint);
+            }
+            let meta = self.get_or_create_metadata(src_dst);
+            meta.field_type = seed.field_type;
+            meta.annotated_semantics = seed.annotated_semantics;
+            meta.source_var = None;
         }
         Ok(())
     }
