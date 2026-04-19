@@ -119,6 +119,25 @@ fn parse_offset(s: &str) -> Result<u64, ProgramSpecParseError> {
     }
 }
 
+pub(crate) fn struct_ops_callback_is_sleepable(value_type_name: &str, callback_name: &str) -> bool {
+    match value_type_name {
+        // sched_ext documents these callbacks as sleepable and they must be
+        // emitted under `struct_ops.s/...` rather than plain `struct_ops/...`.
+        "sched_ext_ops" => matches!(
+            callback_name,
+            "init_task"
+                | "cgroup_init"
+                | "cgroup_exit"
+                | "cgroup_prep_move"
+                | "cpu_online"
+                | "cpu_offline"
+                | "init"
+                | "exit"
+        ),
+        _ => false,
+    }
+}
+
 /// Parsed xdp target information.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XdpTarget {
@@ -1156,33 +1175,92 @@ impl PerfEventTarget {
 /// Parsed program specification with structured target metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProgramSpec {
-    Kprobe { function: String },
-    Kretprobe { function: String },
-    Fentry { function: String },
-    Fexit { function: String },
-    TpBtf { name: String },
-    Lsm { hook: String },
-    Tracepoint { category: String, name: String },
-    RawTracepoint { name: String },
-    Uprobe { target: UprobeTarget },
-    Uretprobe { target: UprobeTarget },
-    Xdp { target: XdpTarget },
-    PerfEvent { target: PerfEventTarget },
-    SocketFilter { target: SocketFilterTarget },
-    SkLookup { target: SkLookupTarget },
-    SkMsg { target: SkMsgTarget },
-    SkSkb { target: SkSkbTarget },
-    SkSkbParser { target: SkSkbTarget },
-    CgroupDevice { target: CgroupDeviceTarget },
-    SockOps { target: SockOpsTarget },
-    Tc { target: TcTarget },
-    CgroupSkb { target: CgroupSkbTarget },
-    CgroupSock { target: CgroupSockTarget },
-    CgroupSysctl { target: CgroupSysctlTarget },
-    CgroupSockopt { target: CgroupSockoptTarget },
-    CgroupSockAddr { target: CgroupSockAddrTarget },
-    LircMode2 { target: LircMode2Target },
-    StructOps { value_type_name: String },
+    Kprobe {
+        function: String,
+    },
+    Kretprobe {
+        function: String,
+    },
+    Fentry {
+        function: String,
+    },
+    Fexit {
+        function: String,
+    },
+    TpBtf {
+        name: String,
+    },
+    Lsm {
+        hook: String,
+    },
+    Tracepoint {
+        category: String,
+        name: String,
+    },
+    RawTracepoint {
+        name: String,
+    },
+    Uprobe {
+        target: UprobeTarget,
+    },
+    Uretprobe {
+        target: UprobeTarget,
+    },
+    Xdp {
+        target: XdpTarget,
+    },
+    PerfEvent {
+        target: PerfEventTarget,
+    },
+    SocketFilter {
+        target: SocketFilterTarget,
+    },
+    SkLookup {
+        target: SkLookupTarget,
+    },
+    SkMsg {
+        target: SkMsgTarget,
+    },
+    SkSkb {
+        target: SkSkbTarget,
+    },
+    SkSkbParser {
+        target: SkSkbTarget,
+    },
+    CgroupDevice {
+        target: CgroupDeviceTarget,
+    },
+    SockOps {
+        target: SockOpsTarget,
+    },
+    Tc {
+        target: TcTarget,
+    },
+    CgroupSkb {
+        target: CgroupSkbTarget,
+    },
+    CgroupSock {
+        target: CgroupSockTarget,
+    },
+    CgroupSysctl {
+        target: CgroupSysctlTarget,
+    },
+    CgroupSockopt {
+        target: CgroupSockoptTarget,
+    },
+    CgroupSockAddr {
+        target: CgroupSockAddrTarget,
+    },
+    LircMode2 {
+        target: LircMode2Target,
+    },
+    StructOps {
+        value_type_name: String,
+    },
+    StructOpsCallback {
+        value_type_name: String,
+        callback_name: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1366,7 +1444,9 @@ impl ProgramSpec {
             ProgramSpec::CgroupSockopt { .. } => EbpfProgramType::CgroupSockopt,
             ProgramSpec::CgroupSockAddr { .. } => EbpfProgramType::CgroupSockAddr,
             ProgramSpec::LircMode2 { .. } => EbpfProgramType::LircMode2,
-            ProgramSpec::StructOps { .. } => EbpfProgramType::StructOps,
+            ProgramSpec::StructOps { .. } | ProgramSpec::StructOpsCallback { .. } => {
+                EbpfProgramType::StructOps
+            }
         }
     }
 
@@ -1400,6 +1480,7 @@ impl ProgramSpec {
             ProgramSpec::CgroupSockAddr { target } => target.target_string(),
             ProgramSpec::LircMode2 { target } => target.target_string(),
             ProgramSpec::StructOps { value_type_name } => value_type_name.clone(),
+            ProgramSpec::StructOpsCallback { callback_name, .. } => callback_name.clone(),
         }
     }
 
@@ -1412,7 +1493,10 @@ impl ProgramSpec {
 
     pub(crate) fn struct_ops_value_type_name(&self) -> Option<&str> {
         match self {
-            ProgramSpec::StructOps { value_type_name } => Some(value_type_name),
+            ProgramSpec::StructOps { value_type_name }
+            | ProgramSpec::StructOpsCallback {
+                value_type_name, ..
+            } => Some(value_type_name),
             _ => None,
         }
     }
@@ -1577,6 +1661,10 @@ mod tests {
             .expect("tracepoint spec should parse");
         let struct_ops =
             ProgramSpec::parse("struct_ops:sched_ext_ops").expect("struct_ops spec should parse");
+        let callback = ProgramSpec::StructOpsCallback {
+            value_type_name: "sched_ext_ops".to_string(),
+            callback_name: "select_cpu".to_string(),
+        };
 
         assert_eq!(
             tracepoint.tracepoint_parts(),
@@ -1588,6 +1676,14 @@ mod tests {
             struct_ops.struct_ops_value_type_name(),
             Some("sched_ext_ops")
         );
+        assert_eq!(callback.tracepoint_parts(), None);
+        assert_eq!(callback.struct_ops_value_type_name(), Some("sched_ext_ops"));
+        assert_eq!(callback.target_string(), "select_cpu");
+        assert!(struct_ops_callback_is_sleepable("sched_ext_ops", "init"));
+        assert!(!struct_ops_callback_is_sleepable(
+            "sched_ext_ops",
+            "dispatch"
+        ));
     }
 
     #[test]

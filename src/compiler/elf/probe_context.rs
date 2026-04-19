@@ -241,7 +241,13 @@ impl ProbeContext {
     ) -> Self {
         let value_type_name = value_type_name.into();
         let callback_name = callback_name.into();
-        Self::from_program_spec_parts(ProgramSpec::StructOps { value_type_name }, callback_name)
+        Self::from_program_spec_parts(
+            ProgramSpec::StructOpsCallback {
+                value_type_name,
+                callback_name: callback_name.clone(),
+            },
+            callback_name,
+        )
     }
 
     /// Create a default probe context for tests or legacy code
@@ -902,70 +908,11 @@ impl ProbeContext {
         self.program_type().get_socket_cookie_arg_policy()
     }
 
-    fn sched_ext_callback(&self) -> Option<&str> {
-        self.struct_ops_value_type_name()
-            .filter(|value_type_name| *value_type_name == "sched_ext_ops")
-            .map(|_| self.target.as_str())
-    }
-
-    fn sched_ext_callback_is_sleepable(callback: &str) -> bool {
-        super::struct_ops_callback_is_sleepable("sched_ext_ops", callback)
-    }
-
-    fn sched_ext_kfunc_allowed_callbacks(kfunc: &str) -> Option<&'static [&'static str]> {
-        match kfunc {
-            "scx_bpf_dispatch_nr_slots"
-            | "scx_bpf_dsq_move_to_local"
-            | "scx_bpf_dispatch_cancel"
-            | "scx_bpf_dsq_move"
-            | "scx_bpf_dsq_move_vtime"
-            | "scx_bpf_dsq_move_set_slice"
-            | "scx_bpf_dsq_move_set_vtime" => Some(&["dispatch"]),
-            "scx_bpf_reenqueue_local" => Some(&["cpu_release"]),
-            "scx_bpf_select_cpu_dfl" | "scx_bpf_select_cpu_and" => Some(&["select_cpu", "enqueue"]),
-            "scx_bpf_dsq_insert" | "scx_bpf_dsq_insert_vtime" => {
-                Some(&["select_cpu", "enqueue", "dispatch"])
-            }
-            _ => None,
-        }
-    }
-
-    fn format_sched_ext_callback_list(callbacks: &[&str]) -> String {
-        match callbacks {
-            [] => String::new(),
-            [only] => format!("sched_ext_ops.{only}"),
-            [left, right] => format!("sched_ext_ops.{left} or sched_ext_ops.{right}"),
-            _ => {
-                let mut names = callbacks
-                    .iter()
-                    .map(|callback| format!("sched_ext_ops.{callback}"))
-                    .collect::<Vec<_>>();
-                let last = names.pop().unwrap();
-                format!("{}, or {}", names.join(", "), last)
-            }
-        }
-    }
-
     /// Returns a user-facing error message when a kfunc is not valid
     /// for this program type or attach context.
     pub fn kfunc_call_error(&self, kfunc: &str) -> Option<String> {
-        let active_callback = self.sched_ext_callback()?;
-        if kfunc == "scx_bpf_create_dsq" && !Self::sched_ext_callback_is_sleepable(active_callback)
-        {
-            return Some(format!(
-                "kfunc '{}' is only valid in sleepable sched_ext_ops callbacks, not sched_ext_ops.{}",
-                kfunc, active_callback
-            ));
-        }
-        let allowed_callbacks = Self::sched_ext_kfunc_allowed_callbacks(kfunc)?;
-        if allowed_callbacks.contains(&active_callback) {
-            return None;
-        }
-        let allowed = Self::format_sched_ext_callback_list(allowed_callbacks);
-        Some(format!(
-            "kfunc '{}' is only valid in {}, not sched_ext_ops.{}",
-            kfunc, allowed, active_callback
-        ))
+        self.parsed_program_spec()
+            .and_then(|spec| spec.kfunc_call_error(kfunc))
     }
 
     /// Returns a user-facing error message when a socket projection member is

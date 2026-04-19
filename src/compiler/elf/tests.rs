@@ -667,7 +667,10 @@ fn test_probe_context_struct_ops_callback_uses_value_type_program_spec() {
 
     assert!(matches!(
         ctx.parsed_program_spec(),
-        Some(ProgramSpec::StructOps { value_type_name }) if value_type_name == "sched_ext_ops"
+        Some(ProgramSpec::StructOpsCallback {
+            value_type_name,
+            callback_name
+        }) if value_type_name == "sched_ext_ops" && callback_name == "select_cpu"
     ));
 }
 

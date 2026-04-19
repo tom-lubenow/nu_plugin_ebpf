@@ -24,7 +24,9 @@ use super::mir::{
     KSTACK_MAP_NAME, MapRef, MirType, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME,
     TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
 };
-use crate::program_spec::ProgramSpec;
+use crate::program_spec::{
+    ProgramSpec, struct_ops_callback_is_sleepable as program_spec_struct_ops_callback_is_sleepable,
+};
 
 mod probe_context;
 mod program_ctx_access;
@@ -33,6 +35,7 @@ mod program_ctx_schema;
 mod program_ctx_writes;
 mod program_helper_policy;
 mod program_impl;
+mod program_kfunc_policy;
 mod program_return_policy;
 mod program_types;
 
@@ -1322,22 +1325,7 @@ pub struct CompiledStructOpsCallback {
 }
 
 pub fn struct_ops_callback_is_sleepable(value_type_name: &str, callback_name: &str) -> bool {
-    match value_type_name {
-        // sched_ext documents these callbacks as sleepable and they must be
-        // emitted under `struct_ops.s/...` rather than plain `struct_ops/...`.
-        "sched_ext_ops" => matches!(
-            callback_name,
-            "init_task"
-                | "cgroup_init"
-                | "cgroup_exit"
-                | "cgroup_prep_move"
-                | "cpu_online"
-                | "cpu_offline"
-                | "init"
-                | "exit"
-        ),
-        _ => false,
-    }
+    program_spec_struct_ops_callback_is_sleepable(value_type_name, callback_name)
 }
 
 pub fn struct_ops_callback_section_name(
