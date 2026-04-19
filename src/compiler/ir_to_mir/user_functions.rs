@@ -3,6 +3,7 @@ use crate::compiler::subfn_summaries::{
     SubfunctionReturnSummary, infer_subfunction_return_summaries,
 };
 use nu_protocol::Record;
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct UserFunctionCallArg {
@@ -54,15 +55,39 @@ impl<'a> HirToMirLowering<'a> {
         block: &crate::compiler::hir::HirBlock,
         return_src: RegId,
     ) -> Option<SubfunctionAggregateReturnAbi> {
+        fn clear_tracked_reg(
+            literal_strings: &mut HashMap<RegId, String>,
+            string_slots: &mut HashSet<RegId>,
+            reg_types: &mut HashMap<RegId, MirType>,
+            list_caps: &mut HashMap<RegId, usize>,
+            record_fields: &mut HashMap<RegId, Vec<(String, MirType)>>,
+            reg: RegId,
+        ) {
+            literal_strings.remove(&reg);
+            string_slots.remove(&reg);
+            reg_types.remove(&reg);
+            list_caps.remove(&reg);
+            record_fields.remove(&reg);
+        }
+
         let hint_map = self.decl_type_hints.get(&decl_id);
         let mut literal_strings: HashMap<RegId, String> = HashMap::new();
         let mut reg_types: HashMap<RegId, MirType> = HashMap::new();
         let mut list_caps: HashMap<RegId, usize> = HashMap::new();
         let mut record_fields: HashMap<RegId, Vec<(String, MirType)>> = HashMap::new();
+        let mut string_slots: HashSet<RegId> = HashSet::new();
 
         for stmt in &block.stmts {
             match stmt {
                 HirStmt::LoadLiteral { dst, lit } => {
+                    clear_tracked_reg(
+                        &mut literal_strings,
+                        &mut string_slots,
+                        &mut reg_types,
+                        &mut list_caps,
+                        &mut record_fields,
+                        *dst,
+                    );
                     if let Some(ty) = hint_map
                         .and_then(|hints| hints.get(&dst.get()).cloned())
                         .or_else(|| Self::inferred_literal_type(&lit))
@@ -74,6 +99,7 @@ impl<'a> HirToMirLowering<'a> {
                             if let Ok(string) = std::str::from_utf8(&bytes) {
                                 literal_strings.insert(*dst, string.to_string());
                             }
+                            string_slots.insert(*dst);
                         }
                         HirLiteral::Filepath { val, .. }
                         | HirLiteral::Directory { val, .. }
@@ -81,6 +107,7 @@ impl<'a> HirToMirLowering<'a> {
                             if let Ok(string) = std::str::from_utf8(&val) {
                                 literal_strings.insert(*dst, string.to_string());
                             }
+                            string_slots.insert(*dst);
                         }
                         HirLiteral::Record { .. } => {
                             record_fields.insert(*dst, Vec::new());
@@ -93,7 +120,16 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 HirStmt::LoadValue { dst, val } => match &**val {
                     Value::String { val, .. } | Value::Glob { val, .. } => {
+                        clear_tracked_reg(
+                            &mut literal_strings,
+                            &mut string_slots,
+                            &mut reg_types,
+                            &mut list_caps,
+                            &mut record_fields,
+                            *dst,
+                        );
                         literal_strings.insert(*dst, val.clone());
+                        string_slots.insert(*dst);
                         reg_types.insert(
                             *dst,
                             MirType::Array {
@@ -105,16 +141,52 @@ impl<'a> HirToMirLowering<'a> {
                         );
                     }
                     Value::Int { .. } => {
+                        clear_tracked_reg(
+                            &mut literal_strings,
+                            &mut string_slots,
+                            &mut reg_types,
+                            &mut list_caps,
+                            &mut record_fields,
+                            *dst,
+                        );
                         reg_types.insert(*dst, MirType::I64);
                     }
                     Value::Bool { .. } => {
+                        clear_tracked_reg(
+                            &mut literal_strings,
+                            &mut string_slots,
+                            &mut reg_types,
+                            &mut list_caps,
+                            &mut record_fields,
+                            *dst,
+                        );
                         reg_types.insert(*dst, MirType::Bool);
                     }
-                    _ => {}
+                    _ => {
+                        clear_tracked_reg(
+                            &mut literal_strings,
+                            &mut string_slots,
+                            &mut reg_types,
+                            &mut list_caps,
+                            &mut record_fields,
+                            *dst,
+                        );
+                    }
                 },
                 HirStmt::Move { dst, src } | HirStmt::Clone { dst, src } => {
+                    clear_tracked_reg(
+                        &mut literal_strings,
+                        &mut string_slots,
+                        &mut reg_types,
+                        &mut list_caps,
+                        &mut record_fields,
+                        *dst,
+                    );
                     if let Some(string) = literal_strings.get(&src).cloned() {
                         literal_strings.insert(*dst, string);
+                    }
+                    if string_slots.contains(&src) {
+                        string_slots.insert(*dst);
                     }
                     if let Some(ty) = hint_map
                         .and_then(|hints| hints.get(&dst.get()).cloned())
@@ -127,6 +199,22 @@ impl<'a> HirToMirLowering<'a> {
                     }
                     if let Some(fields) = record_fields.get(&src).cloned() {
                         record_fields.insert(*dst, fields);
+                    }
+                }
+                HirStmt::LoadVariable { dst, .. } => {
+                    clear_tracked_reg(
+                        &mut literal_strings,
+                        &mut string_slots,
+                        &mut reg_types,
+                        &mut list_caps,
+                        &mut record_fields,
+                        *dst,
+                    );
+                    if let Some(ty) = hint_map
+                        .and_then(|hints| hints.get(&dst.get()).cloned())
+                        .map(|ty| self.stored_generic_map_value_type(&ty))
+                    {
+                        reg_types.insert(*dst, ty);
                     }
                 }
                 HirStmt::RecordInsert { src_dst, key, val } => {
@@ -144,6 +232,14 @@ impl<'a> HirToMirLowering<'a> {
                                 elem: Box::new(MirType::I64),
                                 len: capacity.saturating_add(1),
                             })
+                        })
+                        .map(|ty| self.stored_generic_map_value_type(&ty))
+                        .map(|ty| {
+                            if string_slots.contains(&val) {
+                                Self::stored_record_field_type(&ty)
+                            } else {
+                                ty
+                            }
                         })?;
                     let fields = record_fields.entry(*src_dst).or_default();
                     if let Some(existing) = fields.iter_mut().find(|(name, _)| *name == key_name) {
@@ -178,6 +274,18 @@ impl<'a> HirToMirLowering<'a> {
                     .copied()
                     .map(|max_len| SubfunctionAggregateReturnAbi::List { max_len })
             })
+    }
+
+    fn stored_record_field_type(ty: &MirType) -> MirType {
+        match ty {
+            MirType::Array { elem, len } if matches!(elem.as_ref(), MirType::U8) => {
+                MirType::Array {
+                    elem: elem.clone(),
+                    len: len.saturating_add(std::mem::size_of::<u64>()),
+                }
+            }
+            _ => ty.clone(),
+        }
     }
 
     fn constant_record_key_value(
@@ -656,11 +764,24 @@ impl<'a> HirToMirLowering<'a> {
                 )
             })
         });
-        if !simple_list_builder {
-            return None;
-        }
+        let simple_record_builder = hir.blocks.len() == 1
+            && hir.blocks.iter().all(|block| {
+                block.stmts.iter().all(|stmt| {
+                    matches!(
+                        stmt,
+                        HirStmt::LoadLiteral { .. }
+                            | HirStmt::LoadValue { .. }
+                            | HirStmt::LoadVariable { .. }
+                            | HirStmt::Move { .. }
+                            | HirStmt::Clone { .. }
+                            | HirStmt::RecordInsert { .. }
+                            | HirStmt::Drain { .. }
+                            | HirStmt::Drop { .. }
+                    )
+                })
+            });
 
-        if let Some(hints) = self.decl_type_hints.get(&decl_id) {
+        if simple_list_builder && let Some(hints) = self.decl_type_hints.get(&decl_id) {
             let return_tys: Vec<MirType> = hir
                 .blocks
                 .iter()
@@ -710,7 +831,9 @@ impl<'a> HirToMirLowering<'a> {
             .all(|abi| abi == &first_abi)
             .then_some(first_abi)
             .and_then(|abi| match abi {
-                SubfunctionAggregateReturnAbi::List { .. } => Some(abi),
+                SubfunctionAggregateReturnAbi::List { .. } if simple_list_builder => Some(abi),
+                SubfunctionAggregateReturnAbi::List { .. } => None,
+                SubfunctionAggregateReturnAbi::Record { .. } if simple_record_builder => Some(abi),
                 SubfunctionAggregateReturnAbi::Record { .. } => None,
             })
     }

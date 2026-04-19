@@ -1441,6 +1441,25 @@ fn test_user_function_returned_metadata_only_record_preserves_string_semantics()
     )
     .expect("metadata-only record return should keep enough information for caller projection");
 
+    assert_eq!(
+        result.program.subfunctions.len(),
+        1,
+        "single-block metadata-only record return should lower as a BPF subfunction with an aggregate out slot"
+    );
+    assert_eq!(
+        result.program.subfunctions[0].param_count, 2,
+        "record-returning subfunction should receive the user argument plus the hidden aggregate out parameter"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::CallSubfn { .. })),
+        "single-block metadata-only record return should emit a BPF subfunction call"
+    );
     assert!(
         result
             .program
