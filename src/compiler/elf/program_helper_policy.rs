@@ -27,6 +27,7 @@ enum HelperProgramSurfaceFamily {
     Tc,
     PerfEventOutput,
     GetStackId,
+    LegacyProbeRead,
     SocketCookie,
     SocketUid,
     NetnsCookie,
@@ -94,6 +95,20 @@ impl HelperProgramSurfaceFamily {
                     | EbpfProgramType::Kretprobe
                     | EbpfProgramType::Uprobe
                     | EbpfProgramType::Uretprobe
+                    | EbpfProgramType::PerfEvent
+                    | EbpfProgramType::RawTracepoint
+                    | EbpfProgramType::Tracepoint
+                    | EbpfProgramType::Fentry
+                    | EbpfProgramType::Fexit
+                    | EbpfProgramType::TpBtf
+            ),
+            Self::LegacyProbeRead => matches!(
+                program_type,
+                EbpfProgramType::Kprobe
+                    | EbpfProgramType::Kretprobe
+                    | EbpfProgramType::Uprobe
+                    | EbpfProgramType::Uretprobe
+                    | EbpfProgramType::Lsm
                     | EbpfProgramType::PerfEvent
                     | EbpfProgramType::RawTracepoint
                     | EbpfProgramType::Tracepoint
@@ -260,6 +275,9 @@ impl HelperProgramSurfaceFamily {
             Self::GetStackId => {
                 "kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf"
             }
+            Self::LegacyProbeRead => {
+                "kprobe, kretprobe, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf"
+            }
             Self::SocketCookie => {
                 "fentry, fexit, tp_btf, socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser"
             }
@@ -386,6 +404,9 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         },
         BpfHelper::GetStackId => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::GetStackId,
+        },
+        BpfHelper::ProbeRead => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::LegacyProbeRead,
         },
         BpfHelper::GetSocketCookie => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::SocketCookie,

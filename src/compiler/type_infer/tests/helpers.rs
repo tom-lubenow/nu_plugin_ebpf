@@ -1740,6 +1740,39 @@ fn test_type_error_get_stackid_helper_rejects_xdp_program() {
 }
 
 #[test]
+fn test_type_error_probe_read_helper_rejects_xdp_program() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let out_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::ProbeRead as u32,
+        args: vec![
+            MirValue::StackSlot(out_slot),
+            MirValue::Const(8),
+            MirValue::VReg(ctx),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_probe_read to be rejected on xdp");
+    assert!(errs.iter().any(|e| e.message.contains(
+        "helper 'bpf_probe_read' is only valid in kprobe, kretprobe, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf programs"
+    )));
+}
+
+#[test]
 fn test_type_error_store_hdr_opt_helper_requires_zero_flags() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
