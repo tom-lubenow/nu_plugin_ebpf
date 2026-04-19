@@ -7,8 +7,7 @@ use crate::program_spec::{
 
 #[derive(Debug, Clone, Copy)]
 struct HelperProgramSurfaceSpec {
-    allowed_programs: &'static [EbpfProgramType],
-    allowed_programs_label: &'static str,
+    family: HelperProgramSurfaceFamily,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -19,16 +18,247 @@ struct HelperZeroArgRequirementSpec {
     error_message: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HelperProgramSurfaceFamily {
+    LircMode2,
+    Xdp,
+    TcSkSkb,
+    XdpTc,
+    Tc,
+    SocketCookie,
+    SocketUid,
+    NetnsCookie,
+    CgroupSkb,
+    SkMsg,
+    SkSkb,
+    SocketLookup,
+    SocketRelease,
+    TcSkLookup,
+    TcCgroupSkb,
+    TcpSock,
+    SocketCast,
+    TaskStorage,
+    Lsm,
+    SkStorageGet,
+    SkStorageDelete,
+    TracingSocket,
+    Sockopt,
+    CgroupSockAddr,
+    SockOps,
+    CgroupSysctl,
+}
+
+impl HelperProgramSurfaceFamily {
+    fn allows(self, program_type: EbpfProgramType) -> bool {
+        match self {
+            Self::LircMode2 => matches!(program_type, EbpfProgramType::LircMode2),
+            Self::Xdp => matches!(program_type, EbpfProgramType::Xdp),
+            Self::TcSkSkb => matches!(
+                program_type,
+                EbpfProgramType::Tc | EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser
+            ),
+            Self::XdpTc => matches!(program_type, EbpfProgramType::Xdp | EbpfProgramType::Tc),
+            Self::Tc => matches!(program_type, EbpfProgramType::Tc),
+            Self::SocketCookie => matches!(
+                program_type,
+                EbpfProgramType::Fentry
+                    | EbpfProgramType::Fexit
+                    | EbpfProgramType::TpBtf
+                    | EbpfProgramType::SocketFilter
+                    | EbpfProgramType::Tc
+                    | EbpfProgramType::CgroupSkb
+                    | EbpfProgramType::CgroupSock
+                    | EbpfProgramType::CgroupSockAddr
+                    | EbpfProgramType::SockOps
+                    | EbpfProgramType::SkSkb
+                    | EbpfProgramType::SkSkbParser
+            ),
+            Self::SocketUid => matches!(
+                program_type,
+                EbpfProgramType::SocketFilter
+                    | EbpfProgramType::Tc
+                    | EbpfProgramType::CgroupSkb
+                    | EbpfProgramType::SkSkb
+                    | EbpfProgramType::SkSkbParser
+            ),
+            Self::NetnsCookie => matches!(
+                program_type,
+                EbpfProgramType::SocketFilter
+                    | EbpfProgramType::Tc
+                    | EbpfProgramType::CgroupSkb
+                    | EbpfProgramType::CgroupSock
+                    | EbpfProgramType::CgroupSockopt
+                    | EbpfProgramType::CgroupSockAddr
+                    | EbpfProgramType::SockOps
+                    | EbpfProgramType::SkMsg
+            ),
+            Self::CgroupSkb => matches!(program_type, EbpfProgramType::CgroupSkb),
+            Self::SkMsg => matches!(program_type, EbpfProgramType::SkMsg),
+            Self::SkSkb => {
+                matches!(
+                    program_type,
+                    EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser
+                )
+            }
+            Self::SocketLookup => matches!(
+                program_type,
+                EbpfProgramType::Xdp
+                    | EbpfProgramType::Tc
+                    | EbpfProgramType::CgroupSkb
+                    | EbpfProgramType::CgroupSockAddr
+                    | EbpfProgramType::SkSkb
+            ),
+            Self::SocketRelease => matches!(
+                program_type,
+                EbpfProgramType::Xdp
+                    | EbpfProgramType::Tc
+                    | EbpfProgramType::CgroupSkb
+                    | EbpfProgramType::CgroupSockAddr
+                    | EbpfProgramType::SkLookup
+                    | EbpfProgramType::SkSkb
+            ),
+            Self::TcSkLookup => matches!(
+                program_type,
+                EbpfProgramType::Tc | EbpfProgramType::SkLookup
+            ),
+            Self::TcCgroupSkb => {
+                matches!(
+                    program_type,
+                    EbpfProgramType::Tc | EbpfProgramType::CgroupSkb
+                )
+            }
+            Self::TcpSock => matches!(
+                program_type,
+                EbpfProgramType::Tc
+                    | EbpfProgramType::CgroupSkb
+                    | EbpfProgramType::CgroupSockopt
+                    | EbpfProgramType::SockOps
+            ),
+            Self::SocketCast => matches!(
+                program_type,
+                EbpfProgramType::Fentry
+                    | EbpfProgramType::Fexit
+                    | EbpfProgramType::TpBtf
+                    | EbpfProgramType::SkLookup
+                    | EbpfProgramType::SkMsg
+                    | EbpfProgramType::SkSkb
+                    | EbpfProgramType::SkSkbParser
+                    | EbpfProgramType::SockOps
+            ),
+            Self::TaskStorage => matches!(
+                program_type,
+                EbpfProgramType::Kprobe
+                    | EbpfProgramType::Kretprobe
+                    | EbpfProgramType::Uprobe
+                    | EbpfProgramType::Uretprobe
+                    | EbpfProgramType::PerfEvent
+                    | EbpfProgramType::RawTracepoint
+                    | EbpfProgramType::Tracepoint
+                    | EbpfProgramType::Fentry
+                    | EbpfProgramType::Fexit
+                    | EbpfProgramType::TpBtf
+                    | EbpfProgramType::Lsm
+            ),
+            Self::Lsm => matches!(program_type, EbpfProgramType::Lsm),
+            Self::SkStorageGet => matches!(
+                program_type,
+                EbpfProgramType::Tc
+                    | EbpfProgramType::CgroupSkb
+                    | EbpfProgramType::CgroupSock
+                    | EbpfProgramType::CgroupSockAddr
+                    | EbpfProgramType::CgroupSockopt
+                    | EbpfProgramType::SockOps
+                    | EbpfProgramType::SkMsg
+                    | EbpfProgramType::StructOps
+                    | EbpfProgramType::Fentry
+                    | EbpfProgramType::Fexit
+                    | EbpfProgramType::TpBtf
+                    | EbpfProgramType::Lsm
+            ),
+            Self::SkStorageDelete => matches!(
+                program_type,
+                EbpfProgramType::Tc
+                    | EbpfProgramType::CgroupSkb
+                    | EbpfProgramType::CgroupSockAddr
+                    | EbpfProgramType::CgroupSockopt
+                    | EbpfProgramType::SockOps
+                    | EbpfProgramType::SkMsg
+                    | EbpfProgramType::StructOps
+                    | EbpfProgramType::Fentry
+                    | EbpfProgramType::Fexit
+                    | EbpfProgramType::TpBtf
+                    | EbpfProgramType::Lsm
+            ),
+            Self::TracingSocket => matches!(
+                program_type,
+                EbpfProgramType::Fentry | EbpfProgramType::Fexit | EbpfProgramType::TpBtf
+            ),
+            Self::Sockopt => matches!(
+                program_type,
+                EbpfProgramType::SockOps
+                    | EbpfProgramType::CgroupSockAddr
+                    | EbpfProgramType::CgroupSockopt
+            ),
+            Self::CgroupSockAddr => matches!(program_type, EbpfProgramType::CgroupSockAddr),
+            Self::SockOps => matches!(program_type, EbpfProgramType::SockOps),
+            Self::CgroupSysctl => matches!(program_type, EbpfProgramType::CgroupSysctl),
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::LircMode2 => "lirc_mode2",
+            Self::Xdp => "xdp",
+            Self::TcSkSkb => "tc, sk_skb, and sk_skb_parser",
+            Self::XdpTc => "xdp and tc",
+            Self::Tc => "tc",
+            Self::SocketCookie => {
+                "fentry, fexit, tp_btf, socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser"
+            }
+            Self::SocketUid => "socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser",
+            Self::NetnsCookie => {
+                "socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sock_ops, and sk_msg"
+            }
+            Self::CgroupSkb => "cgroup_skb",
+            Self::SkMsg => "sk_msg",
+            Self::SkSkb => "sk_skb and sk_skb_parser",
+            Self::SocketLookup => "xdp, tc, cgroup_skb, cgroup_sock_addr, and sk_skb",
+            Self::SocketRelease => "xdp, tc, cgroup_skb, cgroup_sock_addr, sk_lookup, and sk_skb",
+            Self::TcSkLookup => "tc and sk_lookup",
+            Self::TcCgroupSkb => "tc and cgroup_skb",
+            Self::TcpSock => "tc, cgroup_skb, cgroup_sockopt, and sock_ops",
+            Self::SocketCast => {
+                "fentry, fexit, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops"
+            }
+            Self::TaskStorage => {
+                "kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, and lsm"
+            }
+            Self::Lsm => "lsm",
+            Self::SkStorageGet => {
+                "tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm"
+            }
+            Self::SkStorageDelete => {
+                "tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm"
+            }
+            Self::TracingSocket => "fentry, fexit, and tp_btf",
+            Self::Sockopt => "sock_ops, cgroup_sock_addr, and cgroup_sockopt",
+            Self::CgroupSockAddr => "cgroup_sock_addr",
+            Self::SockOps => "sock_ops",
+            Self::CgroupSysctl => "cgroup_sysctl",
+        }
+    }
+}
+
 impl HelperProgramSurfaceSpec {
     fn allows(self, program_type: EbpfProgramType) -> bool {
-        self.allowed_programs.contains(&program_type)
+        self.family.allows(program_type)
     }
 
     fn error(self, helper: BpfHelper) -> String {
         format!(
             "helper '{}' is only valid in {} programs",
             helper.name(),
-            self.allowed_programs_label
+            self.family.label()
         )
     }
 }
@@ -44,152 +274,6 @@ fn helper_list_contains(helpers: &[BpfHelper], helper: BpfHelper) -> bool {
         .any(|candidate| helper_ids_equal(candidate, helper))
 }
 
-const LIRC_MODE2_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::LircMode2];
-const XDP_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Xdp];
-const TC_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Tc];
-const TC_SK_SKB_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::Tc,
-    EbpfProgramType::SkSkb,
-    EbpfProgramType::SkSkbParser,
-];
-const XDP_TC_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Xdp, EbpfProgramType::Tc];
-const SOCKET_COOKIE_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::Fentry,
-    EbpfProgramType::Fexit,
-    EbpfProgramType::TpBtf,
-    EbpfProgramType::SocketFilter,
-    EbpfProgramType::Tc,
-    EbpfProgramType::CgroupSkb,
-    EbpfProgramType::CgroupSock,
-    EbpfProgramType::CgroupSockAddr,
-    EbpfProgramType::SockOps,
-    EbpfProgramType::SkSkb,
-    EbpfProgramType::SkSkbParser,
-];
-const SOCKET_UID_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::SocketFilter,
-    EbpfProgramType::Tc,
-    EbpfProgramType::CgroupSkb,
-    EbpfProgramType::SkSkb,
-    EbpfProgramType::SkSkbParser,
-];
-const NETNS_COOKIE_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::SocketFilter,
-    EbpfProgramType::Tc,
-    EbpfProgramType::CgroupSkb,
-    EbpfProgramType::CgroupSock,
-    EbpfProgramType::CgroupSockopt,
-    EbpfProgramType::CgroupSockAddr,
-    EbpfProgramType::SockOps,
-    EbpfProgramType::SkMsg,
-];
-const CGROUP_SKB_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::CgroupSkb];
-const SK_MSG_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SkMsg];
-const SK_SKB_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SkSkb, EbpfProgramType::SkSkbParser];
-const SOCKET_LOOKUP_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::Xdp,
-    EbpfProgramType::Tc,
-    EbpfProgramType::CgroupSkb,
-    EbpfProgramType::CgroupSockAddr,
-    EbpfProgramType::SkSkb,
-];
-const SOCKET_RELEASE_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::Xdp,
-    EbpfProgramType::Tc,
-    EbpfProgramType::CgroupSkb,
-    EbpfProgramType::CgroupSockAddr,
-    EbpfProgramType::SkLookup,
-    EbpfProgramType::SkSkb,
-];
-const TC_SK_LOOKUP_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Tc, EbpfProgramType::SkLookup];
-const TC_CGROUP_SKB_PROGRAMS: &[EbpfProgramType] =
-    &[EbpfProgramType::Tc, EbpfProgramType::CgroupSkb];
-const TCP_SOCK_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::Tc,
-    EbpfProgramType::CgroupSkb,
-    EbpfProgramType::CgroupSockopt,
-    EbpfProgramType::SockOps,
-];
-const SOCKET_CAST_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::Fentry,
-    EbpfProgramType::Fexit,
-    EbpfProgramType::TpBtf,
-    EbpfProgramType::SkLookup,
-    EbpfProgramType::SkMsg,
-    EbpfProgramType::SkSkb,
-    EbpfProgramType::SkSkbParser,
-    EbpfProgramType::SockOps,
-];
-const TASK_STORAGE_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::Kprobe,
-    EbpfProgramType::Kretprobe,
-    EbpfProgramType::Uprobe,
-    EbpfProgramType::Uretprobe,
-    EbpfProgramType::PerfEvent,
-    EbpfProgramType::RawTracepoint,
-    EbpfProgramType::Tracepoint,
-    EbpfProgramType::Fentry,
-    EbpfProgramType::Fexit,
-    EbpfProgramType::TpBtf,
-    EbpfProgramType::Lsm,
-];
-const LSM_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Lsm];
-const SK_STORAGE_GET_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::Tc,
-    EbpfProgramType::CgroupSkb,
-    EbpfProgramType::CgroupSock,
-    EbpfProgramType::CgroupSockAddr,
-    EbpfProgramType::CgroupSockopt,
-    EbpfProgramType::SockOps,
-    EbpfProgramType::SkMsg,
-    EbpfProgramType::StructOps,
-    EbpfProgramType::Fentry,
-    EbpfProgramType::Fexit,
-    EbpfProgramType::TpBtf,
-    EbpfProgramType::Lsm,
-];
-const SK_STORAGE_DELETE_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::Tc,
-    EbpfProgramType::CgroupSkb,
-    EbpfProgramType::CgroupSockAddr,
-    EbpfProgramType::CgroupSockopt,
-    EbpfProgramType::SockOps,
-    EbpfProgramType::SkMsg,
-    EbpfProgramType::StructOps,
-    EbpfProgramType::Fentry,
-    EbpfProgramType::Fexit,
-    EbpfProgramType::TpBtf,
-    EbpfProgramType::Lsm,
-];
-const TRACING_SOCKET_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::Fentry,
-    EbpfProgramType::Fexit,
-    EbpfProgramType::TpBtf,
-];
-const SOCKOPT_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::SockOps,
-    EbpfProgramType::CgroupSockAddr,
-    EbpfProgramType::CgroupSockopt,
-];
-const CGROUP_SOCK_ADDR_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::CgroupSockAddr];
-const SOCK_OPS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SockOps];
-const CGROUP_SYSCTL_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::CgroupSysctl];
-const GET_SOCKET_COOKIE_CONTEXT_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::SocketFilter,
-    EbpfProgramType::Tc,
-    EbpfProgramType::CgroupSkb,
-    EbpfProgramType::CgroupSockAddr,
-    EbpfProgramType::SockOps,
-    EbpfProgramType::SkSkb,
-    EbpfProgramType::SkSkbParser,
-];
-const GET_SOCKET_COOKIE_CONTEXT_OR_SOCKET_PROGRAMS: &[EbpfProgramType] =
-    &[EbpfProgramType::CgroupSock];
-const GET_SOCKET_COOKIE_SOCKET_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::Fentry,
-    EbpfProgramType::Fexit,
-    EbpfProgramType::TpBtf,
-];
 const TC_INGRESS_ONLY_HELPERS: &[BpfHelper] = &[BpfHelper::RedirectPeer, BpfHelper::SkAssign];
 const CGROUP_SOCK_ADDR_CONNECT_ONLY_HELPERS: &[BpfHelper] = &[
     BpfHelper::Bind,
@@ -218,19 +302,16 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
     Some(match helper {
         BpfHelper::RcRepeat | BpfHelper::RcKeydown | BpfHelper::RcPointerRel => {
             HelperProgramSurfaceSpec {
-                allowed_programs: LIRC_MODE2_PROGRAMS,
-                allowed_programs_label: "lirc_mode2",
+                family: HelperProgramSurfaceFamily::LircMode2,
             }
         }
         BpfHelper::XdpAdjustHead | BpfHelper::XdpAdjustMeta | BpfHelper::XdpAdjustTail => {
             HelperProgramSurfaceSpec {
-                allowed_programs: XDP_PROGRAMS,
-                allowed_programs_label: "xdp",
+                family: HelperProgramSurfaceFamily::Xdp,
             }
         }
         BpfHelper::RedirectMap => HelperProgramSurfaceSpec {
-            allowed_programs: XDP_PROGRAMS,
-            allowed_programs_label: "xdp",
+            family: HelperProgramSurfaceFamily::Xdp,
         },
         BpfHelper::SkbChangeTail
         | BpfHelper::SkbStoreBytes
@@ -242,34 +323,27 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::SetHashInvalid
         | BpfHelper::SkbChangeHead
         | BpfHelper::SkbAdjustRoom => HelperProgramSurfaceSpec {
-            allowed_programs: TC_SK_SKB_PROGRAMS,
-            allowed_programs_label: "tc, sk_skb, and sk_skb_parser",
+            family: HelperProgramSurfaceFamily::TcSkSkb,
         },
         BpfHelper::Redirect => HelperProgramSurfaceSpec {
-            allowed_programs: XDP_TC_PROGRAMS,
-            allowed_programs_label: "xdp and tc",
+            family: HelperProgramSurfaceFamily::XdpTc,
         },
         BpfHelper::RedirectPeer | BpfHelper::RedirectNeigh | BpfHelper::SkbSetTstamp => {
             HelperProgramSurfaceSpec {
-                allowed_programs: TC_PROGRAMS,
-                allowed_programs_label: "tc",
+                family: HelperProgramSurfaceFamily::Tc,
             }
         }
         BpfHelper::GetSocketCookie => HelperProgramSurfaceSpec {
-            allowed_programs: SOCKET_COOKIE_PROGRAMS,
-            allowed_programs_label: "fentry, fexit, tp_btf, socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser",
+            family: HelperProgramSurfaceFamily::SocketCookie,
         },
         BpfHelper::GetSocketUid => HelperProgramSurfaceSpec {
-            allowed_programs: SOCKET_UID_PROGRAMS,
-            allowed_programs_label: "socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser",
+            family: HelperProgramSurfaceFamily::SocketUid,
         },
         BpfHelper::GetNetnsCookie => HelperProgramSurfaceSpec {
-            allowed_programs: NETNS_COOKIE_PROGRAMS,
-            allowed_programs_label: "socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sock_ops, and sk_msg",
+            family: HelperProgramSurfaceFamily::NetnsCookie,
         },
         BpfHelper::SkCgroupId | BpfHelper::SkAncestorCgroupId => HelperProgramSurfaceSpec {
-            allowed_programs: CGROUP_SKB_PROGRAMS,
-            allowed_programs_label: "cgroup_skb",
+            family: HelperProgramSurfaceFamily::CgroupSkb,
         },
         BpfHelper::MsgApplyBytes
         | BpfHelper::MsgCorkBytes
@@ -278,38 +352,30 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::MsgPopData
         | BpfHelper::MsgRedirectMap
         | BpfHelper::MsgRedirectHash => HelperProgramSurfaceSpec {
-            allowed_programs: SK_MSG_PROGRAMS,
-            allowed_programs_label: "sk_msg",
+            family: HelperProgramSurfaceFamily::SkMsg,
         },
         BpfHelper::SkRedirectMap | BpfHelper::SkRedirectHash => HelperProgramSurfaceSpec {
-            allowed_programs: SK_SKB_PROGRAMS,
-            allowed_programs_label: "sk_skb and sk_skb_parser",
+            family: HelperProgramSurfaceFamily::SkSkb,
         },
         BpfHelper::SkLookupTcp | BpfHelper::SkLookupUdp | BpfHelper::SkcLookupTcp => {
             HelperProgramSurfaceSpec {
-                allowed_programs: SOCKET_LOOKUP_PROGRAMS,
-                allowed_programs_label: "xdp, tc, cgroup_skb, cgroup_sock_addr, and sk_skb",
+                family: HelperProgramSurfaceFamily::SocketLookup,
             }
         }
         BpfHelper::TcpCheckSyncookie | BpfHelper::TcpGenSyncookie => HelperProgramSurfaceSpec {
-            allowed_programs: XDP_TC_PROGRAMS,
-            allowed_programs_label: "xdp and tc",
+            family: HelperProgramSurfaceFamily::XdpTc,
         },
         BpfHelper::SkRelease => HelperProgramSurfaceSpec {
-            allowed_programs: SOCKET_RELEASE_PROGRAMS,
-            allowed_programs_label: "xdp, tc, cgroup_skb, cgroup_sock_addr, sk_lookup, and sk_skb",
+            family: HelperProgramSurfaceFamily::SocketRelease,
         },
         BpfHelper::SkAssign => HelperProgramSurfaceSpec {
-            allowed_programs: TC_SK_LOOKUP_PROGRAMS,
-            allowed_programs_label: "tc and sk_lookup",
+            family: HelperProgramSurfaceFamily::TcSkLookup,
         },
         BpfHelper::GetListenerSock | BpfHelper::SkFullsock => HelperProgramSurfaceSpec {
-            allowed_programs: TC_CGROUP_SKB_PROGRAMS,
-            allowed_programs_label: "tc and cgroup_skb",
+            family: HelperProgramSurfaceFamily::TcCgroupSkb,
         },
         BpfHelper::TcpSock => HelperProgramSurfaceSpec {
-            allowed_programs: TCP_SOCK_PROGRAMS,
-            allowed_programs_label: "tc, cgroup_skb, cgroup_sockopt, and sock_ops",
+            family: HelperProgramSurfaceFamily::TcpSock,
         },
         BpfHelper::SkcToTcpSock
         | BpfHelper::SkcToTcp6Sock
@@ -317,36 +383,28 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::SkcToTcpRequestSock
         | BpfHelper::SkcToUdp6Sock
         | BpfHelper::SkcToUnixSock => HelperProgramSurfaceSpec {
-            allowed_programs: SOCKET_CAST_PROGRAMS,
-            allowed_programs_label: "fentry, fexit, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops",
+            family: HelperProgramSurfaceFamily::SocketCast,
         },
         BpfHelper::TaskStorageGet | BpfHelper::TaskStorageDelete => HelperProgramSurfaceSpec {
-            allowed_programs: TASK_STORAGE_PROGRAMS,
-            allowed_programs_label: "kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, and lsm",
+            family: HelperProgramSurfaceFamily::TaskStorage,
         },
         BpfHelper::InodeStorageGet | BpfHelper::InodeStorageDelete => HelperProgramSurfaceSpec {
-            allowed_programs: LSM_PROGRAMS,
-            allowed_programs_label: "lsm",
+            family: HelperProgramSurfaceFamily::Lsm,
         },
         BpfHelper::SkStorageGet => HelperProgramSurfaceSpec {
-            allowed_programs: SK_STORAGE_GET_PROGRAMS,
-            allowed_programs_label: "tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm",
+            family: HelperProgramSurfaceFamily::SkStorageGet,
         },
         BpfHelper::SkStorageDelete => HelperProgramSurfaceSpec {
-            allowed_programs: SK_STORAGE_DELETE_PROGRAMS,
-            allowed_programs_label: "tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm",
+            family: HelperProgramSurfaceFamily::SkStorageDelete,
         },
         BpfHelper::SockFromFile => HelperProgramSurfaceSpec {
-            allowed_programs: TRACING_SOCKET_PROGRAMS,
-            allowed_programs_label: "fentry, fexit, and tp_btf",
+            family: HelperProgramSurfaceFamily::TracingSocket,
         },
         BpfHelper::SetSockOpt | BpfHelper::GetSockOpt => HelperProgramSurfaceSpec {
-            allowed_programs: SOCKOPT_PROGRAMS,
-            allowed_programs_label: "sock_ops, cgroup_sock_addr, and cgroup_sockopt",
+            family: HelperProgramSurfaceFamily::Sockopt,
         },
         BpfHelper::Bind => HelperProgramSurfaceSpec {
-            allowed_programs: CGROUP_SOCK_ADDR_PROGRAMS,
-            allowed_programs_label: "cgroup_sock_addr",
+            family: HelperProgramSurfaceFamily::CgroupSockAddr,
         },
         BpfHelper::SockOpsCbFlagsSet
         | BpfHelper::SockMapUpdate
@@ -354,15 +412,13 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::LoadHdrOpt
         | BpfHelper::StoreHdrOpt
         | BpfHelper::ReserveHdrOpt => HelperProgramSurfaceSpec {
-            allowed_programs: SOCK_OPS_PROGRAMS,
-            allowed_programs_label: "sock_ops",
+            family: HelperProgramSurfaceFamily::SockOps,
         },
         BpfHelper::SysctlGetName
         | BpfHelper::SysctlGetCurrentValue
         | BpfHelper::SysctlGetNewValue
         | BpfHelper::SysctlSetNewValue => HelperProgramSurfaceSpec {
-            allowed_programs: CGROUP_SYSCTL_PROGRAMS,
-            allowed_programs_label: "cgroup_sysctl",
+            family: HelperProgramSurfaceFamily::CgroupSysctl,
         },
         _ => return None,
     })
@@ -386,11 +442,23 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn get_socket_cookie_arg_policy(&self) -> Option<GetSocketCookieArgPolicy> {
-        if GET_SOCKET_COOKIE_CONTEXT_PROGRAMS.contains(self) {
+        if matches!(
+            self,
+            EbpfProgramType::SocketFilter
+                | EbpfProgramType::Tc
+                | EbpfProgramType::CgroupSkb
+                | EbpfProgramType::CgroupSockAddr
+                | EbpfProgramType::SockOps
+                | EbpfProgramType::SkSkb
+                | EbpfProgramType::SkSkbParser
+        ) {
             Some(GetSocketCookieArgPolicy::Context)
-        } else if GET_SOCKET_COOKIE_CONTEXT_OR_SOCKET_PROGRAMS.contains(self) {
+        } else if matches!(self, EbpfProgramType::CgroupSock) {
             Some(GetSocketCookieArgPolicy::ContextOrSocket)
-        } else if GET_SOCKET_COOKIE_SOCKET_PROGRAMS.contains(self) {
+        } else if matches!(
+            self,
+            EbpfProgramType::Fentry | EbpfProgramType::Fexit | EbpfProgramType::TpBtf
+        ) {
             Some(GetSocketCookieArgPolicy::Socket)
         } else {
             None
@@ -398,7 +466,7 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn packet_redirect_helper(&self) -> Option<BpfHelper> {
-        if XDP_TC_PROGRAMS.contains(self) {
+        if HelperProgramSurfaceFamily::XdpTc.allows(*self) {
             Some(BpfHelper::Redirect)
         } else {
             None
@@ -408,47 +476,49 @@ impl EbpfProgramType {
     pub(crate) fn packet_adjust_helper(&self, mode: PacketAdjustMode) -> Option<BpfHelper> {
         match mode {
             PacketAdjustMode::Head => {
-                if XDP_PROGRAMS.contains(self) {
+                if HelperProgramSurfaceFamily::Xdp.allows(*self) {
                     Some(BpfHelper::XdpAdjustHead)
-                } else if TC_SK_SKB_PROGRAMS.contains(self) {
+                } else if HelperProgramSurfaceFamily::TcSkSkb.allows(*self) {
                     Some(BpfHelper::SkbChangeHead)
                 } else {
                     None
                 }
             }
-            PacketAdjustMode::Meta => XDP_PROGRAMS
-                .contains(self)
+            PacketAdjustMode::Meta => HelperProgramSurfaceFamily::Xdp
+                .allows(*self)
                 .then_some(BpfHelper::XdpAdjustMeta),
             PacketAdjustMode::Tail => {
-                if XDP_PROGRAMS.contains(self) {
+                if HelperProgramSurfaceFamily::Xdp.allows(*self) {
                     Some(BpfHelper::XdpAdjustTail)
-                } else if TC_SK_SKB_PROGRAMS.contains(self) {
+                } else if HelperProgramSurfaceFamily::TcSkSkb.allows(*self) {
                     Some(BpfHelper::SkbChangeTail)
                 } else {
                     None
                 }
             }
-            PacketAdjustMode::Pull => TC_SK_SKB_PROGRAMS
-                .contains(self)
+            PacketAdjustMode::Pull => HelperProgramSurfaceFamily::TcSkSkb
+                .allows(*self)
                 .then_some(BpfHelper::SkbPullData),
-            PacketAdjustMode::Room => TC_SK_SKB_PROGRAMS
-                .contains(self)
+            PacketAdjustMode::Room => HelperProgramSurfaceFamily::TcSkSkb
+                .allows(*self)
                 .then_some(BpfHelper::SkbAdjustRoom),
         }
     }
 
     pub(crate) fn message_adjust_helper(&self, mode: MessageAdjustMode) -> Option<BpfHelper> {
-        SK_MSG_PROGRAMS.contains(self).then_some(match mode {
-            MessageAdjustMode::Apply => BpfHelper::MsgApplyBytes,
-            MessageAdjustMode::Cork => BpfHelper::MsgCorkBytes,
-            MessageAdjustMode::Pull => BpfHelper::MsgPullData,
-            MessageAdjustMode::Push => BpfHelper::MsgPushData,
-            MessageAdjustMode::Pop => BpfHelper::MsgPopData,
-        })
+        HelperProgramSurfaceFamily::SkMsg
+            .allows(*self)
+            .then_some(match mode {
+                MessageAdjustMode::Apply => BpfHelper::MsgApplyBytes,
+                MessageAdjustMode::Cork => BpfHelper::MsgCorkBytes,
+                MessageAdjustMode::Pull => BpfHelper::MsgPullData,
+                MessageAdjustMode::Push => BpfHelper::MsgPushData,
+                MessageAdjustMode::Pop => BpfHelper::MsgPopData,
+            })
     }
 
     pub(crate) fn packet_redirect_peer_helper(&self) -> Option<BpfHelper> {
-        if TC_PROGRAMS.contains(self) {
+        if HelperProgramSurfaceFamily::Tc.allows(*self) {
             Some(BpfHelper::RedirectPeer)
         } else {
             None
@@ -456,7 +526,7 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn packet_redirect_neigh_helper(&self) -> Option<BpfHelper> {
-        if TC_PROGRAMS.contains(self) {
+        if HelperProgramSurfaceFamily::Tc.allows(*self) {
             Some(BpfHelper::RedirectNeigh)
         } else {
             None
@@ -464,13 +534,13 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn socket_redirect_helper(&self, map_kind: MapKind) -> Option<BpfHelper> {
-        if SK_MSG_PROGRAMS.contains(self) {
+        if HelperProgramSurfaceFamily::SkMsg.allows(*self) {
             match map_kind {
                 MapKind::SockMap => Some(BpfHelper::MsgRedirectMap),
                 MapKind::SockHash => Some(BpfHelper::MsgRedirectHash),
                 _ => None,
             }
-        } else if SK_SKB_PROGRAMS.contains(self) {
+        } else if HelperProgramSurfaceFamily::SkSkb.allows(*self) {
             match map_kind {
                 MapKind::SockMap => Some(BpfHelper::SkRedirectMap),
                 MapKind::SockHash => Some(BpfHelper::SkRedirectHash),
