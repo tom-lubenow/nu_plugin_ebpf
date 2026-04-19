@@ -1546,6 +1546,15 @@ impl ProgramSpec {
             ProgramSpec::CgroupSockopt { target } => target.section_name().to_string(),
             ProgramSpec::CgroupSockAddr { target } => target.section_name(),
             ProgramSpec::CgroupDevice { target } => target.section_name().to_string(),
+            ProgramSpec::StructOpsCallback { callback_name, .. } => match self.attach_shape() {
+                ProgramAttachShape::StructOpsCallback {
+                    sleepable: true, ..
+                } => format!("struct_ops.s/{callback_name}"),
+                ProgramAttachShape::StructOpsCallback { .. } => {
+                    format!("struct_ops/{callback_name}")
+                }
+                _ => unreachable!("struct_ops callback attach shape must stay typed"),
+            },
             _ => {
                 let prog_type = self.program_type();
                 if prog_type.info().section_uses_target {
@@ -1719,6 +1728,8 @@ mod tests {
                 sleepable: true,
             }
         );
+        assert_eq!(sched_ext_select_cpu.section_name(), "struct_ops/select_cpu");
+        assert_eq!(sched_ext_init.section_name(), "struct_ops.s/init");
     }
 
     #[test]
