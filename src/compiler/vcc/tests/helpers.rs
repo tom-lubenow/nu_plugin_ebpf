@@ -1165,6 +1165,68 @@ fn test_verify_mir_for_program_sockopt_helpers_reject_invalid_program_or_attach(
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_sockopt_helpers_accept_supported_socket_contexts() {
+    for probe_ctx in [
+        ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4"),
+        ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get"),
+        ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set"),
+    ] {
+        let (mut func, entry) = new_mir_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let optval_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: BpfHelper::GetSockOpt as u32,
+                args: vec![
+                    MirValue::VReg(ctx),
+                    MirValue::Const(1),
+                    MirValue::Const(2),
+                    MirValue::StackSlot(optval_slot),
+                    MirValue::Const(16),
+                ],
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: BpfHelper::SetSockOpt as u32,
+                args: vec![
+                    MirValue::VReg(ctx),
+                    MirValue::Const(1),
+                    MirValue::Const(2),
+                    MirValue::StackSlot(optval_slot),
+                    MirValue::Const(16),
+                ],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected sockopt helpers to verify on cgroup_sockopt");
+    }
+}
+
+#[test]
 fn test_verify_mir_for_program_bind_helper_rejects_invalid_program_or_attach() {
     for (probe_ctx, expected) in [
         (
@@ -1416,6 +1478,153 @@ fn test_verify_mir_for_probe_context_socket_map_helpers_reject_invalid_programs(
             .expect_err("expected socket-map helper program-surface error");
         assert!(err.iter().any(|e| e.message.contains(expected)));
     }
+}
+
+#[test]
+fn test_verify_mir_for_program_socket_map_helpers_accept_supported_programs() {
+    for (helper, program_info) in [
+        (BpfHelper::SockMapUpdate, EbpfProgramType::SockOps.info()),
+        (BpfHelper::SockHashUpdate, EbpfProgramType::SockOps.info()),
+        (BpfHelper::MsgRedirectMap, EbpfProgramType::SkMsg.info()),
+        (BpfHelper::MsgRedirectHash, EbpfProgramType::SkMsg.info()),
+        (BpfHelper::SkRedirectMap, EbpfProgramType::SkSkb.info()),
+        (
+            BpfHelper::SkRedirectHash,
+            EbpfProgramType::SkSkbParser.info(),
+        ),
+    ] {
+        let (mut func, entry) = new_mir_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let key_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+        let args = match helper {
+            BpfHelper::SockMapUpdate | BpfHelper::SockHashUpdate => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(key_slot),
+                MirValue::Const(0),
+            ],
+            BpfHelper::MsgRedirectMap | BpfHelper::SkRedirectMap => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+            BpfHelper::MsgRedirectHash | BpfHelper::SkRedirectHash => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(key_slot),
+                MirValue::Const(0),
+            ],
+            _ => unreachable!(),
+        };
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args,
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        verify_mir_for_program(&func, &types, program_info)
+            .expect("expected socket-map helper in supported program");
+    }
+}
+
+#[test]
+fn test_verify_mir_for_program_redirect_map_helper_rejects_invalid_programs() {
+    let (mut func, entry) = new_mir_function();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_redirect_map".to_string(),
+            kind: MapKind::DevMap,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RedirectMap as u32,
+            args: vec![MirValue::VReg(map), MirValue::Const(0), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        map,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::U32),
+            val_ty: Box::new(MirType::Unknown),
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Kprobe.info())
+        .expect_err("expected redirect_map helper program-surface error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect_map' is only valid in xdp programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_program_redirect_map_helper_accepts_xdp() {
+    let (mut func, entry) = new_mir_function();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_redirect_map".to_string(),
+            kind: MapKind::DevMapHash,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RedirectMap as u32,
+            args: vec![MirValue::VReg(map), MirValue::Const(7), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        map,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::U32),
+            val_ty: Box::new(MirType::Unknown),
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect("expected redirect_map helper in xdp program");
 }
 
 #[test]
