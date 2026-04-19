@@ -98,6 +98,160 @@ fn test_ptr_add_unknown_offset_on_stack() {
 }
 
 #[test]
+fn test_verify_mir_stack_pointer_loop_counter_range_in_bounds() {
+    let (mut func, entry) = new_mir_function();
+    let header = func.alloc_block();
+    let body = func.alloc_block();
+    let exit = func.alloc_block();
+
+    let slot = func.alloc_stack_slot(24, 8, StackSlotKind::ListBuffer);
+    let list = func.alloc_vreg();
+    let counter = func.alloc_vreg();
+    let scaled = func.alloc_vreg();
+    let ptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::ListNew {
+        dst: list,
+        buffer: slot,
+        max_len: 2,
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: counter,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Jump { target: header };
+
+    func.block_mut(header).terminator = MirInst::LoopHeader {
+        counter,
+        start: 0,
+        limit: 2,
+        body,
+        exit,
+    };
+
+    func.block_mut(body).instructions.push(MirInst::BinOp {
+        dst: scaled,
+        op: BinOpKind::Mul,
+        lhs: MirValue::VReg(counter),
+        rhs: MirValue::Const(8),
+    });
+    func.block_mut(body).instructions.push(MirInst::BinOp {
+        dst: ptr,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(list),
+        rhs: MirValue::VReg(scaled),
+    });
+    func.block_mut(body).instructions.push(MirInst::Load {
+        dst,
+        ptr,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    func.block_mut(body).terminator = MirInst::LoopBack {
+        counter,
+        step: 1,
+        header,
+    };
+
+    func.block_mut(exit).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        list,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(counter, MirType::I64);
+    types.insert(scaled, MirType::I64);
+    types.insert(
+        ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types).expect("bounded loop counter should preserve stack bounds");
+}
+
+#[test]
+fn test_verify_mir_ctx_u32_mod_range_in_bounds() {
+    let (mut func, entry) = new_mir_function();
+
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::ListBuffer);
+    let list = func.alloc_vreg();
+    let idx = func.alloc_vreg();
+    let modded = func.alloc_vreg();
+    let scaled = func.alloc_vreg();
+    let ptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::ListNew {
+        dst: list,
+        buffer: slot,
+        max_len: 2,
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: idx,
+            field: CtxField::Pid,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: modded,
+        op: BinOpKind::Mod,
+        lhs: MirValue::VReg(idx),
+        rhs: MirValue::Const(2),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: scaled,
+        op: BinOpKind::Mul,
+        lhs: MirValue::VReg(modded),
+        rhs: MirValue::Const(8),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: ptr,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(list),
+        rhs: MirValue::VReg(scaled),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Load {
+        dst,
+        ptr,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        list,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(idx, MirType::U32);
+    types.insert(modded, MirType::U32);
+    types.insert(scaled, MirType::U32);
+    types.insert(
+        ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types).expect("unsigned ctx-field mod range should stay in bounds");
+}
+
+#[test]
 fn test_unreachable_block_is_ignored() {
     let mut func = VccFunction::new();
     let entry = func.entry;
@@ -220,6 +374,82 @@ fn test_joined_null_wildcard_pointer_keeps_concrete_space() {
     VccVerifier::default()
         .verify_function_with_seed(&func, seed)
         .expect("null wildcard pointer join should preserve concrete pointer space");
+}
+
+#[test]
+fn test_verify_mir_joined_typed_null_copy_preserves_pointer_nullability() {
+    let (mut func, entry) = new_mir_function();
+    let with_ptr = func.alloc_block();
+    let with_null = func.alloc_block();
+    let join = func.alloc_block();
+    let ok = func.alloc_block();
+    let bad = func.alloc_block();
+    func.param_count = 1;
+
+    let selector = func.alloc_vreg();
+    let ptr = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let loaded = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: with_ptr,
+        if_false: with_null,
+    };
+
+    func.block_mut(with_ptr).instructions.push(MirInst::Copy {
+        dst: ptr,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(with_ptr).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(with_null).instructions.push(MirInst::Copy {
+        dst: ptr,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(with_null).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(join).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(ptr),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(join).terminator = MirInst::Branch {
+        cond,
+        if_true: ok,
+        if_false: bad,
+    };
+
+    func.block_mut(ok).instructions.push(MirInst::Load {
+        dst: loaded,
+        ptr,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    func.block_mut(ok).terminator = MirInst::Return { val: None };
+    func.block_mut(bad).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(selector, MirType::I64);
+    types.insert(
+        ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(loaded, MirType::I64);
+
+    verify_mir(&func, &types)
+        .expect("typed null-pointer branch join should remain nullable pointer");
 }
 
 #[test]
